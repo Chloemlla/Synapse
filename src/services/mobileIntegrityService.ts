@@ -30,6 +30,22 @@ const ACCESS_TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 /** 同时保留的未消费 nonce 上限，防止内存被刷爆。 */
 const MAX_PENDING_NONCES = 20_000;
 
+/**
+ * 外部请求超时时长的静态有界区间。`cfg.timeoutMs` 来自运行时可变配置
+ * （超管配置面板可改），CodeQL 的 js/resource-exhaustion 会把它当用户可控输入；
+ * RuntimeConfigService 已在加载期 normalizeInteger 到 [1000,60000]，这里在使用点
+ * 再用 Math.min/Math.max 钳一次：既是纵深防御（配置路径变化也不会造出无界定时器），
+ * 也让时延对静态分析可证有界。
+ */
+const MIN_REQUEST_TIMEOUT_MS = 1000;
+const MAX_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 8000;
+function resolveRequestTimeoutMs(value: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.min(Math.max(Math.trunc(n), MIN_REQUEST_TIMEOUT_MS), MAX_REQUEST_TIMEOUT_MS);
+}
+
 export type IntegrityMode = "off" | "observe" | "enforce";
 
 export type DeviceIntegrityLevel = "STRONG" | "DEVICE" | "BASIC" | "NONE";
@@ -189,7 +205,7 @@ async function getAccessToken(): Promise<string | null> {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), resolveRequestTimeoutMs(cfg.timeoutMs));
   try {
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: "POST",
@@ -250,7 +266,7 @@ async function decodeIntegrityToken(integrityToken: string): Promise<DecodedInte
 
   const endpoint = `https://playintegrity.googleapis.com/v1/${encodeURIComponent(cfg.packageName.trim())}:decodeIntegrityToken`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), resolveRequestTimeoutMs(cfg.timeoutMs));
   try {
     const response = await fetch(endpoint, {
       method: "POST",
