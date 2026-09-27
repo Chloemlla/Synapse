@@ -105,7 +105,13 @@ export function encryptCredential(cookie: string): { credentialCiphertext: strin
 }
 
 function decryptCredential(doc: BilibiliSyncDoc): string {
-  if (!KNOWN_CREDENTIAL_VERSIONS.has(doc.credentialKeyVersion) || !doc.credentialCiphertext || !doc.credentialIv || !doc.credentialTag) {
+  if (
+    !doc.credentialKeyVersion ||
+    !KNOWN_CREDENTIAL_VERSIONS.has(doc.credentialKeyVersion) ||
+    !doc.credentialCiphertext ||
+    !doc.credentialIv ||
+    !doc.credentialTag
+  ) {
     throw new BilibiliSyncError("Bilibili 凭据不可用", "BILIBILI_CREDENTIAL_INVALID", 403);
   }
   const iv = Buffer.from(doc.credentialIv, "base64");
