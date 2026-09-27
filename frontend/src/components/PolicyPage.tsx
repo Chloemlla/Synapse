@@ -52,7 +52,7 @@ const policySections: PolicySection[] = [
     title: '服务简介',
     icon: FaInfoCircle,
     tone: 'sky',
-    summary: 'Happy 文本转语音服务用于将文字快速转换为语音，并提供基础的账户、资源与安全能力。',
+    summary: 'Synapse - 综合服务平台用于将文字快速转换为语音，并提供基础的账户、资源与安全能力。',
     items: [
       '用户应在合法范围内使用文本转语音、资源下载、翻译与相关工具。',
       '平台会按照业务需要处理必要的账户、使用与系统信息。',
@@ -172,7 +172,7 @@ const PolicyPage: React.FC<{ error?: any }> = ({ error }) => {
         <InfoQueryHero
           eyebrow="Terms And Privacy"
           title="服务条款与隐私政策"
-          description="Happy 文本转语音服务的使用规则、隐私处理、用户义务、安全限制与联系方式集中说明。"
+          description="Synapse - 综合服务平台的使用规则、隐私处理、用户义务、安全限制与联系方式集中说明。"
           icon={FaVolumeUp}
           tone="slate"
           meta={(

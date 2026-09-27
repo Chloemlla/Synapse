@@ -1,10 +1,41 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { motion } from 'framer-motion';
 import { FaLink, FaCopy, FaDice, FaArrowLeft } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
-import getApiBaseUrl from '../api';
+import { apiWithRetry } from '../api';
 import { studioEyebrowClassName } from './studioTheme';
+
+interface PublicShortLinkResponse {
+  success?: boolean;
+  shortUrl?: string;
+  error?: string;
+  errorCode?: string;
+}
+
+/** 把创建接口的各类失败归一化成一句用户能看懂的中文提示。 */
+function resolveCreateErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+      return '请求超时，请稍后重试';
+    }
+    if (!err.response) {
+      return '网络连接异常，请检查网络后重试';
+    }
+    const status = err.response.status;
+    const data = err.response.data as PublicShortLinkResponse | undefined;
+    // 首访安全验证由全局拦截器弹出验证页，这里只给一句温和的重试提示。
+    if (data?.errorCode === 'IP_VERIFICATION_REQUIRED') {
+      return '请先完成安全验证后重试';
+    }
+    if (status === 429) return data?.error || '操作过于频繁，请稍后再试';
+    if (status >= 500) return data?.error || '服务暂时不可用，请稍后重试';
+    if (data?.error) return data.error;
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return '创建失败';
+}
 
 const PublicShortLinkCreator: React.FC = () => {
   const [target, setTarget] = useState('');
@@ -15,7 +46,8 @@ const PublicShortLinkCreator: React.FC = () => {
   const { setNotification } = useNotification();
 
   const handleCreate = async () => {
-    if (!target.trim()) {
+    const trimmedTarget = target.trim();
+    if (!trimmedTarget) {
       setNotification({ message: '请输入目标地址', type: 'warning' });
       return;
     }
@@ -23,36 +55,39 @@ const PublicShortLinkCreator: React.FC = () => {
       setNotification({ message: '请输入服务密码', type: 'warning' });
       return;
     }
+    let parsedTarget: URL;
     try {
-      new URL(target.trim());
+      parsedTarget = new URL(trimmedTarget);
     } catch {
-      setNotification({ message: '请输入有效的URL格式', type: 'error' });
+      setNotification({ message: '请输入有效的 URL 格式', type: 'error' });
+      return;
+    }
+    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+      setNotification({ message: '目标地址仅支持 http 和 https 协议', type: 'error' });
       return;
     }
 
     setCreating(true);
     setResult(null);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/shorturl/public/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target: target.trim(),
+      const { data } = await apiWithRetry.post<PublicShortLinkResponse>(
+        '/api/shorturl/public/create',
+        {
+          target: trimmedTarget,
           customCode: customCode.trim() || undefined,
           password: password.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
+        },
+      );
+      if (data?.success && data.shortUrl) {
         setResult(data.shortUrl);
         setNotification({ message: '短链创建成功', type: 'success' });
         setTarget('');
         setCustomCode('');
       } else {
-        setNotification({ message: data.error || '创建失败', type: 'error' });
+        setNotification({ message: data?.error || '创建失败', type: 'error' });
       }
-    } catch (err: any) {
-      setNotification({ message: err.message || '网络错误', type: 'error' });
+    } catch (err) {
+      setNotification({ message: resolveCreateErrorMessage(err), type: 'error' });
     } finally {
       setCreating(false);
     }
