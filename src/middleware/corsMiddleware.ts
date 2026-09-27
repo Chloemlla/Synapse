@@ -132,4 +132,29 @@ export function openCorsHeadersMiddleware(_req: Request, res: Response, next: Ne
   next();
 }
 
+// ============ 状态变更请求的 Origin 硬校验（CSRF 纵深防御）============
+// F-02（2026-09-27）：敏感写接口（如 /admin/envs）走 Cookie 鉴权（authFetch credentials:'include'）。
+// SameSite=Lax 已阻断跨站携 Cookie 的 POST/DELETE；此处再加一道：若带了 Origin/Referer，
+// 必须在白名单内，否则直接拒绝。无 Origin（非浏览器/同源省略）不携受害者会话，放行交给鉴权。
+const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+
+function originFromReferer(referer: string | undefined): string | undefined {
+  if (!referer) return undefined;
+  try {
+    const u = new URL(referer);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return undefined;
+  }
+}
+
+export function requireAllowedOriginForWrites(req: Request, res: Response, next: NextFunction) {
+  if (!STATE_CHANGING_METHODS.has(req.method.toUpperCase())) return next();
+  const origin = (req.headers.origin as string | undefined) || originFromReferer(req.headers.referer as string | undefined);
+  // 没有 Origin/Referer：不是浏览器发起的跨站写（且不会携受害者 SameSite=Lax 会话 Cookie），放行。
+  if (!origin) return next();
+  if (isOriginAllowed(origin)) return next();
+  return res.status(403).json({ error: "请求来源不在允许列表（CSRF 防护）", code: "ORIGIN_NOT_ALLOWED" });
+}
+
 export { allowedOrigins };

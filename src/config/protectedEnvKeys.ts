@@ -20,3 +20,18 @@ export const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   "HCAPTCHA_SECRET_KEY",
   "RESEND_API_KEY",
 ]);
+
+// F-01（2026-09-27）：数据静态加密根密钥——它们直接解密已落库的密文。
+// 不同于 webhook / 令牌类可轮换密钥（轮换是安全行为），一旦已有非空值又被静默改写，
+// 存量密文就永久解不开（无重加密流程）= 静默数据损坏。
+// 因此首次配置（当前为空）放行，但覆盖已有值必须携显式 confirmRotate（见 adminController.setEnv）。
+export const DATA_AT_REST_ENCRYPTION_KEYS: ReadonlySet<string> = new Set([
+  "PASSWORD_ENCRYPTION_KEY",
+  "BILIBILI_COOKIE_ENCRYPTION_KEY",
+  "DATA_COLLECTION_RAW_SECRET",
+]);
+
+/** 是否为「覆盖即可能静默损坏存量密文」的数据静态加密根密钥。 */
+export function isDataAtRestEncryptionKey(key: string): boolean {
+  return DATA_AT_REST_ENCRYPTION_KEYS.has(key.trim().toUpperCase());
+}

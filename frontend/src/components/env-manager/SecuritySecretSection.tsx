@@ -16,6 +16,14 @@ const REFRESH_BUTTON_CLASS = studioPrimaryButtonClassName;
 
 const SECTION_KEY = 'securitySecrets';
 
+// F-01（2026-09-27）：数据静态加密根密钥——覆盖已有值会让存量密文永久解不开。
+// 后端对这几个键的覆盖要求 confirmRotate:true；前端在已配置时先弹确认再带上该标志。
+const DATA_AT_REST_ENCRYPTION_KEYS = new Set([
+  'PASSWORD_ENCRYPTION_KEY',
+  'BILIBILI_COOKIE_ENCRYPTION_KEY',
+  'DATA_COLLECTION_RAW_SECRET',
+]);
+
 interface SecretField {
   key: string;
   altKeys: string[];
@@ -202,10 +210,21 @@ export default function SecuritySecretSection({
       }
       setSavingKey(key);
       try {
+        // F-01: 轮换数据静态加密根密钥（已配置过）会静默损坏存量密文，先显式确认。
+        const isRotation = DATA_AT_REST_ENCRYPTION_KEYS.has(key) && Boolean(current[key]);
+        if (isRotation) {
+          const ok = window.confirm(
+            `${key} 已配置。它直接解密已落库的存量密文，轮换后旧数据将永久无法解密（需自行重加密）。\n\n确定要轮换吗？`,
+          );
+          if (!ok) {
+            setSavingKey(null);
+            return;
+          }
+        }
         const res = await authFetch(API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ key, value }),
+          body: JSON.stringify(isRotation ? { key, value, confirmRotate: true } : { key, value }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -225,7 +244,7 @@ export default function SecuritySecretSection({
         setSavingKey(null);
       }
     },
-    [canWrite, inputs, savingKey, fetchValues, onRefresh, setNotification],
+    [canWrite, inputs, current, savingKey, fetchValues, onRefresh, setNotification],
   );
 
   const handleDelete = useCallback(

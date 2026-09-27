@@ -4,6 +4,7 @@ import { CDictDonationController } from "../../controllers/cdictDonationControll
 import { ttsProviderController } from "../../controllers/ttsProviderController";
 import { authenticateSuperAdmin } from "../../middleware/auth";
 import { auditLog } from "../../middleware/auditLog";
+import { requireAllowedOriginForWrites } from "../../middleware/corsMiddleware";
 
 const router = express.Router();
 
@@ -49,6 +50,7 @@ router.get(
 router.post(
   "/envs",
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.set", captureBody: false, extractDetail: (req) => ({ key: req.body.key }) }),
   adminController.setEnv,
@@ -75,6 +77,7 @@ router.post(
 router.delete(
   "/envs",
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.delete", extractDetail: (req) => ({ key: req.body.key }) }),
   adminController.deleteEnv,
@@ -101,6 +104,7 @@ router.delete(
 router.post(
   "/envs/delete",
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.delete", extractDetail: (req) => ({ key: req.body.key }) }),
   adminController.deleteEnv,

@@ -9,7 +9,7 @@ import { TranslationLogService } from "../services/translationLogService";
 import { getGithubTarget, pushRepoSecret } from "../services/githubSecretService";
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
-import { PROTECTED_ENV_KEYS } from "../config/protectedEnvKeys";
+import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
@@ -1148,6 +1148,18 @@ export const adminController = {
       const normalizedKey = key.trim();
       if (isProtectedEnvKey(normalizedKey)) {
         return res.status(400).json({ error: `key=${normalizedKey} 受保护，不能通过此接口修改` });
+      }
+      // F-01: 数据静态加密根密钥（解密已落库密文）。首次配置放行，但覆盖已有非空值会
+      // 让存量密文永久解不开（无重加密流程）——要求显式 confirmRotate，避免误操作/CSRF 静默损坏数据。
+      if (isDataAtRestEncryptionKey(normalizedKey) && req.body.confirmRotate !== true) {
+        const existing = process.env[normalizedKey];
+        if (typeof existing === "string" && existing.length > 0 && existing !== value) {
+          return res.status(409).json({
+            error: `key=${normalizedKey} 是数据静态加密根密钥，覆盖会导致已加密的存量数据永久无法解密。`,
+            code: "ENCRYPTION_KEY_ROTATION_REQUIRES_CONFIRM",
+            hint: "确需轮换请在请求体带 confirmRotate:true，并自行完成存量数据的重加密。",
+          });
+        }
       }
       if (isUserStorageModeKey(normalizedKey) && value.trim().toLowerCase() !== USER_STORAGE_MODE) {
         return res.status(400).json({ error: "USER_STORAGE_MODE 只允许设置为 mongo" });
