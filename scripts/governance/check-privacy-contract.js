@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..");
-const mapPath = path.join(root, "docs", "privacy-data-map.json");
+const mapPath = path.join(root, "docs", "governance", "privacy-data-map.json");
 const requiredDatasetKeys = ["id", "collection", "fields", "purpose", "legalBasis", "retention", "delete", "export", "evidence"];
 const knownRetentionTypes = new Set([
   "account_lifetime",
