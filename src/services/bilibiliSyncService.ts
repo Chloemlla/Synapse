@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import axios from "axios";
 import { BilibiliSyncModel, type BilibiliSearchRecord, type BilibiliSyncDoc, type BilibiliSyncSettings } from "../models/bilibiliSyncModel";
 import { config } from "../config/config";
+import { KL, deriveKey, hashSecretToKey, legacyDecryptKeys } from "../config/keyDerivation";
 
 export const BILIBILI_UID_PATTERN = /^\d{1,12}$/;
 export const MAX_SETTINGS_BYTES = 256 * 1024;
@@ -11,7 +12,9 @@ export const MAX_SEARCH_CHANGE_LIMIT = MAX_SEARCH_RECORDS;
 export const MAX_SEARCH_KEYWORD_LENGTH = 256;
 export const MAX_SEARCH_RECORD_ID_LENGTH = 128;
 const CREDENTIAL_ALGO = "aes-256-gcm";
-const CREDENTIAL_KEY_VERSION = "v1";
+// v2 = 单一主密钥 AES_KEY 经 HKDF(KL.BILIBILI_CRED) 派生；v1 = 历史多密钥方案（仍可解密）。
+const CREDENTIAL_KEY_VERSION = "v2";
+const KNOWN_CREDENTIAL_VERSIONS = new Set(["v1", "v2"]);
 
 export class BilibiliSyncError extends Error {
   constructor(
@@ -68,43 +71,24 @@ function sanitizeSettingValue(value: unknown): unknown {
   );
 }
 
-function credentialKeySources(): string[] {
-  return [
-    process.env.BILIBILI_COOKIE_ENCRYPTION_KEY,
-    process.env.PASSWORD_ENCRYPTION_KEY,
-    process.env.AES_KEY,
-    config.jwtSecret,
-  ].filter((source): source is string => Boolean(source));
-}
-
-function deriveCredentialKey(source: string): Buffer {
-  return crypto.createHash("sha256").update(source).digest();
-}
-
 /**
- * Preferred key for new encryptions: derived from the first configured source.
+ * 新写入统一用单一主密钥派生的子密钥（KL.BILIBILI_CRED）。
  */
 function preferredCredentialKey(): Buffer {
-  return deriveCredentialKey(credentialKeySources()[0]);
+  return deriveKey(KL.BILIBILI_CRED);
 }
 
 /**
- * Every key that could have encrypted a stored credential, preferred first,
- * deduplicated. Reads try each in turn so credentials written before the
- * dedicated BILIBILI_COOKIE_ENCRYPTION_KEY was introduced (i.e. derived from
- * PASSWORD_ENCRYPTION_KEY / AES_KEY / JWT_SECRET) can still be decrypted
- * instead of being invalidated immediately.
+ * 解密候选密钥：新派生子密钥在前，其后是历史 env 命名密钥（BILIBILI_COOKIE_ENCRYPTION_KEY /
+ * PASSWORD_ENCRYPTION_KEY / AES_KEY / JWT_SECRET）与 config.jwtSecret 的 sha256，去重。
+ * 迁移前用旧密钥加密的凭据仍可解开，迁移后统一写成 v2。
  */
 function credentialKeys(): Buffer[] {
-  const seen = new Set<string>();
-  const keys: Buffer[] = [];
-  for (const source of credentialKeySources()) {
-    const derived = deriveCredentialKey(source);
-    const fingerprint = derived.toString("hex");
-    if (seen.has(fingerprint)) continue;
-    seen.add(fingerprint);
-    keys.push(derived);
-  }
+  const keys = legacyDecryptKeys(KL.BILIBILI_CRED);
+  const seen = new Set(keys.map((key) => key.toString("hex")));
+  // config.jwtSecret 可能与 process.env.JWT_SECRET 不同（未配置时为进程级临时值），单独补入。
+  const jwtDerived = hashSecretToKey(config.jwtSecret);
+  if (!seen.has(jwtDerived.toString("hex"))) keys.push(jwtDerived);
   return keys;
 }
 
@@ -121,7 +105,7 @@ export function encryptCredential(cookie: string): { credentialCiphertext: strin
 }
 
 function decryptCredential(doc: BilibiliSyncDoc): string {
-  if (doc.credentialKeyVersion !== CREDENTIAL_KEY_VERSION || !doc.credentialCiphertext || !doc.credentialIv || !doc.credentialTag) {
+  if (!KNOWN_CREDENTIAL_VERSIONS.has(doc.credentialKeyVersion) || !doc.credentialCiphertext || !doc.credentialIv || !doc.credentialTag) {
     throw new BilibiliSyncError("Bilibili 凭据不可用", "BILIBILI_CREDENTIAL_INVALID", 403);
   }
   const iv = Buffer.from(doc.credentialIv, "base64");

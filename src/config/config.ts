@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import dotenv from "dotenv";
 import { z } from "zod";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
+import { KL, deriveSecretHex } from "./keyDerivation";
 import {
   buildRuntimeConfigDefaults,
   type DeepLXRuntimeConfig,
@@ -405,7 +406,7 @@ runtimeDefaults.proxycheck = {
   apiKey: process.env.PROXYCHECK_API_KEY || runtimeDefaults.proxycheck.apiKey,
   publicApiKey: process.env.PROXYCHECK_PUBLIC_API_KEY || "",
   payloadVerificationKey: process.env.PROXYCHECK_PAYLOAD_VERIFICATION_KEY || "",
-  hmacSecret: process.env.PROXYCHECK_HMAC_SECRET || "",
+  hmacSecret: process.env.PROXYCHECK_HMAC_SECRET || deriveSecretHex(KL.PROXYCHECK_HMAC),
 };
 
 // 注册邀请码闸门的默认值来自 env；已存 REGISTRATION_INVITE 文档覆盖之。

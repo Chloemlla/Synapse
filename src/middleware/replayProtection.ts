@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "../config/config";
+import { KL, deriveSecretHex, legacyRawSecrets } from "../config/keyDerivation";
 import { getTokenFromRequest } from "../utils/authCookie";
 import { getNonceStore } from "../services/nonceStore";
 import logger from "../utils/logger";
@@ -32,9 +33,14 @@ function getBearerToken(req: Request): string | null {
 }
 
 function getSigningKeys(req: Request): string[] {
-  const candidates = [getConfiguredSigningSecret(), getBearerToken(req), getTokenFromRequest(req)].filter(
-    (value): value is string => Boolean(value),
-  );
+  // 首位为 AES_KEY 派生的重放签名子密钥；其后兼容显式 SIGN_SECRET_KEY（含旧值）与请求令牌。
+  const candidates = [
+    deriveSecretHex(KL.REPLAY_SIGN),
+    getConfiguredSigningSecret(),
+    ...legacyRawSecrets(KL.REPLAY_SIGN),
+    getBearerToken(req),
+    getTokenFromRequest(req),
+  ].filter((value): value is string => Boolean(value));
   return [...new Set(candidates)];
 }
 

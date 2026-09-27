@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import logger from "../utils/logger";
+import { KL, deriveSecretHex } from "../config/keyDerivation";
 import { getNonceStore, type NonceStore, type NonceRecord } from "./nonceStore";
 
 /**
@@ -148,7 +149,6 @@ const HKDF_SALT = Buffer.from("shc-v2-salt-2026", "utf8");
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_SKEW_MS = 2 * 60 * 1000;
 const DEFAULT_SCORE_THRESHOLD = 0.62;
-const EPHEMERAL_SMART_HUMAN_CHECK_SECRET = crypto.randomBytes(32).toString("base64url");
 const MAX_PAYLOAD_BYTES = 8 * 1024; // 8 KB 上限，避免被塞入巨型 st
 const MAX_POW_DIFFICULTY = 24;
 const POW_HARD_TIMEOUT_MS = 2_500;
@@ -543,16 +543,12 @@ export class SmartHumanCheckService {
     defaultAction?: string;
   }) {
     const configuredSecret = (opts?.secret ?? process.env.SMART_HUMAN_CHECK_SECRET ?? "").trim();
-    const supplied = configuredSecret.length >= 16
-      ? configuredSecret
-      : EPHEMERAL_SMART_HUMAN_CHECK_SECRET;
-    // G7-44: track whether the ephemeral (process-local, restart-volatile) key
-    // is in use so getSecretInfo can report the real state instead of a
-    // hardcoded "all good". Multi-instance deployments with an ephemeral key
-    // will fail to decrypt nonces issued by a sibling instance.
-    this.usingEphemeralSecret = configuredSecret.length < 16;
+    // 未显式配置时回退到 AES_KEY 派生子密钥（稳定、跨实例一致），不再用进程级临时高熵密钥。
+    const supplied = configuredSecret.length >= 16 ? configuredSecret : deriveSecretHex(KL.SMART_HUMAN_CHECK);
+    // 派生密钥稳定可复现，不再存在「进程重启/多实例不一致」问题。
+    this.usingEphemeralSecret = false;
     if (configuredSecret.length < 16) {
-      logger.warn("[SmartHumanCheck] SMART_HUMAN_CHECK_SECRET 未配置或长度不足，使用进程级临时高熵密钥", {
+      logger.info("[SmartHumanCheck] SMART_HUMAN_CHECK_SECRET 未配置，回退到 AES_KEY 派生子密钥", {
         configured: configuredSecret.length > 0,
       });
     }

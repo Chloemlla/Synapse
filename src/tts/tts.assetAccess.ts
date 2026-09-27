@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Request, Response } from "express";
 import { config } from "../config/config";
+import { KL, deriveSecretHex } from "../config/keyDerivation";
 import { AuditLogService } from "../services/auditLogService";
 import logger from "../utils/logger";
 import { ttsAudioAssetStore } from "./tts.asset";
@@ -90,7 +91,7 @@ function resolveMimeType(fileName: string): string {
 export class TtsAssetAccessService {
   // 运行期读 process.env：admin/env 面板保存 TTS_ASSET_ACCESS_SECRET 后立即生效，无需重启。
   private get secret(): string {
-    return process.env.TTS_ASSET_ACCESS_SECRET || config.jwtSecret;
+    return process.env.TTS_ASSET_ACCESS_SECRET || deriveSecretHex(KL.TTS_ASSET);
   }
   private readonly audioDir = path.resolve(config.audioDir);
 

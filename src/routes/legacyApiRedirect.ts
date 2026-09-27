@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler, Response } from "express";
-import { config } from "../config/config";
+import { KL, deriveSecretHex } from "../config/keyDerivation";
 import {
   ADMIN_SPA_MODULE_PATHS,
   FRONTEND_SPA_ROUTE_PATHS,
@@ -332,9 +332,9 @@ function isFrontendOnlySpaPath(pathname: string): boolean {
 }
 
 function getChoiceStateSecret(): string {
-  // 用独立派生密钥，避免把 JWT 签名密钥直接用于纯 UI 状态签名
+  // 统一从单一主密钥 AES_KEY 派生（KL.LEGACY_API_CHOICE），不再把 JWT 签名密钥直接用于纯 UI 状态签名。
   if (process.env.LEGACY_API_CHOICE_SECRET) return process.env.LEGACY_API_CHOICE_SECRET;
-  return createHmac("sha256", config.jwtSecret).update("legacy-api-choice").digest("hex");
+  return deriveSecretHex(KL.LEGACY_API_CHOICE);
 }
 
 function toBase64Url(value: string): string {
