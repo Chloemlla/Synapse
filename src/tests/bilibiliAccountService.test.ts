@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import crypto from "node:crypto";
+import { KL, deriveKey } from "../config/keyDerivation";
 
 process.env.BILIBILI_COOKIE_ENCRYPTION_KEY = "test-bilibili-account-cookie-key";
 
@@ -203,12 +204,13 @@ describe("bilibiliAccountService", () => {
     })).rejects.toMatchObject({ code: "BILIBILI_DEVICE_TOO_LARGE" });
   });
 
-  it("round-trips encrypted credentials decryptable with the configured key", async () => {
+  it("round-trips encrypted credentials decryptable with the AES_KEY-derived subkey", async () => {
     await upsertBilibiliAccount("user-1", { uid: "12345", cookie: "SESSDATA=abc; bili_jct=def", isPrimary: true });
     const [, update] = mockBindingFindOneAndUpdate.mock.calls[0] as [unknown, { $set: Record<string, string> }];
+    // 凭据现由单一主密钥 AES_KEY 经 HKDF(KL.BILIBILI_CRED) 派生的子密钥加密（不再直接用 sha256(BILIBILI_COOKIE_ENCRYPTION_KEY)）。
     const decipher = crypto.createDecipheriv(
       "aes-256-gcm",
-      crypto.createHash("sha256").update(process.env.BILIBILI_COOKIE_ENCRYPTION_KEY!).digest(),
+      deriveKey(KL.BILIBILI_CRED),
       Buffer.from(update.$set.credentialIv, "base64"),
     );
     decipher.setAuthTag(Buffer.from(update.$set.credentialTag, "base64"));
