@@ -35,6 +35,7 @@ import SelfContainedSecretKeySection from './env-manager/SelfContainedSecretKeyS
 import SelfContainedEcoEnchantsTokenSection from './env-manager/SelfContainedEcoEnchantsTokenSection';
 import SelfContainedEcoEnchantsWebhookSection from './env-manager/SelfContainedEcoEnchantsWebhookSection';
 import SelfContainedSecuritySecretSection from './env-manager/SelfContainedSecuritySecretSection';
+import RevealKeysSection from './env-manager/RevealKeysSection';
 import SelfContainedProjectLumenConfigSection from './env-manager/SelfContainedProjectLumenConfigSection';
 import SelfContainedMediaToolConfigSection from './env-manager/SelfContainedMediaToolConfigSection';
 import SelfContainedLumenServerConfigSection from './env-manager/SelfContainedLumenServerConfigSection';
@@ -529,6 +530,7 @@ const EnvManager: React.FC = () => {
         <SelfContainedEcoEnchantsTokenSection />
         <SelfContainedEcoEnchantsWebhookSection />
         <SelfContainedSecuritySecretSection />
+        <RevealKeysSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedMediaToolConfigSection />
         <SelfContainedProjectLumenConfigSection />
         <SelfContainedLumenServerConfigSection prefersReducedMotion={prefersReducedMotion} />

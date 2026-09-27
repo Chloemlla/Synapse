@@ -35,6 +35,7 @@ export const CDICT_DONATE_PUBLIC_API = `${API_BASE_URL}/api/cdict/donate`;
 export const ECOENCHANTS_TOKEN_API = `${API_BASE_URL}/api/admin/envs`;
 export const ECOENCHANTS_WEBHOOK_API = `${API_BASE_URL}/api/admin/envs`;
 export const SECURITY_SECRET_API = `${API_BASE_URL}/api/admin/envs`;
+export const REVEAL_KEY_API = `${API_BASE_URL}/api/admin/envs/reveal-key`;
 export const LUMEN_CONFIG_API = `${API_BASE_URL}/api/admin/lumen-config`;
 export const LUMEN_CONFIG_SYNC_API = `${API_BASE_URL}/api/admin/lumen-config/sync-github`;
 export const LUMEN_SERVER_API = `${API_BASE_URL}/api/admin/lumen-server/setting`;

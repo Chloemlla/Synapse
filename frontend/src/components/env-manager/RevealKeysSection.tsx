@@ -1,0 +1,137 @@
+import { useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
+import CollapsibleSection from './CollapsibleSection';
+import { REVEAL_KEY_API, authFetch } from './api';
+import { useNotification } from '../Notification';
+import { useAuth } from '../../hooks/useAuth';
+import { isSuperAdmin } from '../../utils/rbac';
+import { studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
+
+interface RevealKeysSectionProps {
+  prefersReducedMotion?: boolean | null;
+}
+
+interface RevealResult {
+  aesKey: string;
+  aesKeyConfigured: boolean;
+  masterFingerprint: string;
+  derived: Record<string, string>;
+}
+
+function KeyRow({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-amber-100 py-1 last:border-b-0">
+      <span className="shrink-0 text-slate-600">{label}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <code className="truncate font-mono text-[11px] text-slate-800" title={value}>
+          {value}
+        </code>
+        <button type="button" onClick={onCopy} className="shrink-0 text-sky-600 underline">
+          复制
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * 验证管理操作口令后查看单一主密钥 AES_KEY 及各用途派生子密钥（D-5）。
+ * 明文只在本次会话内存中，收起/离开即清除；后端每次查看都写审计日志。
+ */
+export default function RevealKeysSection({ prefersReducedMotion: reducedMotionProp }: RevealKeysSectionProps) {
+  const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
+  const { setNotification } = useNotification();
+  const { user } = useAuth();
+  const canView = isSuperAdmin(user?.role);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [opPassword, setOpPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<RevealResult | null>(null);
+
+  const onReveal = async () => {
+    if (!opPassword.trim()) {
+      setNotification({ message: '请输入管理操作口令', type: 'warning' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await authFetch(REVEAL_KEY_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operationPassword: opPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setResult(null);
+        setNotification({ message: data?.error || '查看密钥失败', type: 'error' });
+        return;
+      }
+      setResult(data as RevealResult);
+      setOpPassword('');
+    } catch {
+      setNotification({ message: '查看密钥请求失败', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = (value: string) => {
+    navigator.clipboard?.writeText(value).then(
+      () => setNotification({ message: '已复制到剪贴板', type: 'success' }),
+      () => setNotification({ message: '复制失败', type: 'error' }),
+    );
+  };
+
+  if (!canView) return null;
+
+  return (
+    <CollapsibleSection
+      title="查看密钥（AES_KEY 主密钥与派生子密钥）"
+      description="所有内部签名/加密密钥均由单一主密钥 AES_KEY 经 HKDF 按用途派生。查看明文需再次输入管理操作口令，且每次查看都会记入审计日志。"
+      sectionKey="reveal-keys"
+      isOpen={isOpen}
+      onToggle={() => setIsOpen((open) => !open)}
+      prefersReducedMotion={prefersReducedMotion}
+    >
+      <div className="space-y-3 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            type="password"
+            value={opPassword}
+            onChange={(event) => setOpPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void onReveal();
+            }}
+            placeholder="管理操作口令（二次验证）"
+            aria-label="管理操作口令"
+            autoComplete="off"
+            className={studioFieldClassName}
+          />
+          <button type="button" disabled={loading} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
+            {loading ? '验证中…' : '验证并查看'}
+          </button>
+        </div>
+
+        {result ? (
+          <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-xs">
+            <div className="font-semibold text-amber-700">以下为敏感明文，请勿外泄；点击“收起并清除”或离开页面即清除。</div>
+            <KeyRow
+              label="AES_KEY（主密钥）"
+              value={result.aesKeyConfigured ? result.aesKey : '（未配置，使用进程级临时源）'}
+              onCopy={() => result.aesKeyConfigured && copy(result.aesKey)}
+            />
+            <div className="text-[11px] text-slate-400">主密钥指纹 {result.masterFingerprint}</div>
+            <div className="pt-1 font-semibold text-slate-600">派生子密钥（hex，按用途）</div>
+            {Object.entries(result.derived).map(([label, value]) => (
+              <KeyRow key={label} label={label} value={value} onCopy={() => copy(value)} />
+            ))}
+            <button type="button" onClick={() => setResult(null)} className="mt-2 text-slate-500 underline">
+              收起并清除
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </CollapsibleSection>
+  );
+}

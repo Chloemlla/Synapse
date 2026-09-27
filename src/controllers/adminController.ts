@@ -10,6 +10,8 @@ import { getGithubTarget, pushRepoSecret } from "../services/githubSecretService
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
+import { KL, deriveSecretHex, masterIkm } from "../config/keyDerivation";
+import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
@@ -1124,9 +1126,46 @@ export const adminController = {
     }
   },
 
+  // 验证管理操作口令后查看密钥明文（D-5）：返回单一主密钥 AES_KEY 及各用途派生子密钥。
+  // 需 superadmin + 二次口令校验；审计日志由路由层 auditLog 中间件留痕。
+  async revealKey(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
+      const body = (req.body ?? {}) as { operationPassword?: unknown; label?: unknown };
+      if (!isAdminOperationPasswordValid(body.operationPassword)) {
+        return res.status(403).json({ success: false, error: "管理操作口令校验失败" });
+      }
+
+      const aesKey = (process.env.AES_KEY || "").trim();
+      const derived: Record<string, string> = {};
+      for (const label of Object.values(KL)) derived[label] = deriveSecretHex(label);
+
+      logger.warn("[EnvManager] 超管查看密钥明文", {
+        userId: req.user?.id,
+        label: typeof body.label === "string" ? body.label : "all",
+      });
+
+      if (typeof body.label === "string" && body.label) {
+        const one = derived[body.label];
+        if (!one) return res.status(400).json({ success: false, error: "未知的密钥标签" });
+        return res.json({ success: true, label: body.label, key: one });
+      }
+
+      return res.json({
+        success: true,
+        aesKey,
+        aesKeyConfigured: aesKey.length > 0,
+        masterFingerprint: masterIkm().toString("hex").slice(0, 16),
+        derived,
+      });
+    } catch (e) {
+      logger.error("查看密钥失败:", e);
+      res.status(500).json({ success: false, error: "查看密钥失败" });
+    }
+  },
+
   // 脱敏敏感信息
-  maskSensitiveValue(value: string | undefined): string {
-    if (!value || value.length < 4) {
+  maskSensitiveValue(value: string | undefined): string {    if (!value || value.length < 4) {
       return "***";
     }
     // 确保 visibleChars * 2 不超过字符串长度，避免 repeat 负数异常

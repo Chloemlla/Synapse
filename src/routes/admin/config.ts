@@ -58,6 +58,35 @@ router.post(
 
 /**
  * @openapi
+ * /admin/envs/reveal-key:
+ *   post:
+ *     summary: 验证管理操作口令后查看单一主密钥 AES_KEY 及派生子密钥
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               operationPassword:
+ *                 type: string
+ *               label:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 密钥明文（仅 superadmin + 口令校验通过后）
+ */
+router.post(
+  "/envs/reveal-key",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  requireAllowedOriginForWrites,
+  authenticateSuperAdmin,
+  auditLog({ module: "env", action: "env.reveal_key", captureBody: false, extractDetail: (req) => ({ label: req.body?.label ?? "all" }) }),
+  adminController.revealKey,
+);
+
+/**
+ * @openapi
  * /admin/envs:
  *   delete:
  *     summary: 删除环境变量
