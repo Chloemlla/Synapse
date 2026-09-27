@@ -18,6 +18,8 @@ setDefaultEnv("OPENAI_KEY", "test-openai-key");
 setDefaultEnv("OPENAI_BASE_URL", "https://api.openai.com/v1");
 setDefaultEnv("JWT_SECRET", "test-jwt-secret");
 setDefaultEnv("SIGN_SECRET_KEY", "test-sign-secret-key");
+// 单一主密钥：keyDerivation 以 AES_KEY 为 IKM 源；测试固定一个默认值保证派生确定。
+setDefaultEnv("AES_KEY", "test-aes-master-key-0123456789abcdef0123456789abcdef");
 setDefaultEnv("ADMIN_USERNAME", "admin");
 setDefaultEnv("ADMIN_PASSWORD", "admin123");
 // SYN-01: adminOperationPassword 的 test 后门已移除。测试用例读 TEST_ADMIN_PASSWORD 作为管理
