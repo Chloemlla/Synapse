@@ -56,8 +56,10 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 ### 亮点特性
 
 - 🔐 多因素认证体系（密码 + TOTP + Passkey/WebAuthn + 邮箱验证 + 备份码）
-- 🛡️ 多层安全防护（WAF + IP 封禁 + 速率限制 + 篡改检测 + 智能人机验证）
-- 🎙️ 基于 OpenAI 的高质量文本转语音服务
+- 🔑 OIDC 登录提供方：本服务可作为下游应用的统一身份源
+- 🛡️ 多层安全防护（WAF + IP 封禁 + 速率限制 + 篡改检测 + 智能人机验证 + proxycheck.io IP 风险检测）
+- 🎙️ 多提供商文本转语音（OpenAI / Fish Audio / 内置微软 Edge 朗读）
+- 🎧 语音转文本（录音转写）与媒体工具（B 站音频下载联动）
 - 🏪 完整的资源商店与 CDK 兑换系统
 - 📊 用户行为数据收集与分析（集成 Microsoft Clarity）
 - 🌐 WebSocket 实时通信
@@ -91,6 +93,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | Turnstile 验证码 | Cloudflare Turnstile 集成 | `turnstileAuth.ts`, `TurnstileWidget` |
 | hCaptcha 验证 | hCaptcha 人机验证集成 | `HCaptchaWidget`, `HCaptchaVerificationPage` |
 | 首次访问检测 | 新设备/浏览器首次访问验证 | `FirstVisitVerification` |
+| IP 风险检测 | proxycheck.io IP 风险评分与自动阻断（出口探测 + HMAC 验签） | `ip-risk` 服务、`IP 风险缓存页` |
 | 指纹采集 | 浏览器指纹识别与追踪 | `FingerprintManager`, `FingerprintRequestModal` |
 | 重放保护 | 防止请求重放攻击 | `replayProtection.ts` |
 | 审计日志 | 全操作审计记录 | `auditLog.ts`, `AuditLogViewer` |
@@ -100,7 +103,10 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 > [!NOTE]
 > TTS 功能依赖 OpenAI API，需要在 `.env` 中配置有效的 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。支持自定义 API 代理地址。
 
-平台核心功能，基于 OpenAI TTS API 实现高质量语音合成。
+平台核心功能，基于 OpenAI TTS API 实现高质量语音合成；支持多提供商并存与用户切换（OpenAI / Fish Audio / 内置微软 Edge 朗读接口）。
+
+> [!NOTE]
+> 综合服务平台首页迁移后，语音合成工作台位于 `/tts`。
 
 - **语音合成**：支持多种语言、多种音色，文本转语音生成
 - **音频管理**：生成历史记录、音频文件缓存与预览
@@ -1654,6 +1660,69 @@ docker-compose up -d
 - 移除 keystore 签名 4 字段（`KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD`），签名材料改由线下单独管理
 - 新增依赖 `libsodium-wrappers`（注意：需在部署环境重新生成 `pnpm-lock.yaml`，否则 `--frozen-lockfile` 工作流会因锁文件未同步而失败）
 
+#### 08-27 ~ 08-31
+- 崩溃报告后台重构：优化查询路径，支持按设备 ID 检索
+- CDict 官方客户端签名参数改为后台可调
+- coin-flip 前后端生成唯一结果 ID，管理端可查看记录
+- 全量升级 npm 依赖；补充 IP 与反向代理相关环境变量详解
+- CI MongoDB 镜像 `mongo:7` → `mongo:8`，修复 replica/nightly 集成测试；回退 mongodb 驱动至 `^7.5.0` 修复握手失败
+- 基础镜像 `node:24.3.0-alpine` → `24.20.0-alpine`，运行时移除 npm/corepack/pnpm 并 `apk upgrade`、仅装生产依赖，消除镜像扫描 CVE
+- Lumen 服务端配置改为 env-manager 可配置 + 启动门控
+- 应用 2026-08-31 架构审计修复
+
+### 2026-09
+
+#### 09-01
+- 大规模架构审计落地：app/中间件、认证/身份、路由、控制器、平台服务、前端核心/管理/功能等 G1–G13 分组共数百项修复
+- 全量修复 type-check 错误（TOTP delta 计数、聚合分组类型、定时器句柄类型、runtimeConfig 缓存键、静态 import 收紧等）
+
+#### 09-02 ~ 09-03
+- Lumen 采集集合加 TTL 保留期与回填迁移，随生产镜像发布
+- 基于作用域的路由治理；拆分超过 800 行的路由文件与 `authController`
+- 篡改事件落 MongoDB、审计失败即 fail-closed、受管命令从策略重建
+- `dist-obfuscated` 补齐非 JS 资源并对生产产物做冒烟；输出侧消毒 HTML 而非写入时改写
+- 抽取共享 `PROTECTED_ENV_KEYS`、去重限流后端
+
+#### 09-06
+- LibreChat：强制登录、移除游客与手动鉴权通道；管理端游客孤儿历史筛选 + 一键清理；通道支持 openai-chat / openai-responses / anthropic 三种线格式；遗留审计 F1–F11 修复
+- 新增 qq-guard 纪律管控：控制通道 + 审计存储 + 管理面板，扩展政治/历史失真内容审核规则，bot 离线/恢复健康事件入审计与告警邮件，控制通道密钥接入 runtimeConfig
+- 新增 media-tool：内置 + 独立双形态管理 GUI，Mongo/JSON 双任务存储 + 任务 runner + HTTP API，移植 B 站下载 / 语音转写引擎至 `src/mediaTool`
+- 工单内容超限改走邮件通道（前端保留全文并一键 mailto）
+- 修复邮箱 identifier 登录被当用户名拒、hCaptcha token 被截断、`/admin/*` SPA 深链 308、失效 IP 地理位置源、winston 重复日志等；移除全屏 LoadingSpinner
+
+#### 09-12
+- OAuth userinfo 改从 auth 上下文取 user（而非无 user 行的窄 oauthContext），修复生产 500
+
+#### 09-19
+- 补齐 OIDC 语义，使本服务可作为下游应用的登录提供方；管理页新增 OIDC 接入信息面板
+- 全量升级 npm 依赖；修复 vitest 5 与 mongodb 7.6 升级引入的两处 CI 回归
+
+#### 09-22
+- 新增 v-t 图六个比例交互演示页
+
+#### 09-25
+- 新增综合服务平台首页，语音合成工作台迁至 `/tts`
+- 上线「语音转文本」核心功能页：内嵌 transcribe.js 全链路，转写正文入 `media_tool_transcripts`
+- 接入 proxycheck.io IP 风险检测：出口探测 + 按官方语义的 HMAC 验签 + 详细日志面板（api 请求日志 / 库内内容 / 每项决策）
+- 新增内置微软语音（直连 Edge 朗读接口）提供商，默认不动；TTS 支持多提供商
+- media-tool 镜像补齐 yt-dlp/ffmpeg 并落实「留空探测 PATH」；任务终态只落库一次，取消不再卡在运行中
+- 新增 Vercel Web Analytics 页面浏览统计
+- `ENABLE_FIRST_VISIT_VERIFICATION` / `REGISTRATION_INVITE_REQUIRED` 收敛为 env-manager 运行时配置（env 仅作启动默认值）
+- 域名统一为 `chloemlla.com`，前端基址固定，CORS/CSP 相应放行
+- 前端样式大规模收敛到 studioTheme（批 1–6 + Info* 组件族），清除蓝紫渐变统一中性 slate
+- 恢复后端 Jest 与前端覆盖率采集，让 118 个后端套件真正启动
+- CVE 依赖升级（browserslist / baseline-browser-mapping），修复 pnpm 锁文件
+
+#### 09-26
+- 客户端 `sml_` 令牌按血缘每日轮换，旧令牌复用即整链吊销；接入风险分级轮换（命中信号压到 1 小时）与 Play Integrity 设备证明（不通过只降级不拒绝）；新增登录令牌血缘只读面板（P4）与代次上限告警 + 被顶替代次 IP 保留期
+- footer 构建期注入前后端版本 + 短 SHA，四块信息响应式横竖排
+- IP 风险分过高直接阻断，前后端各加对应页面；封禁界面统一改为支持邮箱入口
+- 将 Project-Lumen 识别为官方客户端，记录设备/会话身份
+- TTS 多提供商并存与用户切换，SPA 路径清单覆盖全部前端路由
+- media-tool：B 站 412 改走 API 直取 + cookies 正文入库持久化
+- 部署脚本修复（后端短 SHA 部署后永不更新、env 差集精确化、失败不再假绿）
+- 大量测试收尾（替身/mock 修复、单测真入门禁、覆盖率补齐）
+
 ---
 
 ## 📝 许可证
@@ -1676,4 +1745,4 @@ docker-compose up -d
 
 ---
 
-**版本**: 2026-08-07
+**版本**: 2026-09-26
