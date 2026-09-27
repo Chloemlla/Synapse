@@ -431,7 +431,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
       },
       newlineToComma: {
         description: isEnglish ? 'Convert newlines to comma-separated values' : '将换行转换为逗号分隔值',
-        code: 'text.split("\\\\n").filter(line => line.trim()).join(", ")',
+        code: 'text.split("\\\\n").filter(line => line.trim()).join(",")',
         example: isEnglish
           ? 'chatgpt-4o-latest\ngpt-4o\ngpt-4o-2024-05-13 → chatgpt-4o-latest,gpt-4o,gpt-4o-2024-05-13'
           : 'chatgpt-4o-latest\ngpt-4o\ngpt-4o-2024-05-13 → chatgpt-4o-latest,gpt-4o,gpt-4o-2024-05-13'
@@ -773,7 +773,8 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
           return line.replace(/^\s*[-*+]\s*/, '- ');
         }
         if (/^\s*\d+\.\s/.test(line)) {
-          return line.replace(/^\s*\d+\.\s*/, (match, num) => `${parseInt(num) + 1}. `);
+          // 保留原序号与缩进，仅规范序号后的空格（旧实现误把匹配偏移量当序号，导致所有行都变成 1.）
+          return line.replace(/^(\s*)(\d+)\.\s*/, (_match, indent, num) => `${indent}${num}. `);
         }
         return line;
       }).join('\n');
@@ -816,8 +817,8 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         // 句子内容
         return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
       } else {
-        // 标点符号
-        return part;
+        // 标点符号：补回被 split 吃掉的句间空格（后续 replace(/\s+/g,' ') 会合并多余空白）
+        return part + ' ';
       }
     }).join('');
 
@@ -1092,49 +1093,15 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
     }
   }, [isMobile, hoveredFunction, convertCase]);
 
-  // 键盘快捷键处理
+  // 键盘快捷键处理（仅保留与浏览器/文本框默认行为不冲突的组合）
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Ctrl/Cmd + Enter: 转换为大写
+    // Ctrl/Cmd + Enter: 转大写；Ctrl/Cmd + Shift + Enter: 转小写。
+    // 原有的 Ctrl+A/F/R/S/N/K 会劫持“全选/查找/刷新/保存/新建/地址栏”等系统快捷键，已移除。
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      convertCase('uppercase');
+      convertCase(e.shiftKey ? 'lowercase' : 'uppercase');
     }
-    // Ctrl/Cmd + Shift + Enter: 转换为小写
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
-      e.preventDefault();
-      convertCase('lowercase');
-    }
-    // Ctrl/Cmd + K: 清空文本
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      clearText();
-    }
-    // Ctrl/Cmd + S: 智能大小写
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      convertCase('smartCase');
-    }
-    // Ctrl/Cmd + A: 自动格式化
-    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-      e.preventDefault();
-      convertCase('autoFormat');
-    }
-    // Ctrl/Cmd + N: 文本标准化
-    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-      e.preventDefault();
-      convertCase('normalizeText');
-    }
-    // Ctrl/Cmd + F: 修复常见错误
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-      e.preventDefault();
-      convertCase('fixCommonErrors');
-    }
-    // Ctrl/Cmd + R: 提升可读性
-    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
-      e.preventDefault();
-      convertCase('enhanceReadability');
-    }
-  }, [convertCase, clearText]);
+  }, [convertCase]);
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
@@ -1544,7 +1511,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
               </li>
               <li className="flex items-start gap-2">
                 <FaKeyboard className="mt-1 h-3 w-3 flex-shrink-0 text-slate-500" />
-                {isEnglish ? 'Keyboard shortcuts: Ctrl+Enter (UPPERCASE), Ctrl+Shift+Enter (lowercase), Ctrl+K (Clear), Ctrl+S (Smart), Ctrl+A (Auto), Ctrl+N (Normalize), Ctrl+F (Fix), Ctrl+R (Readable)' : '键盘快捷键：Ctrl+Enter (全大写)，Ctrl+Shift+Enter (全小写)，Ctrl+K (清空)，Ctrl+S (智能)，Ctrl+A (自动)，Ctrl+N (标准化)，Ctrl+F (修复)，Ctrl+R (可读性)'}
+                {isEnglish ? 'Keyboard shortcuts: Ctrl+Enter (UPPERCASE), Ctrl+Shift+Enter (lowercase)' : '键盘快捷键：Ctrl+Enter （全大写）、Ctrl+Shift+Enter （全小写）'}
               </li>
               <li className="flex items-start gap-2">
                 <FaStar className="mt-1 h-3 w-3 flex-shrink-0 text-slate-500" />
