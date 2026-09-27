@@ -205,7 +205,12 @@ async function getAccessToken(): Promise<string | null> {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), resolveRequestTimeoutMs(cfg.timeoutMs));
+  // Cap the abort delay with a constant upper bound at the call site so the timer
+  // duration is provably bounded for CodeQL js/resource-exhaustion (the source is
+  // the admin-mutable cfg.timeoutMs). resolveRequestTimeoutMs already clamps; the
+  // in-scope Math.min(..., MAX_REQUEST_TIMEOUT_MS) makes the bound local to the sink.
+  const abortAfterMs = Math.min(resolveRequestTimeoutMs(cfg.timeoutMs), MAX_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), abortAfterMs);
   try {
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: "POST",
@@ -266,7 +271,10 @@ async function decodeIntegrityToken(integrityToken: string): Promise<DecodedInte
 
   const endpoint = `https://playintegrity.googleapis.com/v1/${encodeURIComponent(cfg.packageName.trim())}:decodeIntegrityToken`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), resolveRequestTimeoutMs(cfg.timeoutMs));
+  // Same constant upper bound at the sink as getAccessToken (CodeQL js/resource-exhaustion):
+  // the delay is provably capped at MAX_REQUEST_TIMEOUT_MS regardless of cfg.timeoutMs.
+  const abortAfterMs = Math.min(resolveRequestTimeoutMs(cfg.timeoutMs), MAX_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), abortAfterMs);
   try {
     const response = await fetch(endpoint, {
       method: "POST",
