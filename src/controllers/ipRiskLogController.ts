@@ -456,9 +456,19 @@ export class IpRiskLogController {
       }
 
       const query = parseProbeReportQuery(req.query as Record<string, unknown>);
-      const filter: Record<string, unknown> = {};
+      const conditions: Record<string, unknown>[] = [];
       const ipMatcher = buildIpMatcher(query.ip);
-      if (ipMatcher) filter.ip = ipMatcher;
+      if (ipMatcher) conditions.push({ ip: ipMatcher });
+      // WebRTC 泄露筛选——以服务端判决为准：真实泄露看 mismatch.webrtcVsExit（等价于
+      // flag webrtc_public_ip_leak），自报看 flag webrtc_leak_reported（不采信客户端布尔值）。
+      if (query.webrtc === 'leak') {
+        conditions.push({ 'mismatch.webrtcVsExit': true });
+      } else if (query.webrtc === 'reported') {
+        conditions.push({ flags: 'webrtc_leak_reported' });
+      } else if (query.webrtc === 'any') {
+        conditions.push({ $or: [{ 'mismatch.webrtcVsExit': true }, { flags: 'webrtc_leak_reported' }] });
+      }
+      const filter: Record<string, unknown> = conditions.length ? { $and: conditions } : {};
 
       const [docs, total] = await Promise.all([
         ProxycheckProbeReportModel.find(filter)

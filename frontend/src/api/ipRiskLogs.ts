@@ -250,6 +250,8 @@ export interface ProbeReportsParams {
   limit?: number;
   offset?: number;
   ip?: string;
+  /** WebRTC 泄露筛选：leak=服务端判定的真实泄露，reported=客户端自报，any=任一。 */
+  webrtc?: 'leak' | 'reported' | 'any';
 }
 
 export interface ProbeReportsResponse {

@@ -133,6 +133,18 @@ export interface ParsedProbeReportQuery {
   limit: number;
   offset: number;
   ip: string;
+  /**
+   * WebRTC 泄露筛选：
+   *   'leak'     —— 服务端判定的真实泄露（mismatch.webrtcVsExit=true / flag webrtc_public_ip_leak）
+   *   'reported' —— 仅客户端自报（flag webrtc_leak_reported）
+   *   'any'      —— 上述任一
+   *   ''         —— 不筛选
+   */
+  webrtc: '' | 'leak' | 'reported' | 'any';
+}
+
+function readWebrtcFilter(value: unknown): ParsedProbeReportQuery['webrtc'] {
+  return value === 'leak' || value === 'reported' || value === 'any' ? value : '';
 }
 
 export function parseProbeReportQuery(query: Record<string, unknown>): ParsedProbeReportQuery {
@@ -140,5 +152,6 @@ export function parseProbeReportQuery(query: Record<string, unknown>): ParsedPro
     limit: readBoundedInt(query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT),
     offset: readBoundedInt(query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
     ip: readIpPrefix(query.ip),
+    webrtc: readWebrtcFilter(query.webrtc),
   };
 }

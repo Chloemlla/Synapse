@@ -37,6 +37,38 @@ interface Props {
 
 type ProbeAxisKey = 'ipv4vsWs' | 'ipvEvsV6' | 'timezoneVsGeo' | 'webrtcVsExit';
 
+type WebrtcFilter = '' | 'leak' | 'reported' | 'any';
+
+const WEBRTC_FILTER_OPTIONS: ReadonlyArray<{ value: WebrtcFilter; label: string }> = [
+  { value: '', label: 'WebRTC：全部' },
+  { value: 'leak', label: 'WebRTC：服务端判定泄露' },
+  { value: 'reported', label: 'WebRTC：客户端自报' },
+  { value: 'any', label: 'WebRTC：任一命中' },
+];
+
+/**
+ * 服务端判定优先：mismatch.webrtcVsExit=true 是「真实泄露」（公网候选 ≠ 请求出口），
+ * 只有 webrtcLeak=true / flag webrtc_leak_reported 则是「客户端自报、未采信」。
+ */
+function webrtcLeakState(row: ProbeReportRow): 'server' | 'reported' | 'none' {
+  if (row.mismatch?.webrtcVsExit === true || (row.flags ?? []).includes('webrtc_public_ip_leak')) return 'server';
+  if (row.webrtcLeak === true || (row.flags ?? []).includes('webrtc_leak_reported')) return 'reported';
+  return 'none';
+}
+
+const WEBRTC_BADGE: Record<'server' | 'reported', { className: string; label: string; title: string }> = {
+  server: {
+    className: 'border-rose-200 bg-rose-50 font-semibold text-rose-700',
+    label: 'WebRTC 泄露',
+    title: '服务端判定的真实泄露：WebRTC 暴露的公网候选与请求出口 IP 不一致（flag webrtc_public_ip_leak）。',
+  },
+  reported: {
+    className: 'border-amber-200 bg-amber-50 text-amber-700',
+    label: 'WebRTC 自报',
+    title: '仅客户端自报泄露（flag webrtc_leak_reported），服务端未采信，仅作留痕。',
+  },
+};
+
 const MISMATCH_LABELS: ReadonlyArray<{ key: ProbeAxisKey; label: string; unavailableHint: string }> = [
   {
     key: 'ipv4vsWs',
@@ -86,6 +118,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
 
   const [draftIp, setDraftIp] = useState('');
   const [ip, setIp] = useState('');
+  const [webrtc, setWebrtc] = useState<WebrtcFilter>('');
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [manualNonce, setManualNonce] = useState(0);
@@ -103,7 +136,12 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
     setLoading(true);
     void (async () => {
       try {
-        const res = await ipRiskLogsApi.probeReports({ limit: pageSize, offset, ip: ip || undefined });
+        const res = await ipRiskLogsApi.probeReports({
+          limit: pageSize,
+          offset,
+          ip: ip || undefined,
+          webrtc: webrtc || undefined,
+        });
         if (requestId !== requestRef.current) return;
         setRows(res.reports ?? []);
         setTotal(res.total ?? 0);
@@ -117,7 +155,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
         if (requestId === requestRef.current) setLoading(false);
       }
     })();
-  }, [pageSize, offset, ip, refreshNonce, manualNonce, notice]);
+  }, [pageSize, offset, ip, webrtc, refreshNonce, manualNonce, notice]);
 
   const toggle = useCallback((key: string) => {
     setExpanded((current) => {
@@ -131,6 +169,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
   const rowKey = (row: ProbeReportRow, index: number): string => row._id || `${row.createdAt}-${index}`;
   const allExpanded = rows.length > 0 && rows.every((row, index) => expanded.has(rowKey(row, index)));
   const flaggedCount = rows.filter((row) => (row.flags ?? []).length > 0).length;
+  const webrtcLeakCount = rows.filter((row) => webrtcLeakState(row) !== 'none').length;
 
   return (
     <div className="space-y-5">
@@ -197,6 +236,15 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
             ) : null}
           </div>
           <FilterSelect
+            title="WebRTC 泄露筛选"
+            value={webrtc}
+            options={WEBRTC_FILTER_OPTIONS}
+            onChange={(value) => {
+              setWebrtc(value as WebrtcFilter);
+              setOffset(0);
+            }}
+          />
+          <FilterSelect
             title="每页条数"
             value={pageSize}
             options={PAGE_SIZE_OPTIONS.map((size) => ({ value: size, label: `每页 ${size} 条` }))}
@@ -219,6 +267,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <InfoBadge>命中 {formatCount(total)} 条</InfoBadge>
           <InfoBadge tone={flaggedCount > 0 ? 'amber' : 'slate'}>本页有服务端标记 {flaggedCount} 条</InfoBadge>
+          <InfoBadge tone={webrtcLeakCount > 0 ? 'rose' : 'slate'}>本页 WebRTC 泄露 {webrtcLeakCount} 条</InfoBadge>
           {loading ? <span>正在刷新…</span> : null}
         </div>
       </InfoPanel>
@@ -247,6 +296,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
               const key = rowKey(row, index);
               const isOpen = expanded.has(key);
               const flags = row.flags ?? [];
+              const leak = webrtcLeakState(row);
               return (
                 <React.Fragment key={key}>
                   <tr className="border-b border-slate-100 align-top hover:bg-slate-50/60">
@@ -269,6 +319,14 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                       <div className="text-[11px] text-slate-500">WebRTC 自报泄漏 {boolLabel(row.webrtcLeak)}</div>
                     </Td>
                     <Td>
+                      {leak !== 'none' ? (
+                        <span
+                          title={WEBRTC_BADGE[leak].title}
+                          className={`mb-1 inline-flex items-center rounded-lg border px-2 py-0.5 text-[11px] ${WEBRTC_BADGE[leak].className}`}
+                        >
+                          {WEBRTC_BADGE[leak].label}
+                        </span>
+                      ) : null}
                       {flags.length === 0 ? (
                         <span className="text-slate-400">无标记</span>
                       ) : (
