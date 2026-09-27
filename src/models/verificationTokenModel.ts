@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { config } from "../config/config";
+import { KL, deriveKey } from "../config/keyDerivation";
 import { mongoose } from "../services/mongoService";
 import logger from "../utils/logger";
 
@@ -84,15 +84,9 @@ class VerificationTokenStorage {
   // Lazily derived so process.env values written after import (e.g. env.admin.json) are honored.
   private get metadataKey(): Buffer {
     if (!this._metadataKey) {
-      this._metadataKey = crypto
-        .createHash("sha256")
-        .update(
-          process.env.VERIFICATION_TOKEN_SECRET ||
-            process.env.JWT_SECRET ||
-            process.env.AES_KEY ||
-            config.jwtSecret,
-        )
-        .digest();
+      // 统一从单一主密钥 AES_KEY 派生（KL.VERIFICATION_META）。旧令牌 metadata 仅 10 分钟 TTL，
+      // 过渡期旧密钥加密的令牌解密失败会被 withDecryptedMetadata 吃掉（metadata=undefined），不阻断。
+      this._metadataKey = deriveKey(KL.VERIFICATION_META);
     }
     return this._metadataKey;
   }

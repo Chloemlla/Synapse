@@ -1,5 +1,4 @@
 import path from "node:path";
-import crypto from "node:crypto";
 import dotenv from "dotenv";
 import { z } from "zod";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
@@ -36,10 +35,6 @@ dotenv.config();
 // G8-08: 下面的 envSchema.parse 是本进程对 process.env 的第一次快照，管理后台写的
 // data/env.admin.json 必须在此之前重放，否则 config.* 永远只看到 .env 与真实环境变量。
 applyAdminEnvOverlay();
-
-function generateEphemeralSecret(): string {
-  return crypto.randomBytes(48).toString("hex");
-}
 
 const stringToBoolean = z
   .union([z.boolean(), z.string(), z.number()])
@@ -226,16 +221,16 @@ const envSchema = z
       });
     }
 
-    // Production must not start with an ephemeral JWT secret (all sessions die on
-    // restart, G8-02 ciphertexts become undecryptable) or a weak/absent admin password.
-    // AGENTS.md promises these fail at startup — enforce it instead of warning.
+    // Production must not start without the single master key AES_KEY (all internal signing/
+    // encryption keys derive from it; an ephemeral fallback would kill all sessions on restart
+    // and make at-rest ciphertext undecryptable). AGENTS.md promises this fails at startup.
     if (env.NODE_ENV === "production") {
-      const jwtSecret = env.JWT_SECRET;
-      if (!jwtSecret || jwtSecret.length < 32) {
+      const aesKey = (process.env.AES_KEY || "").trim();
+      if (aesKey.length < 32) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["JWT_SECRET"],
-          message: "JWT_SECRET must be set to at least 32 characters in production",
+          path: ["AES_KEY"],
+          message: "AES_KEY must be set to at least 32 characters in production（统一主密钥，所有内部签名/加密密钥由它派生）",
         });
       }
       const adminPassword = env.ADMIN_PASSWORD || "";
@@ -259,8 +254,10 @@ const parsedEnv = envSchema.parse(process.env);
 const baseUrl = parsedEnv.VITE_API_URL || parsedEnv.BASE_URL || "https://chloemlla.com";
 const frontendBaseUrl = parsedEnv.FRONTEND_URL || "https://chloemlla.com";
 const openaiApiKey = parsedEnv.OPENAI_KEY || parsedEnv.OPENAI_API_KEY;
-const jwtSecretConfigured = Boolean(parsedEnv.JWT_SECRET);
-const jwtSecret = parsedEnv.JWT_SECRET || generateEphemeralSecret();
+// 单一主密钥：JWT 签名密钥不再独立配置，统一由 AES_KEY 经 HKDF(KL.JWT) 派生。
+// 旧 JWT_SECRET 仅作过渡兼容候选（部署时切换即一次性登出，已确认接受）。
+const jwtSecretConfigured = Boolean((process.env.AES_KEY || "").trim());
+const jwtSecret = deriveSecretHex(KL.JWT);
 const signSecretKey = parsedEnv.SIGN_SECRET_KEY || "";
 const adminPassword = parsedEnv.ADMIN_PASSWORD || "";
 const adminOperationPassword = parsedEnv.ADMIN_OPERATION_PASSWORD || adminPassword;
