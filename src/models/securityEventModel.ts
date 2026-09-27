@@ -30,6 +30,11 @@ const securityEventSchema = new Schema<ISecurityEvent>(
 // lets MongoDB use the index for both filter and sort.
 securityEventSchema.index({ eventType: 1, createdAt: -1 });
 
+// getSecurityEvents 支持按 deviceFingerprint 过滤并按 createdAt 倒序分页（find({ deviceFingerprint }).sort({ createdAt: -1 })）。
+// 单字段 deviceFingerprint 索引只能服务过滤，后续 createdAt 排序仍落到内存；
+// 单个高频设备累积大量事件时会撞 sort memory limit。补复合索引让过滤+排序都走索引。
+securityEventSchema.index({ deviceFingerprint: 1, createdAt: -1 });
+
 export const SecurityEvent =
   (mongoose.models.SecurityEvent as mongoose.Model<ISecurityEvent>) ||
   mongoose.model<ISecurityEvent>("SecurityEvent", securityEventSchema);
