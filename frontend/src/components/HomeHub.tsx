@@ -136,8 +136,8 @@ const HomeHubComponent: React.FC = () => {
                 综合服务平台
               </h1>
               <p className='mt-3 max-w-xl text-[13px] leading-6 text-slate-600 sm:text-base sm:leading-7'>
-                语音合成只是 Synapse 的一个能力。这里汇集文本翻译、资源商店、
-                效率工具与信息查询，按需要进入对应模块。
+                Synapse 提供语音合成、文本翻译、资源商店、效率工具与信息查询等一体化服务，
+                助您高效完成各项任务。请选择下方模块开始使用。
               </p>
             </div>
 
