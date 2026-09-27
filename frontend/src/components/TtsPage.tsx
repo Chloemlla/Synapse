@@ -242,7 +242,7 @@ export const TtsPage: React.FC = () => {
                 文本转语音
               </h1>
               <p className="mt-3 max-w-xl text-[13px] leading-6 text-slate-600 sm:text-base sm:leading-7">
-                将文本转换为自然流畅的语音。支持多种音色与导出格式，所有合成请求都会经过安全审计。
+                将文本转换为自然流畅的语音，支持多种音色与导出格式。
               </p>
             </div>
 

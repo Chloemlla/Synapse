@@ -260,7 +260,7 @@ const CampusEmergencyPage: React.FC = () => {
             <InfoPanel>
               <InfoSectionTitle
                 title="老师指令区"
-                description="当前轮询指令与学生响应。"
+                description="当前指令与学生响应。"
                 icon={FaChalkboardTeacher}
                 tone="emerald"
               />

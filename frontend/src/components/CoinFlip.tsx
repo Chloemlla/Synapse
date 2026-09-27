@@ -453,14 +453,14 @@ const CoinFlip: React.FC = () => {
           <InfoQueryHero
             eyebrow="Entertainment"
             title="抛硬币工具"
-            description="简单、快速、无需下载的随机决策工具，保留动画、音效、统计和随机算法查看功能。"
+            description="简单、快速、无需下载的随机决策工具，支持动画、音效与统计记录。"
             icon={FaCoins}
             tone="amber"
             meta={
               <>
                 <InfoBadge tone="amber">随机决策</InfoBadge>
                 <InfoBadge tone="emerald">本地统计</InfoBadge>
-                <InfoBadge tone="sky">算法透明</InfoBadge>
+                <InfoBadge tone="sky">结果可核对</InfoBadge>
               </>
             }
           />

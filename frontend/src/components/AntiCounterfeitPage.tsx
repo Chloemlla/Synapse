@@ -108,7 +108,7 @@ const AntiCounterfeitPage: React.FC = () => {
         <InfoQueryHero
           eyebrow="Authenticity Query"
           title="安踏产品防伪查询"
-          description="输入鞋盒贴标二维码 ID 或导入官方查询链接，系统会提交到后端接口进行防伪验证，并展示查询次数与产品信息。"
+          description="输入鞋盒贴标二维码 ID 或导入官方查询链接，即可进行防伪验证，并查看查询次数与产品信息。"
           icon={FaShieldAlt}
           tone="emerald"
           meta={(

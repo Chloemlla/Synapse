@@ -670,10 +670,10 @@ export const DeepLXTranslatorPage: React.FC = () => {
                   ) : null}
                   {!configLoading && !config?.enabled ? (
                     <div className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 px-5 py-4 text-sm leading-7 text-amber-700">
-                      当前 DeepLX 尚未可用。
+                      当前翻译服务尚未可用。
                       {config?.requiresApiKey
-                        ? ' 你需要先在 EnvManager 中配置 API Key。'
-                        : ' 请确认后端地址可访问。'}
+                        ? ' 请联系管理员完成配置后再试。'
+                        : ' 请稍后重试或联系管理员。'}
                     </div>
                   ) : null}
                 </div>

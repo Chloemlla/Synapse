@@ -43,7 +43,7 @@ function describeUploadError(err: unknown): string | null {
   const data = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
   const message = data?.error || data?.message || '';
   if (/未收到文件/.test(message)) {
-    return '上传没到达后端文件解析环节（请求被当成 JSON 发出去了）。请硬刷新页面重试；若仍失败，说明前端构建产物不是最新版。';
+    return '文件上传失败，请刷新页面后重试；若仍无法上传，请稍后再试或联系管理员。';
   }
   return message || null;
 }
@@ -348,7 +348,7 @@ export const SpeechToTextPage: React.FC = () => {
         <InfoPanel className="space-y-3">
           <InfoSectionTitle
             title="我的转写任务"
-            description="任务在服务端排队执行;提交后可以关掉页面,进度与结果都会留着,失败了也能原地重试。"
+            description="提交后可以关闭页面，进度与结果都会保留，失败也能重新尝试。"
             tone="slate"
             action={
               hasActive ? (

@@ -486,12 +486,12 @@ const LotteryPage: React.FC = () => {
           <InfoQueryHero
             eyebrow="Entertainment"
             title="幸运抽奖"
-            description="参与抽奖轮次、查看奖品与中奖记录。中奖结果由服务端加密安全随机数产生，与区块数据无关。"
+            description="参与抽奖轮次、查看奖品与中奖记录。抽奖结果公平公正，全程可查。"
             icon={FaDice}
             tone="violet"
             meta={
               <>
-                <InfoBadge tone="sky">服务端随机</InfoBadge>
+                <InfoBadge tone="sky">公平公正</InfoBadge>
                 <InfoBadge tone="emerald">实时轮次</InfoBadge>
                 <InfoBadge tone="amber">透明记录</InfoBadge>
               </>

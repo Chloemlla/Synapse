@@ -1541,7 +1541,7 @@ const UserProfile: React.FC = () => {
                       placeholder="请输入新密码（至少8位）"
                     />
                     <p className="mt-2 text-[11px] leading-5 text-slate-500">
-                      后端会按强密码规则校验。至少 8 位，长度超过 12 位或包含数字、大小写、特殊字符会更稳妥。
+                      密码至少 8 位；长度超过 12 位或包含数字、大小写字母与特殊字符会更安全。
                     </p>
                   </div>
                   <div>
