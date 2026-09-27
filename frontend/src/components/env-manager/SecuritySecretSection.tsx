@@ -24,6 +24,19 @@ const DATA_AT_REST_ENCRYPTION_KEYS = new Set([
   'DATA_COLLECTION_RAW_SECRET',
 ]);
 
+// 已统一由单一主密钥 AES_KEY 经 HKDF 按用途派生的内部密钥：留空即用派生子密钥，
+// 仅在需要解密“用旧独立密钥加密的存量数据”或临时覆盖时才配置。LUMEN_ADMIN_AUTOMATION_TOKEN
+// 是与 Lumen CI 共享的 Bearer 令牌（跨端契约），不在此列，仍需独立配置。
+const REDIRECTED_TO_AES_KEY = new Set([
+  'DATA_COLLECTION_RAW_SECRET',
+  'BILIBILI_COOKIE_ENCRYPTION_KEY',
+  'PASSWORD_ENCRYPTION_KEY',
+  'POLICY_SECRET_SALT',
+  'VERIFICATION_TOKEN_SECRET',
+  'TTS_ASSET_ACCESS_SECRET',
+  'LEGACY_API_CHOICE_SECRET',
+]);
+
 interface SecretField {
   key: string;
   altKeys: string[];
@@ -287,7 +300,7 @@ export default function SecuritySecretSection({
   return (
     <CollapsibleSection
       title="安全密钥隔离与数据采集加密"
-      description="配置数据采集加密密钥（DATA_COLLECTION_RAW_SECRET）、Bilibili Cookie 加密密钥（BILIBILI_COOKIE_ENCRYPTION_KEY）、密码加密密钥（PASSWORD_ENCRYPTION_KEY）、安全密钥隔离（POLICY_SECRET_SALT、VERIFICATION_TOKEN_SECRET、TTS_ASSET_ACCESS_SECRET、LEGACY_API_CHOICE_SECRET）与 Lumen 发布自动化令牌（LUMEN_ADMIN_AUTOMATION_TOKEN）。保存后写入运行时配置（环境变量）并立即生效。"
+      description="这些内部密钥已统一由单一主密钥 AES_KEY 经 HKDF 按用途派生：留空即用派生子密钥，无需单独配置。仅当需要解密用旧独立密钥加密的存量数据，或想临时覆盖某一项时才在此填写（保存即写入运行时配置并立即生效）。LUMEN_ADMIN_AUTOMATION_TOKEN 为与 Lumen CI 共享的令牌，仍需独立配置。"
       sectionKey={SECTION_KEY}
       isOpen={isOpen}
       onToggle={onToggle}
@@ -309,19 +322,16 @@ export default function SecuritySecretSection({
     >
       <InfoBox icon={<FaLock />}>
         <p>
-          以下密钥用于数据采集加密、Bilibili 凭证加密与安全密钥隔离：{' '}
-          <code className="rounded bg-white/80 px-1">DATA_COLLECTION_RAW_SECRET</code>（数据加密）、{' '}
-          <code className="rounded bg-white/80 px-1">BILIBILI_COOKIE_ENCRYPTION_KEY</code>（Bilibili Cookie 加密）、{' '}
-          <code className="rounded bg-white/80 px-1">PASSWORD_ENCRYPTION_KEY</code>（密码加密），以及密钥隔离所需的{' '}
-          <code className="rounded bg-white/80 px-1">POLICY_SECRET_SALT</code>、
-          <code className="rounded bg-white/80 px-1">VERIFICATION_TOKEN_SECRET</code>、
-          <code className="rounded bg-white/80 px-1">TTS_ASSET_ACCESS_SECRET</code>、
-          <code className="rounded bg-white/80 px-1">LEGACY_API_CHOICE_SECRET</code>，以及 Lumen 发布自动化令牌{' '}
-          <code className="rounded bg-white/80 px-1">LUMEN_ADMIN_AUTOMATION_TOKEN</code>。
+          <strong>已统一为单一主密钥 AES_KEY。</strong>
+          下列内部密钥（数据采集加密、Bilibili Cookie 加密、密码 KEK、策略盐、验证令牌、TTS 资产访问、旧版 API 选择）
+          均由 <code className="rounded bg-white/80 px-1">AES_KEY</code> 经 HKDF 按用途派生；在上方“查看密钥”可验证后查看每个派生子密钥。
         </p>
         <p className="mt-1">
-          保存的密钥会覆盖进程环境 / <code className="rounded bg-white/80 px-1">.env</code> 中的同名启动默认值并立即生效。
-          建议为每个用途使用独立、足够随机的密钥，避免跨模块复用。
+          <strong>无需在此单独配置。</strong>仅当（1）需要解密用旧独立密钥加密的存量密文，或（2）临时覆盖某项时才填写；
+          填写后会覆盖该项的派生值。带 <span className="font-semibold">“已并入 AES_KEY”</span> 徽标的项留空即可。
+        </p>
+        <p className="mt-1 text-slate-500">
+          <code className="rounded bg-white/80 px-1">LUMEN_ADMIN_AUTOMATION_TOKEN</code> 是与 Lumen CI 共享的令牌（跨端契约），不由 AES_KEY 派生，仍需独立配置。
         </p>
       </InfoBox>
 
@@ -330,9 +340,14 @@ export default function SecuritySecretSection({
           <div key={field.key} className={`${studioTileClassName} p-3 sm:p-4`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h4 className="text-sm font-semibold text-slate-700">{field.label}</h4>
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
-                {field.key}
-              </code>
+              <div className="flex items-center gap-2">
+                {REDIRECTED_TO_AES_KEY.has(field.key) ? (
+                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] text-emerald-700">已并入 AES_KEY（可留空）</span>
+                ) : null}
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
+                  {field.key}
+                </code>
+              </div>
             </div>
             <p className="mt-1 mb-3 text-xs text-slate-500">{field.description}</p>
 
