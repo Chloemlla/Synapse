@@ -75,6 +75,8 @@ function startArtifact() {
     MONGO_URI: mongoUri,
     MONGO_DB: process.env.SMOKE_MONGO_DB || "synapse_smoke",
     JWT_SECRET: crypto.randomBytes(32).toString("hex"),
+    // 单一主密钥：生产启动校验要求 AES_KEY≥32（所有内部密钥由它派生）。
+    AES_KEY: crypto.randomBytes(32).toString("hex"),
     ADMIN_PASSWORD: `smoke-${crypto.randomBytes(12).toString("hex")}`,
   };
   // 继承下来的可选凭据会让冒烟不确定（弱 GENERATION_CODE 直接让 config 解析失败）。
