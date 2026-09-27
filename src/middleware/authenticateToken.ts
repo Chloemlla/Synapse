@@ -39,6 +39,10 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!user) {
       return res.status(403).json({ error: "无效的Token" });
     }
+    if ((user as any).disabled) {
+      // SYN-02: 与 authMiddlewareV2 / wsAuthentication 对齐，被禁用账户不得通过认证。
+      return res.status(403).json({ error: "账户已被禁用" });
+    }
     if (user.accountStatus === "suspended") {
       return res.status(403).json({ error: "账户已被封停", code: "ACCOUNT_SUSPENDED", supportEmail: "support@chloemlla.com" });
     }

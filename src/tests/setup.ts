@@ -20,6 +20,10 @@ setDefaultEnv("JWT_SECRET", "test-jwt-secret");
 setDefaultEnv("SIGN_SECRET_KEY", "test-sign-secret-key");
 setDefaultEnv("ADMIN_USERNAME", "admin");
 setDefaultEnv("ADMIN_PASSWORD", "admin123");
+// SYN-01: adminOperationPassword 的 test 后门已移除。测试用例读 TEST_ADMIN_PASSWORD 作为管理
+// 操作口令，这里将其对齐到 config.adminOperationPassword 的实际取值（= ADMIN_OPERATION_PASSWORD
+// || ADMIN_PASSWORD = "admin123"），使其走 isAdminOperationPasswordValid 的真校验分支。
+setDefaultEnv("TEST_ADMIN_PASSWORD", "admin123");
 setDefaultEnv("SMART_HUMAN_CHECK_SECRET", "test-smart-human-check-secret");
 
 const testDirectories = [

@@ -1,10 +1,11 @@
 import { commandService } from "../services/commandService";
 
-// G7-39 删掉了「NODE_ENV==="test" 且密码是 "wumy" 就放行」这个通用后门；测试改走
-// utils/adminOperationPassword 的真校验分支（NODE_ENV=test 下接受 TEST_ADMIN_PASSWORD，默认 "admin"）。
+// G7-39 删掉了「NODE_ENV==="test" 且密码是 "wumy" 就放行」这个通用后门；SYN-01 又删了
+// utils/adminOperationPassword 里残留的 NODE_ENV=test 兜底。测试走真校验分支（只接受
+// config.adminOperationPassword，setup.ts 把 TEST_ADMIN_PASSWORD 默认对齐到 "admin123"）。
 // 之前所有用例拿到的都是 "Invalid password" 早退，所以下面那些「拒绝危险字符」的断言
 // 其实一直在验证另一个分支，等于没有验到注入防护。
-const ADMIN_OPERATION_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "admin";
+const ADMIN_OPERATION_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "admin123";
 
 jest.mock("../services/commandStorage", () => ({
   getCommandQueue: jest.fn().mockResolvedValue([]),

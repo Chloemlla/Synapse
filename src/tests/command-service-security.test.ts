@@ -2,8 +2,9 @@ import { commandService } from "../services/commandService";
 
 // G7-39 删掉了「NODE_ENV==="test" 且密码是 "wumy" 就放行」这个通用后门（否则任何
 // 跑在 NODE_ENV=test 下的部署都有一个万能管理口令）。测试必须走真正的校验分支：
-// utils/adminOperationPassword 在 NODE_ENV=test 下接受 TEST_ADMIN_PASSWORD（未设置则 "admin"）。
-const ADMIN_OPERATION_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "admin";
+// utils/adminOperationPassword 的真校验分支只接受 config.adminOperationPassword（= ADMIN_OPERATION_PASSWORD
+// || ADMIN_PASSWORD）。SYN-01 已移除 NODE_ENV=test 后门；setup.ts 把 TEST_ADMIN_PASSWORD 默认对齐到 "admin123"。
+const ADMIN_OPERATION_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "admin123";
 
 jest.mock("../services/commandStorage", () => ({
   getCommandQueue: jest.fn().mockResolvedValue([]),

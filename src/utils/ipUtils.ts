@@ -34,10 +34,15 @@ export function extractRealIP(req: Request): string | undefined {
   }
 
   // 仅在 req.ip 不可用时，检查受信任的反向代理头部（Cloudflare 等）。
-  // 注意：CF-Connecting-IP 由 Cloudflare 边缘设置，仅当请求经过 CF 时可信。
-  const cfConnectingIP = req.headers["cf-connecting-ip"];
-  if (cfConnectingIP && typeof cfConnectingIP === "string" && isValidIP(cfConnectingIP)) {
-    return cfConnectingIP;
+  // SYN-03: CF-Connecting-IP 由客户端可自带，只有请求确经 Cloudflare 边缘时才可信。此前无条件采信，
+  // 在"未走 CF 的部署"或"trust proxy 配置使 req.ip 失效"时可被伪造，影响封禁/限流/用量统计。
+  // 通过 TRUST_CLOUDFLARE 显式开启（默认关闭），不让客户端可写的头参与真实 IP 判定。
+  const trustCloudflare = /^(1|true|yes|on)$/i.test((process.env.TRUST_CLOUDFLARE || "").trim());
+  if (trustCloudflare) {
+    const cfConnectingIP = req.headers["cf-connecting-ip"];
+    if (cfConnectingIP && typeof cfConnectingIP === "string" && isValidIP(cfConnectingIP)) {
+      return cfConnectingIP.replace(/^::ffff:/i, "");
+    }
   }
 
   // 最后使用连接的远程地址

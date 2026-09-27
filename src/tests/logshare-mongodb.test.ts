@@ -5,7 +5,7 @@ import { connectMongo, mongoose } from "../services/mongoService";
 import { decryptLogSharePayload, type EncryptedLogSharePayload } from "./helpers/logShareCrypto";
 
 describe("logshare MongoDB 文本上传与查询", () => {
-  const adminPassword = process.env.TEST_ADMIN_PASSWORD || "admin";
+  const adminPassword = process.env.TEST_ADMIN_PASSWORD || "admin123";
   const testContent = "Hello, this is a test log!";
   let fileId = "";
 
