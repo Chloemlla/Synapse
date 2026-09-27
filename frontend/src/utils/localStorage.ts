@@ -355,7 +355,8 @@ export class LocalStorageManager<T = any> {
         byType[item.type] = (byType[item.type] || 0) + 1;
       });
 
-      const dates = data.map(item => new Date(item.createdAt)).sort();
+      // 排序必须用时间戳比较；默认 sort() 会把 Date 转成字符串（周几打头）按字典序排，导致 oldest/newest 错乱。
+      const dates = data.map(item => new Date(item.createdAt)).sort((a, b) => a.getTime() - b.getTime());
       
       return {
         total: data.length,

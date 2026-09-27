@@ -16,21 +16,23 @@ export interface AgeResult {
 
 // Get Western zodiac sign based on month and day
 export function getWesternZodiac(month: number, day: number): string {
+  // 每个区间对应「起始月的下半段」到「结束月的上半段」。名称必须与区间一一对应：
+  // 旧实现整体错位一位（把每个区间标成了前一个星座），且漏掉射手座，导致除摩羯座外几乎全部判错。
   const zodiacSigns = [
-    { name: '摩羯座', start: [1, 20], end: [2, 18] },
-    { name: '水瓶座', start: [2, 19], end: [3, 20] },
-    { name: '双鱼座', start: [3, 21], end: [4, 19] },
-    { name: '白羊座', start: [4, 20], end: [5, 20] },
-    { name: '金牛座', start: [5, 21], end: [6, 21] },
-    { name: '双子座', start: [6, 22], end: [7, 22] },
-    { name: '巨蟹座', start: [7, 23], end: [8, 22] },
-    { name: '狮子座', start: [8, 23], end: [9, 22] },
-    { name: '处女座', start: [9, 23], end: [10, 23] },
-    { name: '天秤座', start: [10, 24], end: [11, 22] },
-    { name: '天蝎座', start: [11, 23], end: [12, 21] }
+    { name: '水瓶座', start: [1, 20], end: [2, 18] },
+    { name: '双鱼座', start: [2, 19], end: [3, 20] },
+    { name: '白羊座', start: [3, 21], end: [4, 19] },
+    { name: '金牛座', start: [4, 20], end: [5, 20] },
+    { name: '双子座', start: [5, 21], end: [6, 21] },
+    { name: '巨蟹座', start: [6, 22], end: [7, 22] },
+    { name: '狮子座', start: [7, 23], end: [8, 22] },
+    { name: '处女座', start: [8, 23], end: [9, 22] },
+    { name: '天秤座', start: [9, 23], end: [10, 23] },
+    { name: '天蝎座', start: [10, 24], end: [11, 22] },
+    { name: '射手座', start: [11, 23], end: [12, 21] }
   ];
 
-  // Special case for Capricorn
+  // 摩羯座跨年（12/22 - 1/19），单独处理
   if ((month === 12 && day >= 22) || (month === 1 && day <= 19)) {
     return '摩羯座';
   }
