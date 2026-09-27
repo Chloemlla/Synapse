@@ -152,7 +152,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                         {!isSubmitting && !isSubmitted && !hasDismissedOnce && (
                             <button
                                 onClick={handleClose}
-                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+                                className="inline-flex items-center justify-center absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
                                 title="关闭"
                             >
                                 <FaTimes className="w-5 h-5" />

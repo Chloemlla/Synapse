@@ -659,7 +659,7 @@ const OAuthClientManager: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => (editingClientId === client.clientId ? cancelEdit() : beginEdit(client))}
-                      className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
                       title={editingClientId === client.clientId ? '取消编辑' : '编辑客户端信息'}
                     >
                       {editingClientId === client.clientId ? <FaTimes /> : <FaEdit />}
@@ -667,7 +667,7 @@ const OAuthClientManager: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => copy(client.clientId)}
-                      className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
                       title="复制 clientId"
                     >
                       <FaCopy />

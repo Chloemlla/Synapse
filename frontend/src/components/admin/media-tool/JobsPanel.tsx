@@ -363,7 +363,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div className="truncate font-mono text-xs text-slate-700">{preview.title}</div>
-              <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setPreview(null)} className="inline-flex items-center justify-center text-slate-400 hover:text-slate-600">
                 <FaTimes />
               </button>
             </div>

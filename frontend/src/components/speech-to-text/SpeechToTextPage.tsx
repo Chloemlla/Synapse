@@ -276,7 +276,7 @@ export const SpeechToTextPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setChosen((prev) => prev.filter((r) => r !== rel))}
-                      className="text-slate-400 transition hover:text-rose-500"
+                      className="inline-flex items-center justify-center text-slate-400 transition hover:text-rose-500"
                       aria-label={`移除 ${rel}`}
                     >
                       <FaTimes className="text-xs" />

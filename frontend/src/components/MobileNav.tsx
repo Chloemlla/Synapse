@@ -436,7 +436,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
                     <button
                       type="button"
                       onClick={closeMenu}
-                      className="rounded-full border border-slate-200 bg-white/80 p-2 text-slate-400 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white/80 p-2 text-slate-400 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
                       aria-label="关闭导航菜单"
                       title="关闭"
                     >
@@ -532,7 +532,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
                                     event.stopPropagation();
                                     handleRemoveAccount(account.user.id);
                                   }}
-                                  className="rounded-full border border-transparent p-2 text-slate-300 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2"
+                                  className="inline-flex items-center justify-center rounded-full border border-transparent p-2 text-slate-300 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2"
                                   title="移除此账号"
                                   aria-label={`移除账号 ${account.user.username}`}
                                 >

@@ -189,7 +189,7 @@ const CrashGroupDetailView: React.FC<Props> = ({
               type="button"
               onClick={() => setSearch('')}
               title="清空搜索"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
             >
               <FaTimes />
             </button>

@@ -770,7 +770,7 @@ const FBIWantedManager: React.FC = () => {
                                                 setShowCreateModal(false);
                                                 setFormData({});
                                             }}
-                                            className="text-white hover:text-slate-200 transition-colors"
+                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
                                         >
                                             <FaTimes size={24} />
                                         </button>
@@ -1016,7 +1016,7 @@ const FBIWantedManager: React.FC = () => {
                                                 setSelectedWanted(null);
                                                 setFormData({});
                                             }}
-                                            className="text-white hover:text-slate-200 transition-colors"
+                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
                                         >
                                             <FaTimes size={24} />
                                         </button>
@@ -1167,7 +1167,7 @@ const FBIWantedManager: React.FC = () => {
                                                 setShowViewModal(false);
                                                 setSelectedWanted(null);
                                             }}
-                                            className="text-white hover:text-slate-200 transition-colors"
+                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
                                         >
                                             <FaTimes size={24} />
                                         </button>

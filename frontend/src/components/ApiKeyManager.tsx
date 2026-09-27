@@ -964,7 +964,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                   <div className="text-sm font-semibold text-slate-800">{eventsKey.name} 计费流水</div>
                   <div className="mt-1 font-mono text-xs text-slate-400">{eventsKey.keyId}</div>
                 </div>
-                <button onClick={() => setEventsKey(null)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <button onClick={() => setEventsKey(null)} className="inline-flex items-center justify-center rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                   <FaTimes />
                 </button>
               </div>

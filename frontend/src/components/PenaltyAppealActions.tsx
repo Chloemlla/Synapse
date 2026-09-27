@@ -275,7 +275,7 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
                 <button
                   type="button"
                   onClick={() => !submitting && setOpen(false)}
-                  className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
                   aria-label="关闭"
                 >
                   <FiX />

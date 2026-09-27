@@ -235,7 +235,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
                 )}
                 <button
                   onClick={onClose}
-                  className={`text-slate-400 hover:text-slate-600 transition-colors touch-manipulation ${
+                  className={`inline-flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors touch-manipulation ${
                     isMobile ? 'p-1.5 min-w-[36px] min-h-[36px]' : 'p-2'
                   }`}
                 >

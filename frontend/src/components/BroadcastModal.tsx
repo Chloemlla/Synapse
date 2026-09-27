@@ -171,7 +171,7 @@ function BroadcastModalView({ title, content, format = 'text', level = 'info', i
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded-full hover:bg-black/10 transition"
+              className="inline-flex items-center justify-center p-1 rounded-full hover:bg-black/10 transition"
               aria-label="关闭"
             >
               <FaTimes className="w-4 h-4 text-slate-500" />

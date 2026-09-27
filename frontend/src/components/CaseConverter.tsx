@@ -1459,7 +1459,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                 {isMobile && (
                   <button
                     onClick={handleMouseLeave}
-                    className="absolute right-2 top-2 text-slate-400 transition-colors hover:text-white"
+                    className="inline-flex items-center justify-center absolute right-2 top-2 text-slate-400 transition-colors hover:text-white"
                     aria-label={isEnglish ? 'Close tooltip' : '关闭提示'}
                   >
                     <FaTimes className="h-4 w-4" />

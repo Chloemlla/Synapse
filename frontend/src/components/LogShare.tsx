@@ -1714,7 +1714,7 @@ const LogShare: React.FC = React.memo(() => {
                       <h3 className="mt-3 text-xl font-semibold text-slate-900">创建日志归档</h3>
                     </div>
                     <button
-                      className="rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
                       onClick={() => setShowArchiveModal(false)}
                       aria-label="关闭"
                     >
@@ -1828,7 +1828,7 @@ const LogShare: React.FC = React.memo(() => {
                       <h3 className="mt-3 text-xl font-semibold text-slate-900">编辑日志元数据</h3>
                     </div>
                     <button
-                      className="rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
                       onClick={() => { setEditingLog(null); setEditFileName(''); setEditNote(''); }}
                       aria-label="关闭"
                     >

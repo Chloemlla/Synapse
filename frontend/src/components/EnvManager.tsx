@@ -461,7 +461,7 @@ const EnvManager: React.FC = () => {
                                   <div className="flex items-center gap-2">
                                     <input value={form.value || ''} onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))} className={`${studioFieldClassName} flex-1`} autoComplete="off" spellCheck={false} />
                                     <button onClick={handleSaveEdit} className="p-2 text-slate-900 hover:text-slate-700 transition rounded hover:bg-slate-100" title="保存"><FaCheck className="w-4 h-4" /></button>
-                                    <button onClick={handleCancelEdit} className="p-2 text-slate-400 hover:text-slate-600 transition rounded hover:bg-slate-100" title="取消"><FaTimes className="w-4 h-4" /></button>
+                                    <button onClick={handleCancelEdit} className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-slate-600 transition rounded hover:bg-slate-100" title="取消"><FaTimes className="w-4 h-4" /></button>
                                   </div>
                                 ) : <div className="break-words whitespace-pre-wrap leading-relaxed">{item.value}</div>}
                               </td>
