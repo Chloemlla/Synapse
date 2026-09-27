@@ -10,6 +10,7 @@ import {
   studioFieldClassName,
   studioGhostButtonClassName,
   studioModalCardClassName,
+  studioModalCloseButtonClassName,
   studioPageFont,
   studioPrimaryButtonClassName,
 } from './studioTheme';
@@ -148,11 +149,11 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                 type="button"
                 onClick={handleClose}
                 disabled={loading}
-                className="rounded-full border border-slate-200 bg-white/80 p-2 text-slate-400 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                className={studioModalCloseButtonClassName}
                 aria-label="关闭 TOTP 设置"
                 title="关闭"
               >
-                <FaTimes />
+                <FaTimes className="h-4 w-4" />
               </button>
             </div>
 

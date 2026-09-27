@@ -63,6 +63,11 @@ export const studioModalOverlayClassName =
 export const studioModalCardClassName =
   'w-full rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur-xl sm:p-8';
 
+// Round icon-only close button for modal headers. Uses flex centering + a fixed
+// square so the glyph never rides the text baseline (the mobile "叉号错位").
+export const studioModalCloseButtonClassName =
+  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-400 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+
 export const studioEyebrowClassName =
   'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500';
 

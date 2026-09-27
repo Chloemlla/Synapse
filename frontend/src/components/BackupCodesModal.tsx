@@ -16,6 +16,7 @@ import { ModalPortal } from './ModalPortal';
 import {
   studioGhostButtonClassName,
   studioModalCardClassName,
+  studioModalCloseButtonClassName,
   studioModalOverlayClassName,
   studioPageFont,
   studioPrimaryButtonClassName,
@@ -194,11 +195,11 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                   type="button"
                   onClick={onClose}
                   disabled={regenerating}
-                  className="rounded-full border border-slate-200 bg-white/80 p-2 text-slate-400 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                  className={studioModalCloseButtonClassName}
                   aria-label="关闭备用恢复码"
                   title="关闭"
                 >
-                  <FaTimes />
+                  <FaTimes className="h-4 w-4" />
                 </button>
               </div>
 

@@ -332,6 +332,11 @@ const LIMITER_DEFINITIONS = {
   totp: {
     profile: "verification",
     category: "verification",
+    // /status 与 /backup-codes 是 UI 挂载与每次弹窗关闭都会拉的读接口，与 verify/
+    // disable 共用一个桶；verification 档的 20/5min 在移动端很容易被状态刷新打满。
+    // 放宽到 120/5min：真正的暴力破解由 totpController 的 TOTP_ATTEMPT_LIMIT(5 次/
+    // 15 分钟锁定，per-user)单独兜底，这里只是粗粒度节流。
+    max: 120,
     message: "TOTP操作过于频繁，请稍后再试",
   },
   passkey: {

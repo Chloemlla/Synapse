@@ -396,7 +396,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                   maxLength={6}
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  className={`${studioFieldClassName} text-center font-mono sm:rounded-2xl`}
+                  className={`${studioFieldClassName} text-center font-mono`}
                 />
                 {error ? (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -451,7 +451,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               className={`${studioModalCardClassName} max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain`}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="max-h-[80vh] overflow-y-auto overscroll-contain pr-1">
+              <div className="pr-1">
                 <PasskeySetup
                   onClose={() => {
                     setShowPasskeySetup(false);
