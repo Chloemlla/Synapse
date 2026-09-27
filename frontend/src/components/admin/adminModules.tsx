@@ -76,6 +76,7 @@ export const ADMIN_MODULE_LOADERS = {
   'tts-history': () => import('@/components/TtsGenerationManager'),
   system: () => import('@/components/SystemManager'),
   'bilibili-sync': () => import('@/components/BilibiliSyncAdmin'),
+  'bilibili-data': () => import('@/components/BilibiliDataAdmin'),
   'ip-risk-logs': () => import('@/components/admin/IpRiskLogPanel'),
   'mobile-token-lineage': () => import('@/components/admin/MobileTokenLineagePanel'),
 } as const;

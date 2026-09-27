@@ -1,6 +1,6 @@
 import express from "express";
 import { adminController } from "../../controllers/adminController";
-import { listReports as listBilibiliCookieReports } from "../../controllers/bilibiliCookieReportController";
+import { listReports as listBilibiliCookieReports, listAccountBindings as listBilibiliAccountBindings } from "../../controllers/bilibiliCookieReportController";
 import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middleware/auth";
 import { wsService } from "../../services/wsService";
 import broadcastRouter from "./broadcast";
@@ -80,6 +80,8 @@ router.use(mobileTokensRouter);
 router.get("/bilibili-sync", (req, res) => adminController.getBilibiliSyncRecords(req, res));
 // Login-time cookie reports (device identity, no Synapse account): metadata only, ciphertext never leaves.
 router.get("/bilibili-reports", (req, res) => listBilibiliCookieReports(req, res));
+// Multi-account bindings (per Synapse user): metadata only, ciphertext never leaves.
+router.get("/bilibili-accounts", (req, res) => listBilibiliAccountBindings(req, res));
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/bilibili-sync/:userId/search-records", (req, res) => adminController.getBilibiliSearchRecords(req, res));
 

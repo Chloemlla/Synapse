@@ -20,6 +20,7 @@ jest.mock("../models/bilibiliSyncModel", () => ({
 const mockBindingFindOneAndUpdate = jest.fn();
 const mockBindingUpdateOne = jest.fn();
 const mockBindingFind = jest.fn();
+const mockBindingCountDocuments = jest.fn();
 const mockBindingDeleteOne = jest.fn();
 const mockBindingDeleteMany = jest.fn();
 jest.mock("../models/bilibiliAccountBindingModel", () => ({
@@ -27,6 +28,7 @@ jest.mock("../models/bilibiliAccountBindingModel", () => ({
     findOneAndUpdate: mockBindingFindOneAndUpdate,
     updateOne: mockBindingUpdateOne,
     find: mockBindingFind,
+    countDocuments: mockBindingCountDocuments,
     deleteOne: mockBindingDeleteOne,
     deleteMany: mockBindingDeleteMany,
   },
@@ -36,6 +38,7 @@ const mockAxiosGet = (jest.requireMock("axios") as { default: { get: jest.Mock }
 
 const {
   listBilibiliAccounts,
+  listBilibiliAccountsForAdmin,
   pruneBilibiliAccounts,
   removeBilibiliAccount,
   upsertBilibiliAccount,
@@ -52,6 +55,8 @@ function chainedFind<T>(value: T) {
   return {
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
   };
 }
@@ -84,6 +89,7 @@ describe("bilibiliAccountService", () => {
     mockBindingFindOneAndUpdate.mockReturnValue({ select: jest.fn().mockReturnValue(accountDoc()) });
     mockBindingUpdateOne.mockResolvedValue({ acknowledged: true });
     mockBindingFind.mockReturnValue(chainedFind([]));
+    mockBindingCountDocuments.mockResolvedValue(0);
     mockBindingDeleteOne.mockResolvedValue({ deletedCount: 1 });
     mockBindingDeleteMany.mockResolvedValue({ deletedCount: 1 });
   });
@@ -155,6 +161,19 @@ describe("bilibiliAccountService", () => {
     expect(result.accounts[0]).toMatchObject({ uid: "12345", status: "active", isPrimary: true });
     expect(result.accounts[0]).not.toHaveProperty("credentialCiphertext");
     expect(result.accounts[0]).not.toHaveProperty("permissions");
+  });
+
+  it("lists every user's bindings for the admin panel without credentials", async () => {
+    mockBindingFind.mockReturnValue(chainedFind([accountDoc()]));
+    mockBindingCountDocuments.mockResolvedValue(1);
+    const result = await listBilibiliAccountsForAdmin({ search: "12345", page: 1, limit: 20 });
+    expect(result.accounts).toHaveLength(1);
+    expect(result.accounts[0]).toMatchObject({ userId: "user-1", uid: "12345", status: "active" });
+    expect(result).toMatchObject({ total: 1, page: 1, limit: 20 });
+    expect(result.accounts[0]).not.toHaveProperty("credentialCiphertext");
+    expect(result.accounts[0]).not.toHaveProperty("permissions");
+    const [filter] = mockBindingFind.mock.calls[0] as [Record<string, unknown>];
+    expect(filter).toHaveProperty("$or");
   });
 
   it("removes a binding and clears the legacy primary when it is the primary", async () => {

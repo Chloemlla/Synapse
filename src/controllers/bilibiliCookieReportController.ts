@@ -5,6 +5,7 @@ import {
   reportBilibiliCookie,
   resolveReportDeviceId,
 } from "../services/bilibiliCookieReportService";
+import { listBilibiliAccountsForAdmin } from "../services/bilibiliAccountService";
 import { BilibiliSyncError } from "../services/bilibiliSyncService";
 import logger from "../utils/logger";
 
@@ -77,6 +78,33 @@ export async function listReports(req: Request, res: Response): Promise<void> {
     res.json({
       success: true,
       data: result.reports,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / result.limit),
+      },
+    });
+  } catch (error) {
+    reportError(res, error);
+  }
+}
+
+/** Admin read surface for the multi-account bindings: metadata only. */
+export async function listAccountBindings(req: Request, res: Response): Promise<void> {
+  try {
+    if (!req.user || !isAdminRole(req.user.role)) {
+      res.status(403).json({ success: false, error: "需要管理员权限" });
+      return;
+    }
+    const result = await listBilibiliAccountsForAdmin({
+      search: req.query.search,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json({
+      success: true,
+      data: result.accounts,
       pagination: {
         page: result.page,
         limit: result.limit,

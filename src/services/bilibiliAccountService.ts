@@ -201,6 +201,49 @@ export async function listBilibiliAccounts(userId: string): Promise<{ accounts: 
   return { accounts: docs.map(toView) };
 }
 
+/**
+ * Cross-user admin listing of account bindings. Returns metadata only — the
+ * credential fields are `select:false`, so this can never surface a cookie.
+ */
+export interface AdminBilibiliAccountView extends BilibiliAccountView {
+  userId: string;
+}
+
+export async function listBilibiliAccountsForAdmin(query: {
+  search?: unknown;
+  page?: unknown;
+  limit?: unknown;
+}): Promise<{ accounts: AdminBilibiliAccountView[]; total: number; page: number; limit: number }> {
+  const page = Math.max(1, parseInt(String(query.page ?? 1), 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(String(query.limit ?? 20), 10) || 20));
+  const search = typeof query.search === "string" ? query.search.trim() : "";
+
+  const filter: Record<string, unknown> = {};
+  if (search) {
+    filter.$or = [
+      { userId: { $regex: search, $options: "i" } },
+      { bilibiliUid: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const [docs, total] = await Promise.all([
+    BilibiliAccountBindingModel.find(filter)
+      .select("userId bilibiliUid credentialStatus isPrimary uidBoundAt lastSyncedAt device permissions client")
+      .sort({ lastSyncedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean<(Pick<BilibiliAccountBindingDoc, "userId" | "bilibiliUid" | "credentialStatus" | "isPrimary" | "uidBoundAt" | "lastSyncedAt" | "device" | "permissions" | "client">)[]>(),
+    BilibiliAccountBindingModel.countDocuments(filter),
+  ]);
+
+  return {
+    accounts: docs.map((doc) => ({ userId: doc.userId, ...toView(doc) })),
+    total,
+    page,
+    limit,
+  };
+}
+
 export async function removeBilibiliAccount(userId: string, rawUid: unknown): Promise<{ removed: boolean; uid: string }> {
   const uid = normalizeUid(rawUid);
   const result = await BilibiliAccountBindingModel.deleteOne({ userId, bilibiliUid: uid });

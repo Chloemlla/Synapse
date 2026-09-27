@@ -14,6 +14,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/apikey-billing",
   "/admin/apikeys",
   "/admin/audit-log",
+  "/admin/bilibili-data",
   "/admin/bilibili-sync",
   "/admin/broadcast",
   "/admin/coin-flip",
