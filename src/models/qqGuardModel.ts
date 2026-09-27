@@ -68,7 +68,7 @@ export interface QqGuardCommandDoc {
 const auditSchema = new mongoose.Schema<QqGuardAuditDoc>(
   {
     traceId: { type: String, required: true, index: true },
-    eventId: { type: String, index: true },
+    eventId: { type: String },
     event: { type: String, required: true, index: true },
     groupId: { type: String, index: true },
     userId: { type: String, index: true },

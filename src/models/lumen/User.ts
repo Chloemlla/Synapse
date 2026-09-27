@@ -64,8 +64,6 @@ const UserSchema = new mongoose.Schema<IUser>(
   { strict: true, timestamps: false, collection: "users" },
 );
 
-UserSchema.index({ email: 1 }, { unique: true, sparse: true });
-
 const User =
   (mongoose.models.LumenUser as mongoose.Model<IUser>) ||
   mongoose.model<IUser>("LumenUser", UserSchema);

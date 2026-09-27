@@ -29,7 +29,6 @@ const MarkdownArticleSchema = new Schema<IMarkdownArticle>(
   { timestamps: true },
 );
 
-MarkdownArticleSchema.index({ slug: 1 }, { unique: true });
 MarkdownArticleSchema.index({ status: 1, publishedAt: -1 });
 MarkdownArticleSchema.index({ title: "text", excerpt: "text", content: "text" });
 

@@ -88,7 +88,6 @@ mobileClientTokenSchema.add({
   ttlExpireAt: { type: Date },
 });
 mobileClientTokenSchema.index({ ttlExpireAt: 1 }, { expireAfterSeconds: 0 });
-mobileClientTokenSchema.index({ tokenHash: 1 }, { unique: true });
 mobileClientTokenSchema.index({ userId: 1, revokedAt: 1 });
 // 整链吊销与“24 小时内轮换次数”统计走这两个索引。
 mobileClientTokenSchema.index({ userId: 1, lineageId: 1, createdAt: -1 });

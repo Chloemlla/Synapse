@@ -43,7 +43,6 @@ const SessionSchema = new mongoose.Schema<ISession>(
   { strict: true, timestamps: false, collection: "sessions" },
 );
 
-SessionSchema.index({ refreshToken: 1 }, { unique: true, sparse: true });
 SessionSchema.index({ refreshExpiresAt: 1 }, { expireAfterSeconds: 0 });
 SessionSchema.index({ userId: 1 });
 SessionSchema.index({ userId: 1, deviceInstallationId: 1 });

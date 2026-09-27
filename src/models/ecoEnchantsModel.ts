@@ -449,7 +449,7 @@ const WebhookEventSchema = new Schema<IEcoEnchantsWebhookEvent>(
     headers: { type: MixedType },
     data: { type: MixedType },
     errorMessage: { type: String },
-    receivedAt: { type: Date, default: Date.now, index: true },
+    receivedAt: { type: Date, default: Date.now },
     processedAt: { type: Date },
   },
   { collection: "ecoenchants_webhook_events", timestamps: false },
@@ -570,7 +570,7 @@ const OpsNonceSchema = new Schema<IEcoEnchantsOpsNonce>(
   {
     keyId: { type: String, required: true },
     nonce: { type: String, required: true },
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "ecoenchants_ops_nonces", timestamps: false },

@@ -43,7 +43,6 @@ const SyncChangeSchema = new mongoose.Schema<ISyncChange>(
 );
 
 SyncChangeSchema.index({ userId: 1, cursor: 1 });
-SyncChangeSchema.index({ cursor: 1 }, { unique: true });
 SyncChangeSchema.index({ ttlExpireAt: 1 }, { expireAfterSeconds: 0 });
 
 const SyncChange =

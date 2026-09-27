@@ -41,7 +41,7 @@ const TtsHistorySchema = new mongoose.Schema<TtsHistoryDocument>(
     providerVoice: { type: String, required: true },
     createdAt: { type: String, required: true, index: true },
     // 真正的 Date 型时间戳，用于 TTL 索引（TTL 只对 Date 生效）。
-    createdAtDate: { type: Date, default: Date.now, index: true },
+    createdAtDate: { type: Date, default: Date.now },
     adminNote: { type: String },
     adminSuggestion: { type: String },
     reviewStatus: { type: String, enum: REVIEW_STATUSES, default: "none", index: true },
