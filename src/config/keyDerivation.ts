@@ -91,6 +91,11 @@ function currentMasterSource(): string {
   return masterKeyInfo().value;
 }
 
+/** 某个主密钥源的指纹（sha256 前 16 位 hex），与 masterFingerprint 同口径，用于展示/比对而不泄露明文。 */
+export function fingerprintOfSource(source: string): string {
+  return crypto.createHash("sha256").update(source).digest("hex").slice(0, 16);
+}
+
 /** master 派生的输入密钥材料（IKM）= sha256(AES_KEY)。带进程内缓存，`AES_KEY` 变更时自动失效。 */
 export function masterIkm(): Buffer {
   const source = currentMasterSource();

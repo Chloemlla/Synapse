@@ -10,7 +10,8 @@ import { getGithubTarget, pushRepoSecret } from "../services/githubSecretService
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
-import { KL, deriveSecretHex, masterIkm, masterKeyInfo } from "../config/keyDerivation";
+import { config } from "../config/config";
+import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
 import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
@@ -1133,6 +1134,22 @@ export const adminController = {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
       const body = (req.body ?? {}) as { operationPassword?: unknown; label?: unknown };
       if (!isAdminOperationPasswordValid(body.operationPassword)) {
+        const provided = typeof body.operationPassword === "string" ? body.operationPassword : "";
+        const configured = config.adminOperationPassword || "";
+        // 详细诊断日志（不输出任何口令明文，只输出长度/是否配置/尾部空白等可定位特征）。
+        logger.warn("[EnvManager] 查看密钥：管理操作口令校验失败", {
+          userId: req.user?.id,
+          providedType: typeof body.operationPassword,
+          providedLength: provided.length,
+          providedTrimmedLength: provided.trim().length,
+          providedHasSurroundingWhitespace: provided.length !== provided.trim().length,
+          operationPasswordConfigured: configured.length > 0,
+          operationPasswordLength: configured.length,
+          lengthMatches: provided.length === configured.length,
+          // 来源：config.adminOperationPassword = ADMIN_OPERATION_PASSWORD || ADMIN_PASSWORD
+          adminOperationPasswordEnvSet: Boolean((process.env.ADMIN_OPERATION_PASSWORD || "").trim()),
+          adminPasswordEnvSet: Boolean((process.env.ADMIN_PASSWORD || "").trim()),
+        });
         return res.status(403).json({ success: false, error: "管理操作口令校验失败" });
       }
 
@@ -1153,12 +1170,46 @@ export const adminController = {
 
       // 语义统一：主密钥从运行时实际生效源读取（AES_KEY → 过渡回退 JWT_SECRET → 临时源），
       // 与子密钥派生（masterIkm）同源，避免“AES_KEY 显示为空但派生子密钥非空”的不一致。
+      const aes = (process.env.AES_KEY || "").trim();
+      const jwt = (process.env.JWT_SECRET || "").trim();
+      const masterSources = [
+        { name: "AES_KEY", configured: aes.length > 0, fingerprint: aes ? fingerprintOfSource(aes) : null, active: master.origin === "AES_KEY" },
+        { name: "JWT_SECRET（过渡回退源）", configured: jwt.length > 0, fingerprint: jwt ? fingerprintOfSource(jwt) : null, active: master.origin === "JWT_SECRET" },
+      ];
+
+      // 之前迁移完成的记录（若已跑过密钥统一迁移）：读 security_migrations，不存在则为 null，不报错。
+      let lastMigration: {
+        schemeVersion: number | null;
+        masterFingerprint: string | null;
+        phase: string | null;
+        finishedAt: string | null;
+      } | null = null;
+      try {
+        const doc = (await mongoose.connection
+          .collection("security_migrations")
+          // biome-ignore lint/suspicious/noExplicitAny: 原生集合按字符串 _id 查询，避开默认 ObjectId 过滤类型
+          .findOne({ _id: "key-scheme" } as any)) as Record<string, unknown> | null;
+        if (doc) {
+          const finishedAtRaw = doc.finishedAt;
+          lastMigration = {
+            schemeVersion: typeof doc.version === "number" ? doc.version : (typeof doc.schemeVersion === "number" ? doc.schemeVersion : null),
+            masterFingerprint: typeof doc.masterFingerprint === "string" ? doc.masterFingerprint : null,
+            phase: typeof doc.phase === "string" ? doc.phase : null,
+            finishedAt: finishedAtRaw instanceof Date ? finishedAtRaw.toISOString() : (typeof finishedAtRaw === "string" ? finishedAtRaw : null),
+          };
+        }
+      } catch {
+        // 集合不存在 / 读取异常：视为尚未迁移，lastMigration 保持 null。
+      }
+
       return res.json({
         success: true,
         masterOrigin: master.origin,
         aesKey: master.value,
         aesKeyConfigured: master.origin === "AES_KEY",
         masterFingerprint: masterIkm().toString("hex").slice(0, 16),
+        masterSources,
+        lastMigration,
         derived,
       });
     } catch (e) {

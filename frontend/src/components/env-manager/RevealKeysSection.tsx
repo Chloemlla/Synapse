@@ -16,6 +16,13 @@ interface RevealResult {
   aesKeyConfigured: boolean;
   masterOrigin?: 'AES_KEY' | 'JWT_SECRET' | 'ephemeral';
   masterFingerprint: string;
+  masterSources?: Array<{ name: string; configured: boolean; fingerprint: string | null; active: boolean }>;
+  lastMigration?: {
+    schemeVersion: number | null;
+    masterFingerprint: string | null;
+    phase: string | null;
+    finishedAt: string | null;
+  } | null;
   derived: Record<string, string>;
 }
 
@@ -134,6 +141,43 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
                 ? ' · 所有派生子密钥均由该生效主密钥源经 HKDF 派生'
                 : null}
             </div>
+
+            {result.masterSources && result.masterSources.length > 0 ? (
+              <div className="mt-2 rounded-lg border border-amber-100 bg-white/60 p-2">
+                <div className="font-semibold text-slate-600">主密钥源（运行时）</div>
+                {result.masterSources.map((source) => (
+                  <div key={source.name} className="flex items-center justify-between gap-2 py-0.5">
+                    <span className="text-slate-600">
+                      {source.name}
+                      {source.active ? <span className="ml-1 rounded bg-emerald-100 px-1 text-emerald-700">生效中</span> : null}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      {source.configured ? `指纹 ${source.fingerprint}` : '未配置'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {result.lastMigration ? (
+              <div className="mt-2 rounded-lg border border-sky-100 bg-sky-50/60 p-2">
+                <div className="font-semibold text-slate-600">上次密钥统一迁移记录</div>
+                <div className="text-[11px] text-slate-500">
+                  方案版本 {result.lastMigration.schemeVersion ?? '-'} · 阶段 {result.lastMigration.phase ?? '-'}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  迁移时主密钥指纹 {result.lastMigration.masterFingerprint ?? '-'}
+                  {result.lastMigration.masterFingerprint && result.lastMigration.masterFingerprint === result.masterFingerprint
+                    ? ' · 与当前一致'
+                    : result.lastMigration.masterFingerprint
+                      ? ' · 与当前不一致（当前主密钥已变更）'
+                      : ''}
+                </div>
+                <div className="text-[11px] text-slate-400">完成于 {result.lastMigration.finishedAt ?? '（未完成）'}</div>
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-slate-400">尚无密钥统一迁移记录（security_migrations 未生成）。</div>
+            )}
             <div className="pt-1 font-semibold text-slate-600">派生子密钥（hex，按用途）</div>
             {Object.entries(result.derived).map(([label, value]) => (
               <KeyRow key={label} label={label} value={value} onCopy={() => copy(value)} />
