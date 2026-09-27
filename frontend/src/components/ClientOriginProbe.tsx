@@ -24,15 +24,29 @@ const CONFIG_TIMEOUT_MS = 5000;
 const ECHO_TIMEOUT_MS = 8000;
 const REPORT_TIMEOUT_MS = 8000;
 const WS_PROBE_TIMEOUT_MS = 10000;
-const WEBRTC_PROBE_TIMEOUT_MS = 3000;
+const WEBRTC_PROBE_TIMEOUT_MS = 5000;
 
 const MAX_LANGUAGES = 10;
 const MAX_USER_AGENT_LENGTH = 512;
-const STUN_SERVER_URL = 'stun:stun.l.google.com:19302';
+/**
+ * 多个公开 STUN server：Google / Cloudflare 在部分网络（如中国大陆）不可达，
+ * 补入国内公开 STUN（小米路由、bilibili）确保各网络环境下都能拿到 srflx 公网映射候选。
+ * 单个 RTCPeerConnection 会向全部 STUN 并行收集候选，结果按地址去重。
+ */
+const WEBRTC_STUN_SERVERS: readonly string[] = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun.cloudflare.com:3478',
+  'stun:stun.miwifi.com:3478',
+  'stun:stun.chat.bilibili.com:3478',
+];
 
-const IPV4_PATTERN = /\b(\d{1,3}(?:\.\d{1,3}){3})\b/;
+const IPV4_LITERAL = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+// 至少两个冒号才算 IPv6 字面量（排除 host:port 之类的误命中）。
+const IPV6_LITERAL = /^[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}$/i;
 // RFC1918 私网 + 环回 + 链路本地：这些地址不可能是「出口 IP」，不参与泄露判定。
 const PRIVATE_IPV4_PATTERN = /^(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/;
+// IPv6 非公网段：环回 ::1、未指定 ::、链路本地 fe80::/10、唯一本地 fc00::/7。
+const PRIVATE_IPV6_PATTERN = /^(?:::1?$|fe[89ab]|f[cd])/i;
 
 interface ClientProbeConfig {
   enabled?: boolean;
@@ -88,6 +102,10 @@ interface ClientProbePayload extends ClientProbeFingerprint {
   wsExitIp: string | null;
   ipv6Exit: string | null;
   webrtcLeak: boolean;
+  /** WebRTC host 候选暴露的地址（局域网/本机；mDNS 混淆下通常为空）。 */
+  webrtcHostIps: string[];
+  /** WebRTC srflx 候选——经 STUN 观测到的公网映射地址，是真正的泄露向量。 */
+  webrtcSrflxIps: string[];
 }
 
 interface ClientProbeReportBody {
@@ -118,10 +136,27 @@ function isPrivateIpv4(ip: string): boolean {
   return PRIVATE_IPV4_PATTERN.test(ip);
 }
 
-function extractIPv4(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const match = IPV4_PATTERN.exec(raw);
-  return match ? match[1] : null;
+/** 私网 / 环回 / 链路本地（v4 与 v6 通吃）：不是任何客户端的出口，不参与泄露判定。 */
+function isPrivateIp(ip: string): boolean {
+  return ip.includes(':') ? PRIVATE_IPV6_PATTERN.test(ip) : isPrivateIpv4(ip);
+}
+
+function isIpLiteral(value: string): boolean {
+  return IPV4_LITERAL.test(value) || IPV6_LITERAL.test(value);
+}
+
+/**
+ * 从 ICE 候选里抠出连接地址：优先用 RTCIceCandidate.address；mDNS 混淆的 host 候选
+ * （xxx.local）拿不到真实 IP，返回 null。老浏览器 address 为空时回退解析 candidate SDP 行
+ * （candidate:foundation component transport priority CONN-ADDR port typ TYPE …）。
+ */
+function extractCandidateIp(candidate: RTCIceCandidate): string | null {
+  const address = (candidate.address ?? '').trim();
+  if (address && !address.endsWith('.local') && isIpLiteral(address)) return address;
+  const raw = candidate.candidate ?? '';
+  const connAddr = raw.split(' ')[4] ?? '';
+  if (connAddr && !connAddr.endsWith('.local') && isIpLiteral(connAddr)) return connAddr;
+  return null;
 }
 
 async function fetchProbeJson<T>(path: string, timeoutMs: number): Promise<T | null> {
@@ -211,24 +246,36 @@ function probeWebSocketExitIp(path: string): Promise<string | null> {
   });
 }
 
+interface WebRtcProbeResult {
+  /** type=host 候选暴露的地址（局域网/本机；mDNS 混淆下通常为空）。 */
+  hostIps: string[];
+  /** type=srflx 候选——经 STUN 观测到的公网映射地址，真正的泄露向量。 */
+  srflxIps: string[];
+}
+
 function createProbePeerConnection(): RTCPeerConnection | null {
   try {
-    return new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER_URL }] });
+    return new RTCPeerConnection({ iceServers: [{ urls: [...WEBRTC_STUN_SERVERS] }] });
   } catch {
     return null;
   }
 }
 
-/** 收集 host candidate 暴露的地址（mDNS 混淆下拿不到 IP，会自然返回空数组）。 */
-function probeWebRtcHostIps(): Promise<string[]> {
+/**
+ * 静默收集 WebRTC ICE 候选：host（局域网/本机）与 srflx（经 STUN 观测到的公网映射地址）。
+ * srflx 是真正的泄露向量——即便浏览器普通流量走了代理/VPN，STUN 请求也可能沿真实链路发出，
+ * 从而暴露真实公网出口。mDNS 混淆下 host 候选拿不到 IP，会自然为空；ICE 收集完成或超时即结束。
+ */
+function probeWebRtc(): Promise<WebRtcProbeResult> {
   return new Promise((resolve) => {
     const pc = createProbePeerConnection();
     if (!pc) {
-      resolve([]);
+      resolve({ hostIps: [], srflxIps: [] });
       return;
     }
 
-    const ips = new Set<string>();
+    const hostIps = new Set<string>();
+    const srflxIps = new Set<string>();
     let settled = false;
     let timer: number | null = null;
 
@@ -240,24 +287,39 @@ function probeWebRtcHostIps(): Promise<string[]> {
         timer = null;
       }
       pc.onicecandidate = null;
+      pc.onicegatheringstatechange = null;
       try {
         pc.close();
       } catch {
         // 连接已关闭
       }
-      resolve([...ips]);
+      resolve({ hostIps: [...hostIps], srflxIps: [...srflxIps] });
     };
 
     timer = window.setTimeout(finish, WEBRTC_PROBE_TIMEOUT_MS);
 
     pc.onicecandidate = (event) => {
       const candidate = event.candidate;
-      if (!candidate || candidate.type !== 'host') return;
-      const ip = extractIPv4(candidate.address ?? candidate.candidate);
-      if (ip) ips.add(ip);
+      // 空/结束候选：ICE 收集完成信号。
+      if (!candidate || !candidate.candidate) {
+        finish();
+        return;
+      }
+      const type = candidate.type;
+      if (type !== 'host' && type !== 'srflx') return;
+      const ip = extractCandidateIp(candidate);
+      if (!ip) return;
+      if (type === 'host') hostIps.add(ip);
+      else srflxIps.add(ip);
+    };
+
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete') finish();
     };
 
     try {
+      // 无 m-line 不会触发 ICE 收集；建一个数据通道即可让浏览器发起 STUN 询问。
+      pc.createDataChannel('probe');
       void pc
         .createOffer()
         .then((offer) => pc.setLocalDescription(offer))
@@ -405,14 +467,19 @@ async function runClientOriginProbe(): Promise<void> {
 
     const wsExitIp = await probeWebSocketExitIp(resolveEndpointPath(config.wsProbePath, DEFAULT_WS_PROBE_PATH));
 
-    const webrtcHostIps = await probeWebRtcHostIps();
-    const webrtcLeak = webrtcHostIps.some((ip) => ip !== httpExitIp && !isPrivateIpv4(ip));
+    const webrtc = await probeWebRtc();
+    // WebRTC 暴露的公网地址（srflx 为主，公网 host 候选同样算）：私网/环回/链路本地不参与判定。
+    const webrtcPublicIps = [...webrtc.srflxIps, ...webrtc.hostIps].filter((ip) => !isPrivateIp(ip));
+    // 泄露 = 已知 HTTP 出口 IP 时，WebRTC 暴露了与之不同的公网地址（权威判定在服务端）。
+    const webrtcLeak = httpExitIp !== null && webrtcPublicIps.some((ip) => ip !== httpExitIp);
 
     const payload: ClientProbePayload = {
       httpExitIp,
       wsExitIp,
       ipv6Exit,
       webrtcLeak,
+      webrtcHostIps: webrtc.hostIps,
+      webrtcSrflxIps: webrtc.srflxIps,
       ...collectLocalFingerprint(),
     };
 
@@ -423,7 +490,9 @@ async function runClientOriginProbe(): Promise<void> {
       // 只是「两侧地址不同」的原始事实：两侧同口径（升级路径同样按 trust proxy 解析），
       // 正常情况下应当相等，不等即值得排查；但不构成泄漏结论（判定在服务端，见 comparability）。
       wsExitDiffersFromHttp: wsExitIp !== null && wsExitIp !== httpExitIp,
-      webrtcHostIps,
+      webrtcHostIps: webrtc.hostIps,
+      webrtcSrflxIps: webrtc.srflxIps,
+      webrtcPublicIps,
       webrtcLeak,
       observationWarnings: observed.warning ?? [],
     });

@@ -25,6 +25,9 @@ const MAX_USER_AGENT_LENGTH = 512;
 const MAX_SCREEN_RES_LENGTH = 32;
 const MAX_LANGUAGE_ITEMS = 10;
 const MAX_LANGUAGE_LENGTH = 32;
+/** WebRTC 候选地址数组上限（客户端可控，封顶后再落库）。 */
+const MAX_WEBRTC_IPS = 20;
+const MAX_IP_LENGTH = 45;
 
 const ECHO_PATH = "/api/ip-risk/echo";
 const REPORT_PATH = "/api/ip-risk/report";
@@ -66,11 +69,28 @@ function readLanguages(source: Record<string, unknown>): string[] | undefined {
   return languages.length ? languages : undefined;
 }
 
+/** 读一个字符串数组（WebRTC 候选地址）：逐项去重 + 长度封顶 + 条数封顶，空数组返回 undefined。 */
+function readIpArray(source: Record<string, unknown>, key: string): string[] | undefined {
+  const value = source[key];
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    seen.add(trimmed.slice(0, MAX_IP_LENGTH));
+    if (seen.size >= MAX_WEBRTC_IPS) break;
+  }
+  return seen.size ? [...seen] : undefined;
+}
+
 interface SanitizedProbePayload {
   httpExitIp?: string;
   wsExitIp?: string;
   ipv6Exit?: string;
   webrtcLeak?: boolean;
+  webrtcHostIps?: string[];
+  webrtcSrflxIps?: string[];
   timezone?: string;
   timezoneOffsetMin?: number;
   languages?: string[];
@@ -90,6 +110,8 @@ function sanitizeProbePayload(payload: Record<string, unknown>): SanitizedProbeP
     wsExitIp: readText(payload, "wsExitIp"),
     ipv6Exit: readText(payload, "ipv6Exit"),
     webrtcLeak: readBoolean(payload, "webrtcLeak"),
+    webrtcHostIps: readIpArray(payload, "webrtcHostIps"),
+    webrtcSrflxIps: readIpArray(payload, "webrtcSrflxIps"),
     timezone: readText(payload, "timezone"),
     timezoneOffsetMin: readNumber(payload, "timezoneOffsetMin"),
     languages: readLanguages(payload),
@@ -149,6 +171,11 @@ function isComparableExitAddress(value: string | undefined): boolean {
   return false;
 }
 
+/** 地址归一化：剔 IPv4-mapped 前缀 + 去空白 + 小写（仅用于相等比较）。 */
+function normalizeExitForCompare(value: string): string {
+  return value.trim().replace(/^::ffff:/i, "").toLowerCase();
+}
+
 /**
  * 由服务端自行判定不一致项与标记，不采信客户端自报的结论。
  * 客户端上报的 webrtcLeak / webdriver 只作为"客户端自称"记录进 flags。
@@ -164,6 +191,7 @@ function isComparableExitAddress(value: string | undefined): boolean {
 function computeProbeVerdict(
   report: SanitizedProbePayload,
   geoTimezone: string | null,
+  exitIp: string,
 ): {
   flags: string[];
   mismatch: ProxycheckProbeMismatch;
@@ -174,10 +202,18 @@ function computeProbeVerdict(
   const ipv6Exit = report.ipv6Exit;
   const clientTimezone = report.timezone;
 
+  // WebRTC 暴露的可比对公网地址（srflx 为主，公网 host 候选同样算）：私网/NAT/链路本地地址不算出口。
+  // 对比基准用服务端解析出的请求出口 IP（权威），而不是客户端自报的 httpExitIp。
+  const webrtcPublicIps = [...(report.webrtcSrflxIps ?? []), ...(report.webrtcHostIps ?? [])].filter((v) =>
+    isComparableExitAddress(v),
+  );
+  const exitComparable = isComparableExitAddress(exitIp);
+
   const comparability: ProxycheckProbeComparability = {
     ipv4vsWs: isComparableExitAddress(httpExit) && isComparableExitAddress(wsExit),
     ipvEvsV6: isComparableExitAddress(httpExit) && isComparableExitAddress(ipv6Exit),
     timezoneVsGeo: Boolean(geoTimezone && clientTimezone),
+    webrtcVsExit: exitComparable && webrtcPublicIps.length > 0,
   };
 
   const mismatch: ProxycheckProbeMismatch = {
@@ -188,12 +224,17 @@ function computeProbeVerdict(
       geoTimezone !== null &&
       clientTimezone !== undefined &&
       clientTimezone.toLowerCase() !== geoTimezone.toLowerCase(),
+    webrtcVsExit:
+      comparability.webrtcVsExit &&
+      webrtcPublicIps.some((v) => normalizeExitForCompare(v) !== normalizeExitForCompare(exitIp)),
   };
 
   const flags: string[] = [];
   if (mismatch.ipv4vsWs) flags.push("ipv4_vs_ws_mismatch");
   if (mismatch.ipvEvsV6) flags.push("ipv_vs_v6_mismatch");
   if (mismatch.timezoneVsGeo) flags.push("timezone_vs_geo_mismatch");
+  // 服务端自判的真实 WebRTC 泄露（区别于下面客户端自报的 webrtc_leak_reported）。
+  if (mismatch.webrtcVsExit) flags.push("webrtc_public_ip_leak");
   if (report.webrtcLeak === true) flags.push("webrtc_leak_reported");
   if (report.webdriver === true) flags.push("webdriver_reported");
 
@@ -261,7 +302,7 @@ export class IpRiskController {
     const ip = resolveRequestIp(req);
     const report = sanitizeProbePayload(payload as Record<string, unknown>);
     const geoTimezone = await readCachedGeoTimezone(ip);
-    const { flags, mismatch, comparability } = computeProbeVerdict(report, geoTimezone);
+    const { flags, mismatch, comparability } = computeProbeVerdict(report, geoTimezone, ip);
 
     let stored = true;
     try {

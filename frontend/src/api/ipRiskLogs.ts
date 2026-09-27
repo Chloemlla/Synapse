@@ -213,6 +213,10 @@ export interface ProbeReportRow {
   wsExitIp?: string;
   ipv6Exit?: string;
   webrtcLeak?: boolean;
+  /** WebRTC host 候选暴露的地址（局域网/本机；mDNS 混淆下通常为空），客户端自报。 */
+  webrtcHostIps?: string[];
+  /** WebRTC srflx 候选（经 STUN 观测到的公网映射地址），客户端自报；服务端据此自判 webrtcVsExit。 */
+  webrtcSrflxIps?: string[];
   timezone?: string;
   timezoneOffsetMin?: number;
   languages?: string[];
@@ -228,12 +232,15 @@ export interface ProbeReportRow {
     ipv4vsWs: boolean;
     ipvEvsV6: boolean;
     timezoneVsGeo: boolean;
+    /** 本轮新增：老文档没有这个字段，读出为 undefined。 */
+    webrtcVsExit?: boolean;
   };
   /** 各轴是否具备判定条件；老文档（本判定改版前写入）没有这个字段，读出为 undefined。 */
   comparability?: {
     ipv4vsWs: boolean;
     ipvEvsV6: boolean;
     timezoneVsGeo: boolean;
+    webrtcVsExit?: boolean;
   };
   createdAt: string;
   [key: string]: unknown;

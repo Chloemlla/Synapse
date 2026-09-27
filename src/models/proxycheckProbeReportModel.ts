@@ -4,6 +4,8 @@ export interface ProxycheckProbeMismatch {
   ipv4vsWs: boolean;
   ipvEvsV6: boolean;
   timezoneVsGeo: boolean;
+  /** WebRTC 暴露的公网地址与服务端解析的请求出口 IP 不一致（真实泄露）。 */
+  webrtcVsExit: boolean;
 }
 
 /**
@@ -15,6 +17,7 @@ export interface ProxycheckProbeComparability {
   ipv4vsWs: boolean;
   ipvEvsV6: boolean;
   timezoneVsGeo: boolean;
+  webrtcVsExit: boolean;
 }
 
 export interface ProxycheckProbeReportDoc {
@@ -24,6 +27,10 @@ export interface ProxycheckProbeReportDoc {
   wsExitIp?: string;
   ipv6Exit?: string;
   webrtcLeak?: boolean;
+  /** WebRTC host 候选暴露的地址（局域网/本机；mDNS 混淆下通常为空），客户端自报。 */
+  webrtcHostIps?: string[];
+  /** WebRTC srflx 候选（经 STUN 观测到的公网映射地址），客户端自报；服务端据此自判 webrtcVsExit。 */
+  webrtcSrflxIps?: string[];
   timezone?: string;
   timezoneOffsetMin?: number;
   languages?: string[];
@@ -53,6 +60,8 @@ const ProxycheckProbeReportSchema = new mongoose.Schema<ProxycheckProbeReportDoc
     wsExitIp: { type: String, default: undefined },
     ipv6Exit: { type: String, default: undefined },
     webrtcLeak: { type: Boolean, default: undefined },
+    webrtcHostIps: { type: [String], default: undefined },
+    webrtcSrflxIps: { type: [String], default: undefined },
     timezone: { type: String, default: undefined },
     timezoneOffsetMin: { type: Number, default: undefined },
     languages: { type: [String], default: undefined },
@@ -68,6 +77,8 @@ const ProxycheckProbeReportSchema = new mongoose.Schema<ProxycheckProbeReportDoc
       ipv4vsWs: { type: Boolean, required: true, default: false },
       ipvEvsV6: { type: Boolean, required: true, default: false },
       timezoneVsGeo: { type: Boolean, required: true, default: false },
+      // webrtcVsExit 在本轮新增：旧文档没有该字段，读出为 undefined，前端按不可判定处理。
+      webrtcVsExit: { type: Boolean, default: false },
     },
     // 与 mismatch 同形。schema 上不设 required：判定改版前写入的旧文档没有这个字段，
     // 读出时按 undefined 处理即可，不回填也不改写历史判决（应用侧总是会写入它）。
@@ -75,6 +86,7 @@ const ProxycheckProbeReportSchema = new mongoose.Schema<ProxycheckProbeReportDoc
       ipv4vsWs: { type: Boolean, default: false },
       ipvEvsV6: { type: Boolean, default: false },
       timezoneVsGeo: { type: Boolean, default: false },
+      webrtcVsExit: { type: Boolean, default: false },
     },
     createdAt: { type: Date, default: Date.now },
   },

@@ -35,7 +35,7 @@ interface Props {
   refreshNonce: number;
 }
 
-type ProbeAxisKey = 'ipv4vsWs' | 'ipvEvsV6' | 'timezoneVsGeo';
+type ProbeAxisKey = 'ipv4vsWs' | 'ipvEvsV6' | 'timezoneVsGeo' | 'webrtcVsExit';
 
 const MISMATCH_LABELS: ReadonlyArray<{ key: ProbeAxisKey; label: string; unavailableHint: string }> = [
   {
@@ -53,6 +53,12 @@ const MISMATCH_LABELS: ReadonlyArray<{ key: ProbeAxisKey; label: string; unavail
     key: 'timezoneVsGeo',
     label: '时区/地理',
     unavailableHint: '该 IP 在 proxycheck 风险缓存里没有时区（没查询过或缓存已过期）时不可判定。',
+  },
+  {
+    key: 'webrtcVsExit',
+    label: 'WebRTC/出口',
+    unavailableHint:
+      '需要客户端上报至少一个公网 WebRTC 候选（srflx 的公网映射地址，或公网 host 候选），且服务端解析出的请求出口也是公网地址时才判定；mDNS 混淆 / 纯私网候选 / STUN 不可达时本轴不可判定。',
   },
 ];
 
@@ -254,7 +260,13 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                       <div className="font-mono text-[11px] text-slate-600">HTTP {row.httpExitIp || '-'}</div>
                       <div className="font-mono text-[11px] text-slate-500">WS {row.wsExitIp || '-'}</div>
                       <div className="font-mono text-[11px] text-slate-500">IPv6 {row.ipv6Exit || '-'}</div>
-                      <div className="text-[11px] text-slate-500">WebRTC 泄漏 {boolLabel(row.webrtcLeak)}</div>
+                      <div className="font-mono text-[11px] text-slate-500">
+                        WebRTC srflx {(row.webrtcSrflxIps ?? []).join(', ') || '-'}
+                      </div>
+                      <div className="font-mono text-[11px] text-slate-400">
+                        WebRTC host {(row.webrtcHostIps ?? []).join(', ') || '-'}
+                      </div>
+                      <div className="text-[11px] text-slate-500">WebRTC 自报泄漏 {boolLabel(row.webrtcLeak)}</div>
                     </Td>
                     <Td>
                       {flags.length === 0 ? (
@@ -336,7 +348,19 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                               <FieldRow label="httpExitIp（HTTP 侧 echo 回显）" value={row.httpExitIp} mono always />
                               <FieldRow label="wsExitIp（WS 侧回显）" value={row.wsExitIp} mono always />
                               <FieldRow label="ipv6Exit（echo 回显的双栈出口）" value={row.ipv6Exit} mono always />
-                              <FieldRow label="webrtcLeak" value={boolLabel(row.webrtcLeak)} always />
+                              <FieldRow label="webrtcLeak（客户端自报）" value={boolLabel(row.webrtcLeak)} always />
+                              <FieldRow
+                                label="webrtcSrflxIps（STUN 公网映射）"
+                                value={(row.webrtcSrflxIps ?? []).join(', ') || '-'}
+                                mono
+                                always
+                              />
+                              <FieldRow
+                                label="webrtcHostIps（局域网/本机）"
+                                value={(row.webrtcHostIps ?? []).join(', ') || '-'}
+                                mono
+                                always
+                              />
                               <FieldRow label="timezone" value={row.timezone} always />
                               <FieldRow label="timezoneOffsetMin" value={row.timezoneOffsetMin} always />
                               <FieldRow label="languages" value={(row.languages ?? []).join(', ') || '-'} always />
@@ -383,6 +407,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                                     ipv4vsWs={boolLabel(row.mismatch?.ipv4vsWs)} · ipvEvsV6=
                                     {boolLabel(row.mismatch?.ipvEvsV6)} · timezoneVsGeo=
                                     {boolLabel(row.mismatch?.timezoneVsGeo)}
+                                    {' · '}webrtcVsExit={boolLabel(row.mismatch?.webrtcVsExit)}
                                   </span>
                                 </div>
                                 <div>
@@ -391,6 +416,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                                     ipv4vsWs={boolLabel(row.comparability?.ipv4vsWs)} · ipvEvsV6=
                                     {boolLabel(row.comparability?.ipvEvsV6)} · timezoneVsGeo=
                                     {boolLabel(row.comparability?.timezoneVsGeo)}
+                                    {' · '}webrtcVsExit={boolLabel(row.comparability?.webrtcVsExit)}
                                   </span>
                                 </div>
                                 <div className="text-[11px] leading-5 text-slate-400">
