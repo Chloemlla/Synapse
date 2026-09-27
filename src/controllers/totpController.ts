@@ -275,7 +275,8 @@ export class TOTPController {
           subject: "Synapse 两步验证 (TOTP) 已启用",
           html: emailHtml,
           logTag: "TOTP启用通知",
-          checkQuota: true,
+          // 安全通知邮件（由已认证操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {
@@ -398,7 +399,8 @@ export class TOTPController {
               subject: "Synapse 备用恢复码已使用通知",
               html: emailHtml,
               logTag: "恢复码使用通知",
-              checkQuota: true,
+              // 安全通知邮件（恢复码被使用是必须触达用户的安全事件），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
