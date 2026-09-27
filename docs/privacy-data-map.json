@@ -395,6 +395,49 @@
         "src/models/mobileClientTokenModel.ts",
         "src/services/mobileLoginService.ts"
       ]
+    },
+    {
+      "id": "bilibili-cookie-reports",
+      "collection": "bilibili_cookie_reports",
+      "fields": [
+        "clientId",
+        "deviceId",
+        "bilibiliUid",
+        "credentialCiphertext",
+        "credentialIv",
+        "credentialTag",
+        "credentialKeyVersion",
+        "credentialStatus",
+        "credentialValidatedAt",
+        "credentialLastCheckedAt",
+        "firstReportedAt",
+        "lastReportedAt",
+        "reportCount",
+        "device",
+        "permissions",
+        "client"
+      ],
+      "purpose": "Bilibili login cookies a client files immediately after a Bilibili login completes, archived per (clientId, deviceId, UID) so the operator can see which device holds which session. The cookie is only ever stored as AES-GCM ciphertext; the device snapshot and granted-permission list are non-secret metadata.",
+      "legalBasis": "security_and_service_integrity",
+      "retention": {
+        "type": "operational",
+        "description": "Kept until the report is replaced by a newer one from the same device or deleted by an operator; there is no TTL today. Rows are keyed by device id, not by Synapse account, because the reporter holds no Synapse session."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "current": "no user cascade: rows belong to a (clientId, deviceId, bilibiliUid) triple rather than to a Synapse userId",
+        "manual": "removeBilibiliCookieReport(clientId, deviceId, uid) in src/services/bilibiliCookieReportService.ts",
+        "gap": "a device that uninstalls the app leaves its last report behind until an operator deletes it"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Admin listing returns metadata only; ciphertext fields are select:false and the plaintext cookie is never serialized into a response"
+      },
+      "evidence": [
+        "src/models/bilibiliCookieReportModel.ts",
+        "src/services/bilibiliCookieReportService.ts",
+        "src/routes/bilibiliCookieReportRoutes.ts"
+      ]
     }
   ]
 }

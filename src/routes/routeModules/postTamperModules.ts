@@ -15,6 +15,7 @@ import {
 } from "../../middleware/routeLimiters";
 import logger from "../../utils/logger";
 import antaRoutes from "../antaRoutes";
+import bilibiliCookieReportRoutes from "../bilibiliCookieReportRoutes";
 import bilibiliSyncRoutes from "../bilibiliSyncRoutes";
 import cdictRoutes from "../cdictRoutes";
 import cdkRoutes from "../cdkRoutes";
@@ -601,6 +602,25 @@ export const postTamperRouteModules: RouteModule[] = [
       mode: "router",
       limiters: ["bilibiliSyncLimiter"],
       note: "All Bilibili binding and sync operations share the authenticated sync limiter.",
+    },
+  },
+  {
+    name: "bilibili-cookie-report-routes",
+    path: "/api/bilibili-reports",
+    router: bilibiliCookieReportRoutes,
+    requiresAuth: false,
+    rateLimited: true,
+    isPublic: true,
+    rateLimitPolicy: {
+      mode: "route",
+      limiters: ["bilibiliReportLimiter"],
+      note: "The cookie report endpoint applies the dedicated bilibiliReportLimiter on the route itself; there is no mount-level limiter for this path."
+    },
+    securityBypass: {
+      ipVerification: {
+        value: true,
+        reason: "Login cookie reports are filed by app clients that hold no Synapse session and cannot complete an interactive human check; the endpoint only accepts data, is rate limited per device, and every cookie is verified against Bilibili before it is stored.",
+      },
     },
   },
   {

@@ -34,7 +34,7 @@ function isDuplicateKeyError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { code?: number }).code === 11000);
 }
 
-function normalizeDevice(value: unknown): Record<string, unknown> {
+export function normalizeDevice(value: unknown): Record<string, unknown> {
   if (value === undefined || value === null) return {};
   if (!isPlainObject(value)) {
     throw new BilibiliSyncError("设备信息必须是 JSON 对象", "BILIBILI_DEVICE_INVALID");
@@ -46,7 +46,7 @@ function normalizeDevice(value: unknown): Record<string, unknown> {
   return value;
 }
 
-function normalizePermissions(value: unknown): Record<string, string> {
+export function normalizePermissions(value: unknown): Record<string, string> {
   if (value === undefined || value === null) return {};
   if (!isPlainObject(value)) {
     throw new BilibiliSyncError("权限清单必须是 JSON 对象", "BILIBILI_PERMISSIONS_INVALID");
@@ -63,7 +63,7 @@ function normalizePermissions(value: unknown): Record<string, string> {
   return normalized;
 }
 
-function normalizeClient(value: unknown): BilibiliAccountClientIdentity {
+export function normalizeClient(value: unknown): BilibiliAccountClientIdentity {
   if (!isPlainObject(value)) return {};
   const text = (key: string): string | undefined => {
     const raw = value[key];

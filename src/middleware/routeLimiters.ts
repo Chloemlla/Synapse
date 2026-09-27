@@ -526,6 +526,12 @@ const LIMITER_DEFINITIONS = {
     max: 120,
     message: "Bilibili 同步请求过于频繁，请稍后再试",
   },
+  bilibiliReport: {
+    profile: "verification",
+    category: "public-api",
+    max: 12,
+    message: "Bilibili 凭据上报过于频繁，请稍后再试",
+  },
   lumen: {
     profile: "standard",
     category: "public-api",
@@ -681,6 +687,7 @@ export const cdictTrustedUpstreamIpLimiter = limiterFromDefinition("cdictTrusted
 export const integrityLimiter = limiterFromDefinition("integrity");
 export const nexaiSecurityLimiter = limiterFromDefinition("nexaisecurity");
 export const bilibiliSyncLimiter = limiterFromDefinition("bilibiliSync");
+export const bilibiliReportLimiter = limiterFromDefinition("bilibiliReport");
 export const lumenLimiter = limiterFromDefinition("lumen");
 export const crashSdkLimiter = limiterFromDefinition("crashSdk");
 export const qqGuardLimiter = limiterFromDefinition("qqGuard");
