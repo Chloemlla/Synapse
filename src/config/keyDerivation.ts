@@ -71,9 +71,10 @@ const EPHEMERAL_SOURCE = crypto.randomBytes(32).toString("hex");
 
 let cached: { source: string; ikm: Buffer } | null = null;
 
-/** 惰性读取 `AES_KEY`：尊重 admin/env 面板运行期覆盖；缺失时用进程级临时源兜底。 */
+/** 惰性读取主密钥源：优先 AES_KEY；过渡期允许回退到旧 JWT_SECRET（避免存量部署因未配
+ * AES_KEY 而启动失败）；都缺失时用进程级临时源兑底。尊重 admin/env 面板运行期覆盖。 */
 function currentMasterSource(): string {
-  return (process.env.AES_KEY || "").trim() || EPHEMERAL_SOURCE;
+  return (process.env.AES_KEY || "").trim() || (process.env.JWT_SECRET || "").trim() || EPHEMERAL_SOURCE;
 }
 
 /** master 派生的输入密钥材料（IKM）= sha256(AES_KEY)。带进程内缓存，`AES_KEY` 变更时自动失效。 */

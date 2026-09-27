@@ -221,16 +221,16 @@ const envSchema = z
       });
     }
 
-    // Production must not start without the single master key AES_KEY (all internal signing/
-    // encryption keys derive from it; an ephemeral fallback would kill all sessions on restart
-    // and make at-rest ciphertext undecryptable). AGENTS.md promises this fails at startup.
+    // Production must not start without a master key. AES_KEY is the single master (all internal
+    // signing/encryption keys derive from it); JWT_SECRET is accepted as a transitional fallback
+    // source so existing deployments that only set JWT_SECRET still boot until AES_KEY is provisioned.
     if (env.NODE_ENV === "production") {
-      const aesKey = (process.env.AES_KEY || "").trim();
-      if (aesKey.length < 32) {
+      const masterKey = (process.env.AES_KEY || "").trim() || (process.env.JWT_SECRET || "").trim();
+      if (masterKey.length < 32) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["AES_KEY"],
-          message: "AES_KEY must be set to at least 32 characters in production（统一主密钥，所有内部签名/加密密钥由它派生）",
+          message: "AES_KEY must be set to at least 32 characters in production（统一主密钥；过渡期允许用旧 JWT_SECRET 回退）",
         });
       }
       const adminPassword = env.ADMIN_PASSWORD || "";
@@ -256,7 +256,7 @@ const frontendBaseUrl = parsedEnv.FRONTEND_URL || "https://chloemlla.com";
 const openaiApiKey = parsedEnv.OPENAI_KEY || parsedEnv.OPENAI_API_KEY;
 // 单一主密钥：JWT 签名密钥不再独立配置，统一由 AES_KEY 经 HKDF(KL.JWT) 派生。
 // 旧 JWT_SECRET 仅作过渡兼容候选（部署时切换即一次性登出，已确认接受）。
-const jwtSecretConfigured = Boolean((process.env.AES_KEY || "").trim());
+const jwtSecretConfigured = Boolean((process.env.AES_KEY || "").trim() || (process.env.JWT_SECRET || "").trim());
 const jwtSecret = deriveSecretHex(KL.JWT);
 const signSecretKey = parsedEnv.SIGN_SECRET_KEY || "";
 const adminPassword = parsedEnv.ADMIN_PASSWORD || "";
