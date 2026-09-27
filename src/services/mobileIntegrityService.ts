@@ -11,7 +11,7 @@ import logger from "../utils/logger";
  * Google Play 签发的证明，服务端据此确认"请求来自未被改包的真机上、由 Play 分发的
  * 那个 App"，而不是某个拿着令牌的脚本。
  *
- * 三条设计约束（与 docs/mobile-token-risk-control.md 一致）：
+ * 三条设计约束（与 docs/contracts/mobile-token-risk-control.md 一致）：
  * 1. 默认 `mode = "off"`，不配置就完全等价于 P1，不会改变任何既有行为；
  * 2. 校验失败**不拒绝登录**，只降级（缩短单代有效期 + 让客户端提前轮换）；
  * 3. 校验链路自身故障时由 `failOpen` 决定放行与否，默认放行。

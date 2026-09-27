@@ -2,7 +2,7 @@ import { api, getApiBaseUrl } from './api';
 
 /**
  * `sml_` 客户端登录令牌血缘的超管只读面板 API。
- * 契约：`docs/mobile-token-risk-control.md` §3/§5（P4 可视化）。
+ * 契约：`docs/contracts/mobile-token-risk-control.md` §3/§5（P4 可视化）。
  * 所有端点都要求 superadmin 会话，只读；令牌明文永不出库（库里只有 SHA-256 哈希），
  * 哈希 / deviceId / IP 由服务端掩码后才下发，前端原样展示。
  */

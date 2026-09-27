@@ -40,7 +40,7 @@ const MAX_CHALLENGES = 5000;
 
 /**
  * 客户端登录令牌（sml_）轮换风控参数。
- * 策略正文见 docs/mobile-token-risk-control.md，客户端只跟着响应里的
+ * 策略正文见 docs/contracts/mobile-token-risk-control.md，客户端只跟着响应里的
  * nextRotationAt / graceMs 走，不自己算节奏。
  */
 const ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000;

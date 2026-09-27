@@ -81,9 +81,9 @@ pnpm run test:nightly             # live/API suite excluded from PR CI
 
 文档：
 
-- `docs/test-matrix.md`
-- `docs/repository-governance.md`
-- `docs/privacy-fingerprint-ip-contract.md`
+- `docs/guides/test-matrix.md`
+- `docs/governance/repository-governance.md`
+- `docs/contracts/privacy-fingerprint-ip-contract.md`
 
 ## 测试覆盖率
 

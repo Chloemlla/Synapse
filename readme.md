@@ -141,7 +141,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 
 > [!NOTE]
 > 用户数据存储仅支持 MongoDB。`USER_STORAGE_MODE` 只能设置为 `mongo`，或省略后使用默认值 `mongo`。
-> 后端 MongoDB 持久化的启动链路、集合、索引和运维细节见 [后端 MongoDB 持久化细节](docs/backend-mongo-persistence-detail.md)。
+> 后端 MongoDB 持久化的启动链路、集合、索引和运维细节见 [后端 MongoDB 持久化细节](docs/reference/backend-mongo-persistence-detail.md)。
 
 - **用户注册/登录**：支持用户名 + 密码注册，JWT Token 认证
 - **个人资料**：头像、昵称、邮箱等个人信息管理

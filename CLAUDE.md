@@ -301,7 +301,7 @@ Multi-stage Dockerfile with 3 stages:
 
 ### MongoDB Persistence Details
 
-Backend MongoDB persistence details are documented in `docs/backend-mongo-persistence-detail.md`.
+Backend MongoDB persistence details are documented in `docs/reference/backend-mongo-persistence-detail.md`.
 
 ### Running Tests for Specific Module
 

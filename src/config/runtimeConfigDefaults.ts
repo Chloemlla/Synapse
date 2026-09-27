@@ -244,7 +244,7 @@ export interface FirstVisitVerificationRuntimeConfig {
  * `mode` 默认 `off`：不开就是不校验，行为与 P1 完全一致，因此本分区可以随代码先落地、
  * 由运维在拿到 Google Cloud 服务账号后再逐级升到 `observe` → `enforce`。
  * 校验失败不走"拒绝登录"，而是降级：单代有效期压到 `downgradedTtlHours` 并在响应里
- * 带 `requiresVerification`，客户端据此提前轮换（见 docs/mobile-token-risk-control.md）。
+ * 带 `requiresVerification`，客户端据此提前轮换（见 docs/contracts/mobile-token-risk-control.md）。
  */
 export interface MobileTokenIntegrityRuntimeConfig {
   /** off = 不校验；observe = 校验并记日志但不下发降级；enforce = 校验并决定降级。 */

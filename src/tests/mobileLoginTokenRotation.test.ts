@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 /**
- * 客户端登录令牌（sml_）轮换的风控语义。策略正文：docs/mobile-token-risk-control.md。
+ * 客户端登录令牌（sml_）轮换的风控语义。策略正文：docs/contracts/mobile-token-risk-control.md。
  *
  * 不连 Mongo：模型替身只需要认本用例真正用到的查询形态
  * （tokenHash / userId / lineageId / revokedAt:null / supersededAt:null / createdAt.$gte / $in）。

@@ -45,7 +45,7 @@ import {
 
 /**
  * 客户端登录令牌（sml_）血缘只读面板：概览计数 + 复用断链看板 + 按血缘/用户查代次。
- * 策略正文见服务端 docs/mobile-token-risk-control.md §3～§5；本页只读，数据全部经服务端掩码。
+ * 策略正文见服务端 docs/contracts/mobile-token-risk-control.md §3～§5；本页只读，数据全部经服务端掩码。
  */
 
 type TabKey = 'overview' | 'reuse' | 'lineage';

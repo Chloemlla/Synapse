@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 /**
- * 风险分级轮换（P3）的判定语义。策略正文：docs/mobile-token-risk-control.md §5。
+ * 风险分级轮换（P3）的判定语义。策略正文：docs/contracts/mobile-token-risk-control.md §5。
  *
  * 判定全部是纯函数（事实进、信号出），因此这里不发网络请求、不连 Mongo：
  * 只有 `runtimeMutableConfig` 换成一个可改写的替身，用来验证配置门控。

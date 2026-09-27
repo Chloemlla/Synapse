@@ -229,7 +229,7 @@ router.post(
  *       不要求 JWT；被顶替的旧代超过宽限期再次使用会触发整条血缘吊销。
  *       设备证明（P2）启用时需附带 integrityNonce + integrityToken，未通过只降级不拒绝：
  *       单代有效期缩短、nextRotationAt 提前，响应里以 requiresVerification 标记。
- *       策略正文见 docs/mobile-token-risk-control.md。
+ *       策略正文见 docs/contracts/mobile-token-risk-control.md。
  *     requestBody:
  *       required: true
  *       content:
