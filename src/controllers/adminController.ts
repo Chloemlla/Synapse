@@ -10,7 +10,7 @@ import { getGithubTarget, pushRepoSecret } from "../services/githubSecretService
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
-import { KL, deriveSecretHex, masterIkm } from "../config/keyDerivation";
+import { KL, deriveSecretHex, masterIkm, masterKeyInfo } from "../config/keyDerivation";
 import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
@@ -1136,7 +1136,7 @@ export const adminController = {
         return res.status(403).json({ success: false, error: "管理操作口令校验失败" });
       }
 
-      const aesKey = (process.env.AES_KEY || "").trim();
+      const master = masterKeyInfo();
       const derived: Record<string, string> = {};
       for (const label of Object.values(KL)) derived[label] = deriveSecretHex(label);
 
@@ -1151,10 +1151,13 @@ export const adminController = {
         return res.json({ success: true, label: body.label, key: one });
       }
 
+      // 语义统一：主密钥从运行时实际生效源读取（AES_KEY → 过渡回退 JWT_SECRET → 临时源），
+      // 与子密钥派生（masterIkm）同源，避免“AES_KEY 显示为空但派生子密钥非空”的不一致。
       return res.json({
         success: true,
-        aesKey,
-        aesKeyConfigured: aesKey.length > 0,
+        masterOrigin: master.origin,
+        aesKey: master.value,
+        aesKeyConfigured: master.origin === "AES_KEY",
         masterFingerprint: masterIkm().toString("hex").slice(0, 16),
         derived,
       });

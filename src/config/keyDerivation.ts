@@ -71,10 +71,24 @@ const EPHEMERAL_SOURCE = crypto.randomBytes(32).toString("hex");
 
 let cached: { source: string; ikm: Buffer } | null = null;
 
-/** 惰性读取主密钥源：优先 AES_KEY；过渡期允许回退到旧 JWT_SECRET（避免存量部署因未配
- * AES_KEY 而启动失败）；都缺失时用进程级临时源兑底。尊重 admin/env 面板运行期覆盖。 */
+export type MasterOrigin = "AES_KEY" | "JWT_SECRET" | "ephemeral";
+
+/**
+ * 当前生效的主密钥源（运行时读取，尊重 admin/env 面板覆盖）：
+ * 优先 AES_KEY；过渡期回退到旧 JWT_SECRET；都缺失时用进程级临时源。
+ * 派生与密钥查看统一以此为唯一来源。
+ */
+export function masterKeyInfo(): { origin: MasterOrigin; value: string } {
+  const aes = (process.env.AES_KEY || "").trim();
+  if (aes) return { origin: "AES_KEY", value: aes };
+  const jwt = (process.env.JWT_SECRET || "").trim();
+  if (jwt) return { origin: "JWT_SECRET", value: jwt };
+  return { origin: "ephemeral", value: EPHEMERAL_SOURCE };
+}
+
+/** 惰性读取主密钥源：与 masterKeyInfo 同一来源（AES_KEY → JWT_SECRET → 进程级临时源）。 */
 function currentMasterSource(): string {
-  return (process.env.AES_KEY || "").trim() || (process.env.JWT_SECRET || "").trim() || EPHEMERAL_SOURCE;
+  return masterKeyInfo().value;
 }
 
 /** master 派生的输入密钥材料（IKM）= sha256(AES_KEY)。带进程内缓存，`AES_KEY` 变更时自动失效。 */
