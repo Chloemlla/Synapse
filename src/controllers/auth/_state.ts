@@ -25,7 +25,9 @@ const allowedDomains = [
   "foxmail.com",
   "chloemlla.com",
 ];
-export const emailPattern = new RegExp(`^[\\w.-]+@(${allowedDomains.map((d) => d.replace(".", "\\.")).join("|")})$`);
+// 注意：域名里的点必须全部转义。旧写法 `d.replace(".", "\\.")` 用字符串参数只替换**第一个**点，
+// 多点域名（如 co.uk / 子域名）会残留未转义的点，在正则里变成任意字符匹配，导致白名单过宽。
+export const emailPattern = new RegExp(`^[\\w.-]+@(${allowedDomains.map((d) => d.replace(/\./g, "\\.")).join("|")})$`);
 
 // 临时存储验证码和注册信息
 export const emailCodeMap = new Map<string, { code: string; time: number; regInfo: any; attempts: number }>(); // email -> { code, time, regInfo, attempts }
