@@ -56,7 +56,8 @@ const maybeSendUsageAlert = async (user: User, dailyUsage: number): Promise<void
       subject: `Synapse 每日用量警报 (${usagePercent}%)`,
       html: emailHtml,
       logTag: "用量警报通知",
-      checkQuota: true,
+      // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+      checkQuota: false,
     })
       .then((result) => {
         if (result.success) {

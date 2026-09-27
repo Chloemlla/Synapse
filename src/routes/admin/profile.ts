@@ -484,7 +484,8 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
           subject: "Synapse 账户邮箱已更改",
           html: oldEmailHtml,
           logTag: "用户自助修改邮箱-旧邮箱通知",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {
@@ -510,7 +511,8 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
         subject: "Synapse 新邮箱绑定成功",
         html: newEmailHtml,
         logTag: "用户自助修改邮箱-新邮箱通知",
-        checkQuota: true,
+        // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+        checkQuota: false,
       })
         .then((result) => {
           if (result.success) {

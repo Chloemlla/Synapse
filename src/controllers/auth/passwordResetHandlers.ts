@@ -144,7 +144,8 @@ export async function resetPasswordLink(req: Request, res: Response) {
             subject: "Synapse 账号密码变更通知",
             html: emailHtml,
             logTag: "密码变更通知",
-            checkQuota: true,
+            // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+            checkQuota: false,
           })
             .then((sendResult) => {
               if (sendResult.success) {
@@ -306,7 +307,8 @@ export async function resetPassword(req: Request, res: Response) {
         subject: "Synapse 密码重置成功通知",
         html: notifyHtml,
         logTag: "密码重置成功通知",
-        checkQuota: true,
+        // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+        checkQuota: false,
       })
         .then((result) => {
           if (result.success) {

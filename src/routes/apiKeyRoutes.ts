@@ -122,7 +122,8 @@ router.post(
           subject: "Synapse 新的 API Key 已创建",
           html: emailHtml,
           logTag: "API Key 创建通知",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {

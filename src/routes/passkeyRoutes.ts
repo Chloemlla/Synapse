@@ -206,7 +206,8 @@ router.post("/register/finish", passkeyAuthLimiter, authenticateToken, async (re
           subject: "Synapse 已成功添加 Passkey",
           html: emailHtml,
           logTag: "Passkey添加通知",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {
@@ -628,7 +629,8 @@ router.delete("/credentials/:credentialId", passkeyAuthLimiter, authenticateToke
           subject: "Synapse Passkey 已移除",
           html: emailHtml,
           logTag: "Passkey移除通知",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {

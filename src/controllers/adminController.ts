@@ -496,7 +496,8 @@ export const adminController = {
             subject,
             html: emailHtml,
             logTag: "管理员修改用户信息通知",
-            checkQuota: true,
+            // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+            checkQuota: false,
           })
             .then((result) => {
               if (result.success) {
@@ -525,7 +526,8 @@ export const adminController = {
               subject: "Synapse 账户权限变更通知",
               html: roleEmailHtml,
               logTag: "角色变更专门通知",
-              checkQuota: true,
+              // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
@@ -557,7 +559,8 @@ export const adminController = {
               subject: "Synapse 账户邮箱地址变更安全通知",
               html: oldEmailHtml,
               logTag: "邮箱变更安全通知(旧邮箱)",
-              checkQuota: true,
+              // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
@@ -583,7 +586,8 @@ export const adminController = {
               subject: "Synapse 账户邮箱绑定成功通知",
               html: newEmailHtml,
               logTag: "新邮箱绑定通知",
-              checkQuota: true,
+              // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
@@ -631,7 +635,8 @@ export const adminController = {
               subject: "Synapse 账号已被停用通知",
               html: emailHtml,
               logTag: "账号停用通知",
-              checkQuota: true,
+              // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
@@ -650,7 +655,8 @@ export const adminController = {
               subject: "Synapse 账号已恢复使用通知",
               html: emailHtml,
               logTag: "账号恢复通知",
-              checkQuota: true,
+              // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+              checkQuota: false,
             })
               .then((result) => {
                 if (result.success) {
@@ -815,7 +821,8 @@ export const adminController = {
                 subject: "Synapse 账号已被停用通知",
                 html: emailHtml,
                 logTag: "账号停用通知",
-                checkQuota: true,
+                // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+                checkQuota: false,
               })
                 .then((result) => {
                   if (result.success) {
@@ -834,7 +841,8 @@ export const adminController = {
                 subject: "Synapse 账号已恢复使用通知",
                 html: emailHtml,
                 logTag: "账号恢复通知",
-                checkQuota: true,
+                // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+                checkQuota: false,
               })
                 .then((result) => {
                   if (result.success) {
@@ -914,7 +922,8 @@ export const adminController = {
           subject: "Synapse 账户注销成功通知",
           html: emailHtml,
           logTag: "账户删除通知",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {

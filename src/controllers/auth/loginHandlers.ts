@@ -268,7 +268,8 @@ export async function login(req: Request, res: Response) {
           subject: "Synapse 异地登录安全提醒",
           html: emailHtml,
           logTag: "异地登录提醒",
-          checkQuota: true,
+          // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {
