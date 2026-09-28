@@ -345,18 +345,18 @@ export class GitHubBillingService {
 
       // 按仓库统计
       if (item.repo?.name) {
-        repoBreakdown[item.repo.name] = (repoBreakdown[item.repo.name] || 0) + item.billedAmount;
+        repoBreakdown[item.repo.name] = (repoBreakdown[item.repo.name] || 0) + (item.billedAmount || 0);
       }
 
       // 按组织统计
       if (item.org?.name) {
-        orgBreakdown[item.org.name] = (orgBreakdown[item.org.name] || 0) + item.billedAmount;
+        orgBreakdown[item.org.name] = (orgBreakdown[item.org.name] || 0) + (item.billedAmount || 0);
       }
 
       // 按日期统计
       if (item.usageAt) {
         const date = item.usageAt.split("T")[0];
-        dailyBreakdown[date] = (dailyBreakdown[date] || 0) + item.billedAmount;
+        dailyBreakdown[date] = (dailyBreakdown[date] || 0) + (item.billedAmount || 0);
       }
     });
 
