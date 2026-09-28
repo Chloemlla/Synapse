@@ -5,7 +5,9 @@ import { REVEAL_KEY_API, authFetch } from './api';
 import { useNotification } from '../Notification';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
-import { studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
+import { useSecuritySession } from '../../hooks/useSecuritySession';
+import { verifyIdentity } from '../user-profile/profileHelpers';
+import { studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '../studioTheme';
 
 interface RevealKeysSectionProps {
   prefersReducedMotion?: boolean | null;
@@ -49,7 +51,8 @@ function KeyRow({ label, value, onCopy }: { label: string; value: string; onCopy
 }
 
 /**
- * 验证管理操作口令后查看单一主密钥 AES_KEY 及各用途派生子密钥（D-5）。
+ * 验证一次身份后查看单一主密钥 AES_KEY 及各用途派生子密钥。
+ * 复用个人资料页同一套「安全会话」：邮箱、密码、第三方账号绑定与此处查看共用同一枚 verificationToken。
  * 明文只在本次会话内存中，收起/离开即清除；后端每次查看都写审计日志。
  */
 export default function RevealKeysSection({ prefersReducedMotion: reducedMotionProp }: RevealKeysSectionProps) {
@@ -57,15 +60,39 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   const { setNotification } = useNotification();
   const { user } = useAuth();
   const canView = isSuperAdmin(user?.role);
+  const { verificationToken, isActive, setSession, clear } = useSecuritySession();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [opPassword, setOpPassword] = useState('');
+  const [password, setPassword] = useState('');
+  const [establishing, setEstablishing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RevealResult | null>(null);
 
+  const establishSession = async () => {
+    if (!password.trim()) {
+      setNotification({ message: '请输入当前登录密码以建立安全会话', type: 'warning' });
+      return;
+    }
+    setEstablishing(true);
+    try {
+      const res = await verifyIdentity({ method: 'password', password });
+      if (!res.success || !res.verificationToken) {
+        setNotification({ message: res.error || '身份验证失败', type: 'error' });
+        return;
+      }
+      setSession(res.verificationToken, typeof res.expiresAt === 'number' ? res.expiresAt : null);
+      setPassword('');
+      setNotification({ message: '安全会话已建立，可查看密钥', type: 'success' });
+    } catch {
+      setNotification({ message: '身份验证请求失败', type: 'error' });
+    } finally {
+      setEstablishing(false);
+    }
+  };
+
   const onReveal = async () => {
-    if (!opPassword.trim()) {
-      setNotification({ message: '请输入管理操作口令', type: 'warning' });
+    if (!isActive || !verificationToken) {
+      setNotification({ message: '安全会话无效，请先建立安全会话', type: 'warning' });
       return;
     }
     setLoading(true);
@@ -73,16 +100,16 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       const res = await authFetch(REVEAL_KEY_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operationPassword: opPassword }),
+        body: JSON.stringify({ verificationToken }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setResult(null);
+        if (res.status === 403) clear();
         setNotification({ message: data?.error || '查看密钥失败', type: 'error' });
         return;
       }
       setResult(data as RevealResult);
-      setOpPassword('');
     } catch {
       setNotification({ message: '查看密钥请求失败', type: 'error' });
     } finally {
@@ -102,34 +129,62 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   return (
     <CollapsibleSection
       title="查看密钥（AES_KEY 主密钥与派生子密钥）"
-      description="所有内部签名/加密密钥均由单一主密钥 AES_KEY 经 HKDF 按用途派生。查看明文需再次输入管理操作口令，且每次查看都会记入审计日志。"
+      description="所有内部签名/加密密钥均由单一主密钥 AES_KEY 经 HKDF 按用途派生。先验证一次身份，邮箱、密码和第三方账号操作会复用同一安全会话；每次查看都会记入审计日志。"
       sectionKey="reveal-keys"
       isOpen={isOpen}
       onToggle={() => setIsOpen((open) => !open)}
       prefersReducedMotion={prefersReducedMotion}
     >
       <div className="space-y-3 px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="password"
-            value={opPassword}
-            onChange={(event) => setOpPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void onReveal();
-            }}
-            placeholder="管理操作口令（二次验证）"
-            aria-label="管理操作口令"
-            autoComplete="off"
-            className={studioFieldClassName}
-          />
-          <button type="button" disabled={loading} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
-            {loading ? '验证中…' : '验证并查看'}
-          </button>
-        </div>
+        {!isActive ? (
+          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
+            <div className="text-xs text-slate-500">查看密钥前需要建立安全会话（与账号修改/绑定第三方账号共用同一次验证）。</div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void establishSession();
+                }}
+                placeholder="当前登录密码"
+                aria-label="当前登录密码"
+                autoComplete="current-password"
+                className={studioFieldClassName}
+              />
+              <button
+                type="button"
+                disabled={establishing}
+                onClick={() => void establishSession()}
+                className={studioPrimaryButtonClassName}
+              >
+                {establishing ? '验证中…' : '建立安全会话'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">安全会话有效</span>
+            <button type="button" disabled={loading} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
+              {loading ? '读取中…' : '查看密钥'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setResult(null);
+                clear();
+              }}
+              className={studioSecondaryButtonClassName}
+            >
+              结束会话
+            </button>
+          </div>
+        )}
 
         {result ? (
           <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-xs">
-            <div className="font-semibold text-amber-700">以下为敏感明文，请勿外泄；点击“收起并清除”或离开页面即清除。</div>
+            <div className="font-semibold text-amber-700">以下为敏感明文，请勿外泄；点击“结束会话”或离开页面即清除。</div>
             <KeyRow
               label={MASTER_ORIGIN_LABEL[result.masterOrigin ?? (result.aesKeyConfigured ? 'AES_KEY' : 'ephemeral')]}
               value={result.aesKey || '（空）'}
@@ -178,12 +233,13 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
             ) : (
               <div className="mt-2 text-[11px] text-slate-400">尚无密钥统一迁移记录（security_migrations 未生成）。</div>
             )}
+
             <div className="pt-1 font-semibold text-slate-600">派生子密钥（hex，按用途）</div>
             {Object.entries(result.derived).map(([label, value]) => (
               <KeyRow key={label} label={label} value={value} onCopy={() => copy(value)} />
             ))}
             <button type="button" onClick={() => setResult(null)} className="mt-2 text-slate-500 underline">
-              收起并清除
+              收起明文
             </button>
           </div>
         ) : null}

@@ -10,9 +10,8 @@ import { getGithubTarget, pushRepoSecret } from "../services/githubSecretService
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
-import { config } from "../config/config";
 import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
-import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
+import { validateProfileVerificationSession } from "../services/profileUpdateVerificationService";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
@@ -1141,25 +1140,16 @@ export const adminController = {
   async revealKey(req: Request, res: Response) {
     try {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
-      const body = (req.body ?? {}) as { operationPassword?: unknown; label?: unknown };
-      if (!isAdminOperationPasswordValid(body.operationPassword)) {
-        const provided = typeof body.operationPassword === "string" ? body.operationPassword : "";
-        const configured = config.adminOperationPassword || "";
-        // 详细诊断日志（不输出任何口令明文，只输出长度/是否配置/尾部空白等可定位特征）。
-        logger.warn("[EnvManager] 查看密钥：管理操作口令校验失败", {
-          userId: req.user?.id,
-          providedType: typeof body.operationPassword,
-          providedLength: provided.length,
-          providedTrimmedLength: provided.trim().length,
-          providedHasSurroundingWhitespace: provided.length !== provided.trim().length,
-          operationPasswordConfigured: configured.length > 0,
-          operationPasswordLength: configured.length,
-          lengthMatches: provided.length === configured.length,
-          // 来源：config.adminOperationPassword = ADMIN_OPERATION_PASSWORD || ADMIN_PASSWORD
-          adminOperationPasswordEnvSet: Boolean((process.env.ADMIN_OPERATION_PASSWORD || "").trim()),
-          adminPasswordEnvSet: Boolean((process.env.ADMIN_PASSWORD || "").trim()),
+      const userId = req.user.id;
+      const body = (req.body ?? {}) as { verificationToken?: unknown; label?: unknown };
+      const verificationToken = typeof body.verificationToken === "string" ? body.verificationToken : "";
+      // 复用个人资料页同一套「安全会话」：校验不消耗（查看是读操作，可在 TTL 内重复查看）。
+      if (!verificationToken || !validateProfileVerificationSession(userId, verificationToken)) {
+        logger.warn("[EnvManager] 查看密钥：安全会话校验失败", {
+          userId,
+          tokenProvided: verificationToken.length > 0,
         });
-        return res.status(403).json({ success: false, error: "管理操作口令校验失败" });
+        return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
       }
 
       const master = masterKeyInfo();
@@ -1167,7 +1157,7 @@ export const adminController = {
       for (const label of Object.values(KL)) derived[label] = deriveSecretHex(label);
 
       logger.warn("[EnvManager] 超管查看密钥明文", {
-        userId: req.user?.id,
+        userId,
         label: typeof body.label === "string" ? body.label : "all",
       });
 

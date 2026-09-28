@@ -72,6 +72,7 @@ import {
 } from './user-profile/profileHelpers';
 import DeviceSessionsPanel from './user-profile/DeviceSessionsPanel';
 import { ProfileSidebarSummary } from './user-profile/ProfileSidebarSummary';
+import { setSecuritySession } from '../hooks/useSecuritySession';
 declare global {
   interface Window {
     google?: {
@@ -405,6 +406,8 @@ const UserProfile: React.FC = () => {
     setVerified(true);
     setVerificationToken(result.verificationToken);
     setVerificationExpiresAt(typeof result.expiresAt === 'number' ? result.expiresAt : null);
+    // 镜像到全站共享安全会话，使 env-manager「查看密钥」等敏感操作复用同一会话。
+    setSecuritySession(result.verificationToken, typeof result.expiresAt === 'number' ? result.expiresAt : null);
     setNotification({ message: successMessage, type: 'success' });
   }, [setNotification]);
 
