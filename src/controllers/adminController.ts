@@ -1152,6 +1152,36 @@ export const adminController = {
         return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
       }
 
+      // 敏感操作通知：查看密钥后即时邮件告知管理员本人（失败不阻断查看）。
+      void (async () => {
+        try {
+          const actor = await UserStorage.getUserById(userId);
+          if (!actor?.email) return;
+          const { generateSensitiveKeyViewedEmailHtml } = require("../templates/emailTemplates");
+          const { getClientIP } = require("../utils/ipUtils");
+          const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+          const scope = typeof body.label === "string" && body.label ? body.label : "全部密钥";
+          await sendEmail({
+            to: actor.email,
+            subject: "Synapse 安全事件：查看服务器密钥",
+            html: generateSensitiveKeyViewedEmailHtml(
+              actor.username,
+              time,
+              getClientIP(req),
+              (req.headers["user-agent"] as string) || "未知设备",
+              scope,
+            ),
+            logTag: "查看密钥通知",
+            // 安全事件通知（由已过安全会话校验的操作触发），不占用也不受验证码发送配额限制。
+            checkQuota: false,
+          });
+        } catch (notifyErr) {
+          logger.warn("[EnvManager] 查看密钥通知邮件发送失败", {
+            error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+          });
+        }
+      })();
+
       const master = masterKeyInfo();
       const derived: Record<string, string> = {};
       for (const label of Object.values(KL)) derived[label] = deriveSecretHex(label);

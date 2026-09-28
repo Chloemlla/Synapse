@@ -462,6 +462,25 @@ export function generateBackupCodeUsedEmailHtml(
   );
 }
 
+/** 安全事件：查看主密钥 / 派生子密钥 */
+export function generateSensitiveKeyViewedEmailHtml(
+  username: string,
+  time: string,
+  ip: string,
+  device: string,
+  scope: string,
+): string {
+  return generateSecurityNoticeHtml(
+    username,
+    "有人查看了服务器密钥",
+    `管理端「查看密钥」在通过安全会话校验后，展示了主密钥 AES_KEY 与派生子密钥的明文（范围：<strong>${escapeHtml(scope)}</strong>）。`,
+    time,
+    ip,
+    device,
+    "如果这不是您本人操作，说明您的管理安全会话可能已被他人使用，请立即结束所有安全会话并轮换 AES_KEY。",
+  );
+}
+
 /** 资源：CDK 兑换成功 */
 export function generateCDKActivatedEmailHtml(
   username: string,
