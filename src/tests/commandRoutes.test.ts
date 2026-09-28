@@ -6,6 +6,7 @@ import request from "supertest";
 import app from "../app";
 import { config } from "../config/config";
 import { UserStorage } from "../utils/userStorage";
+import { createProfileVerificationSession } from "../services/profileUpdateVerificationService";
 
 jest.mock("../utils/userStorage", () => ({
   UserStorage: {
@@ -28,7 +29,9 @@ function superadminToken(): string {
 }
 
 describe("Command Routes", () => {
-  const validPassword = config.adminPassword;
+  // 命令端点已统一改为复用个人资料页「安全会话」：为 u-admin（与 JWT userId 一致）建立一枚
+  // verificationToken，随请求体一并发送；不再校验管理操作口令。
+  let adminSessionToken = "";
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -38,13 +41,14 @@ describe("Command Routes", () => {
       role: "superadmin",
       accountStatus: "active",
     } as any);
+    adminSessionToken = createProfileVerificationSession("u-admin", "password").token;
   });
 
   describe("POST /api/command/execute", () => {
     it("应该拒绝未登录请求（401）", async () => {
       const res = await request(app).post("/api/command/execute").send({
         command: "ls",
-        password: validPassword,
+        verificationToken: adminSessionToken,
       });
 
       expect(res.status).toBe(401);
@@ -62,22 +66,22 @@ describe("Command Routes", () => {
       const res = await request(app)
         .post("/api/command/execute")
         .set("Authorization", `Bearer ${token}`)
-        .send({ command: "ls", password: validPassword });
+        .send({ command: "ls", verificationToken: adminSessionToken });
 
       expect(res.status).toBe(403);
     });
 
-    it("应该拒绝无效密码的请求", async () => {
+    it("应该拒绝无有效安全会话的请求", async () => {
       const res = await request(app)
         .post("/api/command/execute")
         .set("Authorization", `Bearer ${superadminToken()}`)
         .send({
           command: "ls",
-          password: "invalid-password",
+          verificationToken: "invalid-token",
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/密码错误/);
+      expect(res.body.error).toMatch(/安全会话/);
     });
 
     it("应该成功执行安全命令", async () => {
@@ -89,14 +93,14 @@ describe("Command Routes", () => {
         .set("Authorization", `Bearer ${superadminToken()}`)
         .send({
           command: testCommand,
-          password: validPassword,
+          verificationToken: adminSessionToken,
         });
 
       // 在 Windows 上 dir 可能不在白名单中，所以我们检查状态码
       if (res.status === 200) {
         expect(res.body.output).toBeDefined();
       } else if (res.status === 500) {
-        // 如果命令执行失败，至少验证了鉴权和密码验证通过
+        // 如果命令执行失败，至少验证了鉴权和安全会话校验通过
         expect(res.body.error).toBeDefined();
       }
     });
@@ -108,7 +112,7 @@ describe("Command Routes", () => {
         .post("/api/command/status")
         .set("Authorization", `Bearer ${superadminToken()}`)
         .send({
-          password: validPassword,
+          verificationToken: adminSessionToken,
         });
 
       expect(res.status).toBe(200);
@@ -117,16 +121,16 @@ describe("Command Routes", () => {
       expect(res.body).toHaveProperty("cpu_usage_percent");
     });
 
-    it("应该拒绝无效密码的状态请求", async () => {
+    it("应该拒绝无有效安全会话的状态请求", async () => {
       const res = await request(app)
         .post("/api/command/status")
         .set("Authorization", `Bearer ${superadminToken()}`)
         .send({
-          password: "invalid-password",
+          verificationToken: "invalid-token",
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/密码错误/);
+      expect(res.body.error).toMatch(/安全会话/);
     });
   });
 });

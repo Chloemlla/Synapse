@@ -1,10 +1,7 @@
 import { commandService } from "../services/commandService";
 
-// G7-39 删掉了「NODE_ENV==="test" 且密码是 "wumy" 就放行」这个通用后门（否则任何
-// 跑在 NODE_ENV=test 下的部署都有一个万能管理口令）。测试必须走真正的校验分支：
-// utils/adminOperationPassword 的真校验分支只接受 config.adminOperationPassword（= ADMIN_OPERATION_PASSWORD
-// || ADMIN_PASSWORD）。SYN-01 已移除 NODE_ENV=test 后门；setup.ts 把 TEST_ADMIN_PASSWORD 默认对齐到 "admin123"。
-const ADMIN_OPERATION_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "admin123";
+// 命令的二次验证已统一上移到路由层的「安全会话」校验（commandRoutes.ts）；
+// commandService.addCommand 不再校验口令，只负责命令安全性（validateCommand）。
 
 jest.mock("../services/commandStorage", () => ({
   getCommandQueue: jest.fn().mockResolvedValue([]),
@@ -28,7 +25,7 @@ describe("CommandService 安全性测试", () => {
   describe("命令注入防护", () => {
     it("应该使用spawn而非exec执行命令", async () => {
       // 这个测试验证我们使用的是spawn而不是exec
-      const result = await commandService.addCommand("ls", ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand("ls");
       expect(result.status).toBe("command added");
 
       // 只测试命令验证逻辑，不实际执行命令
@@ -60,7 +57,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of shellInjectionAttempts) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         expect(result.status).toBe("error");
         // 检查是否被拒绝（任何错误消息都表示被拒绝）
         expect(
@@ -96,7 +93,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of parameterInjectionAttempts) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         expect(result.status).toBe("error");
         // 检查是否被拒绝（任何错误消息都表示被拒绝）
         expect(
@@ -127,7 +124,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of commandSubstitutionAttempts) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         expect(result.status).toBe("error");
         // 检查是否被拒绝（任何错误消息都表示被拒绝）
         expect(
@@ -158,7 +155,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of pathTraversalAttempts) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         expect(result.status).toBe("error");
         expect(result.message).toContain("参数包含危险字符");
       }
@@ -174,7 +171,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of specialCharCommands) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         expect(result.status).toBe("error");
         // 检查是否被拒绝（任何错误消息都表示被拒绝）
         expect(
@@ -198,7 +195,7 @@ describe("CommandService 安全性测试", () => {
       ];
 
       for (const command of unauthorizedCommands) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         const msg = result.message || "";
         console.log(`Testing unauthorized command: ${command}, result:`, result);
         // 检查是否被拒绝（任何错误消息都表示被拒绝）
@@ -213,7 +210,7 @@ describe("CommandService 安全性测试", () => {
       const authorizedCommands = ["pwd", "whoami", "date", "uptime"];
 
       for (const command of authorizedCommands) {
-        const result = await commandService.addCommand(command, ADMIN_OPERATION_PASSWORD);
+        const result = await commandService.addCommand(command);
         console.log(`Testing command: ${command}, result:`, result);
         expect(result.status).toBe("command added");
         expect(result.command).toBe(command);
@@ -223,21 +220,21 @@ describe("CommandService 安全性测试", () => {
 
   describe("输入验证", () => {
     it("应该拒绝空命令", async () => {
-      const result = await commandService.addCommand("", ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand("");
       expect(result.status).toBe("error");
       expect(result.message).toContain("No command provided");
     });
 
     it("应该拒绝非字符串输入", async () => {
       // @ts-expect-error - 故意传递错误类型进行测试
-      const result = await commandService.addCommand(null, ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand(null as unknown as string);
       expect(result.status).toBe("error");
       expect(result.message).toContain("No command provided");
     });
 
     it("应该拒绝过长的命令", async () => {
       const longCommand = `ls ${"a".repeat(200)}`;
-      const result = await commandService.addCommand(longCommand, ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand(longCommand);
       expect(result.status).toBe("error");
       expect(result.message).toContain("命令长度超过限制");
     });
@@ -246,36 +243,23 @@ describe("CommandService 安全性测试", () => {
   describe("执行安全性", () => {
     it("应该正确处理命令执行错误", async () => {
       // 测试命令验证逻辑，不实际执行
-      const result = await commandService.addCommand("nonexistentcommand", ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand("nonexistentcommand");
       expect(result.status).toBe("error");
       expect(result.message).toContain("不允许执行命令");
     });
 
     it("应该正确处理命令超时", async () => {
       // 测试命令验证逻辑，不实际执行
-      const result = await commandService.addCommand("sleep 35", ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand("sleep 35");
       expect(result.status).toBe("error");
       expect(result.message).toContain("不允许执行命令");
     });
 
     it("应该正确处理命令退出码", async () => {
       // 测试命令验证逻辑，不实际执行
-      const result = await commandService.addCommand("nonexistentcommand", ADMIN_OPERATION_PASSWORD);
+      const result = await commandService.addCommand("nonexistentcommand");
       expect(result.status).toBe("error");
       expect(result.message).toContain("不允许执行命令");
-    });
-  });
-
-  describe("密码验证", () => {
-    it("应该拒绝错误的密码", async () => {
-      const result = await commandService.addCommand("ls", "wrongpassword");
-      expect(result.status).toBe("error");
-      expect(result.message).toBe("Invalid password");
-    });
-
-    it("应该接受正确的密码", async () => {
-      const result = await commandService.addCommand("ls", ADMIN_OPERATION_PASSWORD);
-      expect(result.status).toBe("command added");
     });
   });
 });

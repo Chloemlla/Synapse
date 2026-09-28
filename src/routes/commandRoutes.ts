@@ -4,7 +4,7 @@ import { auditLog } from "../middleware/auditLog";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { commandLimiter } from "../middleware/routeLimiters";
 import { commandService } from "../services/commandService";
-import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
+import { hasValidSecuritySession } from "../utils/securitySession";
 import { encryptCommandPayload } from "../utils/commandCrypto";
 import logger from "../utils/logger";
 
@@ -52,19 +52,19 @@ function encryptWithToken(payload: unknown, token: string) {
  *         description: 添加命令结果
  */
 router.post("/y", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.add" }), async (req, res) => {
-  const { command, password } = req.body;
+  const { command } = req.body;
 
   if (!ensureAdmin(req, res)) {
     return;
   }
 
-  if (!isAdminOperationPasswordValid(password)) {
-    logger.warn("[CommandManager] 密码验证失败", { reason: "invalid-password", path: "/y" });
-    return res.status(403).json({ error: "密码错误" });
+  if (!hasValidSecuritySession(req)) {
+    logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/y" });
+    return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
   }
 
   try {
-    const result = await commandService.addCommand(command as string, password as string);
+    const result = await commandService.addCommand(command as string);
 
     if (result.status === "error") {
       return res.status(403).json(result);
@@ -195,11 +195,11 @@ router.post(
         return;
       }
 
-      const { command, password } = req.body;
+      const { command } = req.body;
 
-      if (!isAdminOperationPasswordValid(password)) {
-        logger.warn("[CommandManager] 密码验证失败", { reason: "invalid-password", path: "/execute" });
-        return res.status(403).json({ error: "密码错误" });
+      if (!hasValidSecuritySession(req)) {
+        logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/execute" });
+        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
       }
 
       // 真正的命令白名单/黑名单判定在 commandService.validateCommand，路由层不再维护子串黑名单
@@ -245,11 +245,9 @@ router.post(
         return;
       }
 
-      const { password } = req.body;
-
-      if (!isAdminOperationPasswordValid(password)) {
-        logger.warn("[CommandManager] 密码验证失败", { reason: "invalid-password", path: "/status" });
-        return res.status(403).json({ error: "密码错误" });
+      if (!hasValidSecuritySession(req)) {
+        logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/status" });
+        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
       }
 
       const status = commandService.getServerStatus();
@@ -326,14 +324,9 @@ router.post("/clear-history", commandLimiter, authenticateToken, auditLog({ modu
       return;
     }
 
-    const { password } = req.body;
-
-    if (!isAdminOperationPasswordValid(password)) {
-      logger.warn("[CommandManager] 密码验证失败", {
-        reason: "invalid-password",
-        path: "/clear-history",
-      });
-      return res.status(403).json({ error: "密码错误" });
+    if (!hasValidSecuritySession(req)) {
+      logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/clear-history" });
+      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
     }
 
     const result = await commandService.clearExecutionHistory();
@@ -370,14 +363,9 @@ router.post("/clear-queue", commandLimiter, authenticateToken, auditLog({ module
       return;
     }
 
-    const { password } = req.body;
-
-    if (!isAdminOperationPasswordValid(password)) {
-      logger.warn("[CommandManager] 密码验证失败", {
-        reason: "invalid-password",
-        path: "/clear-queue",
-      });
-      return res.status(403).json({ error: "密码错误" });
+    if (!hasValidSecuritySession(req)) {
+      logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/clear-queue" });
+      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
     }
 
     const result = await commandService.clearCommandQueue();

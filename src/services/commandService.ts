@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import * as os from "node:os";
-import { isAdminOperationPasswordValid } from "../utils/adminOperationPassword";
 import * as commandStorage from "./commandStorage";
 
 class CommandService {
@@ -323,20 +322,13 @@ class CommandService {
 
   public async addCommand(
     command: string,
-    _password: string,
   ): Promise<{ status: string; message?: string; command?: string; commandId?: string }> {
     console.log("🔐 [CommandService] 添加命令请求:");
     console.log("   命令:", command);
-    console.log("   密码: [已隐藏]");
 
     if (!command) {
       console.log("❌ [CommandService] 命令为空");
       return { status: "error", message: "No command provided" };
-    }
-
-    if (!this.isValidPassword(_password)) {
-      console.log("❌ [CommandService] 密码验证失败");
-      return { status: "error", message: "Invalid password" };
     }
 
     // 验证命令安全性
@@ -393,8 +385,8 @@ class CommandService {
 
   /**
    * 执行命令
-   * 密码闸门在路由层（`src/routes/commandRoutes.ts` 的 `/execute`）：本方法不重复校验，
-   * 因此不要把它暴露给任何未经 isSuperAdmin + isAdminOperationPasswordValid 的调用方。
+   * 安全闸门在路由层（`src/routes/commandRoutes.ts` 的 `/execute`，经 isSuperAdmin + 安全会话校验）：
+   * 本方法不重复校验，因此不要把它暴露给任何未经闸门的调用方。
    */
   public async executeCommand(command: string): Promise<string> {
     const startTime = Date.now();
@@ -517,13 +509,6 @@ class CommandService {
       arch: os.arch(),
       node_version: process.version,
     };
-  }
-
-  private isValidPassword(password: string): boolean {
-    // G7-39: the `NODE_ENV === "test" && password === "wumy"` hardcoded
-    // backdoor is removed. Any deployment with NODE_ENV=test would otherwise
-    // accept a universal admin password.
-    return isAdminOperationPasswordValid(password);
   }
 }
 
