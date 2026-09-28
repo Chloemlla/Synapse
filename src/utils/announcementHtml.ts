@@ -60,6 +60,20 @@ const ALLOWED_ATTR = [
   "width",
 ];
 
+// 出站邮件正文白名单：在公告白名单基础上额外允许内联 style / 表格属性。
+// 邮件客户端普遍剔除 <style> 块与 class，排版只能靠内联 style；
+// DOMPurify 默认会对 style 值做 CSS 净化（剔除 expression()/javascript: 等），保留颜色/间距/边框等安全排版。
+const EMAIL_ALLOWED_ATTR = [
+  ...ALLOWED_ATTR,
+  "style",
+  "align",
+  "valign",
+  "bgcolor",
+  "border",
+  "cellpadding",
+  "cellspacing",
+];
+
 let purifier: typeof DOMPurify | null = null;
 
 /**
@@ -97,4 +111,20 @@ export function sanitizeAnnouncementForOutput(doc: unknown): unknown {
       ALLOW_DATA_ATTR: false,
     }),
   };
+}
+
+/**
+ * 净化出站邮件的 HTML 正文：保留标题/表格/链接/内联 style 等排版，
+ * 仅剔除 <script>/<style>/on* 事件/javascript: 等危险内容。
+ * 用于修复“出站邮件被剪成纯文本、丢失 HTML 排版”的问题：
+ * text/plain 分支仍由 plainTextifyHtmlContent 提供，这里只负责 text/html 分支。
+ */
+export function sanitizeEmailHtml(content: string): string {
+  return String(
+    getPurifier().sanitize(content, {
+      ALLOWED_TAGS,
+      ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
+      ALLOW_DATA_ATTR: false,
+    }),
+  );
 }
