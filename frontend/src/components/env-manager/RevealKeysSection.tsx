@@ -6,8 +6,8 @@ import { useNotification } from '../Notification';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useSecuritySession } from '../../hooks/useSecuritySession';
-import { verifyIdentity } from '../user-profile/profileHelpers';
-import { studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '../studioTheme';
+import EstablishSecuritySession from '../EstablishSecuritySession';
+import { studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '../studioTheme';
 
 interface RevealKeysSectionProps {
   prefersReducedMotion?: boolean | null;
@@ -60,11 +60,9 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   const { setNotification } = useNotification();
   const { user } = useAuth();
   const canView = isSuperAdmin(user?.role);
-  const { verificationToken, isActive, setSession, clear } = useSecuritySession();
+  const { verificationToken, isActive, clear } = useSecuritySession();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [password, setPassword] = useState('');
-  const [establishing, setEstablishing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RevealResult | null>(null);
@@ -124,28 +122,6 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
     }
   };
 
-  const establishSession = async () => {
-    if (!password.trim()) {
-      setNotification({ message: '请输入当前登录密码以建立安全会话', type: 'warning' });
-      return;
-    }
-    setEstablishing(true);
-    try {
-      const res = await verifyIdentity({ method: 'password', password });
-      if (!res.success || !res.verificationToken) {
-        setNotification({ message: res.error || '身份验证失败', type: 'error' });
-        return;
-      }
-      setSession(res.verificationToken, typeof res.expiresAt === 'number' ? res.expiresAt : null);
-      setPassword('');
-      setNotification({ message: '安全会话已建立，可查看密钥', type: 'success' });
-    } catch {
-      setNotification({ message: '身份验证请求失败', type: 'error' });
-    } finally {
-      setEstablishing(false);
-    }
-  };
-
   const onReveal = async () => {
     if (!isActive || !verificationToken) {
       setNotification({ message: '安全会话无效，请先建立安全会话', type: 'warning' });
@@ -193,32 +169,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
     >
       <div className="space-y-3 px-4 py-4 sm:px-5">
         {!isActive ? (
-          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-            <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
-            <div className="text-xs text-slate-500">查看密钥前需要建立安全会话（与账号修改/绑定第三方账号共用同一次验证）。</div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void establishSession();
-                }}
-                placeholder="当前登录密码"
-                aria-label="当前登录密码"
-                autoComplete="current-password"
-                className={studioFieldClassName}
-              />
-              <button
-                type="button"
-                disabled={establishing}
-                onClick={() => void establishSession()}
-                className={studioPrimaryButtonClassName}
-              >
-                {establishing ? '验证中…' : '建立安全会话'}
-              </button>
-            </div>
-          </div>
+          <EstablishSecuritySession showActiveBar={false} />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">安全会话有效</span>

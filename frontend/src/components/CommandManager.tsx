@@ -1,11 +1,13 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaTerminal, FaServer, FaList, FaHistory, FaPlay, FaPlus, FaEye, FaTrash, FaSync, FaEyeSlash, FaArrowLeft, FaInfoCircle, FaChartLine, FaSpaceShuttle } from 'react-icons/fa';
+import { FaTerminal, FaServer, FaList, FaHistory, FaPlay, FaPlus, FaEye, FaTrash, FaSync, FaArrowLeft, FaInfoCircle, FaChartLine, FaSpaceShuttle } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { api } from '../api/index';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
+import { useSecuritySession } from '../hooks/useSecuritySession';
+import EstablishSecuritySession from './EstablishSecuritySession';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -102,12 +104,11 @@ const ResourceAnalysisPanel = React.lazy(() => import('./CommandManager/Resource
 const CommandManager: React.FC = () => {
   const { setNotification } = useNotification();
   const { user } = useAuth();
+  const { verificationToken, isActive } = useSecuritySession();
   const [command, setCommand] = useState('');
-  const [password, setPassword] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [commandHistory, setCommandHistory] = useState<CommandHistory[]>([]);
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [commandQueue, setCommandQueue] = useState<CommandQueueItem[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -125,7 +126,7 @@ const CommandManager: React.FC = () => {
   // 获取服务器状态（支持是否弹出成功提示）
   const fetchServerStatus = async (showSuccess = true) => {
     try {
-      const response = await api.post('/api/command/status', { password });
+      const response = await api.post('/api/command/status', { verificationToken });
       try {
         const statusData = await maybeDecryptCommandResponse(response.data);
         if (statusData && (statusData.memory_usage || response.data?.data)) {
@@ -164,7 +165,7 @@ const CommandManager: React.FC = () => {
   // 自动刷新效果
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (autoRefresh && password) {
+    if (autoRefresh && isActive) {
       interval = setInterval(() => {
         fetchServerStatus(false); // 自动刷新时不弹出成功提示
       }, 6000);
@@ -172,7 +173,7 @@ const CommandManager: React.FC = () => {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [autoRefresh, password]);
+  }, [autoRefresh, isActive]);
 
   // 检查超级管理员权限
   if (!user || !isSuperAdmin(user.role)) {
@@ -188,14 +189,14 @@ const CommandManager: React.FC = () => {
 
   // 执行命令
   const executeCommand = async () => {
-    if (!command.trim() || !password.trim()) {
-      setNotification({ message: '请输入命令和管理员密码', type: 'warning' });
+    if (!command.trim() || !isActive) {
+      setNotification({ message: '请输入命令并先建立安全会话', type: 'warning' });
       return;
     }
 
     setIsExecuting(true);
     try {
-      const response = await api.post('/api/command/execute', { command, password });
+      const response = await api.post('/api/command/execute', { command, verificationToken });
       
       const newHistory: CommandHistory = {
         historyId: Date.now().toString(),
@@ -233,13 +234,13 @@ const CommandManager: React.FC = () => {
 
   // 添加命令到队列
   const addToQueue = async () => {
-    if (!command.trim() || !password.trim()) {
-      setNotification({ message: '请输入命令和管理员密码', type: 'warning' });
+    if (!command.trim() || !isActive) {
+      setNotification({ message: '请输入命令并先建立安全会话', type: 'warning' });
       return;
     }
 
     try {
-      await api.post('/api/command/y', { command, password });
+      await api.post('/api/command/y', { command, verificationToken });
       setCommand('');
       setNotification({ message: '命令已添加到队列', type: 'success' });
     } catch (error: any) {
@@ -410,7 +411,7 @@ const CommandManager: React.FC = () => {
     }
     if (!window.confirm('确定清空全部命令执行历史？此操作不可撤销。')) return;
     try {
-      await api.post('/api/command/clear-history', { password });
+      await api.post('/api/command/clear-history', { verificationToken });
       setCommandHistory([]);
       setHistoryLoaded(false);
       setNotification({ message: '历史记录已清空', type: 'success' });
@@ -813,36 +814,8 @@ const CommandManager: React.FC = () => {
             />
           </div>
 
-          {/* 管理员密码 */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              管理员密码
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="输入管理员密码"
-                className="w-full px-3 py-2 pr-12 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors duration-200 flex items-center justify-center w-8 h-8"
-              >
-                {showPassword ? (
-                  <FaEyeSlash className="w-4 h-4" />
-                ) : (
-                  <FaEye className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-            <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
-              <FaInfoCircle className="text-blue-500" />
-              可在 EnvManager 的管理员安全配置中修改
-            </div>
-          </div>
+          {/* 安全会话（命令执行需先建立，与账号修改/绑定第三方共用同一会话） */}
+          <EstablishSecuritySession />
         </div>
 
         {/* 操作按钮 */}
