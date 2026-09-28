@@ -137,17 +137,27 @@ export function legacyRawSecrets(label: KeyLabel): string[] {
  * 静态加密解密候选密钥（32B sha256），新派生子密钥在前，其后是各旧命名 env 的 sha256，去重。
  * 迁移 / 解密时依次尝试（AES-GCM auth tag 判定命中）。DB 运行时配置里的旧值由调用方叠加。
  */
+export function deriveKeyFromMasterSource(source: string, label: KeyLabel): Buffer {
+  const ikm = crypto.createHash("sha256").update(source).digest();
+  return Buffer.from(crypto.hkdfSync("sha256", ikm, HKDF_SALT, Buffer.from(label, "utf8"), 32));
+}
+
 export function legacyDecryptKeys(label: KeyLabel): Buffer[] {
   const primary = deriveKey(label);
   const keys: Buffer[] = [primary];
   const seen = new Set<string>([primary.toString("hex")]);
-  for (const raw of legacyRawSecrets(label)) {
-    const derived = crypto.createHash("sha256").update(raw).digest();
-    const fingerprint = derived.toString("hex");
+  const pushKey = (key: Buffer): void => {
+    const fingerprint = key.toString("hex");
     if (!seen.has(fingerprint)) {
       seen.add(fingerprint);
-      keys.push(derived);
+      keys.push(key);
     }
+  };
+  // 上一代主密钥 AES_KEY_PREV（轮换后留存）派生的同 label 子密钥，使轮换 AES_KEY 后用旧主密钥加密的存量密文仍可解。
+  const prev = (process.env.AES_KEY_PREV || "").trim();
+  if (prev) pushKey(deriveKeyFromMasterSource(prev, label));
+  for (const raw of legacyRawSecrets(label)) {
+    pushKey(crypto.createHash("sha256").update(raw).digest());
   }
   return keys;
 }

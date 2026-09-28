@@ -87,6 +87,42 @@ router.post(
 
 /**
  * @openapi
+ * /admin/envs/end-sessions:
+ *   post:
+ *     summary: 立即结束全站所有安全会话（需当前有效安全会话）
+ *     responses:
+ *       200:
+ *         description: 已撑销的会话数
+ */
+router.post(
+  "/envs/end-sessions",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter)
+  requireAllowedOriginForWrites,
+  authenticateSuperAdmin,
+  auditLog({ module: "env", action: "env.end_security_sessions", captureBody: false }),
+  adminController.endAllSecuritySessions,
+);
+
+/**
+ * @openapi
+ * /admin/envs/rotate-aes-key:
+ *   post:
+ *     summary: 轮换主密钥 AES_KEY（需当前有效安全会话；旧密钥转存 AES_KEY_PREV 供解密存量）
+ *     responses:
+ *       200:
+ *         description: 新主密钥指纹与撑销会话数
+ */
+router.post(
+  "/envs/rotate-aes-key",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter)
+  requireAllowedOriginForWrites,
+  authenticateSuperAdmin,
+  auditLog({ module: "env", action: "env.rotate_aes_key", captureBody: false }),
+  adminController.rotateAesKey,
+);
+
+/**
+ * @openapi
  * /admin/envs:
  *   delete:
  *     summary: 删除环境变量

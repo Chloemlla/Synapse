@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { EmailService, getAllSenderDomains, getOutEmailServiceStatus } from "../services/emailService";
 import { sendEmail } from "../services/emailSender";
@@ -11,7 +12,7 @@ import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
 import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
-import { validateProfileVerificationSession } from "../services/profileUpdateVerificationService";
+import { validateProfileVerificationSession, clearAllProfileVerificationSessions } from "../services/profileUpdateVerificationService";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
@@ -1244,6 +1245,104 @@ export const adminController = {
     } catch (e) {
       logger.error("查看密钥失败:", e);
       res.status(500).json({ success: false, error: "查看密钥失败" });
+    }
+  },
+
+  // 立即结束全站所有安全会话（需 superadmin + 当前有效安全会话）。撑销后包括调用者自己需重新验证。
+  async endAllSecuritySessions(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
+      const userId = req.user.id;
+      const token = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
+      if (!token || !validateProfileVerificationSession(userId, token)) {
+        return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
+      }
+      const cleared = clearAllProfileVerificationSessions();
+      logger.warn("[EnvManager] 超管立即结束所有安全会话", { userId, cleared });
+      return res.json({ success: true, cleared });
+    } catch (e) {
+      logger.error("结束安全会话失败:", e);
+      res.status(500).json({ success: false, error: "结束安全会话失败" });
+    }
+  },
+
+  // 轮换主密钥 AES_KEY（需 superadmin + 有效安全会话）。
+  // 新主密钥随机生成；将当前 AES_KEY 存为 AES_KEY_PREV（让旧主密钥加密的存量密文仍可解），
+  // 写入运行时配置并立即生效；轮换后结束全部安全会话（旧 JWT 一并失效 = 全体登出）。
+  async rotateAesKey(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
+      const userId = req.user.id;
+      const token = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
+      if (!token || !validateProfileVerificationSession(userId, token)) {
+        return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
+      }
+
+      const currentAes = (process.env.AES_KEY || "").trim();
+      const newAes = crypto.randomBytes(48).toString("hex"); // 96 hex 字符，远过 32 下限
+      const now = new Date().toISOString();
+      const envs = readEnvFile();
+      const upsert = (key: string, value: string): void => {
+        const idx = envs.findIndex((e: any) => e.key === key);
+        if (idx >= 0) envs[idx] = { ...envs[idx], value, updatedAt: now };
+        else envs.push({ key, value, updatedAt: now });
+      };
+      // 旧主密钥转存 AES_KEY_PREV（仅当当前确实配了 AES_KEY 才有意义；否则不写，避免把 JWT_SECRET 误当前代）。
+      if (currentAes) upsert("AES_KEY_PREV", currentAes);
+      upsert("AES_KEY", newAes);
+      await writeEnvFile(envs);
+      if (currentAes) process.env.AES_KEY_PREV = currentAes;
+      process.env.AES_KEY = newAes;
+
+      const cleared = clearAllProfileVerificationSessions();
+      const newFingerprint = crypto.createHash("sha256").update(newAes).digest("hex").slice(0, 16);
+      logger.warn("[EnvManager] 超管轮换主密钥 AES_KEY", {
+        userId,
+        hadPreviousAesKey: currentAes.length > 0,
+        newFingerprint,
+        clearedSessions: cleared,
+      });
+
+      // 敏感操作通知：轮换主密钥后即时邮件告知管理员本人（失败不阻断）。
+      void (async () => {
+        try {
+          const actor = await UserStorage.getUserById(userId);
+          if (!actor?.email) return;
+          const { generateSecurityNoticeHtml } = require("../templates/emailTemplates");
+          const { getClientIP } = require("../utils/ipUtils");
+          const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+          await sendEmail({
+            to: actor.email,
+            subject: "Synapse 安全事件：主密钥 AES_KEY 已轮换",
+            html: generateSecurityNoticeHtml(
+              actor.username,
+              "主密钥 AES_KEY 已轮换",
+              `服务器主密钥已重新生成（新指纹 <strong>${newFingerprint}</strong>），所有已签发的会话与令牌已失效，需重新登录。旧密文在迁移完成前仍可用 AES_KEY_PREV 解密。`,
+              time,
+              getClientIP(req),
+              (req.headers["user-agent"] as string) || "未知设备",
+              "如果这不是您本人操作，请立即排查管理员账号是否失控。",
+            ),
+            logTag: "主密钥轮换通知",
+            checkQuota: false,
+          });
+        } catch (notifyErr) {
+          logger.warn("[EnvManager] 主密钥轮换通知邮件发送失败", {
+            error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+          });
+        }
+      })();
+
+      return res.json({
+        success: true,
+        newFingerprint,
+        clearedSessions: cleared,
+        previousKeyRetained: currentAes.length > 0,
+        note: "新密文已用新 AES_KEY；旧密文经 AES_KEY_PREV 仍可解。建议随后跑密钥统一迁移将存量数据重加密到新密钥后再清理 AES_KEY_PREV。",
+      });
+    } catch (e) {
+      logger.error("轮换主密钥失败:", e);
+      res.status(500).json({ success: false, error: "轮换主密钥失败" });
     }
   },
 

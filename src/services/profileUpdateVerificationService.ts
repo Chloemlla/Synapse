@@ -126,6 +126,13 @@ export function clearProfileVerificationSessions(userId: string): void {
   }
 }
 
+/** 立即结束全站所有安全会话（管理后台紧急撑销），返回被清除的会话数。 */
+export function clearAllProfileVerificationSessions(): number {
+  const count = profileVerificationSessions.size;
+  profileVerificationSessions.clear();
+  return count;
+}
+
 export function createEmailChangeChallenge(
   userId: string,
   newEmail: string,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import CollapsibleSection from './CollapsibleSection';
-import { REVEAL_KEY_API, authFetch } from './api';
+import { REVEAL_KEY_API, END_SECURITY_SESSIONS_API, ROTATE_AES_KEY_API, authFetch } from './api';
 import { useNotification } from '../Notification';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
@@ -66,7 +66,63 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   const [password, setPassword] = useState('');
   const [establishing, setEstablishing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RevealResult | null>(null);
+
+  const postWithToken = async (url: string): Promise<{ ok: boolean; data: Record<string, unknown> }> => {
+    const res = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verificationToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 403) clear();
+    return { ok: res.ok, data };
+  };
+
+  const endAllSessions = async () => {
+    if (!window.confirm('立即结束全站所有安全会话？所有人（含你自己）都需要重新验证身份。')) return;
+    setBusy(true);
+    try {
+      const { ok, data } = await postWithToken(END_SECURITY_SESSIONS_API);
+      if (!ok || !data.success) {
+        setNotification({ message: (data.error as string) || '结束安全会话失败', type: 'error' });
+        return;
+      }
+      setResult(null);
+      setNotification({ message: `已结束 ${data.cleared ?? 0} 个安全会话`, type: 'success' });
+    } catch {
+      setNotification({ message: '结束安全会话请求失败', type: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rotateAesKey = async () => {
+    if (
+      !window.confirm(
+        '轮换主密钥 AES_KEY？\n\n- 所有已签发会话/令牌立即失效（全体重新登录）\n- 旧密钥转存为 AES_KEY_PREV，存量密文仍可解密\n- 建议随后执行密钥统一迁移，将存量数据重加密到新密钥\n\n确定继续？',
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const { ok, data } = await postWithToken(ROTATE_AES_KEY_API);
+      if (!ok || !data.success) {
+        setNotification({ message: (data.error as string) || '轮换主密钥失败', type: 'error' });
+        return;
+      }
+      setResult(null);
+      setNotification({
+        message: `主密钥已轮换（新指纹 ${data.newFingerprint ?? '-'}），已结束 ${data.clearedSessions ?? 0} 个会话，请重新验证`,
+        type: 'success',
+      });
+    } catch {
+      setNotification({ message: '轮换主密钥请求失败', type: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const establishSession = async () => {
     if (!password.trim()) {
@@ -166,8 +222,14 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">安全会话有效</span>
-            <button type="button" disabled={loading} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
+            <button type="button" disabled={loading || busy} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
               {loading ? '读取中…' : '查看密钥'}
+            </button>
+            <button type="button" disabled={busy} onClick={() => void rotateAesKey()} className={studioSecondaryButtonClassName}>
+              轮换 AES_KEY
+            </button>
+            <button type="button" disabled={busy} onClick={() => void endAllSessions()} className={studioSecondaryButtonClassName}>
+              结束所有安全会话
             </button>
             <button
               type="button"
@@ -177,7 +239,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
               }}
               className={studioSecondaryButtonClassName}
             >
-              结束会话
+              结束本会话
             </button>
           </div>
         )}
