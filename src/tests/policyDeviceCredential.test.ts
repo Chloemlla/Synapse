@@ -11,7 +11,14 @@
  *
  * 只替换持久化与用户查询两层，其余（app、路由、限流、cookie 凭据校验）都走真实现，
  * 因此不需要真库，能进 CI（需要真库的 policyApi.test.ts 因同原因被排除在 CI 之外）。
+ *
+ * 必须在 import ../app 之前引入应用安全边界替身：ipBanCheck 在 Redis 与 Mongo 都问不到时
+ * fail-closed 回 503，而本套件没有 Mongo ⇒ 每个请求都会被拦在路由之前拿到 503（CI 日志里
+ * 表现为「封禁状态查询不可用，拒绝请求（fail-closed）: 127.0.0.1」），断言全部失去意义。
+ * 封禁/限流语义不在本套件射程内，统一直通见 helpers/mockAppSecurityBoundaries。
  */
+
+import "./helpers/mockAppSecurityBoundaries";
 
 import jwt from "jsonwebtoken";
 import request from "supertest";
