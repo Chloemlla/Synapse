@@ -12,22 +12,26 @@ export function getLoginRetrySeconds(lockedUntil: number): number {
   return Math.max(1, Math.ceil((lockedUntil - Date.now()) / 1000));
 }
 
-// 支持的主流邮箱后缀
-const allowedDomains = [
-  "gmail.com",
-  "outlook.com",
-  "qq.com",
-  "163.com",
-  "126.com",
-  "hotmail.com",
-  "yahoo.com",
-  "icloud.com",
-  "foxmail.com",
-  "chloemlla.com",
+// 支持的主流邮箱后缀。
+//
+// 这里存的是**已转义的正则片段**（点号写成 `\.`），下面直接 join 进 RegExp。
+// 旧写法是存纯域名、再在运行时 `d.replace(/\./g, "\\.")` 现转义，被 CodeQL
+// js/incomplete-sanitization 判为「只转义元字符、未转义反斜杠」的不完整转义
+// （而且更早的 `d.replace(".", "\\.")` 连多点域名都只替第一个点）。
+// 数组本身就是字面量，不再有任何运行时 replace，也就不存在转义遗漏。
+const allowedDomainPatterns = [
+  "gmail\\.com",
+  "outlook\\.com",
+  "qq\\.com",
+  "163\\.com",
+  "126\\.com",
+  "hotmail\\.com",
+  "yahoo\\.com",
+  "icloud\\.com",
+  "foxmail\\.com",
+  "chloemlla\\.com",
 ];
-// 注意：域名里的点必须全部转义。旧写法 `d.replace(".", "\\.")` 用字符串参数只替换**第一个**点，
-// 多点域名（如 co.uk / 子域名）会残留未转义的点，在正则里变成任意字符匹配，导致白名单过宽。
-export const emailPattern = new RegExp(`^[\\w.-]+@(${allowedDomains.map((d) => d.replace(/\./g, "\\.")).join("|")})$`);
+export const emailPattern = new RegExp(`^[\\w.-]+@(${allowedDomainPatterns.join("|")})$`);
 
 // 临时存储验证码和注册信息
 export const emailCodeMap = new Map<string, { code: string; time: number; regInfo: any; attempts: number }>(); // email -> { code, time, regInfo, attempts }

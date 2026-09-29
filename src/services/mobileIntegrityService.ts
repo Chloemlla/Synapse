@@ -31,20 +31,21 @@ const ACCESS_TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 const MAX_PENDING_NONCES = 20_000;
 
 /**
- * 外部请求超时时长的静态有界区间。`cfg.timeoutMs` 来自运行时可变配置
- * （超管配置面板可改），CodeQL 的 js/resource-exhaustion 会把它当用户可控输入；
- * RuntimeConfigService 已在加载期 normalizeInteger 到 [1000,60000]，这里在使用点
- * 再用 Math.min/Math.max 钳一次：既是纵深防御（配置路径变化也不会造出无界定时器），
- * 也让时延对静态分析可证有界。
+ * 外部请求超时时长的静态有界区间。`cfg.timeoutMs` 来自运行时可变配置（超管配置面板可改），
+ * CodeQL js/resource-exhaustion 会把它当用户可控输入，而 sink 就是
+ * `setTimeout(() => controller.abort(), 时长)`。
+ *
+ * **不要用 Math.min/Math.max 去做“钳制”**：ResourceExhaustionQuery.qll 把 `Math.*` 调用
+ * 当作污点传播步骤（isNumericFlowStep：`globalVarRef("Math").getAMemberCall(_)`），
+ * 钳制结果会把污点原样带到 sink —— 提交 70876167 正是这么写的，告警照旧。
+ * 该查询唯一认可的有界性证明是 UpperBoundsCheckSanitizerGuard：在**与 sink 同一个函数体**
+ * 里用关系比较（`x > 上限`）守卫住 sink。两个调用点因此各自内联下面这段
+ * “非有限值回落默认值 + 关系比较钳上下限”，不要再抽成公共函数（守卫一旦离开 sink
+ * 所在函数体就不再生效）。
  */
 const MIN_REQUEST_TIMEOUT_MS = 1000;
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 8000;
-function resolveRequestTimeoutMs(value: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return DEFAULT_REQUEST_TIMEOUT_MS;
-  return Math.min(Math.max(Math.trunc(n), MIN_REQUEST_TIMEOUT_MS), MAX_REQUEST_TIMEOUT_MS);
-}
 
 export type IntegrityMode = "off" | "observe" | "enforce";
 
@@ -205,11 +206,18 @@ async function getAccessToken(): Promise<string | null> {
   }
 
   const controller = new AbortController();
-  // Cap the abort delay with a constant upper bound at the call site so the timer
-  // duration is provably bounded for CodeQL js/resource-exhaustion (the source is
-  // the admin-mutable cfg.timeoutMs). resolveRequestTimeoutMs already clamps; the
-  // in-scope Math.min(..., MAX_REQUEST_TIMEOUT_MS) makes the bound local to the sink.
-  const abortAfterMs = Math.min(resolveRequestTimeoutMs(cfg.timeoutMs), MAX_REQUEST_TIMEOUT_MS);
+  // CodeQL js/resource-exhaustion 的有界性证明：关系比较守卫必须留在 sink 所在函数体内
+  // （见文件头 MAX_REQUEST_TIMEOUT_MS 注释，不要再抽公共函数、也不要用 Math.min 钳）。
+  let abortAfterMs = Number(cfg.timeoutMs);
+  if (!Number.isFinite(abortAfterMs)) {
+    abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+  if (abortAfterMs < MIN_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = MIN_REQUEST_TIMEOUT_MS;
+  }
+  if (abortAfterMs > MAX_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = MAX_REQUEST_TIMEOUT_MS;
+  }
   const timer = setTimeout(() => controller.abort(), abortAfterMs);
   try {
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
@@ -271,9 +279,17 @@ async function decodeIntegrityToken(integrityToken: string): Promise<DecodedInte
 
   const endpoint = `https://playintegrity.googleapis.com/v1/${encodeURIComponent(cfg.packageName.trim())}:decodeIntegrityToken`;
   const controller = new AbortController();
-  // Same constant upper bound at the sink as getAccessToken (CodeQL js/resource-exhaustion):
-  // the delay is provably capped at MAX_REQUEST_TIMEOUT_MS regardless of cfg.timeoutMs.
-  const abortAfterMs = Math.min(resolveRequestTimeoutMs(cfg.timeoutMs), MAX_REQUEST_TIMEOUT_MS);
+  // 同 getAccessToken：守卫留在 sink 所在函数体内，CodeQL 才认这段时长有上界。
+  let abortAfterMs = Number(cfg.timeoutMs);
+  if (!Number.isFinite(abortAfterMs)) {
+    abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+  if (abortAfterMs < MIN_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = MIN_REQUEST_TIMEOUT_MS;
+  }
+  if (abortAfterMs > MAX_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = MAX_REQUEST_TIMEOUT_MS;
+  }
   const timer = setTimeout(() => controller.abort(), abortAfterMs);
   try {
     const response = await fetch(endpoint, {

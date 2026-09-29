@@ -78,7 +78,16 @@ function verdictOf(evaluated: boolean, trusted: boolean): IntegrityVerdict {
 /** 按 URL 分发：Google 换票端点与 decodeIntegrityToken 各给一个假响应。 */
 function stubFetch(decoded: unknown, options: { ok?: boolean } = {}): jest.Mock {
   const fetchMock = jest.fn(async (url: string) => {
-    if (String(url).includes("oauth2.googleapis.com")) {
+    // 用 URL.hostname 精确比对，而不是 String.includes：后者会把
+    // `https://evil.example/?x=oauth2.googleapis.com` 这类伪装地址
+    // 当成 Google 端点（CodeQL js/incomplete-url-substring-sanitization）。
+    let hostname = "";
+    try {
+      hostname = new URL(String(url)).hostname;
+    } catch {
+      hostname = "";
+    }
+    if (hostname === "oauth2.googleapis.com") {
       return { ok: true, json: async () => ({ access_token: "at", expires_in: 3600 }) };
     }
     if (options.ok === false) {

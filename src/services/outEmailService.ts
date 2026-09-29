@@ -11,6 +11,7 @@ import {
   type EmailAttachmentInput,
 } from "./emailService";
 import { plainTextifyHtmlContent } from "./htmlToPlainText";
+import { containsHtmlTag } from "./outEmailHtmlProbe";
 import { sanitizeEmailHtml } from "../utils/announcementHtml";
 import { recordUsage, validateApiKey } from "./apiKeyService";
 import { UserStorage } from "../utils/userStorage";
@@ -27,9 +28,6 @@ const OutEmailRecordSchema = new mongoose.Schema(
 );
 const OutEmailRecord = mongoose.models.OutEmailRecord || mongoose.model("OutEmailRecord", OutEmailRecordSchema);
 
-// 判定正文是否含 HTML 标签（开标签或闭标签）。
-const HTML_TAG_PROBE = /<(?:[a-z][a-z0-9]*)(?:\s[^>]*)?\/?>|<\/[a-z][a-z0-9]*\s*>/i;
-
 /**
  * 构造出站邮件的 text/plain 与 text/html 两份正文。
  * - text：始终用 plainTextifyHtmlContent 的纯文本（作为 text/plain 回退）。
@@ -39,7 +37,7 @@ const HTML_TAG_PROBE = /<(?:[a-z][a-z0-9]*)(?:\s[^>]*)?\/?>|<\/[a-z][a-z0-9]*\s*
 function buildEmailBodies(content: unknown): { text: string; html: string } {
   const raw = String(content ?? "");
   const { text, html: plainHtml } = plainTextifyHtmlContent(raw);
-  if (!HTML_TAG_PROBE.test(raw)) {
+  if (!containsHtmlTag(raw)) {
     return { text, html: plainHtml };
   }
   const sanitized = sanitizeEmailHtml(raw);
