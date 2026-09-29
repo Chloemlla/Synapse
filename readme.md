@@ -699,6 +699,7 @@ IMAGE_BED_STORAGE_DESTINATION=     # 存储目标（local / telegram / r2）
 
 # ==================== 其他 ====================
 TTS_REQUIRE_POLICY_CONSENT=        # TTS 使用前需要同意政策（true/false）
+AUTH_REQUIRE_POLICY_CONSENT=       # 登录/注册必须逐项同意四份政策文件（true/false；生产默认 true，测试环境固定关闭）
 TTS_DOWNLOADS_ENABLED=             # 启用 TTS 下载（true/false）
 TTS_ASSET_SHARE_ENABLED=           # 启用 TTS 资产分享（true/false）
 TTS_PUBLIC_STATIC_AUDIO_ENABLED=   # 启用公共静态音频访问（true/false）

@@ -320,6 +320,13 @@ export const preTamperRouteModules: RouteModule[] = [
       handlers: ["authenticateToken", "adminOnly", "authenticateSuperAdmin"],
       note: "Public policy reads are open; admin stats are admin-level; the admin cleanup mutation is gated to superadmin inside the router.",
     },
+    securityBypass: {
+      ipVerification: {
+        value: true,
+        reason:
+          "The terms and privacy document must be readable before a visitor completes first-visit verification — the text a user is asked to accept cannot itself sit behind the challenge. Admin reads/writes in this module stay JWT- and role-gated.",
+      },
+    },
   },
   {
     name: "tamper-routes",

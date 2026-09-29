@@ -12,6 +12,13 @@ import { api } from '../api/api';
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaUser, FaVolumeUp, FaArrowLeft, FaUserPlus, FaCheckCircle, FaInfoCircle, FaTicketAlt } from 'react-icons/fa';
 import { getFingerprint, getClientIP } from '../utils/fingerprint';
 import { getBackendErrorMessage } from '../utils/backendError';
+import PolicyConsentChecklist from './PolicyConsentChecklist';
+import {
+    buildPolicyConsentPayload,
+    createPolicyConsentSelection,
+    isPolicyConsentComplete,
+    type PolicyConsentSelection,
+} from '../utils/policyConsent';
 import {
     authAlertClassName,
     authBackLinkClassName,
@@ -22,7 +29,6 @@ import {
     authCardBodyClassName,
     authCardClassName,
     authCardHeaderClassName,
-    authCheckboxClassName,
     authDividerClassName,
     authDividerLabelClassName,
     authDividerLineClassName,
@@ -72,7 +78,8 @@ export const RegisterPage: React.FC = () => {
     const [invitationCode, setInvitationCode] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [agreed, setAgreed] = useState(false);
+    const [policyConsent, setPolicyConsent] = useState<PolicyConsentSelection>(createPolicyConsentSelection);
+    const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({ score: 0, feedback: '' });
     const [turnstileToken, setTurnstileToken] = useState<string>('');
     const [turnstileVerified, setTurnstileVerified] = useState(false);
@@ -140,7 +147,13 @@ export const RegisterPage: React.FC = () => {
         const emailError = validateInput(email, 'email'); if (emailError) { setError(emailError); return; }
         const passwordError = validateInput(password, 'password'); if (passwordError) { setError(passwordError); return; }
         if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
-        if (!agreed) { setNotification({ message: '请勾选服务条款与隐私政策', type: 'warning' }); return; }
+        const consentPayload = buildPolicyConsentPayload(policyConsent);
+        if (!consentPayload) {
+            setPolicyConsentInvalid(true);
+            setError('请先阅读并勾选同意全部四项条款');
+            setNotification({ message: '请先阅读并勾选同意全部四项条款', type: 'warning' });
+            return;
+        }
         if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
@@ -151,7 +164,7 @@ export const RegisterPage: React.FC = () => {
             const sanitizedInvitationCode = DOMPurify.sanitize(invitationCode).trim().toUpperCase();
             const [fingerprint, clientIP] = await Promise.all([getFingerprint(), getClientIP()]);
             if (!fingerprint) { setError('无法获取设备信息，请稍后重试'); setLoading(false); return; }
-            const requestBody: any = { username: sanitizedUsername, email: sanitizedEmail, password, fingerprint, clientIP };
+            const requestBody: any = { username: sanitizedUsername, email: sanitizedEmail, password, fingerprint, clientIP, policyConsent: consentPayload };
             if (sanitizedInvitationCode) requestBody.invitationCode = sanitizedInvitationCode;
             if (turnstileConfig.siteKey && turnstileToken) requestBody.cfToken = turnstileToken;
             const res = await api.post('/api/auth/register', requestBody);
@@ -281,10 +294,12 @@ export const RegisterPage: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="flex items-start">
-                                    <input id="agree" name="agree" type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} aria-label="我已阅读并同意服务条款与隐私政策" aria-required="true" className={cn(authCheckboxClassName, 'mt-0.5')} required />
-                                    <label htmlFor="agree" className="ml-2 block text-xs leading-5 text-slate-600">我已阅读并同意<Link to="/policy" className={cn(authTextLinkClassName, 'ml-1')} target="_blank">服务条款与隐私政策</Link></label>
-                                </div>
+                                <PolicyConsentChecklist
+                                    selection={policyConsent}
+                                    onChange={next => { setPolicyConsent(next); if (policyConsentInvalid) setPolicyConsentInvalid(false); }}
+                                    showInvalid={policyConsentInvalid}
+                                    disabled={loading}
+                                />
 
                                 <m.button type="submit" disabled={loading || password !== confirmPassword || (!!turnstileConfig.siteKey && !turnstileVerified)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
                                     className={authPrimaryButtonClassName}
@@ -293,23 +308,33 @@ export const RegisterPage: React.FC = () => {
                                 </m.button>
                             </form>
 
-                            <div className={authDividerClassName}>
-                                <div className="absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
-                                <div className="relative flex justify-center"><span className={authDividerLabelClassName}>或者</span></div>
-                            </div>
+                            {/* 第三方注册入口同样受同意约束：未逐项勾选前不渲染，
+                                Google 按钮由 GIS 脚本注入原生 iframe，无法靠事件拦截拦住。 */}
+                            {isPolicyConsentComplete(policyConsent) ? (
+                                <>
+                                    <div className={authDividerClassName}>
+                                        <div className="absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
+                                        <div className="relative flex justify-center"><span className={authDividerLabelClassName}>或者</span></div>
+                                    </div>
 
-                            <div className="space-y-4">
-                                <GoogleAuthButton
-                                    intent="register"
-                                    label="使用 Google 注册或登录"
-                                    description="使用 Google 账号快速注册，首次登录自动创建本地账户"
-                                />
-                                <LinuxDoAuthButton
-                                    intent="register"
-                                    label="使用 Linux.do 一键注册"
-                                    description="复用 Linux.do 论坛账号，首次登录自动创建本地账户"
-                                />
-                            </div>
+                                    <div className="space-y-4">
+                                        <GoogleAuthButton
+                                            intent="register"
+                                            label="使用 Google 注册或登录"
+                                            description="使用 Google 账号快速注册，首次登录自动创建本地账户"
+                                        />
+                                        <LinuxDoAuthButton
+                                            intent="register"
+                                            label="使用 Linux.do 一键注册"
+                                            description="复用 Linux.do 论坛账号，首次登录自动创建本地账户"
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-center text-xs leading-5 text-slate-500">
+                                    勾选上方四项条款后，可使用 Google 或 Linux.do 注册。
+                                </p>
+                            )}
 
                             <div className="mt-6 text-center">
                                 <p className="text-sm text-slate-600">已有账户？<Link to="/login" className={authTextLinkClassName}>立即登录</Link></p>

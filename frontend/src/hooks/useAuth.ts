@@ -11,6 +11,7 @@ import {
     ACCOUNTS_KEY as ACCOUNTS_KEY_CONST,
 } from '../utils/authSession';
 import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
+import type { PolicyConsentPayload } from '../utils/policyConsent';
 import { isAdminRole } from '../utils/rbac';
 import { resetAdminVerifyCache } from '../utils/adminVerifyCache';
 
@@ -217,10 +218,10 @@ export const useAuth = () => {
         navigate('/welcome');
     }, [loadSavedAccounts, navigate, setUser]);
 
-    const login = useCallback(async (username: string, password: string, cfToken?: string): Promise<LoginResult> => {
+    const login = useCallback(async (username: string, password: string, cfToken?: string, policyConsent?: PolicyConsentPayload): Promise<LoginResult> => {
         try {
             // Delegate the actual API call + auth state mutation to the Zustand store.
-            const result = await storeLogin(username, password, cfToken);
+            const result = await storeLogin(username, password, cfToken, policyConsent);
 
             if (result.requires2FA && result.twoFactorType && result.twoFactorType.length > 0) {
                 setPending2FA({ userId: result.user.id, type: result.twoFactorType, username: result.user.username });

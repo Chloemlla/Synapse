@@ -1,6 +1,14 @@
 import type { Request, Response } from "express";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../../services/authSessionService";
 import { sendEmail } from "../../services/emailSender";
+import {
+  POLICY_AGREEMENT_KEYS,
+  POLICY_CONSENT_REQUIRED_MESSAGE,
+  normalizeAuthPolicyConsent,
+  recordAuthPolicyConsent,
+  resolveRequestFingerprint,
+  shouldRequireAuthPolicyConsent,
+} from "../../services/policyConsentService";
 import { TurnstileService } from "../../services/turnstileService";
 import {
   generateAccountLockedEmailHtml,
@@ -68,6 +76,18 @@ export async function login(req: Request, res: Response) {
     if (!password) {
       logger.warn("登录失败：password 字段缺失", summarizeAuthBody(req.body));
       return res.status(400).json({ error: "请提供密码" });
+    }
+
+    // 登录前必须逐项勾选四份政策文件。校验放在这里（而不是认证之后）是为了不让
+    // 未同意的请求走到密码校验，避免「先试密码、后补同意」把同意变成可选步骤。
+    const policyConsent = normalizeAuthPolicyConsent(req.body?.policyConsent);
+    if (shouldRequireAuthPolicyConsent() && !policyConsent) {
+      logger.warn("登录失败：未逐项同意政策条款", { identifier, ip });
+      return res.status(400).json({
+        error: POLICY_CONSENT_REQUIRED_MESSAGE,
+        code: "POLICY_CONSENT_REQUIRED",
+        agreementsRequired: [...POLICY_AGREEMENT_KEYS],
+      });
     }
 
     const turnstileConfig = await TurnstileService.getConfig();
@@ -216,6 +236,17 @@ export async function login(req: Request, res: Response) {
 
     // 登录成功，重置尝试次数
     loginAttempts.delete(attemptKey);
+
+    // 认证通过后落同意记录（客户端提交了载荷才写；指纹缺失时只记日志，见服务实现）。
+    // 记录失败不影响登录本身：同意记录是留档，不是放行条件。
+    if (policyConsent) {
+      await recordAuthPolicyConsent({
+        fingerprint: resolveRequestFingerprint(req),
+        source: "login",
+        userAgent: typeof userAgent === "string" ? userAgent : undefined,
+        ipAddress: ip,
+      });
+    }
 
     // 检查用户是否启用了TOTP或Passkey
     const hasTOTP = !!user.totpEnabled;

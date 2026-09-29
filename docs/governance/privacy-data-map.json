@@ -125,8 +125,8 @@
     {
       "id": "policy-consents",
       "collection": "policy_consents",
-      "fields": ["fingerprint", "ipAddress", "userAgent", "version", "checksum", "expiresAt"],
-      "purpose": "Proof of privacy-policy acceptance for gated features such as anonymous TTS",
+      "fields": ["fingerprint", "ipAddress", "userAgent", "version", "checksum", "expiresAt", "source", "agreements"],
+      "purpose": "Proof of policy acceptance: the four agreements ticked at login/register (source, agreements) plus acceptance for gated features such as anonymous TTS",
       "legalBasis": "consent_record",
       "retention": {
         "type": "ttl",

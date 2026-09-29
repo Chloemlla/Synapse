@@ -1,8 +1,13 @@
 import crypto from "node:crypto";
 import { PolicyConsent } from "../models/policyConsentModel";
 import { KL, deriveSecretHex } from "../config/keyDerivation";
+import logger from "../utils/logger";
+import { uuidv4 } from "../utils/uuid";
 
-export const CURRENT_POLICY_VERSION = process.env.POLICY_VERSION || "2.0";
+// 2.1：条文实质扩充（数据保存期限、用户权利行使路径、Cookie 与本地存储、第三方与跨境、
+// 自动化风控处置、条款变更机制）。版本号变化会让此前记录的同意不再覆盖新条文，
+// 依赖同意的功能因此要求重新同意——这正是条文变更后应有的行为。
+export const CURRENT_POLICY_VERSION = process.env.POLICY_VERSION || "2.1";
 export const CONSENT_VALIDITY_DAYS = Number(process.env.POLICY_CONSENT_VALIDITY_DAYS || 30);
 // 原实现把盐硬编码在源码里，等于公开密钥。现优先用显式配置；缺失时统一从单一主密钥
 // AES_KEY 派生（KL.POLICY_SALT），不再单独依赖 POLICY_SECRET_SALT / JWT_SECRET。
@@ -39,6 +44,139 @@ export function shouldRequireTtsPolicyConsent(): boolean {
     return false;
   }
   return process.env.TTS_REQUIRE_POLICY_CONSENT === "true";
+}
+
+// 登录/注册必须逐项勾选的四份文件。键名同时是政策页锚点（policy-agreement-<key>）
+// 与同意记录里 agreements 字段的取值，改键名等于让历史记录与新条文对不上。
+export const POLICY_AGREEMENT_KEYS = ["terms", "usage", "specific-terms", "supported-regions"] as const;
+export type PolicyAgreementKey = (typeof POLICY_AGREEMENT_KEYS)[number];
+export const POLICY_AGREEMENT_ANCHOR_PREFIX = "policy-agreement-";
+
+export function policyAgreementAnchor(key: string): string {
+  return `${POLICY_AGREEMENT_ANCHOR_PREFIX}${key}`;
+}
+
+export type PolicyConsentSource = "login" | "register";
+
+export interface AuthPolicyConsent {
+  accepted: true;
+  agreements: PolicyAgreementKey[];
+}
+
+export const POLICY_CONSENT_REQUIRED_MESSAGE =
+  "请先阅读并勾选同意服务条款、使用政策、服务专项条款与支持地区";
+
+// 校验登录/注册提交的同意载荷：必须显式 accepted:true，且四项一个不少、不重复、无未知项。
+// 返回 null 表示无效，调用方据此拒绝请求——只勾前两项就提交的客户端不能靠字段漏传混过去。
+export function normalizeAuthPolicyConsent(input: unknown): AuthPolicyConsent | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+  const raw = input as { accepted?: unknown; agreements?: unknown };
+  if (raw.accepted !== true || !Array.isArray(raw.agreements)) {
+    return null;
+  }
+  const seen = new Set<string>();
+  for (const item of raw.agreements) {
+    if (typeof item !== "string" || !POLICY_AGREEMENT_KEYS.includes(item as PolicyAgreementKey)) {
+      return null;
+    }
+    if (seen.has(item)) {
+      return null;
+    }
+    seen.add(item);
+  }
+  if (seen.size !== POLICY_AGREEMENT_KEYS.length) {
+    return null;
+  }
+  return { accepted: true, agreements: [...POLICY_AGREEMENT_KEYS] };
+}
+
+// 与 TTS_REQUIRE_POLICY_CONSENT 同样的取舍：测试环境关闭，否则既有登录/注册用例
+// 全部要改造成携带同意载荷；生产默认开启，可用 AUTH_REQUIRE_POLICY_CONSENT=false 关闭。
+export function shouldRequireAuthPolicyConsent(): boolean {
+  if (process.env.NODE_ENV === "test") {
+    return false;
+  }
+  const configured = process.env.AUTH_REQUIRE_POLICY_CONSENT?.trim().toLowerCase();
+  if (configured === "false") {
+    return false;
+  }
+  if (configured === "true") {
+    return true;
+  }
+  return process.env.NODE_ENV === "production";
+}
+
+// 同意记录的指纹取值顺序与 tts.controller 一致：请求头优先（前端拦截器在启用首访验证时
+// 统一注入 X-Fingerprint），其次请求体；拿不到有效的设备标识时返回 null，由调用方决定怎么办。
+export function resolveRequestFingerprint(req: {
+  headers?: Record<string, unknown>;
+  body?: unknown;
+}): string | null {
+  const header = req.headers?.["x-fingerprint"];
+  const body = (req.body as { fingerprint?: unknown } | undefined)?.fingerprint;
+  const value = typeof header === "string" && header.trim() ? header : typeof body === "string" ? body : "";
+  const trimmed = value.trim();
+  return trimmed && trimmed !== "unknown" ? trimmed : null;
+}
+
+// 登录/注册通过后落一条同意记录：checksum 由服务端签名，客户端无法自行伪造，
+// 因此这条记录与 POST /api/policy/verify 写入的记录同源同格式。
+// 同一指纹+版本已有有效记录时原地续期，避免 unique id 冲突与记录堆积。
+// 指纹缺失（客户端拿不到设备信息）时不写库，只记日志：登录环节不能因为
+// 指纹采集失败而把已有账户挡在门外，注册环节的指纹是硬要求（缺失已在更早处拒绝）。
+export async function recordAuthPolicyConsent(params: {
+  fingerprint?: string | null;
+  source: PolicyConsentSource;
+  userAgent?: string;
+  ipAddress?: string;
+}): Promise<string | null> {
+  const fingerprint = typeof params.fingerprint === "string" ? params.fingerprint.trim() : "";
+  if (!fingerprint || fingerprint === "unknown") {
+    logger.warn("[政策同意] 缺少可用设备指纹，未写入同意记录", { source: params.source });
+    return null;
+  }
+
+  const timestamp = Date.now();
+  const expiresAt = new Date(timestamp + CONSENT_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
+  const checksum = generatePolicyChecksum({ timestamp, version: CURRENT_POLICY_VERSION, fingerprint });
+  const userAgent = typeof params.userAgent === "string" ? params.userAgent.substring(0, 500) : undefined;
+  const agreements = [...POLICY_AGREEMENT_KEYS];
+
+  try {
+    const existing = await PolicyConsent.findValidConsent(fingerprint, CURRENT_POLICY_VERSION);
+    if (existing) {
+      existing.timestamp = timestamp;
+      existing.checksum = checksum;
+      existing.source = params.source;
+      existing.agreements = agreements;
+      existing.userAgent = userAgent;
+      existing.ipAddress = params.ipAddress;
+      existing.recordedAt = new Date(timestamp);
+      existing.expiresAt = expiresAt;
+      await existing.save();
+      return existing.id;
+    }
+
+    const consent = new PolicyConsent({
+      id: uuidv4(),
+      timestamp,
+      version: CURRENT_POLICY_VERSION,
+      fingerprint,
+      checksum,
+      userAgent,
+      ipAddress: params.ipAddress,
+      source: params.source,
+      agreements,
+      expiresAt,
+    });
+    await consent.save();
+    return consent.id;
+  } catch (error) {
+    logger.warn("[政策同意] 写入同意记录失败", { source: params.source, error: String(error) });
+    return null;
+  }
 }
 
 export async function hasValidPolicyConsent(

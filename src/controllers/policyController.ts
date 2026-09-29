@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
+import { POLICY_DOCUMENT } from "../config/policyDocument";
 import { PolicyConsent } from "../models/policyConsentModel";
 import {
   CONSENT_VALIDITY_DAYS,
@@ -60,10 +61,6 @@ function assertDeviceOwnership(req: Request, res: Response, fingerprint: string)
   return false;
 }
 
-// 当前政策版本
-
-// 验证校验和
-// 生成校验和（用于验证客户端逻辑）
 // 记录隐私政策同意
 export const recordPolicyConsent = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -563,5 +560,15 @@ export const getCurrentPolicyVersion = async (_req: Request, res: Response): Pro
     success: true,
     version: CURRENT_POLICY_VERSION,
     validityDays: CONSENT_VALIDITY_DAYS,
+  });
+};
+
+// 获取完整政策条文（公开）
+// 条文由 src/config/policyDocument.ts 单点维护，前端页面直接渲染返回值；
+// 版本号与 /version 同源，避免「同意的是哪个版本」与「页面上读到的条文」分叉。
+export const getPolicyDocument = async (_req: Request, res: Response): Promise<void> => {
+  res.json({
+    success: true,
+    document: POLICY_DOCUMENT,
   });
 };

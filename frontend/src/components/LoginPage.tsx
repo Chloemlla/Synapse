@@ -12,6 +12,7 @@ import MobileLoginPanel from './MobileLoginPanel';
 import { TurnstileWidget } from './TurnstileWidget';
 import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
 import PasskeyVerifyModal from './PasskeyVerifyModal';
+import PolicyConsentChecklist from './PolicyConsentChecklist';
 import TOTPVerification from './TOTPVerification';
 import VerificationMethodSelector from './VerificationMethodSelector';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
@@ -68,6 +69,12 @@ import {
     studioPageFont,
 } from './authStudioTheme';
 import { cn } from '../utils/cn';
+import {
+    buildPolicyConsentPayload,
+    createPolicyConsentSelection,
+    isPolicyConsentComplete,
+    type PolicyConsentSelection,
+} from '../utils/policyConsent';
 
 const NO_TRANSITION = { duration: 0 } as const;
 const FADE_VARIANTS = { hidden: { opacity: 0 }, visible: { opacity: 1 } } as const;
@@ -129,6 +136,10 @@ export const LoginPage: React.FC = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [showPasskeyHelp, setShowPasskeyHelp] = useState(false);
     const [attemptStatus, setAttemptStatus] = useState<LoginAttemptStatus | null>(null);
+    // 每次登录都要重新勾选四份政策文件，因此初始状态不持久化
+    const [policyConsent, setPolicyConsent] = useState<PolicyConsentSelection>(createPolicyConsentSelection);
+    const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
+    const consentComplete = React.useMemo(() => isPolicyConsentComplete(policyConsent), [policyConsent]);
 
     const effectiveCardVariants = React.useMemo(() => prefersReducedMotion ? FADE_VARIANTS : cardVariants, [prefersReducedMotion]);
     const effectiveCardTransition = React.useMemo(() => prefersReducedMotion ? NO_TRANSITION : CARD_TRANSITION, [prefersReducedMotion]);
@@ -214,6 +225,13 @@ export const LoginPage: React.FC = () => {
         setAttemptStatus(null);
         const sanitizedUsername = DOMPurify.sanitize(username).trim();
         if (!sanitizedUsername || !password) { setError('请输入用户名和密码'); return; }
+        const consentPayload = buildPolicyConsentPayload(policyConsent);
+        if (!consentPayload) {
+            setPolicyConsentInvalid(true);
+            setError('请先阅读并勾选同意全部四项条款');
+            setNotification({ message: '请先阅读并勾选同意全部四项条款', type: 'warning' });
+            return;
+        }
         if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
@@ -221,7 +239,7 @@ export const LoginPage: React.FC = () => {
         try {
             if (rememberMe) { localStorage.setItem('rememberedUsername', sanitizedUsername); }
             else { localStorage.removeItem('rememberedUsername'); }
-            const result = await login(sanitizedUsername, password, turnstileConfig.siteKey ? turnstileToken : undefined);
+            const result = await login(sanitizedUsername, password, turnstileConfig.siteKey ? turnstileToken : undefined, consentPayload);
             // 只在完整登录（无 2FA）时保存会话令牌供深链回传。
             // 2FA 未完成时 result.token 是 5 分钟的 2fa_pending 临时令牌，不得外泄给外部应用。
             if (result?.token && !result.requires2FA) {
@@ -399,6 +417,13 @@ export const LoginPage: React.FC = () => {
                                     <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-600">记住我</label>
                                 </div>
 
+                                <PolicyConsentChecklist
+                                    selection={policyConsent}
+                                    onChange={next => { setPolicyConsent(next); if (policyConsentInvalid) setPolicyConsentInvalid(false); }}
+                                    showInvalid={policyConsentInvalid}
+                                    disabled={loading}
+                                />
+
                                 {!turnstileConfigLoading && turnstileConfig.siteKey && (
                                     <div role="group" aria-label="人机验证">
                                         <TurnstileWidget key={turnstileKey} siteKey={turnstileConfig.siteKey} onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} onError={handleTurnstileError} size="normal" />
@@ -414,27 +439,32 @@ export const LoginPage: React.FC = () => {
                                 </m.button>
                             </form>
 
-                            <div className={authDividerClassName}>
-                                <div className="absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
-                                <div className="relative flex justify-center"><span className={authDividerLabelClassName}>或者使用以下方式</span></div>
-                            </div>
+                            {/* 其他登录方式（手机号 / Google / Linux.do / 通行密钥）同样受同意约束：
+                                未逐项勾选前不渲染入口。Google 按钮由 GIS 脚本注入原生 iframe，
+                                点击无法被 React 拦截，隐藏入口是唯一对所有方式都生效的做法。 */}
+                            {consentComplete ? (
+                                <>
+                                    <div className={authDividerClassName}>
+                                        <div className="absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
+                                        <div className="relative flex justify-center"><span className={authDividerLabelClassName}>或者使用以下方式</span></div>
+                                    </div>
 
-                            <div className="space-y-4">
-                                <MobileLoginPanel
-                                    disabled={loading}
-                                    loginWithToken={loginWithToken}
-                                    onSuccess={completeLogin}
-                                />
-                                <GoogleAuthButton
-                                    intent="login"
-                                    label="使用 Google 登录或注册"
-                                    description="使用 Google 账号快速登录，首次登录自动创建本地账户"
-                                />
-                                <LinuxDoAuthButton
-                                    intent="login"
-                                    label="使用 Linux.do 登录或注册"
-                                    description="复用 Linux.do 论坛账号，首次登录自动创建本地账户"
-                                />
+                                    <div className="space-y-4">
+                                        <MobileLoginPanel
+                                            disabled={loading}
+                                            loginWithToken={loginWithToken}
+                                            onSuccess={completeLogin}
+                                        />
+                                        <GoogleAuthButton
+                                            intent="login"
+                                            label="使用 Google 登录或注册"
+                                            description="使用 Google 账号快速登录，首次登录自动创建本地账户"
+                                        />
+                                        <LinuxDoAuthButton
+                                            intent="login"
+                                            label="使用 Linux.do 登录或注册"
+                                            description="复用 Linux.do 论坛账号，首次登录自动创建本地账户"
+                                        />
                                 <div className={authInfoPanelClassName}>
                                     <div className="flex items-start gap-3">
                                         <FaFingerprint className="mt-1 h-5 w-5 shrink-0 text-slate-500" />
@@ -479,7 +509,13 @@ export const LoginPage: React.FC = () => {
                                     <FaFingerprint className="h-5 w-5" />
                                     使用通行密钥登录
                                 </m.button>
-                            </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-center text-xs leading-5 text-slate-500">
+                                    勾选上方四项条款后，可使用手机号、Google、Linux.do 或通行密钥登录。
+                                </p>
+                            )}
 
                             <div className="mt-6 text-center">
                                 <p className="text-sm text-slate-600">还没有账户？<Link to="/register" className={authTextLinkClassName}>立即注册</Link></p>

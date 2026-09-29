@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { User } from "../types/auth";
 import { api } from "../api/api";
+import { getFingerprint } from "../utils/fingerprint";
+import type { PolicyConsentPayload } from "../utils/policyConsent";
 
 /**
  * Enriched error thrown by auth actions so UI can surface lockout / retry hints.
@@ -32,7 +34,7 @@ interface AuthState {
   /** true until the initial session check has settled. */
   isLoading: boolean;
   error: string | null;
-  login: (username: string, password: string, cfToken?: string) => Promise<LoginResult>;
+  login: (username: string, password: string, cfToken?: string, policyConsent?: PolicyConsentPayload) => Promise<LoginResult>;
   logout: () => void;
   checkAuth: () => Promise<void>;
   setUser: (user: User | null) => void;
@@ -64,13 +66,17 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       error: null,
 
-      login: async (username, password, cfToken) => {
+      login: async (username, password, cfToken, policyConsent) => {
         set({ isLoading: true, error: null });
         try {
+          // 设备指纹随登录一起上送：服务端用它给政策同意记录归档（拿不到时为 null，不影响登录）
+          const fingerprint = await getFingerprint().catch(() => null);
           const response = await api.post<LoginResponse>("/api/auth/login", {
             identifier: username,
             password,
             ...(cfToken ? { cfToken } : {}),
+            ...(policyConsent ? { policyConsent } : {}),
+            ...(fingerprint ? { fingerprint } : {}),
           });
           const { user, requires2FA, twoFactorType } = response.data;
           // 2FA required: keep the session pending — do NOT mark authenticated yet.

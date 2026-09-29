@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   cleanExpiredConsents,
   getCurrentPolicyVersion,
+  getPolicyDocument,
   getPolicyStats,
   recordPolicyConsent,
   revokePolicyConsent,
@@ -76,6 +77,101 @@ const adminRateLimit = createLimiter({
  *           type: number
  *           description: 请求时间戳
  *           example: 1696636800000
+ *
+ *     PolicySection:
+ *       type: object
+ *       required:
+ *         - id
+ *         - title
+ *         - summary
+ *         - icon
+ *         - items
+ *       properties:
+ *         id:
+ *           type: string
+ *           description: 章节锚点 id，前端渲染为 #policy-<id>
+ *           example: "retention"
+ *         title:
+ *           type: string
+ *           example: "数据保存期限与删除"
+ *         summary:
+ *           type: string
+ *           description: 章节摘要
+ *         icon:
+ *           type: string
+ *           description: 图标语义键，由前端映射为具体图标
+ *           example: "retention"
+ *         emphasis:
+ *           type: string
+ *           description: 强调级别，前端据此选择配色
+ *           enum: [normal, notice, critical]
+ *         items:
+ *           type: array
+ *           description: 条款条目
+ *           items:
+ *             type: string
+ *
+ *     PolicyDocument:
+ *       type: object
+ *       required:
+ *         - version
+ *         - title
+ *         - effectiveDate
+ *         - lastUpdated
+ *         - sections
+ *       properties:
+ *         version:
+ *           type: string
+ *           description: 政策版本号，与 /api/policy/version 返回的版本一致
+ *           example: "2.1"
+ *         title:
+ *           type: string
+ *           example: "服务条款与隐私政策"
+ *         eyebrow:
+ *           type: string
+ *           description: 页面眉标
+ *           example: "Terms And Privacy"
+ *         description:
+ *           type: string
+ *           description: 页面导语
+ *         effectiveDate:
+ *           type: string
+ *           description: 生效日期（YYYY-MM-DD）
+ *           example: "2026-09-29"
+ *         lastUpdated:
+ *           type: string
+ *           description: 最近修订日期（YYYY-MM-DD）
+ *           example: "2026-09-29"
+ *         historyNote:
+ *           type: string
+ *           description: 历史版本说明
+ *         procedures:
+ *           type: object
+ *           description: 程序化入口说明（同意有效期、条文/版本/记录/撤回/查询接口）
+ *         highlights:
+ *           type: array
+ *           description: 阅读摘要卡片（title / body / icon）
+ *           items:
+ *             type: object
+ *         sections:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/PolicySection'
+ *         warnings:
+ *           type: array
+ *           description: 重点风险提示（title / body / icon）
+ *           items:
+ *             type: object
+ *         revisions:
+ *           type: array
+ *           description: 修订记录（version / date / changes）
+ *           items:
+ *             type: object
+ *         contacts:
+ *           type: array
+ *           description: 联系方式（label / email / scope）
+ *           items:
+ *             type: object
  */
 
 /**
@@ -228,6 +324,33 @@ router.get("/check", policyRateLimit, verifyPolicyConsent);
  *         description: 服务器内部错误
  */
 router.post("/revoke", policyRateLimit, revokePolicyConsent);
+
+/**
+ * @swagger
+ * /api/policy/document:
+ *   get:
+ *     summary: 获取服务条款与隐私政策条文
+ *     description: 返回当前版本的完整政策条文（章节、重点提示、修订记录与联系方式）。版本号与 /api/policy/version 同源，前端政策页面直接渲染该返回值。
+ *     tags: [Policy]
+ *     responses:
+ *       200:
+ *         description: 政策条文
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 document:
+ *                   $ref: '#/components/schemas/PolicyDocument'
+ *       429:
+ *         description: 请求过于频繁
+ *       500:
+ *         description: 服务器内部错误
+ */
+router.get("/document", policyRateLimit, getPolicyDocument);
 
 /**
  * @swagger

@@ -8,6 +8,14 @@ import {
 } from "../../services/registrationInviteService";
 import * as VerificationService from "../../services/verificationService";
 import {
+  POLICY_AGREEMENT_KEYS,
+  POLICY_CONSENT_REQUIRED_MESSAGE,
+  normalizeAuthPolicyConsent,
+  recordAuthPolicyConsent,
+  resolveRequestFingerprint,
+  shouldRequireAuthPolicyConsent,
+} from "../../services/policyConsentService";
+import {
   generateVerificationCodeEmailHtml,
   generateVerificationLinkEmailHtml,
   generateWelcomeEmailHtml,
@@ -31,6 +39,15 @@ export async function register(req: Request, res: Response) {
     }
     if (!fingerprint) {
       return res.status(400).json({ error: "设备信息缺失" });
+    }
+    // 注册必须逐项勾选四份政策文件；载荷无效直接拒绝，不进入格式校验与验证码流程
+    const policyConsent = normalizeAuthPolicyConsent(req.body?.policyConsent);
+    if (shouldRequireAuthPolicyConsent() && !policyConsent) {
+      return res.status(400).json({
+        error: POLICY_CONSENT_REQUIRED_MESSAGE,
+        code: "POLICY_CONSENT_REQUIRED",
+        agreementsRequired: [...POLICY_AGREEMENT_KEYS],
+      });
     }
     // 用户名格式校验：3-20 位字母数字下划线
     if (typeof username !== "string" || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
@@ -104,6 +121,16 @@ export async function register(req: Request, res: Response) {
     });
 
     if (result.success) {
+      // 验证邮件已发出即视为提交成立，此刻落同意记录（指纹是注册的硬要求，此处必然存在）
+      if (policyConsent) {
+        const userAgent = req.headers["user-agent"];
+        await recordAuthPolicyConsent({
+          fingerprint: resolveRequestFingerprint(req) || fingerprint,
+          source: "register",
+          userAgent: typeof userAgent === "string" ? userAgent : undefined,
+          ipAddress,
+        });
+      }
       res.json({
         needVerify: true,
         message: "验证链接已发送到邮箱，请查收",

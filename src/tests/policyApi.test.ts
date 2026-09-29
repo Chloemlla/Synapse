@@ -1,5 +1,6 @@
 import request from "supertest";
 import app from "../app";
+import type { PolicyDocument } from "../config/policyDocument";
 import { PolicyConsent } from "../models/policyConsentModel";
 import { connectMongo, mongoose } from "../services/mongoService";
 import {
@@ -27,6 +28,33 @@ describe("Policy API MongoDB contract", () => {
       version: CURRENT_POLICY_VERSION,
       validityDays: CONSENT_VALIDITY_DAYS,
     });
+  });
+
+  it("serves the policy document with the current version and unique section anchors", async () => {
+    const response = await request(app).get("/api/policy/document").expect(200);
+
+    expect(response.body.success).toBe(true);
+
+    const document = response.body.document as PolicyDocument;
+    expect(document.version).toBe(CURRENT_POLICY_VERSION);
+    expect(document.effectiveDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(document.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(document.sections.length).toBeGreaterThan(0);
+
+    // 章节锚点必须唯一：前端把它渲染成 #policy-<id>，重复会让目录跳错位置
+    const ids = document.sections.map((section) => section.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const section of document.sections) {
+      expect(section.title.length).toBeGreaterThan(0);
+      expect(section.summary.length).toBeGreaterThan(0);
+      expect(section.items.length).toBeGreaterThan(0);
+    }
+
+    // 条文里给出的程序化入口必须与真实路由一致
+    expect(document.procedures.consentValidityDays).toBe(CONSENT_VALIDITY_DAYS);
+    expect(document.procedures.documentEndpoint).toBe("GET /api/policy/document");
+    expect(document.procedures.revokeConsentEndpoint).toBe("POST /api/policy/revoke");
   });
 
   it("records, verifies, revokes, and invalidates a consent", async () => {
