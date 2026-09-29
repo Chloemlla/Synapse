@@ -114,3 +114,34 @@
   `Node verification`（tsc）、`Quality Guardrails`、`Code Quality`。
 - 收尾以 `gh api repos/Chloemlla/Synapse/code-scanning/alerts?state=open` 复验，
   只应剩下范围外的 `js/missing-rate-limiting`。
+
+## 三、验证结果（实测）
+
+### 3.1 告警终态（2026-09-29，CodeQL v2.27.1）
+
+| 编号 | 规则 | state | 说明 |
+|---|---|---|---|
+| 1231 | `js/polynomial-redos` | ✅ fixed | 末次被看到于 `c2773368`（修复前） |
+| 1228 | `js/incomplete-sanitization` | ✅ fixed | 同上 |
+| 1225 / 1224 | `js/resource-exhaustion` | ✅ fixed | 末次被看到于 `532efe91`（第一版修复前） |
+| 1211 | `js/incomplete-url-substring-sanitization` | ✅ fixed | 同上 |
+
+`state=open` 复验：只剩 `js/missing-rate-limiting`（本次范围外）。
+
+### 3.2 提交与失败归因
+
+| 提交 | 内容 | CodeQL | 结果 |
+|---|---|---|---|
+| `d810ea15` | 五项告警首轮修复（ReDoS / 清洗 / 资源耗尽 / URL 断言） | success | 1231/1228/1211 转 fixed；1224/1225 仍 open |
+| `6404bf1a` | 资源耗尽改为 query-test 验证过的守卫形状 | success | 1224/1225 转 fixed |
+
+`6404bf1a` 上其余红灯均为**同一会话内并发进行的前端工作**所致，与本次无关（已按 §五-40 做历史归因：
+同一批 job 在父提交 `532efe91` / `efc45d66` 上同样是 failure）：
+
+| job | 结论 | 归因 |
+|---|---|---|
+| `Analyze (javascript/typescript/python)` | success | ✅ 本次关心项 |
+| `type-check-backend` | success | ✅ 后端 tsc 通过 |
+| `Node verification` / `type-check` / `type-check-frontend` / `Publish Docker (amd64)` / `Frontend bundle budget` | failure | 同一个根因：`src/components/admin/PolicyConsentPanel.tsx(460,19) TS2322`（并发会话新增文件），父提交同样红 |
+| `Governance checks` / `Browser cookie smoke` / `Mongo replica integration` / `Code Quality` | success | — |
+
