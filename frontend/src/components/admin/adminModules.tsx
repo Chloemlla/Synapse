@@ -79,6 +79,7 @@ export const ADMIN_MODULE_LOADERS = {
   'bilibili-data': () => import('@/components/BilibiliDataAdmin'),
   'ip-risk-logs': () => import('@/components/admin/IpRiskLogPanel'),
   'mobile-token-lineage': () => import('@/components/admin/MobileTokenLineagePanel'),
+  'policy-consents': () => import('@/components/admin/PolicyConsentPanel'),
 } as const;
 
 export type AdminModuleKey = keyof typeof ADMIN_MODULE_LOADERS;

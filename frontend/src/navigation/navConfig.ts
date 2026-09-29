@@ -15,6 +15,7 @@ import {
   FaExchangeAlt,
   FaExclamationTriangle,
   FaFileAlt,
+  FaFileSignature,
   FaFlask,
   FaFont,
   FaGamepad,
@@ -554,6 +555,12 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            title: '政策同意记录',
+            url: '/admin/policy-consents',
+            icon: FaFileSignature as IconType,
+            requiredRole: 'superadmin',
+          },
+          {
             title: '系统管理',
             url: '/admin/system',
             icon: FaBars as IconType,
@@ -627,6 +634,7 @@ export const ADMIN_TAB_TO_PATH: Record<string, string> = {
   fingerprint: '/admin/fingerprint',
   'ip-risk-logs': '/admin/ip-risk-logs',
   'mobile-token-lineage': '/admin/mobile-token-lineage',
+  'policy-consents': '/admin/policy-consents',
   broadcast: '/admin/broadcast',
   oauth: '/admin/oauth',
   apikeys: '/admin/apikeys',

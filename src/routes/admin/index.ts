@@ -8,6 +8,7 @@ import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
 import ipRiskLogsRouter from "./ipRiskLogs";
 import mobileTokensRouter from "./mobileTokens";
+import policyConsentsRouter from "./policyConsents";
 import profileRouter from "./profile";
 import qqGuardRouter from "./qqGuard";
 import registrationInvitesRouter from "./registrationInvites";
@@ -75,6 +76,7 @@ router.use(crashReportsRouter);
 router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
 router.use(mobileTokensRouter);
+router.use(policyConsentsRouter);
 
 // Bilibili Sync 管理（PiliPlus 配置数据）
 router.get("/bilibili-sync", (req, res) => adminController.getBilibiliSyncRecords(req, res));

@@ -815,6 +815,7 @@ const App: React.FC = () => {
       '/admin/store/resources': 'Synapse - 资源管理',
       '/admin/store/cdks': 'Synapse - CDK管理',
       '/admin/mobile-token-lineage': 'Synapse - 登录令牌血缘',
+      '/admin/policy-consents': 'Synapse - 政策同意记录',
       '/public-shortlink': 'Synapse - 公共短链创建',
     },
     descriptions: {
