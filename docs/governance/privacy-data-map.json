@@ -259,7 +259,7 @@
     {
       "id": "browser-local-fingerprint-cache",
       "collection": "browser.localStorage",
-      "fields": ["hapx_fingerprint_v2", "hapx_fp_rand", "lastFingerprintReport"],
+      "fields": ["chloemlla.com_fingerprint_v2", "chloemlla.com_fp_rand", "lastFingerprintReport"],
       "purpose": "Client-side fingerprint cache and report debounce",
       "legalBasis": "security_and_service_integrity",
       "retention": {

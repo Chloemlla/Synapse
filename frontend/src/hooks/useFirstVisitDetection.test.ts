@@ -109,7 +109,7 @@ describe('useFirstVisitDetection', () => {
     });
 
     act(() => {
-      notify(new CustomEvent('hapx:ip-verification-required', { detail: { reason: 'missing_verification_headers' } }));
+      notify(new CustomEvent('chloemlla.com:ip-verification-required', { detail: { reason: 'missing_verification_headers' } }));
     });
 
     await waitFor(() => expect(initializeIpVerificationSession).toHaveBeenCalledTimes(2));

@@ -61,7 +61,7 @@ export async function register(req: Request, res: Response) {
     // 只允许主流邮箱
     if (!emailPattern.test(email)) {
       return res.status(400).json({
-        error: "只支持主流邮箱（如gmail、outlook、qq、163、126、hotmail、yahoo、icloud、foxmail、hapxs、hapx等）",
+        error: "只支持主流邮箱（如gmail、outlook、qq、163、126、hotmail、yahoo、icloud、foxmail、chloemlla.com等）",
       });
     }
     // 验证邮箱格式

@@ -6,7 +6,7 @@ export function setFirstVisitVerificationEnabled(nextEnabled: boolean): void {
   if (!nextEnabled && typeof window !== 'undefined') {
     try {
       localStorage.removeItem('accessTokens');
-      localStorage.removeItem('hapx_ip_verification_token_v1');
+      localStorage.removeItem('chloemlla.com_ip_verification_token_v1');
     } catch {
       // ignore storage failures
     }

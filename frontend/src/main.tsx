@@ -215,8 +215,6 @@ function hasDangerousExtension(): ClientIntegrityCheckResult {
     "https://localhost",
     "https://ipfs.chloemlla.com",
     "https://cdn.jsdelivr.net",
-    "https://tts-api-docs.hapx.one",
-    "https://tts-api-docs.chloemlla.com",
     "https://chloemlla.com",
     "https://synapse.chloemlla.com",
   ];

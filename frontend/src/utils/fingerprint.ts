@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { fetchWithTimeout } from './fetchWithTimeout';
 
 
-const FP_STORAGE_KEY = 'hapx_fingerprint_v2';
+const FP_STORAGE_KEY = 'chloemlla.com_fingerprint_v2';
 const FP_VERSION = '2';
 const FP_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30天
 
@@ -43,7 +43,7 @@ function writeCache(id: string): void {
 }
 
 function getOrCreateStableRandomId(): string {
-  const key = 'hapx_fp_rand';
+  const key = 'chloemlla.com_fp_rand';
   try {
     const existing = localStorage.getItem(key);
     if (existing) return existing;
@@ -123,7 +123,7 @@ function getCanvasFingerprint(): string {
     ctx.fillStyle = '#f60';
     ctx.fillRect(0, 0, 200, 50);
     ctx.fillStyle = '#069';
-    ctx.fillText('HAPX-FP-CANVAS-测试字符串😊', 2, 2);
+    ctx.fillText('CHLOEMLLA.COM-FP-CANVAS-测试字符串😊', 2, 2);
     ctx.strokeStyle = 'rgba(120, 186, 176, 0.5)';
     ctx.beginPath();
     ctx.moveTo(10, 10);

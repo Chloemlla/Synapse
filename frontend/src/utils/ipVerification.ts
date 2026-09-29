@@ -28,8 +28,8 @@ interface StoredIpVerificationToken {
   issuedBy?: 'auto' | 'turnstile' | 'hcaptcha';
 }
 
-const STORAGE_KEY = 'hapx_ip_verification_token_v1';
-const EVENT_NAME = 'hapx:ip-verification-required';
+const STORAGE_KEY = 'chloemlla.com_ip_verification_token_v1';
+const EVENT_NAME = 'chloemlla.com:ip-verification-required';
 
 export const EXEMPT_PATH_PREFIXES = [
   '/api/ip-verification',
