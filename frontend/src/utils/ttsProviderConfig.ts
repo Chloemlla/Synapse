@@ -174,7 +174,7 @@ export function normalizeTtsProviderEntry(value: unknown): TtsProviderPublicConf
         id: providerDefaultModel,
         name: provider === "edge" ? "Microsoft TTS" : providerDefaultModel,
         ...(provider === "fish"
-          ? { description: "Fish Audio 免费专业模型" }
+          ? { description: "Fish Audio 专业模型" }
           : provider === "edge"
             ? { description: "Microsoft TTS 官方模型" }
             : {}),
