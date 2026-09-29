@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import app from "../app";
 import { config } from "../config/config";
+import { createProfileVerificationSession } from "../services/profileUpdateVerificationService";
 import { UserStorage } from "../utils/userStorage";
 
 describe("TOTP认证修复测试", () => {
@@ -105,9 +106,14 @@ describe("TOTP认证修复测试", () => {
   });
 
   it("应该正确处理TOTP生成设置请求", async () => {
+    // 双因素配置类接口统一要求「安全会话」（routes/totpRoutes.ts）。
+    // 该账号尚未配置任何二次验证因素，TOTP 方式的会话直接放行。
+    const verificationToken = createProfileVerificationSession(testUser.id, "totp").token;
+
     const response = await request(app)
       .post("/api/totp/generate-setup")
       .set("Authorization", `Bearer ${validToken}`)
+      .send({ verificationToken })
       .expect(200);
 
     expect(response.body).toHaveProperty("secret");

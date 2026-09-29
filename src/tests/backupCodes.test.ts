@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import { config } from "../config/config";
 import totpRoutes from "../routes/totpRoutes";
+import { createProfileVerificationSession } from "../services/profileUpdateVerificationService";
 import { UserStorage } from "../utils/userStorage";
 
 // 创建测试应用
@@ -49,6 +50,13 @@ jest.mock("../services/authSessionService", () => ({
 }));
 
 describe("备用恢复码功能测试", () => {
+  // 双因素配置类接口现在统一要求「安全会话」（routes/totpRoutes.ts 里的 requireTwoFactorConfigSession）。
+  // 用 TOTP 方式建会话等价于「用户已通过 TOTP 验证」，守卫无需回查账号已配置的因素；
+  // GET 请求没有 body，令牌只能走 x-verification-token 请求头。
+  const securitySessionHeader = (userId = "test-user-id") => ({
+    "x-verification-token": createProfileVerificationSession(userId, "totp").token,
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -64,6 +72,7 @@ describe("备用恢复码功能测试", () => {
       const response = await request(app)
         .get("/api/totp/backup-codes")
         .set("Authorization", `Bearer ${token}`)
+        .set(securitySessionHeader())
         .expect(200);
 
       // G2-22 同步收紧了契约：备份码只在生成那一次回显，查询接口永远只报剩余数
@@ -93,6 +102,7 @@ describe("备用恢复码功能测试", () => {
       const response = await request(app)
         .get("/api/totp/backup-codes")
         .set("Authorization", `Bearer ${token}`)
+        .set(securitySessionHeader())
         .expect(400);
 
       expect(response.body).toEqual({
@@ -110,6 +120,7 @@ describe("备用恢复码功能测试", () => {
       const response = await request(app)
         .get("/api/totp/backup-codes")
         .set("Authorization", `Bearer ${token}`)
+        .set(securitySessionHeader())
         .expect(404);
 
       expect(response.body).toEqual({
@@ -130,6 +141,36 @@ describe("备用恢复码功能测试", () => {
       expect(response.body).toEqual({
         error: "无效的Token",
       });
+    });
+
+    it("没有安全会话时拒绝访问", async () => {
+      (UserStorage.getUserById as jest.Mock).mockResolvedValue(mockUser);
+      (UserStorage.getUserSecretsById as jest.Mock).mockResolvedValue(mockUser);
+
+      const token = generateTestToken("test-user-id");
+
+      const response = await request(app)
+        .get("/api/totp/backup-codes")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(403);
+
+      expect(response.body.code).toBe("SECURITY_SESSION_REQUIRED");
+    });
+
+    it("已启用TOTP的账号不接受密码建立的会话", async () => {
+      (UserStorage.getUserById as jest.Mock).mockResolvedValue(mockUser);
+      (UserStorage.getUserSecretsById as jest.Mock).mockResolvedValue(mockUser);
+
+      const token = generateTestToken("test-user-id");
+      const passwordSession = createProfileVerificationSession("test-user-id", "password").token;
+
+      const response = await request(app)
+        .get("/api/totp/backup-codes")
+        .set("Authorization", `Bearer ${token}`)
+        .set("x-verification-token", passwordSession)
+        .expect(403);
+
+      expect(response.body.code).toBe("TWO_FACTOR_SESSION_REQUIRED");
     });
   });
 });

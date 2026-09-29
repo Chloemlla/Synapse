@@ -3,6 +3,7 @@ import "./helpers/mockAuthSessionPersistence";
 import "./helpers/mockUserService";
 import request from "supertest";
 import app from "../app";
+import { createProfileVerificationSession } from "../services/profileUpdateVerificationService";
 
 describe("TOTP 登录流程", () => {
   const TEST_USER = {
@@ -52,6 +53,10 @@ describe("TOTP 登录流程", () => {
     const user = loginResponse.body.user;
     const token = loginResponse.body.token;
 
+    // 双因素配置类接口统一要求「安全会话」（routes/totpRoutes.ts 的 requireTwoFactorConfigSession），
+    // 这里为登录用户现建一个 TOTP 方式的会话，做法同 commandRoutes.test.ts。
+    const newSecuritySession = () => createProfileVerificationSession(user.id, "totp").token;
+
     console.log("用户信息:", {
       id: user.id,
       username: user.username,
@@ -96,7 +101,8 @@ describe("TOTP 登录流程", () => {
         // 为管理员账户启用TOTP
         const setupResponse = await request(app)
           .post("/api/totp/generate-setup")
-          .set("Authorization", `Bearer ${token}`);
+          .set("Authorization", `Bearer ${token}`)
+          .send({ verificationToken: newSecuritySession() });
 
         expect(setupResponse.status).toBe(200);
         expect(setupResponse.body).toHaveProperty("secret");
@@ -113,7 +119,7 @@ describe("TOTP 登录流程", () => {
         const verifyResponse = await request(app)
           .post("/api/totp/verify-and-enable")
           .set("Authorization", `Bearer ${token}`)
-          .send({ token: totpToken });
+          .send({ token: totpToken, verificationToken: newSecuritySession() });
 
         if (verifyResponse.status === 200) {
           // TOTP验证成功
@@ -194,7 +200,8 @@ describe("TOTP 登录流程", () => {
         // 生成TOTP设置
         const setupResponse = await request(app)
           .post("/api/totp/generate-setup")
-          .set("Authorization", `Bearer ${token}`);
+          .set("Authorization", `Bearer ${token}`)
+          .send({ verificationToken: newSecuritySession() });
 
         expect(setupResponse.status).toBe(200);
         expect(setupResponse.body).toHaveProperty("secret");
@@ -218,7 +225,8 @@ describe("TOTP 登录流程", () => {
         // 生成TOTP设置
         const setupResponse = await request(app)
           .post("/api/totp/generate-setup")
-          .set("Authorization", `Bearer ${token}`);
+          .set("Authorization", `Bearer ${token}`)
+          .send({ verificationToken: newSecuritySession() });
 
         expect(setupResponse.status).toBe(200);
         expect(setupResponse.body).toHaveProperty("secret");
@@ -228,7 +236,7 @@ describe("TOTP 登录流程", () => {
         const fakeVerifyResponse = await request(app)
           .post("/api/totp/verify-and-enable")
           .set("Authorization", `Bearer ${token}`)
-          .send({ token: "123456" });
+          .send({ token: "123456", verificationToken: newSecuritySession() });
 
         // 假验证码应该返回400
         expect(fakeVerifyResponse.status).toBe(400);
@@ -244,7 +252,7 @@ describe("TOTP 登录流程", () => {
         const realVerifyResponse = await request(app)
           .post("/api/totp/verify-and-enable")
           .set("Authorization", `Bearer ${token}`)
-          .send({ token: realToken });
+          .send({ token: realToken, verificationToken: newSecuritySession() });
 
         if (realVerifyResponse.status === 200) {
           // TOTP验证成功
