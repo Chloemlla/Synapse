@@ -5,8 +5,7 @@ import { FaLink, FaCopy, FaDice, FaArrowLeft } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { apiWithRetry } from '../api';
-import { useAuthStore } from '../stores/authStore';
-import { isAdminRole } from '../utils/rbac';
+import { useIsAdmin } from '../hooks/useRBAC';
 import { studioEyebrowClassName } from './studioTheme';
 
 interface PublicShortLinkResponse {
@@ -47,8 +46,7 @@ const PublicShortLinkCreator: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const { setNotification } = useNotification();
   // 已登录管理员（admin / superadmin）由后端按会话放行，无需填写服务密码。
-  const currentUser = useAuthStore((state) => state.user);
-  const isAdmin = isAdminRole(currentUser?.role);
+  const isAdmin = useIsAdmin();
 
   const handleCreate = async () => {
     const trimmedTarget = target.trim();
