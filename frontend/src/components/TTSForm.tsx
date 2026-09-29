@@ -63,7 +63,7 @@ function getFishAudioSampleUrl(audioUrl: string): string {
   return `${getApiBaseUrl()}/api/tts/fish-audio-sample?url=${encodeURIComponent(audioUrl)}`;
 }
 
-/** 微软语音音色 ID 的语言前缀，形如 zh-CN-XiaoxiaoNeural 里的 zh-CN。 */
+/** Microsoft TTS 音色 ID 的语言前缀，形如 zh-CN-XiaoxiaoNeural 里的 zh-CN。 */
 const VOICE_LANGUAGE_PATTERN = /^([A-Za-z]{2,3}-[A-Za-z0-9]{2,8})/;
 
 /** 音色列表语言分组的阈值：超过这个数量才值得加筛选器。 */
@@ -248,7 +248,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           setOutputFormat("mp3");
           setSpeed(1);
         } else if (nextConfig.provider === "edge") {
-          // 微软语音只输出 MP3，但支持语速调节
+          // Microsoft TTS 只输出 MP3，但支持语速调节
           setOutputFormat("mp3");
         }
         if (nextConfig.voiceMode === "select") {
@@ -850,7 +850,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               {activeProviderConfig.provider === "fish" ? (
                 <p className="mt-2 text-xs text-muted-foreground">Fish Audio 当前仅支持 MP3 输出。</p>
               ) : activeProviderConfig.provider === "edge" ? (
-                <p className="mt-2 text-xs text-muted-foreground">微软内置语音当前仅支持 MP3 输出。</p>
+                <p className="mt-2 text-xs text-muted-foreground">Microsoft TTS 当前仅支持 MP3 输出。</p>
               ) : null}
             </motion.div>
 

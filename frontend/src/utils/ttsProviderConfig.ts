@@ -122,10 +122,10 @@ function cloneFallback(): TtsProviderPublicConfig {
 const TTS_PROVIDER_LABELS: Record<TtsProviderId, string> = {
   openai: "OpenAI",
   fish: "Fish Audio",
-  edge: "微软语音",
+  edge: "Microsoft TTS",
 };
 
-/** 提供商的中文展示名，供 TTSForm 的切换控件与当前提供商标签共用。 */
+/** 提供商的展示名，供 TTSForm 的切换控件与当前提供商标签共用。 */
 export function getTtsProviderLabel(provider: TtsProviderId): string {
   return TTS_PROVIDER_LABELS[provider];
 }

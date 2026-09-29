@@ -33,7 +33,7 @@ const TTS_PROVIDER_IDS: readonly TtsProviderId[] = ['openai', 'fish', 'edge'];
 const TTS_PROVIDER_LABELS: Record<TtsProviderId, string> = {
   openai: 'OpenAI',
   fish: 'Fish Audio',
-  edge: '微软语音',
+  edge: 'Microsoft TTS',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -180,7 +180,7 @@ const defaultClient: TtsProviderAdminClient = {
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({}),
     });
-    return readResponse(response, '刷新微软语音音色失败');
+    return readResponse(response, '刷新 Microsoft TTS 音色失败');
   },
 };
 
@@ -332,11 +332,11 @@ export default function TtsProviderConfigSection({
           throw new Error();
         }
       } catch {
-        setError('微软语音接口地址必须是有效的 ws 或 wss 地址');
+        setError('Microsoft TTS 接口地址必须是有效的 ws 或 wss 地址');
         return;
       }
       if (!EDGE_VOICE_ID_PATTERN.test(edgeVoice)) {
-        setError('微软语音默认音色格式无效');
+        setError('Microsoft TTS 默认音色格式无效');
         return;
       }
     }
@@ -392,7 +392,7 @@ export default function TtsProviderConfigSection({
     if (!canWrite || loading || saving || refreshingVoices) return;
     const refresh = client.refreshVoices;
     if (!refresh) {
-      setError('当前环境不支持刷新微软语音音色');
+      setError('当前环境不支持刷新 Microsoft TTS 音色');
       return;
     }
 
@@ -414,7 +414,7 @@ export default function TtsProviderConfigSection({
       }
       setStatus(`已刷新 ${count} 个音色`);
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : '刷新微软语音音色失败');
+      setError(refreshError instanceof Error ? refreshError.message : '刷新 Microsoft TTS 音色失败');
     } finally {
       setRefreshingVoices(false);
     }
@@ -423,7 +423,7 @@ export default function TtsProviderConfigSection({
   return (
     <CollapsibleSection
       title="TTS 提供商与模型"
-      description="可同时启用多个提供商（OpenAI / Fish Audio / 微软语音），前端 /tts 会展示这些选项并允许用户切换；默认提供商决定用户未指定时请求的路由，并始终处于启用状态。同时可配置各提供商的服务地址、参考音色与音色清单。"
+      description="可同时启用多个提供商（OpenAI / Fish Audio / Microsoft TTS），前端 /tts 会展示这些选项并允许用户切换；默认提供商决定用户未指定时请求的路由，并始终处于启用状态。同时可配置各提供商的服务地址、参考音色与音色清单。"
       sectionKey="ttsProvider"
       isOpen={isOpen}
       onToggle={() => setIsOpen((value) => !value)}
@@ -457,7 +457,7 @@ export default function TtsProviderConfigSection({
           >
             <option value="openai">OpenAI</option>
             <option value="fish">Fish Audio</option>
-            <option value="edge">微软语音</option>
+            <option value="edge">Microsoft TTS</option>
           </select>
         </label>
         <label className="block text-sm font-medium text-slate-700">
@@ -473,7 +473,7 @@ export default function TtsProviderConfigSection({
             {modelOptions.map((model) => <option key={model} value={model} />)}
           </datalist>
           {provider === 'edge' ? (
-            <span className="mt-1 block text-xs text-slate-500">微软语音只有固定的一种模型，此处填写其它值也会被服务端忽略。</span>
+            <span className="mt-1 block text-xs text-slate-500">Microsoft TTS 只有固定的一种模型，此处填写其它值也会被服务端忽略。</span>
           ) : null}
         </label>
       </div>
@@ -530,7 +530,7 @@ export default function TtsProviderConfigSection({
       {provider === 'edge' ? (
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
           <label className="block text-sm font-medium text-slate-700">
-            微软语音接口地址
+            Microsoft TTS 接口地址
             <input value={edgeBaseUrl} onChange={(event) => setEdgeBaseUrl(event.target.value)} className={`${studioFieldClassName} mt-1 font-mono`} disabled={loading || saving || !canWrite} placeholder={EDGE_DEFAULT_TTS_BASE_URL} />
           </label>
           <label className="block text-sm font-medium text-slate-700">

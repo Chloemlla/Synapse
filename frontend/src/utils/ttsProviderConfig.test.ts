@@ -110,7 +110,7 @@ describe("normalizeTtsProviderConfig", () => {
         provider: "edge",
         defaultModel: EDGE_DEFAULT_TTS_MODEL,
         defaultVoice: EDGE_DEFAULT_TTS_VOICE,
-        models: [{ id: EDGE_DEFAULT_TTS_MODEL, name: "Edge 朗读" }],
+        models: [{ id: EDGE_DEFAULT_TTS_MODEL, name: "Microsoft TTS" }],
         voices: [
           { id: EDGE_DEFAULT_TTS_VOICE, name: "晓晓", description: "Chinese (Mandarin, Simplified) · 女" },
         ],
