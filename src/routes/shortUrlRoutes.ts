@@ -1,19 +1,15 @@
-import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import crypto from "node:crypto";
-import jwt from "jsonwebtoken";
 import { ShortUrlController } from "../controllers/shortUrlController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
-import { adminAuthMiddleware, authenticateSuperAdmin, authMiddlewareV2 as authMiddleware, isAdminRole } from "../middleware/auth";
+import { adminAuthMiddleware, authenticateSuperAdmin, authMiddlewareV2 as authMiddleware } from "../middleware/auth";
+import { optionalAdminAuth, sessionAdmin } from "../middleware/optionalAdminAuth";
 import { createLimiter } from "../middleware/routeLimiters";
 import { replayProtection } from "../middleware/replayProtection";
-import { assertActiveAuthSession } from "../services/authSessionService";
 import { mongoose } from "../services/mongoService";
 import { ShortUrlService } from "../services/shortUrlService";
 import { config } from "../config/config";
-import { getTokenFromRequest } from "../utils/authCookie";
-import { UserStorage } from "../utils/userStorage";
 
 // 允许的 URL 协议白名单（防止 javascript:/data:/file: 等协议导致的开放重定向）
 const ALLOWED_URL_PROTOCOLS = ["http:", "https:"];
@@ -33,34 +29,6 @@ function timingSafeStringEqual(candidate: string, expected: string): boolean {
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-
-/**
- * 公共短链创建上的“可选管理员身份”解析。
- *
- * 匿名创建是合法路径，所以这里不能像 authMiddlewareV2 那样在缺令牌/令牌失效时回 401：
- * 只有拿到有效、未被禁用/封停且角色为管理员（admin / superadmin）的会话时才把用户挂到
- * req.user，其余情况一律静默按匿名继续，交由后续口令校验决定是否放行。
- */
-const resolveOptionalAdmin = async (req: Request, _res: Response, next: NextFunction) => {
-  try {
-    const token = getTokenFromRequest(req);
-    if (!token) return next();
-
-    const decoded = jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] }) as { userId?: string };
-    if (!decoded?.userId) return next();
-
-    const user = await UserStorage.getUserById(decoded.userId);
-    if (!user || (user as any).disabled || user.accountStatus === "suspended") return next();
-    if (!isAdminRole(user.role)) return next();
-
-    // 会话被撤销的管理员不享受免口令，按匿名处理。
-    await assertActiveAuthSession(user.id, token);
-    req.user = user;
-    return next();
-  } catch {
-    return next();
-  }
-};
 
 const router = Router();
 const redirectRouter = Router();
@@ -231,7 +199,7 @@ router.delete(
 );
 
 // 匿名公共创建短链（显式启用、独立口令、严格限流）；已登录管理员免填口令
-router.post("/public/create", publicCreateLimiter, resolveOptionalAdmin, async (req: any, res: any) => {
+router.post("/public/create", publicCreateLimiter, optionalAdminAuth, async (req: any, res: any) => {
   try {
     const { target, customCode, password } = req.body || {};
 
@@ -240,7 +208,7 @@ router.post("/public/create", publicCreateLimiter, resolveOptionalAdmin, async (
     }
 
     // 管理员走已认证会话放行，不参与口令比对；匿名访问才要求服务密码。
-    const adminUser = req.user && isAdminRole(req.user.role) ? req.user : null;
+    const adminUser = sessionAdmin(req);
 
     if (!adminUser) {
       const publicShortUrlPassword = config.publicShortUrl.password;

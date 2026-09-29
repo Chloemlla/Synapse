@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { config } from "../config/config";
 import { getServerStatusSnapshot, isServerStatusPasswordValid } from "../services/operationalStatusService";
+import { sessionAdmin } from "../middleware/optionalAdminAuth";
 import logger from "../utils/logger";
 
 // G4-11: 日志只记录白名单请求头，禁止把整个 req.headers（含 cookie/authorization）写进日志。
@@ -55,7 +56,8 @@ export class DiagnosticsController {
   }
 
   static getServerStatus(req: Request, res: Response): void {
-    if (!isServerStatusPasswordValid(req.body?.password)) {
+    // 已登录管理员由 optionalAdminAuth 确认会话后免填口令；其余调用方仍凭 SERVER_PASSWORD。
+    if (!sessionAdmin(req) && !isServerStatusPasswordValid(req.body?.password)) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
