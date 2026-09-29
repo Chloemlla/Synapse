@@ -65,20 +65,34 @@
   `isAdditionalFlowStep` 明确写着 `isNumericFlowStep`：**任何 `Math.*` 调用都是污点传播步骤**
   （`c = DataFlow::globalVarRef("Math").getAMemberCall(_)`）。也就是说 `Math.min` 不但不能
   清污，反而把污点原样搬到了 sink —— 这就是两次"已修"后告警仍在的原因。
-- **该查询唯一认可的有界性证明**：`UpperBoundsCheckSanitizerGuard`（`BarrierGuard` 子类）——
-  在**与 sink 同一个函数体**里，用关系比较把变量守卫住：
-  `blocksExpr(true, lesserOperand)` / `blocksExpr(false, greaterOperand)`。屏障守卫是 CFG 局部
-  的，跨函数（哪怕 helper 里写了同样的 `if`）不会生效。
-- **改法**：删掉 `resolveRequestTimeoutMs`，在两个 sink 所在函数体内各自内联：
+- **第一次尝试（本次提交 `d810ea15`）也没清掉，值得记下**：当时把三个 `Math.min/Math.max`
+  换成 `if (x < MIN) x = MIN; if (x > MAX) x = MAX;` 内联关系比较守卫（上层提交、
+  守卫与 sink 同函数体），CodeQL 仍然报同一条告警（重扫后 1224/1225 继续 open）。
+  查 `github/codeql` 源码后定位到真正约束：`UpperBoundsCheckSanitizerGuard`
+  （`javascript/ql/lib/semmle/javascript/security/dataflow/ResourceExhaustionQuery.ql` 里
+  `isBarrier` 引用的 `BarrierGuard`）只认
+  `true = outcome and e = astNode.getLesserOperand()` / `false = outcome and e = astNode.getGreaterOperand()`，
+  即 **`x < 上限` 的 true 分支 / `x > 上限` 的 false 分支**；而且**被守卫切断的那次读取必须在
+  该分支内**——先 `let v = Number(cfg.timeoutMs)` 读一次（未被守卫罩住），再在后面的 if 里
+  改写同一个变量，等于只守卫了"写常量"，污点依然从开头那次读取直达 sink。
+  对照 `javascript/ql/test/query-tests/Security/CWE-770/ResourceExhaustion/resource-exhaustion.js`
+  可以逐行验证：`if (n < 1000) { Buffer.alloc(n); }`（第 90 行）无告警，
+  而 `else { Buffer.alloc(n); }`（第 92 行）报 —— `.expected` 里只有 88/92 两条。
+- **改法**：按官方 query test 验证过的形状重排，把**唯一的污点值读取放进 `配置值 < 上限` 的
+  true 分支**：
   ```ts
-  let abortAfterMs = Number(cfg.timeoutMs);
-  if (!Number.isFinite(abortAfterMs)) abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
-  if (abortAfterMs < MIN_REQUEST_TIMEOUT_MS) abortAfterMs = MIN_REQUEST_TIMEOUT_MS;
-  if (abortAfterMs > MAX_REQUEST_TIMEOUT_MS) abortAfterMs = MAX_REQUEST_TIMEOUT_MS; // ← 这一条守卫住 sink
+  const configuredTimeoutMs = Number(cfg.timeoutMs);
+  let abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS; // NaN / 非数字配置落到默认值
+  if (configuredTimeoutMs < MAX_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = configuredTimeoutMs < MIN_REQUEST_TIMEOUT_MS ? MIN_REQUEST_TIMEOUT_MS : configuredTimeoutMs;
+  } else if (configuredTimeoutMs >= MAX_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = MAX_REQUEST_TIMEOUT_MS;
+  }
+  const timer = setTimeout(() => controller.abort(), abortAfterMs);
   ```
-  最后一处 `> MAX_REQUEST_TIMEOUT_MS` 的 false 分支支配 `setTimeout`，污点在该分支被截断；
-  语义与旧 `resolveRequestTimeoutMs` 一致（非有限值 → 8000，低于 1000 → 1000，高于 60000 → 60000）。
-  文件头注释已写明"不要再抽公共函数、不要再用 Math.min 钳"，防止下次被"重构"回去。
+  语义与旧 `resolveRequestTimeoutMs` 一致（NaN → 8000，低于 1000 → 1000，高于 60000 → 60000，
+  其余原值；仅少了无意义的 `Math.trunc`）。文件头注释已写明三条硬约束与各自对应的失败提交，
+  避免下次被"重构"回去。
 
 ### 1211 — 测试替身用子串判断 URL host（High）
 

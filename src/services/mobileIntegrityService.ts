@@ -35,13 +35,16 @@ const MAX_PENDING_NONCES = 20_000;
  * CodeQL js/resource-exhaustion 会把它当用户可控输入，而 sink 就是
  * `setTimeout(() => controller.abort(), 时长)`。
  *
- * **不要用 Math.min/Math.max 去做“钳制”**：ResourceExhaustionQuery.qll 把 `Math.*` 调用
- * 当作污点传播步骤（isNumericFlowStep：`globalVarRef("Math").getAMemberCall(_)`），
- * 钳制结果会把污点原样带到 sink —— 提交 70876167 正是这么写的，告警照旧。
- * 该查询唯一认可的有界性证明是 UpperBoundsCheckSanitizerGuard：在**与 sink 同一个函数体**
- * 里用关系比较（`x > 上限`）守卫住 sink。两个调用点因此各自内联下面这段
- * “非有限值回落默认值 + 关系比较钳上下限”，不要再抽成公共函数（守卫一旦离开 sink
- * 所在函数体就不再生效）。
+ * 要让告警消失，必须同时满足三条（前两条踩过坑，第三条是前两次尝试失败的原因）：
+ * 1. **不能用 Math.min/Math.max 钳制**：ResourceExhaustionQuery.qll 的 isNumericFlowStep
+ *    把 `Math.*` 调用当污点传播步骤，钳制结果依旧带污点（提交 70876167）；
+ * 2. **守卫必须与 sink 同函数体**：屏障守卫是 CFG 局部的，抽成 helper 就失效；
+ * 3. **守卫要“罩住”污点值的读取点**：先读值、再在后面的 if 里用 `Math.min`/关系比较
+ *    改写同一个变量（提交 d810ea15）CodeQL 不认 —— sink 那次读取并不在守卫选中的分支里。
+ *    正确形状（CodeQL query test 里标为 `// OK - length check` 的用例
+ *    `if (n < 1000) { Buffer.alloc(n); }`，即 UpperBoundsCheckSanitizerGuard 认的
+ *    上界检查）是把**所有对污点值的读取都放进 `配置值 < 上限` 的 true 分支**。
+ * 下面的写法按这个形状组织：true 分支内先读一次（上界已可证），再吸附下界。
  */
 const MIN_REQUEST_TIMEOUT_MS = 1000;
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
@@ -206,16 +209,14 @@ async function getAccessToken(): Promise<string | null> {
   }
 
   const controller = new AbortController();
-  // CodeQL js/resource-exhaustion 的有界性证明：关系比较守卫必须留在 sink 所在函数体内
-  // （见文件头 MAX_REQUEST_TIMEOUT_MS 注释，不要再抽公共函数、也不要用 Math.min 钳）。
-  let abortAfterMs = Number(cfg.timeoutMs);
-  if (!Number.isFinite(abortAfterMs)) {
-    abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
-  }
-  if (abortAfterMs < MIN_REQUEST_TIMEOUT_MS) {
-    abortAfterMs = MIN_REQUEST_TIMEOUT_MS;
-  }
-  if (abortAfterMs > MAX_REQUEST_TIMEOUT_MS) {
+  // 有界性证明的写法见文件头 MIN/MAX_REQUEST_TIMEOUT_MS 注释：对污点值的读取必须落在
+  // `配置值 < 上限` 的 true 分支内，不要改成“先钳制再守卫”。
+  const configuredTimeoutMs = Number(cfg.timeoutMs);
+  let abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS; // NaN / 非数字配置落到默认值
+  if (configuredTimeoutMs < MAX_REQUEST_TIMEOUT_MS) {
+    // 本条分支内该值已被上界守卫切断；下界吸附同样在这个分支内完成。
+    abortAfterMs = configuredTimeoutMs < MIN_REQUEST_TIMEOUT_MS ? MIN_REQUEST_TIMEOUT_MS : configuredTimeoutMs;
+  } else if (configuredTimeoutMs >= MAX_REQUEST_TIMEOUT_MS) {
     abortAfterMs = MAX_REQUEST_TIMEOUT_MS;
   }
   const timer = setTimeout(() => controller.abort(), abortAfterMs);
@@ -279,15 +280,12 @@ async function decodeIntegrityToken(integrityToken: string): Promise<DecodedInte
 
   const endpoint = `https://playintegrity.googleapis.com/v1/${encodeURIComponent(cfg.packageName.trim())}:decodeIntegrityToken`;
   const controller = new AbortController();
-  // 同 getAccessToken：守卫留在 sink 所在函数体内，CodeQL 才认这段时长有上界。
-  let abortAfterMs = Number(cfg.timeoutMs);
-  if (!Number.isFinite(abortAfterMs)) {
-    abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
-  }
-  if (abortAfterMs < MIN_REQUEST_TIMEOUT_MS) {
-    abortAfterMs = MIN_REQUEST_TIMEOUT_MS;
-  }
-  if (abortAfterMs > MAX_REQUEST_TIMEOUT_MS) {
+  // 同 getAccessToken：读取污点值的代码必须落在上界守卫的 true 分支内。
+  const configuredTimeoutMs = Number(cfg.timeoutMs);
+  let abortAfterMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  if (configuredTimeoutMs < MAX_REQUEST_TIMEOUT_MS) {
+    abortAfterMs = configuredTimeoutMs < MIN_REQUEST_TIMEOUT_MS ? MIN_REQUEST_TIMEOUT_MS : configuredTimeoutMs;
+  } else if (configuredTimeoutMs >= MAX_REQUEST_TIMEOUT_MS) {
     abortAfterMs = MAX_REQUEST_TIMEOUT_MS;
   }
   const timer = setTimeout(() => controller.abort(), abortAfterMs);
