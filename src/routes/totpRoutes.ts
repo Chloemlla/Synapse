@@ -2,8 +2,13 @@ import { Router } from "express";
 import { TOTPController } from "../controllers/totpController";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { totpLimiter } from "../middleware/routeLimiters";
+import { requireTwoFactorConfigSession } from "../utils/securitySession";
 
 const router = Router();
+
+// 双因素配置类接口统一要求「安全会话」：账号已配置 TOTP/Passkey 时只能用 TOTP 或 Passkey
+// 建立的会话（见 requireTwoFactorConfigSession），避免仅凭密码就能改动二次验证配置。
+// /status 供各页面探测已配置的因素、/verify-token 是登录流程，两者不加该守卫。
 
 /**
  * @openapi
@@ -14,7 +19,7 @@ const router = Router();
  *       200:
  *         description: 生成TOTP设置信息
  */
-router.post("/generate-setup", authenticateToken, totpLimiter, TOTPController.generateSetup);
+router.post("/generate-setup", authenticateToken, totpLimiter, requireTwoFactorConfigSession, TOTPController.generateSetup);
 
 /**
  * @openapi
@@ -25,7 +30,7 @@ router.post("/generate-setup", authenticateToken, totpLimiter, TOTPController.ge
  *       200:
  *         description: 验证并启用TOTP
  */
-router.post("/verify-and-enable", authenticateToken, totpLimiter, TOTPController.verifyAndEnable);
+router.post("/verify-and-enable", authenticateToken, totpLimiter, requireTwoFactorConfigSession, TOTPController.verifyAndEnable);
 
 /**
  * @openapi
@@ -47,7 +52,7 @@ router.post("/verify-token", totpLimiter, TOTPController.verifyToken);
  *       200:
  *         description: 禁用TOTP
  */
-router.post("/disable", authenticateToken, totpLimiter, TOTPController.disable);
+router.post("/disable", authenticateToken, totpLimiter, requireTwoFactorConfigSession, TOTPController.disable);
 
 /**
  * @openapi
@@ -69,7 +74,7 @@ router.get("/status", authenticateToken, totpLimiter, TOTPController.getStatus);
  *       200:
  *         description: 获取备用恢复码
  */
-router.get("/backup-codes", authenticateToken, totpLimiter, TOTPController.getBackupCodes);
+router.get("/backup-codes", authenticateToken, totpLimiter, requireTwoFactorConfigSession, TOTPController.getBackupCodes);
 
 /**
  * @openapi
@@ -80,6 +85,12 @@ router.get("/backup-codes", authenticateToken, totpLimiter, TOTPController.getBa
  *       200:
  *         description: 重新生成备用恢复码
  */
-router.post("/regenerate-backup-codes", authenticateToken, totpLimiter, TOTPController.regenerateBackupCodes);
+router.post(
+  "/regenerate-backup-codes",
+  authenticateToken,
+  totpLimiter,
+  requireTwoFactorConfigSession,
+  TOTPController.regenerateBackupCodes,
+);
 
 export default router;

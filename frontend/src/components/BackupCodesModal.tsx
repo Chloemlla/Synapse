@@ -11,6 +11,7 @@ import {
   FaTimes,
 } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useSecuritySession } from '../hooks/useSecuritySession';
 import { api } from '../api/api';
 import { ModalPortal } from './ModalPortal';
 import {
@@ -41,6 +42,8 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const { setNotification } = useNotification();
+  // 查看/重生成恢复码属双因素配置类操作，需携带统一的安全会话（见 requireTwoFactorConfigSession）
+  const { verificationToken } = useSecuritySession();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,7 +53,9 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
         setLoading(true);
         setError('');
         setShowCodes(false);
-        const response = await api.get<BackupCodesResponse>('/api/totp/backup-codes');
+        const response = await api.get<BackupCodesResponse>('/api/totp/backup-codes', {
+          headers: verificationToken ? { 'x-verification-token': verificationToken } : undefined,
+        });
         setBackupCodes(response.data.backupCodes);
       } catch (error: any) {
         const message = error.response?.data?.error || '获取备用恢复码失败';
@@ -63,13 +68,13 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
     };
 
     void fetchBackupCodes();
-  }, [api, isOpen, setNotification]);
+  }, [api, isOpen, setNotification, verificationToken]);
 
   const regenerateBackupCodes = async () => {
     try {
       setRegenerating(true);
       setError('');
-      const response = await api.post<BackupCodesResponse>('/api/totp/regenerate-backup-codes');
+      const response = await api.post<BackupCodesResponse>('/api/totp/regenerate-backup-codes', { verificationToken });
       setBackupCodes(response.data.backupCodes);
       setShowRegenerateConfirm(false);
       setShowCodes(true);

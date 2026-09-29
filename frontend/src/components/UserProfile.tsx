@@ -2,11 +2,10 @@ import React, { useEffect, useState, ChangeEvent, useRef, useCallback, useMemo }
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useNotification } from './Notification';
 import { m } from 'framer-motion';
-import VerifyCodeInput from './VerifyCodeInput';
 import getApiBaseUrl from '../api';
 import { passkeyApi } from '../api/passkey';
 import { openDB } from 'idb';
-import { FaUser, FaUserCircle, FaShieldAlt, FaLock, FaEnvelope, FaCamera, FaSave, FaKey, FaCheckCircle, FaClock, FaExclamationCircle, FaGlobe, FaHistory, FaLink, FaUndoAlt, FaGoogle, FaSyncAlt, FaUnlink, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaUser, FaUserCircle, FaShieldAlt, FaEnvelope, FaCamera, FaSave, FaKey, FaCheckCircle, FaClock, FaExclamationCircle, FaGlobe, FaHistory, FaLink, FaUndoAlt, FaGoogle, FaSyncAlt, FaUnlink, FaExternalLinkAlt } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { useAuthStore } from '../stores/authStore';
 import { getBackendErrorMessage } from '../utils/backendError';
@@ -39,12 +38,10 @@ import {
   AccountMergeRiskItem,
   AccountMergeAccountSummary,
   AccountMergePreview,
-  ApiResponse,
   UserDeviceSession,
   fetchProfile,
   fetchDeviceSessions,
   revokeDeviceSession,
-  verifyIdentity,
   sendEmailCode,
   updateProfile,
   getAuthHeaders,
@@ -54,7 +51,6 @@ import {
   unlinkLinkedAccount,
   fetchAccountMergePreview,
   confirmAccountMerge,
-  getPasskeyAuthResponse,
   loadGoogleIdentityScript,
   AVATAR_DB,
   AVATAR_STORE,
@@ -72,7 +68,8 @@ import {
 } from './user-profile/profileHelpers';
 import DeviceSessionsPanel from './user-profile/DeviceSessionsPanel';
 import { ProfileSidebarSummary } from './user-profile/ProfileSidebarSummary';
-import { setSecuritySession } from '../hooks/useSecuritySession';
+import EstablishSecuritySession from './EstablishSecuritySession';
+import { useSecuritySession } from '../hooks/useSecuritySession';
 declare global {
   interface Window {
     google?: {
@@ -98,12 +95,15 @@ const UserProfile: React.FC = () => {
 
   // Form state
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [verified, setVerified] = useState(false);
-  const [verificationToken, setVerificationToken] = useState('');
-  const [verificationExpiresAt, setVerificationExpiresAt] = useState<number | null>(null);
   const [verificationTimeLeft, setVerificationTimeLeft] = useState(0);
+
+  // 全站共享的「安全会话」：与 TOTPManager、env-manager 用的是同一份（模块级单例）
+  const {
+    verificationToken,
+    expiresAt: verificationExpiresAt,
+    isActive: isSecuritySessionActive,
+    clear: clearSecuritySession,
+  } = useSecuritySession();
 
   // Email change verification
   const [emailVerificationCode, setEmailVerificationCode] = useState('');
@@ -112,7 +112,7 @@ const UserProfile: React.FC = () => {
 
   // Authentication state
   const [totpStatus, setTotpStatus] = useState<TotpStatus | null>(null);
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const securitySessionCardRef = useRef<HTMLElement | null>(null);
 
   // Device and session state
   const [deviceSessions, setDeviceSessions] = useState<UserDeviceSession[]>([]);
@@ -351,17 +351,18 @@ const UserProfile: React.FC = () => {
     }
   }, [emailChanged]);
 
-  const resetVerificationState = useCallback(() => {
-    setVerified(false);
-    setVerificationToken('');
-    setVerificationCode('');
-    setVerificationExpiresAt(null);
-    setVerificationTimeLeft(0);
+  const resetEmailCodeState = useCallback(() => {
     setEmailVerificationCode('');
     setEmailCodeSent(false);
     setEmailCodeCooldown(0);
-    setShowVerificationModal(false);
   }, []);
+
+  // 只作废安全会话本身；邮箱验证码状态另算（保存成功后不结束会话，同一 TTL 内还要复用）。
+  const resetVerificationState = useCallback(() => {
+    clearSecuritySession();
+    setVerificationTimeLeft(0);
+    resetEmailCodeState();
+  }, [clearSecuritySession, resetEmailCodeState]);
 
   useEffect(() => {
     if (!verificationExpiresAt) {
@@ -395,25 +396,10 @@ const UserProfile: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [verificationExpiresAt, resetVerificationState, setNotification]);
 
-  const applyVerificationSuccess = useCallback((
-    result: ApiResponse & { verificationToken?: string; expiresAt?: number },
-    successMessage: string,
-  ) => {
-    if (!result.success || !result.verificationToken) {
-      throw new Error(result.error || '验证失败');
-    }
-
-    setVerified(true);
-    setVerificationToken(result.verificationToken);
-    setVerificationExpiresAt(typeof result.expiresAt === 'number' ? result.expiresAt : null);
-    // 镜像到全站共享安全会话，使 env-manager「查看密钥」等敏感操作复用同一会话。
-    setSecuritySession(result.verificationToken, typeof result.expiresAt === 'number' ? result.expiresAt : null);
-    setNotification({ message: successMessage, type: 'success' });
-  }, [setNotification]);
-
-  const isSecuritySessionActive = useMemo(() => (
-    verified && Boolean(verificationToken) && (!verificationExpiresAt || verificationExpiresAt > Date.now())
-  ), [verificationExpiresAt, verificationToken, verified]);
+  // 安全会话由共享组件 EstablishSecuritySession 建立，这里只负责把用户带到那块卡片。
+  const focusSecuritySession = useCallback(() => {
+    securitySessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const passwordChangeReady = useMemo(() => (
     changePwdMode && newPwd.length >= 8 && newPwd === confirmNewPwd
@@ -599,26 +585,19 @@ const UserProfile: React.FC = () => {
   }, [avatarLoading]);
 
   // Security session flow
-  const handleVerify = useCallback(async () => {
-    if (!profile?.id) {
-      setNotification({ message: '用户信息不完整', type: 'error' });
-      return;
-    }
-
+  const handleVerify = useCallback(() => {
     if (isSecuritySessionActive) {
       setNotification({ message: '安全会话仍有效，可继续保存账号修改', type: 'success' });
       return;
     }
 
-    setPassword('');
-    setVerificationCode('');
-    setShowVerificationModal(true);
-  }, [isSecuritySessionActive, profile?.id, setNotification]);
+    focusSecuritySession();
+  }, [focusSecuritySession, isSecuritySessionActive, setNotification]);
 
   const handleLogoutDeviceSession = useCallback(async (deviceKey: string) => {
     if (!isSecuritySessionActive || !verificationToken) {
       setNotification({ message: '退出设备会话前请先建立安全会话', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -640,39 +619,13 @@ const UserProfile: React.FC = () => {
     } finally {
       setRevokingDeviceSessions(false);
     }
-  }, [isSecuritySessionActive, loadDeviceSessions, setNotification, verificationToken]);
-
-  const handlePasswordVerification = useCallback(async () => {
-    if (!profile?.id) {
-      setNotification({ message: '用户信息不完整', type: 'error' });
-      return;
-    }
-
-    if (!password) {
-      setNotification({ message: '请输入当前密码', type: 'warning' });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const res = await verifyIdentity({ method: 'password', password });
-      applyVerificationSuccess(res, '安全会话已建立，可继续保存账号修改');
-      setPassword('');
-      setShowVerificationModal(false);
-    } catch (error) {
-      console.error('[UserProfile] Password verification error:', error);
-      const errorMessage = getBackendErrorMessage(error, '密码验证失败');
-      setNotification({ message: errorMessage, type: 'error' });
-    } finally {
-      setSubmitting(false);
-    }
-  }, [applyVerificationSuccess, password, profile?.id, setNotification]);
+  }, [focusSecuritySession, isSecuritySessionActive, loadDeviceSessions, setNotification, verificationToken]);
 
   // Send email verification code
   const handleSendEmailCode = useCallback(async () => {
     if (!isSecuritySessionActive) {
       setNotification({ message: '请先建立安全会话，再发送新邮箱验证码', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
     if (!email || !emailChanged) {
@@ -693,7 +646,7 @@ const UserProfile: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [verificationToken, email, emailChanged, isSecuritySessionActive, setNotification]);
+  }, [verificationToken, email, emailChanged, focusSecuritySession, isSecuritySessionActive, setNotification]);
 
   // Profile update
   const handleUpdate = useCallback(async () => {
@@ -706,7 +659,7 @@ const UserProfile: React.FC = () => {
 
     if (!isSecuritySessionActive) {
       setNotification({ message: '保存账号修改前请先建立安全会话', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -753,11 +706,16 @@ const UserProfile: React.FC = () => {
 
       await loadProfile({ background: true });
 
-      setPassword('');
       setNewPwd('');
       setConfirmNewPwd('');
       setChangePwdMode(false);
-      resetVerificationState();
+      if (wantsPasswordChange) {
+        // 后端改密后会立即作废安全会话，前端同步清掉。
+        resetVerificationState();
+      } else {
+        // 仅改邮箱/头像时保留会话，同一 TTL 内的其他敏感操作还能复用。
+        resetEmailCodeState();
+      }
     } catch (error) {
       console.error('[UserProfile] Update error:', error);
       const errorMessage = getBackendErrorMessage(error, '更新失败');
@@ -771,66 +729,21 @@ const UserProfile: React.FC = () => {
     email,
     emailChanged,
     emailVerificationCode,
+    focusSecuritySession,
     isSecuritySessionActive,
     loadProfile,
     newPwd,
+    resetEmailCodeState,
     resetVerificationState,
     setNotification,
     verificationToken,
   ]);
 
-  // TOTP verification in modal
-  const handleTotpVerification = useCallback(async () => {
-    if (!profile?.id || !verificationCode) {
-      setNotification({ message: '请输入验证码', type: 'warning' });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const res = await verifyIdentity({ method: 'totp', verificationCode });
-      applyVerificationSuccess(res, '安全会话已建立，可继续保存账号修改');
-      setShowVerificationModal(false);
-    } catch (error) {
-      console.error('[UserProfile] TOTP verification error:', error);
-      const errorMessage = getBackendErrorMessage(error, '验证失败');
-      setNotification({ message: errorMessage, type: 'error' });
-    } finally {
-      setSubmitting(false);
-    }
-  }, [applyVerificationSuccess, profile, setNotification, verificationCode]);
-
-  // Passkey verification in modal
-  const handlePasskeyVerification = useCallback(async () => {
-    if (!profile?.username) {
-      setNotification({ message: '无法获取用户名', type: 'error' });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const passkeyResponse = await getPasskeyAuthResponse(profile.username);
-      const res = await verifyIdentity({
-        method: 'passkey',
-        passkeyResponse,
-        clientOrigin: window.location.origin,
-      });
-      applyVerificationSuccess(res, '安全会话已建立，可继续保存账号修改');
-      setShowVerificationModal(false);
-    } catch (error) {
-      console.error('[UserProfile] Passkey verification error:', error);
-      const errorMessage = getBackendErrorMessage(error, 'Passkey 验证失败');
-      setNotification({ message: errorMessage, type: 'error' });
-    } finally {
-      setSubmitting(false);
-    }
-  }, [applyVerificationSuccess, profile, setNotification]);
-
   const handleGoogleBindResult = useCallback(async (idToken: string) => {
     if (!isSecuritySessionActive) {
       setNotification({ message: '安全会话已过期，请重新验证后绑定 Google', type: 'warning' });
       setGoogleBindActive(false);
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -863,7 +776,7 @@ const UserProfile: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [isSecuritySessionActive, loadLinkedAccounts, loadProfile, setNotification, verificationToken]);
+  }, [focusSecuritySession, isSecuritySessionActive, loadLinkedAccounts, loadProfile, setNotification, verificationToken]);
 
   useEffect(() => {
     if (!googleBindActive || !googleBindClientId || !googleBindButtonRef.current) {
@@ -924,7 +837,7 @@ const UserProfile: React.FC = () => {
   const handleStartLinkedAccountBind = useCallback(async (provider: IdentityProvider) => {
     if (!isSecuritySessionActive) {
       setNotification({ message: '绑定第三方账号前请先建立安全会话', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -953,12 +866,12 @@ const UserProfile: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [isSecuritySessionActive, setNotification, verificationToken]);
+  }, [focusSecuritySession, isSecuritySessionActive, setNotification, verificationToken]);
 
   const handleUnlinkLinkedAccount = useCallback(async (provider: IdentityProvider) => {
     if (!isSecuritySessionActive) {
       setNotification({ message: '解绑第三方账号前请先建立安全会话', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -976,7 +889,7 @@ const UserProfile: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [isSecuritySessionActive, loadProfile, setNotification, verificationToken]);
+  }, [focusSecuritySession, isSecuritySessionActive, loadProfile, setNotification, verificationToken]);
 
   const handleOpenMergePreview = useCallback(async (account: LinkedAccount) => {
     const token = account.mergeToken || mergeToken;
@@ -1009,7 +922,7 @@ const UserProfile: React.FC = () => {
 
     if (!isSecuritySessionActive) {
       setNotification({ message: '确认合并前请先建立安全会话', type: 'warning' });
-      setShowVerificationModal(true);
+      focusSecuritySession();
       return;
     }
 
@@ -1100,7 +1013,6 @@ const UserProfile: React.FC = () => {
     if (!profile) return;
 
     setEmail(profile.email);
-    setPassword('');
     setNewPwd('');
     setConfirmNewPwd('');
     setChangePwdMode(false);
@@ -1449,7 +1361,10 @@ const UserProfile: React.FC = () => {
             </section>
 
             {/* Identity verification section */}
-            <section className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
+            <section
+              ref={securitySessionCardRef}
+              className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5"
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -1457,36 +1372,18 @@ const UserProfile: React.FC = () => {
                     安全会话
                   </label>
                   <p className="mt-2 text-[13px] leading-6 text-slate-600 sm:text-sm">
-                    先验证一次身份，邮箱、密码和第三方账号操作会复用同一安全会话。
+                    先验证一次身份，邮箱、密码、第三方账号和双因素配置会复用同一安全会话。
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleVerify}
-                  disabled={submitting}
-                  className={cn(studioPrimaryButtonClassName, 'self-start px-4 py-2 text-xs disabled:opacity-60')}
-                >
-                  <FaShieldAlt />
-                  {isSecuritySessionActive ? '会话有效' : '建立安全会话'}
-                </button>
+                {isSecuritySessionActive && verificationTimeLeft > 0 ? (
+                  <span className="inline-flex self-start items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                    <FaClock />
+                    剩余 {formatCountdown(verificationTimeLeft)}
+                  </span>
+                ) : null}
               </div>
-              <div className={`mt-4 rounded-2xl border px-3 py-3 text-[13px] font-medium sm:rounded-2xl sm:text-sm ${
-                isSecuritySessionActive
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-amber-100 bg-amber-50 text-amber-700'
-              }`}>
-                {isSecuritySessionActive ? (
-                  <>
-                    <span className="mr-2">✓</span>
-                    安全会话已建立
-                    {verificationTimeLeft > 0 ? `，剩余 ${formatCountdown(verificationTimeLeft)}` : ''}
-                  </>
-                ) : (
-                  <>
-                    <FaExclamationCircle className="mr-2 inline" />
-                    保存账号修改或绑定第三方账号前需要建立安全会话。
-                  </>
-                )}
+              <div className="mt-4">
+                <EstablishSecuritySession />
               </div>
             </section>
 
@@ -1616,127 +1513,6 @@ const UserProfile: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* ── Verification method modal ── */}
-      {showVerificationModal && (
-        <div
-          className={studioModalOverlayClassName}
-          onClick={() => setShowVerificationModal(false)}
-        >
-          <m.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className={cn(studioModalCardClassName, 'm-4 max-w-md max-h-[90vh] overflow-y-auto overscroll-contain')}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-6 text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-slate-900 text-white">
-                <FaShieldAlt className="text-2xl" />
-              </div>
-              <h3 className="text-xl font-semibold text-slate-900" style={{ fontFamily: displayFont }}>
-                建立安全会话
-              </h3>
-              <p className="mt-2 text-sm text-slate-500">验证一次后，账号修改和第三方绑定会复用该会话</p>
-            </div>
-
-            <div className="space-y-4">
-              {/* Password */}
-              <div className="rounded-2xl border border-slate-200 p-4 transition hover:border-slate-300">
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-slate-100">
-                    <FaLock className="text-sm text-slate-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-800">当前密码</div>
-                    <div className="text-[11px] text-slate-500">使用登录密码建立 10 分钟安全会话</div>
-                  </div>
-                </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className={studioFieldClassName}
-                  disabled={submitting}
-                  placeholder="请输入当前密码"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={handlePasswordVerification}
-                  disabled={submitting || !password}
-                  className={cn(studioPrimaryButtonClassName, 'mt-3 w-full py-2.5 disabled:opacity-50')}
-                >
-                  {submitting ? '验证中…' : '使用密码验证'}
-                </button>
-              </div>
-
-              {/* TOTP */}
-              {totpStatus?.enabled && (
-                <div className="rounded-2xl border border-slate-200 p-4 transition hover:border-slate-300">
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-sky-100">
-                      <FaShieldAlt className="text-sm text-sky-600" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-slate-800">TOTP 验证码</div>
-                      <div className="text-[11px] text-slate-500">使用认证器应用生成的6位验证码</div>
-                    </div>
-                  </div>
-                  <VerifyCodeInput
-                    length={6}
-                    onComplete={setVerificationCode}
-                    loading={submitting}
-                    error={undefined}
-                    inputClassName="bg-white border border-slate-200 text-slate-900 focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400 rounded-2xl px-2 py-1 text-sm transition-all outline-none mx-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleTotpVerification}
-                    disabled={submitting || verificationCode.length !== 6}
-                    className={cn(studioPrimaryButtonClassName, 'mt-3 w-full py-2.5 disabled:opacity-50')}
-                  >
-                    {submitting ? '验证中…' : '使用 TOTP 验证'}
-                  </button>
-                </div>
-              )}
-
-              {/* Passkey */}
-              {totpStatus?.hasPasskey && (
-                <div className="rounded-2xl border border-slate-200 p-4 transition hover:border-emerald-300/50">
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-emerald-100">
-                      <FaLock className="text-sm text-emerald-600" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-slate-800">Passkey 验证</div>
-                      <div className="text-[11px] text-slate-500">使用生物识别或安全密钥进行验证</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handlePasskeyVerification}
-                    disabled={submitting}
-                    className={cn(studioPrimaryButtonClassName, 'w-full py-2.5 disabled:opacity-50')}
-                  >
-                    {submitting ? '验证中…' : '使用 Passkey 验证'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                onClick={() => setShowVerificationModal(false)}
-                disabled={submitting}
-                className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
-              >
-                取消
-              </button>
-            </div>
-          </m.div>
-        </div>
-      )}
 
       {showMergeModal && mergePreview && (
         <div

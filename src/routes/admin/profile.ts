@@ -5,11 +5,11 @@ import { sendEmail } from "../../services/emailSender";
 import {
   clearEmailChangeChallenge,
   clearProfileVerificationSessions,
-  consumeProfileVerificationSession,
   createEmailChangeChallenge,
   createProfileVerificationSession,
   validateEmailChangeChallenge,
 } from "../../services/profileUpdateVerificationService";
+import { hasValidSecuritySession, requestVerificationToken } from "../../utils/securitySession";
 import {
   generateEmailChangeNewNoticeHtml,
   generateEmailChangeOldNoticeHtml,
@@ -183,10 +183,9 @@ router.post("/user/profile/devices/:deviceKey/revoke", authMiddleware, async (re
     const user = req.user;
     const token = getTokenFromRequest(req);
     const deviceKey = typeof req.params.deviceKey === "string" ? req.params.deviceKey : "";
-    const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
     if (!user || !token) return res.status(401).json({ error: "未登录" });
     if (!/^[a-f0-9]{40}$/.test(deviceKey)) return res.status(400).json({ error: "设备标识无效" });
-    if (!verificationToken || !consumeProfileVerificationSession(user.id, verificationToken)) {
+    if (!hasValidSecuritySession(req)) {
       return res.status(401).json({ error: "请先完成身份验证", code: "PROFILE_VERIFICATION_REQUIRED" });
     }
 
@@ -307,14 +306,9 @@ router.post("/user/profile/email/send-code", authMiddleware, async (req, res) =>
       return res.status(404).json({ error: "用户不存在" });
     }
 
-    const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
     const newEmail = normalizeEmail(req.body?.newEmail);
 
-    if (!verificationToken) {
-      return res.status(401).json({ error: "请先完成身份验证" });
-    }
-
-    if (!consumeProfileVerificationSession(dbUser.id, verificationToken)) {
+    if (!hasValidSecuritySession(req)) {
       return res.status(401).json({ error: "身份验证已过期，请重新验证" });
     }
 
@@ -368,7 +362,6 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
     const avatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl : "";
-    const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
     const emailVerificationCode =
       typeof req.body?.emailVerificationCode === "string" ? req.body.emailVerificationCode.trim() : "";
 
@@ -386,9 +379,11 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "没有可更新的内容" });
     }
 
+    // 安全会话在 TTL 内可复用（账号修改与第三方绑定共用一次验证）；
+    // 带了令牌却校验不过，说明会话已过期或不属于当前用户。
     let verifiedBySession = false;
-    if (verificationToken) {
-      verifiedBySession = Boolean(consumeProfileVerificationSession(dbUser.id, verificationToken));
+    if (requestVerificationToken(req)) {
+      verifiedBySession = hasValidSecuritySession(req);
 
       if (!verifiedBySession) {
         return res.status(401).json({ error: "身份验证已过期，请重新验证" });
@@ -460,7 +455,9 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
     if (emailChanged) {
       clearEmailChangeChallenge(dbUser.id);
     }
-    if (verifiedBySession) {
+    // 改密后旧的二次验证凭据不再是「当前凭据」，立即作废安全会话；
+    // 仅改邮箱/头像时保留会话，供同一 TTL 内的其他敏感操作继续复用。
+    if (wantsPasswordChange) {
       clearProfileVerificationSessions(dbUser.id);
     }
 

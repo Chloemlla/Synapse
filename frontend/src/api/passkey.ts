@@ -44,18 +44,21 @@ export const passkeyApi = {
     // 这样生成的 Passkey 才能在所有四个前端中使用
     // 开发环境：使用本地后端（避免 CORS）
     // 生产环境：使用 https://api.951100.xyz（确保 RP_ID 一致）
-    startRegistration: (credentialName: string) => 
-        api.post<RegistrationOptions>(`${getPasskeyApiBase()}/api/passkey/register/start`, { 
+    // 凭证管理类调用需带统一的安全会话 verificationToken（见后端 requireTwoFactorConfigSession）
+    startRegistration: (credentialName: string, verificationToken?: string) =>
+        api.post<RegistrationOptions>(`${getPasskeyApiBase()}/api/passkey/register/start`, {
             credentialName,
-            clientOrigin: getClientOrigin()
+            clientOrigin: getClientOrigin(),
+            verificationToken
         }),
-    
+
     // 完成注册 Passkey
-    finishRegistration: (credentialName: string, response: any) => 
-        api.post(`${getPasskeyApiBase()}/api/passkey/register/finish`, { 
-            credentialName, 
+    finishRegistration: (credentialName: string, response: any, verificationToken?: string) =>
+        api.post(`${getPasskeyApiBase()}/api/passkey/register/finish`, {
+            credentialName,
             response,
-            clientOrigin: getClientOrigin()
+            clientOrigin: getClientOrigin(),
+            verificationToken
         }),
     
     // 开始认证 - 向统一的 Passkey API 服务器发送
@@ -89,6 +92,9 @@ export const passkeyApi = {
     
     // 删除 Passkey 凭证
     // 这个可以向各自的前端服务器发送
-    removeCredential: (credentialId: string) => 
-        api.delete(`${getApiBaseUrl()}/api/passkey/credentials/${credentialId}`)
+    // 凭证管理类调用需带统一的安全会话（后端从 x-verification-token 读取）
+    removeCredential: (credentialId: string, verificationToken?: string) =>
+        api.delete(`${getApiBaseUrl()}/api/passkey/credentials/${credentialId}`, {
+            headers: verificationToken ? { 'x-verification-token': verificationToken } : undefined
+        })
 };

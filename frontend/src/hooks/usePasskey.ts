@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import { passkeyApi, Authenticator } from '../api/passkey';
+import { getSecuritySessionToken } from './useSecuritySession';
 import { useAuth } from './useAuth';
 
 type RegisterAuthenticatorResult = {
@@ -68,8 +69,8 @@ export const usePasskey = (): UsePasskeyReturn & {
         setIsLoading(true);
         let attResp: any = null;
         try {
-            // 获取注册选项
-            const optionsResponse = await passkeyApi.startRegistration(credentialName);
+            // 获取注册选项（凭证管理需带安全会话，见后端 requireTwoFactorConfigSession）
+            const optionsResponse = await passkeyApi.startRegistration(credentialName, getSecuritySessionToken());
 
             // 提取注册选项
             // 后端返回格式: { data: { options: PublicKeyCredentialCreationOptionsJSON } }
@@ -106,7 +107,7 @@ export const usePasskey = (): UsePasskeyReturn & {
                 return { attRespId: attResp?.id ?? null, finishData: null };
             }
             // 完成注册
-            const finishResp = await passkeyApi.finishRegistration(credentialName, attResp);
+            const finishResp = await passkeyApi.finishRegistration(credentialName, attResp, getSecuritySessionToken());
             // 注册成功后弹窗显示 credentialID
             if (attResp && attResp.id) {
                 setCurrentCredentialId(attResp.id);
@@ -467,7 +468,7 @@ export const usePasskey = (): UsePasskeyReturn & {
     const removeAuthenticator = useCallback(async (credentialId: string) => {
         try {
             setIsLoading(true);
-            await passkeyApi.removeCredential(credentialId);
+            await passkeyApi.removeCredential(credentialId, getSecuritySessionToken());
             // 成功提示交由外部 setNotification 统一管理
             await loadCredentials();
         } catch (error) {

@@ -16,6 +16,7 @@ import {
   validateTOTPToken,
 } from "../utils/totpUtils";
 import BackupCodesModal from "./BackupCodesModal";
+import EstablishSecuritySession from "./EstablishSecuritySession";
 import { ModalPortal } from "./ModalPortal";
 import { PasskeySetup } from "./PasskeySetup";
 import {
@@ -28,6 +29,7 @@ import {
 } from "./studioTheme";
 import TOTPSetup from "./TOTPSetup";
 import { api } from "../api/api";
+import { useSecuritySession } from "../hooks/useSecuritySession";
 
 
 interface TOTPManagerProps {
@@ -48,6 +50,8 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
   const [error, setError] = useState("");
   const [disabling, setDisabling] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  // 双因素配置类操作统一复用个人资料页那套「安全会话」
+  const { isActive, isTwoFactor, verificationToken } = useSecuritySession();
 
   const fetchStatus = useCallback(async (mode: "initial" | "refresh" = "refresh") => {
     const isInitial = mode === "initial";
@@ -121,7 +125,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
     try {
       setError("");
       setDisabling(true);
-      await api.post("/api/totp/disable", { token: cleanCode });
+      await api.post("/api/totp/disable", { token: cleanCode, verificationToken });
       setShowDisable(false);
       setDisableCode("");
       void fetchStatus("refresh");
@@ -134,6 +138,10 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
 
   const totpEnabled = Boolean(status?.enabled);
   const hasPasskey = passkeyEnabled;
+  // 已配置任一二次验证因素时，后端要求用 TOTP / Passkey 建立的会话来改动双因素配置；
+  // 两者都未配置时（首次启用）允许密码会话，否则无法开始配置。
+  const requiresTwoFactorSession = totpEnabled || hasPasskey;
+  const sessionReady = isActive && (!requiresTwoFactorSession || isTwoFactor);
   const methodLabel = [
     totpEnabled ? "TOTP" : null,
     hasPasskey ? "Passkey" : null,
@@ -245,6 +253,8 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
         transition={motionProps?.transition ?? { duration: 0.24, delay: 0.04 }}
         className="space-y-3"
       >
+        <EstablishSecuritySession requireTwoFactor={requiresTwoFactorSession} />
+
         <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
           <div className="flex gap-3">
             <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500">
@@ -278,7 +288,9 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                   <button
                     type="button"
                     onClick={() => setShowBackupCodes(true)}
-                    className={`${studioGhostButtonClassName} sm:w-auto`}
+                    disabled={!sessionReady}
+                    title={sessionReady ? undefined : "请先建立安全会话"}
+                    className={`${studioGhostButtonClassName} disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
                   >
                     <FaEye />
                     查看恢复码
@@ -287,7 +299,9 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                 <button
                   type="button"
                   onClick={() => setShowDisable(true)}
-                  className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 sm:w-auto`}
+                  disabled={!sessionReady}
+                  title={sessionReady ? undefined : "请先建立安全会话"}
+                  className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
                 >
                   关闭 TOTP
                 </button>
@@ -296,6 +310,8 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               <button
                 type="button"
                 onClick={() => setShowSetup(true)}
+                disabled={!sessionReady}
+                title={sessionReady ? undefined : "请先建立安全会话"}
                 className={`${studioPrimaryButtonClassName} sm:w-auto`}
               >
                 <FaLock />
@@ -334,7 +350,9 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
             <button
               type="button"
               onClick={() => setShowPasskeySetup(true)}
-              className={`${studioGhostButtonClassName} w-full sm:w-auto`}
+              disabled={!sessionReady}
+              title={sessionReady ? undefined : "请先建立安全会话"}
+              className={`${studioGhostButtonClassName} disabled:cursor-not-allowed disabled:opacity-60 w-full sm:w-auto`}
             >
               <FaKey />
               管理 Passkey

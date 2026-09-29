@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 export type ProfileVerificationMethod = "password" | "totp" | "passkey";
 
-interface ProfileVerificationSession {
+export interface ProfileVerificationSession {
   token: string;
   userId: string;
   method: ProfileVerificationMethod;
@@ -20,7 +20,8 @@ interface PendingEmailChangeChallenge {
   attempts: number;
 }
 
-const PROFILE_VERIFICATION_TTL_MS = 5 * 60 * 1000;
+// 与前端「使用登录密码建立 10 分钟安全会话」的文案保持一致。
+const PROFILE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CHANGE_RESEND_INTERVAL_MS = 60 * 1000;
 const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
@@ -105,16 +106,6 @@ export function validateProfileVerificationSession(userId: string, token: string
     return null;
   }
 
-  return session;
-}
-
-// 一次性消费：敏感操作放行后立即作废令牌，避免同一次身份验证被反复兑换成多个敏感操作授权。
-export function consumeProfileVerificationSession(userId: string, token: string): ProfileVerificationSession | null {
-  const session = validateProfileVerificationSession(userId, token);
-  if (!session) {
-    return null;
-  }
-  profileVerificationSessions.delete(token);
   return session;
 }
 

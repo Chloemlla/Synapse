@@ -8,7 +8,7 @@ import {
   verifyGoogleIdToken,
 } from "../../services/googleAuthService";
 import { getLinuxDoConfigSummary } from "../../services/linuxDoAuthService";
-import { consumeProfileVerificationSession } from "../../services/profileUpdateVerificationService";
+import { hasValidSecuritySession } from "../../utils/securitySession";
 import {
   confirmProviderBindSession,
   getProviderBindSessionView,
@@ -153,11 +153,10 @@ export async function googleBind(req: Request, res: Response) {
     }
 
     const idToken = typeof req.body?.idToken === "string" ? req.body.idToken : "";
-    const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
     if (!idToken) {
       return res.status(400).json({ error: "缺少 Google idToken" });
     }
-    if (!verificationToken || !consumeProfileVerificationSession(currentUser.id, verificationToken)) {
+    if (!hasValidSecuritySession(req)) {
       return res.status(401).json({ error: "请先完成身份验证" });
     }
 

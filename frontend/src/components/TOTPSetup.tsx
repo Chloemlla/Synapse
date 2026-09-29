@@ -5,6 +5,7 @@ import { api } from '../api/api';
 import { TOTPSetupData } from '../types/auth';
 import { cleanTOTPToken, handleTOTPError, validateTOTPToken } from '../utils/totpUtils';
 import { useNotification } from './Notification';
+import { useSecuritySession } from '../hooks/useSecuritySession';
 import { ModalPortal } from './ModalPortal';
 import {
   studioFieldClassName,
@@ -40,6 +41,8 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
   const [loading, setLoading] = useState(false);
   const [showBackupCodes, setShowBackupCodes] = useState(false);
   const { setNotification } = useNotification();
+  // 后端要求 TOTP 配置走统一的「安全会话」（见 requireTwoFactorConfigSession）
+  const { verificationToken } = useSecuritySession();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,7 +54,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
         setVerificationCode('');
         setShowBackupCodes(false);
 
-        const response = await api.post('/api/totp/generate-setup');
+        const response = await api.post('/api/totp/generate-setup', { verificationToken });
         setSetupData(response.data);
         setStep('setup');
       } catch (error: any) {
@@ -83,6 +86,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
 
       await api.post('/api/totp/verify-and-enable', {
         token: cleanCode,
+        verificationToken,
       });
 
       setStep('success');

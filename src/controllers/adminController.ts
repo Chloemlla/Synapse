@@ -12,7 +12,8 @@ import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
 import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
-import { validateProfileVerificationSession, clearAllProfileVerificationSessions } from "../services/profileUpdateVerificationService";
+import { clearAllProfileVerificationSessions } from "../services/profileUpdateVerificationService";
+import { hasValidSecuritySession, requestVerificationToken } from "../utils/securitySession";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
@@ -1136,19 +1137,18 @@ export const adminController = {
     }
   },
 
-  // 验证管理操作口令后查看密钥明文（D-5）：返回单一主密钥 AES_KEY 及各用途派生子密钥。
-  // 需 superadmin + 二次口令校验；审计日志由路由层 auditLog 中间件留痕。
+  // 查看密钥明文（D-5）：返回单一主密钥 AES_KEY 及各用途派生子密钥。
+  // 需 superadmin + 全站统一的安全会话校验；审计日志由路由层 auditLog 中间件留痕。
   async revealKey(req: Request, res: Response) {
     try {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
       const userId = req.user.id;
-      const body = (req.body ?? {}) as { verificationToken?: unknown; label?: unknown };
-      const verificationToken = typeof body.verificationToken === "string" ? body.verificationToken : "";
+      const body = (req.body ?? {}) as { label?: unknown };
       // 复用个人资料页同一套「安全会话」：校验不消耗（查看是读操作，可在 TTL 内重复查看）。
-      if (!verificationToken || !validateProfileVerificationSession(userId, verificationToken)) {
+      if (!hasValidSecuritySession(req)) {
         logger.warn("[EnvManager] 查看密钥：安全会话校验失败", {
           userId,
-          tokenProvided: verificationToken.length > 0,
+          tokenProvided: requestVerificationToken(req).length > 0,
         });
         return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
       }
@@ -1253,8 +1253,7 @@ export const adminController = {
     try {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
       const userId = req.user.id;
-      const token = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
-      if (!token || !validateProfileVerificationSession(userId, token)) {
+      if (!hasValidSecuritySession(req)) {
         return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
       }
       const cleared = clearAllProfileVerificationSessions();
@@ -1273,8 +1272,7 @@ export const adminController = {
     try {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ success: false, error: "需要超级管理员权限" });
       const userId = req.user.id;
-      const token = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
-      if (!token || !validateProfileVerificationSession(userId, token)) {
+      if (!hasValidSecuritySession(req)) {
         return res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话" });
       }
 

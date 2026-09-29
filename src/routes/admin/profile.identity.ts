@@ -8,7 +8,7 @@ import {
 import { confirmAccountMerge, getMergePreviewByToken } from "../../services/accountMergeService";
 import { getGoogleAuthConfigSummary } from "../../services/googleAuthService";
 import { createLinuxDoAuthorizationUrl, isLinuxDoAuthEnabled } from "../../services/linuxDoAuthService";
-import { consumeProfileVerificationSession } from "../../services/profileUpdateVerificationService";
+import { hasValidSecuritySession } from "../../utils/securitySession";
 import { getClientIP } from "../../utils/ipUtils";
 import logger from "../../utils/logger";
 import { UserStorage } from "../../utils/userStorage";
@@ -44,8 +44,7 @@ export function registerProfileIdentityRoutes(router: Router): void {
         return res.status(400).json({ error: "不支持的第三方身份提供商" });
       }
 
-      const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
-      if (!verificationToken || !consumeProfileVerificationSession(user.id, verificationToken)) {
+      if (!hasValidSecuritySession(req)) {
         return res.status(401).json({ error: "请先完成身份验证" });
       }
 
@@ -98,8 +97,7 @@ export function registerProfileIdentityRoutes(router: Router): void {
         return res.status(404).json({ error: "用户不存在" });
       }
 
-      const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
-      if (!verificationToken || !consumeProfileVerificationSession(dbUser.id, verificationToken)) {
+      if (!hasValidSecuritySession(req)) {
         return res.status(401).json({ error: "请先完成身份验证" });
       }
 
@@ -156,11 +154,10 @@ export function registerProfileIdentityRoutes(router: Router): void {
       }
 
       const mergeToken = typeof req.body?.mergeToken === "string" ? req.body.mergeToken : "";
-      const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken : "";
       if (!mergeToken) {
         return res.status(400).json({ error: "缺少合并令牌" });
       }
-      if (!verificationToken || !consumeProfileVerificationSession(dbUser.id, verificationToken)) {
+      if (!hasValidSecuritySession(req)) {
         return res.status(401).json({ error: "确认合并前请先完成身份验证" });
       }
 

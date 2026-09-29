@@ -3,6 +3,7 @@ import getApiBaseUrl from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from './Notification';
 import { useSecuritySession } from '../hooks/useSecuritySession';
+import { passkeyApi } from '../api/passkey';
 import { verifyIdentity, getPasskeyAuthResponse } from './user-profile/profileHelpers';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
@@ -12,24 +13,35 @@ interface EstablishSecuritySessionProps {
   onEstablished?: () => void;
   /** 会话已有效时是否仍渲染「有效 + 结束会话」的状态条（默认渲染）。 */
   showActiveBar?: boolean;
+  /**
+   * 是否要求用 TOTP / Passkey 建立会话（配置双因素验证时用）。
+   * 为 true 时隐藏「当前密码」方式，密码建立的旧会话也不算满足要求。
+   * 调用方应在账号已配置 TOTP/Passkey 时才传 true，否则用户无法开始首次配置。
+   */
+  requireTwoFactor?: boolean;
 }
 
 type VerifyResult = { success?: boolean; verificationToken?: string; expiresAt?: number; error?: string };
 
 /**
- * 全站统一的「建立安全会话」组件：验证一次身份后，账号修改、第三方绑定、查看密钥、命令执行等
- * 敏感操作复用同一枚 verificationToken（10 分钟 TTL）。按已配置的因素展示三种方式：
- * 当前密码（始终）、TOTP（开启后）、Passkey（注册后）。
+ * 全站统一的「建立安全会话」组件：验证一次身份后，账号修改、第三方绑定、查看密钥、命令执行、
+ * 双因素配置等敏感操作复用同一枚 verificationToken（10 分钟 TTL）。按已配置的因素展示三种方式：
+ * 当前密码（requireTwoFactor 为 false 时）、TOTP（开启后）、Passkey（注册后）。
  */
-export default function EstablishSecuritySession({ onEstablished, showActiveBar = true }: EstablishSecuritySessionProps) {
+export default function EstablishSecuritySession({
+  onEstablished,
+  showActiveBar = true,
+  requireTwoFactor = false,
+}: EstablishSecuritySessionProps) {
   const { user } = useAuth();
   const { setNotification } = useNotification();
-  const { isActive, setSession, clear } = useSecuritySession();
+  const { isActive, method, setSession, clear } = useSecuritySession();
 
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [submitting, setSubmitting] = useState<'password' | 'totp' | 'passkey' | null>(null);
-  const [factors, setFactors] = useState<{ totp: boolean; passkey: boolean }>({ totp: false, passkey: false });
+  // null = 尚未探测到（比如 /api/totp/status 请求失败）
+  const [factors, setFactors] = useState<{ totp: boolean; passkey: boolean } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +50,7 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
         const res = await fetch(`${getApiBaseUrl()}/api/totp/status`, { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json();
-        const passkey =
+        const explicitPasskey =
           typeof data?.hasPasskey === 'boolean'
             ? data.hasPasskey
             : typeof data?.passkeyEnabled === 'boolean'
@@ -47,10 +59,18 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
                 ? data.credentialsCount > 0
                 : Array.isArray(data?.passkeyCredentials)
                   ? data.passkeyCredentials.length > 0
-                  : false;
+                  : null;
+        // /api/totp/status 不返回 Passkey 信息，缺省时回落到凭证列表接口，
+        // 否则只配了 Passkey 的账号在这里看不到 Passkey 验证方式。
+        const passkey =
+          explicitPasskey ??
+          (await passkeyApi
+            .getCredentials()
+            .then(({ data: credentials }) => Array.isArray(credentials) && credentials.length > 0)
+            .catch(() => false));
         if (!cancelled) setFactors({ totp: Boolean(data?.enabled), passkey });
       } catch {
-        // 拉取因素失败时只展示密码方式，不阻塞
+        // 拉取因素失败时保持 null：不阻塞，由渲染逻辑决定兜底展示哪些方式
       }
     })();
     return () => {
@@ -58,10 +78,14 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
     };
   }, []);
 
+  // 因素未知时按「要求二因素就两种都给出」兜底，避免只配了 Passkey 的账号看到空盒子。
+  const totpAvailable = factors ? factors.totp : requireTwoFactor;
+  const passkeyAvailable = factors ? factors.passkey : requireTwoFactor;
+
   const applySuccess = useCallback(
-    (res: VerifyResult) => {
+    (res: VerifyResult, kind: 'password' | 'totp' | 'passkey') => {
       if (!res.success || !res.verificationToken) throw new Error(res.error || '验证失败');
-      setSession(res.verificationToken, typeof res.expiresAt === 'number' ? res.expiresAt : null);
+      setSession(res.verificationToken, typeof res.expiresAt === 'number' ? res.expiresAt : null, kind);
       setPassword('');
       setTotpCode('');
       setNotification({ message: '安全会话已建立', type: 'success' });
@@ -74,7 +98,7 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
     async (kind: 'password' | 'totp' | 'passkey', fn: () => Promise<VerifyResult>, fallbackMsg: string) => {
       setSubmitting(kind);
       try {
-        applySuccess(await fn());
+        applySuccess(await fn(), kind);
       } catch (error) {
         setNotification({ message: getBackendErrorMessage(error, fallbackMsg), type: 'error' });
       } finally {
@@ -115,7 +139,10 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
     );
   };
 
-  if (isActive) {
+  // 要求「非密码」时，密码建立的会话不算满足，继续展示可用的验证方式让用户升级会话。
+  const satisfied = isActive && (!requireTwoFactor || method !== 'password');
+
+  if (satisfied) {
     if (!showActiveBar) return null;
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
@@ -132,33 +159,39 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
       <div>
         <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
-        <div className="text-xs text-slate-500">验证一次后，账号修改和第三方绑定会复用该会话。</div>
-      </div>
-
-      {/* 当前密码（始终可用） */}
-      <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-        <div className="text-sm font-medium text-slate-700">当前密码</div>
-        <div className="mb-2 text-xs text-slate-500">使用登录密码建立 10 分钟安全会话</div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') verifyPassword();
-            }}
-            placeholder="请输入当前密码"
-            autoComplete="current-password"
-            className={studioFieldClassName}
-          />
-          <button type="button" disabled={submitting !== null} onClick={verifyPassword} className={studioPrimaryButtonClassName}>
-            {submitting === 'password' ? '验证中…' : '使用密码验证'}
-          </button>
+        <div className="text-xs text-slate-500">
+          {requireTwoFactor
+            ? '配置双因素验证需用 TOTP 或 Passkey 建立 10 分钟安全会话，不能使用登录密码。'
+            : '验证一次后，账号修改和第三方绑定会复用该会话。'}
         </div>
       </div>
 
+      {/* 当前密码（requireTwoFactor 时隐藏，避免只拿到密码就能改动双因素配置） */}
+      {requireTwoFactor ? null : (
+        <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+          <div className="text-sm font-medium text-slate-700">当前密码</div>
+          <div className="mb-2 text-xs text-slate-500">使用登录密码建立 10 分钟安全会话</div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') verifyPassword();
+              }}
+              placeholder="请输入当前密码"
+              autoComplete="current-password"
+              className={studioFieldClassName}
+            />
+            <button type="button" disabled={submitting !== null} onClick={verifyPassword} className={studioPrimaryButtonClassName}>
+              {submitting === 'password' ? '验证中…' : '使用密码验证'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* TOTP（开启后展示） */}
-      {factors.totp ? (
+      {totpAvailable ? (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
           <div className="text-sm font-medium text-slate-700">TOTP 验证码</div>
           <div className="mb-2 text-xs text-slate-500">使用认证器应用生成的 6 位验证码</div>
@@ -182,7 +215,7 @@ export default function EstablishSecuritySession({ onEstablished, showActiveBar 
       ) : null}
 
       {/* Passkey（注册后展示） */}
-      {factors.passkey ? (
+      {passkeyAvailable ? (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
           <div className="text-sm font-medium text-slate-700">Passkey 验证</div>
           <div className="mb-2 text-xs text-slate-500">使用生物识别或安全密钥进行验证</div>

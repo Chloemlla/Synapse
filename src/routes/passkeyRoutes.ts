@@ -12,6 +12,7 @@ import { sanitizeLogValue } from "../utils/requestLogSanitizer";
 import { getAuthSessionMetadata } from "../services/authSessionService";
 import logger from "../utils/logger";
 import { firstString } from "../utils/httpParam";
+import { requireTwoFactorConfigSession } from "../utils/securitySession";
 import { UserStorage } from "../utils/userStorage";
 import { registerPasskeyMaintenanceRoutes } from "./passkeyRoutes.maintenance";
 
@@ -66,8 +67,8 @@ router.get("/credentials", passkeyAuthLimiter, authenticateToken, async (req, re
   }
 });
 
-// 开始注册 Passkey
-router.post("/register/start", passkeyAuthLimiter, authenticateToken, async (req, res) => {
+// 开始注册 Passkey（凭证管理入口，需安全会话；见 requireTwoFactorConfigSession）
+router.post("/register/start", passkeyAuthLimiter, authenticateToken, requireTwoFactorConfigSession, async (req, res) => {
   try {
     const userId = (req as any).user?.id;
     const { credentialName, clientOrigin } = req.body;
@@ -163,8 +164,8 @@ router.post("/register/start", passkeyAuthLimiter, authenticateToken, async (req
   }
 });
 
-// 完成注册 Passkey
-router.post("/register/finish", passkeyAuthLimiter, authenticateToken, async (req, res) => {
+// 完成注册 Passkey（凭证管理入口，需安全会话；见 requireTwoFactorConfigSession）
+router.post("/register/finish", passkeyAuthLimiter, authenticateToken, requireTwoFactorConfigSession, async (req, res) => {
   try {
     const userId = (req as any).user.id;
     const { credentialName, response, clientOrigin } = req.body;
@@ -604,8 +605,8 @@ router.post("/authenticate/finish", passkeyAuthLimiter, async (req, res) => {
   }
 });
 
-// 删除 Passkey 凭证
-router.delete("/credentials/:credentialId", passkeyAuthLimiter, authenticateToken, async (req, res) => {
+// 删除 Passkey 凭证（凭证管理入口，需安全会话；见 requireTwoFactorConfigSession）
+router.delete("/credentials/:credentialId", passkeyAuthLimiter, authenticateToken, requireTwoFactorConfigSession, async (req, res) => {
   try {
     const userId = (req as any).user.id;
     const credentialId = firstString(req.params.credentialId);
