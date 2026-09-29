@@ -25,8 +25,6 @@ interface PolicyCheckResponse {
   hasValidConsent: boolean;
   version?: string;
   expiresAt?: string;
-  /** 后端在无有效同意时给出的英文原因文案 */
-  message?: string;
   currentVersion?: string;
 }
 
@@ -43,8 +41,6 @@ export interface PolicyConsentStatus {
   version: string;
   /** 同意到期时间，仅 hasValidConsent 为 true 时存在 */
   expiresAt?: string;
-  /** 无有效同意的原因：从未同意过 / 已有的同意已过期 */
-  reason?: 'none' | 'expired';
 }
 
 export interface RevokePolicyConsentResult {
@@ -123,13 +119,7 @@ export async function checkPolicyConsent(fingerprintInput?: string): Promise<Pol
       return { hasValidConsent: true, version: data.version || version, expiresAt: data.expiresAt };
     }
 
-    return {
-      hasValidConsent: false,
-      version,
-      // 「已过期」目前只能从这句英文文案区分；后端 findValidConsent 会把过期记录一并过滤掉，
-      // 因此该分支实际很少命中，拿不到就按「未同意」展示。
-      reason: data.message === 'Consent expired' ? 'expired' : 'none',
-    };
+    return { hasValidConsent: false, version };
   } catch (error) {
     throw toPolicyRequestError(error);
   }

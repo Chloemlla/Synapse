@@ -39,6 +39,8 @@ interface StatusPresentation {
   hint: string;
 }
 
+// 只有「有效 / 无效」两态：后端 findValidConsent 带 expiresAt > now 过滤，过期记录查不出来，
+// 所以这里区分不了「从未同意」和「已过期」，提示语对两种情况都成立即可。
 const getStatusPresentation = (status: PolicyConsentStatus): StatusPresentation => {
   if (status.hasValidConsent) {
     return {
@@ -48,18 +50,10 @@ const getStatusPresentation = (status: PolicyConsentStatus): StatusPresentation 
     };
   }
 
-  if (status.reason === 'expired') {
-    return {
-      label: '已过期',
-      badgeClassName: 'bg-amber-100 text-amber-700',
-      hint: '同意已过期，需要重新逐项勾选条款才能继续使用依赖该同意的功能。',
-    };
-  }
-
   return {
     label: '未同意',
     badgeClassName: 'bg-slate-100 text-slate-600',
-    hint: '本设备还没有对当前版本政策做出同意，无需撤回。',
+    hint: '本设备当前没有有效的同意记录（未同意过，或此前的同意已过期），无需撤回；继续使用依赖该同意的功能时会被要求重新逐项勾选。',
   };
 };
 
