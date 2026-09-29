@@ -5,6 +5,8 @@ import { FaLink, FaCopy, FaDice, FaArrowLeft } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { apiWithRetry } from '../api';
+import { useAuthStore } from '../stores/authStore';
+import { isAdminRole } from '../utils/rbac';
 import { studioEyebrowClassName } from './studioTheme';
 
 interface PublicShortLinkResponse {
@@ -44,6 +46,9 @@ const PublicShortLinkCreator: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const { setNotification } = useNotification();
+  // 已登录管理员（admin / superadmin）由后端按会话放行，无需填写服务密码。
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = isAdminRole(currentUser?.role);
 
   const handleCreate = async () => {
     const trimmedTarget = target.trim();
@@ -51,7 +56,7 @@ const PublicShortLinkCreator: React.FC = () => {
       setNotification({ message: '请输入目标地址', type: 'warning' });
       return;
     }
-    if (!password.trim()) {
+    if (!isAdmin && !password.trim()) {
       setNotification({ message: '请输入服务密码', type: 'warning' });
       return;
     }
@@ -75,7 +80,7 @@ const PublicShortLinkCreator: React.FC = () => {
         {
           target: trimmedTarget,
           customCode: customCode.trim() || undefined,
-          password: password.trim(),
+          password: isAdmin ? undefined : password.trim(),
         },
       );
       if (data?.success && data.shortUrl) {
@@ -169,19 +174,25 @@ const PublicShortLinkCreator: React.FC = () => {
               </p>
             </div>
 
-            <div>
-              <label className={studioEyebrowClassName}>
-                服务密码
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="请输入公共短链访问口令"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
-                aria-label="服务密码"
-              />
-            </div>
+            {isAdmin ? (
+              <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm leading-6 text-emerald-800">
+                当前已登录管理员账号，创建短链无需填写服务密码。
+              </div>
+            ) : (
+              <div>
+                <label className={studioEyebrowClassName}>
+                  服务密码
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="请输入公共短链访问口令"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  aria-label="服务密码"
+                />
+              </div>
+            )}
 
             <motion.button
               whileHover={{ scale: 1.01 }}
