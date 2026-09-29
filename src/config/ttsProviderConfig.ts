@@ -406,7 +406,7 @@ export function buildProviderPublicConfig(
         {
           id: defaultModel,
           name: defaultModel,
-          description: "Fish Audio 管理员配置模型",
+          description: "Fish Audio 官方模型",
         },
       ],
       voices: [],
@@ -426,7 +426,7 @@ export function buildProviderPublicConfig(
         ? configuredVoice
         : EDGE_DEFAULT_VOICE,
       models: [
-        { id: EDGE_MODEL_ID, name: "Edge 朗读", description: "微软内置语音，无需额外密钥" },
+        { id: EDGE_MODEL_ID, name: "Microsoft TTS", description: "Microsoft TTS 官方模型" },
       ],
       voices,
       voiceMode: "select",

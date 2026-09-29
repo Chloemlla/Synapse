@@ -177,7 +177,7 @@ describe("TTS provider runtime capability", () => {
       provider: "edge",
       defaultModel: EDGE_MODEL_ID,
       defaultVoice: EDGE_DEFAULT_VOICE,
-      models: [{ id: EDGE_MODEL_ID, name: "Edge 朗读", description: "微软内置语音，无需额外密钥" }],
+      models: [{ id: EDGE_MODEL_ID, name: "Microsoft TTS", description: "Microsoft TTS 官方模型" }],
       voices: EDGE_BUILTIN_VOICE_OPTIONS.map((entry) => ({ ...entry })),
       voiceMode: "select",
     });
