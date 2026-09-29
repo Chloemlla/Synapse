@@ -18,6 +18,7 @@ import {
   FaFileAudio,
   FaFileContract,
   FaGavel,
+  FaGlobe,
   FaGlobeAsia,
   FaHistory,
   FaInfoCircle,
