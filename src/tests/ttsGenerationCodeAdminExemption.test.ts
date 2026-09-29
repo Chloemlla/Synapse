@@ -164,7 +164,7 @@ describe("TTS 生成码闸门的管理员豁免", () => {
     context.input.generationCode = EXPECTED_CODE;
     await expect(
       buildPipeline().validateAndBuild(context as never),
-    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", status: 401 });
+    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", statusCode: 401 });
   });
 
   it("管理员与超管不带生成码即可提交", async () => {
@@ -200,6 +200,6 @@ describe("TTS 生成码闸门的管理员豁免", () => {
     const context = contextFor(null, { authenticatedByApiKey: true });
     await expect(
       buildPipeline().validateAndBuild(context as never),
-    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", status: 401 });
+    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", statusCode: 401 });
   });
 });
