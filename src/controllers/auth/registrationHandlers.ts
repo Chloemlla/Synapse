@@ -11,9 +11,9 @@ import {
   POLICY_AGREEMENT_KEYS,
   POLICY_CONSENT_REQUIRED_MESSAGE,
   normalizeAuthPolicyConsent,
-  recordAuthPolicyConsent,
   resolveRequestFingerprint,
   shouldRequireAuthPolicyConsent,
+  writePolicyConsent,
 } from "../../services/policyConsentService";
 import {
   generateVerificationCodeEmailHtml,
@@ -124,7 +124,7 @@ export async function register(req: Request, res: Response) {
       // 验证邮件已发出即视为提交成立，此刻落同意记录（指纹是注册的硬要求，此处必然存在）
       if (policyConsent) {
         const userAgent = req.headers["user-agent"];
-        await recordAuthPolicyConsent({
+        await writePolicyConsent({
           fingerprint: resolveRequestFingerprint(req) || fingerprint,
           source: "register",
           userAgent: typeof userAgent === "string" ? userAgent : undefined,

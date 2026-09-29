@@ -19,6 +19,8 @@ function resolveSecretSalt(): string {
 
 // 惰性解析盐：模块加载时定格会让 admin/env 面板运行期保存的 POLICY_SECRET_SALT 不生效，
 // 改为每次签名时调用 resolveSecretSalt()（JWT_SECRET 派生回退不变）。
+// 只做服务端签名：盐不下发，浏览器无从计算，因此这个值不能作为「客户端自证同意」的凭据，
+// 只能作为库里那条记录未被外部改写的标记（见 writePolicyConsent）。
 export function generatePolicyChecksum(consent: {
   timestamp: number;
   version: string;
@@ -26,17 +28,6 @@ export function generatePolicyChecksum(consent: {
 }): string {
   const data = `${consent.timestamp}|${consent.version}|${consent.fingerprint}`;
   return crypto.createHmac("sha256", resolveSecretSalt()).update(data).digest("hex");
-}
-
-export function verifyPolicyChecksum(
-  consent: { timestamp: number; version: string; fingerprint: string },
-  checksum: string,
-): boolean {
-  const expectedChecksum = generatePolicyChecksum(consent);
-  if (typeof checksum !== "string" || checksum.length !== expectedChecksum.length) {
-    return false;
-  }
-  return crypto.timingSafeEqual(Buffer.from(checksum, "utf8"), Buffer.from(expectedChecksum, "utf8"));
 }
 
 export function shouldRequireTtsPolicyConsent(): boolean {
@@ -56,7 +47,7 @@ export function policyAgreementAnchor(key: string): string {
   return `${POLICY_AGREEMENT_ANCHOR_PREFIX}${key}`;
 }
 
-export type PolicyConsentSource = "login" | "register";
+export type PolicyConsentSource = "login" | "register" | "feature";
 
 export interface AuthPolicyConsent {
   accepted: true;
@@ -121,17 +112,18 @@ export function resolveRequestFingerprint(req: {
   return trimmed && trimmed !== "unknown" ? trimmed : null;
 }
 
-// 登录/注册通过后落一条同意记录：checksum 由服务端签名，客户端无法自行伪造，
-// 因此这条记录与 POST /api/policy/verify 写入的记录同源同格式。
+// 唯一的同意记录写入路径：登录、注册，以及显式同意端点（POST /api/policy/verify，
+// 供 TTS 这类「先同意再使用」的功能门禁调用）。
+// checksum 由服务端签名，客户端无法自行伪造；记录归属于调用方已证明归属的指纹。
 // 同一指纹+版本已有有效记录时原地续期，避免 unique id 冲突与记录堆积。
 // 指纹缺失（客户端拿不到设备信息）时不写库，只记日志：登录环节不能因为
 // 指纹采集失败而把已有账户挡在门外，注册环节的指纹是硬要求（缺失已在更早处拒绝）。
-export async function recordAuthPolicyConsent(params: {
+export async function writePolicyConsent(params: {
   fingerprint?: string | null;
   source: PolicyConsentSource;
   userAgent?: string;
   ipAddress?: string;
-}): Promise<string | null> {
+}): Promise<{ id: string; expiresAt: Date } | null> {
   const fingerprint = typeof params.fingerprint === "string" ? params.fingerprint.trim() : "";
   if (!fingerprint || fingerprint === "unknown") {
     logger.warn("[政策同意] 缺少可用设备指纹，未写入同意记录", { source: params.source });
@@ -156,7 +148,7 @@ export async function recordAuthPolicyConsent(params: {
       existing.recordedAt = new Date(timestamp);
       existing.expiresAt = expiresAt;
       await existing.save();
-      return existing.id;
+      return { id: existing.id, expiresAt };
     }
 
     const consent = new PolicyConsent({
@@ -172,7 +164,7 @@ export async function recordAuthPolicyConsent(params: {
       expiresAt,
     });
     await consent.save();
-    return consent.id;
+    return { id: consent.id, expiresAt };
   } catch (error) {
     logger.warn("[政策同意] 写入同意记录失败", { source: params.source, error: String(error) });
     return null;

@@ -17,9 +17,11 @@ import {
   emitIpVerificationRequired,
   isExemptPath,
 } from "../utils/ipVerification";
+import { TtsApiError } from "../types/ttsErrors";
 
 type TtsErrorPayload = {
   error?: string;
+  code?: string;
   errorCode?: string;
   message?: string;
   nextAction?: {
@@ -291,15 +293,16 @@ export const useTts = () => {
     } catch (requestError) {
       if (axios.isAxiosError(requestError)) {
         const axiosError = requestError as AxiosError<TtsErrorPayload>;
+        const payload = axiosError.response?.data;
         const errorMessage =
-          axiosError.response?.data?.error ||
-          axiosError.response?.data?.message ||
-          axiosError.response?.data?.nextAction?.message ||
+          payload?.error ||
+          payload?.message ||
+          payload?.nextAction?.message ||
           (axiosError.request ? "网络连接错误，请检查网络连接后重试" : axiosError.message) ||
           "生成失败，请稍后重试";
 
         setError(errorMessage);
-        throw new Error(errorMessage);
+        throw new TtsApiError(errorMessage, payload?.code || payload?.errorCode);
       }
 
       const errorMessage =

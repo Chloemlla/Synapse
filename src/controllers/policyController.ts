@@ -5,13 +5,13 @@ import { PolicyConsent } from "../models/policyConsentModel";
 import {
   CONSENT_VALIDITY_DAYS,
   CURRENT_POLICY_VERSION,
-  verifyPolicyChecksum,
+  writePolicyConsent,
 } from "../services/policyConsentService";
+import IpVerificationService from "../services/ipVerificationService";
 import { config } from "../config/config";
 import { parseCookieHeader } from "../utils/authCookie";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
-import { uuidv4 } from "../utils/uuid";
 
 // G3-12: 把"指纹归属"变成可验证的。verify 时下发与指纹绑定的 HMAC 凭据，
 // revoke/check 必须携带该凭据（或已登录会话）才能操作，防止拿别人指纹就能撤销同意。
@@ -61,27 +61,42 @@ function assertDeviceOwnership(req: Request, res: Response, fingerprint: string)
   return false;
 }
 
-// 记录隐私政策同意
+// 写同意记录前的设备归属证明：已登录会话、本端点下发的凭据 cookie，或首访验证令牌。
+// 首次写入时既没有会话也没有 consent cookie（后者正是本端点签发的），所以必须承认首访验证
+// 令牌——它由 /api/ip-verification/session 签发并与指纹绑定。
+// 令牌为空时同样交给 verifyRequestToken 判定，不能在这里先短路掉：首访验证关闭（闸门关闭或
+// IPQS/proxycheck 都关）时它恒为 true，与中间件放行 TTS 请求用的是同一判据。若在此处要求
+// 非空令牌，「TTS 门禁开启 + 首访验证关闭」这个组合下匿名端就没有任何可用证明，门禁记录不出来，
+// 等于把这次要修的问题又原地复现一遍。
+async function assertConsentWriteOwnership(req: Request, res: Response, fingerprint: string): Promise<boolean> {
+  if ((req as any).user?.id) return true;
+  if (verifyConsentToken(readConsentTokenCookie(req), fingerprint)) return true;
+
+  const tokenHeader = req.headers["x-ip-verification-token"];
+  const token = typeof tokenHeader === "string" ? tokenHeader.trim() : "";
+  if (await IpVerificationService.verifyRequestToken(token, fingerprint, getClientIP(req))) {
+    return true;
+  }
+
+  res.status(403).json({ success: false, error: "缺少设备凭据，无法完成操作", code: "DEVICE_CREDENTIAL_REQUIRED" });
+  return false;
+}
+
+// 记录政策同意（POST /api/policy/verify）。
+// 旧实现要求客户端提交 checksum，而签名的盐只在服务端——浏览器无从计算，等于这个端点对真实
+// 客户端不可用，TTS_REQUIRE_POLICY_CONSENT 的门禁因此永远拿不到同意记录。现在改由服务端签名
+// 并落库，客户端只需证明「我是这个指纹的设备」。时间戳同样由服务端生成，于是原先为防重放而设的
+// ±80 秒时间窗校验连同它自己的失效模式一并消失。
 export const recordPolicyConsent = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { consent, userAgent, timestamp } = req.body;
+    const { fingerprint, version } = req.body;
     const clientIP = getClientIP(req);
+    const userAgent = req.headers["user-agent"];
 
-    // 验证必需字段
-    if (!consent?.timestamp || !consent.version || !consent.fingerprint || !consent.checksum) {
-      res.status(400).json({
-        success: false,
-        error: "Missing required consent fields",
-        code: "MISSING_FIELDS",
-      });
-      return;
-    }
-
-    // 输入验证和清理
     if (
-      typeof consent.fingerprint !== "string" ||
-      consent.fingerprint.trim().length === 0 ||
-      consent.fingerprint.trim().length > 100
+      typeof fingerprint !== "string" ||
+      fingerprint.trim().length === 0 ||
+      fingerprint.trim().length > 100
     ) {
       res.status(400).json({
         success: false,
@@ -91,151 +106,71 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    if (
-      typeof consent.version !== "string" ||
-      consent.version.trim().length === 0 ||
-      consent.version.trim().length > 50
-    ) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid version format",
-        code: "INVALID_VERSION",
-      });
+    const sanitizedFingerprint = fingerprint.trim();
+
+    // 版本可省略（默认当前版本）；显式给出但与当前版本不符时拒绝，
+    // 免得客户端以为自己在同意旧条文、却拿到一条标着新版本的记录。
+    if (version !== undefined) {
+      if (typeof version !== "string" || version.trim().length === 0 || version.trim().length > 50) {
+        res.status(400).json({
+          success: false,
+          error: "Invalid version format",
+          code: "INVALID_VERSION",
+        });
+        return;
+      }
+      if (version.trim() !== CURRENT_POLICY_VERSION) {
+        res.status(400).json({
+          success: false,
+          error: "Unsupported policy version",
+          currentVersion: CURRENT_POLICY_VERSION,
+          providedVersion: version.trim(),
+          code: "UNSUPPORTED_VERSION",
+        });
+        return;
+      }
+    }
+
+    if (!(await assertConsentWriteOwnership(req, res, sanitizedFingerprint))) {
       return;
     }
 
-    if (
-      typeof consent.checksum !== "string" ||
-      consent.checksum.trim().length === 0 ||
-      consent.checksum.trim().length > 100
-    ) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid checksum format",
-        code: "INVALID_CHECKSUM",
-      });
-      return;
-    }
-
-    // 清理输入
-    const sanitizedFingerprint = consent.fingerprint.trim();
-    const sanitizedVersion = consent.version.trim();
-    const sanitizedChecksum = consent.checksum.trim();
-
-    // 验证校验和
-    if (!verifyPolicyChecksum(consent, sanitizedChecksum)) {
-      logger.warn("Policy consent checksum verification failed", {
-        fingerprint: sanitizedFingerprint,
-        ip: clientIP,
-        userAgent: userAgent?.substring(0, 100),
-      });
-
-      res.status(400).json({
-        success: false,
-        error: "Invalid consent data",
-        details: "Checksum verification failed",
-        code: "INVALID_CHECKSUM",
-      });
-      return;
-    }
-
-    // 验证时间戳（允许80秒的时间差）
-    const now = Date.now();
-    const eightySecondsAgo = now - 80 * 1000;
-    const eightySecondsLater = now + 80 * 1000;
-
-    if (consent.timestamp < eightySecondsAgo || consent.timestamp > eightySecondsLater) {
-      logger.warn("Policy consent invalid timestamp", {
-        consentTimestamp: consent.timestamp,
-        currentTimestamp: now,
-        timeDifference: Math.abs(consent.timestamp - now),
-        allowedRange: "±80 seconds",
-        fingerprint: sanitizedFingerprint,
-        ip: clientIP,
-      });
-
-      res.status(400).json({
-        success: false,
-        error: "Invalid timestamp - must be within 80 seconds of server time",
-        details: {
-          serverTime: now,
-          clientTime: consent.timestamp,
-          timeDifference: Math.abs(consent.timestamp - now),
-          allowedRange: "±80 seconds",
-        },
-        code: "INVALID_TIMESTAMP",
-      });
-      return;
-    }
-
-    // 验证版本
-    if (sanitizedVersion !== CURRENT_POLICY_VERSION) {
-      res.status(400).json({
-        success: false,
-        error: "Unsupported policy version",
-        currentVersion: CURRENT_POLICY_VERSION,
-        providedVersion: sanitizedVersion,
-        code: "UNSUPPORTED_VERSION",
-      });
-      return;
-    }
-
-    // 检查是否已存在有效的同意记录
-    const existingConsent = await PolicyConsent.findValidConsent(sanitizedFingerprint, sanitizedVersion);
-    if (existingConsent) {
-      logger.info("Policy consent already exists", {
-        consentId: existingConsent.id,
-        fingerprint: sanitizedFingerprint,
-        ip: clientIP,
-      });
-
-      // 下发与指纹绑定的凭据，使后续 check/revoke 能证明设备归属
-      setConsentTokenCookie(req, res, sanitizedFingerprint);
-
-      res.json({
-        success: true,
-        message: "Consent already recorded",
-        consentId: existingConsent.id,
-        expiresAt: existingConsent.expiresAt,
-      });
-      return;
-    }
-
-    // 创建新的同意记录
-    const consentId = uuidv4();
-    const expiresAt = new Date(Date.now() + CONSENT_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
-
-    const newConsent = new PolicyConsent({
-      id: consentId,
-      timestamp: consent.timestamp,
-      version: sanitizedVersion,
+    // 同一指纹+版本已有有效记录时原地续期，因此这里不必先查再分支
+    const written = await writePolicyConsent({
       fingerprint: sanitizedFingerprint,
-      checksum: sanitizedChecksum,
-      userAgent: userAgent?.substring(0, 500),
+      source: "feature",
+      userAgent: typeof userAgent === "string" ? userAgent : undefined,
       ipAddress: clientIP,
-      expiresAt,
     });
 
-    await newConsent.save();
+    if (!written) {
+      logger.error("Policy consent write returned no record", { fingerprint: sanitizedFingerprint, ip: clientIP });
+      res.status(500).json({
+        success: false,
+        error: "Failed to record consent",
+        code: "RECORD_FAILED",
+      });
+      return;
+    }
 
     // 下发与指纹绑定的凭据，使后续 check/revoke 能证明设备归属
     setConsentTokenCookie(req, res, sanitizedFingerprint);
 
-    // 记录日志
     logger.info("Policy consent recorded successfully", {
-      consentId,
-      version: sanitizedVersion,
+      consentId: written.id,
+      version: CURRENT_POLICY_VERSION,
       fingerprint: sanitizedFingerprint,
       ip: clientIP,
-      userAgent: userAgent?.substring(0, 100),
-      expiresAt,
+      source: "feature",
+      expiresAt: written.expiresAt,
     });
 
     res.json({
       success: true,
       message: "Consent recorded successfully",
-      consentId,
-      expiresAt,
+      consentId: written.id,
+      version: CURRENT_POLICY_VERSION,
+      expiresAt: written.expiresAt,
     });
   } catch (error) {
     logger.error("Error recording policy consent", {

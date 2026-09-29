@@ -5,9 +5,9 @@ import {
   POLICY_AGREEMENT_KEYS,
   POLICY_CONSENT_REQUIRED_MESSAGE,
   normalizeAuthPolicyConsent,
-  recordAuthPolicyConsent,
   resolveRequestFingerprint,
   shouldRequireAuthPolicyConsent,
+  writePolicyConsent,
 } from "../../services/policyConsentService";
 import { TurnstileService } from "../../services/turnstileService";
 import {
@@ -240,7 +240,7 @@ export async function login(req: Request, res: Response) {
     // 认证通过后落同意记录（客户端提交了载荷才写；指纹缺失时只记日志，见服务实现）。
     // 记录失败不影响登录本身：同意记录是留档，不是放行条件。
     if (policyConsent) {
-      await recordAuthPolicyConsent({
+      await writePolicyConsent({
         fingerprint: resolveRequestFingerprint(req),
         source: "login",
         userAgent: typeof userAgent === "string" ? userAgent : undefined,

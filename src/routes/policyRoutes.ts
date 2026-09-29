@@ -40,43 +40,16 @@ const adminRateLimit = createLimiter({
  *     PolicyConsent:
  *       type: object
  *       required:
- *         - timestamp
- *         - version
  *         - fingerprint
- *         - checksum
  *       properties:
- *         timestamp:
- *           type: number
- *           description: 同意时间戳
- *           example: 1696636800000
- *         version:
- *           type: string
- *           description: 政策版本
- *           example: "2.0"
  *         fingerprint:
  *           type: string
- *           description: 设备指纹
+ *           description: 设备指纹（由调用方声明，归属由服务端按会话/凭据 cookie/首访验证令牌核验）
  *           example: "abc123def456"
- *         checksum:
+ *         version:
  *           type: string
- *           description: 数据校验和
- *           example: "xyz789"
- *
- *     PolicyConsentRequest:
- *       type: object
- *       required:
- *         - consent
- *       properties:
- *         consent:
- *           $ref: '#/components/schemas/PolicyConsent'
- *         userAgent:
- *           type: string
- *           description: 用户代理字符串
- *           example: "Mozilla/5.0..."
- *         timestamp:
- *           type: number
- *           description: 请求时间戳
- *           example: 1696636800000
+ *           description: 可选，仅接受当前版本；省略即视为当前版本
+ *           example: "2.1"
  *
  *     PolicySection:
  *       type: object
@@ -179,14 +152,24 @@ const adminRateLimit = createLimiter({
  * /api/policy/verify:
  *   post:
  *     summary: 记录隐私政策同意
- *     description: 记录用户对隐私政策的同意状态
+ *     description: |
+ *       记录指定设备指纹对当前版本政策的同意。校验和与时间戳由服务端生成（签名盐不下发，
+ *       客户端无法自行计算），调用方只需证明设备归属：已登录会话、本端点此前下发的凭据
+ *       cookie，或首访验证令牌（X-IP-Verification-Token）三者之一。成功后下发与指纹绑定的
+ *       凭据 cookie，供 /api/policy/check 与 /api/policy/revoke 证明归属。
  *     tags: [Policy]
+ *     parameters:
+ *       - in: header
+ *         name: X-IP-Verification-Token
+ *         schema:
+ *           type: string
+ *         description: 首访验证令牌；首次为该设备写入同意时用于证明指纹归属
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/PolicyConsentRequest'
+ *             $ref: '#/components/schemas/PolicyConsent'
  *     responses:
  *       200:
  *         description: 同意记录成功
@@ -204,6 +187,9 @@ const adminRateLimit = createLimiter({
  *                 consentId:
  *                   type: string
  *                   example: "uuid-string"
+ *                 version:
+ *                   type: string
+ *                   example: "2.1"
  *                 expiresAt:
  *                   type: string
  *                   format: date-time
@@ -219,10 +205,25 @@ const adminRateLimit = createLimiter({
  *                   example: false
  *                 error:
  *                   type: string
- *                   example: "Invalid consent data"
+ *                   example: "Invalid fingerprint format"
  *                 code:
  *                   type: string
- *                   example: "INVALID_CHECKSUM"
+ *                   example: "INVALID_FINGERPRINT"
+ *       403:
+ *         description: 未能证明设备归属（缺少会话、凭据 cookie 或首访验证令牌）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                 code:
+ *                   type: string
+ *                   example: "DEVICE_CREDENTIAL_REQUIRED"
  *       429:
  *         description: 请求过于频繁
  *       500:

@@ -6,7 +6,8 @@ import { connectMongo, mongoose } from "../services/mongoService";
 import {
   CONSENT_VALIDITY_DAYS,
   CURRENT_POLICY_VERSION,
-  generatePolicyChecksum,
+  POLICY_AGREEMENT_KEYS,
+  policyAgreementAnchor,
 } from "../services/policyConsentService";
 
 describe("Policy API MongoDB contract", () => {
@@ -61,29 +62,25 @@ describe("Policy API MongoDB contract", () => {
     // 使用 supertest agent，自动保留 verify 时下发的设备凭据 cookie
     const agent = request.agent(app);
 
-    const consent = {
-      timestamp: Date.now(),
-      version: CURRENT_POLICY_VERSION,
-      fingerprint: `nightly-policy-${Date.now()}`,
-    };
-    const checksum = generatePolicyChecksum(consent);
+    const fingerprint = `nightly-policy-${Date.now()}`;
 
     const recorded = await agent
       .post("/api/policy/verify")
-      .send({ consent: { ...consent, checksum }, userAgent: "PolicyNightly/1.0" })
+      .send({ fingerprint })
       .expect(200);
 
     expect(recorded.body).toEqual(
       expect.objectContaining({
         success: true,
         consentId: expect.any(String),
+        version: CURRENT_POLICY_VERSION,
         expiresAt: expect.any(String),
       }),
     );
 
     const verified = await agent
       .get("/api/policy/check")
-      .query({ fingerprint: consent.fingerprint, version: consent.version })
+      .query({ fingerprint, version: CURRENT_POLICY_VERSION })
       .expect(200);
 
     expect(verified.body).toEqual(
@@ -96,7 +93,7 @@ describe("Policy API MongoDB contract", () => {
 
     const revoked = await agent
       .post("/api/policy/revoke")
-      .send({ fingerprint: consent.fingerprint, version: consent.version })
+      .send({ fingerprint, version: CURRENT_POLICY_VERSION })
       .expect(200);
 
     expect(revoked.body).toEqual(
@@ -108,7 +105,7 @@ describe("Policy API MongoDB contract", () => {
 
     const afterRevoke = await agent
       .get("/api/policy/check")
-      .query({ fingerprint: consent.fingerprint, version: consent.version })
+      .query({ fingerprint, version: CURRENT_POLICY_VERSION })
       .expect(200);
 
     expect(afterRevoke.body).toEqual(
@@ -120,48 +117,58 @@ describe("Policy API MongoDB contract", () => {
     );
   });
 
-  it("rejects revoke/check without the device credential (cookie)", async () => {
-    const consent = {
-      timestamp: Date.now(),
-      version: CURRENT_POLICY_VERSION,
-      fingerprint: `nightly-unauthorized-${Date.now()}`,
-    };
-    const checksum = generatePolicyChecksum(consent);
-
-    // 用一个匿名 agent 记录同意（拿到 cookie），再用另一个匿名 agent 尝试撤销
-    const ownerAgent = request.agent(app);
-    await ownerAgent
-      .post("/api/policy/verify")
-      .send({ consent: { ...consent, checksum }, userAgent: "PolicyNightly/1.0" })
-      .expect(200);
-
-    const attackerAgent = request.agent(app);
-    const revoked = await attackerAgent
-      .post("/api/policy/revoke")
-      .send({ fingerprint: consent.fingerprint, version: consent.version })
-      .expect(403);
-
-    expect(revoked.body.code).toBe("DEVICE_CREDENTIAL_REQUIRED");
-  });
-
-  it("rejects a consent with an invalid checksum", async () => {
+  it("rejects a consent for an unsupported policy version", async () => {
     const response = await request(app)
       .post("/api/policy/verify")
-      .send({
-        consent: {
-          timestamp: Date.now(),
-          version: CURRENT_POLICY_VERSION,
-          fingerprint: `nightly-invalid-${Date.now()}`,
-          checksum: "invalid-checksum",
-        },
-      })
+      .send({ fingerprint: `nightly-version-${Date.now()}`, version: "0.1" })
       .expect(400);
 
     expect(response.body).toEqual(
       expect.objectContaining({
         success: false,
-        code: "INVALID_CHECKSUM",
+        code: "UNSUPPORTED_VERSION",
+        currentVersion: CURRENT_POLICY_VERSION,
       }),
     );
+  });
+
+  it("rejects revoke/check without the device credential (cookie)", async () => {
+    const fingerprint = `nightly-unauthorized-${Date.now()}`;
+
+    // 用一个匿名 agent 记录同意（拿到 cookie），再用另一个匿名 agent 尝试撤销
+    const ownerAgent = request.agent(app);
+    await ownerAgent.post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    const attackerAgent = request.agent(app);
+    const revoked = await attackerAgent
+      .post("/api/policy/revoke")
+      .send({ fingerprint, version: CURRENT_POLICY_VERSION })
+      .expect(403);
+
+    expect(revoked.body.code).toBe("DEVICE_CREDENTIAL_REQUIRED");
+  });
+
+  it("rejects a consent without a usable fingerprint", async () => {
+    const missing = await request(app).post("/api/policy/verify").send({}).expect(400);
+
+    expect(missing.body).toEqual(
+      expect.objectContaining({
+        success: false,
+        code: "INVALID_FINGERPRINT",
+      }),
+    );
+  });
+
+  it("serves the four login/register agreements with anchors the checklist can link to", async () => {
+    const response = await request(app).get("/api/policy/document").expect(200);
+    const document = response.body.document as PolicyDocument;
+
+    expect(document.agreements.map((agreement) => agreement.key)).toEqual([...POLICY_AGREEMENT_KEYS]);
+    for (const agreement of document.agreements) {
+      // 勾选框的 href 是 /policy#<anchor>，锚点必须与页面上的 id 完全一致
+      expect(agreement.anchor).toBe(policyAgreementAnchor(agreement.key));
+      expect(agreement.label.length).toBeGreaterThan(0);
+      expect(agreement.points.length).toBeGreaterThan(0);
+    }
   });
 });

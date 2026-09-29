@@ -13,7 +13,7 @@ export interface IPolicyConsent extends Document {
   recordedAt: Date;
   isValid: boolean;
   expiresAt: Date;
-  // 记录来源（login / register）；早于该功能写入的记录没有这两个字段
+  // 记录来源（login / register / feature）；早于该功能写入的记录没有这两个字段
   source?: string;
   // 当时逐项勾选的文件键名，见 policyConsentService.POLICY_AGREEMENT_KEYS
   agreements?: string[];

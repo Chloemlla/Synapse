@@ -6,6 +6,8 @@ import { useNotification } from "./Notification";
 import { TurnstileWidget } from "./TurnstileWidget";
 import { useTurnstileConfig } from "../hooks/useTurnstileConfig";
 import { useIsAdmin } from "../hooks/useRBAC";
+import { TTS_POLICY_CONSENT_REQUIRED, TtsApiError } from "../types/ttsErrors";
+import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
 import {
   FaLock,
   FaMicrophone,
@@ -113,6 +115,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileVerified, setTurnstileVerified] = useState(false);
   const [turnstileError, setTurnstileError] = useState(false);
+  // 只在需要丢弃已核销的 CF 令牌时递增：变化会让 TurnstileWidget 重挂，回到未验证状态。
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0);
   const [providerConfig, setProviderConfig] = useState(FALLBACK_TTS_PROVIDER_CONFIG);
   const [providerConfigLoading, setProviderConfigLoading] = useState(true);
   const [usingProviderFallback, setUsingProviderFallback] = useState(false);
@@ -134,6 +138,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [fishModalSource, setFishModalSource] = useState<"model" | "default-voices">("model");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [voiceLanguage, setVoiceLanguage] = useState("");
+  // 生成被 TTS_POLICY_CONSENT_REQUIRED 拦下时展开勾选清单，确认后自动重试这次生成
+  const [policyConsentRequired, setPolicyConsentRequired] = useState(false);
   const fishModelPageRef = useRef(1);
   const fishDefaultPageRef = useRef(1);
 
@@ -401,6 +407,55 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     voice,
   ]);
 
+  // 实际提交：表单提交与「同意政策后续跑」都走这里，保证两条路径的载荷完全一致。
+  const submitRequest = useCallback(async () => {
+    try {
+      const result = await onSubmit({
+        text,
+        model,
+        ...(usesSelectableVoice || (activeProviderConfig.provider === "fish" && voice) ? { voice } : {}),
+        outputFormat,
+        speed: supportsSpeedAdjustment ? speed : 1,
+        generationCode,
+        provider: activeProviderConfig.provider,
+        ...(turnstileConfig.enabled && { cfToken: turnstileToken }),
+      });
+
+      setPolicyConsentRequired(false);
+      setNotification({
+        message: result.message || (result.isDuplicate ? "已返回历史音频" : "语音生成成功"),
+        type: result.isDuplicate ? "warning" : "success",
+      });
+
+      onSuccess?.(result);
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : "生成失败，请稍后重试";
+      setPolicyConsentRequired(
+        submitError instanceof TtsApiError && submitError.code === TTS_POLICY_CONSENT_REQUIRED,
+      );
+      setNotification({
+        message,
+        type: "error",
+      });
+    }
+  }, [
+    activeProviderConfig.provider,
+    generationCode,
+    model,
+    onSubmit,
+    onSuccess,
+    outputFormat,
+    setNotification,
+    speed,
+    supportsSpeedAdjustment,
+    text,
+    turnstileConfig.enabled,
+    turnstileToken,
+    usesSelectableVoice,
+    voice,
+  ]);
+
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
@@ -412,51 +467,29 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         return;
       }
 
-      try {
-        const result = await onSubmit({
-          text,
-          model,
-          ...(usesSelectableVoice || (activeProviderConfig.provider === "fish" && voice) ? { voice } : {}),
-          outputFormat,
-          speed: supportsSpeedAdjustment ? speed : 1,
-          generationCode,
-          provider: activeProviderConfig.provider,
-          ...(turnstileConfig.enabled && { cfToken: turnstileToken }),
-        });
-
-        setNotification({
-          message: result.message || (result.isDuplicate ? "已返回历史音频" : "语音生成成功"),
-          type: result.isDuplicate ? "warning" : "success",
-        });
-
-        onSuccess?.(result);
-      } catch (submitError) {
-        const message =
-          submitError instanceof Error ? submitError.message : "生成失败，请稍后重试";
-        setNotification({
-          message,
-          type: "error",
-        });
-      }
+      await submitRequest();
     },
-    [
-      activeProviderConfig.provider,
-      generationCode,
-      model,
-      onSubmit,
-      onSuccess,
-      outputFormat,
-      setNotification,
-      speed,
-      supportsSpeedAdjustment,
-      text,
-      turnstileConfig.enabled,
-      turnstileToken,
-      usesSelectableVoice,
-      validateForm,
-      voice,
-    ],
+    [submitRequest, validateForm],
   );
+
+  // 同意落库后续跑这次生成。人机验证开启时不能直接重试：CF 令牌是一次性的，
+  // 而后端的校验顺序里 Turnstile 在政策门禁之前，说明令牌已被核销，重发只会撞
+  // TTS_TURNSTILE_FAILED。这里清掉令牌并重挂控件（key 变化触发 remount），让用户重新验证。
+  const handlePolicyConsentAccepted = useCallback(() => {
+    setPolicyConsentRequired(false);
+
+    if (turnstileConfig.enabled) {
+      setTurnstileToken("");
+      setTurnstileVerified(false);
+      setTurnstileError(false);
+      setTurnstileWidgetKey((prev) => prev + 1);
+      setNotification({ message: "已确认政策，请重新完成人机验证后再生成", type: "success" });
+      return;
+    }
+
+    setNotification({ message: "已确认政策，正在重新生成语音...", type: "success" });
+    void submitRequest();
+  }, [setNotification, submitRequest, turnstileConfig.enabled]);
 
   const handleTurnstileVerify = (token: string) => {
     setTurnstileToken(token);
@@ -973,6 +1006,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             </motion.label>
 
             <TurnstileWidget
+              key={turnstileWidgetKey}
               siteKey={turnstileConfig.siteKey}
               onVerify={handleTurnstileVerify}
               onExpire={handleTurnstileExpire}
@@ -1012,6 +1046,19 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               transition={{ duration: 0.3 }}
             >
               {displayError}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {policyConsentRequired && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+            >
+              <TtsPolicyConsentPanel onAccepted={handlePolicyConsentAccepted} />
             </motion.div>
           )}
         </AnimatePresence>
