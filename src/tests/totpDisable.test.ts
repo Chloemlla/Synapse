@@ -89,17 +89,16 @@ describe("关闭 TOTP", () => {
     expect(UserStorage.updateUser).not.toHaveBeenCalled();
   });
 
-  it("显式带上验证码时仍按验证码校验", async () => {
+  it("请求体里残留验证码字段时同样直接关闭（旧前端缓存的请求体）", async () => {
     const verificationToken = createProfileVerificationSession(USER_ID, "totp").token;
 
     const response = await request(app)
       .post("/api/totp/disable")
       .set("Authorization", `Bearer ${generateTestToken(USER_ID)}`)
       .send({ verificationToken, token: "000000" })
-      .expect(400);
+      .expect(200);
 
-    expect(response.body.error).toBe("验证码错误");
-    expect(UserStorage.updateUser).not.toHaveBeenCalled();
+    expect(response.body).toEqual({ message: "TOTP已禁用", enabled: false });
   });
 
   it("未启用TOTP时返回400", async () => {
