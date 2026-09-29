@@ -457,7 +457,9 @@ const RecordsTab: React.FC<{ refreshNonce: number; agreementKeys: string[] }> = 
               <Th>来源</Th>
               <Th>设备指纹</Th>
               <Th>IP</Th>
-              <Th title={`需勾选：${agreementKeys.join(', ')}`}>勾选文件</Th>
+              <Th>
+                <span title={`需勾选：${agreementKeys.join(', ')}`}>勾选文件</span>
+              </Th>
               <Th>到期时间</Th>
               <Th>checksum</Th>
               <Th>User-Agent</Th>
