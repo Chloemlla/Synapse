@@ -35,6 +35,11 @@ export interface TtsHistoryRecord {
   providerModel: string;
   providerVoice: string;
   createdAt: string;
+  // 用户自助管理字段：软删除只打标记，记录不物理消失，管理后台仍然可见。
+  userTitle?: string;
+  userNote?: string;
+  userTags?: string[];
+  userDeletedAt?: string;
   adminNote?: string;
   adminSuggestion?: string;
   reviewStatus?: TtsHistoryReviewStatus;
@@ -43,6 +48,16 @@ export interface TtsHistoryRecord {
   fixedAt?: string;
   updatedAt?: string;
 }
+
+/** 用户可自行编辑的字段。fileName 不在其中：它决定音频落盘路径，改不得。 */
+export interface TtsHistoryUserPatch {
+  userTitle?: string;
+  userNote?: string;
+  userTags?: string[];
+}
+
+/** 管理后台的记录状态筛选：未删除 / 已被用户软删除。 */
+export type TtsHistoryDeletedFilter = "all" | "active" | "deleted";
 
 export interface TtsDuplicateHit {
   fileName: string;
@@ -161,23 +176,8 @@ export interface GenerationHistoryStore {
     outputFormat: string;
     contentHashes: string[];
   }): Promise<TtsDuplicateHit | null>;
-  findDuplicateForAnonymous(params: {
-    ip: string;
-    fingerprint: string;
-    text: string;
-    voice: string;
-    model: string;
-    speed: number;
-    outputFormat: string;
-    contentHashes: string[];
-  }): Promise<TtsDuplicateHit | null>;
   addRecord(record: TtsHistoryRecord): Promise<TtsHistoryRecord>;
-  getRecentRecords(params: {
-    userId?: string;
-    ip?: string;
-    fingerprint?: string;
-    limit?: number;
-  }): Promise<TtsHistoryRecord[]>;
+  getRecentRecords(params: { userId: string; limit?: number }): Promise<TtsHistoryRecord[]>;
   countRecentByContentHash(params: {
     userId: string;
     contentHash: string;
@@ -189,6 +189,7 @@ export interface GenerationHistoryStore {
     userId?: string;
     scope?: "user" | "anonymous";
     reviewStatus?: TtsHistoryReviewStatus | "all";
+    userDeleted?: TtsHistoryDeletedFilter;
     q?: string;
   }): Promise<{
     records: TtsHistoryRecord[];
@@ -205,4 +206,11 @@ export interface GenerationHistoryStore {
       reviewedBy?: string;
     },
   ): Promise<TtsHistoryRecord | null>;
+  /** owner 条件写进查询过滤里，避免先读后改的 TOCTOU 与越权改他人记录。 */
+  updateUserRecord(
+    params: { recordId: string; userId: string },
+    patch: TtsHistoryUserPatch,
+  ): Promise<TtsHistoryRecord | null>;
+  /** 软删除：只打 userDeletedAt 标记，用户侧不可恢复。 */
+  softDeleteRecord(params: { recordId: string; userId: string }): Promise<TtsHistoryRecord | null>;
 }

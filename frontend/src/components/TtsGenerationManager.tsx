@@ -27,6 +27,7 @@ import { InfoSectionTitle, studioEyebrowPillClassName, studioSubPanelClassName }
 
 type ReviewFilter = TtsHistoryReviewStatus | "all";
 type ScopeFilter = "all" | "user" | "anonymous";
+type DeletedFilter = "all" | "active" | "deleted";
 
 interface ReviewDraft {
   adminNote: string;
@@ -122,6 +123,7 @@ const TtsGenerationManager: React.FC = () => {
   const [userId, setUserId] = useState("");
   const [reviewStatus, setReviewStatus] = useState<ReviewFilter>("all");
   const [scope, setScope] = useState<ScopeFilter>("all");
+  const [userDeleted, setUserDeleted] = useState<DeletedFilter>("all");
   const [activeAudioId, setActiveAudioId] = useState<string | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
 
@@ -150,6 +152,7 @@ const TtsGenerationManager: React.FC = () => {
             ...(userId.trim() ? { userId: userId.trim() } : {}),
             ...(reviewStatus !== "all" ? { reviewStatus } : {}),
             ...(scope !== "all" ? { scope } : {}),
+            ...(userDeleted !== "all" ? { userDeleted } : {}),
           },
         });
 
@@ -163,7 +166,7 @@ const TtsGenerationManager: React.FC = () => {
         setLoading(false);
       }
     },
-    [limit, mergeDrafts, query, reviewStatus, scope, userId],
+    [limit, mergeDrafts, query, reviewStatus, scope, userId, userDeleted],
   );
 
   useEffect(() => {
@@ -287,7 +290,7 @@ const TtsGenerationManager: React.FC = () => {
           </button>
         </div>
 
-        <form onSubmit={applyFilters} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px_150px_auto]">
+        <form onSubmit={applyFilters} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px_150px_150px_auto]">
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Search</span>
             <div className="relative">
@@ -341,6 +344,21 @@ const TtsGenerationManager: React.FC = () => {
               <option value="anonymous">匿名</option>
             </select>
           </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Deleted</span>
+            <select
+              value={userDeleted}
+              onChange={(event) => {
+                setUserDeleted(event.target.value as DeletedFilter);
+                setPage(1);
+              }}
+              className={fieldClassName}
+            >
+              <option value="all">全部</option>
+              <option value="active">未删除</option>
+              <option value="deleted">用户已删除</option>
+            </select>
+          </label>
           <div className="flex items-end">
             <button type="submit" className={cn(primaryButtonClassName, "w-full sm:w-auto")}>
               <FaSearch />
@@ -386,6 +404,7 @@ const TtsGenerationManager: React.FC = () => {
               const status = normalizeReviewStatus(draft.reviewStatus);
               const isPlaying = activeAudioId === record.id;
               const isSaving = savingId === record.id;
+              const userTitle = record.userTitle?.trim() || "";
 
               return (
                 <article key={record.id} className={cn(studioSubPanelClassName, "border bg-slate-50/70")}>
@@ -409,8 +428,30 @@ const TtsGenerationManager: React.FC = () => {
                         <span className={cn(studioEyebrowPillClassName, "bg-white px-2.5 text-slate-600")}>
                           {record.provider}
                         </span>
+                        {record.userDeletedAt && (
+                          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+                            用户已删除
+                          </span>
+                        )}
                       </div>
-                      <h3 className="break-all text-base font-semibold text-slate-900">{record.fileName}</h3>
+                      <h3 className="break-all text-base font-semibold text-slate-900">
+                        {userTitle || record.fileName}
+                      </h3>
+                      {userTitle && (
+                        <div className="break-all text-xs text-slate-400">文件：{record.fileName}</div>
+                      )}
+                      {record.userTags?.length ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {record.userTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="grid min-w-0 grid-cols-1 gap-2 text-xs leading-5 text-slate-500 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4">
                         <div>用户：{record.userId || "-"}</div>
                         <div>生成：{formatDateTime(record.createdAt)}</div>
@@ -420,7 +461,13 @@ const TtsGenerationManager: React.FC = () => {
                         <div>类型：{record.audioMimeType || "-"}</div>
                         <div>大小：{formatAudioSize(record.audioSize)}</div>
                         <div className="break-all">音频ID：{record.audioFileId || "-"}</div>
+                        <div className="break-all">用户删除：{record.userDeletedAt ? formatDateTime(record.userDeletedAt) : "-"}</div>
                       </div>
+                      {record.userNote && (
+                        <div className="max-w-full break-words rounded-2xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs leading-5 text-sky-800">
+                          用户备注：{record.userNote}
+                        </div>
+                      )}
                       <div className="max-w-full break-words rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
                         {record.text || "[redacted]"}
                       </div>

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import axios, { AxiosError, AxiosHeaders } from "axios";
 import type {
   TtsHistoryRecord,
+  TtsHistoryDeleteResponse,
+  TtsHistoryUserUpdateResponse,
+  TtsHistoryUserUpdatePayload,
   TtsJobStatusResponse,
   TtsRequest,
   TtsResponse,
@@ -181,6 +184,56 @@ export const useTts = () => {
     }
   }, []);
 
+  const updateHistoryRecord = useCallback(
+    async (recordId: string, patch: TtsHistoryUserUpdatePayload): Promise<TtsHistoryRecord> => {
+      try {
+        const response = await api.patch<TtsHistoryUserUpdateResponse>(
+          `/api/tts/history/${encodeURIComponent(recordId)}`,
+          patch,
+        );
+
+        // normalizeHistory 负责把相对 audioUrl 转绝对并补 reviewStatus，与列表加载口径一致
+        const [normalized] = normalizeHistory([response.data.record]);
+        setHistory((current) =>
+          current.map((record) => (record.id === normalized.id ? normalized : record)),
+        );
+        return normalized;
+      } catch (requestError) {
+        if (axios.isAxiosError(requestError)) {
+          const axiosError = requestError as AxiosError<TtsErrorPayload>;
+          const message =
+            axiosError.response?.data?.error ||
+            axiosError.response?.data?.message ||
+            axiosError.message ||
+            "保存记录失败";
+          throw new Error(message);
+        }
+
+        throw new Error(requestError instanceof Error ? requestError.message : "保存记录失败");
+      }
+    },
+    [],
+  );
+
+  const deleteHistoryRecord = useCallback(async (recordId: string): Promise<void> => {
+    try {
+      await api.delete<TtsHistoryDeleteResponse>(`/api/tts/history/${encodeURIComponent(recordId)}`);
+      setHistory((current) => current.filter((record) => record.id !== recordId));
+    } catch (requestError) {
+      if (axios.isAxiosError(requestError)) {
+        const axiosError = requestError as AxiosError<TtsErrorPayload>;
+        const message =
+          axiosError.response?.data?.error ||
+          axiosError.response?.data?.message ||
+          axiosError.message ||
+          "删除记录失败";
+        throw new Error(message);
+      }
+
+      throw new Error(requestError instanceof Error ? requestError.message : "删除记录失败");
+    }
+  }, []);
+
   const generateSpeech = async (request: TtsRequest): Promise<TtsResponse> => {
     // G9-12：防重提交——同一 hook 实例内已有任务在跑时拒绝连点
     if (generateInFlightRef.current) {
@@ -329,5 +382,7 @@ export const useTts = () => {
     reset,
     generateSpeech,
     fetchHistory,
+    updateHistoryRecord,
+    deleteHistoryRecord,
   };
 };

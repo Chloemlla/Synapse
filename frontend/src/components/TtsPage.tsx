@@ -16,7 +16,7 @@ import {
   FaEnvelope,
 } from "react-icons/fa";
 import { cn } from "../utils/cn";
-import type { TtsHistoryRecord } from "../types/tts";
+import type { TtsHistoryRecord, TtsHistoryUserUpdatePayload } from "../types/tts";
 import {
   studioAccentBlobBlueClassName,
   studioAccentBlobSkyClassName,
@@ -70,6 +70,8 @@ export const TtsPage: React.FC = () => {
     historyError,
     generateSpeech,
     fetchHistory,
+    updateHistoryRecord,
+    deleteHistoryRecord,
   } = useTts();
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
@@ -182,6 +184,21 @@ export const TtsPage: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   }, []);
+
+  // 列表由 hook 就地更新，这里只透传；in-flight 与错误展示都在 TtsHistoryList 内部处理
+  const handleUpdateHistoryRecord = useCallback(
+    async (recordId: string, patch: TtsHistoryUserUpdatePayload) => {
+      await updateHistoryRecord(recordId, patch);
+    },
+    [updateHistoryRecord],
+  );
+
+  const handleDeleteHistoryRecord = useCallback(
+    async (recordId: string) => {
+      await deleteHistoryRecord(recordId);
+    },
+    [deleteHistoryRecord],
+  );
 
   const usageSummary = useMemo(() => {
     if (!result?.usage) return null;
@@ -412,6 +429,8 @@ export const TtsPage: React.FC = () => {
           onRefresh={() => void fetchHistory(20).catch(() => {})}
           onTogglePlayback={toggleHistoryPlayback}
           onDownload={handleHistoryDownload}
+          onUpdateRecord={handleUpdateHistoryRecord}
+          onDeleteRecord={handleDeleteHistoryRecord}
           onHistoryPlay={() => {
             audioElement?.pause();
             historyAudioElement?.pause();

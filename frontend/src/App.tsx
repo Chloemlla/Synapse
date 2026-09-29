@@ -704,7 +704,8 @@ const App: React.FC = () => {
         <Route path="/reset-password" element={renderAnimatedRoute(<ResetPasswordLinkPage />)} />
         <Route path="/verify-email" element={renderAnimatedRoute(<EmailVerifyPage />)} />
         <Route path="/" element={renderAnimatedRoute(<HomeHub />)} />
-        <Route path="/tts" element={renderAnimatedRoute(<TtsPage />)} />
+        {/* TTS:仅登录用户可用(后端同样强制);闸门是为了不给访客渲染一个必然 401 的表单 */}
+        <Route path="/tts" element={renderProtectedRoute(<TtsPage />)} />
         {/* 语音转文本:普通登录用户可用的核心功能(后端 /api/transcribe) */}
         <Route path="/transcribe" element={renderProtectedRoute(<SpeechToTextPage />)} />
         <Route path="/lottery" element={renderAnimatedRoute(<LotteryPage />)} />

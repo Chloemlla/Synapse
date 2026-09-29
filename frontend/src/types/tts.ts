@@ -154,6 +154,14 @@ export interface TtsHistoryRecord {
   providerModel: string;
   providerVoice: string;
   createdAt: string;
+  /** 用户自定义标题；留空时界面回落到 fileName。 */
+  userTitle?: string;
+  /** 用户备注（自由文本）。 */
+  userNote?: string;
+  /** 用户预设标签，多选。 */
+  userTags?: string[];
+  /** 软删除时间；有值即表示用户已删除，仅在管理后台可见。 */
+  userDeletedAt?: string;
   adminNote?: string;
   adminSuggestion?: string;
   reviewStatus?: TtsHistoryReviewStatus;
@@ -165,6 +173,26 @@ export interface TtsHistoryRecord {
     canDownload: boolean;
     canShare: boolean;
   };
+}
+
+/** 用户可自行编辑的字段（文件名不动，它决定音频存储路径）。 */
+export interface TtsHistoryUserUpdatePayload {
+  userTitle?: string;
+  userNote?: string;
+  userTags?: string[];
+}
+
+export interface TtsHistoryUserUpdateResponse {
+  success: boolean;
+  record: TtsHistoryRecord;
+  error?: string;
+}
+
+export interface TtsHistoryDeleteResponse {
+  success: boolean;
+  id: string;
+  userDeletedAt?: string;
+  error?: string;
 }
 
 export interface TtsAdminHistoryResponse {

@@ -30,6 +30,8 @@ jest.mock("../tts/tts.history", () => ({
     getRecentRecords: jest.fn(async () => []),
     getAllRecords: jest.fn(async () => ({ records: [], total: 0 })),
     updateAdminReview: jest.fn(async () => null),
+    updateUserRecord: jest.fn(async () => null),
+    softDeleteRecord: jest.fn(async () => null),
   },
   redactTtsTextForStorage: (text: string) => text,
 }));
@@ -116,15 +118,49 @@ function makeOwnedJob(taskId: string, userId: string) {
   };
 }
 
+function makeHistoryRecord(userId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: "rec-1",
+    scope: "user" as const,
+    userId,
+    ip: "127.0.0.1",
+    fingerprint: "fp-owner",
+    text: "hello",
+    voice: "alloy",
+    model: "tts-1",
+    outputFormat: "mp3",
+    speed: 1,
+    contentHash: "hash",
+    fileName: "owner-audio.mp3",
+    audioUrl: "https://example.test/owner-audio.mp3",
+    provider: "openai",
+    providerModel: "tts-1",
+    providerVoice: "alloy",
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 describe("TTS cookie-only identity and job ownership", () => {
   const owner = makeUser("owner-1", "owner");
   const other = makeUser("other-1", "other");
   const taskId = "tts_job_owner_1";
 
+  const { generationHistoryStore } = jest.requireMock("../tts/tts.history") as {
+    generationHistoryStore: {
+      getRecentRecords: jest.Mock;
+      updateUserRecord: jest.Mock;
+      softDeleteRecord: jest.Mock;
+    };
+  };
+
   const app = express();
+  app.use(express.json());
   app.get("/jobs/:taskId", (req, res) => TtsController.getJobStatus(req, res));
   app.get("/jobs/:taskId/result", (req, res) => TtsController.getJobResult(req, res));
   app.get("/history", (req, res) => TtsController.getRecentGenerations(req, res));
+  app.patch("/history/:recordId", (req, res) => TtsController.updateUserGeneration(req, res));
+  app.delete("/history/:recordId", (req, res) => TtsController.deleteGeneration(req, res));
   app.get("/assets/:fileName", (req, res) => TtsController.getAudioAsset(req, res));
 
   let getJobSpy: jest.SpiedFunction<typeof ttsStorage.getJob>;
@@ -291,6 +327,104 @@ describe("TTS cookie-only identity and job ownership", () => {
         userId: owner.id,
       }),
     );
+  });
+
+  it("lets the owner edit their own record through a Cookie session", async () => {
+    generationHistoryStore.updateUserRecord.mockResolvedValueOnce(
+      makeHistoryRecord(owner.id, { userTitle: "项目配音", userNote: "第二版", userTags: ["工作"] }),
+    );
+
+    const token = jwt.sign({ userId: owner.id }, config.jwtSecret, { expiresIn: "1h" });
+    const res = await request(app)
+      .patch("/history/rec-1")
+      .set("Cookie", [`${AUTH_COOKIE_NAME}=${token}`])
+      .send({ userTitle: "项目配音", userNote: "第二版", userTags: ["工作"] });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    expect(res.body.record).toMatchObject({ userTitle: "项目配音", userNote: "第二版", userTags: ["工作"] });
+    // owner 由会话身份决定并透传给存储层，客户端无法通过请求体伪造。
+    expect(generationHistoryStore.updateUserRecord).toHaveBeenCalledWith(
+      { recordId: "rec-1", userId: owner.id },
+      { userTitle: "项目配音", userNote: "第二版", userTags: ["工作"] },
+    );
+  });
+
+  it("reports 404 when the caller edits a record they do not own", async () => {
+    // 存储层把 owner 条件写进过滤里，非本人记录查不到 → null → 404（而不是 403，避免泄露记录是否存在）。
+    generationHistoryStore.updateUserRecord.mockResolvedValueOnce(null);
+
+    const token = jwt.sign({ userId: other.id }, config.jwtSecret, { expiresIn: "1h" });
+    const res = await request(app)
+      .patch("/history/rec-1")
+      .set("Cookie", [`${AUTH_COOKIE_NAME}=${token}`])
+      .send({ userNote: "越权" });
+
+    expect(res.status).toBe(404);
+    expect(generationHistoryStore.updateUserRecord).toHaveBeenCalledWith(
+      { recordId: "rec-1", userId: other.id },
+      expect.objectContaining({ userNote: "越权" }),
+    );
+  });
+
+  it("requires a login to edit a record", async () => {
+    const res = await request(app).patch("/history/rec-1").send({ userNote: "匿名修改" });
+
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ success: false, code: "TTS_AUTH_REQUIRED" });
+    expect(generationHistoryStore.updateUserRecord).not.toHaveBeenCalled();
+  });
+
+  it("rejects a patch that only carries non-editable fields", async () => {
+    const token = jwt.sign({ userId: owner.id }, config.jwtSecret, { expiresIn: "1h" });
+    const res = await request(app)
+      .patch("/history/rec-1")
+      .set("Cookie", [`${AUTH_COOKIE_NAME}=${token}`])
+      // fileName 决定音频落盘路径，不在可编辑字段里。
+      .send({ fileName: "hacked.mp3" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ success: false, error: "没有需要更新的字段" });
+    expect(generationHistoryStore.updateUserRecord).not.toHaveBeenCalled();
+  });
+
+  it("soft-deletes the owner's record and echoes the marker", async () => {
+    const deletedAt = new Date().toISOString();
+    generationHistoryStore.softDeleteRecord.mockResolvedValueOnce(
+      makeHistoryRecord(owner.id, { userDeletedAt: deletedAt }),
+    );
+
+    const token = jwt.sign({ userId: owner.id }, config.jwtSecret, { expiresIn: "1h" });
+    const res = await request(app)
+      .delete("/history/rec-1")
+      .set("Cookie", [`${AUTH_COOKIE_NAME}=${token}`]);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, id: "rec-1", userDeletedAt: deletedAt });
+    expect(generationHistoryStore.softDeleteRecord).toHaveBeenCalledWith({
+      recordId: "rec-1",
+      userId: owner.id,
+    });
+  });
+
+  it("reports 404 when deleting a record the caller does not own", async () => {
+    generationHistoryStore.softDeleteRecord.mockResolvedValueOnce(null);
+
+    const token = jwt.sign({ userId: other.id }, config.jwtSecret, { expiresIn: "1h" });
+    const res = await request(app)
+      .delete("/history/rec-1")
+      .set("Cookie", [`${AUTH_COOKIE_NAME}=${token}`]);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ success: false, error: "生成记录不存在或无权删除" });
+  });
+
+  it("requires a login to delete a record", async () => {
+    const res = await request(app).delete("/history/rec-1");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ success: false, code: "TTS_AUTH_REQUIRED" });
+    expect(generationHistoryStore.softDeleteRecord).not.toHaveBeenCalled();
   });
 
   it("asset endpoint still accepts accessToken path (token-bound ownership)", async () => {

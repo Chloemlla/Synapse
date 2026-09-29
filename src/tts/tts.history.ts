@@ -2,8 +2,10 @@ import { mongoose } from "../services/mongoService";
 import type {
   GenerationHistoryStore,
   TtsDuplicateHit,
+  TtsHistoryDeletedFilter,
   TtsHistoryRecord,
   TtsHistoryReviewStatus,
+  TtsHistoryUserPatch,
 } from "./tts.ports";
 
 interface TtsHistoryDocument extends TtsHistoryRecord {
@@ -17,6 +19,12 @@ const REVIEW_STATUSES: TtsHistoryReviewStatus[] = ["none", "needs_review", "in_r
 // 历史记录保留期：90 天（与 translationLog/auditLog 一致）。
 const HISTORY_TTL_SECONDS = 90 * 24 * 60 * 60;
 const REDACT_TEXT_MAX_LENGTH = 64;
+
+// 用户自助字段的长度/数量上限：前端也截一遍，这里是不可信输入的最后一道闸。
+const USER_TITLE_MAX_LENGTH = 120;
+const USER_NOTE_MAX_LENGTH = 1000;
+const USER_TAG_MAX_LENGTH = 24;
+const USER_TAG_MAX_COUNT = 10;
 
 const TtsHistorySchema = new mongoose.Schema<TtsHistoryDocument>(
   {
@@ -42,6 +50,10 @@ const TtsHistorySchema = new mongoose.Schema<TtsHistoryDocument>(
     createdAt: { type: String, required: true, index: true },
     // 真正的 Date 型时间戳，用于 TTL 索引（TTL 只对 Date 生效）。
     createdAtDate: { type: Date, default: Date.now },
+    userTitle: { type: String },
+    userNote: { type: String },
+    userTags: { type: [String], default: undefined },
+    userDeletedAt: { type: String },
     adminNote: { type: String },
     adminSuggestion: { type: String },
     reviewStatus: { type: String, enum: REVIEW_STATUSES, default: "none", index: true },
@@ -56,6 +68,7 @@ const TtsHistorySchema = new mongoose.Schema<TtsHistoryDocument>(
 
 TtsHistorySchema.index({ scope: 1, userId: 1, contentHash: 1, createdAt: -1 });
 TtsHistorySchema.index({ scope: 1, duplicateScopeKey: 1, contentHash: 1, createdAt: -1 });
+TtsHistorySchema.index({ scope: 1, userId: 1, userDeletedAt: 1, createdAt: -1 });
 TtsHistorySchema.index({ createdAtDate: 1 }, { expireAfterSeconds: HISTORY_TTL_SECONDS });
 
 const TtsHistoryModel =
@@ -87,6 +100,30 @@ function trimOptionalText(value: unknown, maxLength: number): string | undefined
   }
 
   return String(value || "").trim().slice(0, maxLength);
+}
+
+/** 用户标签：去空、去重、截断、限量，保持提交顺序（前端 chips 依赖稳定顺序）。 */
+function normalizeUserTags(value: unknown): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  for (const item of value) {
+    const tag = String(item || "").trim().slice(0, USER_TAG_MAX_LENGTH);
+    if (tag) {
+      seen.add(tag);
+      if (seen.size >= USER_TAG_MAX_COUNT) {
+        break;
+      }
+    }
+  }
+
+  return Array.from(seen);
 }
 
 function mapHistoryRecord(record: any): TtsHistoryRecord {
@@ -136,40 +173,13 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
     const record = (await TtsHistoryModel.findOne({
       scope: "user",
       userId: params.userId,
+      // 用户软删掉的记录不再参与去重复用，否则删除等于没删（还能拿回同一份音频）。
+      userDeletedAt: { $exists: false },
       voice: params.voice,
       model: params.model,
       speed: params.speed,
       outputFormat: params.outputFormat,
       contentHash: { $in: params.contentHashes },
-    })
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec()) as TtsHistoryRecord | null;
-
-    return mapDuplicate(record);
-  }
-
-  public async findDuplicateForAnonymous(params: {
-    ip: string;
-    fingerprint: string;
-    text: string;
-    voice: string;
-    model: string;
-    speed: number;
-    outputFormat: string;
-    contentHashes: string[];
-  }) {
-    const duplicateScopeKey = this.buildAnonymousScopeKey(params.ip, params.fingerprint);
-    const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const record = (await TtsHistoryModel.findOne({
-      scope: "anonymous",
-      duplicateScopeKey,
-      voice: params.voice,
-      model: params.model,
-      speed: params.speed,
-      outputFormat: params.outputFormat,
-      contentHash: { $in: params.contentHashes },
-      createdAt: { $gte: windowStart },
     })
       .sort({ createdAt: -1 })
       .lean()
@@ -208,22 +218,14 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
     }).exec();
   }
 
-  public async getRecentRecords(params: {
-    userId?: string;
-    ip?: string;
-    fingerprint?: string;
-    limit?: number;
-  }) {
+  public async getRecentRecords(params: { userId: string; limit?: number }) {
     const limit = Math.max(1, Math.min(params.limit || 10, 50));
-    const query =
-      params.userId && params.userId.trim()
-        ? { scope: "user", userId: params.userId }
-        : {
-            scope: "anonymous",
-            duplicateScopeKey: this.buildAnonymousScopeKey(params.ip || "unknown", params.fingerprint || "unknown"),
-          };
-
-    const records = (await TtsHistoryModel.find(query)
+    // TTS 仅登录可用，历史只按 userId 取本人记录；匿名维度（ip::fingerprint）已停用。
+    const records = (await TtsHistoryModel.find({
+      scope: "user",
+      userId: params.userId,
+      userDeletedAt: { $exists: false },
+    })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean()
@@ -238,6 +240,7 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
     userId?: string;
     scope?: "user" | "anonymous";
     reviewStatus?: TtsHistoryReviewStatus | "all";
+    userDeleted?: TtsHistoryDeletedFilter;
     q?: string;
   }) {
     const page = Math.max(1, Math.floor(params.page || 1));
@@ -263,6 +266,13 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
       }
     }
 
+    // 用户软删除只对管理后台可见：默认全部（含已删除），可筛选只看已删除/未删除。
+    if (params.userDeleted === "active") {
+      and.push({ userDeletedAt: { $exists: false } });
+    } else if (params.userDeleted === "deleted") {
+      and.push({ userDeletedAt: { $exists: true, $nin: [null, ""] } });
+    }
+
     const q = params.q?.trim();
     if (q) {
       const pattern = new RegExp(escapeRegExp(q), "i");
@@ -280,6 +290,11 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
           { provider: pattern },
           { providerModel: pattern },
           { providerVoice: pattern },
+          { userTitle: pattern },
+          { userNote: pattern },
+          { userTags: pattern },
+          { adminNote: pattern },
+          { adminSuggestion: pattern },
         ],
       });
     }
@@ -351,6 +366,95 @@ export class MongoGenerationHistoryStore implements GenerationHistoryStore {
     }
 
     const updated = await TtsHistoryModel.findByIdAndUpdate(recordId, update, { returnDocument: "after" })
+      .lean()
+      .exec();
+
+    return updated ? mapHistoryRecord(updated) : null;
+  }
+
+  /**
+   * 用户自助编辑本人记录（标题/备注/标签）。
+   * owner 条件与「未被用户删除」都写进过滤里：越权与改已删记录一律返回 null，
+   * 不给先读后判的 TOCTOU 留窗口。
+   */
+  public async updateUserRecord(params: { recordId: string; userId: string }, patch: TtsHistoryUserPatch) {
+    if (!mongoose.Types.ObjectId.isValid(params.recordId)) {
+      return null;
+    }
+
+    const setPatch: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+    const unsetPatch: Record<string, string> = {};
+
+    if (patch.userTitle !== undefined) {
+      const userTitle = trimOptionalText(patch.userTitle, USER_TITLE_MAX_LENGTH);
+      if (userTitle) {
+        setPatch.userTitle = userTitle;
+      } else {
+        unsetPatch.userTitle = "";
+      }
+    }
+
+    if (patch.userNote !== undefined) {
+      const userNote = trimOptionalText(patch.userNote, USER_NOTE_MAX_LENGTH);
+      if (userNote) {
+        setPatch.userNote = userNote;
+      } else {
+        unsetPatch.userNote = "";
+      }
+    }
+
+    if (patch.userTags !== undefined) {
+      const userTags = normalizeUserTags(patch.userTags);
+      if (userTags?.length) {
+        setPatch.userTags = userTags;
+      } else {
+        unsetPatch.userTags = "";
+      }
+    }
+
+    const update: Record<string, unknown> = { $set: setPatch };
+    if (Object.keys(unsetPatch).length) {
+      update.$unset = unsetPatch;
+    }
+
+    const updated = await TtsHistoryModel.findOneAndUpdate(
+      {
+        _id: params.recordId,
+        scope: "user",
+        userId: params.userId,
+        userDeletedAt: { $exists: false },
+      },
+      update,
+      { returnDocument: "after" },
+    )
+      .lean()
+      .exec();
+
+    return updated ? mapHistoryRecord(updated) : null;
+  }
+
+  /**
+   * 软删除：只打标记，不物理删除，也不动音频资产。
+   * 删除不可恢复（对外没有任何清标记的入口），管理后台仍然可见。
+   */
+  public async softDeleteRecord(params: { recordId: string; userId: string }) {
+    if (!mongoose.Types.ObjectId.isValid(params.recordId)) {
+      return null;
+    }
+
+    const deletedAt = new Date().toISOString();
+    const updated = await TtsHistoryModel.findOneAndUpdate(
+      {
+        _id: params.recordId,
+        scope: "user",
+        userId: params.userId,
+        userDeletedAt: { $exists: false },
+      },
+      { $set: { userDeletedAt: deletedAt, updatedAt: deletedAt } },
+      { returnDocument: "after" },
+    )
       .lean()
       .exec();
 

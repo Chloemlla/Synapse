@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FaHistory,
@@ -8,9 +8,21 @@ import {
   FaDownload,
   FaCommentDots,
   FaTools,
+  FaPen,
+  FaTrash,
+  FaStickyNote,
 } from "react-icons/fa";
 import { cn } from "../utils/cn";
-import type { TtsHistoryRecord, TtsHistoryReviewStatus } from "../types/tts";
+import type {
+  TtsHistoryRecord,
+  TtsHistoryReviewStatus,
+  TtsHistoryUserUpdatePayload,
+} from "../types/tts";
+import {
+  TTS_HISTORY_PRESET_TAGS,
+  TTS_HISTORY_TITLE_MAX_LENGTH,
+  TTS_HISTORY_NOTE_MAX_LENGTH,
+} from "../utils/ttsHistoryTags";
 import {
   studioEyebrowClassName,
   studioStrongBadgeClassName,
@@ -80,7 +92,29 @@ interface TtsHistoryListProps {
   onDownload: (record: TtsHistoryRecord) => void;
   onHistoryPlay: () => void;
   setActiveHistoryId: (id: string | null) => void;
+  onUpdateRecord: (recordId: string, patch: TtsHistoryUserUpdatePayload) => Promise<void>;
+  onDeleteRecord: (recordId: string) => Promise<void>;
 }
+
+const ALL_TAGS_FILTER = "全部";
+
+type HistoryDraft = {
+  userTitle: string;
+  userNote: string;
+  userTags: string[];
+};
+
+const buildDraft = (record: TtsHistoryRecord): HistoryDraft => ({
+  userTitle: record.userTitle || "",
+  userNote: record.userNote || "",
+  userTags: [...(record.userTags || [])],
+});
+
+const mergeTags = (extra?: string[]) =>
+  Array.from(new Set([...TTS_HISTORY_PRESET_TAGS, ...(extra || [])]));
+
+const draftInputClassName =
+  "mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none";
 
 const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   history,
@@ -94,7 +128,92 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   onDownload,
   onHistoryPlay,
   setActiveHistoryId,
+  onUpdateRecord,
+  onDeleteRecord,
 }) => {
+  const [tagFilter, setTagFilter] = useState<string>(ALL_TAGS_FILTER);
+  const [editor, setEditor] = useState<{ id: string; draft: HistoryDraft } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
+
+  const filterTags = useMemo(() => mergeTags(history.flatMap((record) => record.userTags || [])), [history]);
+
+  const visibleHistory =
+    tagFilter === ALL_TAGS_FILTER
+      ? history
+      : history.filter((record) => record.userTags?.includes(tagFilter));
+
+  const closeEditor = () => {
+    setEditor(null);
+    setEditorError(null);
+    setConfirmingDelete(false);
+  };
+
+  const toggleEditor = (record: TtsHistoryRecord) => {
+    if (editor?.id === record.id) {
+      closeEditor();
+      return;
+    }
+    setEditor({ id: record.id, draft: buildDraft(record) });
+    setEditorError(null);
+    setConfirmingDelete(false);
+  };
+
+  const setDraftText = (field: "userTitle" | "userNote", value: string) => {
+    setEditor((current) =>
+      current ? { ...current, draft: { ...current.draft, [field]: value } } : current,
+    );
+  };
+
+  const toggleDraftTag = (tag: string) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const selected = current.draft.userTags.includes(tag);
+      return {
+        ...current,
+        draft: {
+          ...current.draft,
+          userTags: selected
+            ? current.draft.userTags.filter((item) => item !== tag)
+            : [...current.draft.userTags, tag],
+        },
+      };
+    });
+  };
+
+  const handleSave = async (record: TtsHistoryRecord) => {
+    setSaving(true);
+    setEditorError(null);
+    try {
+      await onUpdateRecord(record.id, {
+        userTitle: editor?.draft.userTitle.trim() ?? "",
+        userNote: editor?.draft.userNote.trim() ?? "",
+        userTags: editor?.draft.userTags ?? [],
+      });
+      closeEditor();
+    } catch (saveError) {
+      setEditorError(saveError instanceof Error ? saveError.message : "保存记录失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (record: TtsHistoryRecord) => {
+    setDeleting(true);
+    setEditorError(null);
+    try {
+      await onDeleteRecord(record.id);
+      closeEditor();
+    } catch (deleteError) {
+      setEditorError(deleteError instanceof Error ? deleteError.message : "删除记录失败");
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
@@ -127,6 +246,38 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
           </button>
         </div>
 
+        {history.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {filterTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setTagFilter(tag)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                  tagFilter === tag
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                )}
+              >
+                {tag}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setTagFilter(ALL_TAGS_FILTER)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                tagFilter === ALL_TAGS_FILTER
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+              )}
+            >
+              {ALL_TAGS_FILTER}
+            </button>
+          </div>
+        )}
+
         {historyError && (
           <div className="mt-4 min-w-0 max-w-full break-words rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
             {historyError}
@@ -141,11 +292,17 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
             暂无生成记录
           </div>
+        ) : visibleHistory.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+            「{tagFilter}」标签下暂无记录
+          </div>
         ) : (
           <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            {history.map((record) => {
+            {visibleHistory.map((record) => {
               const reviewStatus = (record.reviewStatus || "none") as TtsHistoryReviewStatus;
               const isHistoryPlaying = activeHistoryId === record.id;
+              const isEditing = editor?.id === record.id;
+              const panelTags = isEditing ? mergeTags(record.userTags) : [];
 
               return (
                 <div
@@ -174,8 +331,34 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
                         </span>
                       </div>
                       <div className="mt-3 break-words text-sm font-semibold text-slate-900">
-                        {record.fileName || "语音文件"}
+                        {record.userTitle?.trim() || record.fileName || "语音文件"}
                       </div>
+                      {record.userTitle?.trim() ? (
+                        <div className="mt-1 break-words text-xs text-slate-500">
+                          文件：{record.fileName}
+                        </div>
+                      ) : null}
+                      {record.userTags?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {record.userTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="min-w-0 max-w-full break-words rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {record.userNote?.trim() ? (
+                        <div className="mt-2 flex gap-2 rounded-2xl border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs leading-5 text-slate-600">
+                          <FaStickyNote className="mt-0.5 shrink-0 text-sky-500" />
+                          <span className="min-w-0 break-words">
+                            <span className="font-semibold text-sky-800">我的备注：</span>
+                            {record.userNote}
+                          </span>
+                        </div>
+                      ) : null}
                       <div className="mt-1 break-words text-xs text-slate-500">
                         {formatHistoryTime(record.createdAt)} · {record.speed}x · {record.provider}
                       </div>
@@ -234,7 +417,142 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
                       <FaDownload />
                       下载
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleEditor(record)}
+                      disabled={saving || deleting}
+                      className={cn(
+                        studioGhostButtonClassName,
+                        "w-full sm:w-auto",
+                        saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                      )}
+                    >
+                      <FaPen />
+                      {isEditing ? "收起管理" : "管理"}
+                    </button>
                   </div>
+
+                  {isEditing && editor ? (
+                    <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-3">
+                      <label className="block text-xs font-semibold text-slate-600">
+                        标题
+                        <input
+                          type="text"
+                          value={editor.draft.userTitle}
+                          onChange={(event) => setDraftText("userTitle", event.target.value)}
+                          maxLength={TTS_HISTORY_TITLE_MAX_LENGTH}
+                          placeholder="留空则显示文件名"
+                          className={draftInputClassName}
+                        />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-600">
+                        备注
+                        <textarea
+                          rows={3}
+                          value={editor.draft.userNote}
+                          onChange={(event) => setDraftText("userNote", event.target.value)}
+                          maxLength={TTS_HISTORY_NOTE_MAX_LENGTH}
+                          placeholder="写下这条记录的用途、待办或备注"
+                          className={draftInputClassName}
+                        />
+                      </label>
+                      <div>
+                        <div className="text-xs font-semibold text-slate-600">标签</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {panelTags.map((tag) => {
+                            const selected = editor.draft.userTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleDraftTag(tag)}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                                  selected
+                                    ? "border-slate-900 bg-slate-900 text-white"
+                                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                                )}
+                              >
+                                {tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleSave(record)}
+                          disabled={saving || deleting}
+                          className={cn(
+                            studioPrimaryButtonClassName,
+                            saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                          )}
+                        >
+                          {saving ? "保存中…" : "保存"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeEditor}
+                          disabled={saving || deleting}
+                          className={cn(
+                            studioGhostButtonClassName,
+                            saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                          )}
+                        >
+                          取消
+                        </button>
+                      </div>
+                      {confirmingDelete ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-rose-700">
+                            删除后不可恢复，确认删除？
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(record)}
+                            disabled={saving || deleting}
+                            className={cn(
+                              "rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100",
+                              saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                            )}
+                          >
+                            {deleting ? "删除中…" : "确认删除"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDelete(false)}
+                            disabled={saving || deleting}
+                            className={cn(
+                              studioGhostButtonClassName,
+                              "px-3 py-1.5 text-xs",
+                              saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                            )}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDelete(true)}
+                          disabled={saving || deleting}
+                          className={cn(
+                            "flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50",
+                            saving || deleting ? "cursor-not-allowed opacity-60" : "",
+                          )}
+                        >
+                          <FaTrash />
+                          删除记录
+                        </button>
+                      )}
+                      {editorError && (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                          {editorError}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
 
                   {(record.adminNote || record.adminSuggestion || reviewStatus !== "none") && (
                     <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3">

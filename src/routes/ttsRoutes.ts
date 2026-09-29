@@ -4,6 +4,7 @@ import { ttsProviderController } from "../controllers/ttsProviderController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
+import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
 import {
   adminLimiter,
   createLimiter,
@@ -14,7 +15,10 @@ import { ClarityService } from "../services/clarityService";
 import { TurnstileService } from "../services/turnstileService";
 
 const router = express.Router();
-const ttsApiKeyAuth = apiKeyAuth("tts", { required: false });
+// 登录闸门：会话 Cookie 由 optionalAuthenticateToken 解析，API Key / OAuth 由 apiKeyAuth
+// 的必需模式把关。顺序不能反 —— apiKeyAuth 在 req.user 已就绪时直接放行，
+// 反过来写会让 Cookie 用户在 oauthTokenAuth 那里被 401。
+const ttsApiKeyAuth = apiKeyAuth("tts", { required: true });
 const ttsSubmissionLimiter = ttsLimiter;
 const ttsJobReadLimiter = createLimiter({
   name: "ttsJobRead",
@@ -42,6 +46,12 @@ const ttsConfigWriteLimiter = createLimiter({
   message: "配置操作过于频繁，请稍后再试",
 });
 const ttsHistoryLimiter = historyLimiter;
+const ttsHistoryWriteLimiter = createLimiter({
+  name: "ttsHistoryWrite",
+  profile: "sensitive",
+  category: "tts-history",
+  message: "记录管理操作过于频繁，请稍后再试",
+});
 const ttsAdminOperationLimiter = adminLimiter;
 
 /**
@@ -108,14 +118,14 @@ const ttsAdminOperationLimiter = adminLimiter;
  *                   type: object
  *                   description: 建议的下一步动作
  */
-router.post("/generate", ttsSubmissionLimiter, ttsApiKeyAuth, TtsController.submitJob);
-router.post("/jobs", ttsSubmissionLimiter, ttsApiKeyAuth, TtsController.submitJob);
+router.post("/generate", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.submitJob);
+router.post("/jobs", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.submitJob);
 router.get("/provider-config", ttsConfigReadLimiter, ttsProviderController.getPublicConfig);
 router.get("/fish-catalog", ttsConfigReadLimiter, ttsProviderController.getFishCatalog);
 router.get("/fish-audio-sample", ttsConfigReadLimiter, ttsProviderController.getFishAudioSample);
 router.get("/assets/:fileName", ttsAssetLimiter, TtsController.getAudioAsset);
-router.get("/jobs/:taskId", ttsJobReadLimiter, ttsApiKeyAuth, TtsController.getJobStatus);
-router.get("/jobs/:taskId/result", ttsJobReadLimiter, ttsApiKeyAuth, TtsController.getJobResult);
+router.get("/jobs/:taskId", ttsJobReadLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.getJobStatus);
+router.get("/jobs/:taskId/result", ttsJobReadLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.getJobResult);
 router.get("/admin/history", ttsAdminOperationLimiter, authenticateAdmin, TtsController.getAllGenerations);
 router.patch(
   "/admin/history/:recordId/review",
@@ -401,10 +411,10 @@ router.get("/clarity/history", ttsConfigReadLimiter, authenticateAdmin, async (r
 
 /**
  * @openapi
- * /tts/history:
+ * /api/tts/history:
  *   get:
  *     summary: 获取最近生成记录
- *     description: 获取最近生成的语音记录
+ *     description: 获取当前登录用户自己的生成记录（不含已被用户删除的记录）。TTS 仅登录可用。
  *     responses:
  *       200:
  *         description: 生成记录列表
@@ -416,7 +426,120 @@ router.get("/clarity/history", ttsConfigReadLimiter, authenticateAdmin, async (r
  *                 records:
  *                   type: array
  *                   description: 生成记录列表
+ *       401:
+ *         description: 未登录
  */
-router.get("/history", ttsHistoryLimiter, ttsApiKeyAuth, TtsController.getRecentGenerations);
+router.get("/history", ttsHistoryLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.getRecentGenerations);
+
+/**
+ * @openapi
+ * /api/tts/history/{recordId}:
+ *   patch:
+ *     summary: 编辑我的生成记录
+ *     description: 用户为自己的记录设置自定义标题、备注与预设标签。仅能操作本人记录，文件名不可修改。
+ *     parameters:
+ *       - in: path
+ *         name: recordId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 生成记录 ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userTitle:
+ *                 type: string
+ *                 description: 自定义标题（最多 120 字，留空即清除）
+ *               userNote:
+ *                 type: string
+ *                 description: 自由文本备注（最多 1000 字，留空即清除）
+ *               userTags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 预设标签（最多 10 个，单个最多 24 字）
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 record:
+ *                   type: object
+ *                   description: 更新后的记录
+ *       400:
+ *         description: 请求体格式无效
+ *       401:
+ *         description: 未登录
+ *       404:
+ *         description: 记录不存在、非本人记录或已被删除
+ */
+router.patch(
+  "/history/:recordId",
+  ttsHistoryWriteLimiter,
+  optionalAuthenticateToken,
+  ttsApiKeyAuth,
+  auditLog({
+    module: "tts",
+    action: "tts.historyUpdate",
+    extractTarget: (req) => ({ targetId: req.params.recordId }),
+  }),
+  TtsController.updateUserGeneration,
+);
+
+/**
+ * @openapi
+ * /api/tts/history/{recordId}:
+ *   delete:
+ *     summary: 删除我的生成记录
+ *     description: 软删除，仅打标记且不可恢复；记录从用户列表消失，管理后台仍然可见。
+ *     parameters:
+ *       - in: path
+ *         name: recordId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 生成记录 ID
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 id:
+ *                   type: string
+ *                   description: 被删除的记录 ID
+ *                 userDeletedAt:
+ *                   type: string
+ *                   description: 软删除标记时间
+ *       401:
+ *         description: 未登录
+ *       404:
+ *         description: 记录不存在、非本人记录或已被删除
+ */
+router.delete(
+  "/history/:recordId",
+  ttsHistoryWriteLimiter,
+  optionalAuthenticateToken,
+  ttsApiKeyAuth,
+  auditLog({
+    module: "tts",
+    action: "tts.historyDelete",
+    extractTarget: (req) => ({ targetId: req.params.recordId }),
+  }),
+  TtsController.deleteGeneration,
+);
 
 export default router;

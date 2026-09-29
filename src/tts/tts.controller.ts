@@ -84,6 +84,15 @@ export class TtsController {
     return user;
   }
 
+  // TTS 全链路仅登录可用：取不到登录身份即 401，供历史/管理端点统一收口。
+  private static async requireCurrentUser(req: Request): Promise<User> {
+    const user = await TtsController.resolveCurrentUser(req);
+    if (!user?.id) {
+      throw new TtsRequestError(401, "请登录后使用语音功能", "TTS_AUTH_REQUIRED");
+    }
+    return user;
+  }
+
   private static buildNextAction(type: string, label: string, message: string): TtsNextAction {
     return { type, label, message };
   }
@@ -91,6 +100,11 @@ export class TtsController {
   private static getTaskIdParam(req: Request): string {
     const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
     return taskId || "";
+  }
+
+  private static getRecordIdParam(req: Request): string {
+    const recordId = Array.isArray(req.params.recordId) ? req.params.recordId[0] : req.params.recordId;
+    return recordId || "";
   }
 
   private static getRequestFingerprint(req: Request): string {
@@ -549,22 +563,11 @@ export class TtsController {
 
   public static async getRecentGenerations(req: Request, res: Response) {
     try {
-      const ip = TtsController.getClientIp(req);
-      const fingerprint = (req.query.fingerprint as string) || "unknown";
-      const currentUser = await TtsController.resolveCurrentUser(req);
+      const currentUser = await TtsController.requireCurrentUser(req);
       const limit = TtsController.parsePositiveInt(req.query.limit, 10, 50);
 
-      logger.info("获取历史记录", {
-        ip,
-        fingerprint,
-        userAgent: req.headers["user-agent"],
-        timestamp: new Date().toISOString(),
-      });
-
       const records = await generationHistoryStore.getRecentRecords({
-        userId: currentUser?.id,
-        ip,
-        fingerprint,
+        userId: currentUser.id,
         limit,
       });
       res.json(await TtsController.serializeHistoryRecords(records));
@@ -582,17 +585,92 @@ export class TtsController {
     }
   }
 
+  /** 用户自助编辑本人记录（自定义标题 / 备注 / 预设标签）。 */
+  public static async updateUserGeneration(req: Request, res: Response) {
+    try {
+      const recordId = TtsController.getRecordIdParam(req);
+      const currentUser = await TtsController.requireCurrentUser(req);
+      const body = req.body || {};
+
+      if (body.userTitle !== undefined && typeof body.userTitle !== "string") {
+        return res.status(400).json({ success: false, error: "标题格式无效" });
+      }
+      if (body.userNote !== undefined && typeof body.userNote !== "string") {
+        return res.status(400).json({ success: false, error: "备注格式无效" });
+      }
+      if (body.userTags !== undefined && !Array.isArray(body.userTags)) {
+        return res.status(400).json({ success: false, error: "标签格式无效" });
+      }
+      if (body.userTags !== undefined && body.userTags.some((tag: unknown) => typeof tag !== "string")) {
+        return res.status(400).json({ success: false, error: "标签格式无效" });
+      }
+
+      if (body.userTitle === undefined && body.userNote === undefined && body.userTags === undefined) {
+        return res.status(400).json({ success: false, error: "没有需要更新的字段" });
+      }
+
+      const record = await generationHistoryStore.updateUserRecord(
+        { recordId, userId: currentUser.id },
+        {
+          userTitle: body.userTitle,
+          userNote: body.userNote,
+          userTags: body.userTags,
+        },
+      );
+
+      if (!record) {
+        return res.status(404).json({ success: false, error: "生成记录不存在或无权修改" });
+      }
+
+      return res.json({
+        success: true,
+        record: (await TtsController.serializeHistoryRecords([record]))[0],
+      });
+    } catch (error) {
+      if (error instanceof TtsRequestError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message, code: error.code });
+      }
+      logger.error("更新 TTS 生成记录用户信息失败:", error);
+      return res.status(500).json({ success: false, error: "更新生成记录失败" });
+    }
+  }
+
+  /** 用户删除本人记录：只打软删除标记，不可恢复，管理后台仍可见。 */
+  public static async deleteGeneration(req: Request, res: Response) {
+    try {
+      const recordId = TtsController.getRecordIdParam(req);
+      const currentUser = await TtsController.requireCurrentUser(req);
+
+      const record = await generationHistoryStore.softDeleteRecord({ recordId, userId: currentUser.id });
+      if (!record) {
+        return res.status(404).json({ success: false, error: "生成记录不存在或无权删除" });
+      }
+
+      return res.json({ success: true, id: record.id, userDeletedAt: record.userDeletedAt });
+    } catch (error) {
+      if (error instanceof TtsRequestError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message, code: error.code });
+      }
+      logger.error("删除 TTS 生成记录失败:", error);
+      return res.status(500).json({ success: false, error: "删除生成记录失败" });
+    }
+  }
+
   public static async getAllGenerations(req: Request, res: Response) {
     try {
       const page = TtsController.parsePositiveInt(req.query.page, 1, 10000);
       const limit = TtsController.parsePositiveInt(req.query.limit, 20, 100);
       const scope = TtsController.stringifyQueryValue(req.query.scope);
+      const userDeleted = TtsController.stringifyQueryValue(req.query.userDeleted);
       const result = await generationHistoryStore.getAllRecords({
         page,
         limit,
         userId: TtsController.stringifyQueryValue(req.query.userId),
         scope: scope === "user" || scope === "anonymous" ? scope : undefined,
         reviewStatus: TtsController.parseReviewStatus(req.query.reviewStatus),
+        // 用户软删除的记录默认仍然出现在后台列表里（管理员要看得到），可按需筛选。
+        userDeleted:
+          userDeleted === "active" || userDeleted === "deleted" || userDeleted === "all" ? userDeleted : "all",
         q: TtsController.stringifyQueryValue(req.query.q),
       });
 
@@ -608,7 +686,7 @@ export class TtsController {
 
   public static async updateGenerationReview(req: Request, res: Response) {
     try {
-      const recordId = Array.isArray(req.params.recordId) ? req.params.recordId[0] : req.params.recordId;
+      const recordId = TtsController.getRecordIdParam(req);
       const parsedReviewStatus = TtsController.parseReviewStatus(req.body?.reviewStatus);
 
       if (req.body?.reviewStatus !== undefined && (parsedReviewStatus === undefined || parsedReviewStatus === "all")) {

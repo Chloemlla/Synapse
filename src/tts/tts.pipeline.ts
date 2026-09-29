@@ -12,7 +12,7 @@ import type { User } from "../utils/userStorage";
 import { TtsRequestError } from "./tts.errors";
 import { generationHistoryStore } from "./tts.history";
 import type { GenerationHistoryStore, QuotaLedger, TtsSettingsStore } from "./tts.ports";
-import { buildUsageSummaryFromSnapshot, buildAnonymousScopeKey, quotaLedger } from "./tts.quota";
+import { buildUsageSummaryFromSnapshot, quotaLedger } from "./tts.quota";
 import { ttsSettingsStore } from "./tts.settings";
 import type { TtsGovernanceSummary, TtsJobRequestPayload, TtsUsageSummary } from "./tts.storage";
 import { TtsService } from "./tts.service";
@@ -346,8 +346,9 @@ export class TtsSubmissionPipeline {
       await this.validateTurnstile(context.input.cfToken, context.ip);
     }
 
-    if (!userId && fingerprint === "unknown") {
-      throw new TtsRequestError(400, "匿名生成需要设备指纹", "TTS_FINGERPRINT_REQUIRED");
+    if (!userId) {
+      // TTS 仅登录可用：匿名通道连同它的日额度台账一起停用，历史记录不再产生 anonymous 作用域。
+      throw new TtsRequestError(401, "请登录后使用语音生成", "TTS_AUTH_REQUIRED");
     }
 
     await this.validatePolicyConsent(context, fingerprint);
@@ -367,59 +368,10 @@ export class TtsSubmissionPipeline {
     };
     const contentHashCandidates = this.ttsService.generateContentHashCandidates(contentIdentity);
 
-    if (userId && !isAdmin) {
-      const snapshot = await this.ledger.getUsageSnapshot(userId);
-      const usageSummary = buildUsageSummaryFromSnapshot(context.currentUser, snapshot);
-      if ((snapshot.remainingToday || 0) <= 0) {
-        throw new TtsRequestError(429, "您今日的使用次数已达上限", "TTS_USAGE_LIMIT_REACHED");
-      }
-
-      const duplicate = await this.historyStore.findDuplicateForUser({
-        userId,
-        text: requestPayload.text,
-        voice: requestPayload.voice,
-        model: requestPayload.model,
-        speed: requestPayload.speed,
-        outputFormat: requestPayload.outputFormat,
-        contentHashes: contentHashCandidates,
-      });
-
-      const reusableFileName = duplicate?.fileName
-        ? await this.ttsService.findExistingFile(duplicate.contentHash, requestPayload.outputFormat)
-        : null;
-
-      if (duplicate && reusableFileName) {
-        return {
-          requestPayload,
-          ip: context.ip,
-          fingerprint,
-          userId,
-          isAdmin,
-          usageSummary,
-          governance,
-          duplicateJobResult: {
-            fileName: reusableFileName,
-            audioUrl: this.ttsService.buildAudioUrl(reusableFileName),
-            audioFileId: duplicate.audioFileId,
-            audioStorage: duplicate.audioStorage,
-            audioMimeType: duplicate.audioMimeType,
-            audioSize: duplicate.audioSize,
-            message: "检测到重复内容，已返回已有音频。",
-            outputFormat: duplicate.outputFormat,
-            provider: duplicate.provider,
-            providerModel: duplicate.providerModel,
-            providerVoice: duplicate.providerVoice,
-          },
-        };
-      }
-
+    // 管理员不受每日额度约束，直接入队（与停用前的匿名/管理员路径同构）。
+    if (isAdmin) {
       if (!context.taskId) {
         throw new TtsRequestError(500, "任务标识缺失", "TTS_TASK_ID_MISSING");
-      }
-
-      const reservation = await this.ledger.reserve(userId, context.taskId);
-      if (!reservation.success) {
-        throw new TtsRequestError(429, "您今日的使用次数已达上限", "TTS_USAGE_LIMIT_REACHED");
       }
 
       return {
@@ -428,14 +380,19 @@ export class TtsSubmissionPipeline {
         fingerprint,
         userId,
         isAdmin,
-        usageSummary: buildUsageSummaryFromSnapshot(context.currentUser, reservation.snapshot),
+        usageSummary: buildUsageSummaryFromSnapshot(context.currentUser, null),
         governance,
       };
     }
 
-    const duplicate = await this.historyStore.findDuplicateForAnonymous({
-      ip: context.ip,
-      fingerprint,
+    const snapshot = await this.ledger.getUsageSnapshot(userId);
+    const usageSummary = buildUsageSummaryFromSnapshot(context.currentUser, snapshot);
+    if ((snapshot.remainingToday || 0) <= 0) {
+      throw new TtsRequestError(429, "您今日的使用次数已达上限", "TTS_USAGE_LIMIT_REACHED");
+    }
+
+    const duplicate = await this.historyStore.findDuplicateForUser({
+      userId,
       text: requestPayload.text,
       voice: requestPayload.voice,
       model: requestPayload.model,
@@ -443,37 +400,43 @@ export class TtsSubmissionPipeline {
       outputFormat: requestPayload.outputFormat,
       contentHashes: contentHashCandidates,
     });
-    const reusableAnonymousFileName = duplicate?.fileName
+
+    const reusableFileName = duplicate?.fileName
       ? await this.ttsService.findExistingFile(duplicate.contentHash, requestPayload.outputFormat)
       : null;
-    if (reusableAnonymousFileName) {
-      throw new TtsRequestError(
-        400,
-        "您已经生成过相同的内容，请登录以获取更多使用次数",
-        "TTS_DUPLICATE_ANONYMOUS_REQUEST",
-      );
+
+    if (duplicate && reusableFileName) {
+      return {
+        requestPayload,
+        ip: context.ip,
+        fingerprint,
+        userId,
+        isAdmin,
+        usageSummary,
+        governance,
+        duplicateJobResult: {
+          fileName: reusableFileName,
+          audioUrl: this.ttsService.buildAudioUrl(reusableFileName),
+          audioFileId: duplicate.audioFileId,
+          audioStorage: duplicate.audioStorage,
+          audioMimeType: duplicate.audioMimeType,
+          audioSize: duplicate.audioSize,
+          message: "检测到重复内容，已返回已有音频。",
+          outputFormat: duplicate.outputFormat,
+          provider: duplicate.provider,
+          providerModel: duplicate.providerModel,
+          providerVoice: duplicate.providerVoice,
+        },
+      };
     }
 
-    // 匿名通道增加日额度台账（G6-12）：按 fingerprintHash + IP 聚合，
-    // 防止单个 IP 每分钟 10 次 × 全天 14400 次的无限烧钱。
     if (!context.taskId) {
       throw new TtsRequestError(500, "任务标识缺失", "TTS_TASK_ID_MISSING");
     }
-    const anonymousScopeKey = buildAnonymousScopeKey(context.ip, fingerprint);
-    const anonymousReservation = await this.ledger.reserveAnonymous(anonymousScopeKey, context.taskId);
-    if (!anonymousReservation.success) {
-      await this.auditGovernanceEvent({
-        context,
-        action: "tts.anonymous.daily_limit",
-        result: "failure",
-        errorMessage: "Anonymous daily limit reached",
-        detail: { textHash: this.hashText(requestPayload.text), textLength: requestPayload.text.length },
-      });
-      throw new TtsRequestError(
-        429,
-        "匿名每日生成次数已达上限，请登录以获取更多使用次数",
-        "TTS_ANONYMOUS_DAILY_LIMIT_REACHED",
-      );
+
+    const reservation = await this.ledger.reserve(userId, context.taskId);
+    if (!reservation.success) {
+      throw new TtsRequestError(429, "您今日的使用次数已达上限", "TTS_USAGE_LIMIT_REACHED");
     }
 
     return {
@@ -482,7 +445,7 @@ export class TtsSubmissionPipeline {
       fingerprint,
       userId,
       isAdmin,
-      usageSummary: buildUsageSummaryFromSnapshot(context.currentUser, null),
+      usageSummary: buildUsageSummaryFromSnapshot(context.currentUser, reservation.snapshot),
       governance,
     };
   }

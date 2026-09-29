@@ -109,13 +109,11 @@ function buildPipeline() {
   const settingsStore = { getGenerationCode: async () => EXPECTED_CODE };
   const historyStore = {
     findDuplicateForUser: async () => null,
-    findDuplicateForAnonymous: async () => null,
   };
   const snapshot = { user: null, remainingToday: 5, reservedToday: 0, consumedToday: 0 };
   const ledger = {
     getUsageSnapshot: async () => snapshot,
     reserve: async () => ({ success: true, snapshot }),
-    reserveAnonymous: async () => ({ success: true, remainingToday: 5 }),
   };
   return new TtsSubmissionPipeline(
     settingsStore as never,
@@ -159,6 +157,16 @@ describe("TTS 生成码闸门的管理员豁免", () => {
     ).rejects.toMatchObject({ code: "TTS_INVALID_GENERATION_CODE" });
   });
 
+  it("匿名调用即使带对生成码也会被登录闸门拦下", async () => {
+    // 生成码校验在前、登录闸门在后：不带码的匿名调用依旧报生成码无效（上一条），
+    // 带对码的也无法绕过「TTS 仅登录可用」。
+    const context = contextFor(null);
+    context.input.generationCode = EXPECTED_CODE;
+    await expect(
+      buildPipeline().validateAndBuild(context as never),
+    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", status: 401 });
+  });
+
   it("管理员与超管不带生成码即可提交", async () => {
     for (const role of ["admin", "superadmin"]) {
       const result = await buildPipeline().validateAndBuild(contextFor(role) as never);
@@ -183,7 +191,15 @@ describe("TTS 生成码闸门的管理员豁免", () => {
   });
 
   it("API Key 调用本来就不走生成码校验", async () => {
-    const context = contextFor(null, { authenticatedByApiKey: true });
+    // API Key 凭证同样解析出用户身份，登录闸门照常放行。
+    const context = contextFor("user", { authenticatedByApiKey: true });
     await expect(buildPipeline().validateAndBuild(context as never)).resolves.toBeTruthy();
+  });
+
+  it("没有用户身份的 API Key 调用同样被登录闸门拦下", async () => {
+    const context = contextFor(null, { authenticatedByApiKey: true });
+    await expect(
+      buildPipeline().validateAndBuild(context as never),
+    ).rejects.toMatchObject({ code: "TTS_AUTH_REQUIRED", status: 401 });
   });
 });
