@@ -47,7 +47,7 @@ router.post("/verify-token", totpLimiter, TOTPController.verifyToken);
  * @openapi
  * /totp/disable:
  *   post:
- *     summary: 禁用TOTP
+ *     summary: 禁用TOTP（已建立安全会话时可直接关闭，无需验证码）
  *     responses:
  *       200:
  *         description: 禁用TOTP

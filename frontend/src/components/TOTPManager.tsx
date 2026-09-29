@@ -10,17 +10,12 @@ import {
 } from "react-icons/fa";
 import type { TOTPStatus } from "../types/auth";
 import { passkeyApi } from "../api/passkey";
-import {
-  cleanTOTPToken,
-  handleTOTPError,
-  validateTOTPToken,
-} from "../utils/totpUtils";
+import { handleTOTPError } from "../utils/totpUtils";
 import BackupCodesModal from "./BackupCodesModal";
 import EstablishSecuritySession from "./EstablishSecuritySession";
 import { ModalPortal } from "./ModalPortal";
 import { PasskeySetup } from "./PasskeySetup";
 import {
-  studioFieldClassName,
   studioGhostButtonClassName,
   studioModalCardClassName,
   studioModalOverlayClassName,
@@ -46,7 +41,6 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
   const [showDisable, setShowDisable] = useState(false);
   const [showBackupCodes, setShowBackupCodes] = useState(false);
   const [showPasskeySetup, setShowPasskeySetup] = useState(false);
-  const [disableCode, setDisableCode] = useState("");
   const [error, setError] = useState("");
   const [disabling, setDisabling] = useState(false);
   const prefersReducedMotion = useReducedMotion();
@@ -112,22 +106,12 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
   const handleDisable = async () => {
     if (disabling) return;
 
-    const cleanCode = cleanTOTPToken(disableCode);
-    if (!cleanCode.trim()) {
-      setError("请输入验证码");
-      return;
-    }
-    if (!validateTOTPToken(cleanCode)) {
-      setError("验证码必须是 6 位数字");
-      return;
-    }
-
     try {
       setError("");
       setDisabling(true);
-      await api.post("/api/totp/disable", { token: cleanCode, verificationToken });
+      // 安全会话已建立，后端复用该会话直接关闭 TOTP，不必再输一次 6 位验证码。
+      await api.post("/api/totp/disable", { verificationToken });
       setShowDisable(false);
-      setDisableCode("");
       void fetchStatus("refresh");
     } catch (err: any) {
       setError(handleTOTPError(err));
@@ -394,28 +378,9 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                 关闭 TOTP
               </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                输入当前 6 位验证码后关闭动态验证码。
+                复用当前安全会话直接关闭动态验证码，无需再次验证。关闭后登录只校验密码或 Passkey。
               </p>
               <div className="mt-5 space-y-3">
-                <input
-                  type="text"
-                  value={disableCode}
-                  onChange={(event) =>
-                    setDisableCode(
-                      event.target.value.replace(/\D/g, "").slice(0, 6),
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && disableCode.length === 6 && !disabling) {
-                      void handleDisable();
-                    }
-                  }}
-                  placeholder="000000"
-                  maxLength={6}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  className={`${studioFieldClassName} text-center font-mono`}
-                />
                 {error ? (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                     {error}
@@ -433,7 +398,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                   <button
                     type="button"
                     onClick={handleDisable}
-                    disabled={disableCode.length !== 6 || disabling}
+                    disabled={disabling}
                     className={`${studioPrimaryButtonClassName} w-full bg-rose-600 shadow-rose-600/20 hover:bg-rose-700 sm:w-auto`}
                   >
                     {disabling ? (

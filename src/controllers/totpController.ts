@@ -13,6 +13,7 @@ import { getAuthSessionMetadata, issueTrackedLoginToken } from "../services/auth
 import { setAuthSessionCookie } from "../utils/authCookie";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { hasValidSecuritySession } from "../utils/securitySession";
 import { UserStorage } from "../utils/userStorage";
 
 // TOTP验证尝试次数限制
@@ -539,7 +540,8 @@ export class TOTPController {
       }
 
       const userId = jwtUser.id;
-      const { token } = req.body;
+      const body = (req.body ?? {}) as { token?: unknown };
+      const token = typeof body.token === "string" ? body.token : "";
 
       // 从数据库获取完整的用户信息，包括TOTP相关字段（G2-22：走专用 secrets 投影）
       const user = await UserStorage.getUserSecretsById(userId);
@@ -551,43 +553,52 @@ export class TOTPController {
         return res.status(400).json({ error: "TOTP未启用" });
       }
 
-      // 检查TOTP验证尝试次数
-      const attemptCheck = TOTPController.checkTOTPAttempts(userId);
-      if (!attemptCheck.allowed) {
-        const remainingTime = Math.ceil((attemptCheck.lockedUntil! - Date.now()) / 1000 / 60);
-        return res.status(429).json({
-          error: `验证尝试次数过多，请${remainingTime}分钟后再试`,
-          lockedUntil: attemptCheck.lockedUntil,
-        });
-      }
+      // 已建立安全会话时直接关闭：会话由 TOTP / Passkey 建立（路由守卫 requireTwoFactorConfigSession
+      // 只放行非密码会话），本身即一次更强的验证，与全站「验证一次后复用会话」的约定一致，
+      // 不必再输一遍 6 位验证码。未带验证码又没有该会话时，仍走下面的验证码校验。
+      const sessionAuthorized = !token && hasValidSecuritySession(req, { requireTwoFactor: true });
 
-      // 验证令牌（G2-13：带 counter 重放防护，原子消费）
-      const totpCheck = TOTPService.verifyTokenWithCounter(token, user.totpSecret || "");
-      let isValid = totpCheck.valid;
-      if (isValid && totpCheck.counter !== null) {
-        isValid = await UserStorage.consumeTotpCounter(user.id, totpCheck.counter);
-        if (!isValid) {
-          logger.warn("disable: TOTP 重放被拒绝", { userId });
+      if (sessionAuthorized) {
+        logger.info("disable: 复用安全会话关闭 TOTP", { userId, username: user.username });
+      } else {
+        // 检查TOTP验证尝试次数
+        const attemptCheck = TOTPController.checkTOTPAttempts(userId);
+        if (!attemptCheck.allowed) {
+          const remainingTime = Math.ceil((attemptCheck.lockedUntil! - Date.now()) / 1000 / 60);
+          return res.status(429).json({
+            error: `验证尝试次数过多，请${remainingTime}分钟后再试`,
+            lockedUntil: attemptCheck.lockedUntil,
+          });
         }
-      }
 
-      // 记录验证尝试
-      TOTPController.recordTOTPAttempt(userId, isValid);
+        // 验证令牌（G2-13：带 counter 重放防护，原子消费）
+        const totpCheck = TOTPService.verifyTokenWithCounter(token, user.totpSecret || "");
+        let isValid = totpCheck.valid;
+        if (isValid && totpCheck.counter !== null) {
+          isValid = await UserStorage.consumeTotpCounter(user.id, totpCheck.counter);
+          if (!isValid) {
+            logger.warn("disable: TOTP 重放被拒绝", { userId });
+          }
+        }
 
-      if (!isValid) {
-        const remainingAttempts = attemptCheck.remainingAttempts - 1;
+        // 记录验证尝试
+        TOTPController.recordTOTPAttempt(userId, isValid);
 
-        logger.warn("disable: TOTP验证码错误", {
-          userId,
-          username: user.username,
-          remainingAttempts,
-        });
+        if (!isValid) {
+          const remainingAttempts = attemptCheck.remainingAttempts - 1;
 
-        return res.status(400).json({
-          error: "验证码错误",
-          remainingAttempts,
-          lockedUntil: remainingAttempts === 0 ? Date.now() + TOTP_LOCKOUT_DURATION : undefined,
-        });
+          logger.warn("disable: TOTP验证码错误", {
+            userId,
+            username: user.username,
+            remainingAttempts,
+          });
+
+          return res.status(400).json({
+            error: "验证码错误",
+            remainingAttempts,
+            lockedUntil: remainingAttempts === 0 ? Date.now() + TOTP_LOCKOUT_DURATION : undefined,
+          });
+        }
       }
 
       // 禁用TOTP
