@@ -12,6 +12,7 @@ import { adminOnly } from "../middleware/adminOnly";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
+import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
 import { createLimiter } from "../middleware/routeLimiters";
 
 const router = Router();
@@ -278,7 +279,10 @@ router.post("/verify", policyRateLimit, recordPolicyConsent);
  *       500:
  *         description: 服务器内部错误
  */
-router.get("/check", policyRateLimit, verifyPolicyConsent);
+// 查询与撤回都要走 assertDeviceOwnership，而它认「已登录会话」这条路径——模块挂载时
+// 没有全局会话解析，不在路由上补 optionalAuthenticateToken 的话 req.user 永远是空的，
+// 那句话就是死代码：cookie 被清掉或换设备后，登录用户也撤不掉自己的同意。
+router.get("/check", policyRateLimit, optionalAuthenticateToken, verifyPolicyConsent);
 
 /**
  * @swagger
@@ -324,7 +328,7 @@ router.get("/check", policyRateLimit, verifyPolicyConsent);
  *       500:
  *         description: 服务器内部错误
  */
-router.post("/revoke", policyRateLimit, revokePolicyConsent);
+router.post("/revoke", policyRateLimit, optionalAuthenticateToken, revokePolicyConsent);
 
 /**
  * @swagger

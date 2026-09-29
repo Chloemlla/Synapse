@@ -439,7 +439,7 @@ export const LoginPage: React.FC = () => {
                                 </m.button>
                             </form>
 
-                            {/* 其他登录方式（手机号 / Google / Linux.do / 通行密钥）同样受同意约束：
+                            {/* 其他登录方式（安卓客户端 / Google / Linux.do / 通行密钥）同样受同意约束：
                                 未逐项勾选前不渲染入口。Google 按钮由 GIS 脚本注入原生 iframe，
                                 点击无法被 React 拦截，隐藏入口是唯一对所有方式都生效的做法。 */}
                             {consentComplete ? (
@@ -513,7 +513,7 @@ export const LoginPage: React.FC = () => {
                                 </>
                             ) : (
                                 <p className="text-center text-xs leading-5 text-slate-500">
-                                    勾选上方四项条款后，可使用手机号、Google、Linux.do 或通行密钥登录。
+                                    勾选上方四项条款后，可使用安卓客户端、Google、Linux.do 或通行密钥登录。
                                 </p>
                             )}
 

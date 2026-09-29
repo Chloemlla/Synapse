@@ -67,6 +67,7 @@ import {
   getMergeStrategyLabel,
 } from './user-profile/profileHelpers';
 import DeviceSessionsPanel from './user-profile/DeviceSessionsPanel';
+import PrivacyConsentPanel from './user-profile/PrivacyConsentPanel';
 import { ProfileSidebarSummary } from './user-profile/ProfileSidebarSummary';
 import EstablishSecuritySession from './EstablishSecuritySession';
 import { useSecuritySession } from '../hooks/useSecuritySession';
@@ -1403,6 +1404,8 @@ const UserProfile: React.FC = () => {
                 void handleLogoutDeviceSession(deviceKey);
               }}
             />
+
+            <PrivacyConsentPanel />
 
             {/* Password change section */}
             <section className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
