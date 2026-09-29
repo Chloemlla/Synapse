@@ -70,15 +70,24 @@ const PrivacyConsentPanel: React.FC = () => {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 本浏览器拿不到该设备的同意凭据（换设备、清了站点数据，或从未在此同意过）。
+  // 这是空状态，不是故障，不该渲染成红色错误。
+  const [credentialMissing, setCredentialMissing] = useState(false);
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       setStatus(await checkPolicyConsent());
+      setCredentialMissing(false);
     } catch (loadError) {
       setStatus(null);
-      setError(describeError(loadError, '获取本设备的同意状态失败，请稍后重试'));
+      if (loadError instanceof DeviceCredentialRequiredError) {
+        setCredentialMissing(true);
+      } else {
+        setCredentialMissing(false);
+        setError(describeError(loadError, '获取本设备的同意状态失败，请稍后重试'));
+      }
     } finally {
       setLoading(false);
     }
@@ -176,6 +185,14 @@ const PrivacyConsentPanel: React.FC = () => {
         <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-4 text-sm text-slate-500">
           <FaSyncAlt className="animate-spin" />
           正在加载本设备的同意状态...
+        </div>
+      ) : credentialMissing ? (
+        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 text-[13px] leading-6 text-slate-600 sm:text-sm">
+          <FaShieldAlt className="mt-1 shrink-0 text-slate-400" />
+          <span>
+            本浏览器没有该设备的同意凭据（可能是在其他设备上同意过，或清除了站点数据），因此这里没有可撤回的同意。
+            继续使用依赖同意的功能时，会被要求重新逐项勾选；撤回也可通过支持邮箱办理。
+          </span>
         </div>
       ) : status && presentation ? (
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 sm:px-4">

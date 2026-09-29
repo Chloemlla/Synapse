@@ -12,7 +12,6 @@ import { adminOnly } from "../middleware/adminOnly";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
-import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
 import { createLimiter } from "../middleware/routeLimiters";
 
 const router = Router();
@@ -45,7 +44,7 @@ const adminRateLimit = createLimiter({
  *       properties:
  *         fingerprint:
  *           type: string
- *           description: 设备指纹（由调用方声明，归属由服务端按会话/凭据 cookie/首访验证令牌核验）
+ *           description: 设备指纹（由调用方声明，归属由服务端按凭据 cookie 或首访验证令牌核验）
  *           example: "abc123def456"
  *         version:
  *           type: string
@@ -155,9 +154,10 @@ const adminRateLimit = createLimiter({
  *     summary: 记录隐私政策同意
  *     description: |
  *       记录指定设备指纹对当前版本政策的同意。校验和与时间戳由服务端生成（签名盐不下发，
- *       客户端无法自行计算），调用方只需证明设备归属：已登录会话、本端点此前下发的凭据
- *       cookie，或首访验证令牌（X-IP-Verification-Token）三者之一。成功后下发与指纹绑定的
- *       凭据 cookie，供 /api/policy/check 与 /api/policy/revoke 证明归属。
+ *       客户端无法自行计算），调用方只需证明设备归属：本端点此前下发的凭据 cookie，或首访
+ *       验证令牌（X-IP-Verification-Token）二者之一。成功后下发与指纹绑定的凭据 cookie，
+ *       供 /api/policy/check 与 /api/policy/revoke 证明归属。注意：登录会话不是设备凭据——
+ *       它只证明调用者是谁，不证明调用者是这台设备，因此不能用于证明归属。
  *     tags: [Policy]
  *     parameters:
  *       - in: header
@@ -211,7 +211,7 @@ const adminRateLimit = createLimiter({
  *                   type: string
  *                   example: "INVALID_FINGERPRINT"
  *       403:
- *         description: 未能证明设备归属（缺少会话、凭据 cookie 或首访验证令牌）
+ *         description: 未能证明设备归属（缺少凭据 cookie 或首访验证令牌）
  *         content:
  *           application/json:
  *             schema:
@@ -279,10 +279,11 @@ router.post("/verify", policyRateLimit, recordPolicyConsent);
  *       500:
  *         description: 服务器内部错误
  */
-// 查询与撤回都要走 assertDeviceOwnership，而它认「已登录会话」这条路径——模块挂载时
-// 没有全局会话解析，不在路由上补 optionalAuthenticateToken 的话 req.user 永远是空的，
-// 那句话就是死代码：cookie 被清掉或换设备后，登录用户也撤不掉自己的同意。
-router.get("/check", policyRateLimit, optionalAuthenticateToken, verifyPolicyConsent);
+// 这里刻意不挂 optionalAuthenticateToken：同意记录的所有权单位是「设备」（指纹），而会话只证明
+// 「你是谁」，不证明「你是这台设备」。放行会话 = 任何登录用户只要拿到一个指纹（日志里就带着它），
+// 就能查/撤别人设备的同意；而指纹在本系统里正是设备凭据本身（同意 cookie 就是它的 HMAC）。
+// 设备没了 cookie 的正解是重新同意（本地重新下发 cookie），或走政策条文里给的邮箱通道。
+router.get("/check", policyRateLimit, verifyPolicyConsent);
 
 /**
  * @swagger
@@ -328,7 +329,7 @@ router.get("/check", policyRateLimit, optionalAuthenticateToken, verifyPolicyCon
  *       500:
  *         description: 服务器内部错误
  */
-router.post("/revoke", policyRateLimit, optionalAuthenticateToken, revokePolicyConsent);
+router.post("/revoke", policyRateLimit, revokePolicyConsent);
 
 /**
  * @swagger

@@ -14,7 +14,8 @@ import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 
 // G3-12: 把"指纹归属"变成可验证的。verify 时下发与指纹绑定的 HMAC 凭据，
-// revoke/check 必须携带该凭据（或已登录会话）才能操作，防止拿别人指纹就能撤销同意。
+// revoke/check 必须携带该凭据才能操作，防止拿别人指纹就能撤销同意。凭据只有设备持有，
+// 登录会话不算——见 assertDeviceOwnership 的说明。
 const CONSENT_TOKEN_COOKIE = "policy_consent_token";
 // 用独立派生密钥签名，避免把 JWT 签名密钥直接用于 UI 状态签名
 const CONSENT_TOKEN_SECRET = crypto.createHmac("sha256", config.jwtSecret).update("policy-consent-token").digest();
@@ -53,23 +54,25 @@ function setConsentTokenCookie(req: Request, res: Response, fingerprint: string)
   });
 }
 
-// 校验调用者是否持有该指纹对应的凭据（已登录会话也算）
+// 校验调用者是否持有该指纹对应的设备凭据。
+// 刻意不接受「已登录会话」：会话只证明调用者是谁，不证明他是这台设备。指纹在本系统里就是设备凭据
+// 本身（同意 cookie 是它的 HMAC），拿会话替代它，等于让任何登录用户凭一个已知指纹就查/撤别人
+// 设备的同意——而指纹会出现在日志与请求 URL 里，不能当作身份之外的东西。
 function assertDeviceOwnership(req: Request, res: Response, fingerprint: string): boolean {
-  if ((req as any).user?.id) return true;
   if (verifyConsentToken(readConsentTokenCookie(req), fingerprint)) return true;
   res.status(403).json({ success: false, error: "缺少设备凭据，无法完成操作", code: "DEVICE_CREDENTIAL_REQUIRED" });
   return false;
 }
 
-// 写同意记录前的设备归属证明：已登录会话、本端点下发的凭据 cookie，或首访验证令牌。
-// 首次写入时既没有会话也没有 consent cookie（后者正是本端点签发的），所以必须承认首访验证
+// 写同意记录前的设备归属证明：本端点下发的凭据 cookie，或首访验证令牌。
+// 同理不接受「已登录会话」（理由见 assertDeviceOwnership）。
+// 首次写入时还没有 consent cookie（后者正是本端点签发的），所以必须承认首访验证
 // 令牌——它由 /api/ip-verification/session 签发并与指纹绑定。
 // 令牌为空时同样交给 verifyRequestToken 判定，不能在这里先短路掉：首访验证关闭（闸门关闭或
 // IPQS/proxycheck 都关）时它恒为 true，与中间件放行 TTS 请求用的是同一判据。若在此处要求
 // 非空令牌，「TTS 门禁开启 + 首访验证关闭」这个组合下匿名端就没有任何可用证明，门禁记录不出来，
 // 等于把这次要修的问题又原地复现一遍。
 async function assertConsentWriteOwnership(req: Request, res: Response, fingerprint: string): Promise<boolean> {
-  if ((req as any).user?.id) return true;
   if (verifyConsentToken(readConsentTokenCookie(req), fingerprint)) return true;
 
   const tokenHeader = req.headers["x-ip-verification-token"];
@@ -234,7 +237,7 @@ export const verifyPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // G3-12: 必须持有该指纹对应的设备凭据（或已登录会话），防止查询他人同意记录
+    // G3-12: 必须持有该指纹对应的设备凭据，防止查询他人同意记录
     if (!assertDeviceOwnership(req, res, sanitizedFingerprint)) {
       return;
     }
@@ -323,7 +326,7 @@ export const revokePolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // G3-12: 必须持有该指纹对应的设备凭据（或已登录会话），防止撤销他人同意
+    // G3-12: 必须持有该指纹对应的设备凭据，防止撤销他人同意
     if (!assertDeviceOwnership(req, res, sanitizedFingerprint)) {
       return;
     }
