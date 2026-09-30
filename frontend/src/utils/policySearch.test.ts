@@ -35,10 +35,20 @@ describe('searchPolicySections', () => {
   });
 
   it('matches items and records their indexes per section', () => {
-    const result = searchPolicySections(sections, '默认');
-    expect(result.matchedSectionIds).toEqual(['retention']);
-    expect(result.matchedItemIndexes.retention).toEqual([1]);
-    expect(result.itemMatchCount).toBe(1);
+    // '默认' 在第 1、2 两条里都出现（两条都以「…：默认…」开头）
+    const both = searchPolicySections(sections, '默认');
+    expect(both.matchedSectionIds).toEqual(['retention']);
+    expect(both.matchedItemIndexes.retention).toEqual([0, 1]);
+    expect(both.itemMatchCount).toBe(2);
+
+    // 只命中第二条时，序号必须落在它自己的位置上
+    const second = searchPolicySections(sections, '30 天');
+    expect(second.matchedSectionIds).toEqual(['retention']);
+    expect(second.matchedItemIndexes.retention).toEqual([1]);
+    expect(second.itemMatchCount).toBe(1);
+
+    const first = searchPolicySections(sections, '审计日志');
+    expect(first.matchedItemIndexes.retention).toEqual([0]);
   });
 
   it('matches titles and summaries even without item hits', () => {
