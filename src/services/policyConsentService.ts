@@ -185,6 +185,9 @@ export async function writePolicyConsent(params: {
       source: params.source,
       agreements,
       documentHash: POLICY_DOCUMENT_HASH,
+      // 与 timestamp 同源写出，而不是依赖 schema 的 default：
+      // 趋势统计与管理端排序都读 recordedAt，显式赋值才能保证两侧一致（续期分支也是这么写的）。
+      recordedAt: new Date(timestamp),
       expiresAt,
     });
     await consent.save();
