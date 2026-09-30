@@ -118,4 +118,37 @@
 
 ## 三、改动去向
 
-（收尾时逐条回填 commit 短号；见本次提交序列 `feat(policy)` / `feat(admin-policy)` / `feat(policy-ui)`。）
+| 编号 | 去向 |
+|---|---|
+| P-01 | `3b013f66` schema 补 revokedAt/revokedIP/revokedReason + 面板撤回列 + 回归用例 |
+| P-02 | `3b013f66` policyMeta.resolveConsentValidityDays（纯函数 + 用例） |
+| P-03 | `3b013f66` 删不可达分支 + isCompleteAgreementSet 门禁；管理端「仅看勾选不完整」筛选 |
+| P-04 | `3b013f66` 后端请求头优先；`ee4bb276` 前端指纹只走 X-Fingerprint |
+| P-05 | `3b013f66` describeFingerprintForLog 统一日志短标识 |
+| P-06 | `3b013f66` hadActiveConsent / purged；`ee4bb276` 面板区分文案 |
+| P-07 | `3b013f66` POLICY_DOCUMENT_HASH + 同意记录 documentHash + ETag |
+| P-08 | `3b013f66` base64url({f,iat}).hmac + 判龄；旧形态兼容（有回归用例） |
+| P-09 | `3b013f66` admin/stats 补 revokedConsents / sources / documentHash / trendDays |
+| P-10 | `3b013f66` GET /api/policy/status；`ee4bb276` 前端单次往返 |
+| P-11 | `3b013f66` revoke {purge:true} 硬删除 + 清 cookie |
+| P-12 | `3b013f66` 时间范围/完整性筛选、趋势窗口、CSV 导出（审计 + 5000 行封顶） |
+| P-13 | `ee4bb276` utils/policySearch + 政策页检索（高亮/目录置灰/空态） |
+| P-14 | `ee4bb276` 字号三档 + 打印样式收敛 |
+| P-15 | `ee4bb276` 勾选清单内联文件要点（hooks/usePolicyDocument） |
+| P-16 | `ee4bb276` 隐私面板同意明细 + 「删除本设备记录」 |
+| P-17 | `ee4bb276` 政策页「本设备同意状态」卡片（含就地同意） |
+| P-18 | `ee4bb276` 页脚条文指纹展示与复制 |
+| P-19 | `ee4bb276` 管理端面板拆分 + 撤回/条文指纹列 + 导出按钮 |
+| P-20 | `ee4bb276` 清单文案/标题单一映射 + 条文共享缓存 hook |
+
+无挂起项：P-01 ～ P-20 全部已修。
+
+### 本次新增/变更的接口与页面入口（供后续维护者索引）
+
+- `GET /api/policy/status`（新增，设备凭据门槛）：版本 + 有效期 + 条文指纹 + 本设备同意明细与 reason
+- `POST /api/policy/revoke`（扩展）：`purge: true` 硬删除；响应新增 `hadActiveConsent` / `purged`
+- `GET /api/policy/check` / `/version` / `/document`（扩展）：指纹可走 `X-Fingerprint`；回带 `documentHash`；document 带 ETag/304
+- `GET /api/policy/admin/stats`（扩展）：`revokedConsents` / `sources` / `documentHash` / `trendDays`
+- `GET /api/admin/policy-consents`（扩展）：`from`/`to`/`agreementsIncomplete` 筛选 + 撤回与条文指纹字段
+- `GET /api/admin/policy-consents/export`（新增，superadmin + 审计）：CSV，5000 行封顶
+- 前端：`hooks/usePolicyDocument`、`utils/policySearch`、`components/policy/*`、`components/admin/policy-consent/*`

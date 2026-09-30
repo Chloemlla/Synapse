@@ -337,8 +337,8 @@ const PolicyConsentRecordsTab: React.FC<{ refreshNonce: number; agreementKeys: s
                   <AgreementsCell row={row} />
                 </Td>
                 <Td className="whitespace-nowrap text-slate-600">{formatIso(row.expiresAt)}</Td>
-                <Td className="whitespace-nowrap text-slate-600" title={row.revokedReason || undefined}>
-                  {formatIso(row.revokedAt)}
+                <Td className="whitespace-nowrap text-slate-600">
+                  <span title={row.revokedReason || undefined}>{formatIso(row.revokedAt)}</span>
                 </Td>
                 <Td>
                   <Mono value={row.revokedIP} title={row.revokedIP} />
