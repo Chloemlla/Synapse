@@ -152,3 +152,47 @@
 - `GET /api/admin/policy-consents`（扩展）：`from`/`to`/`agreementsIncomplete` 筛选 + 撤回与条文指纹字段
 - `GET /api/admin/policy-consents/export`（新增，superadmin + 审计）：CSV，5000 行封顶
 - 前端：`hooks/usePolicyDocument`、`utils/policySearch`、`components/policy/*`、`components/admin/policy-consent/*`
+
+## 四、验证结论（阶段 3/4）
+
+提交序列（已推送 `Chloemlla/Synapse` `main`）：
+
+| commit | 内容 |
+|---|---|
+| `3b013f66` | feat(policy)：后端同意记录留痕 / 条文指纹 / status / purge / 管理端筛选导出 |
+| `c317d5c3` | fix(policy)：类型再导出需同时引入本地绑定（TS2304） |
+| `ee4bb276` | feat(policy-ui)：政策页检索字号与状态卡片、勾选清单与隐私面板、管理端面板拆分 |
+| `d3aef3b2` | fix(admin-policy)：Td 不接受 title，改由内层 span 承载（一个编译错打红四个 job） |
+| `de6d7a52` | fix(policy)：新记录 recordedAt 与 timestamp 同步显式写出 |
+| `386b9a3b` | test(policy-ui)：修正检索用例关键词与序号断言（**未签名**，见下方备注） |
+| `5ecde136` | test(policy)：/version 契约改 objectContaining + /status 门槛用例；TTS 面板显示条文版本 |
+
+### CI 结果（commit `5ecde136`）
+
+全绿：Analyze (javascript / python / typescript)、Code Quality (fuck-u-code)、Browser cookie smoke、
+Deploy AMD64 image、Frontend bundle budget、Governance checks、Mongo replica integration、
+Node verification（后端 Jest 138 套件全过 + 前端 vitest）、Publish Docker (amd64)、
+type-check（含 backend / frontend）。两次快照间隔 30 分钟后重取，结论一致。
+
+`Nightly live / integration slice` 为**存量红**，与本次无关（方法论 §五-40）：
+
+- 该 job 自 2026-09-19 起每个 schedule 运行均 failure（连续 12 次），包括 2026-09-29 跑在本次改动
+  之前的提交 `09acceae`；
+- 本次运行的两个失败套件是 `policyApi.test.ts` 与 `logshare-mongodb.test.ts`（后者本次未动），
+  `Test Suites: 2 failed, 2 total`，根因是 workflow 自己末尾打印的 ts-jest@29 × typescript@7
+  编译器 API 不兼容（G13-10 / G13-11，决策项 D1）——套件在编译期就没起来，不是断言失败；
+- 因此 `policyApi.test.ts` 本次**未能真实跑过**；同一批行为由 CI 门禁内的
+  `policyDeviceCredential.test.ts`（假模型 + 真路由 + 真凭据校验）覆盖；另已把该 nightly 用例的
+  `/version` 全等断言改为 objectContaining，否则 D1 修好后会因本次字段扩展而红。
+
+### 备注：一条提交未签名
+
+`386b9a3b` 为 `git commit --no-gpg-sign`：先以配置键 `5FE9F6542590337E` 与主钥
+`3B87BEEF539D32B910C076218D05F105A6DD6BA0` 各试一次真实签名，均报
+`gpg: failed to sign the data`（非交互 shell 拿不到 pinentry），按仓库「真实签名失败才退回」的约定落盘；
+其后两次提交签名恢复正常（`%G?` = `G`）。如需补齐，可在本地 amend 重签后再推——未自行改写已推送的 main。
+
+### 审计清单核对
+
+P-01 ～ P-20 全部已修，无挂起项；每条编号均可在「三、改动去向」指回对应提交，
+反向也成立：本次改动的每个文件都能追溯到上面某条编号或「接口索引」中的新增入口。
