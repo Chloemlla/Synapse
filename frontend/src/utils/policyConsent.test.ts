@@ -4,7 +4,10 @@ import {
   POLICY_CONSENT_ITEMS,
   buildPolicyConsentPayload,
   createPolicyConsentSelection,
+  describeAgreementKey,
+  isPolicyAgreementSetComplete,
   isPolicyConsentComplete,
+  missingPolicyAgreements,
 } from './policyConsent';
 
 // 这份清单与后端 src/config/policyDocument.ts 的 POLICY_AGREEMENTS 必须逐项一致：
@@ -55,5 +58,37 @@ describe('policyConsent', () => {
       accepted: true,
       agreements: ['terms', 'usage', 'specific-terms', 'supported-regions'],
     });
+  });
+});
+
+describe('policyConsent helpers used by the panels', () => {
+  it('exposes a human-readable title per agreement key', () => {
+    expect(POLICY_CONSENT_ITEMS.map(item => item.title)).toEqual([
+      '服务条款',
+      '使用政策',
+      '服务专项条款',
+      '支持地区',
+    ]);
+  });
+
+  it('describes unknown keys verbatim instead of throwing', () => {
+    expect(describeAgreementKey('terms')).toBe('服务条款');
+    expect(describeAgreementKey('brand-new-agreement')).toBe('brand-new-agreement');
+  });
+
+  it('lists the missing agreements of a stored record', () => {
+    expect(missingPolicyAgreements(['terms', 'usage', 'specific-terms', 'supported-regions'])).toEqual([]);
+    expect(missingPolicyAgreements(['terms'])).toEqual(['usage', 'specific-terms', 'supported-regions']);
+    // 早期记录没有 agreements 字段：四份都算缺
+    expect(missingPolicyAgreements(undefined)).toEqual([...POLICY_AGREEMENT_KEYS]);
+    expect(isPolicyAgreementSetComplete(undefined)).toBe(false);
+    expect(isPolicyAgreementSetComplete([...POLICY_AGREEMENT_KEYS, 'extra'])).toBe(true);
+  });
+
+  it('anchors every agreement at policy-agreement-<key>', () => {
+    for (const item of POLICY_CONSENT_ITEMS) {
+      expect(item.anchor).toBe(`policy-agreement-${item.key}`);
+      expect(item.href).toBe(`/policy#${item.anchor}`);
+    }
   });
 });

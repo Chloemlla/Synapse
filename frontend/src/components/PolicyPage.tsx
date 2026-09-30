@@ -3,47 +3,25 @@ import axios from 'axios';
 import { motion } from 'framer-motion';
 import {
   FaAddressBook,
-  FaArrowUp,
-  FaBalanceScale,
-  FaBan,
   FaCheckCircle,
   FaClock,
   FaCode,
-  FaCookieBite,
   FaCopy,
-  FaCopyright,
   FaEnvelope,
   FaExclamationTriangle,
   FaFileAlt,
-  FaFileAudio,
   FaFileContract,
-  FaGavel,
   FaGlobe,
-  FaGlobeAsia,
   FaHistory,
-  FaInfoCircle,
-  FaLock,
   FaPrint,
-  FaScroll,
-  FaServer,
-  FaShieldAlt,
   FaSyncAlt,
-  FaUserSecret,
-  FaUserShield,
   FaVolumeUp,
 } from 'react-icons/fa';
-import type { IconType } from 'react-icons';
-import { apiWithRetry } from '../api';
 import type {
-  PolicyAgreement,
-  PolicyDocument,
   PolicyDocumentResponse,
-  PolicyHighlight,
-  PolicyIconKey,
-  PolicySection,
-  PolicyWarning,
 } from '../types/policy';
-import type { PolicyAgreementKey } from '../utils/policyConsent';
+import { usePolicyDocument } from '../hooks/usePolicyDocument';
+import { searchPolicySections, type PolicySearchResult } from '../utils/policySearch';
 import { cn } from '../utils/cn';
 import {
   InfoBadge,
@@ -52,57 +30,26 @@ import {
   InfoQueryHero,
   InfoQueryShell,
   InfoSectionTitle,
-  studioElevatedPanelClassName,
   studioSecondaryButtonClassName,
   type InfoTone,
 } from './studioTheme';
+import PolicyToc from './policy/PolicyToc';
+import {
+  AgreementCard,
+  HighlightCard,
+  HighlightedText,
+  WarningCard,
+  formatSectionNumber,
+  resolveIcon,
+  resolveTone,
+} from './policy/policyCards';
+import PolicySearchBar, { PolicyReadingControls, READING_SCALES, type ReadingScale } from './policy/PolicySearchBar';
+import PolicyConsentStatusPanel from './policy/PolicyConsentStatusPanel';
 
-// 图标与配色由前端决定：后端只给语义键（icon / emphasis），换风格不必动条文。
-const sectionIcons: Record<PolicyIconKey, IconType> = {
-  info: FaInfoCircle,
-  service: FaFileAudio,
-  account: FaLock,
-  conduct: FaBan,
-  privacy: FaUserSecret,
-  'third-party': FaServer,
-  retention: FaHistory,
-  rights: FaUserShield,
-  cookies: FaCookieBite,
-  enforcement: FaShieldAlt,
-  copyright: FaCopyright,
-  liability: FaBalanceScale,
-  changes: FaSyncAlt,
-  law: FaGavel,
-  contact: FaAddressBook,
-};
+// 条文正文由后端单点维护（src/config/policyDocument.ts），本页只负责阅读体验：
+// 检索、定位、字号、打印、以及「本设备同意状态」的就地查看与同意。
 
-const accentPalette: InfoTone[] = ['sky', 'emerald', 'violet', 'slate', 'teal'];
-
-// 登录/注册的四份必读文件各自的图标与强调色，与 PolicyConsentChecklist 的勾选项一一对应
-const agreementIcons: Record<PolicyAgreementKey, IconType> = {
-  terms: FaFileContract,
-  usage: FaShieldAlt,
-  'specific-terms': FaScroll,
-  'supported-regions': FaGlobeAsia,
-};
-
-const agreementTones: Record<PolicyAgreementKey, InfoTone> = {
-  terms: 'sky',
-  usage: 'amber',
-  'specific-terms': 'violet',
-  'supported-regions': 'emerald',
-};
-
-function resolveIcon(key: PolicyIconKey): IconType {
-  return sectionIcons[key] || FaFileAlt;
-}
-
-// critical / notice 章节固定用警示色，其余按顺序轮转强调色。
-function resolveTone(emphasis: PolicySection['emphasis'], index: number): InfoTone {
-  if (emphasis === 'critical') return 'rose';
-  if (emphasis === 'notice') return 'amber';
-  return accentPalette[index % accentPalette.length];
-}
+const READING_SCALE_STORAGE_KEY = 'policy-reading-scale';
 
 /** 条文接口的失败原因归一化成一句用户能看懂的中文提示。 */
 function resolveLoadError(err: unknown): string {
@@ -126,171 +73,10 @@ function resolveLoadError(err: unknown): string {
   return '加载失败，请刷新页面或稍后重试。';
 }
 
-function formatSectionNumber(index: number): string {
-  return String(index + 1).padStart(2, '0');
-}
-
-const PolicyToc: React.FC<{
-  sections: PolicySection[];
-  activeId: string;
-  progress: number;
-  onJump: (id: string) => void;
-  onTop: () => void;
-}> = ({ sections, activeId, progress, onJump, onTop }) => (
-  <>
-    <div className="mb-4">
-      <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-        <span>阅读进度</span>
-        <span>{progress}%</span>
-      </div>
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-slate-900 transition-[width] duration-150"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
-    <nav aria-label="条款目录" className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
-      {sections.map((section, index) => {
-        const target = `policy-${section.id}`;
-        const active = activeId === target;
-        return (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => onJump(section.id)}
-            aria-current={active ? 'true' : undefined}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition',
-              active
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-            )}
-          >
-            <span className={cn('font-mono text-[11px]', active ? 'text-white/70' : 'text-slate-400')}>
-              {formatSectionNumber(index)}
-            </span>
-            <span className="flex-1 leading-5">{section.title}</span>
-          </button>
-        );
-      })}
-    </nav>
-    <button
-      type="button"
-      onClick={onTop}
-      className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 transition hover:text-slate-900"
-    >
-      <FaArrowUp className="text-[10px]" /> 回到顶部
-    </button>
-  </>
-);
-
-const HighlightCard: React.FC<{ highlight: PolicyHighlight; tone: InfoTone }> = ({ highlight, tone }) => {
-  const Icon = resolveIcon(highlight.icon);
-  return (
-    <div className={cn(studioElevatedPanelClassName, 'border')}>
-      <Icon
-        className={cn(
-          tone === 'emerald' && 'text-emerald-600',
-          tone === 'sky' && 'text-sky-600',
-          tone === 'rose' && 'text-rose-600',
-          tone === 'amber' && 'text-amber-600',
-          tone === 'violet' && 'text-violet-600',
-          tone === 'teal' && 'text-teal-600',
-          tone === 'slate' && 'text-slate-600',
-        )}
-      />
-      <h3 className="mt-3 font-semibold text-slate-950">{highlight.title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{highlight.body}</p>
-    </div>
-  );
-};
-
-const AgreementCard: React.FC<{
-  agreement: PolicyAgreement;
-  copied: boolean;
-  onCopy: () => void;
-  onOpenSection: (sectionId: string) => void;
-  sectionTitle: (sectionId: string) => string;
-}> = ({ agreement, copied, onCopy, onOpenSection, sectionTitle }) => {
-  const Icon = agreementIcons[agreement.key] || FaFileContract;
-  const tone = agreementTones[agreement.key] || 'slate';
-  return (
-    <div id={agreement.anchor} className={cn(studioElevatedPanelClassName, 'scroll-mt-24 border')}>
-      <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-100">
-          <Icon
-            className={cn(
-              tone === 'sky' && 'text-sky-600',
-              tone === 'emerald' && 'text-emerald-600',
-              tone === 'violet' && 'text-violet-600',
-              tone === 'amber' && 'text-amber-600',
-              tone === 'teal' && 'text-teal-600',
-            )}
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-slate-950">{agreement.title}</h3>
-            <InfoBadge tone={tone}>登录 / 注册勾选项</InfoBadge>
-          </div>
-          <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">{agreement.label}</p>
-        </div>
-      </div>
-      <p className="mt-3 text-sm leading-7 text-slate-600">{agreement.summary}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-        {agreement.points.map((point) => (
-          <li key={point} className="flex items-start gap-2">
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
-            <span>{point}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {agreement.sectionIds.map((sectionId) => (
-          <button
-            key={sectionId}
-            type="button"
-            onClick={() => onOpenSection(sectionId)}
-            className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-          >
-            相关章节：{sectionTitle(sectionId)}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={onCopy}
-          aria-label={`复制「${agreement.title}」链接`}
-          className={cn(
-            'ml-auto inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition print:hidden',
-            copied
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-white/80 text-slate-500 hover:border-slate-300 hover:text-slate-700',
-          )}
-        >
-          {copied ? <FaCheckCircle className="text-[11px]" /> : <FaCopy className="text-[11px]" />}
-          {copied ? '已复制' : '复制链接'}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const WarningCard: React.FC<{ warning: PolicyWarning }> = ({ warning }) => {
-  const Icon = resolveIcon(warning.icon);
-  return (
-    <div className="rounded-2xl border border-rose-200 bg-rose-50/75 p-5 text-rose-800">
-      <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-700 ring-1 ring-rose-100">
-          <Icon />
-        </div>
-        <div>
-          <h3 className="font-semibold">{warning.title}</h3>
-          <p className="mt-2 text-sm leading-7">{warning.body}</p>
-        </div>
-      </div>
-    </div>
-  );
+const readStoredScale = (): ReadingScale => {
+  if (typeof window === 'undefined') return 1;
+  const raw = Number(window.localStorage.getItem(READING_SCALE_STORAGE_KEY));
+  return (READING_SCALES as readonly number[]).includes(raw) ? (raw as ReadingScale) : 1;
 };
 
 function PolicySkeleton() {
@@ -318,37 +104,26 @@ function PolicySkeleton() {
 }
 
 const PolicyPage: React.FC = () => {
-  const [policy, setPolicy] = useState<PolicyDocument | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { document: policy, loading, error: loadError, reload } = usePolicyDocument();
+  const error = loadError ? resolveLoadError(loadError) : null;
   const [progress, setProgress] = useState(0);
   const [activeId, setActiveId] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [readingScale, setReadingScale] = useState<ReadingScale>(readStoredScale);
   const copyTimer = useRef<number | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await apiWithRetry.get<PolicyDocumentResponse>('/api/policy/document');
-      if (data?.success && data.document) {
-        setPolicy(data.document);
-      } else {
-        setError('条文数据不完整，请稍后重试。');
-      }
-    } catch (err) {
-      setError(resolveLoadError(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   useEffect(() => () => {
     if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+  }, []);
+
+  const changeScale = useCallback((next: ReadingScale) => {
+    setReadingScale(next);
+    try {
+      window.localStorage.setItem(READING_SCALE_STORAGE_KEY, String(next));
+    } catch {
+      // 隐私模式下 localStorage 可能不可写：字号仅本次会话生效，不影响阅读
+    }
   }, []);
 
   // 阅读进度与目录高亮共用一个 rAF 节流的滚动监听，避免两套监听互相抢帧。
@@ -410,11 +185,10 @@ const PolicyPage: React.FC = () => {
 
   // 锚点已自带 policy- 前缀（章节是 policy-<id>，四份文件是 policy-agreement-<key>），
   // 因此这里按完整锚点拼分享链接，复制出来的地址能直接落到该段。
-  const copyAnchorLink = useCallback(async (anchor: string) => {
-    const url = `${window.location.origin}${window.location.pathname}#${anchor}`;
+  const copyText = useCallback(async (text: string, feedbackKey: string) => {
     try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(anchor);
+      await navigator.clipboard.writeText(text);
+      setCopiedId(feedbackKey);
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
       copyTimer.current = window.setTimeout(() => setCopiedId(null), 2000);
     } catch {
@@ -422,7 +196,34 @@ const PolicyPage: React.FC = () => {
     }
   }, []);
 
+  const copyAnchorLink = useCallback(
+    async (anchor: string) => {
+      await copyText(`${window.location.origin}${window.location.pathname}#${anchor}`, anchor);
+    },
+    [copyText],
+  );
+
   const highlightTones: InfoTone[] = useMemo(() => ['sky', 'emerald', 'rose'], []);
+
+  const search: PolicySearchResult = useMemo(
+    () => searchPolicySections(policy?.sections ?? [], query),
+    [policy, query],
+  );
+  const searching = search.query.length > 0;
+  const matchedSectionIds = useMemo(() => new Set(search.matchedSectionIds), [search.matchedSectionIds]);
+  const visibleSections = useMemo(
+    () =>
+      policy
+        ? searching
+          ? policy.sections.filter((section) => matchedSectionIds.has(section.id))
+          : policy.sections
+        : [],
+    [policy, searching, matchedSectionIds],
+  );
+  const itemsTotal = useMemo(
+    () => (policy?.sections ?? []).reduce((total, section) => total + section.items.length, 0),
+    [policy],
+  );
   const sessionSection = policy?.sections.find((section) => section.id === 'changes');
 
   return (
@@ -449,7 +250,7 @@ const PolicyPage: React.FC = () => {
             </>
           )}
           actions={(
-            <div className="flex flex-wrap gap-3 print:hidden">
+            <div className="flex flex-wrap items-center gap-3 print:hidden">
               <InfoPrimaryButton type="button" tone="slate" onClick={() => window.print()}>
                 <span className="inline-flex items-center gap-2">
                   <FaPrint className="text-[12px]" /> 打印 / 另存为 PDF
@@ -470,7 +271,7 @@ const PolicyPage: React.FC = () => {
 
         {loading && !policy && <PolicySkeleton />}
 
-        {error && (
+        {error && !policy && (
           <InfoPanel className="border-rose-200 bg-rose-50/85">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3 text-rose-800">
@@ -480,7 +281,7 @@ const PolicyPage: React.FC = () => {
                   <div className="mt-1 whitespace-pre-line">{error}</div>
                 </div>
               </div>
-              <button type="button" className={studioSecondaryButtonClassName} onClick={() => void load()}>
+              <button type="button" className={studioSecondaryButtonClassName} onClick={reload}>
                 <span className="inline-flex items-center gap-2">
                   <FaSyncAlt className="text-[12px]" /> 重新加载
                 </span>
@@ -501,6 +302,7 @@ const PolicyPage: React.FC = () => {
                     sections={policy.sections}
                     activeId={activeId}
                     progress={progress}
+                    matchedSectionIds={matchedSectionIds}
                     onJump={jumpTo}
                     onTop={scrollToTop}
                   />
@@ -514,14 +316,40 @@ const PolicyPage: React.FC = () => {
                   sections={policy.sections}
                   activeId={activeId}
                   progress={progress}
+                  matchedSectionIds={matchedSectionIds}
                   onJump={jumpTo}
                   onTop={scrollToTop}
                 />
               </InfoPanel>
             </div>
 
-            <div className="space-y-5">
-              <InfoPanel>
+            <div className="space-y-5" style={{ zoom: readingScale }}>
+              <InfoPanel className="print:border-0 print:shadow-none">
+                <div className="space-y-4">
+                  <PolicySearchBar
+                    value={query}
+                    onChange={setQuery}
+                    itemMatchCount={search.itemMatchCount}
+                    sectionMatchCount={search.matchedSectionIds.length}
+                    sectionsTotal={policy.sections.length}
+                    itemsTotal={itemsTotal}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <PolicyReadingControls scale={readingScale} onChange={changeScale} />
+                    <button
+                      type="button"
+                      onClick={() => void copyAnchorLink(`policy-${visibleSections[0]?.id ?? policy.sections[0]?.id ?? ''}`)}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 print:hidden"
+                    >
+                      <FaCopy className="text-[11px]" /> 复制当前条文链接
+                    </button>
+                  </div>
+                </div>
+              </InfoPanel>
+
+              <PolicyConsentStatusPanel documentVersion={policy.version} documentHash={policy.documentHash} />
+
+              <InfoPanel className="print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="阅读摘要"
                   description="以下摘要帮助快速定位条款主题，完整内容请按章节阅读。"
@@ -539,7 +367,7 @@ const PolicyPage: React.FC = () => {
                 </div>
               </InfoPanel>
 
-              <InfoPanel>
+              <InfoPanel className="print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="登录与注册须逐项同意的文件"
                   description="登录与注册页面会逐项要求勾选下列四份文件；每一项对应本页条款的一部分，正文按章节排列在本页下方。"
@@ -557,16 +385,32 @@ const PolicyPage: React.FC = () => {
                       sectionTitle={(sectionId) =>
                         policy.sections.find((section) => section.id === sectionId)?.title ?? sectionId
                       }
+                      searchQuery={search.query}
                     />
                   ))}
                 </div>
               </InfoPanel>
 
-              {policy.sections.map((section, index) => {
+              {searching && visibleSections.length === 0 && (
+                <InfoPanel className="print:border-0 print:shadow-none">
+                  <div className="flex items-start gap-3 text-amber-800">
+                    <FaExclamationTriangle className="mt-1 shrink-0" />
+                    <div className="text-sm leading-6">
+                      <div className="font-semibold">没有条文命中「{query.trim()}」</div>
+                      <div className="mt-1">
+                        换个关键词（例如「撤回」「保留」「Cookie」「跨境」），或清空检索查看全部 {policy.sections.length} 章。
+                      </div>
+                    </div>
+                  </div>
+                </InfoPanel>
+              )}
+
+              {visibleSections.map((section, index) => {
                 const Icon = resolveIcon(section.icon);
-                const tone = resolveTone(section.emphasis, index);
+                const tone = resolveTone(section.emphasis, policy.sections.findIndex((item) => item.id === section.id));
                 const anchor = `policy-${section.id}`;
                 const copied = copiedId === anchor;
+                const matchedItems = search.matchedItemIndexes[section.id] ?? [];
                 return (
                   <motion.section
                     key={section.id}
@@ -576,9 +420,11 @@ const PolicyPage: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.22, delay: Math.min(index * 0.03, 0.3) }}
                   >
-                    <InfoPanel>
+                    <InfoPanel className="print:border-0 print:shadow-none">
                       <InfoSectionTitle
-                        eyebrow={`第 ${formatSectionNumber(index)} 章 / 共 ${policy.sections.length} 章`}
+                        eyebrow={`第 ${formatSectionNumber(
+                          policy.sections.findIndex((item) => item.id === section.id),
+                        )} 章 / 共 ${policy.sections.length} 章`}
                         title={section.title}
                         description={section.summary}
                         icon={Icon}
@@ -601,17 +447,26 @@ const PolicyPage: React.FC = () => {
                         )}
                       />
                       <ul className="space-y-3 text-sm leading-7 text-slate-600">
-                        {section.items.map((item, itemIndex) => (
-                          <li
-                            key={item}
-                            className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-white/65 p-3"
-                          >
-                            <span className="mt-1 font-mono text-[11px] text-slate-400">
-                              {formatSectionNumber(index)}.{itemIndex + 1}
-                            </span>
-                            <span>{item}</span>
-                          </li>
-                        ))}
+                        {section.items.map((item, itemIndex) => {
+                          const hit = matchedItems.includes(itemIndex);
+                          return (
+                            <li
+                              key={item}
+                              className={cn(
+                                'flex items-start gap-3 rounded-2xl border p-3',
+                                hit ? 'border-amber-200 bg-amber-50/60' : 'border-slate-100 bg-white/65',
+                              )}
+                            >
+                              <span className="mt-1 font-mono text-[11px] text-slate-400">
+                                {formatSectionNumber(policy.sections.findIndex((entry) => entry.id === section.id))}.
+                                {itemIndex + 1}
+                              </span>
+                              <span>
+                                <HighlightedText text={item} query={search.query} />
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                       {section.emphasis === 'critical' && (
                         <p className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3 text-xs leading-6 text-rose-700">
@@ -623,7 +478,7 @@ const PolicyPage: React.FC = () => {
                 );
               })}
 
-              <InfoPanel className="border-rose-100">
+              <InfoPanel className="border-rose-100 print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="重点风险提示"
                   description="以下条款涉及账户、授权与平台责任边界，请重点阅读。"
@@ -632,12 +487,12 @@ const PolicyPage: React.FC = () => {
                 />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   {policy.warnings.map((warning) => (
-                    <WarningCard key={warning.title} warning={warning} />
+                    <WarningCard key={warning.title} warning={warning} searchQuery={search.query} />
                   ))}
                 </div>
               </InfoPanel>
 
-              <InfoPanel>
+              <InfoPanel className="print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="本次修订"
                   description="版本变化意味着此前的同意不再覆盖新条文，依赖同意的功能会要求重新同意。"
@@ -657,7 +512,9 @@ const PolicyPage: React.FC = () => {
                         {revision.changes.map((change) => (
                           <li key={change} className="flex items-start gap-2">
                             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
-                            <span>{change}</span>
+                            <span>
+                              <HighlightedText text={change} query={search.query} />
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -667,7 +524,7 @@ const PolicyPage: React.FC = () => {
                 </div>
               </InfoPanel>
 
-              <InfoPanel>
+              <InfoPanel className="print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="联系方式与程序化入口"
                   description="咨询、反馈、数据权利请求与侵权投诉请使用官方邮箱；自动化客户端可直接调用下列接口。"
@@ -679,7 +536,7 @@ const PolicyPage: React.FC = () => {
                     <a
                       key={contact.email}
                       href={`mailto:${contact.email}`}
-                      className={cn(studioElevatedPanelClassName, 'border transition hover:-translate-y-0.5 hover:shadow-md')}
+                      className="rounded-2xl border border-slate-200 bg-white/70 p-5 transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <div className="flex items-start gap-3">
                         <FaEnvelope className="mt-1 text-sky-600" />
@@ -701,8 +558,9 @@ const PolicyPage: React.FC = () => {
                       { label: '获取条文', value: policy.procedures.documentEndpoint },
                       { label: '获取版本', value: policy.procedures.versionEndpoint },
                       { label: '记录同意', value: policy.procedures.recordConsentEndpoint },
-                      { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
+                      { label: '查询状态', value: policy.procedures.statusEndpoint },
                       { label: '查询同意', value: policy.procedures.checkConsentEndpoint },
+                      { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
                     ].map((entry) => (
                       <div key={entry.value} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
                         <dt className="text-slate-500">{entry.label}</dt>
@@ -717,9 +575,33 @@ const PolicyPage: React.FC = () => {
                 </div>
               </InfoPanel>
 
-              <p className="px-1 text-xs leading-6 text-slate-400">
-                本页条文版本 v{policy.version}，生效日期 {policy.effectiveDate}，最近修订 {policy.lastUpdated}。
-              </p>
+              <div className="space-y-1 px-1 text-xs leading-6 text-slate-400">
+                <p>
+                  本页条文版本 v{policy.version}，生效日期 {policy.effectiveDate}，最近修订 {policy.lastUpdated}。
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>条文指纹（sha256，可在同意记录中核对）：</span>
+                  <code className="break-all font-mono text-[11px] text-slate-500">{policy.documentHash}</code>
+                  <button
+                    type="button"
+                    onClick={() => void copyText(policy.documentHash, 'document-hash')}
+                    aria-label="复制条文指纹"
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition print:hidden',
+                      copiedId === 'document-hash'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-white/80 text-slate-500 hover:border-slate-300 hover:text-slate-700',
+                    )}
+                  >
+                    {copiedId === 'document-hash' ? (
+                      <FaCheckCircle className="text-[10px]" />
+                    ) : (
+                      <FaCopy className="text-[10px]" />
+                    )}
+                    {copiedId === 'document-hash' ? '已复制' : '复制指纹'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

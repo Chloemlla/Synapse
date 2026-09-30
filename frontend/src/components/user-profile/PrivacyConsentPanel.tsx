@@ -1,20 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FaCheckCircle,
   FaExclamationCircle,
   FaExclamationTriangle,
   FaShieldAlt,
   FaSyncAlt,
+  FaTrashAlt,
   FaUserShield,
 } from 'react-icons/fa';
 import {
-  checkPolicyConsent,
   DeviceCredentialRequiredError,
+  fetchPolicyConsentStatus,
   revokePolicyConsent,
   type PolicyConsentStatus,
 } from '../../api/policy';
 import { getBackendErrorMessage } from '../../utils/backendError';
 import { cn } from '../../utils/cn';
+import { describeAgreementKey, missingPolicyAgreements } from '../../utils/policyConsent';
 import { formatDateTime } from './profileHelpers';
 import {
   studioDangerButtonClassName,
@@ -25,12 +28,25 @@ import {
 const REVOKE_WARNING =
   '撤回后本设备上依赖政策同意的功能（如语音生成）将立即停止，需要重新逐项勾选条款才能继续使用。';
 
+const PURGE_WARNING =
+  '删除会从服务端彻底移除本设备的全部同意记录（不可恢复），同时清除本设备的同意凭据。之后在本设备使用依赖同意的功能时，会被要求重新逐项勾选。审计与安全类记录（如操作审计日志）按各自期限单独保留。';
+
 const REVOKED_NOTICE = `已撤回本设备对政策条款的同意。${REVOKE_WARNING}`;
+const PURGED_NOTICE = '已删除本设备在服务端的全部同意记录，并清除本设备的同意凭据。';
+
+const SOURCE_LABELS: Record<string, string> = {
+  login: '登录时同意',
+  register: '注册时同意',
+  feature: '功能使用时同意',
+};
+
+const sourceLabel = (source?: string): string =>
+  source ? SOURCE_LABELS[source] ?? source : '未记录';
 
 // 403 的设备凭据缺失要给人话，其余错误沿用后端文案；这里都不把 error code 透给用户。
 const describeError = (error: unknown, fallback: string): string =>
   error instanceof DeviceCredentialRequiredError
-    ? '当前浏览器没有该设备的同意凭据，请在本设备上重新同意后操作。'
+    ? '当前浏览器没有该设备的同意凭据，请在本设备重新同意后操作。'
     : getBackendErrorMessage(error, fallback);
 
 interface StatusPresentation {
@@ -39,8 +55,7 @@ interface StatusPresentation {
   hint: string;
 }
 
-// 只有「有效 / 无效」两态：后端 findValidConsent 带 expiresAt > now 过滤，过期记录查不出来，
-// 所以这里区分不了「从未同意」和「已过期」，提示语对两种情况都成立即可。
+/** 状态文案按后端给出的 reason 分档：比原先的「有效 / 未同意」两态更接近事实。 */
 const getStatusPresentation = (status: PolicyConsentStatus): StatusPresentation => {
   if (status.hasValidConsent) {
     return {
@@ -50,11 +65,38 @@ const getStatusPresentation = (status: PolicyConsentStatus): StatusPresentation 
     };
   }
 
-  return {
-    label: '未同意',
-    badgeClassName: 'bg-slate-100 text-slate-600',
-    hint: '本设备当前没有有效的同意记录（未同意过，或此前的同意已过期），无需撤回；继续使用依赖该同意的功能时会被要求重新逐项勾选。',
-  };
+  switch (status.reason) {
+    case 'expired':
+      return {
+        label: '已过期',
+        badgeClassName: 'bg-amber-100 text-amber-700',
+        hint: '此前的同意已过期，无需手动撤回；继续使用依赖同意的功能时会被要求重新逐项勾选。',
+      };
+    case 'revoked':
+      return {
+        label: '已撤回',
+        badgeClassName: 'bg-rose-100 text-rose-700',
+        hint: '本设备此前撤回过同意（或记录已失效）。要再次使用依赖同意的功能，需要重新逐项勾选。',
+      };
+    case 'incomplete':
+      return {
+        label: '勾选项不完整',
+        badgeClassName: 'bg-amber-100 text-amber-700',
+        hint: '库里的记录没有覆盖当前版本要求的全部文件，需要重新逐项勾选后才能继续使用。',
+      };
+    case 'other-version':
+      return {
+        label: '记录属于旧版本',
+        badgeClassName: 'bg-amber-100 text-amber-700',
+        hint: `本设备最后同意的是 v${status.version}，当前版本是 v${status.currentVersion}，需要按新条文重新同意。`,
+      };
+    default:
+      return {
+        label: '从未同意',
+        badgeClassName: 'bg-slate-100 text-slate-600',
+        hint: '本设备没有同意记录；继续使用依赖同意的功能时会被要求重新逐项勾选。',
+      };
+  }
 };
 
 /**
@@ -62,12 +104,15 @@ const getStatusPresentation = (status: PolicyConsentStatus): StatusPresentation 
  *
  * 政策同意按浏览器设备指纹记录（没有 userId），TTS 生成时的门禁也按指纹判定，
  * 所以这里的口径是「本设备」而不是「本账户」——按账户聚合会与实际判定不一致。
+ * 除状态外还展示同意时间、来源与已勾选文件，并支持两种终止处理：
+ * 撤回（软，留痕）与删除（硬删除本设备记录）。
  */
 const PrivacyConsentPanel: React.FC = () => {
   const [status, setStatus] = useState<PolicyConsentStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [confirming, setConfirming] = useState<'revoke' | 'purge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // 本浏览器拿不到该设备的同意凭据（换设备、清了站点数据，或从未在此同意过）。
@@ -78,7 +123,7 @@ const PrivacyConsentPanel: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      setStatus(await checkPolicyConsent());
+      setStatus(await fetchPolicyConsentStatus());
       setCredentialMissing(false);
     } catch (loadError) {
       setStatus(null);
@@ -97,27 +142,37 @@ const PrivacyConsentPanel: React.FC = () => {
     void loadStatus();
   }, [loadStatus]);
 
-  const handleRevoke = async () => {
-    setRevoking(true);
+  const handleRevoke = async (purge: boolean) => {
+    if (purge) setPurging(true);
+    else setRevoking(true);
     setError(null);
     setNotice(null);
     try {
-      await revokePolicyConsent();
-      setConfirming(false);
-      setNotice(REVOKED_NOTICE);
-      // 撤回成功后无条件重查：提示语之外，状态标签也必须反映服务端的真实结果。
+      const result = await revokePolicyConsent(undefined, { purge });
+      setConfirming(null);
+      if (purge) {
+        setNotice(PURGED_NOTICE);
+      } else {
+        setNotice(result.hadActiveConsent ? REVOKED_NOTICE : '本设备当前没有有效的同意记录，无需撤回。');
+      }
+      // 处理成功后无条件重查：提示语之外，状态标签也必须反映服务端的真实结果。
       // 放在成功分支里，失败时的错误文案才不会被 loadStatus 开头的 setError(null) 抹掉。
       await loadStatus();
-    } catch (revokeError) {
-      setConfirming(false);
-      setError(describeError(revokeError, '撤回同意失败，请稍后重试'));
+    } catch (actionError) {
+      setConfirming(null);
+      setError(describeError(actionError, purge ? '删除同意记录失败，请稍后重试' : '撤回同意失败，请稍后重试'));
     } finally {
       setRevoking(false);
+      setPurging(false);
     }
   };
 
-  const busy = loading || revoking;
+  const busy = loading || revoking || purging;
   const presentation = status ? getStatusPresentation(status) : null;
+  const missing = status ? missingPolicyAgreements(status.agreements) : [];
+  const staleDocument = Boolean(
+    status?.hasValidConsent && status.consentDocumentHash && status.documentHash && status.consentDocumentHash !== status.documentHash,
+  );
 
   return (
     <section
@@ -132,8 +187,13 @@ const PrivacyConsentPanel: React.FC = () => {
             <span id="privacy-consent-title">隐私与同意</span>
           </div>
           <p className="mt-2 text-[13px] leading-6 text-slate-600 sm:text-sm">
-            查看并撤回<strong className="font-semibold text-slate-700">本设备</strong>对服务条款与隐私政策的同意。
-            同意按浏览器设备记录，撤回后需要在本设备上重新逐项勾选条款，才能继续使用依赖该同意的功能。
+            查看、撤回或删除<strong className="font-semibold text-slate-700">本设备</strong>对服务条款与隐私政策的同意。
+            同意按浏览器设备记录，处理之后需要在本设备上重新逐项勾选条款，才能继续使用依赖同意的功能。
+            条文原文见{' '}
+            <Link to="/policy" className="font-semibold text-teal-700 underline-offset-2 hover:underline">
+              服务条款与隐私政策
+            </Link>
+            。
           </p>
         </div>
         <button
@@ -191,15 +251,19 @@ const PrivacyConsentPanel: React.FC = () => {
           <FaShieldAlt className="mt-1 shrink-0 text-slate-400" />
           <span>
             本浏览器没有该设备的同意凭据（可能是在其他设备上同意过，或清除了站点数据），因此这里没有可撤回的同意。
-            继续使用依赖同意的功能时，会被要求重新逐项勾选；撤回也可通过支持邮箱办理。
+            继续使用依赖同意的功能时，会被要求重新逐项勾选；也可以直接到{' '}
+            <Link to="/policy" className="font-semibold text-teal-700 underline-offset-2 hover:underline">
+              政策页
+            </Link>{' '}
+            就地同意。
           </span>
         </div>
       ) : status && presentation ? (
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 sm:px-4">
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-3">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">当前政策版本</div>
-              <div className="mt-1 break-words text-sm font-semibold text-slate-900">{status.version}</div>
+              <div className="mt-1 break-words text-sm font-semibold text-slate-900">{status.currentVersion || status.version}</div>
             </div>
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">本设备同意状态</div>
@@ -213,60 +277,144 @@ const PrivacyConsentPanel: React.FC = () => {
                 )}
               </div>
             </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">同意时间与来源</div>
+              <div className="mt-1 break-words text-xs text-slate-600">
+                {status.recordedAt ? formatDateTime(status.recordedAt) : '无记录'}
+                {status.recordedAt ? ` · ${sourceLabel(status.source)}` : ''}
+              </div>
+            </div>
           </div>
+
+          {status.agreements.length > 0 || missing.length > 0 ? (
+            <div className="mt-3 border-t border-slate-200/80 pt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">已勾选文件</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {status.agreements.map((key) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700"
+                  >
+                    <FaCheckCircle className="text-[9px]" />
+                    {describeAgreementKey(key)}
+                  </span>
+                ))}
+                {missing.map((key) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700"
+                  >
+                    <FaExclamationTriangle className="text-[9px]" />
+                    缺少 {describeAgreementKey(key)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {staleDocument && (
+            <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+              <FaExclamationTriangle className="mt-0.5 shrink-0" />
+              <span>
+                这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在政策页重新同意。
+              </span>
+            </p>
+          )}
 
           <p className="mt-3 break-words border-t border-slate-200/80 pt-3 text-xs leading-5 text-slate-500">
             {presentation.hint}
           </p>
 
-          {status.hasValidConsent && (
-            <div className="mt-3">
-              {confirming ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3">
-                  <p className="flex items-start gap-2 break-words text-[12px] leading-5 text-amber-800">
-                    <FaExclamationTriangle className="mt-0.5 shrink-0" />
-                    <span>{REVOKE_WARNING}</span>
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleRevoke();
-                      }}
-                      disabled={revoking}
-                      className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
-                    >
-                      {revoking ? <FaSyncAlt className="animate-spin" /> : <FaExclamationTriangle />}
-                      {revoking ? '正在撤回...' : '确认撤回本设备同意'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirming(false)}
-                      disabled={revoking}
-                      className={cn(studioSecondaryButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
-                    >
-                      取消
-                    </button>
-                  </div>
+          <div className="mt-3 space-y-3">
+            {confirming === 'revoke' ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+                <p className="flex items-start gap-2 break-words text-[12px] leading-5 text-amber-800">
+                  <FaExclamationTriangle className="mt-0.5 shrink-0" />
+                  <span>{REVOKE_WARNING}</span>
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleRevoke(false);
+                    }}
+                    disabled={revoking}
+                    className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
+                  >
+                    {revoking ? <FaSyncAlt className="animate-spin" /> : <FaExclamationTriangle />}
+                    {revoking ? '正在撤回...' : '确认撤回本设备同意'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    disabled={revoking}
+                    className={cn(studioSecondaryButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
+                  >
+                    取消
+                  </button>
                 </div>
-              ) : (
+              </div>
+            ) : confirming === 'purge' ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3">
+                <p className="flex items-start gap-2 break-words text-[12px] leading-5 text-rose-800">
+                  <FaTrashAlt className="mt-0.5 shrink-0" />
+                  <span>{PURGE_WARNING}</span>
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleRevoke(true);
+                    }}
+                    disabled={purging}
+                    className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
+                  >
+                    {purging ? <FaSyncAlt className="animate-spin" /> : <FaTrashAlt />}
+                    {purging ? '正在删除...' : '确认删除全部记录'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    disabled={purging}
+                    className={cn(studioSecondaryButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setNotice(null);
-                    setConfirming(true);
+                    setConfirming('revoke');
                   }}
-                  disabled={busy}
-                  className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
+                  disabled={busy || !status.hasValidConsent}
+                  className={cn(studioDangerButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
                   aria-label="撤回本设备的政策同意"
                   title="撤回本设备的政策同意"
                 >
                   <FaExclamationTriangle />
                   撤回本设备同意
                 </button>
-              )}
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotice(null);
+                    setConfirming('purge');
+                  }}
+                  disabled={busy}
+                  className={cn(studioSecondaryButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
+                  aria-label="删除本设备的政策同意记录"
+                  title="删除本设备在服务端的全部同意记录（不可恢复）"
+                >
+                  <FaTrashAlt />
+                  删除本设备记录
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
     </section>

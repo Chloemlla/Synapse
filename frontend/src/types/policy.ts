@@ -74,10 +74,17 @@ export interface PolicyProcedures {
   recordConsentEndpoint: string;
   revokeConsentEndpoint: string;
   checkConsentEndpoint: string;
+  /** 一次取回「版本 + 本设备同意状态」的合并端点 */
+  statusEndpoint: string;
 }
 
 export interface PolicyDocument {
   version: string;
+  /**
+   * 条文指纹：后端对「章节正文 + 勾选项文案 + 重点提示」取的 SHA-256。
+   * 同意记录会一并落库，可与本设备记录里的 consentDocumentHash 对账。
+   */
+  documentHash: string;
   title: string;
   eyebrow: string;
   description: string;
