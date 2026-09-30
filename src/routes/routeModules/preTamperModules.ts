@@ -318,7 +318,7 @@ export const preTamperRouteModules: RouteModule[] = [
     authPolicy: {
       mode: "mixed",
       handlers: ["authenticateToken", "adminOnly", "authenticateSuperAdmin"],
-      note: "Public policy reads are open; admin stats are admin-level; the admin cleanup mutation is gated to superadmin inside the router.",
+      note: "Public policy reads are open (/document, /version, and /status — the latter still requires the requesting device's own consent credential cookie); /check and /revoke operate on the caller's device credential only; admin stats are admin-level; the admin cleanup mutation is gated to superadmin inside the router.",
     },
     securityBypass: {
       ipVerification: {

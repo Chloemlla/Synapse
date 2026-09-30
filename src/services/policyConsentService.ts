@@ -6,6 +6,7 @@ import {
   CONSENT_VALIDITY_DAYS,
   CURRENT_POLICY_VERSION,
   POLICY_AGREEMENT_KEYS,
+  type PolicyAgreementKey,
   isCompleteAgreementSet,
   missingAgreementKeys,
 } from "../config/policyMeta";
@@ -22,7 +23,6 @@ export {
   CURRENT_POLICY_VERSION,
   POLICY_AGREEMENT_ANCHOR_PREFIX,
   POLICY_AGREEMENT_KEYS,
-  type PolicyAgreementKey,
   describeFingerprintForLog,
   isCompleteAgreementSet,
   isPolicyAgreementKey,
@@ -30,6 +30,9 @@ export {
   policyAgreementAnchor,
   resolveConsentValidityDays,
 } from "../config/policyMeta";
+// 类型必须单独再导出一次：`export { type X } from` 不会在本地作用域引入 X，
+// 而下面的 normalizeAuthPolicyConsent 需要它作为局部类型。
+export type { PolicyAgreementKey };
 // 原实现把盐硬编码在源码里，等于公开密钥。现优先用显式配置；缺失时统一从单一主密钥
 // AES_KEY 派生（KL.POLICY_SALT），不再单独依赖 POLICY_SECRET_SALT / JWT_SECRET。
 function resolveSecretSalt(): string {
