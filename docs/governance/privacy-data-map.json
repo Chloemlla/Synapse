@@ -1,11 +1,12 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-26",
+  "updatedAt": "2026-09-30",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
     "User account deletion currently removes the user_datas document; linked fingerprint/IP telemetry cleanup is tracked as a long-term debt item.",
-    "proxycheck-* datasets were added 2026-09-25 with the proxycheck.io IP-risk integration. The risk cache is TTL-bounded; the lookup-log and probe-report collections are read-only superadmin surfaces and still await a retention job (declared as an acknowledged gap). The lookup log additionally stores the decision handed to the caller."
+    "proxycheck-* datasets were added 2026-09-25 with the proxycheck.io IP-risk integration. The risk cache is TTL-bounded; the lookup-log and probe-report collections are read-only superadmin surfaces and still await a retention job (declared as an acknowledged gap). The lookup log additionally stores the decision handed to the caller.",
+    "policy_consents gained documentHash (which text revision was accepted) plus revokedAt/revokedIP/revokedReason (withdrawal audit trail) on 2026-09-30, and an owner-initiated hard delete via POST /api/policy/revoke {purge:true}. A superadmin CSV export (/api/admin/policy-consents/export) is the only bulk surface; it is audited and row-capped."
   ],
   "datasets": [
     {
@@ -125,8 +126,8 @@
     {
       "id": "policy-consents",
       "collection": "policy_consents",
-      "fields": ["fingerprint", "ipAddress", "userAgent", "version", "checksum", "expiresAt", "source", "agreements"],
-      "purpose": "Proof of policy acceptance: the four agreements ticked at login/register, an explicit acceptance for gated features such as anonymous TTS, or a server-signed record refreshed at either point (source, agreements)",
+      "fields": ["fingerprint", "ipAddress", "userAgent", "version", "checksum", "documentHash", "expiresAt", "source", "agreements", "revokedAt", "revokedIP", "revokedReason"],
+      "purpose": "Proof of policy acceptance: the four agreements ticked at login/register, an explicit acceptance for gated features such as anonymous TTS, or a server-signed record refreshed at either point (source, agreements). documentHash pins which text revision was accepted; revokedAt/revokedIP record a withdrawal.",
       "legalBasis": "consent_record",
       "retention": {
         "type": "ttl",
@@ -136,13 +137,13 @@
       },
       "delete": {
         "onUserDelete": "not_linked",
-        "userAction": "POST /api/policy/revoke",
+        "userAction": "POST /api/policy/revoke (body { purge: true } hard-deletes this device's records and clears the device credential cookie)",
         "automatic": "Mongo TTL + cleanExpiredConsents()"
       },
       "export": {
         "supported": "partial",
-        "surface": "policy check/admin stats",
-        "includes": ["version", "expiresAt", "consent id"]
+        "surface": "GET /api/policy/status (device owner), admin stats, superadmin /api/admin/policy-consents (+ /export CSV, superadmin only, audited)",
+        "includes": ["version", "expiresAt", "recordedAt", "consent id", "source", "agreements", "documentHash"]
       },
       "evidence": ["src/models/policyConsentModel.ts", "src/services/policyConsentService.ts"]
     },

@@ -3,6 +3,7 @@ import {
   cleanExpiredConsents,
   getCurrentPolicyVersion,
   getPolicyDocument,
+  getPolicyStatus,
   getPolicyStats,
   recordPolicyConsent,
   revokePolicyConsent,
@@ -88,6 +89,7 @@ const adminRateLimit = createLimiter({
  *       type: object
  *       required:
  *         - version
+ *         - documentHash
  *         - title
  *         - effectiveDate
  *         - lastUpdated
@@ -97,6 +99,10 @@ const adminRateLimit = createLimiter({
  *           type: string
  *           description: 政策版本号，与 /api/policy/version 返回的版本一致
  *           example: "2.1"
+ *         documentHash:
+ *           type: string
+ *           description: 条文指纹（sha256）：对章节正文、勾选项文案与重点提示取哈希。同意记录会一并落库，用于对账
+ *           example: "4f2a1c9d…"
  *         title:
  *           type: string
  *           example: "服务条款与隐私政策"
@@ -191,6 +197,12 @@ const adminRateLimit = createLimiter({
  *                 version:
  *                   type: string
  *                   example: "2.1"
+ *                 documentHash:
+ *                   type: string
+ *                   description: 落到这条同意记录里的条文指纹
+ *                 validityDays:
+ *                   type: number
+ *                   example: 30
  *                 expiresAt:
  *                   type: string
  *                   format: date-time
@@ -237,21 +249,30 @@ router.post("/verify", policyRateLimit, recordPolicyConsent);
  * /api/policy/check:
  *   get:
  *     summary: 验证隐私政策同意状态
- *     description: 检查指定设备指纹是否有有效的政策同意记录
+ *     description: |
+ *       检查指定设备指纹是否有有效的政策同意记录。指纹优先从 `X-Fingerprint` 请求头读取
+ *       （避免指纹落到访问日志与 Referer），查询串上的 `fingerprint` 仍兼容；
+ *       `version` 可省略，省略时按当前版本查。响应会回带同意时间、来源与勾选项，
+ *       便于用户端面板展示——这些字段只对持有设备凭据的调用者可见。
  *     tags: [Policy]
  *     parameters:
+ *       - in: header
+ *         name: X-Fingerprint
+ *         schema:
+ *           type: string
+ *         description: 设备指纹（优先于查询串）
  *       - in: query
  *         name: fingerprint
- *         required: true
+ *         required: false
  *         schema:
  *           type: string
- *         description: 设备指纹
+ *         description: 设备指纹（兼容旧客户端；隐藏在请求头里更合适）
  *       - in: query
  *         name: version
- *         required: true
+ *         required: false
  *         schema:
  *           type: string
- *         description: 政策版本
+ *         description: 政策版本，省略即按当前版本查
  *     responses:
  *       200:
  *         description: 验证结果
@@ -287,10 +308,93 @@ router.get("/check", policyRateLimit, verifyPolicyConsent);
 
 /**
  * @swagger
+ * /api/policy/status:
+ *   get:
+ *     summary: 获取本设备的政策与同意状态
+ *     description: |
+ *       一次取回「当前版本 + 有效期 + 条文指纹 + 本设备同意状态」，取代「先 /version 再 /check」
+ *       的两次往返。指纹从 `X-Fingerprint` 请求头读取。与 /check 的差别：这里 success 恒为 true，
+ *       同意状态落在 hasValidConsent；无有效同意时 reason 给出 none / expired / revoked /
+ *       incomplete / other-version。必须持有本端点此前下发的设备凭据 cookie（或首访验证令牌），
+ *       登录会话不能替代。
+ *     tags: [Policy]
+ *     parameters:
+ *       - in: header
+ *         name: X-Fingerprint
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 设备指纹
+ *       - in: query
+ *         name: version
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: 政策版本，省略即当前版本
+ *     responses:
+ *       200:
+ *         description: 状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 hasValidConsent:
+ *                   type: boolean
+ *                 reason:
+ *                   type: string
+ *                   enum: [active, none, expired, revoked, incomplete, other-version]
+ *                 version:
+ *                   type: string
+ *                 currentVersion:
+ *                   type: string
+ *                 validityDays:
+ *                   type: number
+ *                 documentHash:
+ *                   type: string
+ *                 consentDocumentHash:
+ *                   type: string
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *                 recordedAt:
+ *                   type: string
+ *                   format: date-time
+ *                 source:
+ *                   type: string
+ *                 agreements:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 agreementsComplete:
+ *                   type: boolean
+ *                 missingAgreements:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: 缺少设备指纹
+ *       403:
+ *         description: 未能证明设备归属
+ *       429:
+ *         description: 请求过于频繁
+ *       500:
+ *         description: 服务器内部错误
+ */
+router.get("/status", policyRateLimit, getPolicyStatus);
+
+/**
+ * @swagger
  * /api/policy/revoke:
  *   post:
  *     summary: 撤销隐私政策同意
- *     description: 撤销指定设备指纹的政策同意记录
+ *     description: |
+ *       撤销指定设备指纹的政策同意记录（软撤回，保留 revokedAt / revokedIP 留痕，到期由 TTL 回收）。
+ *       body 里带 `purge: true` 时改为硬删除该指纹的全部记录并清除设备凭据 cookie，用于行使「删除」权利。
+ *       必须携带设备凭据 cookie（或首访验证令牌），登录会话不能替代。
  *     tags: [Policy]
  *     requestBody:
  *       required: true
@@ -307,9 +411,12 @@ router.get("/check", policyRateLimit, verifyPolicyConsent);
  *               version:
  *                 type: string
  *                 description: 政策版本（可选，不提供则撤销所有版本）
+ *               purge:
+ *                 type: boolean
+ *                 description: 为 true 时硬删除本指纹的全部同意记录（不可恢复），并清除设备凭据 cookie
  *     responses:
  *       200:
- *         description: 撤销成功
+ *         description: 处理完成
  *         content:
  *           application/json:
  *             schema:
@@ -321,6 +428,11 @@ router.get("/check", policyRateLimit, verifyPolicyConsent);
  *                 message:
  *                   type: string
  *                   example: "Consent revoked successfully"
+ *                 hadActiveConsent:
+ *                   type: boolean
+ *                   description: 本次是否真的改动了有效记录（false = 本来就无需撤回）
+ *                 purged:
+ *                   type: boolean
  *                 revokedCount:
  *                   type: number
  *                   example: 1

@@ -1,14 +1,35 @@
 import crypto from "node:crypto";
 import { PolicyConsent } from "../models/policyConsentModel";
 import { KL, deriveSecretHex } from "../config/keyDerivation";
+import { POLICY_DOCUMENT_HASH } from "../config/policyDocument";
+import {
+  CONSENT_VALIDITY_DAYS,
+  CURRENT_POLICY_VERSION,
+  POLICY_AGREEMENT_KEYS,
+  isCompleteAgreementSet,
+  missingAgreementKeys,
+} from "../config/policyMeta";
 import logger from "../utils/logger";
 import { uuidv4 } from "../utils/uuid";
 
+// 版本号 / 有效期 / 勾选清单的定义处是 config/policyMeta（叶节点模块），这里原样再导出，
+// 让既有调用方（controllers / tests / tts pipeline）继续从本模块拿到同一份值。
 // 2.1：条文实质扩充（数据保存期限、用户权利行使路径、Cookie 与本地存储、第三方与跨境、
 // 自动化风控处置、条款变更机制）。版本号变化会让此前记录的同意不再覆盖新条文，
 // 依赖同意的功能因此要求重新同意——这正是条文变更后应有的行为。
-export const CURRENT_POLICY_VERSION = process.env.POLICY_VERSION || "2.1";
-export const CONSENT_VALIDITY_DAYS = Number(process.env.POLICY_CONSENT_VALIDITY_DAYS || 30);
+export {
+  CONSENT_VALIDITY_DAYS,
+  CURRENT_POLICY_VERSION,
+  POLICY_AGREEMENT_ANCHOR_PREFIX,
+  POLICY_AGREEMENT_KEYS,
+  type PolicyAgreementKey,
+  describeFingerprintForLog,
+  isCompleteAgreementSet,
+  isPolicyAgreementKey,
+  missingAgreementKeys,
+  policyAgreementAnchor,
+  resolveConsentValidityDays,
+} from "../config/policyMeta";
 // 原实现把盐硬编码在源码里，等于公开密钥。现优先用显式配置；缺失时统一从单一主密钥
 // AES_KEY 派生（KL.POLICY_SALT），不再单独依赖 POLICY_SECRET_SALT / JWT_SECRET。
 function resolveSecretSalt(): string {
@@ -39,13 +60,7 @@ export function shouldRequireTtsPolicyConsent(): boolean {
 
 // 登录/注册必须逐项勾选的四份文件。键名同时是政策页锚点（policy-agreement-<key>）
 // 与同意记录里 agreements 字段的取值，改键名等于让历史记录与新条文对不上。
-export const POLICY_AGREEMENT_KEYS = ["terms", "usage", "specific-terms", "supported-regions"] as const;
-export type PolicyAgreementKey = (typeof POLICY_AGREEMENT_KEYS)[number];
-export const POLICY_AGREEMENT_ANCHOR_PREFIX = "policy-agreement-";
-
-export function policyAgreementAnchor(key: string): string {
-  return `${POLICY_AGREEMENT_ANCHOR_PREFIX}${key}`;
-}
+// （清单本体与类型定义在 config/policyMeta，此处不再重复声明。）
 
 export type PolicyConsentSource = "login" | "register" | "feature";
 
@@ -115,6 +130,7 @@ export function resolveRequestFingerprint(req: {
 // 唯一的同意记录写入路径：登录、注册，以及显式同意端点（POST /api/policy/verify，
 // 供 TTS 这类「先同意再使用」的功能门禁调用）。
 // checksum 由服务端签名，客户端无法自行伪造；记录归属于调用方已证明归属的指纹。
+// documentHash 记录同意时的条文指纹，使「这条同意对应哪份文本」事后可证。
 // 同一指纹+版本已有有效记录时原地续期，避免 unique id 冲突与记录堆积。
 // 指纹缺失（客户端拿不到设备信息）时不写库，只记日志：登录环节不能因为
 // 指纹采集失败而把已有账户挡在门外，注册环节的指纹是硬要求（缺失已在更早处拒绝）。
@@ -147,6 +163,10 @@ export async function writePolicyConsent(params: {
       existing.ipAddress = params.ipAddress;
       existing.recordedAt = new Date(timestamp);
       existing.expiresAt = expiresAt;
+      existing.documentHash = POLICY_DOCUMENT_HASH;
+      existing.revokedAt = undefined;
+      existing.revokedIP = undefined;
+      existing.revokedReason = undefined;
       await existing.save();
       return { id: existing.id, expiresAt };
     }
@@ -161,6 +181,7 @@ export async function writePolicyConsent(params: {
       ipAddress: params.ipAddress,
       source: params.source,
       agreements,
+      documentHash: POLICY_DOCUMENT_HASH,
       expiresAt,
     });
     await consent.save();
@@ -185,8 +206,16 @@ export async function hasValidPolicyConsent(
     return false;
   }
 
-  if (consent.isExpired()) {
+  // findValidConsent 已经带 isValid:true 与 expiresAt > now 过滤（因此原先那句 isExpired 是死代码）。
+  // 这里补的是另一件事：记录必须覆盖当前版本要求的全部文件 —— agreements 字段引入之前写下的
+  // 记录版本号可能已经是当前版本，却没有勾满四份文件，放行它们等于让门禁认可一次不存在的勾选。
+  if (!isCompleteAgreementSet(consent.agreements)) {
+    logger.warn("[政策同意] 记录未覆盖当前版本要求的全部文件，按需重新同意处理", {
+      version,
+      missing: missingAgreementKeys(consent.agreements),
+    });
     consent.isValid = false;
+    consent.revokedReason = "incomplete-agreements";
     await consent.save();
     return false;
   }

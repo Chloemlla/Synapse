@@ -1,6 +1,7 @@
 import express from "express";
 import { PolicyConsentLogController } from "../../controllers/admin/policyConsentLogController";
 import { authenticateSuperAdmin } from "../../middleware/auth";
+import { auditLog } from "../../middleware/auditLog";
 
 /**
  * 隐私政策同意记录只读面板（超级管理员专用）。
@@ -15,5 +16,13 @@ const router = express.Router();
 router.get("/policy-consents/overview", authenticateSuperAdmin, PolicyConsentLogController.getOverview);
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/policy-consents", authenticateSuperAdmin, PolicyConsentLogController.listConsents);
+// 导出是唯一会一次性下发大量设备指纹/IP 的端点：superadmin + 审计留痕 + 单次行数封顶（见控制器）
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+router.get(
+  "/policy-consents/export",
+  authenticateSuperAdmin,
+  auditLog({ module: "policy", action: "policy.consents.export", captureBody: false }),
+  PolicyConsentLogController.exportConsents,
+);
 
 export default router;

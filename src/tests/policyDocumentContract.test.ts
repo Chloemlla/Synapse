@@ -1,13 +1,18 @@
 import {
   POLICY_AGREEMENTS,
   POLICY_DOCUMENT,
+  POLICY_DOCUMENT_HASH,
   POLICY_SECTIONS,
 } from "../config/policyDocument";
 import {
   CONSENT_VALIDITY_DAYS,
   CURRENT_POLICY_VERSION,
   POLICY_AGREEMENT_KEYS,
+  describeFingerprintForLog,
+  isCompleteAgreementSet,
+  missingAgreementKeys,
   normalizeAuthPolicyConsent,
+  resolveConsentValidityDays,
   resolveRequestFingerprint,
   shouldRequireAuthPolicyConsent,
 } from "../services/policyConsentService";
@@ -55,6 +60,70 @@ describe("policy document contract", () => {
     expect(POLICY_DOCUMENT.agreements).toEqual(POLICY_AGREEMENTS);
     expect(POLICY_DOCUMENT.version).toBe(CURRENT_POLICY_VERSION);
     expect(POLICY_DOCUMENT.procedures.consentValidityDays).toBe(CONSENT_VALIDITY_DAYS);
+  });
+
+  it("serves the merged status endpoint the frontend actually calls", () => {
+    expect(POLICY_DOCUMENT.procedures.checkConsentEndpoint).toBe("GET /api/policy/check");
+    expect(POLICY_DOCUMENT.procedures.statusEndpoint).toBe("GET /api/policy/status");
+  });
+});
+
+// 条文指纹把「用户同意的是哪一份文本」变成可对账的：同意记录落库时一并保存 documentHash。
+describe("policy document hash", () => {
+  it("is a 64-char sha256 carried on the served document", () => {
+    expect(POLICY_DOCUMENT_HASH).toMatch(/^[0-9a-f]{64}$/);
+    expect(POLICY_DOCUMENT.documentHash).toBe(POLICY_DOCUMENT_HASH);
+  });
+
+  it("is deterministic across fresh module loads", () => {
+    let reloaded = "";
+    jest.isolateModules(() => {
+      reloaded = (require("../config/policyDocument") as typeof import("../config/policyDocument"))
+        .POLICY_DOCUMENT_HASH;
+    });
+    expect(reloaded).toBe(POLICY_DOCUMENT_HASH);
+  });
+
+  it("is not just a hash of the version string", () => {
+    // 防止实现退化成 `sha256(version)`：那样改条文而不改版本号时指纹不变，对账就失效了。
+    const crypto = require("node:crypto") as typeof import("node:crypto");
+    const versionOnly = crypto.createHash("sha256").update(CURRENT_POLICY_VERSION).digest("hex");
+    expect(POLICY_DOCUMENT_HASH).not.toBe(versionOnly);
+  });
+});
+
+// 元信息工具的契约：这些函数直接决定「同意算不算有效」与「日志里会不会出现完整指纹」。
+describe("policy meta helpers", () => {
+  it("sanitizes the consent validity window instead of letting NaN reach the database", () => {
+    expect(resolveConsentValidityDays(undefined)).toBe(30);
+    expect(resolveConsentValidityDays("")).toBe(30);
+    expect(resolveConsentValidityDays("abc")).toBe(30);
+    expect(resolveConsentValidityDays("0")).toBe(30);
+    expect(resolveConsentValidityDays("-5")).toBe(30);
+    expect(resolveConsentValidityDays("99999")).toBe(30);
+    expect(resolveConsentValidityDays("45")).toBe(45);
+    expect(resolveConsentValidityDays("7.9")).toBe(7);
+  });
+
+  it("treats an agreement set as complete only when every key is present", () => {
+    expect(isCompleteAgreementSet([...POLICY_AGREEMENT_KEYS])).toBe(true);
+    expect(isCompleteAgreementSet([...POLICY_AGREEMENT_KEYS, "extra"])).toBe(true);
+    expect(isCompleteAgreementSet(POLICY_AGREEMENT_KEYS.slice(0, 3))).toBe(false);
+    expect(isCompleteAgreementSet(undefined)).toBe(false);
+    expect(isCompleteAgreementSet(null)).toBe(false);
+  });
+
+  it("lists exactly the missing agreement keys", () => {
+    expect(missingAgreementKeys(["terms"])).toEqual(["usage", "specific-terms", "supported-regions"]);
+    expect(missingAgreementKeys([...POLICY_AGREEMENT_KEYS])).toEqual([]);
+    expect(missingAgreementKeys(undefined)).toEqual([...POLICY_AGREEMENT_KEYS]);
+  });
+
+  it("never puts a full fingerprint in logs", () => {
+    expect(describeFingerprintForLog("abcdef1234567890")).toBe("abcdef…(16)");
+    expect(describeFingerprintForLog("  abc  ")).toBe("abc…(3)");
+    expect(describeFingerprintForLog("")).toBe("(empty)");
+    expect(describeFingerprintForLog(null)).toBe("(empty)");
   });
 });
 

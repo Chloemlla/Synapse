@@ -17,6 +17,13 @@ export interface IPolicyConsent extends Document {
   source?: string;
   // 当时逐项勾选的文件键名，见 policyConsentService.POLICY_AGREEMENT_KEYS
   agreements?: string[];
+  // 同意时的条文指纹（sha256），用于事后证明用户同意的是哪一份文本
+  documentHash?: string;
+  // 撤回留痕。原先 controller 的 updateMany 只写了 revokedAt / revokedIP，而 schema 上没有这两个
+  // 字段，Mongoose strict 模式把它们静默丢弃 —— 「谁在何时从哪个 IP 撤回」从未落库。
+  revokedAt?: Date | null;
+  revokedIP?: string;
+  revokedReason?: string;
 
   // 实例方法
   isExpired(): boolean;
@@ -25,6 +32,7 @@ export interface IPolicyConsent extends Document {
 // 静态方法接口
 export interface IPolicyConsentModel extends Model<IPolicyConsent> {
   findValidConsent(fingerprint: string, version: string): Promise<IPolicyConsent | null>;
+  findLatestConsent(fingerprint: string): Promise<IPolicyConsent | null>;
   cleanExpiredConsents(): Promise<{ deletedCount?: number }>;
   getStats(startDate?: Date, endDate?: Date): Promise<any[]>;
 }
@@ -85,6 +93,19 @@ const policyConsentSchema = new Schema<IPolicyConsent>(
       type: [String],
       default: undefined,
     },
+    documentHash: {
+      type: String,
+    },
+    revokedAt: {
+      type: Date,
+      default: null,
+    },
+    revokedIP: {
+      type: String,
+    },
+    revokedReason: {
+      type: String,
+    },
   },
   {
     timestamps: true,
@@ -96,6 +117,9 @@ const policyConsentSchema = new Schema<IPolicyConsent>(
 // timestamp 字段不需要单独索引，复合索引和字段级索引已足够
 policyConsentSchema.index({ fingerprint: 1, version: 1 });
 policyConsentSchema.index({ ipAddress: 1, recordedAt: -1 });
+// 管理端两大筛选维度（来源 + 时间倒序）与状态筛选的支撑
+policyConsentSchema.index({ source: 1, recordedAt: -1 });
+policyConsentSchema.index({ isValid: 1, expiresAt: 1 }, { name: "state_scan" });
 policyConsentSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL索引
 
 // 实例方法：检查是否过期
@@ -111,6 +135,12 @@ policyConsentSchema.statics.findValidConsent = function (fingerprint: string, ve
     isValid: true,
     expiresAt: { $gt: new Date() },
   });
+};
+
+// 静态方法：取该指纹最近的一条记录（不分有效/无效）
+// 用于把「从未同意过」与「同意过但已过期 / 已被撤回」区分开 —— 后者才能给用户看到有意义的提示。
+policyConsentSchema.statics.findLatestConsent = function (fingerprint: string) {
+  return this.findOne({ fingerprint }).sort({ recordedAt: -1 });
 };
 
 // 静态方法：清理过期记录

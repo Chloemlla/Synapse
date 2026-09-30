@@ -20,11 +20,14 @@
 
 import "./helpers/mockAppSecurityBoundaries";
 
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import request from "supertest";
 
 interface ConsentStore {
   __reset: () => void;
+  __size: () => number;
+  __get: (fingerprint: string, version: string) => Record<string, unknown> | undefined;
 }
 
 jest.mock("../models/policyConsentModel", () => {
@@ -33,6 +36,8 @@ jest.mock("../models/policyConsentModel", () => {
     version: string;
     isValid: boolean;
     expiresAt: Date;
+    recordedAt?: Date;
+    revokedAt?: Date;
     [key: string]: unknown;
   }
 
@@ -67,22 +72,48 @@ jest.mock("../models/policyConsentModel", () => {
       return new Date() > found.expiresAt ? null : found;
     }
 
-    public static async updateMany(filter: { fingerprint: string; version?: string }): Promise<{
-      modifiedCount: number;
-    }> {
+    public static async findLatestConsent(fingerprint: string): Promise<StoredConsent | null> {
+      let latest: StoredConsent | null = null;
+      for (const consent of consents.values()) {
+        if (consent.fingerprint !== fingerprint) continue;
+        if (!latest || (consent.recordedAt?.getTime() ?? 0) >= (latest.recordedAt?.getTime() ?? 0)) {
+          latest = consent;
+        }
+      }
+      return latest;
+    }
+
+    public static async updateMany(
+      filter: { fingerprint: string; version?: string },
+      update: Record<string, unknown> = {},
+    ): Promise<{ modifiedCount: number }> {
       let modifiedCount = 0;
       for (const consent of consents.values()) {
         if (consent.fingerprint !== filter.fingerprint || !consent.isValid) continue;
         if (filter.version && consent.version !== filter.version) continue;
-        consent.isValid = false;
+        // 把撤回载荷真的落到内存记录上：真模型靠 schema 声明字段接收它们，
+        // 这里把「载荷有没有落到记录里」断言成可测行为（见 P-01）。
+        Object.assign(consent, update, { isValid: false });
         modifiedCount += 1;
       }
       return { modifiedCount };
+    }
+
+    public static async deleteMany(filter: { fingerprint: string }): Promise<{ deletedCount: number }> {
+      let deletedCount = 0;
+      for (const [key, consent] of consents.entries()) {
+        if (consent.fingerprint !== filter.fingerprint) continue;
+        consents.delete(key);
+        deletedCount += 1;
+      }
+      return { deletedCount };
     }
   }
 
   return {
     __reset: () => consents.clear(),
+    __size: () => consents.size,
+    __get: (fingerprint: string, version: string) => consents.get(keyOf(fingerprint, version)),
     PolicyConsent: FakePolicyConsent,
   };
 });
@@ -110,7 +141,8 @@ jest.mock("../utils/userStorage", () => {
 
 import app from "../app";
 import { config } from "../config/config";
-import { CURRENT_POLICY_VERSION } from "../services/policyConsentService";
+import { POLICY_DOCUMENT_HASH } from "../config/policyDocument";
+import { CURRENT_POLICY_VERSION, POLICY_AGREEMENT_KEYS } from "../services/policyConsentService";
 
 const consentStore = jest.requireMock("../models/policyConsentModel") as ConsentStore;
 const { __ownerId: OWNER_ID } = jest.requireMock("../utils/userStorage") as { __ownerId: string };
@@ -185,5 +217,115 @@ describe("政策同意的设备凭据闸门", () => {
       .expect(403);
 
     expect(revoked.body.code).toBe("DEVICE_CREDENTIAL_REQUIRED");
+  });
+
+  it("撤回会把撤回时间、撤回 IP 与原因真正落进记录（schema 漏字段会让它们静默丢失）", async () => {
+    const device = request.agent(app);
+    const fingerprint = "revoke-audit-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+    const revoked = await device.post("/api/policy/revoke").send({ fingerprint }).expect(200);
+
+    expect(revoked.body).toEqual(expect.objectContaining({ success: true, hadActiveConsent: true, purged: false, revokedCount: 1 }));
+
+    const stored = consentStore.__get(fingerprint, CURRENT_POLICY_VERSION);
+    expect(stored?.isValid).toBe(false);
+    expect(stored?.revokedAt).toBeInstanceOf(Date);
+    expect(stored?.revokedReason).toBe("user-request");
+    expect(typeof stored?.revokedIP).toBe("string");
+  });
+
+  it("对本来就没有有效同意的设备重复撤回时，如实回 hadActiveConsent:false", async () => {
+    const device = request.agent(app);
+    const fingerprint = "revoke-twice-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+    await device.post("/api/policy/revoke").send({ fingerprint }).expect(200);
+
+    const again = await device.post("/api/policy/revoke").send({ fingerprint }).expect(200);
+    expect(again.body).toEqual(expect.objectContaining({ hadActiveConsent: false, revokedCount: 0 }));
+  });
+
+  it("purge 会硬删除本指纹的全部记录", async () => {
+    const device = request.agent(app);
+    const fingerprint = "purge-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+    const purged = await device.post("/api/policy/revoke").send({ fingerprint, purge: true }).expect(200);
+
+    expect(purged.body).toEqual(expect.objectContaining({ success: true, purged: true, revokedCount: 1 }));
+    expect(consentStore.__size()).toBe(0);
+
+    // 另一台没有任何凭据的客户端依然查不到东西（设备凭据闸门不受 purge 影响）
+    await request(app).get("/api/policy/status").set("X-Fingerprint", fingerprint).expect(403);
+  });
+
+  it("GET /api/policy/status 一次返回版本、条文指纹与本设备同意明细", async () => {
+    const device = request.agent(app);
+    const fingerprint = "status-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+    const status = await device.get("/api/policy/status").set("X-Fingerprint", fingerprint).expect(200);
+
+    expect(status.body).toEqual(
+      expect.objectContaining({
+        success: true,
+        hasValidConsent: true,
+        reason: "active",
+        version: CURRENT_POLICY_VERSION,
+        currentVersion: CURRENT_POLICY_VERSION,
+        documentHash: POLICY_DOCUMENT_HASH,
+        consentDocumentHash: POLICY_DOCUMENT_HASH,
+        agreements: [...POLICY_AGREEMENT_KEYS],
+        agreementsComplete: true,
+        missingAgreements: [],
+        source: "feature",
+      }),
+    );
+    expect(typeof status.body.recordedAt).toBe("string");
+    expect(typeof status.body.expiresAt).toBe("string");
+  });
+
+  it("记录被清掉但设备凭据仍在时，status 回 reason=none 而不是报错", async () => {
+    const device = request.agent(app);
+    const fingerprint = "status-stale-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+    consentStore.__reset();
+
+    const status = await device.get("/api/policy/status").set("X-Fingerprint", fingerprint).expect(200);
+    expect(status.body).toEqual(
+      expect.objectContaining({ success: true, hasValidConsent: false, reason: "none" }),
+    );
+  });
+
+  it("旧形态的设备凭据 cookie（<fingerprint>.<sig>）仍然可用，升级不踢掉在线设备", async () => {
+    const fingerprint = "legacy-token-fingerprint";
+    await request.agent(app).post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    const legacySignature = crypto
+      .createHmac("sha256", crypto.createHmac("sha256", config.jwtSecret).update("policy-consent-token").digest())
+      .update(fingerprint)
+      .digest("hex");
+
+    const checked = await request(app)
+      .get("/api/policy/check")
+      .set("Cookie", `policy_consent_token=${fingerprint}.${legacySignature}`)
+      .set("X-Fingerprint", fingerprint)
+      .expect(200);
+
+    expect(checked.body).toEqual(expect.objectContaining({ hasValidConsent: true }));
+  });
+
+  it("篡改过的设备凭据 cookie 被拒", async () => {
+    const fingerprint = "tampered-token-fingerprint";
+    await request.agent(app).post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    const forgedSignature = "f".repeat(64);
+    await request(app)
+      .get("/api/policy/check")
+      .set("Cookie", `policy_consent_token=${fingerprint}.${forgedSignature}`)
+      .set("X-Fingerprint", fingerprint)
+      .expect(403);
   });
 });

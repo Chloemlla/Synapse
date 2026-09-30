@@ -1,9 +1,18 @@
-import { CONSENT_VALIDITY_DAYS, CURRENT_POLICY_VERSION, POLICY_AGREEMENT_KEYS, type PolicyAgreementKey, policyAgreementAnchor } from "../services/policyConsentService";
+import crypto from "node:crypto";
+import {
+  CONSENT_VALIDITY_DAYS,
+  CURRENT_POLICY_VERSION,
+  type PolicyAgreementKey,
+  policyAgreementAnchor,
+} from "./policyMeta";
 
 // 服务条款与隐私政策的唯一来源：接口（GET /api/policy/document）与前端页面共用同一份条文，
 // 避免「用户同意的是 2.x 版」与「页面上读到的条文」各写一份而悄悄分叉。
 // 条文里涉及的数据实践必须与 docs/governance/privacy-data-map.json 对得上，
 // 该文件由 check:privacy-contract 校验，改动任一侧时同步另一侧。
+//
+// 版本号 / 有效期 / 四份必读文件的键名来自 config/policyMeta（叶节点模块），
+// 这样「条文指纹」（documentHash）可以在本文件里算出来而不引入循环 import。
 
 export type PolicyEmphasis = "normal" | "notice" | "critical";
 
@@ -78,10 +87,17 @@ export interface PolicyProcedures {
   recordConsentEndpoint: string;
   revokeConsentEndpoint: string;
   checkConsentEndpoint: string;
+  /** 一次取回「版本 + 本设备同意状态」的合并端点 */
+  statusEndpoint: string;
 }
 
 export interface PolicyDocument {
   version: string;
+  /**
+   * 条文指纹：对「章节正文 + 勾选项文案 + 重点提示」按稳定键序取的 SHA-256。
+   * 同意记录会一并落库，用于事后证明用户同意的是哪一份文本。
+   */
+  documentHash: string;
   title: string;
   eyebrow: string;
   description: string;
@@ -436,10 +452,47 @@ export const POLICY_PROCEDURES: PolicyProcedures = {
   recordConsentEndpoint: "POST /api/policy/verify",
   revokeConsentEndpoint: "POST /api/policy/revoke",
   checkConsentEndpoint: "GET /api/policy/check",
+  statusEndpoint: "GET /api/policy/status",
 };
+
+/**
+ * 条文指纹的可哈希载荷。只收「用户实际同意到的实质内容」：
+ * 章节正文、四份文件的勾选文案与要点、重点风险提示，以及版本与生效日期。
+ * revisions / historyNote / contacts / procedures 刻意不进哈希 —— 补记修订说明、
+ * 调整联系方式或接口说明都不应该让存量同意作废。
+ */
+function buildPolicyHashPayload(): string {
+  return JSON.stringify({
+    version: CURRENT_POLICY_VERSION,
+    effectiveDate: POLICY_EFFECTIVE_DATE,
+    lastUpdated: POLICY_LAST_UPDATED,
+    agreements: POLICY_AGREEMENTS.map((agreement) => ({
+      key: agreement.key,
+      label: agreement.label,
+      title: agreement.title,
+      summary: agreement.summary,
+      points: agreement.points,
+      sectionIds: agreement.sectionIds,
+    })),
+    sections: POLICY_SECTIONS.map((section) => ({
+      id: section.id,
+      title: section.title,
+      summary: section.summary,
+      emphasis: section.emphasis ?? "normal",
+      items: section.items,
+    })),
+    warnings: POLICY_WARNINGS.map((warning) => ({ title: warning.title, body: warning.body })),
+  });
+}
+
+export const POLICY_DOCUMENT_HASH = crypto
+  .createHash("sha256")
+  .update(buildPolicyHashPayload(), "utf8")
+  .digest("hex");
 
 export const POLICY_DOCUMENT: PolicyDocument = {
   version: CURRENT_POLICY_VERSION,
+  documentHash: POLICY_DOCUMENT_HASH,
   title: "服务条款与隐私政策",
   eyebrow: "Terms And Privacy",
   description:

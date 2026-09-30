@@ -1,10 +1,14 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
-import { POLICY_DOCUMENT } from "../config/policyDocument";
+import { POLICY_DOCUMENT, POLICY_DOCUMENT_HASH } from "../config/policyDocument";
 import { PolicyConsent } from "../models/policyConsentModel";
 import {
   CONSENT_VALIDITY_DAYS,
   CURRENT_POLICY_VERSION,
+  POLICY_AGREEMENT_KEYS,
+  describeFingerprintForLog,
+  isCompleteAgreementSet,
+  missingAgreementKeys,
   writePolicyConsent,
 } from "../services/policyConsentService";
 import IpVerificationService from "../services/ipVerificationService";
@@ -19,23 +23,52 @@ import logger from "../utils/logger";
 const CONSENT_TOKEN_COOKIE = "policy_consent_token";
 // 用独立派生密钥签名，避免把 JWT 签名密钥直接用于 UI 状态签名
 const CONSENT_TOKEN_SECRET = crypto.createHmac("sha256", config.jwtSecret).update("policy-consent-token").digest();
+// 凭据自身带签发时间并据此判龄：cookie 的 maxAge 拦得住「浏览器继续回传」，
+// 拦不住「凭据被复制走后在任意客户端重放」。上限取与同意记录一致的有效期。
+const CONSENT_TOKEN_TTL_MS = CONSENT_VALIDITY_DAYS * 24 * 60 * 60 * 1000;
+// 容忍客户端/服务端时钟偏移，避免刚签发的凭据被判成「来自未来」
+const CONSENT_TOKEN_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+function signConsentTokenPayload(payload: string): string {
+  return crypto.createHmac("sha256", CONSENT_TOKEN_SECRET).update(payload).digest("hex");
+}
+
+function timingSafeHexEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// 新形态：`base64url({f,iat}).hmac`。默认不把指纹原文写进 cookie 值。
 function buildConsentToken(fingerprint: string): string {
-  const signature = crypto.createHmac("sha256", CONSENT_TOKEN_SECRET).update(fingerprint).digest("hex");
-  return `${fingerprint}.${signature}`;
+  const payload = Buffer.from(JSON.stringify({ f: fingerprint, iat: Date.now() }), "utf8").toString("base64url");
+  return `${payload}.${signConsentTokenPayload(payload)}`;
 }
 
 function verifyConsentToken(token: string | undefined, fingerprint: string): boolean {
   if (!token || typeof token !== "string") return false;
   const separator = token.lastIndexOf(".");
   if (separator <= 0) return false;
-  const fp = token.slice(0, separator);
-  const sig = token.slice(separator + 1);
-  if (fp !== fingerprint) return false;
-  const expected = crypto.createHmac("sha256", CONSENT_TOKEN_SECRET).update(fingerprint).digest("hex");
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  const payload = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  // 签名先过：旧形态的签名原文就是指纹本身，这一步对两种形态都成立
+  if (!timingSafeHexEqual(signature, signConsentTokenPayload(payload))) return false;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      f?: unknown;
+      iat?: unknown;
+    };
+    if (parsed.f !== fingerprint) return false;
+    const issuedAt = typeof parsed.iat === "number" ? parsed.iat : Number.NaN;
+    if (!Number.isFinite(issuedAt)) return false;
+    const age = Date.now() - issuedAt;
+    return age >= -CONSENT_TOKEN_CLOCK_SKEW_MS && age <= CONSENT_TOKEN_TTL_MS;
+  } catch {
+    // 旧形态 `<fingerprint>.<sig>`：继续接受。指纹仍被逐一比对，重放上限由库中记录自身的
+    // expiresAt 兜住——升级即让所有在线设备掉凭据，代价大于收益。
+    return payload === fingerprint;
+  }
 }
 
 function readConsentTokenCookie(req: Request): string | undefined {
@@ -44,14 +77,57 @@ function readConsentTokenCookie(req: Request): string | undefined {
   return fromReqCookies || cookies[CONSENT_TOKEN_COOKIE];
 }
 
+function isSecureRequest(req: Request): boolean {
+  return req.secure || process.env.NODE_ENV === "production";
+}
+
 function setConsentTokenCookie(req: Request, res: Response, fingerprint: string): void {
   res.cookie(CONSENT_TOKEN_COOKIE, buildConsentToken(fingerprint), {
     httpOnly: true,
     sameSite: "lax",
-    secure: req.secure || process.env.NODE_ENV === "production",
+    secure: isSecureRequest(req),
     path: "/",
     maxAge: CONSENT_VALIDITY_DAYS * 24 * 60 * 60 * 1000,
   });
+}
+
+function clearConsentTokenCookie(req: Request, res: Response): void {
+  res.clearCookie(CONSENT_TOKEN_COOKIE, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isSecureRequest(req),
+    path: "/",
+  });
+}
+
+/**
+ * 请求里的设备指纹来源顺序：请求头 → 请求体 → 查询串。
+ * 请求头优先是隐私考虑：指纹在本系统里就是设备凭据本体，放进 query 会同时落到访问日志、
+ * 代理日志与 Referer（见 docs/audit-2026-09-30-policy-system.md P-04）。前端已统一走 X-Fingerprint。
+ */
+function readFingerprintFromRequest(req: Request): unknown {
+  const header = req.headers["x-fingerprint"];
+  if (typeof header === "string" && header.trim()) return header;
+  const body = (req.body as { fingerprint?: unknown } | undefined)?.fingerprint;
+  if (typeof body === "string" && body.trim()) return body;
+  return (req.query as { fingerprint?: unknown } | undefined)?.fingerprint;
+}
+
+/** 归一化指纹；`unknown` / 空白 / 超长一律视为无效。 */
+function parseFingerprint(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "unknown" || trimmed.length > 100) return null;
+  return trimmed;
+}
+
+/** 版本参数：可省略（默认当前版本）；显式给出时必须是长度合理的非空字符串。 */
+function parseVersionInput(value: unknown): { valid: boolean; version?: string } {
+  if (value === undefined || value === null || value === "") return { valid: true };
+  if (typeof value !== "string") return { valid: false };
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 50) return { valid: false };
+  return { valid: true, version: trimmed };
 }
 
 // 校验调用者是否持有该指纹对应的设备凭据。
@@ -92,15 +168,13 @@ async function assertConsentWriteOwnership(req: Request, res: Response, fingerpr
 // ±80 秒时间窗校验连同它自己的失效模式一并消失。
 export const recordPolicyConsent = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { fingerprint, version } = req.body;
+    const { version } = req.body ?? {};
     const clientIP = getClientIP(req);
     const userAgent = req.headers["user-agent"];
 
-    if (
-      typeof fingerprint !== "string" ||
-      fingerprint.trim().length === 0 ||
-      fingerprint.trim().length > 100
-    ) {
+    // 指纹可取请求头（前端统一注入）或请求体，取不到可用值时直接拒绝
+    const sanitizedFingerprint = parseFingerprint(readFingerprintFromRequest(req));
+    if (!sanitizedFingerprint) {
       res.status(400).json({
         success: false,
         error: "Invalid fingerprint format",
@@ -109,29 +183,26 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const sanitizedFingerprint = fingerprint.trim();
-
     // 版本可省略（默认当前版本）；显式给出但与当前版本不符时拒绝，
     // 免得客户端以为自己在同意旧条文、却拿到一条标着新版本的记录。
-    if (version !== undefined) {
-      if (typeof version !== "string" || version.trim().length === 0 || version.trim().length > 50) {
-        res.status(400).json({
-          success: false,
-          error: "Invalid version format",
-          code: "INVALID_VERSION",
-        });
-        return;
-      }
-      if (version.trim() !== CURRENT_POLICY_VERSION) {
-        res.status(400).json({
-          success: false,
-          error: "Unsupported policy version",
-          currentVersion: CURRENT_POLICY_VERSION,
-          providedVersion: version.trim(),
-          code: "UNSUPPORTED_VERSION",
-        });
-        return;
-      }
+    const versionInput = parseVersionInput(version);
+    if (!versionInput.valid) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid version format",
+        code: "INVALID_VERSION",
+      });
+      return;
+    }
+    if (versionInput.version && versionInput.version !== CURRENT_POLICY_VERSION) {
+      res.status(400).json({
+        success: false,
+        error: "Unsupported policy version",
+        currentVersion: CURRENT_POLICY_VERSION,
+        providedVersion: versionInput.version,
+        code: "UNSUPPORTED_VERSION",
+      });
+      return;
     }
 
     if (!(await assertConsentWriteOwnership(req, res, sanitizedFingerprint))) {
@@ -147,7 +218,10 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
     });
 
     if (!written) {
-      logger.error("Policy consent write returned no record", { fingerprint: sanitizedFingerprint, ip: clientIP });
+      logger.error("Policy consent write returned no record", {
+        fingerprint: describeFingerprintForLog(sanitizedFingerprint),
+        ip: clientIP,
+      });
       res.status(500).json({
         success: false,
         error: "Failed to record consent",
@@ -162,7 +236,8 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
     logger.info("Policy consent recorded successfully", {
       consentId: written.id,
       version: CURRENT_POLICY_VERSION,
-      fingerprint: sanitizedFingerprint,
+      documentHash: POLICY_DOCUMENT_HASH.slice(0, 12),
+      fingerprint: describeFingerprintForLog(sanitizedFingerprint),
       ip: clientIP,
       source: "feature",
       expiresAt: written.expiresAt,
@@ -173,13 +248,17 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
       message: "Consent recorded successfully",
       consentId: written.id,
       version: CURRENT_POLICY_VERSION,
+      documentHash: POLICY_DOCUMENT_HASH,
+      validityDays: CONSENT_VALIDITY_DAYS,
       expiresAt: written.expiresAt,
     });
   } catch (error) {
     logger.error("Error recording policy consent", {
       error: error instanceof Error ? error.message : "Unknown error",
       stack: error instanceof Error ? error.stack : undefined,
-      body: req.body,
+      // 不回显请求体：研发日志同样不应留下可回放的设备指纹
+      fingerprint: describeFingerprintForLog(parseFingerprint(readFingerprintFromRequest(req)) ?? ""),
+      version: (req.body as { version?: unknown } | undefined)?.version,
     });
 
     res.status(500).json({
@@ -190,14 +269,88 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
   }
 };
 
-// 验证隐私政策同意状态
+type ConsentStateReason = "active" | "none" | "expired" | "revoked" | "incomplete" | "other-version";
+
+interface ConsentStatePayload {
+  hasValidConsent: boolean;
+  /** 没有有效同意时给出原因，前端据此区分「从未同意」与「已过期 / 已撤回 / 只勾了一部分」 */
+  reason: ConsentStateReason;
+  version: string;
+  currentVersion: string;
+  validityDays: number;
+  documentHash: string;
+  expiresAt?: string;
+  recordedAt?: string;
+  source?: string;
+  agreements: string[];
+  agreementsComplete: boolean;
+  missingAgreements: string[];
+  /** 该条记录落库时对应的条文指纹；与 documentHash 不一致说明条文已改版 */
+  consentDocumentHash?: string;
+}
+
+/**
+ * 汇总「本设备对某个版本的政策同意状态」。
+ * 只对持有设备凭据的调用者开放（见 assertDeviceOwnership），因此可以安全地回带同意时间、来源与
+ * 勾选项 —— 这些信息对能证明设备归属的一方没有侧信道价值，却是面板必须展示的内容。
+ */
+async function collectConsentState(fingerprint: string, version: string): Promise<ConsentStatePayload> {
+  const base = {
+    version,
+    currentVersion: CURRENT_POLICY_VERSION,
+    validityDays: CONSENT_VALIDITY_DAYS,
+    documentHash: POLICY_DOCUMENT_HASH,
+  };
+
+  const consent = await PolicyConsent.findValidConsent(fingerprint, version);
+  if (consent && isCompleteAgreementSet(consent.agreements)) {
+    return {
+      ...base,
+      hasValidConsent: true,
+      reason: "active",
+      expiresAt: consent.expiresAt?.toISOString(),
+      recordedAt: consent.recordedAt?.toISOString(),
+      source: consent.source,
+      agreements: consent.agreements ?? [],
+      agreementsComplete: true,
+      missingAgreements: [],
+      consentDocumentHash: consent.documentHash,
+    };
+  }
+
+  // 没有有效记录时再取最近一条，用于区分「从未同意」「已过期」「已撤回」「版本不符」
+  const latest = await PolicyConsent.findLatestConsent(fingerprint);
+  let reason: ConsentStateReason = "none";
+  if (consent) {
+    reason = "incomplete";
+  } else if (latest) {
+    if (latest.version !== version) reason = "other-version";
+    else if (!latest.isValid || latest.revokedAt) reason = "revoked";
+    else reason = "expired";
+  }
+
+  return {
+    ...base,
+    hasValidConsent: false,
+    reason,
+    expiresAt: latest?.expiresAt?.toISOString(),
+    recordedAt: latest?.recordedAt?.toISOString(),
+    source: latest?.source,
+    agreements: latest?.agreements ?? [],
+    agreementsComplete: isCompleteAgreementSet(latest?.agreements),
+    missingAgreements: missingAgreementKeys(consent?.agreements ?? latest?.agreements),
+    consentDocumentHash: latest?.documentHash,
+  };
+}
+
+// 验证隐私政策同意状态（GET /api/policy/check）
+// 指纹优先从请求头取（隐私考虑，见 readFingerprintFromRequest）；version 可省略，默认当前版本。
 export const verifyPolicyConsent = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { fingerprint, version } = req.query;
     const clientIP = getClientIP(req);
 
-    // 输入验证和清理
-    if (!fingerprint || typeof fingerprint !== "string") {
+    const sanitizedFingerprint = parseFingerprint(readFingerprintFromRequest(req));
+    if (!sanitizedFingerprint) {
       res.status(400).json({
         success: false,
         error: "Missing or invalid fingerprint",
@@ -206,29 +359,66 @@ export const verifyPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    if (!version || typeof version !== "string") {
+    const versionInput = parseVersionInput((req.query as { version?: unknown } | undefined)?.version);
+    if (!versionInput.valid) {
       res.status(400).json({
         success: false,
-        error: "Missing or invalid version",
-        code: "MISSING_VERSION",
+        error: "Invalid version format",
+        code: "INVALID_VERSION",
+      });
+      return;
+    }
+    const sanitizedVersion = versionInput.version ?? CURRENT_POLICY_VERSION;
+
+    // G3-12: 必须持有该指纹对应的设备凭据，防止查询他人同意记录
+    if (!assertDeviceOwnership(req, res, sanitizedFingerprint)) {
+      return;
+    }
+
+    const state = await collectConsentState(sanitizedFingerprint, sanitizedVersion);
+
+    logger.info("Policy consent checked", {
+      fingerprint: describeFingerprintForLog(sanitizedFingerprint),
+      ip: clientIP,
+      version: sanitizedVersion,
+      hasValidConsent: state.hasValidConsent,
+      reason: state.reason,
+    });
+
+    // 兼容既有契约：没有有效同意时 success 为 false（前端与 nightly 用例均按此断言）
+    res.json({ success: state.hasValidConsent, ...state });
+  } catch (error) {
+    logger.error("Error verifying policy consent", {
+      error: error instanceof Error ? error.message : "Unknown error",
+      fingerprint: describeFingerprintForLog(parseFingerprint(readFingerprintFromRequest(req)) ?? ""),
+      version: (req.query as { version?: unknown } | undefined)?.version,
+    });
+
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
+};
+
+// 一次取回「当前版本 + 有效期 + 条文指纹 + 本设备同意状态」（GET /api/policy/status）。
+// 取代前端「先 /version 再 /check」的两次往返，也让条文指纹与同意记录能在同一份响应里对账。
+// 语义与 /check 的差别：这里 success 恒为 true（它是一次成功查询），状态落在 hasValidConsent。
+export const getPolicyStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const sanitizedFingerprint = parseFingerprint(readFingerprintFromRequest(req));
+    if (!sanitizedFingerprint) {
+      res.status(400).json({
+        success: false,
+        error: "Missing or invalid fingerprint",
+        code: "MISSING_FINGERPRINT",
       });
       return;
     }
 
-    // 清理和验证输入
-    const sanitizedFingerprint = fingerprint.trim();
-    const sanitizedVersion = version.trim();
-
-    if (sanitizedFingerprint.length === 0 || sanitizedFingerprint.length > 100) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid fingerprint format",
-        code: "INVALID_FINGERPRINT",
-      });
-      return;
-    }
-
-    if (sanitizedVersion.length === 0 || sanitizedVersion.length > 50) {
+    const versionInput = parseVersionInput((req.query as { version?: unknown } | undefined)?.version);
+    if (!versionInput.valid) {
       res.status(400).json({
         success: false,
         error: "Invalid version format",
@@ -237,58 +427,17 @@ export const verifyPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // G3-12: 必须持有该指纹对应的设备凭据，防止查询他人同意记录
     if (!assertDeviceOwnership(req, res, sanitizedFingerprint)) {
       return;
     }
 
-    // 查找有效的同意记录
-    const consent = await PolicyConsent.findValidConsent(sanitizedFingerprint, sanitizedVersion);
-
-    if (!consent) {
-      res.json({
-        success: false,
-        hasValidConsent: false,
-        message: "No valid consent found",
-        currentVersion: CURRENT_POLICY_VERSION,
-      });
-      return;
-    }
-
-    // 检查是否过期
-    if (consent.isExpired()) {
-      // 标记为无效
-      consent.isValid = false;
-      await consent.save();
-
-      res.json({
-        success: false,
-        hasValidConsent: false,
-        message: "Consent expired",
-        currentVersion: CURRENT_POLICY_VERSION,
-      });
-      return;
-    }
-
-    logger.info("Policy consent verified", {
-      consentId: consent.id,
-      fingerprint,
-      ip: clientIP,
-      expiresAt: consent.expiresAt,
-    });
-
-    // 响应收敛，不再回 consentId/recordedAt，避免枚举用户行为侧信道
-    res.json({
-      success: true,
-      hasValidConsent: true,
-      version: consent.version,
-      expiresAt: consent.expiresAt,
-    });
+    const state = await collectConsentState(sanitizedFingerprint, versionInput.version ?? CURRENT_POLICY_VERSION);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...state });
   } catch (error) {
-    logger.error("Error verifying policy consent", {
+    logger.error("Error reading policy status", {
       error: error instanceof Error ? error.message : "Unknown error",
-      fingerprint: req.query.fingerprint,
-      version: req.query.version,
+      fingerprint: describeFingerprintForLog(parseFingerprint(readFingerprintFromRequest(req)) ?? ""),
     });
 
     res.status(500).json({
@@ -299,29 +448,20 @@ export const verifyPolicyConsent = async (req: Request, res: Response): Promise<
   }
 };
 
-// 撤销隐私政策同意
+// 撤销隐私政策同意（POST /api/policy/revoke）
+// 默认软撤回（isValid=false + 留痕 revokedAt/revokedIP/revokedReason，由 TTL 在到期时回收）；
+// body 里带 `purge: true` 时硬删除本指纹的全部记录，满足「删除」这项用户权利。
 export const revokePolicyConsent = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { fingerprint, version } = req.body;
+    const { version, purge: purgeInput } = (req.body ?? {}) as { version?: unknown; purge?: unknown };
     const clientIP = getClientIP(req);
 
-    // 输入验证和清理
-    if (!fingerprint || typeof fingerprint !== "string") {
+    const sanitizedFingerprint = parseFingerprint(readFingerprintFromRequest(req));
+    if (!sanitizedFingerprint) {
       res.status(400).json({
         success: false,
         error: "Missing or invalid fingerprint",
         code: "MISSING_FINGERPRINT",
-      });
-      return;
-    }
-
-    // 清理和验证指纹
-    const sanitizedFingerprint = fingerprint.trim();
-    if (sanitizedFingerprint.length === 0 || sanitizedFingerprint.length > 100) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid fingerprint format",
-        code: "INVALID_FINGERPRINT",
       });
       return;
     }
@@ -331,29 +471,40 @@ export const revokePolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // 验证版本号（如果提供）
-    let sanitizedVersion: string | undefined;
-    if (version) {
-      if (typeof version !== "string") {
-        res.status(400).json({
-          success: false,
-          error: "Invalid version format",
-          code: "INVALID_VERSION",
-        });
-        return;
-      }
-      sanitizedVersion = version.trim();
-      if (sanitizedVersion.length === 0 || sanitizedVersion.length > 50) {
-        res.status(400).json({
-          success: false,
-          error: "Invalid version format",
-          code: "INVALID_VERSION",
-        });
-        return;
-      }
+    const versionInput = parseVersionInput(version);
+    if (!versionInput.valid) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid version format",
+        code: "INVALID_VERSION",
+      });
+      return;
+    }
+    const sanitizedVersion = versionInput.version;
+
+    // purge：硬删除本指纹的所有记录（含其他版本），并清掉设备凭据 cookie——留一个指向
+    // 已删除记录的凭据没有意义，也会让面板显示成「有凭据但查不到」。
+    if (purgeInput === true) {
+      const deleted = await PolicyConsent.deleteMany({ fingerprint: sanitizedFingerprint });
+      clearConsentTokenCookie(req, res);
+
+      logger.info("Policy consent records purged", {
+        fingerprint: describeFingerprintForLog(sanitizedFingerprint),
+        ip: clientIP,
+        deletedCount: deleted.deletedCount ?? 0,
+      });
+
+      res.json({
+        success: true,
+        message: "Consent records deleted",
+        purged: true,
+        hadActiveConsent: (deleted.deletedCount ?? 0) > 0,
+        revokedCount: deleted.deletedCount ?? 0,
+      });
+      return;
     }
 
-    // 构建安全的查询对象
+    // 构建安全的查询对象（mongoose 的 FilterQuery 是映射类型，显式 any 避免索引签名互转的噪声）
     const queryFilter: any = {
       fingerprint: sanitizedFingerprint,
       isValid: true,
@@ -364,29 +515,35 @@ export const revokePolicyConsent = async (req: Request, res: Response): Promise<
       queryFilter.version = sanitizedVersion;
     }
 
-    // 查找并撤销同意记录
+    // 查找并撤销同意记录。revokedAt / revokedIP / revokedReason 已在 schema 上声明，
+    // 否则 Mongoose strict 模式会把它们静默丢掉（留痕全丢，见 docs/audit-2026-09-30-policy-system.md P-01）。
     const result = await PolicyConsent.updateMany(queryFilter, {
       isValid: false,
       revokedAt: new Date(),
       revokedIP: clientIP,
+      revokedReason: "user-request",
     });
+    const revokedCount = result.modifiedCount ?? 0;
 
     logger.info("Policy consent revoked", {
-      fingerprint: sanitizedFingerprint,
+      fingerprint: describeFingerprintForLog(sanitizedFingerprint),
       version: sanitizedVersion,
       ip: clientIP,
-      modifiedCount: result.modifiedCount,
+      modifiedCount: revokedCount,
     });
 
     res.json({
       success: true,
-      message: "Consent revoked successfully",
-      revokedCount: result.modifiedCount,
+      // 本来就无有效同意时不再假装「撤回成功」：前端据此给出不同提示（P-06）
+      message: revokedCount > 0 ? "Consent revoked successfully" : "No active consent to revoke",
+      hadActiveConsent: revokedCount > 0,
+      purged: false,
+      revokedCount,
     });
   } catch (error) {
     logger.error("Error revoking policy consent", {
       error: error instanceof Error ? error.message : "Unknown error",
-      fingerprint: req.body.fingerprint,
+      fingerprint: describeFingerprintForLog(parseFingerprint(readFingerprintFromRequest(req)) ?? ""),
     });
 
     res.status(500).json({
@@ -398,12 +555,18 @@ export const revokePolicyConsent = async (req: Request, res: Response): Promise<
 };
 
 // 获取隐私政策统计信息（管理员接口）
+// 与 superadmin 只读面板（/api/admin/policy-consents/*）口径对齐：除有效/过期计数外，
+// 还要给出「已撤销」计数与来源分布，否则两个入口对同一份数据会给出不同说法。
 export const getPolicyStats = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, days } = req.query;
 
     const start = startDate ? new Date(startDate as string) : undefined;
     const end = endDate ? new Date(endDate as string) : undefined;
+
+    // 趋势窗口：默认 7 天，收敛到 [1, 90]
+    const requestedDays = Number(days);
+    const trendDays = Number.isFinite(requestedDays) ? Math.min(Math.max(Math.trunc(requestedDays), 1), 90) : 7;
 
     // 获取统计信息
     const stats = await PolicyConsent.getStats(start, end);
@@ -413,6 +576,8 @@ export const getPolicyStats = async (req: Request, res: Response): Promise<void>
     const expiredConsents = await PolicyConsent.countDocuments({
       $or: [{ expiresAt: { $lt: new Date() } }, { isValid: false }],
     });
+    // 已撤销：revokedAt 由 revoke 端点写入（schema 上声明后才会真的落库）
+    const revokedConsents = await PolicyConsent.countDocuments({ revokedAt: { $ne: null } });
 
     // 获取版本分布
     const versionStats = await PolicyConsent.aggregate([
@@ -421,10 +586,16 @@ export const getPolicyStats = async (req: Request, res: Response): Promise<void>
       { $sort: { _id: 1 } },
     ]);
 
-    // 获取最近7天的同意趋势
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // 获取来源分布（登录 / 注册 / 功能门禁）
+    const sourceStats = await PolicyConsent.aggregate([
+      { $group: { _id: "$source", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // 获取趋势（窗口由 days 控制）
+    const since = new Date(Date.now() - trendDays * 24 * 60 * 60 * 1000);
     const recentTrend = await PolicyConsent.aggregate([
-      { $match: { recordedAt: { $gte: sevenDaysAgo } } },
+      { $match: { recordedAt: { $gte: since } } },
       {
         $group: {
           _id: {
@@ -445,9 +616,13 @@ export const getPolicyStats = async (req: Request, res: Response): Promise<void>
         total: {
           validConsents: totalConsents,
           expiredConsents,
+          revokedConsents,
           currentVersion: CURRENT_POLICY_VERSION,
+          documentHash: POLICY_DOCUMENT_HASH,
         },
         versions: versionStats,
+        sources: sourceStats,
+        trendDays,
         recentTrend,
         detailed: stats,
       },
@@ -493,18 +668,32 @@ export const cleanExpiredConsents = async (_req: Request, res: Response): Promis
 };
 
 // 获取当前政策版本
+// 除版本与有效期外一并回带条文指纹与勾选清单，客户端可据此在本地校验「我同意的是哪份文本」。
 export const getCurrentPolicyVersion = async (_req: Request, res: Response): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   res.json({
     success: true,
     version: CURRENT_POLICY_VERSION,
     validityDays: CONSENT_VALIDITY_DAYS,
+    documentHash: POLICY_DOCUMENT_HASH,
+    agreementKeys: [...POLICY_AGREEMENT_KEYS],
   });
 };
 
 // 获取完整政策条文（公开）
 // 条文由 src/config/policyDocument.ts 单点维护，前端页面直接渲染返回值；
 // 版本号与 /version 同源，避免「同意的是哪个版本」与「页面上读到的条文」分叉。
-export const getPolicyDocument = async (_req: Request, res: Response): Promise<void> => {
+// ETag 由版本号 + 条文指纹拼出：指纹变了就必然换 ETag，客户端不会拿着旧正文当新条文读。
+export const getPolicyDocument = async (req: Request, res: Response): Promise<void> => {
+  const etag = `"policy-${POLICY_DOCUMENT.version}-${POLICY_DOCUMENT_HASH.slice(0, 12)}"`;
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
+
+  if (typeof req.headers["if-none-match"] === "string" && req.headers["if-none-match"].includes(etag)) {
+    res.status(304).end();
+    return;
+  }
+
   res.json({
     success: true,
     document: POLICY_DOCUMENT,
