@@ -1,6 +1,6 @@
 import request from "supertest";
 import app from "../app";
-import type { PolicyDocument } from "../config/policyDocument";
+import { POLICY_DOCUMENT_HASH, type PolicyDocument } from "../config/policyDocument";
 import { PolicyConsent } from "../models/policyConsentModel";
 import { connectMongo, mongoose } from "../services/mongoService";
 import {
@@ -24,11 +24,26 @@ describe("Policy API MongoDB contract", () => {
   it("reports the server policy version and validity window", async () => {
     const response = await request(app).get("/api/policy/version").expect(200);
 
-    expect(response.body).toEqual({
-      success: true,
-      version: CURRENT_POLICY_VERSION,
-      validityDays: CONSENT_VALIDITY_DAYS,
-    });
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        success: true,
+        version: CURRENT_POLICY_VERSION,
+        validityDays: CONSENT_VALIDITY_DAYS,
+        documentHash: POLICY_DOCUMENT_HASH,
+        agreementKeys: [...POLICY_AGREEMENT_KEYS],
+      }),
+    );
+  });
+
+  // 一次取回「当前版本 + 本设备同意状态」的合并端点：至少要在没有设备凭据时被挡住
+  // （持有凭据的完整链路由 policyDeviceCredential.test.ts 覆盖，那套装不需要真库）。
+  it("gates the merged status endpoint behind the device credential", async () => {
+    const response = await request(app)
+      .get("/api/policy/status")
+      .set("X-Fingerprint", `nightly-status-${Date.now()}`)
+      .expect(403);
+
+    expect(response.body.code).toBe("DEVICE_CREDENTIAL_REQUIRED");
   });
 
   it("serves the policy document with the current version and unique section anchors", async () => {

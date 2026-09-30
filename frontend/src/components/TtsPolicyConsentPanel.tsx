@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { FaCheck, FaExclamationCircle, FaSpinner, FaUserShield } from 'react-icons/fa';
 import PolicyConsentChecklist from './PolicyConsentChecklist';
 import { recordPolicyConsent } from '../api/policy';
+import { usePolicyDocument } from '../hooks/usePolicyDocument';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { studioEyebrowClassName, studioPrimaryButtonClassName } from './studioTheme';
 import {
@@ -24,6 +25,8 @@ const TtsPolicyConsentPanel: React.FC<TtsPolicyConsentPanelProps> = ({ onAccepte
   const [showInvalid, setShowInvalid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  // 条文已进程内缓存：这里只用来告诉用户正在同意的是哪个版本（取不到就不显示，不阻断流程）
+  const { document: policyDocument } = usePolicyDocument();
 
   const complete = isPolicyConsentComplete(selection);
 
@@ -56,6 +59,7 @@ const TtsPolicyConsentPanel: React.FC<TtsPolicyConsentPanelProps> = ({ onAccepte
           </p>
           <p className="break-words text-xs leading-5 text-slate-600">
             确认结果与当前设备绑定并保存在服务端，政策版本更新后会再次要求确认。
+            {policyDocument ? `当前条文 v${policyDocument.version}。` : ''}
             条款原文见{' '}
             <Link to="/policy" target="_blank" rel="noreferrer noopener" className={authTextLinkClassName}>
               服务条款与隐私政策
