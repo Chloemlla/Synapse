@@ -129,8 +129,14 @@ export const TableWrap: React.FC<{ children: React.ReactNode; minWidth?: string 
   </div>
 );
 
-export const Th: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
-  <th className={cn('px-3 py-2.5 text-xs uppercase tracking-wide text-slate-500', className)}>{children}</th>
+export const Th: React.FC<{ children: React.ReactNode; className?: string; title?: string }> = ({
+  children,
+  className,
+  title,
+}) => (
+  <th title={title} className={cn('px-3 py-2.5 text-xs uppercase tracking-wide text-slate-500', className)}>
+    {children}
+  </th>
 );
 
 export const Td: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
