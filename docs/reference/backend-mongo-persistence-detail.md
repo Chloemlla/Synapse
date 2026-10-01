@@ -19,6 +19,22 @@
 - `src/services/userService.ts`：`user_datas` 用户集合的 schema 和读写。
 - `src/tts/tts.storage.ts`、`src/tts/tts.quota.ts`、`src/tts/tts.history.ts`、`src/tts/tts.asset.ts`：TTS 任务、配额、历史和音频资产持久化。
 
+## 1.1 存储职责矩阵（2026-10-01 核对）
+
+三层的分工与判据如下（完整核对记录与缺口清单见 `docs/audit/audit-2026-10-01-storage-responsibility.md`，随时可用 `pnpm run report:storage-responsibility` 重扫）：
+
+| 数据性质 | 落点 | 为什么 |
+| --- | --- | --- |
+| 业务实体、跨重启/审计记录（用户、API Key、订单、账单、审计日志、工单、政策同意） | MongoDB | 丢了是事故；需要查询/关联/导出 |
+| 带期限的凭证与令牌（访问令牌、IP 验证令牌、OAuth 授权码、移动端令牌、临时指纹、反篡改事件） | MongoDB + TTL 索引 | 要跨重启生效、能被审计/吐销；到期删除交给 TTL |
+| 短期共享状态（限流计数、一次性 nonce、幂等键、IP 封禁加速、未来的任务锁） | Redis（未配 `REDIS_URL` 时按各家实现回落 Mongo/内存，降级语义必须在代码注释里写明） | 可重建，但多实例必须看到同一份 |
+| 可丢弃的加速缓存（外部 API 结果、配置热值、归属地） | Redis 优先 → Mongo+TTL → 进程内 TTL | 允许丢失，不参与正确性判定 |
+| 运行期产物（音频、日志、上传临时文件、JSONL 缓存） | 文件/对象存储 | 大对象、按目录清理；不是权威数据 |
+
+红线：**任何「丢了就是数据丢失」的数据不得只存在 Redis**（Redis 可能被 evict 或未开持久化）。当前 IP 封禁就是正例：Mongo 是权威、Redis 只是镜像，且有双向同步。
+
+部署前提：当前生产为**单实例**（见 `docker-compose.yml`）。安全会话、OAuth state、账号合并会话、调度器重入保护等仍是进程内状态；扩容成多实例前必须先按审计文档 §四 S1 改造或做共享存储化。
+
 ## 2. 环境变量
 
 | 变量 | 必需 | 说明 |
