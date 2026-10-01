@@ -54,7 +54,7 @@ const interceptCreditsClicks = (root: ShadowRoot): void => {
   interceptedRoots.add(root);
   root.addEventListener(
     'click',
-    (event: MouseEvent) => {
+    (event: Event) => {
       if (!isCreditsAnchor(event.target)) return;
       event.preventDefault();
       // 控件把监听器挂在同一个 <a> 上（冒泡阶段），捕获阶段先跑并终止传播即可拦下它。
