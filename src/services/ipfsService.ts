@@ -8,6 +8,7 @@ import { sanitizeSvgContent, validateSvgContent } from "../utils/svgSecurity";
 import { shortUrlMigrationService } from "./shortUrlMigrationService";
 import { ShortUrlService } from "./shortUrlService";
 import { TurnstileService } from "./turnstileService";
+import { readCaptchaChallenge } from "./turnstile/challenge";
 import FormData from "form-data";
 import axios from "axios";
 
@@ -379,6 +380,8 @@ export class IPFSService {
       shouldSkipTurnstile?: boolean;
       userAgent?: string;
       skipFileTypeCheck?: boolean;
+      /** 客户端声明的人机验证供应商（turnstile / hcaptcha / trycap；缺失回落 turnstile）。 */
+      captchaProvider?: unknown;
       /** 强制走旧的 IPFS 上传路径（默认 false） */
       useLegacyIpfs?: boolean;
     },
@@ -448,26 +451,35 @@ export class IPFSService {
         environment: process.env.NODE_ENV || "development",
       });
     } else {
-      if (!(await TurnstileService.isEnabled())) {
-        logger.warn("[IPFS] Turnstile服务未启用，拒绝公开上传", {
+      // 三家供应商共用同一套下发链路：要不要验、验哪家由管理端配置与 captchaProvider 共同决定。
+      const captchaPolicy = await TurnstileService.getCaptchaRequestPolicy();
+      if (!captchaPolicy.required) {
+        logger.warn("[IPFS] 人机验证服务未启用，拒绝公开上传", {
           clientIp: context?.clientIp,
           environment: process.env.NODE_ENV || "development",
         });
         throw new Error("IPFS上传需要先启用人机验证");
       }
 
-      if (!cfToken || typeof cfToken !== "string") {
+      const challenge = readCaptchaChallenge({ token: cfToken, provider: context?.captchaProvider });
+      if (!challenge.token) {
         throw new Error("请先完成人机验证");
       }
 
       try {
-        const isValid = await TurnstileService.verifyToken(cfToken, context?.clientIp);
-        if (!isValid) {
+        const isValid = await TurnstileService.verifyCaptchaChallenge({
+          token: challenge.token,
+          provider: challenge.provider,
+          remoteIp: context?.clientIp,
+          userAgent: context?.userAgent,
+        });
+        // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
+        if (!isValid && captchaPolicy.enabledProviders.includes(challenge.provider)) {
           throw new Error("人机验证失败，请重新验证");
         }
-        logger.info("[IPFS] Turnstile验证通过");
+        logger.info("[IPFS] 人机验证通过", { provider: challenge.provider });
       } catch (error) {
-        logger.error("[IPFS] Turnstile验证失败:", error instanceof Error ? error.message : String(error));
+        logger.error("[IPFS] 人机验证失败:", error instanceof Error ? error.message : String(error));
         throw new Error("人机验证失败，请重新验证");
       }
     }

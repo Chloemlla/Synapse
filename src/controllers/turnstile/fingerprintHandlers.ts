@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { config } from "../../config/config";
+import { readCaptchaChallenge } from "../../services/turnstile/challenge";
 import { TurnstileService } from "../../services/turnstileService";
 import { firstString } from "../../utils/httpParam";
 import { getClientIp } from "./_helpers";
@@ -128,7 +129,9 @@ export async function reportTempFingerprint(req: Request, res: Response) {
 
 export async function verifyTempFingerprint(req: Request, res: Response) {
   try {
-    const { fingerprint, cfToken, userAgent, captchaType } = req.body;
+    const { fingerprint, userAgent } = req.body;
+    // 统一读取挑战载荷：captchaToken/cfToken/turnstileToken… + captchaProvider/captchaType。
+    const challenge = readCaptchaChallenge(req.body);
     const validatedClientIp = getClientIp(req);
     const clientUserAgent = userAgent || req.headers["user-agent"] || "unknown";
 
@@ -140,7 +143,7 @@ export async function verifyTempFingerprint(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "指纹参数无效" });
     }
 
-    if (!cfToken || typeof cfToken !== "string") {
+    if (!challenge.token) {
       return res.status(400).json({ success: false, error: "验证令牌无效" });
     }
 
@@ -156,17 +159,17 @@ export async function verifyTempFingerprint(req: Request, res: Response) {
 
     const result = await TurnstileService.verifyTempFingerprint(
       fingerprint,
-      cfToken,
+      challenge.token,
       validatedClientIp,
       clientUserAgent,
-      captchaType || "turnstile",
+      challenge.provider,
     );
 
     if (!result.success) {
       return res.status(400).json({ success: false, error: "验证失败" });
     }
 
-    const serviceName = captchaType === "hcaptcha" ? "hCaptcha" : "Turnstile";
+    const serviceName = challenge.provider === "hcaptcha" ? "hCaptcha" : challenge.provider === "trycap" ? "trycap" : "Turnstile";
     console.log(`✅ ${serviceName}验证成功，直接通过`, {
       fingerprint: `${fingerprint.substring(0, 8)}...`,
       ip: validatedClientIp,

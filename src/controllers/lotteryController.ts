@@ -155,6 +155,8 @@ export class LotteryController {
     try {
       const roundId = firstString(req.params.roundId);
       const { cfToken } = req.body;
+      // 三家供应商共用同一套下发链路：客户端带什么供应商就验哪家。
+      const captchaProvider = req.body.captchaProvider ?? req.body.captchaType;
       const userId = req.user?.id;
 
       if (!roundId) {
@@ -176,7 +178,14 @@ export class LotteryController {
         return;
       }
 
-      const winner = await lotteryService.participateInLottery(roundId, userId, username, cfToken, req.user?.role);
+      const winner = await lotteryService.participateInLottery(
+        roundId,
+        userId,
+        username,
+        cfToken,
+        req.user?.role,
+        captchaProvider,
+      );
 
       res.json({
         success: true,

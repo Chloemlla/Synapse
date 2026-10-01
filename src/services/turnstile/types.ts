@@ -177,3 +177,13 @@ export interface CapVerifyResponse {
   success: boolean;
   error?: string;
 }
+
+/**
+ * 请求侧供应商归一：只有明确落在三家枚举里才采信，其余一律回落到 Turnstile
+ * ——即历史调用点（登录/注册/TTS/图床/抽奖/CDK…）在客户端不带供应商字段时的既有语义。
+ */
+export function normalizeCaptchaProviderId(value: unknown): CaptchaProviderId {
+  return typeof value === "string" && (CAPTCHA_PROVIDER_IDS as readonly string[]).includes(value)
+    ? (value as CaptchaProviderId)
+    : "turnstile";
+}

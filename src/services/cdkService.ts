@@ -12,6 +12,8 @@ import { sendEmail } from "./emailSender";
 import { generateCDKActivatedEmailHtml } from "../templates/emailTemplates";
 import { isAdminRole } from "../middleware/auth";
 import { registerBackgroundTaskStopper } from "../utils/backgroundTaskRegistry";
+import { TurnstileService } from "./turnstileService";
+import { readCaptchaChallenge } from "./turnstile/challenge";
 
 /**
  * CDK 业务性失败（用户输入错误、无效/已使用、重复兑换、限流等）。
@@ -326,6 +328,7 @@ export class CDKService {
     cfToken?: string,
     userRole?: string,
     ip?: string,
+    captchaProvider?: unknown,
   ) {
     const startTime = Date.now();
     this.stats.totalRedemptions++;
@@ -364,58 +367,56 @@ export class CDKService {
         userInfo.username = userInfo.username.replace(/[{}$]/g, "");
       }
 
-      // Turnstile 验证（非管理员用户）
+      // 人机验证（非管理员用户）：三家供应商（Turnstile / hCaptcha / trycap）共用同一套下发链路。
       const isAdmin = isAdminRole(userRole);
-      if (!isAdmin && process.env.TURNSTILE_SECRET_KEY) {
-        if (!cfToken) {
-          logger.warn("非管理员用户缺少 Turnstile token，拒绝CDK兑换", { userId: userInfo?.userId, userRole });
-          throw new CdkBusinessError("需要完成人机验证才能兑换CDK");
-        }
-
-        try {
-          // 验证 Turnstile token
-          const axios = await import("axios");
-          const verificationResult = await axios.default.post(
-            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            {
-              secret: process.env.TURNSTILE_SECRET_KEY,
-              response: cfToken,
-            },
-            {
-              timeout: 10000, // 10秒超时
-            },
-          );
-
-          if (!verificationResult.data.success) {
-            logger.warn("Turnstile 验证失败", {
+      if (!isAdmin) {
+        const captchaPolicy = await TurnstileService.getCaptchaRequestPolicy();
+        if (captchaPolicy.required) {
+          const challenge = readCaptchaChallenge({ token: cfToken, provider: captchaProvider });
+          if (!challenge.token) {
+            logger.warn("非管理员用户缺少人机验证 token，拒绝CDK兑换", {
               userId: userInfo?.userId,
               userRole,
-              errorCodes: verificationResult.data["error-codes"],
             });
-            throw new CdkBusinessError("人机验证失败，请重新验证");
+            throw new CdkBusinessError("需要完成人机验证才能兑换CDK");
           }
 
-          logger.info("Turnstile 验证成功", {
-            userId: userInfo?.userId,
-            userRole,
-            hostname: verificationResult.data.hostname,
-          });
-        } catch (error) {
-          if (error instanceof CdkBusinessError) {
-            throw error;
+          try {
+            // 统一走 TurnstileService：DB 优先、env 兜底的密钥解析 + 三家同一套校验/溯源。
+            const verified = await TurnstileService.verifyCaptchaChallenge({
+              token: challenge.token,
+              provider: challenge.provider,
+              remoteIp: ip,
+            });
+
+            // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死。
+            if (!verified && captchaPolicy.enabledProviders.includes(challenge.provider)) {
+              logger.warn("人机验证失败", {
+                userId: userInfo?.userId,
+                userRole,
+                provider: challenge.provider,
+              });
+              throw new CdkBusinessError("人机验证失败，请重新验证");
+            }
+
+            logger.info("人机验证成功", { userId: userInfo?.userId, userRole, provider: challenge.provider });
+          } catch (error) {
+            if (error instanceof CdkBusinessError) {
+              throw error;
+            }
+            // 人机验证服务本身不可用属于依赖故障，计入熔断。
+            logger.error("人机验证请求失败", {
+              userId: userInfo?.userId,
+              userRole,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw new Error("人机验证服务暂时不可用，请稍后重试");
           }
-          // Turnstile 服务本身不可用属于依赖故障，计入熔断。
-          logger.error("Turnstile 验证请求失败", {
-            userId: userInfo?.userId,
-            userRole,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw new Error("人机验证服务暂时不可用，请稍后重试");
+        } else {
+          logger.info("跳过人机验证（未启用）", { userId: userInfo?.userId, userRole });
         }
-      } else if (!isAdmin && !process.env.TURNSTILE_SECRET_KEY) {
-        logger.info("跳过 Turnstile 验证（未配置密钥）", { userId: userInfo?.userId, userRole });
-      } else if (isAdmin) {
-        logger.info("跳过 Turnstile 验证（管理员用户）", { userId: userInfo?.userId, userRole });
+      } else {
+        logger.info("跳过人机验证（管理员用户）", { userId: userInfo?.userId, userRole });
       }
 
       // 首先查找CDK以获取资源ID

@@ -42,6 +42,8 @@ export class TurnstileService {
   static verifyToken = verify.verifyToken;
   static verifyTokenDetailed = verify.verifyTokenDetailed;
   static verifyTempFingerprint = verify.verifyTempFingerprint;
+  /** 三家共用校验入口（按客户端声明的供应商分派）；后台页面统一走这里。 */
+  static verifyCaptchaChallenge = verify.verifyCaptchaChallenge;
 
   // hCaptcha
   static verifyHCaptchaToken = hcaptcha.verifyHCaptchaToken;
@@ -62,6 +64,8 @@ export class TurnstileService {
   // 供应商调度（上线/下线 + 权重 + 优先级 + 场景权重 + 月额度）
   static collectCaptchaProviders = providers.collectCaptchaProviders;
   static selectCaptchaProvider = providers.selectCaptchaProvider;
+  /** 请求侧闸门：现在要不要人机验证、有哪几家真正可用（所有后台页面共用）。 */
+  static getCaptchaRequestPolicy = providers.getCaptchaRequestPolicy;
   static getProviderSecretPresence = providers.getProviderSecretPresence;
   static getProviderQuotaLimits = providers.getProviderQuotaLimits;
   static isCaptchaProviderId = providers.isCaptchaProviderId;

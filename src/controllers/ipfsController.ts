@@ -55,8 +55,9 @@ export class IPFSController {
           });
         }
 
-        // 从请求中提取cfToken（Turnstile验证token）
+        // 从请求中提取挑战令牌与人机验证供应商（三家共用一套下发链路）
         const cfToken = req.body.cfToken;
+        const captchaProvider = req.body.captchaProvider ?? req.body.captchaType;
 
         // ImageBed (scdn.io v1.php) 透传参数
         const passwordEnabled =
@@ -96,6 +97,7 @@ export class IPFSController {
             shouldSkipTurnstile,
             userAgent: req.headers["user-agent"] || "",
             useLegacyIpfs,
+            captchaProvider,
           },
         );
 

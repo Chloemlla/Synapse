@@ -1,3 +1,4 @@
+import { readCaptchaChallenge } from "../../services/turnstile/challenge";
 import { TurnstileService } from "../../services/turnstileService";
 import logger from "../../utils/logger";
 
@@ -99,27 +100,61 @@ export function getFrontendBaseUrl(): string {
   return process.env.FRONTEND_URL || "https://chloemlla.com";
 }
 
+/**
+ * 请求侧人机验证闸门：所有页面（登录/注册/忘记密码/重置密码/TTS/图床/抽奖/CDK…）共用这一段判定。
+ *
+ * 与历史 `verifyRequiredTurnstile` 的区别：
+ * - 「要不要验」不再看 Turnstile 凭据是否存在，而是看三家供应商里有没有任一家真正可下发
+ *   （已上线 + 凭据齐 + 本月额度未用尽）；三家全下线 ⇒ 放行，与历史「开关关掉即放行」等价。
+ * - 「验哪家」由客户端声明的 `captchaProvider` 决定（缺失/非法 → turnstile，兼容老客户端）。
+ * - 客户端声明的供应商已不在可下发名单（管理端在用户答题期间把它下线了）时不再卡人：
+ *   该家的凭据可能已被清掉，再怎么验都会失败，此时放行与「管理端关掉这家」语义一致。
+ */
+export async function verifyRequiredCaptcha(
+  challenge: unknown,
+  ip: string,
+  logTag: string,
+  subject?: string,
+): Promise<string | null> {
+  const { token, provider } = readCaptchaChallenge(challenge);
+  const policy = await TurnstileService.getCaptchaRequestPolicy();
+  if (!policy.required) {
+    return null;
+  }
+
+  if (typeof token !== "string" || token.length === 0) {
+    logger.warn(`[${logTag}] 缺少人机验证令牌`, { subject, ip, provider });
+    return "请先完成人机验证";
+  }
+
+  const isValid = await TurnstileService.verifyCaptchaChallenge({ token, provider, remoteIp: ip });
+  if (isValid) {
+    return null;
+  }
+
+  if (!policy.enabledProviders.includes(provider)) {
+    logger.warn(`[${logTag}] 声明的供应商已下线，本次放行`, {
+      subject,
+      ip,
+      provider,
+      enabledProviders: policy.enabledProviders,
+    });
+    return null;
+  }
+
+  logger.warn(`[${logTag}] 人机验证失败`, { subject, ip, provider });
+  return "人机验证失败，请重试";
+}
+
+/**
+ * @deprecated 保留给尚未接入统一链路的调用点：只接受 Turnstile 令牌。
+ * 新代码一律用 `verifyRequiredCaptcha`（三家共用）。
+ */
 export async function verifyRequiredTurnstile(
   token: unknown,
   ip: string,
   logTag: string,
   subject?: string,
 ): Promise<string | null> {
-  const turnstileConfig = await TurnstileService.getConfig();
-  if (!turnstileConfig.enabled) {
-    return null;
-  }
-
-  if (typeof token !== "string" || token.length === 0) {
-    logger.warn(`[${logTag}] 缺少 Turnstile 令牌`, { subject, ip });
-    return "请先完成人机验证";
-  }
-
-  const isValid = await TurnstileService.verifyToken(token, ip);
-  if (!isValid) {
-    logger.warn(`[${logTag}] Turnstile 验证失败`, { subject, ip });
-    return "人机验证失败，请重试";
-  }
-
-  return null;
+  return verifyRequiredCaptcha({ token, captchaProvider: "turnstile" }, ip, logTag, subject);
 }

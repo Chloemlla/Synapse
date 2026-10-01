@@ -9,7 +9,7 @@ import {
   shouldRequireAuthPolicyConsent,
   writePolicyConsent,
 } from "../../services/policyConsentService";
-import { TurnstileService } from "../../services/turnstileService";
+import { readCaptchaChallenge } from "../../services/turnstile/challenge";
 import {
   generateAccountLockedEmailHtml,
   generateLoginFailureAlertEmailHtml,
@@ -25,14 +25,18 @@ import {
   LOGIN_LOCKOUT_DURATION,
   getLoginRetrySeconds,
   loginAttempts,
+  verifyRequiredCaptcha,
 } from "./_state";
 
 function summarizeAuthBody(body: any) {
+  const challenge = readCaptchaChallenge(body);
   return {
     hasIdentifier: typeof body?.identifier === "string" && body.identifier.length > 0,
     hasPassword: typeof body?.password === "string" && body.password.length > 0,
     hasCfToken: typeof body?.cfToken === "string" && body.cfToken.length > 0,
     hasTurnstileToken: typeof body?.turnstileToken === "string" && body.turnstileToken.length > 0,
+    hasCaptchaToken: challenge.token.length > 0,
+    captchaProvider: challenge.provider,
   };
 }
 
@@ -55,7 +59,7 @@ async function updateUserToken(userId: string, token: string, expiresInMs = 2 * 
 export async function login(req: Request, res: Response) {
   const t0 = Date.now();
   try {
-    const { password, cfToken, turnstileToken } = req.body;
+    const { password } = req.body;
     const identifier = typeof req.body?.identifier === "string" ? req.body.identifier.trim() : "";
     const ip = getClientIP(req);
     const userAgent = req.headers["user-agent"] || "unknown";
@@ -90,19 +94,11 @@ export async function login(req: Request, res: Response) {
       });
     }
 
-    const turnstileConfig = await TurnstileService.getConfig();
-    if (turnstileConfig.enabled) {
-      const captchaToken = typeof cfToken === "string" ? cfToken : typeof turnstileToken === "string" ? turnstileToken : "";
-      if (!captchaToken) {
-        logger.warn("登录失败：缺少 Turnstile 令牌", { identifier, ip });
-        return res.status(400).json({ error: "请先完成人机验证" });
-      }
-
-      const isValidCaptcha = await TurnstileService.verifyToken(captchaToken, ip);
-      if (!isValidCaptcha) {
-        logger.warn("登录失败：Turnstile 验证失败", { identifier, ip });
-        return res.status(400).json({ error: "人机验证失败，请重试" });
-      }
+    // 三家供应商（Turnstile / hCaptcha / trycap）共用同一套下发链路：要不要验、验哪家
+    // 由管理端供应商配置与请求载荷里的 captchaProvider 共同决定。
+    const captchaError = await verifyRequiredCaptcha(req.body, ip, "登录", identifier);
+    if (captchaError) {
+      return res.status(400).json({ error: captchaError });
     }
 
     const logDetails = {

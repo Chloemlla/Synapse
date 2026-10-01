@@ -28,12 +28,12 @@ import {
   emailCodeMap,
   emailPattern,
   getFrontendBaseUrl,
-  verifyRequiredTurnstile,
+  verifyRequiredCaptcha,
 } from "./_state";
 
 export async function register(req: Request, res: Response) {
   try {
-    const { username, email, password, fingerprint, cfToken, turnstileToken, invitationCode } = req.body;
+    const { username, email, password, fingerprint, invitationCode } = req.body;
     if (!username || !email || !password) {
       return res.status(400).json({ error: "请提供所有必需的注册信息" });
     }
@@ -60,10 +60,10 @@ export async function register(req: Request, res: Response) {
 
     // G2-16: 只信任服务端解析的 IP。客户端自报的 clientIP 不参与任何校验。
     const ipAddress = getClientIP(req);
-    const captchaToken = typeof cfToken === "string" ? cfToken : turnstileToken;
-    const turnstileError = await verifyRequiredTurnstile(captchaToken, ipAddress, "注册", email);
-    if (turnstileError) {
-      return res.status(400).json({ error: turnstileError });
+    // 三家供应商共用同一套下发链路：验哪家由请求载荷里的 captchaProvider 决定。
+    const captchaError = await verifyRequiredCaptcha(req.body, ipAddress, "注册", email);
+    if (captchaError) {
+      return res.status(400).json({ error: captchaError });
     }
 
     // 仅做诊断日志：前端上报的 clientIP 不参与安全判定

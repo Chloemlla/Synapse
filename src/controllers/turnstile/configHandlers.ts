@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { isAdminRole } from "../../middleware/auth";
 import { TurnstileService } from "../../services/turnstileService";
 import { isCaptchaScenario } from "../../services/turnstile/allocation";
+import { readCaptchaChallenge } from "../../services/turnstile/challenge";
 import { CAPTCHA_PROVIDER_IDS, type CaptchaProviderId, type CaptchaScenario } from "../../services/turnstile/types";
 import { firstString } from "../../utils/httpParam";
 import logger from "../../utils/logger";
@@ -64,22 +65,28 @@ export async function getPublicTurnstile(_req: Request, res: Response) {
 
 export async function verifyTurnstileToken(req: Request, res: Response) {
   try {
-    const { token } = req.body;
     const validatedClientIp = getClientIp(req);
+    // 三家供应商共用同一个校验入口（路径名保留历史写法）；历史载荷用裸 `token`，予以兼容。
+    const challenged = readCaptchaChallenge(req.body, { genericToken: true });
 
-    if (!token || typeof token !== "string") {
+    if (!challenged.token) {
       return res.status(400).json({ success: false, error: "token 参数无效" });
     }
 
-    const ok = await TurnstileService.verifyToken(token, validatedClientIp);
+    const ok = await TurnstileService.verifyCaptchaChallenge({
+      token: challenged.token,
+      provider: challenged.provider,
+      remoteIp: validatedClientIp,
+      userAgent: req.headers["user-agent"],
+    });
 
     if (ok) {
-      return res.json({ success: true, verified: true });
+      return res.json({ success: true, verified: true, captchaProvider: challenged.provider });
     }
 
-    return res.status(400).json({ success: false, verified: false });
+    return res.status(400).json({ success: false, verified: false, captchaProvider: challenged.provider });
   } catch (error) {
-    console.error("验证 Turnstile token 失败:", error);
+    console.error("验证人机验证 token 失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

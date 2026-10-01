@@ -4,14 +4,22 @@ import { TempFingerprintModel } from "../../models/tempFingerprintModel";
 import logger from "../../utils/logger";
 import { mongoose } from "../mongoService";
 import { generateAccessToken } from "./accessToken";
+import { verifyCapToken } from "./cap";
 import { sanitizeCapEndpoint } from "./capEndpoint";
 import { HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
+import { verifyHCaptchaToken } from "./hcaptcha";
 import { isIpBanned, recordViolation } from "./ipBan";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
 import { consumeConfiguredCaptchaQuota } from "./quota";
 import { assessClientRisk, recordVerificationOutcome, translateTurnstileErrors } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
-import type { CapVerifyResponse, HCaptchaResponse, TurnstileResponse, TurnstileVerificationResult } from "./types";
+import {
+  normalizeCaptchaProviderId,
+  type CapVerifyResponse,
+  type HCaptchaResponse,
+  type TurnstileResponse,
+  type TurnstileVerificationResult,
+} from "./types";
 import { validateFingerprint, validateIpAddress, validateToken } from "./validators";
 
 export type CaptchaVerificationType = "turnstile" | "hcaptcha" | "trycap";
@@ -27,6 +35,35 @@ async function resolveCapVerifyUrl(): Promise<string | null> {
   const [siteKey, endpoint] = await Promise.all([getCapKey("CAP_SITE_KEY"), getCapKey("CAP_API_ENDPOINT")]);
   if (!siteKey) return null;
   return `${sanitizeCapEndpoint(endpoint)}/${siteKey}/siteverify`;
+}
+
+/**
+ * 统一校验入口：所有后台页面（登录/注册/忘记密码/重置密码/TTS/图床/抽奖/CDK…）共用这一个函数。
+ *
+ * 按客户端声明的供应商分派到三家既有的校验实现，三家的 trace / 风控 / hCaptcha 额度扣减语义完全不变：
+ * - turnstile → verifyToken（Cloudflare siteverify）
+ * - hcaptcha  → verifyHCaptchaToken（hCaptcha siteverify，含本月额度扣减）
+ * - trycap    → verifyCapToken（Cap Standalone siteverify）
+ *
+ * 供应商非法或缺失时回落 turnstile —— 即历史所有调用点的唯一语义，保证老客户端不被打断。
+ */
+export async function verifyCaptchaChallenge(options: {
+  token: string;
+  provider?: unknown;
+  remoteIp?: string;
+  userAgent?: string;
+  fingerprint?: string;
+}): Promise<boolean> {
+  const provider = normalizeCaptchaProviderId(options.provider);
+  const token = typeof options.token === "string" ? options.token : "";
+
+  if (provider === "hcaptcha") {
+    return verifyHCaptchaToken(token, options.remoteIp);
+  }
+  if (provider === "trycap") {
+    return verifyCapToken(token, options.remoteIp);
+  }
+  return verifyToken(token, options.remoteIp);
 }
 
 export async function verifyToken(token: string, remoteIp?: string): Promise<boolean> {

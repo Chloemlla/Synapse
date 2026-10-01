@@ -16,13 +16,13 @@ import {
   emailPattern,
   getFrontendBaseUrl,
   resetPasswordCodeMap,
-  verifyRequiredTurnstile,
+  verifyRequiredCaptcha,
 } from "./_state";
 
 // 忘记密码 - 发送重置验证链接
 export async function forgotPassword(req: Request, res: Response) {
   try {
-    const { email, turnstileToken, cfToken, fingerprint } = req.body;
+    const { email, fingerprint } = req.body;
     if (!email || !emailPattern.test(email)) {
       return res.status(400).json({ error: "邮箱格式不正确" });
     }
@@ -32,10 +32,10 @@ export async function forgotPassword(req: Request, res: Response) {
     }
 
     const remoteIp = getClientIP(req);
-    const captchaToken = typeof turnstileToken === "string" ? turnstileToken : cfToken;
-    const turnstileError = await verifyRequiredTurnstile(captchaToken, remoteIp, "密码重置", email);
-    if (turnstileError) {
-      return res.status(400).json({ error: turnstileError });
+    // 三家供应商共用同一套下发链路：验哪家由请求载荷里的 captchaProvider 决定。
+    const captchaError = await verifyRequiredCaptcha(req.body, remoteIp, "密码重置", email);
+    if (captchaError) {
+      return res.status(400).json({ error: captchaError });
     }
 
     // 检查用户是否存在

@@ -17,6 +17,8 @@ const cdkService = CDKService.getInstance();
 export const redeemCDK = async (req: AuthRequest, res: Response) => {
   try {
     const { code, cfToken } = req.body;
+    // 三家供应商共用同一套下发链路：客户端带什么供应商就验哪家。
+    const captchaProvider = req.body.captchaProvider ?? req.body.captchaType;
 
     // 身份与角色全部来自已鉴权会话，禁止从 body 读取 userId/username/userRole/forceRedeem
     const userId = req.user?.id || req.user?._id;
@@ -29,7 +31,15 @@ export const redeemCDK = async (req: AuthRequest, res: Response) => {
     // forceRedeem 仅 superadmin 生效；普通用户即使传了也强制视为 false
     const forceRedeem = req.user?.role === "superadmin" ? Boolean(req.body?.forceRedeem) : false;
 
-    const result = await cdkService.redeemCDK(code, userInfo, forceRedeem, cfToken, userRole, getClientIP(req));
+    const result = await cdkService.redeemCDK(
+      code,
+      userInfo,
+      forceRedeem,
+      cfToken,
+      userRole,
+      getClientIP(req),
+      captchaProvider,
+    );
 
     logger.info("CDK兑换成功", {
       code,

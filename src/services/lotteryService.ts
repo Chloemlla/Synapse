@@ -4,6 +4,7 @@ import { isAdminRole } from "../middleware/auth";
 import { logger } from "./logger";
 import { addRound, getAllRounds, getUserRecord, updateRound, updateUserRecord, deleteAllRounds } from "./lotteryStorage";
 import { TurnstileService } from "./turnstileService";
+import { readCaptchaChallenge } from "./turnstile/challenge";
 
 // 抽奖相关类型定义
 export interface LotteryPrize {
@@ -184,6 +185,7 @@ class LotteryService {
     username: string,
     cfToken?: string,
     userRole?: string,
+    captchaProvider?: unknown,
   ): Promise<LotteryWinner | null> {
     const round = await this.getRoundDetails(roundId); // 使用新的getRoundDetails
     if (!round) {
@@ -203,38 +205,37 @@ class LotteryService {
       throw new Error("您已经参与过此轮抽奖");
     }
 
-    // Turnstile 验证（非管理员用户）
+    // 人机验证（非管理员用户）：三家供应商共用同一套下发链路，验哪家由 captchaProvider 决定。
     const isAdmin = isAdminRole(userRole);
-    if (!isAdmin && process.env.TURNSTILE_SECRET_KEY) {
-      if (!cfToken) {
-        logger.warn("非管理员用户缺少 Turnstile token，拒绝参与抽奖", { userId, userRole });
-        throw new Error("需要完成人机验证才能参与抽奖");
-      }
+    if (!isAdmin) {
+      const policy = await TurnstileService.getCaptchaRequestPolicy();
+      if (policy.required) {
+        const challenge = readCaptchaChallenge({ token: cfToken, provider: captchaProvider });
+        if (!challenge.token) {
+          logger.warn("非管理员用户缺少人机验证 token，拒绝参与抽奖", { userId, userRole });
+          throw new Error("需要完成人机验证才能参与抽奖");
+        }
 
-      // G7-09/死代码: 复用统一的 TurnstileService（DB 优先、env 兜底的密钥解析），
-      // 不再直读 process.env 重复实现 siteverify 调用。
-      try {
-        const verified = await TurnstileService.verifyToken(cfToken);
-        if (!verified) {
-          logger.warn("Turnstile 验证失败", { userId, userRole });
+        const verified = await TurnstileService.verifyCaptchaChallenge({
+          token: challenge.token,
+          provider: challenge.provider,
+        }).catch((error: unknown) => {
+          logger.error("人机验证请求失败", {
+            userId,
+            userRole,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw new Error("人机验证服务暂时不可用，请稍后重试");
+        });
+        // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
+        if (!verified && policy.enabledProviders.includes(challenge.provider)) {
+          logger.warn("人机验证失败", { userId, userRole, provider: challenge.provider });
           throw new Error("人机验证失败，请重新验证");
         }
-        logger.info("Turnstile 验证成功", { userId, userRole });
-      } catch (error) {
-        if (error instanceof Error && error.message.includes("Turnstile")) {
-          throw error;
-        }
-        logger.error("Turnstile 验证请求失败", {
-          userId,
-          userRole,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw new Error("人机验证服务暂时不可用，请稍后重试");
+        logger.info("人机验证成功", { userId, userRole, provider: challenge.provider });
       }
-    } else if (!isAdmin && !process.env.TURNSTILE_SECRET_KEY) {
-      logger.info("跳过 Turnstile 验证（未配置密钥）", { userId, userRole });
-    } else if (isAdmin) {
-      logger.info("跳过 Turnstile 验证（管理员用户）", { userId, userRole });
+    } else {
+      logger.info("跳过人机验证（管理员用户）", { userId, userRole });
     }
 
     // G7-09: 开奖随机数必须由服务端 CSPRNG 决定，不能用公开区块高度/客户端字段/时间戳

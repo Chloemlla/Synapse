@@ -8,6 +8,7 @@ import {
   shouldRequireTtsPolicyConsent,
 } from "../services/policyConsentService";
 import { TurnstileService } from "../services/turnstileService";
+import { readCaptchaChallenge } from "../services/turnstile/challenge";
 import type { User } from "../utils/userStorage";
 import { TtsRequestError } from "./tts.errors";
 import { generationHistoryStore } from "./tts.history";
@@ -27,6 +28,13 @@ export interface TtsSubmissionInput {
   fingerprint: unknown;
   generationCode: unknown;
   cfToken: unknown;
+  /**
+   * 本次人机验证令牌 + 供应商（三家共用一套下发链路）。
+   * 兼容旧字段：captchaToken / turnstileToken / hcaptchaToken / capToken；
+   * 供应商字段只用 captchaProvider / captchaType（裸 provider 是 TTS 提供商，含义不同）。
+   */
+  captchaToken?: unknown;
+  captchaProvider?: unknown;
   /** 用户在前端选择的提供商；老客户端不带该字段。 */
   provider?: unknown;
 }
@@ -283,15 +291,29 @@ export class TtsSubmissionPipeline {
     }
   }
 
-  private async validateTurnstile(cfToken: unknown, ip: string) {
-    if (!(await TurnstileService.isEnabled())) {
+  private async validateHumanCheck(input: TtsSubmissionInput, ip: string, userAgent?: string) {
+    // 要不要验、验哪家都由管理端供应商配置（三家共用同一套下发链路）决定。
+    const policy = await TurnstileService.getCaptchaRequestPolicy();
+    if (!policy.required) {
       return;
     }
 
-    const verified = await TurnstileService.verifyToken(typeof cfToken === "string" ? cfToken : "", ip);
-    if (!verified) {
-      throw new TtsRequestError(403, "人机验证失败，请重新验证", "TTS_TURNSTILE_FAILED");
+    const { token, provider } = readCaptchaChallenge(input);
+    if (!token) {
+      throw new TtsRequestError(403, "请先完成人机验证", "TTS_CAPTCHA_REQUIRED");
     }
+
+    const verified = await TurnstileService.verifyCaptchaChallenge({ token, provider, remoteIp: ip, userAgent });
+    if (verified) {
+      return;
+    }
+
+    // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
+    if (!policy.enabledProviders.includes(provider)) {
+      return;
+    }
+
+    throw new TtsRequestError(403, "人机验证失败，请重新验证", "TTS_CAPTCHA_FAILED");
   }
 
   public async validateAndBuild(context: TtsSubmissionContext): Promise<TtsSubmissionResult> {
@@ -343,7 +365,7 @@ export class TtsSubmissionPipeline {
       if (!isAdmin) {
         await this.validateGenerationCode(context.input.generationCode);
       }
-      await this.validateTurnstile(context.input.cfToken, context.ip);
+      await this.validateHumanCheck(context.input, context.ip, context.userAgent);
     }
 
     if (!userId) {
