@@ -77,6 +77,10 @@ export async function forgotPassword(req: Request, res: Response) {
       subject: "Synapse 账号密码重置",
       html: emailHtml,
       logTag: "密码重置",
+      // 重置链接不受邮件服务商的共享日配额约束：该配额是按发信账号计的总额，被其它批量邮件
+      // 耗尽后会把真正需要找回账号的用户一并挡在门外（表现为“发送次数已达上限，请明日再试”）。
+      // 本路径仍有三层约束：authPasswordResetLimiter（login 档，按 IP）+ 人机验证 + 一次性令牌。
+      checkQuota: false,
     });
 
     if (result.success) {
@@ -84,11 +88,7 @@ export async function forgotPassword(req: Request, res: Response) {
     } else {
       resetPasswordCodeMap.delete(email);
       await verificationTokenStorage.deleteToken(verificationToken.token);
-      if (result.error?.includes("上限")) {
-        res.status(429).json({ error: "重置链接发送次数已达上限，请明日再试" });
-      } else {
-        res.status(500).json({ error: "验证码发送失败，请稍后重试" });
-      }
+      res.status(500).json({ error: "重置邮件发送失败，请稍后重试" });
     }
   } catch (error) {
     logger.error("[密码重置] 流程异常:", error);
