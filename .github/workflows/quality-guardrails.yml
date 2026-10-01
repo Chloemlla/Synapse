@@ -56,6 +56,11 @@ jobs:
         # 防止新的缓存集合或跨实例状态静默进场。判定规则见 docs/audit/audit-2026-10-01-storage-responsibility.md。
         run: pnpm run report:storage-responsibility
 
+      - name: Unused dependency report (advisory)
+        # 只做可见性，从不失败：静态扫出没用到的依赖（不装 depcheck、不读 node_modules 判定）。
+        # 判定口径与已清理清单见 docs/audit/audit-2026-10-01-unused-dependencies.md。
+        run: pnpm run report:unused-dependencies
+
   frontend-bundle:
     name: Frontend bundle budget
     runs-on: ubuntu-latest
