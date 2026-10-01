@@ -70,7 +70,7 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
   icons: ["react-icons"],
   // Hugeicons is only needed by the shadcn sidebar primitives.
   hugeicons: ["@hugeicons/core-free-icons", "@hugeicons/react"],
-  utils: ["axios", "clsx", "tailwind-merge"],
+  utils: ["axios", "clsx", "tailwind-merge", "dompurify"],
   auth: ["@simplewebauthn/browser", "qrcode.react"],
   fingerprint: ["@fingerprintjs/fingerprintjs"],
   animations: ["framer-motion"],
@@ -113,6 +113,10 @@ const jsYamlDefaultInteropPlugin = {
 function getManualChunk(id: string): string | undefined {
   // Normalize Windows paths so node_modules matching is reliable.
   const normalized = id.replace(/\\/g, "/");
+  // Vite 的 __vitePreload 助手是虚拟模块（\0vite/preload-helper），默认会被 rolldown 合并进
+  // 「最大的消费方 chunk」。真实构建里它被合进了 mermaid 包，于是入口与每个 lazy chunk 都
+  // 静态依赖 1.5 MB gzip 的 mermaid —— 首屏白拿一个 5 MB 的包。强制它单独成小块。
+  if (normalized.includes("vite/preload-helper")) return "preload-helper";
   for (const [chunkName, deps] of Object.entries(MANUAL_CHUNKS)) {
     if (deps.some((dep) => matchesPackage(normalized, dep))) {
       return chunkName;
