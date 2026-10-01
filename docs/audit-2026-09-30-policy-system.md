@@ -253,3 +253,74 @@ P-01 ～ P-20 全部已修，无挂起项；每条编号均可在「三、改动
 
 第一轮的编号（P-01 ～ P-20）无一回退；第二轮的改动都建立在第一轮的字段与端点之上
 （轨迹依赖 `revokedAt` 与 `documentHash`，计数依赖勾选完整性判定，存档依赖 `POLICY_DOCUMENT_HASH`）。
+
+---
+
+## 六、第三轮：阅读体验与运维效率
+
+| 编号 | 严重度 | 位置 | 类型 | 状态 |
+|---|---|---|---|---|
+| P-29 | UX | `PolicyPage` | 十几章长文重进要重新找位置 | ✅ 已修 |
+| P-30 | UX/a11y | `PolicyPage` | 检索没有键盘入口 | ✅ 已修 |
+| P-31 | UX | 隐私面板 / 政策页状态卡片 | 有效期只给日期，用户要自己算还剩几天 | ✅ 已修 |
+| P-32 | 运维效率 | 管理端记录表 | 指纹/完整 IP 被截断且无法复制 | ✅ 已修 |
+| P-33 | 维护性 | `PolicyPage`（741 行） | 余量不足，再加功能即撞闸门 | ✅ 已拆（561 行） |
+| P-34 | 文档 | 本清单 / 隐私契约 | 第二轮入口与边界未回写 | ✅ 已修 |
+
+- P-29：滚动时按章节记忆位置（只在切章时写 `localStorage`），下次进入给出「继续阅读：<章节>」入口；
+  带 `#policy-<id>` 深链时不打扰，首章不提示。
+- P-30：按 `/` 聚焦检索框（正在输入时不抢键）；检索框占位文案同步提示该快捷键。
+- P-31：隐私面板「有效期至 X（剩 N 天）」；政策页状态卡片补「查看本设备同意轨迹」入口。
+- P-32：管理端记录的设备指纹 / IP 单元格加一键复制（表格里仍截断显示，复制取完整值）。
+- P-33：正文单章渲染拆到 `policy/PolicySectionPanel`，页脚三块拆到 `policy/PolicyFooter`，
+  并清理抽取后不再使用的导入。
+
+## 七、验证结论（阶段 3/4）
+
+提交序列（已推送 `Chloemlla/Synapse` `main`，按轮次排列）：
+
+| 轮次 | commit | 内容 |
+|---|---|---|
+| 1 | `3b013f66` | feat(policy)：留痕 / 条文指纹 / status / purge / 管理端筛选导出 |
+| 1 | `c317d5c3` | fix(policy)：类型再导出需引入本地绑定（TS2304） |
+| 1 | `ee4bb276` | feat(policy-ui)：政策页检索字号与状态卡片、勾选清单、隐私面板、管理端面板拆分 |
+| 1 | `d3aef3b2` | fix(admin-policy)：Td 不接受 title（一个编译错打红四个 job） |
+| 1 | `de6d7a52` | fix(policy)：新记录 recordedAt 显式写出 |
+| 1 | `386b9a3b` | test(policy-ui)：修正检索用例断言（**未签名**，见下） |
+| 1 | `5ecde136` | test(policy)：/version 契约 + /status 门槛用例；TTS 面板显示条文版本 |
+| 2 | `71824a98` | feat(policy)：Markdown 存档 / 同意轨迹 / 勾选不完整计数；拆 status 与设备凭据模块 |
+| 2 | `fc0e57c6` | feat(policy-ui)：存档下载、轨迹时间线、管理端指纹对账、Th 语义 |
+| 2 | `371bf3b6` | fix(policy)：swagger 描述里的冒号触发 YAML 语义错误（openapi drift） |
+| 3 | `bf8a48d1` | feat(policy-ui)：继续阅读 / `/` 聚焦 / 剩余天数 / 指纹复制；再拆 PolicyPage |
+
+### CI 结果
+
+`commit bf8a48d1`：17/17 check-runs 全绿 —— Analyze (javascript / python / typescript)、
+Code Quality (fuck-u-code)、Browser cookie smoke、Deploy AMD64 image、Frontend bundle budget、
+Governance checks（含 `check:privacy-contract`）、Mongo replica integration、
+Node verification（后端 Jest 全量 + 前端 vitest，含本轮新增的 markdown 与设备凭据/轨迹用例）、
+Publish Docker (amd64)、type-check / type-check-backend / type-check-frontend。
+
+过程中被 CI 拦下并修掉的三个真实缺陷：TS2304（类型再导出未引入本地绑定）、
+Td 不接受 `title`（一个编译错同时打红 4 个 job）、swagger 描述里的「冒号+空格」被 YAML 当成
+嵌套映射（swagger-jsdoc 静默丢块 → openapi drift 红）。第三个另在本地用
+`generate-openapi` + `check-openapi-drift` 复核（178 documented / 178 spec paths 全对账）。
+
+`Nightly live / integration slice` 仍为**存量红**（自 2026-09-19 起每个 schedule 运行均失败，
+根因是 workflow 自述的 ts-jest@29 × typescript@7 决策项 D1，两个套件在编译期就没起来），
+与本次无关；因此 `policyApi.test.ts` 未能在真实环境跑过，但已把它的 `/version` 全等断言改为
+`objectContaining`，避免 D1 修好后因本轮字段扩展而红。
+
+### 备注：一条提交未签名
+
+`386b9a3b` 为 `git commit --no-gpg-sign`：先以配置键 `5FE9F6542590337E` 与主钥
+`3B87BEEF539D32B910C076218D05F105A6DD6BA0` 各试一次真实签名，均报 `gpg: failed to sign the data`
+（非交互 shell 拿不到 pinentry），按仓库「真实签名失败才退回」的约定落盘；其余提交均为 `%G?=G`。
+如需补齐可在本地 amend 重签后再推——未自行改写已推送的 main。
+
+### 清单核对
+
+- 第一轮 P-01 ～ P-20：全部已修，无回退（第二、三轮都建立在第一轮的字段与端点之上）。
+- 第二轮 P-21 ～ P-28：全部已修。
+- 第三轮 P-29 ～ P-34：全部已修。
+- 反向核对：本轮改动的每个文件都能指回上面某条编号或「接口索引」中的新增入口。
