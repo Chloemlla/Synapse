@@ -14,7 +14,55 @@ const chunkMaxGzipBytes = Number(process.env.FRONTEND_CHUNK_MAX_GZIP_KB || 1800)
 // narrow, deterministic margin above the measured post-obfuscation baseline.
 const totalMaxGzipBytes = Number(process.env.FRONTEND_TOTAL_MAX_GZIP_KB || 4600) * 1024;
 // Require isolation for heavy deps that actually split. code-highlight may fold into other chunks depending on imports.
-const heavyChunkNames = ["documents", "pdf", "diagrams", "charts", "fingerprint"];
+const heavyChunkNames = ["documents", "pdf", "mermaid", "katex", "charts", "fingerprint"];
+
+/**
+ * 首屏（entry 静态 import 闭包）预算。
+ *
+ * 背景：/captcha-verify 的线上 trace 显示首屏被塞进了 11 个 chunk（≈2.5 MiB gzip / 7.7 MiB 原始），
+ * 其中 mermaid+katex 单包 5.43 MB，直接导致 FCP 6.7 s；随后 621 ms 的同步模块求值里
+ * 有 ~200 ms 花在全量 Prism（298 个语法）注册上。
+ * 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
+ *
+ * 这里用 Vite manifest 的 `imports`（静态依赖，不含 `dynamicImports`）还原首屏闭包，
+ * 一旦这些重包重新回到首屏关键路径，CI 立刻红灯。
+ */
+const firstScreenForbiddenName =
+  /^(?:mermaid|katex|diagrams|pdf|charts|code-highlight|prism|markdown|docx|swagger|hugeicons)[.-]/;
+const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 800) * 1024;
+
+/**
+ * 从 manifest 还原入口的静态 import 闭包（不含 dynamicImports）。
+ * @param {Record<string, any>} manifest
+ * @returns {{ files: Set<string>, css: Set<string>, sources: Set<string> }}
+ */
+function collectEntryStaticClosure(manifest) {
+  const files = new Set();
+  const css = new Set();
+  const sources = new Set();
+  const visited = new Set();
+  const stack = Object.entries(manifest)
+    .filter(([, item]) => item && item.isEntry && item.file)
+    .map(([source, item]) => [source, item]);
+
+  while (stack.length > 0) {
+    const [source, item] = stack.pop();
+    if (!item || !item.file || visited.has(source)) continue;
+    visited.add(source);
+    sources.add(source);
+    files.add(item.file);
+    for (const asset of item.css || []) css.add(asset);
+    for (const imported of item.imports || []) {
+      if (manifest[imported]) stack.push([imported, manifest[imported]]);
+    }
+  }
+
+  return { files, css, sources };
+}
+
+function assetBaseName(relative) {
+  return path.basename(relative);
+}
 
 function gzipSize(file) {
   return zlib.gzipSync(fs.readFileSync(file), { level: 9 }).byteLength;
@@ -84,11 +132,37 @@ for (const [source, item] of Object.entries(manifest)) {
   }
 }
 
+// 首屏静态闭包：重包不得回流，且闭包总量必须有预算。
+const firstScreen = collectEntryStaticClosure(manifest);
+const firstScreenAssets = [...firstScreen.files, ...firstScreen.css];
+for (const relative of firstScreenAssets) {
+  const name = assetBaseName(relative);
+  if (firstScreenForbiddenName.test(name)) {
+    failures.push(`heavy chunk leaked onto the first screen (static import of the entry): ${relative}`);
+  }
+}
+const firstScreenGzipBytes = firstScreenAssets.reduce((sum, relative) => {
+  const file = path.join(distDir, relative);
+  return fs.existsSync(file) ? sum + gzipSize(file) : sum;
+}, 0);
+if (firstScreenGzipBytes > firstScreenMaxGzipBytes) {
+  failures.push(
+    `first-screen static closure is ${(firstScreenGzipBytes / 1024).toFixed(1)} KiB gzip (budget ${firstScreenMaxGzipBytes / 1024} KiB): ${[...firstScreen.files].sort().join(", ")}`,
+  );
+}
+
 measured
   .sort((a, b) => b.gzipBytes - a.gzipBytes)
   .slice(0, 15)
   .forEach((item) => console.log(`${item.relative}: ${(item.gzipBytes / 1024).toFixed(1)} KiB gzip`));
 console.log(`Total JS/CSS: ${(totalGzipBytes / 1024).toFixed(1)} KiB gzip`);
+console.log(
+  `First-screen static closure: ${(firstScreenGzipBytes / 1024).toFixed(1)} KiB gzip across ${firstScreen.files.size} JS + ${firstScreen.css.size} CSS asset(s)`,
+);
+console.log(`  ${[...firstScreen.files].sort().join("\n  ")}`);
+if (firstScreen.css.size > 0) {
+  console.log(`  css:\n  ${[...firstScreen.css].sort().join("\n  ")}`);
+}
 
 if (failures.length > 0) {
   console.error(`Frontend bundle budget failed (${failures.length} violation(s)):`);

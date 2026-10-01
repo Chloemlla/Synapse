@@ -22,12 +22,20 @@ import { setFirstVisitVerificationEnabled } from './utils/firstVisitVerification
 import { onIpVerificationRequired } from './utils/ipVerification';
 import { recordRecentFeature } from './utils/recentFeature';
 import { fetchWithTimeout } from './utils/fetchWithTimeout';
+import { afterFirstPaintIdle } from './utils/scheduleAfterPaint';
 import ArticleCommandPalette from './components/ArticleCommandPalette';
 import { isAdminRole } from './utils/rbac';
 import { studioModalOverlayClassName } from './components/studioTheme';
 
-
 // 动态导入 clarity 以减少主 bundle 体积，避免与 FirstVisitVerification 的动态导入冲突
+// 性能：只在非验证类页面启用。Clarity 的脚本求值 + 会话回放采集会占用主线程
+// （trace 实测 124 ms）+ 持续产生逐帧 DOM 变更，和 /captcha-verify 的 cap PoW 直接抢 CPU。
+// 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
+const CLARITY_DISABLED_ROUTES = new Set(['/captcha-verify', '/hcaptcha-verify']);
+
+function isClarityDisabledPath(pathname: string): boolean {
+  return CLARITY_DISABLED_ROUTES.has(pathname.replace(/\/+$/, '') || '/');
+}
 let clarityModule: typeof import('@microsoft/clarity') | null = null;
 const loadClarity = async () => {
   if (!clarityModule) {
@@ -1101,7 +1109,14 @@ const App: React.FC = () => {
     const initializeClarity = async () => {
       if (typeof window === 'undefined') return;
 
+      // 人机验证页不采集：这里的主线程/CPU 要留给 cap PoW 与控件渲染。
+      if (isClarityDisabledPath(window.location.pathname)) return;
+
       try {
+        // 先让首帧渲染完，再到空闲时段初始化，避免 Clarity 的脚本求值和首屏抢主线程。
+        await afterFirstPaintIdle(1500);
+        if (controller.signal.aborted) return;
+
         // 从后端获取 Clarity 配置
         const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/tts/clarity/config`, {
           method: 'GET',
@@ -1133,7 +1148,6 @@ const App: React.FC = () => {
     initializeClarity();
     return () => controller.abort();
   }, []);
-
   // 用户状态变化时更新 Clarity 用户标识
   useEffect(() => {
     if (typeof window === 'undefined' || !clarityInitialized || !clarityModule) return;

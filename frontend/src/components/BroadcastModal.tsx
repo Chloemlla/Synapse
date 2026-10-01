@@ -1,8 +1,7 @@
-import React, { useMemo, createContext, use, useState, useCallback } from 'react';
+import React, { Suspense, useMemo, createContext, use, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaTimes, FaBullhorn, FaExclamationTriangle, FaInfoCircle, FaCheckCircle } from 'react-icons/fa';
 import DOMPurify from 'dompurify';
-import MarkdownRenderer from './MarkdownRenderer';
 import { useNavigate } from 'react-router-dom';
 import {
   type ConfigurationNoticeIssue,
@@ -17,6 +16,12 @@ import {
 } from './studioTheme';
 
 // ========== 类型 ==========
+
+// 性能：MarkdownRenderer 会连带 mermaid + katex + react-markdown + Prism（≈2 MB gzip）。
+// BroadcastModalProvider 挂在应用根部（App.tsx），静态引用等于让每个路由（包括 /captcha-verify）
+// 都背这套依赖；改成懒加载后只有真的弹出 markdown 广播时才拉取。
+// 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
+const MarkdownRenderer = React.lazy(() => import('./MarkdownRenderer'));
 
 export type BroadcastFormat = 'text' | 'html' | 'markdown';
 export type BroadcastLevel = 'info' | 'warn' | 'error';
@@ -240,7 +245,9 @@ function BroadcastModalView({ title, content, format = 'text', level = 'info', i
                 <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{content}</p>
               )}
               {format === 'markdown' && (
-                <MarkdownRenderer content={content} density="compact" />
+                <Suspense fallback={<div className="py-2 text-sm text-slate-500">正在渲染内容…</div>}>
+                  <MarkdownRenderer content={content} density="compact" />
+                </Suspense>
               )}
               {format === 'html' && (
                 <div

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import {
   studioModalCardClassName,
@@ -18,13 +17,36 @@ const SUPPORTED_MERMAID_PREFIX =
 // G12-04/G12-05：模块级只初始化一次。
 // securityLevel 用默认的 'strict'，禁用 mermaid 的 click 指令与原始 HTML 标签注入；
 // flowchart 关闭 htmlLabels，让标签输出原生 <text>，避免 DOMPurify 消毒把 foreignObject 里的文字剥掉。
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'strict',
-  theme: 'default',
-  fontFamily: 'inherit',
-  flowchart: { htmlLabels: false },
-});
+//
+// 性能：`mermaid` 单独一个 chunk（≈1.7 MB gzip）。用动态 import 而不是顶层静态 import，
+// 保证「代码块里没有 mermaid 图」的页面（例如 /captcha-verify）永远不会下载/求值它；
+// 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
+type MermaidApi = typeof import('mermaid')['default'];
+
+let mermaidLoader: Promise<MermaidApi> | null = null;
+
+function loadMermaid(): Promise<MermaidApi> {
+  if (!mermaidLoader) {
+    mermaidLoader = import('mermaid')
+      .then((mod) => {
+        const api = mod.default;
+        api.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'default',
+          fontFamily: 'inherit',
+          flowchart: { htmlLabels: false },
+        });
+        return api;
+      })
+      .catch((error) => {
+        // 失败不缓存，下次进代码块还能重试。
+        mermaidLoader = null;
+        throw error;
+      });
+  }
+  return mermaidLoader;
+}
 
 function normalizeMermaidCode(input: string): string {
   return (input || '')
@@ -65,6 +87,11 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
       }
 
       try {
+        const mermaid = await loadMermaid();
+        if (cancelled) {
+          return;
+        }
+
         let renderedSvg: string | null = null;
         for (const candidate of candidates) {
           try {

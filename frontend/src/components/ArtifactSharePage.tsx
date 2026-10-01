@@ -16,8 +16,8 @@ import {
   Share2,
   Tags,
 } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
 import { api } from '../api/api';
 import MarkdownRenderer from './MarkdownRenderer';
 import Mermaid from './Mermaid';
@@ -589,27 +589,42 @@ const ActionButton: React.FC<{
   </button>
 );
 
-const renderHighlightedCode = (artifact: ArtifactData, language: string, content: string) => (
-  <SyntaxHighlighter
-    language={language}
-    style={vscDarkPlus}
-    showLineNumbers
-    wrapLongLines
-    customStyle={{
-      margin: 0,
-      minHeight: '560px',
-      maxHeight: '72vh',
-      overflow: 'auto',
-      borderRadius: 0,
-      padding: '1.5rem',
-      fontSize: '14px',
-      lineHeight: '1.6',
-    }}
-    codeTagProps={{ 'aria-label': `${artifact.title} source` }}
-  >
-    {content}
-  </SyntaxHighlighter>
-);
+const renderHighlightedCode = (artifact: ArtifactData, language: string, content: string) => {
+  // 产物里的 language 来自用户数据，可能是不受支持的语法。
+  // PrismLight 遇到未注册语言会直接抛 `Unknown language`，所以未命中白名单时退化成等宽纯文本。
+  const highlightLanguage = resolveCodeLanguage(language);
+  const containerStyle: React.CSSProperties = {
+    margin: 0,
+    minHeight: '560px',
+    maxHeight: '72vh',
+    overflow: 'auto',
+    borderRadius: 0,
+    padding: '1.5rem',
+    fontSize: '14px',
+    lineHeight: '1.6',
+  };
+
+  if (!highlightLanguage) {
+    return (
+      <pre style={containerStyle} className="bg-slate-900 text-slate-100">
+        <code aria-label={`${artifact.title} source`}>{content}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <CodeHighlighter
+      language={highlightLanguage}
+      style={vscDarkPlus}
+      showLineNumbers
+      wrapLongLines
+      customStyle={containerStyle}
+      codeTagProps={{ 'aria-label': `${artifact.title} source` }}
+    >
+      {content}
+    </CodeHighlighter>
+  );
+};
 
 const renderCsv = (content: string) => {
   const rows = csvRows(content);

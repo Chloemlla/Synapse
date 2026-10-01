@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { applyCapCreditsBranding, type CapCreditsBrandingDisposer } from '../utils/capCreditsBranding';
 import { getCapThemeStyle, type CaptchaWidgetTheme } from '../utils/captchaSelection';
+import { afterFirstPaintIdle } from '../utils/scheduleAfterPaint';
 
 /**
  * trycap（Cap）控件封装。
@@ -13,6 +14,20 @@ import { getCapThemeStyle, type CaptchaWidgetTheme } from '../utils/captchaSelec
  */
 const CAP_WIDGET_SCRIPT_ID = 'cap-widget-script';
 const CAP_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cap.js/widget@0.1.58';
+
+/**
+ * Cap 默认按 `navigator.hardwareConcurrency || 8` 开解题 Worker（官方文档的 data-cap-worker-count）。
+ * 线上 trace（docs/perf/2026-10-01-captcha-verify-trace-analysis.md）里这台 13 核机器一次起了
+ * 13 个 WASM Worker，在首帧后满核跑了 ~5.9 s CPU。这里按官方默认上限收敛到 8，既保留并行度
+ * （解题耗时不会明显变长）又避免低端/多核机器把 CPU 全吃干净。
+ */
+const DEFAULT_MAX_CAP_WORKERS = 8;
+
+function defaultCapWorkerCount(): number {
+  if (typeof navigator === 'undefined') return DEFAULT_MAX_CAP_WORKERS;
+  const cores = Number(navigator.hardwareConcurrency) || DEFAULT_MAX_CAP_WORKERS;
+  return Math.max(1, Math.min(cores, DEFAULT_MAX_CAP_WORKERS));
+}
 
 interface CapWidgetElement extends HTMLElement {
   reset?: () => void;
@@ -28,6 +43,10 @@ interface CapWidgetProps {
   /** 管理端统一调控（/admin/captcha-providers → 组件外观）。 */
   theme?: CaptchaWidgetTheme;
   language?: string;
+  /** 解题 Worker 数；默认 min(hardwareConcurrency, 8)，下限 1。 */
+  workerCount?: number;
+  /** 是否等首帧绘制后再注入 Cap 脚本（默认 true，避免和首屏渲染争主线程/CPU）。 */
+  deferUntilIdle?: boolean;
   'aria-label'?: string;
 }
 
@@ -56,6 +75,8 @@ const CapWidget = ({
   onError,
   theme = 'auto',
   language,
+  workerCount,
+  deferUntilIdle = true,
   'aria-label': ariaLabel = 'trycap 人机验证',
   ref,
 }: CapWidgetInternalProps) => {
@@ -118,6 +139,13 @@ const CapWidget = ({
 
     const mount = async () => {
       try {
+        // 首帧之前的 Cap 脚本注入 + WASM 求值会直接和页面渲染抢主线程（trace 里表现为 3 624 次
+        // UpdateLayer 与 9 次丢帧），所以默认等首帧绘制完、浏览器空闲时再开工。
+        if (deferUntilIdle) {
+          await afterFirstPaintIdle(1000);
+          if (cancelled) return;
+        }
+
         // 严格 CSP 下（script-src 只放行 nonce）不给 nonce，instrumentation 的内联脚本会被浏览器拦掉，
         // 表现为 instr_timeout / blocked。把页面自身的 nonce 透给 Cap 即可。
         // CAP_CSS_NONCE 作用在控件自己注入的 <style> 上（若后端把 style-src-elem 收成 nonce-only，
@@ -138,6 +166,10 @@ const CapWidget = ({
 
       container.replaceChildren();
       const element = document.createElement('cap-widget') as CapWidgetElement;
+      const effectiveWorkerCount = workerCount ?? defaultCapWorkerCount();
+      if (Number.isFinite(effectiveWorkerCount) && effectiveWorkerCount > 0) {
+        element.setAttribute('data-cap-worker-count', String(Math.floor(effectiveWorkerCount)));
+      }
       // 尾斜杠是 Cap 端点约定的一部分，缺了会 404。
       element.setAttribute('data-cap-api-endpoint', `${apiEndpoint.replace(/\/+$/, '')}/${siteKey}/`);
       element.setAttribute('aria-label', ariaLabel);
@@ -186,7 +218,7 @@ const CapWidget = ({
       elementRef.current = null;
       container.replaceChildren();
     };
-  }, [apiEndpoint, siteKey, ariaLabel, language, loadScript, resetToken]);
+  }, [apiEndpoint, siteKey, ariaLabel, language, workerCount, deferUntilIdle, loadScript, resetToken]);
 
   useImperativeHandle(
     ref,

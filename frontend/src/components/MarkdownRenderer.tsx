@@ -3,8 +3,8 @@ import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
 import { Check, Clipboard, Code2, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Mermaid from './Mermaid';
@@ -307,6 +307,9 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     code({ node: _node, inline, className: codeClassName, children, ...props }: MarkdownCodeProps) {
       const language = getCodeLanguage(codeClassName);
       const languageLabel = language || 'text';
+      // 只把白名单内（PrismLight 已注册）的语言交给高亮器，其余退化成等宽纯文本：
+      // 未注册语言在 refractor 里会直接抛错，且全量 Prism 会让首屏多背 298 个语法。
+      const highlightLanguage = resolveCodeLanguage(language);
       const rawCode = React.Children.toArray(children).join('').replace(/\n$/, '');
       const isBlockCode = inline !== true;
 
@@ -332,11 +335,11 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               <span className="h-2 w-2 rounded-full bg-emerald-500/50" />
             </div>
           </div>
-          {language ? (
-            <SyntaxHighlighter
+          {highlightLanguage ? (
+            <CodeHighlighter
               {...props}
               style={vscDarkPlus}
-              language={language}
+              language={highlightLanguage}
               PreTag="div"
               className="!m-0 !bg-slate-900 !p-4"
               customStyle={{
@@ -346,7 +349,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               }}
             >
               {rawCode}
-            </SyntaxHighlighter>
+            </CodeHighlighter>
           ) : (
             <pre
               className="m-0 overflow-x-auto bg-slate-900 p-4 text-xs leading-relaxed text-slate-100"

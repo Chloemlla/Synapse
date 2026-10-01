@@ -72,10 +72,16 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
   auth: ["@simplewebauthn/browser", "qrcode.react"],
   fingerprint: ["@fingerprintjs/fingerprintjs"],
   animations: ["framer-motion"],
-  "code-highlight": ["react-syntax-highlighter", "prismjs"],
+  // refractor 是 react-syntax-highlighter 的 Prism 引擎（prismjs fork）；它必须和
+  // react-syntax-highlighter 同 chunk，否则会被 rolldown 合并回 react-vendor。
+  "code-highlight": ["react-syntax-highlighter", "refractor", "prismjs"],
+  markdown: ["react-markdown", "remark-gfm", "remark-math", "rehype-katex"],
   documents: ["docx"],
   pdf: ["jspdf", "html2canvas"],
-  diagrams: ["mermaid", "katex"],
+  // mermaid 与 katex 分开：两者使用场景几乎不重叠（图表 vs 数学公式），
+  // 绑一起会让只用其中一个的页面多背另一半（mermaid 单包 ≈1.7 MB gzip）。
+  mermaid: ["mermaid"],
+  katex: ["katex"],
   charts: ["chart.js", "react-chartjs-2"],
   toast: ["react-toastify"],
   // Swagger UI is only reachable from the admin-only /api-docs route.
@@ -106,10 +112,25 @@ function getManualChunk(id: string): string | undefined {
   // Normalize Windows paths so node_modules matching is reliable.
   const normalized = id.replace(/\\/g, "/");
   for (const [chunkName, deps] of Object.entries(MANUAL_CHUNKS)) {
-    if (deps.some((dep) => normalized.includes(`/node_modules/${dep}/`) || normalized.includes(`/node_modules/${dep}`))) {
+    if (deps.some((dep) => matchesPackage(normalized, dep))) {
       return chunkName;
     }
   }
+}
+
+/**
+ * 包路径匹配必须带分隔符，否则会退化成「前缀匹配」：
+ * `/node_modules/react` 也是 `react-router-dom` / `react-toastify` / `react-markdown` /
+ * `react-syntax-highlighter` / `react-chartjs-2` … 的前缀，会把它们全部吞进 react-vendor，
+ * 连连带把 react-chartjs-2 → chart.js 拉成首屏依赖。
+ * 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
+ */
+function matchesPackage(normalizedId: string, dep: string): boolean {
+  // 普通 node_modules 布局（含 pnpm 的 `<store>/node_modules/<dep>/…` 软链接真实路径）。
+  if (normalizedId.includes(`/node_modules/${dep}/`)) return true;
+  // pnpm 虚拟 store：`/node_modules/.pnpm/<dep>@<version>[_peer…]/…`（scoped 包写作 `@scope+name@`）。
+  const storeName = dep.startsWith("@") ? dep.replace("/", "+") : dep;
+  return normalizedId.includes(`/node_modules/.pnpm/${storeName}@`);
 }
 
 function normalizeBasePath(basePath: string): string {
