@@ -4,12 +4,7 @@ import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import {
-  checkAccessToken,
-  checkTempFingerprintStatus,
   reportFingerprint,
-  reportTempFingerprint,
-  verifyAccessToken,
-  verifyTempFingerprint,
 } from "../controllers/turnstile/fingerprintHandlers";
 import {
   cleanupExpiredFingerprints,
@@ -63,19 +58,15 @@ import {
   adminLimiter,
   authenticatedFingerprintLimiter,
   configLimiter,
-  fingerprintLimiter,
   publicLimiter,
 } from "../controllers/turnstile/limiters";
 
 const router = express.Router();
 
-// 指纹上报与验证
+// 指纹上报（会话鉴权）。
+// 首次访问验证已统一走 /api/ip-verification（X-IP-Verification-Token）：旧版的
+// temp-fingerprint / verify-temp-fingerprint / verify-access-token / check-access-token 链路已下线。
 router.post("/fingerprint/report", authenticateToken, authenticatedFingerprintLimiter, reportFingerprint);
-router.post("/temp-fingerprint", publicLimiter, reportTempFingerprint);
-router.post("/verify-temp-fingerprint", fingerprintLimiter, verifyTempFingerprint);
-router.post("/verify-access-token", fingerprintLimiter, verifyAccessToken);
-router.get("/check-access-token/:fingerprint", fingerprintLimiter, checkAccessToken);
-router.get("/temp-fingerprint/:fingerprint", fingerprintLimiter, checkTempFingerprintStatus);
 
 // 统计与清理（管理员）
 router.post(

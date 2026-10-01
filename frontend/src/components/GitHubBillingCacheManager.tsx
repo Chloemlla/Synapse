@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaDatabase, FaClock, FaTrash, FaSync, FaUsers, FaChartLine, FaEye, FaHdd, FaFire } from 'react-icons/fa';
-import { getFingerprint, getAccessToken } from '../utils/fingerprint';
 import { useNotification } from '../components/Notification';
 import { getApiBaseUrl } from '../api/api';
-import { isFirstVisitVerificationEnabled } from '../utils/firstVisitVerificationConfig';
+import { buildIpVerificationHeaders } from '../utils/ipVerification';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getBackendErrorMessage } from '../utils/backendError';
@@ -50,30 +49,16 @@ const GitHubBillingCacheManager: React.FC = () => {
     const { user } = useAuth();
     const canWrite = isSuperAdmin(user?.role);
 
-    // 获取管理员和Turnstile认证头部
-    const getAdminTurnstileAuthHeaders = async () => {
+    // 首访验证头统一由 utils/ipVerification 生成（X-Fingerprint + X-IP-Verification-Token）。
+    // 这里不再读已下线的 Turnstile 访问令牌——旧逻辑拿不到 5 分钟有效期的访问令牌
+    // 就直接抛错，把请求杀死在本地；正确行为是照常发请求，由首访门禁统一接管。
+    const getVerificationHeaders = async () => {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json'
         };
 
-        if (!isFirstVisitVerificationEnabled()) {
-            return headers;
-        }
-
-        const fingerprint = await getFingerprint();
-        if (!fingerprint) {
-            throw new Error('缺少浏览器指纹');
-        }
-
-        const turnstileToken = getAccessToken(fingerprint);
-        if (!turnstileToken) {
-            throw new Error('缺少 Turnstile 访问令牌');
-        }
-
-        headers['X-Turnstile-Token'] = turnstileToken;
-        headers['X-Fingerprint'] = fingerprint;
-
-        return headers;
+        const verificationHeaders = await buildIpVerificationHeaders();
+        return { ...headers, ...verificationHeaders };
     };
 
     // 加载缓存客户列表
@@ -108,7 +93,7 @@ const GitHubBillingCacheManager: React.FC = () => {
         setMetricsLoading(true);
         setLoadingStage('metrics');
         try {
-            const headers = await getAdminTurnstileAuthHeaders();
+            const headers = await getVerificationHeaders();
             const response = await fetch(`${getApiBaseUrl()}/api/github-billing/cache/metrics`, {
                 headers,
                 credentials: 'include',
@@ -146,7 +131,7 @@ const GitHubBillingCacheManager: React.FC = () => {
         if (!window.confirm(`确定清除客户「${customerId}」的缓存？`)) return;
         setClearingCache(customerId);
         try {
-            const headers = await getAdminTurnstileAuthHeaders();
+            const headers = await getVerificationHeaders();
             const res = await fetch(`${getApiBaseUrl()}/api/github-billing/cache/${customerId}`, {
                 method: 'DELETE',
                 headers,
@@ -177,7 +162,7 @@ const GitHubBillingCacheManager: React.FC = () => {
         if (!window.confirm('确定清除全部过期缓存条目？')) return;
         setClearingExpired(true);
         try {
-            const headers = await getAdminTurnstileAuthHeaders();
+            const headers = await getVerificationHeaders();
             const res = await fetch(`${getApiBaseUrl()}/api/github-billing/cache/expired`, {
                 method: 'DELETE',
                 headers,

@@ -3,8 +3,7 @@ import { motion as m } from 'framer-motion';
 import { FaSync, FaGithub, FaDollarSign, FaCalendarAlt, FaUser, FaTrash } from 'react-icons/fa';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
-import { getFingerprint, getAccessToken } from '../utils/fingerprint';
-import { isFirstVisitVerificationEnabled } from '../utils/firstVisitVerificationConfig';
+import { buildIpVerificationHeaders } from '../utils/ipVerification';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { studioEyebrowPillClassName } from './studioTheme';
@@ -122,63 +121,16 @@ const GitHubBillingDashboard: React.FC = () => {
   const [clearingCache, setClearingCache] = useState(false);
   const [, setLoadingStage] = useState<'idle' | 'initial' | 'cached' | 'complete'>('idle');
 
-  // 获取带Turnstile访问令牌的请求头（令牌可选，有则携带）
-  const getTurnstileAuthHeaders = async (): Promise<Record<string, string>> => {
+  // 首访验证头统一由 utils/ipVerification 生成（X-Fingerprint + X-IP-Verification-Token）。
+  // 旧实现读的是已下线的 Turnstile 访问令牌（localStorage.accessTokens，5 分钟有效期），
+  // 与当前首访门禁（/api/ip-verification）不是同一条链路；现在两个请求头都从这里取。
+  const getVerificationHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };
 
-    // 开发环境下跳过Turnstile验证
-    if (isDevelopment()) {
-      return headers;
-    }
-
-    if (isFirstVisitVerificationEnabled()) {
-      // 尝试获取浏览器指纹，有则携带，无则跳过
-      try {
-        const fingerprint = await getFingerprint();
-        if (fingerprint) {
-          headers['X-Fingerprint'] = fingerprint;
-        }
-      } catch {
-        // 获取失败不阻塞请求
-      }
-    }
-
-    return headers;
-  };
-
-  // 检测是否为开发环境
-  const isDevelopment = () => {
-    return process.env.NODE_ENV === 'development' ||
-           process.env.NODE_ENV === 'dev' ||
-           window.location.hostname === 'localhost' ||
-           window.location.hostname === '127.0.0.1';
-  };
-
-  // 获取带管理员令牌和Turnstile访问令牌的请求头（用于缓存操作，Turnstile令牌可选）
-  const getAdminTurnstileAuthHeaders = async (): Promise<Record<string, string>> => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-
-    // 尝试获取Turnstile令牌，有则携带
-    if (!isDevelopment() && isFirstVisitVerificationEnabled()) {
-      try {
-        const fingerprint = await getFingerprint();
-        if (fingerprint) {
-          headers['X-Fingerprint'] = fingerprint;
-          const turnstileToken = getAccessToken(fingerprint);
-          if (turnstileToken) {
-            headers['X-Turnstile-Token'] = turnstileToken;
-          }
-        }
-      } catch {
-        // 获取失败不阻塞请求
-      }
-    }
-
-    return headers;
+    const verificationHeaders = await buildIpVerificationHeaders();
+    return { ...headers, ...verificationHeaders };
   };
 
   // 智能处理响应数据格式
@@ -281,7 +233,7 @@ const GitHubBillingDashboard: React.FC = () => {
   const fetchBillingData = useCallback(async (forceRefresh: boolean = false) => {
     setLoading(true);
     try {
-      const headers = await getTurnstileAuthHeaders();
+      const headers = await getVerificationHeaders();
       const url = forceRefresh
         ? `${getApiBaseUrl()}/api/github-billing/usage?force=true`
         : `${getApiBaseUrl()}/api/github-billing/usage`;
@@ -329,24 +281,15 @@ const GitHubBillingDashboard: React.FC = () => {
     }
   }, [setNotification]);
 
-  // 检查是否有管理员访问令牌（Turnstile令牌不再强制要求）
-  const checkAdminAndTurnstileToken = async (): Promise<boolean> => {
-    return true;
-  };
-
   // 清除缓存
   const clearCache = useCallback(async (customerId?: string) => {
-    if (!(await checkAdminAndTurnstileToken())) {
-      return;
-    }
-
     setClearingCache(true);
     try {
       const url = customerId
         ? `${getApiBaseUrl()}/api/github-billing/cache/${customerId}`
         : `${getApiBaseUrl()}/api/github-billing/cache/expired`;
 
-      const headers = await getAdminTurnstileAuthHeaders();
+      const headers = await getVerificationHeaders();
 
       const res = await fetch(url, {
         method: 'DELETE',
@@ -921,7 +864,7 @@ const GitHubBillingDashboard: React.FC = () => {
           </div>
           <ul className="mt-4 space-y-2 text-sm leading-7 text-slate-600">
             <li>• <strong className="text-slate-800">获取数据：</strong>点击“获取数据”按钮从 GitHub API 获取最新的账单数据</li>
-            <li>• <strong className="text-slate-800">访问令牌：</strong>如果后端启用了首次访问验证（ENABLE_FIRST_VISIT_VERIFICATION），需要通过 Turnstile 验证获取访问令牌</li>
+            <li>• <strong className="text-slate-800">首访验证：</strong>如果后端启用了首次访问验证（ENABLE_FIRST_VISIT_VERIFICATION），首访门禁会统一带上验证请求头，无需在此额外处理</li>
             <li>• <strong className="text-slate-800">Customer ID：</strong>系统自动使用后端配置的默认值</li>
             <li>• <strong className="text-slate-800">数据缓存：</strong>系统会自动缓存获取的数据，避免频繁调用 GitHub API</li>
             <li>• <strong className="text-slate-800">金额显示：</strong>billableAmount 会自动格式化为两位小数，同时显示原始值</li>

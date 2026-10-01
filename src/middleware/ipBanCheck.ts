@@ -138,11 +138,6 @@ const WHITELIST_PATHS = [
   "/api/turnstile/fingerprint/report",
   "/api/turnstile/fingerprint/status",
   "/api/turnstile/fingerprint/dismiss",
-  "/api/turnstile/temp-fingerprint",
-  "/api/turnstile/verify-temp-fingerprint",
-  "/api/turnstile/verify-access-token",
-  // 访问令牌和指纹状态查询
-  "/api/turnstile/check-access-token",
 ];
 
 /**
