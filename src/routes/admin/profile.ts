@@ -281,7 +281,7 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
         // G2-13: 带 counter 重放防护（原子消费）
         const totpCheck = TOTPService.verifyTokenWithCounter(verificationCode, dbUser.totpSecret);
         let isValid = totpCheck.valid;
-        if (isValid && totpCheck.counter !== null) {
+        if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
           isValid = await UserStorage.consumeTotpCounter(dbUser.id, totpCheck.counter);
         }
 

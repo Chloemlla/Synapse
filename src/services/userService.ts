@@ -665,7 +665,13 @@ export { UserModel };
 
 // G2-13: 原子消费 TOTP counter——只有传入的 counter 严格大于已记录值时更新成功，
 // 否则说明该 counter 已被使用（重放），返回 false。
+// 非有限值（NaN/Infinity）直接拒绝：拿它去 $set 会让 Mongoose 抛 CastError，
+// 把整条 TOTP 验证链打成 500（曾发生：verifyDelta 不返回 counter → NaN）。
 export const consumeTotpCounter = async (id: string, counter: number): Promise<boolean> => {
+  if (!Number.isFinite(counter)) {
+    return false;
+  }
+
   const result = await UserModel.updateOne(
     { id, $or: [{ lastTotpCounter: { $exists: false } }, { lastTotpCounter: { $lt: counter } }] },
     { $set: { lastTotpCounter: counter } },

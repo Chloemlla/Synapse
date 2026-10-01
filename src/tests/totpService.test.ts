@@ -123,4 +123,33 @@ describe("TOTPService", () => {
       });
     });
   });
+
+  describe("verifyTokenWithCounter", () => {
+    it("返回可落库的有限绝对时间步（回归：曾返回 NaN 打爆 lastTotpCounter）", () => {
+      const secret = TOTPService.generateSecret("counteruser");
+      const token = require("speakeasy").totp({ secret, encoding: "base32", step: 30 });
+
+      const first = TOTPService.verifyTokenWithCounter(token, secret);
+      expect(first.valid).toBe(true);
+      expect(first.counter).not.toBeNull();
+      expect(Number.isFinite(first.counter as number)).toBe(true);
+      expect(Number.isInteger(first.counter as number)).toBe(true);
+
+      // 同一令牌命中的是它自己的时间步，与调用时落在窗口内哪一步无关：
+      // 重放防护（lastTotpCounter 严格递增）据此稳定拒绝复用。
+      const second = TOTPService.verifyTokenWithCounter(token, secret);
+      expect(second.counter).toBe(first.counter);
+    });
+
+    it("验证失败时 counter 为 null", () => {
+      const secret = TOTPService.generateSecret("counteruser2");
+      const result = TOTPService.verifyTokenWithCounter("000000", secret);
+      // 极小概率 000000 恰好是当前码；退化为“只要 valid，counter 必须是有限数”。
+      if (!result.valid) {
+        expect(result.counter).toBeNull();
+      } else {
+        expect(Number.isFinite(result.counter as number)).toBe(true);
+      }
+    });
+  });
 });

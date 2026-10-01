@@ -233,7 +233,7 @@ export class TOTPController {
       // 验证令牌（G2-13：带 counter 重放防护，原子消费）
       const totpCheck = TOTPService.verifyTokenWithCounter(token, currentUser.totpSecret || "");
       let isValid = totpCheck.valid;
-      if (isValid && totpCheck.counter !== null) {
+      if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
         isValid = await UserStorage.consumeTotpCounter(userId, totpCheck.counter);
         if (!isValid) {
           logger.warn("verifyAndEnable: TOTP 重放被拒绝", { userId });
@@ -355,7 +355,7 @@ export class TOTPController {
         // 验证TOTP令牌（G2-13：带 counter 重放防护，原子消费）
         const totpCheck = TOTPService.verifyTokenWithCounter(token, user.totpSecret || "");
         isValid = totpCheck.valid;
-        if (isValid && totpCheck.counter !== null) {
+        if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
           isValid = await UserStorage.consumeTotpCounter(user.id, totpCheck.counter);
           if (!isValid) {
             logger.warn("verifyToken: TOTP 重放被拒绝", { userId });

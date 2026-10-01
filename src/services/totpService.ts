@@ -10,6 +10,9 @@ if (process.env.TZ !== "Asia/Shanghai") {
   logger.info("TOTP服务时区已设置为上海");
 }
 
+/** TOTP 时间步（秒）。RFC 6238 默认 30s；生成 URL、校验、重放防护三处必须同源。 */
+const TOTP_STEP_SECONDS = 30;
+
 export class TOTPService {
   /**
    * 生成TOTP密钥
@@ -66,7 +69,7 @@ export class TOTPService {
         encoding: "base32", // 明确指定传入的是base32编码
         algorithm: "sha1",
         digits: 6,
-        period: 30,
+        period: TOTP_STEP_SECONDS,
       });
 
       if (!otpauthUrl) {
@@ -80,7 +83,7 @@ export class TOTPService {
         urlPattern: otpauthUrl.replace(/secret=[^&]+/, "secret=***"),
         algorithm: "sha1",
         digits: 6,
-        period: 30,
+        period: TOTP_STEP_SECONDS,
       });
 
       return otpauthUrl;
@@ -196,32 +199,43 @@ export class TOTPService {
         serverTime: now.getTime(),
       });
 
-      // verifyDelta 返回 { delta, counter }，delta 为相对当前步的偏移，counter 为绝对时间步。
+      // speakeasy 的 totp.verifyDelta 只返回相对偏移（{ delta }），**不返回绝对时间步**
+      // （@types/speakeasy 也只声明 delta；speakeasy@2 的实现里 hotp/totp 都是只回 delta）。
+      // 之前直接读 verified.counter 得到 undefined，Number(undefined) → NaN，
+      // 落库时就撑爆 User.lastTotpCounter 的 Number 转换（Cast to Number failed for value "NaN"）。
+      // 修法：显式传入基准 counter（同时消掉 verifyDelta 内部自取 Date.now() 跨 30s 边界
+      // 导致 counter 差一步的可能），绝对命中的 counter = 基准 counter + delta。
+      const baseCounter = Math.floor(Date.now() / 1000 / TOTP_STEP_SECONDS);
       const delta = speakeasy.totp.verifyDelta({
         secret,
         encoding: "base32",
         token,
         window,
-        step: 30,
+        step: TOTP_STEP_SECONDS,
+        counter: baseCounter,
       });
 
-      if (!delta || typeof delta !== "object") {
+      if (!delta || typeof delta !== "object" || !Number.isFinite(delta.delta)) {
         logger.info("TOTP验证结果:", { result: false, window, timeZone, currentTime, localTime });
         return { valid: false, counter: null };
       }
 
-      // @types/speakeasy 只声明了 delta，运行时 verifyDelta 还返回 counter（绝对时间步）。
-      const verified = delta as { delta: number; counter: number };
+      const counter = baseCounter + delta.delta;
+      if (!Number.isFinite(counter)) {
+        logger.error("TOTP验证命中非法counter:", { delta: delta.delta, baseCounter });
+        return { valid: false, counter: null };
+      }
+
       logger.info("TOTP验证结果:", {
         result: true,
-        delta: verified.delta,
-        counter: verified.counter,
+        delta: delta.delta,
+        counter,
         window,
         timeZone,
         currentTime,
         localTime,
       });
-      return { valid: true, counter: Number(verified.counter) };
+      return { valid: true, counter };
     } catch (error) {
       logger.error("验证TOTP令牌失败:", error);
       return { valid: false, counter: null };
