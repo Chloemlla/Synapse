@@ -1,9 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion as m, AnimatePresence } from 'framer-motion';
 import { FaShieldAlt } from 'react-icons/fa';
-import HCaptchaWidget, { HCaptchaWidgetRef } from './HCaptchaWidget';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
 import { api } from '../api/api';
+import { getFingerprint } from '../utils/fingerprint';
+import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
+import { CaptchaType, getCaptchaDisplayName } from '../utils/captchaSelection';
 import {
   InfoBadge,
   InfoPanel,
@@ -11,6 +13,25 @@ import {
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
 } from './studioTheme';
+
+// 与首访门闸同款：按后端选中的供应商懒加载对应组件，不把三家 SDK 都塞进首屏。
+const TurnstileWidget = lazy(() =>
+  import('./TurnstileWidget').then((module) => ({ default: module.TurnstileWidget })),
+);
+const HCaptchaWidget = lazy(() => import('./HCaptchaWidget'));
+const CapWidget = lazy(() => import('./CapWidget'));
+
+type ProviderMode = 'turnstile' | 'hcaptcha' | 'trycap';
+
+/**
+ * 验证终点：与首访门闸一致，按后端选中的供应商走后端校验接口
+ * （turnstile / hcaptcha / trycap 三家各自的 verify，均为 publicLimiter 限流的公开端点）。
+ */
+const VERIFY_ENDPOINTS: Record<ProviderMode, string> = {
+  turnstile: '/api/turnstile/verify-token',
+  hcaptcha: '/api/turnstile/hcaptcha-verify',
+  trycap: '/api/turnstile/cap-verify',
+};
 
 interface VerificationResult {
   success: boolean;
@@ -24,125 +45,158 @@ interface VerificationResult {
   };
 }
 
-interface HCaptchaVerificationPageBaseProps {
-  siteKey?: string;
+interface CaptchaVerificationPageBaseProps {
   onVerificationSuccess?: (result: VerificationResult) => void;
   onVerificationFailure?: (error: string) => void;
   title?: string;
   description?: string;
 }
 
-interface ReturnableHCaptchaVerificationPageProps extends HCaptchaVerificationPageBaseProps {
+interface ReturnableCaptchaVerificationPageProps extends CaptchaVerificationPageBaseProps {
   onBack: () => void;
 }
 
-type HCaptchaVerificationPageFrameProps = HCaptchaVerificationPageBaseProps & {
+type CaptchaVerificationPageFrameProps = CaptchaVerificationPageBaseProps & {
   backAction?: {
     label: string;
     onBack: () => void;
   };
 };
 
-const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps> = ({
-  siteKey,
+const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> = ({
   onVerificationSuccess,
   onVerificationFailure,
-  title = "人机验证",
-  description = "请完成以下验证以继续访问",
+  title = '人机验证',
+  description = '请完成以下验证以继续访问',
   backAction,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
-  const [captchaToken, setCaptchaToken] = useState<string>('');
-  const [siteKeyConfig, setSiteKeyConfig] = useState<string>('');
-  const hcaptchaRef = useRef<HCaptchaWidgetRef>(null);
+  const [fingerprint, setFingerprint] = useState('');
+  // 每次重试换 key，强制三家组件里的任意一个重新挂载（等价于 reset）。
+  const [widgetKey, setWidgetKey] = useState(0);
 
-  // 获取 hCaptcha 配置
+  // 指纹是后端选择供应商与校验入参的一部分（与首访门闸同一套 secure-captcha-config 流程）。
   useEffect(() => {
-    const fetchHCaptchaConfig = async () => {
-      try {
-        // 首先尝试从公共配置获取
-        const response = await api.get('/api/turnstile/public-config');
-        if (response.data?.hcaptchaEnabled && response.data?.hcaptchaSiteKey) {
-          setSiteKeyConfig(response.data.hcaptchaSiteKey);
-        } else {
-          setError('hCaptcha 未启用或配置不完整');
-        }
-      } catch (err) {
-        console.error('获取 hCaptcha 配置失败:', err);
-        setError('无法获取验证配置，请稍后重试');
-      }
+    let cancelled = false;
+    void getFingerprint().then((value) => {
+      if (!cancelled) setFingerprint(value || '');
+    });
+    return () => {
+      cancelled = true;
     };
+  }, []);
 
-    if (!siteKey) {
-      fetchHCaptchaConfig();
-    } else {
-      setSiteKeyConfig(siteKey);
-    }
-  }, [siteKey]);
+  const {
+    captchaConfig,
+    loading: selectionLoading,
+    error: selectionError,
+    regenerateSelection,
+    siteKey,
+    apiEndpoint,
+    enabled,
+  } = useSecureCaptchaSelection({ fingerprint });
 
-  // 处理 hCaptcha 验证完成
-  const handleCaptchaVerify = useCallback(async (token: string) => {
-    setCaptchaToken(token);
-    setIsLoading(true);
-    setError('');
-    setVerificationResult(null);
+  const providerMode = useMemo<ProviderMode | null>(() => {
+    if (!captchaConfig || !enabled || !siteKey) return null;
+    if (captchaConfig.captchaType === CaptchaType.TRYCAP) return 'trycap';
+    return captchaConfig.captchaType === CaptchaType.HCAPTCHA ? 'hcaptcha' : 'turnstile';
+  }, [captchaConfig, enabled, siteKey]);
 
-    try {
-      // 向后端发送验证请求
-      const response = await api.post('/api/turnstile/hcaptcha-verify', {
-        token,
-        timestamp: new Date().toISOString()
-      });
+  const providerLabel = useMemo(() => {
+    if (providerMode === 'trycap') return getCaptchaDisplayName(CaptchaType.TRYCAP);
+    if (providerMode === 'hcaptcha') return getCaptchaDisplayName(CaptchaType.HCAPTCHA);
+    if (providerMode === 'turnstile') return getCaptchaDisplayName(CaptchaType.TURNSTILE);
+    return '人机验证';
+  }, [providerMode]);
 
-      const result: VerificationResult = {
-        success: response.data.success || false,
-        message: response.data.message || '验证完成',
-        score: response.data.score,
-        timestamp: response.data.timestamp || new Date().toISOString(),
-        details: response.data.details
-      };
+  // 选择阶段的错误（后端不可用 / 三家都没配置）直接呈现，避免用户对着空白框干等。
+  const selectionFailure = useMemo(() => {
+    if (selectionLoading) return '';
+    if (selectionError) return selectionError;
+    if (!captchaConfig || !enabled || !siteKey) return '验证服务暂不可用，请稍后重试';
+    return '';
+  }, [captchaConfig, enabled, selectionError, selectionLoading, siteKey]);
 
-      setVerificationResult(result);
+  // 拿到挑战 token 后立刻交给后端校验，成功/失败都落到同一份结果里。
+  const handleChallengeToken = useCallback(
+    async (token: string) => {
+      if (!providerMode || !token) return;
 
-      if (result.success) {
-        onVerificationSuccess?.(result);
-      } else {
-        onVerificationFailure?.(result.message);
+      setIsLoading(true);
+      setError('');
+      setVerificationResult(null);
+
+      try {
+        const payload: Record<string, unknown> = { token };
+        if (providerMode === 'hcaptcha') {
+          payload.timestamp = new Date().toISOString();
+          if (fingerprint) payload.fingerprint = fingerprint;
+        }
+
+        const response = await api.post(VERIFY_ENDPOINTS[providerMode], payload);
+        const data = response.data || {};
+        const result: VerificationResult = {
+          // 校验端点对「验证已跳过」也会回 success:true（上线开关关着时的既有语义）。
+          success: Boolean(data.success) && data.verified !== false,
+          message:
+            typeof data.message === 'string' && data.message
+              ? data.message
+              : data.success === false
+                ? '验证失败，请重试'
+                : '验证完成',
+          score: typeof data.score === 'number' ? data.score : undefined,
+          timestamp: typeof data.timestamp === 'string' ? data.timestamp : new Date().toISOString(),
+          details: data.details,
+        };
+
+        setVerificationResult(result);
+
+        if (result.success) {
+          onVerificationSuccess?.(result);
+        } else {
+          onVerificationFailure?.(result.message);
+        }
+      } catch (err: any) {
+        const payload = err?.response?.data;
+        // 403 是 IP 封禁（带 reason/expiresAt），其余是校验失败；两者都要给出后端原文。
+        const errorMessage =
+          (typeof payload?.message === 'string' && payload.message) ||
+          (typeof payload?.error === 'string' && payload.error) ||
+          (payload?.verified === false ? '验证未通过，请重试' : '验证失败，请重试');
+        setError(errorMessage);
+        onVerificationFailure?.(errorMessage);
+        setWidgetKey((value) => value + 1);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.message || '验证失败，请重试';
-      setError(errorMessage);
-      onVerificationFailure?.(errorMessage);
-      
-      // 重置验证码
-      hcaptchaRef.current?.reset();
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onVerificationSuccess, onVerificationFailure]);
+    },
+    [fingerprint, onVerificationFailure, onVerificationSuccess, providerMode],
+  );
 
-  // 处理验证码过期
-  const handleCaptchaExpire = useCallback(() => {
-    setCaptchaToken('');
+  const handleChallengeExpire = useCallback(() => {
     setVerificationResult(null);
     setError('验证码已过期，请重新验证');
   }, []);
 
-  // 处理验证码错误
-  const handleCaptchaError = useCallback((error: any) => {
-    console.error('hCaptcha 错误:', error);
+  const handleChallengeError = useCallback((widgetError: unknown) => {
+    console.error('人机验证组件错误:', widgetError);
     setError('验证组件加载失败，请刷新页面重试');
   }, []);
 
-  // 重新验证
   const handleRetry = useCallback(() => {
     setError('');
     setVerificationResult(null);
-    setCaptchaToken('');
-    hcaptchaRef.current?.reset();
+    setWidgetKey((value) => value + 1);
   }, []);
+
+  const handleReselect = useCallback(() => {
+    setError('');
+    setVerificationResult(null);
+    setWidgetKey((value) => value + 1);
+    regenerateSelection();
+  }, [regenerateSelection]);
 
   // 页面动画变体
   const pageVariants = {
@@ -186,7 +240,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
             <FaShieldAlt className="text-xl sm:text-2xl" />
           </m.div>
           <div className="mb-3 flex justify-center">
-            <InfoBadge>hCaptcha</InfoBadge>
+            <InfoBadge>{providerLabel}</InfoBadge>
           </div>
           <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-2">{title}</h1>
           <p className="text-sm leading-6 text-slate-600">{description}</p>
@@ -194,28 +248,55 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
 
         {/* 验证区域 */}
         <div className="space-y-6">
-          {/* hCaptcha 组件 */}
-          {siteKeyConfig && !verificationResult && (
+          {/* 供应商由后端 captcha-providers 选择（上线开关 + 权重 + 额度），前端只负责渲染对应组件 */}
+          {providerMode && !verificationResult && (
             <m.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
               className="flex justify-center"
             >
-              <HCaptchaWidget
-                ref={hcaptchaRef}
-                siteKey={siteKeyConfig}
-                onVerify={handleCaptchaVerify}
-                onExpire={handleCaptchaExpire}
-                onError={handleCaptchaError}
-                size="normal"
-              />
+              <Suspense
+                fallback={
+                  <div className="flex justify-center py-6">
+                    <SimpleLoadingSpinner size={0.75} />
+                  </div>
+                }
+              >
+                {providerMode === 'turnstile' ? (
+                  <TurnstileWidget
+                    key={widgetKey}
+                    siteKey={siteKey}
+                    onVerify={handleChallengeToken}
+                    onExpire={handleChallengeExpire}
+                    onError={handleChallengeError}
+                  />
+                ) : providerMode === 'trycap' ? (
+                  <CapWidget
+                    key={widgetKey}
+                    siteKey={siteKey}
+                    apiEndpoint={apiEndpoint || ''}
+                    onVerify={handleChallengeToken}
+                    onExpire={handleChallengeExpire}
+                    onError={handleChallengeError}
+                  />
+                ) : (
+                  <HCaptchaWidget
+                    key={widgetKey}
+                    siteKey={siteKey}
+                    onVerify={handleChallengeToken}
+                    onExpire={handleChallengeExpire}
+                    onError={handleChallengeError}
+                    size="normal"
+                  />
+                )}
+              </Suspense>
             </m.div>
           )}
 
-          {/* 加载状态 */}
+          {/* 加载状态（供应商选择中 / 后端校验中） */}
           <AnimatePresence>
-            {isLoading && (
+            {(isLoading || selectionLoading) && (
               <m.div
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -223,7 +304,9 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                 className="flex flex-col items-center space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
               >
                 <SimpleLoadingSpinner size={0.75} />
-                <p className="text-sm text-slate-600">正在验证中...</p>
+                <p className="text-sm text-slate-600">
+                  {selectionLoading ? '正在获取验证方式...' : '正在验证中...'}
+                </p>
               </m.div>
             )}
           </AnimatePresence>
@@ -266,7 +349,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                     }`}>
                       {verificationResult.message}
                     </p>
-                    
+
                     {/* 详细信息 */}
                     {verificationResult.details && (
                       <div className="mt-3 space-y-1">
@@ -292,6 +375,10 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                         )}
                       </div>
                     )}
+
+                    <p className="mt-3 text-xs text-slate-500">
+                      本次验证方式: {providerLabel}
+                    </p>
                   </div>
                 </div>
               </m.div>
@@ -300,7 +387,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
 
           {/* 错误信息 */}
           <AnimatePresence>
-            {error && (
+            {(error || selectionFailure) && (
               <m.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -313,7 +400,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                   </svg>
                   <div>
                     <h3 className="font-semibold text-rose-800">验证错误</h3>
-                    <p className="text-sm text-rose-700 mt-1">{error}</p>
+                    <p className="text-sm text-rose-700 mt-1">{error || selectionFailure}</p>
                   </div>
                 </div>
               </m.div>
@@ -330,7 +417,17 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                 {backAction.label}
               </button>
             )}
-            
+
+            {selectionFailure ? (
+              <button
+                onClick={handleReselect}
+                disabled={selectionLoading}
+                className={`flex-1 ${studioPrimaryButtonClassName}`}
+              >
+                重新获取验证方式
+              </button>
+            ) : null}
+
             {(error || (verificationResult && !verificationResult.success)) && (
               <button
                 onClick={handleRetry}
@@ -339,7 +436,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
                 重新验证
               </button>
             )}
-            
+
             {verificationResult?.success && (
               <button
                 onClick={() => window.location.reload()}
@@ -354,7 +451,7 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
         {/* 底部信息 */}
         <div className="mt-8 pt-6 border-t border-slate-200">
           <p className="text-xs text-slate-500 text-center">
-            此验证由 hCaptcha 提供技术支持
+            此验证由 {providerLabel} 提供技术支持
           </p>
         </div>
           </InfoPanel>
@@ -364,18 +461,18 @@ const HCaptchaVerificationPageFrame: React.FC<HCaptchaVerificationPageFrameProps
   );
 };
 
-export const StandaloneHCaptchaVerificationPage: React.FC<HCaptchaVerificationPageBaseProps> = (props) => (
-  <HCaptchaVerificationPageFrame {...props} />
+export const StandaloneCaptchaVerificationPage: React.FC<CaptchaVerificationPageBaseProps> = (props) => (
+  <CaptchaVerificationPageFrame {...props} />
 );
 
-export const ReturnableHCaptchaVerificationPage: React.FC<ReturnableHCaptchaVerificationPageProps> = ({
+export const ReturnableCaptchaVerificationPage: React.FC<ReturnableCaptchaVerificationPageProps> = ({
   onBack,
   ...props
 }) => (
-  <HCaptchaVerificationPageFrame
+  <CaptchaVerificationPageFrame
     {...props}
     backAction={{ label: '返回', onBack }}
   />
 );
 
-export default StandaloneHCaptchaVerificationPage;
+export default StandaloneCaptchaVerificationPage;

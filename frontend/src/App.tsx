@@ -121,8 +121,8 @@ const GitHubBillingDashboard = React.lazy(() => import('./components/GitHubBilli
 const PublicShortLinkCreator = React.lazy(() => import('./components/PublicShortLinkCreator'));
 const SpeechToTextPage = React.lazy(() => import('./components/speech-to-text/SpeechToTextPage').then((module) => ({ default: module.SpeechToTextPage })));
 
-// hCaptcha 验证页面懒加载
-const HCaptchaVerificationPage = React.lazy(() => import('./components/HCaptchaVerificationPage'));
+// 人机验证页面懒加载（验证方式由后端 captcha-providers 选择）
+const CaptchaVerificationPage = React.lazy(() => import('./components/CaptchaVerificationPage'));
 
 // 通知测试页面懒加载
 const NotificationTestPage = React.lazy(() => import('./components/NotificationTestPage'));
@@ -734,7 +734,9 @@ const App: React.FC = () => {
         <Route path="/smart-human-check" element={renderAdminRoute(<SmartHumanCheckTestPage />)} />
         <Route path="/notification-test" element={renderAdminRoute(<NotificationTestPage />)} />
         <Route path="/cdn-cgi" element={renderAnimatedRoute(<CloudflareChallengePage />)} />
-        <Route path="/hcaptcha-verify" element={renderAdminRoute(<HCaptchaVerificationPage />)} />
+        <Route path="/captcha-verify" element={renderAdminRoute(<CaptchaVerificationPage />)} />
+        {/* 旧路径保留：老书签/外链仍能落到新页面（SPA 清单里也保留，避免被 308 到 API） */}
+        <Route path="/hcaptcha-verify" element={<Navigate to="/captcha-verify" replace />} />
         <Route path="/artifacts/:shortId" element={renderAnimatedRoute(<ArtifactSharePage />)} />
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
@@ -795,7 +797,8 @@ const App: React.FC = () => {
       '/smart-human-check': 'Synapse - 智能人机验证',
       '/notification-test': 'Synapse - 通知测试',
       '/cdn-cgi': 'Synapse - Cloudflare 验证',
-      '/hcaptcha-verify': 'Synapse - hCaptcha验证',
+      '/captcha-verify': 'Synapse - 人机验证',
+      '/hcaptcha-verify': 'Synapse - 人机验证',
       '/artifacts': 'NexAI Artifacts',
       '/image-upload': 'Synapse - 图片上传',
       '/librechat': 'Synapse - LibreChat',

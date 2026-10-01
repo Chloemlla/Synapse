@@ -68,6 +68,7 @@ export const FRONTEND_SPA_ROUTE_PATHS = [
   "/auth/linuxdo/callback",
   "/auth/provider/bind",
   "/campus-emergency",
+  "/captcha-verify",
   "/case-converter",
   "/cdn-cgi",
   "/coin-flip",

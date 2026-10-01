@@ -91,7 +91,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 篡改检测 | 前端关键元素篡改保护 | `tamperProtection.ts`, `TamperDetectionDemo` |
 | 智能人机验证 | 基于行为分析的人机识别 | `smartHumanCheckService.ts`, `SmartHumanCheck` |
 | Turnstile 验证码 | Cloudflare Turnstile 集成 | `turnstileAuth.ts`, `TurnstileWidget` |
-| hCaptcha 验证 | hCaptcha 人机验证集成 | `HCaptchaWidget`, `HCaptchaVerificationPage` |
+| 人机验证 | 验证方式由后端在 Turnstile / hCaptcha / trycap 间调度（`CaptchaVerificationPage`、`FirstVisitVerification`） | `CaptchaVerificationPage`, `HCaptchaWidget`, `TurnstileWidget`, `CapWidget` |
 | 首次访问检测 | 新设备/浏览器首次访问验证 | `FirstVisitVerification` |
 | IP 风险检测 | proxycheck.io IP 风险评分与自动阻断（出口探测 + HMAC 验签） | `ip-risk` 服务、`IP 风险缓存页` |
 | 指纹采集 | 浏览器指纹识别与追踪 | `FingerprintManager`, `FingerprintRequestModal` |

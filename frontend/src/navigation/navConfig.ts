@@ -236,8 +236,8 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
           icon: FaEnvelope as IconType,
         },
         {
-          title: 'hCaptcha',
-          url: '/hcaptcha-verify',
+          title: '人机验证',
+          url: '/captcha-verify',
           icon: FaShieldAlt as IconType,
         },
       ],

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion as m } from 'framer-motion';
-import { ReturnableHCaptchaVerificationPage } from './HCaptchaVerificationPage';
+import { ReturnableCaptchaVerificationPage } from './CaptchaVerificationPage';
 import { studioPanelClassName, studioPrimaryButtonClassName } from './studioTheme';
 
 interface VerificationResult {
@@ -16,12 +16,12 @@ interface VerificationResult {
 }
 
 /**
- * hCaptcha 验证页面使用示例
- * 
- * 这个组件展示了如何使用 HCaptchaVerificationPage 组件
- * 包括处理验证成功和失败的回调函数
+ * 人机验证页面使用示例
+ *
+ * 展示如何使用 CaptchaVerificationPage：验证方式由后端 captcha-providers 选择
+ *（turnstile / hcaptcha / trycap），调用方只需处理成功/失败回调。
  */
-const HCaptchaVerificationExample: React.FC = () => {
+const CaptchaVerificationExample: React.FC = () => {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
@@ -61,7 +61,7 @@ const HCaptchaVerificationExample: React.FC = () => {
 
   if (showVerification) {
     return (
-      <ReturnableHCaptchaVerificationPage
+      <ReturnableCaptchaVerificationPage
         title="安全验证"
         description="为了确保您的账户安全，请完成以下人机验证"
         onVerificationSuccess={handleVerificationSuccess}
@@ -84,8 +84,8 @@ const HCaptchaVerificationExample: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">hCaptcha 验证示例</h1>
-          <p className="text-slate-600">点击下方按钮体验 hCaptcha 验证功能</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">人机验证示例</h1>
+          <p className="text-slate-600">点击下方按钮体验人机验证功能</p>
         </div>
 
         <div className="space-y-4">
@@ -126,7 +126,8 @@ const HCaptchaVerificationExample: React.FC = () => {
         <div className="mt-8 pt-6 border-t border-slate-200">
           <h3 className="font-semibold text-slate-900 mb-3">使用说明</h3>
           <div className="text-sm text-slate-600 space-y-2">
-            <p>• 点击"开始验证"按钮启动 hCaptcha 验证</p>
+            <p>• 点击"开始验证"按钮启动人机验证</p>
+            <p>• 验证方式由后端选择（Turnstile / hCaptcha / trycap）</p>
             <p>• 完成验证后会显示后端返回的验证结果</p>
             <p>• 支持自定义验证成功和失败的回调处理</p>
             <p>• 可以配置验证页面的标题、描述等属性</p>
@@ -137,4 +138,4 @@ const HCaptchaVerificationExample: React.FC = () => {
   );
 };
 
-export default HCaptchaVerificationExample;
+export default CaptchaVerificationExample;
