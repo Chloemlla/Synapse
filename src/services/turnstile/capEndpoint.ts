@@ -33,6 +33,16 @@ const BLOCKED_HOST_PATTERNS: RegExp[] = [
   /^metadata$/,
 ];
 
+/**
+ * Cap Standalone 的 siteKey 是 `randomBytes(5).toString("hex")`，即 10 位十六进制。
+ * 它会被拼进出站 URL 的路径段，因此写入侧与读取侧都按格式卡住（非该格式一律拒）。
+ */
+const CAP_SITE_KEY_PATTERN = /^[a-f0-9]{10}$/i;
+
+export function isValidCapSiteKey(value: unknown): value is string {
+  return typeof value === "string" && CAP_SITE_KEY_PATTERN.test(value.trim());
+}
+
 export interface CapEndpointValidation {
   /** 校验是否通过。 */
   ok: boolean;

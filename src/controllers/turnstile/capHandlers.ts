@@ -73,7 +73,7 @@ export async function deleteCapConfigHandler(req: Request, res: Response) {
 /** 直接用 Cap 校验一个 token（与 /hcaptcha-verify 对齐的独立入口）。 */
 export async function verifyCap(req: Request, res: Response) {
   try {
-    const { token, siteKey } = req.body;
+    const { token } = req.body;
     const validatedClientIp = getClientIp(req);
 
     if (!config.enableFirstVisitVerification) {
@@ -99,7 +99,7 @@ export async function verifyCap(req: Request, res: Response) {
       });
     }
 
-    const isValid = await TurnstileService.verifyCapToken(token, validatedClientIp, typeof siteKey === "string" ? siteKey : undefined);
+    const isValid = await TurnstileService.verifyCapToken(token, validatedClientIp);
 
     if (!isValid) {
       return res.status(400).json({ success: false, message: "验证失败，请重试" });

@@ -4,7 +4,7 @@ import { isConnected } from "../mongoService";
 import { sanitizeCapEndpoint } from "./capEndpoint";
 import { CAP_VERIFY_TIMEOUT_MS } from "./constants";
 import { CapSettingModel, getCapKey, invalidateCapKeyCache } from "./models";
-import { sanitizeCapEndpoint, validateCapEndpoint } from "./capEndpoint";
+import { isValidCapSiteKey, sanitizeCapEndpoint, validateCapEndpoint } from "./capEndpoint";
 import { assessClientRisk, recordVerificationOutcome } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { CapVerifyResponse } from "./types";
@@ -63,13 +63,17 @@ export async function updateCapConfig(key: CapConfigKey, value: string): Promise
       return false;
     }
 
-    // 地址类配置在写入侧就把关：内网/元数据目标、带凭据的 URL、子路径都在这里拒掉。
+    // 写入侧把关：地址类配置查 SSRF，站点密钥查格式（非 10 位十六进制直接拒，避免把非法值带进出站 URL）。
     if (key === "CAP_API_ENDPOINT") {
       const check = validateCapEndpoint(validatedValue);
       if (!check.ok) {
         logger.warn("Cap 实例地址校验未通过", { reason: check.reason });
         return false;
       }
+    }
+    if (key === "CAP_SITE_KEY" && !isValidCapSiteKey(validatedValue)) {
+      logger.warn("Cap Site Key 格式非法（应为 10 位十六进制）");
+      return false;
     }
 
     if (!isConnected()) {
@@ -120,7 +124,11 @@ export async function deleteCapConfig(key: CapConfigKey): Promise<boolean> {
  * Cap Standalone 的 /siteverify：body { secret, response }，失败时返回 { success:false, error }。
  * fail-closed：任何网络异常/超时都判失败并落 trace，绝不因上游抖动放行。
  */
-export async function verifyCapToken(token: string, remoteIp?: string, siteKeyOverride?: string): Promise<boolean> {
+function resolveCapSiteKey(value: string | null): string | null {
+  return isValidCapSiteKey(value) ? value.trim() : null;
+}
+
+export async function verifyCapToken(token: string, remoteIp?: string): Promise<boolean> {
   const traceId = generateUniqueTraceId();
 
   const fail = async (reason: string, errorCode: string, errorMessage: string) => {
@@ -150,15 +158,16 @@ export async function verifyCapToken(token: string, remoteIp?: string, siteKeyOv
     }
 
     const { siteKey, secretKey, apiEndpoint } = await getCapConfig();
-    const effectiveSiteKey = siteKeyOverride || siteKey;
+    // 站点密钥只认配置（且必须是 Cap 的 10 位十六进制格式），不接受任何调用方传入的值。
+    const effectiveSiteKey = resolveCapSiteKey(siteKey);
 
     if (!secretKey || !effectiveSiteKey) {
-      logger.warn("Cap 密钥未配置，拒绝当前验证请求", { traceId, hasSiteKey: !!effectiveSiteKey });
+      logger.warn("Cap 密钥未配置或格式非法，拒绝当前验证请求", { traceId, hasSiteKey: !!effectiveSiteKey });
       return await fail("service_unavailable", "SERVICE_UNAVAILABLE", "trycap 服务未配置");
     }
 
     const response = await axios.post<CapVerifyResponse>(
-      `${apiEndpoint}/${effectiveSiteKey}/siteverify`,
+      `${apiEndpoint}/${encodeURIComponent(effectiveSiteKey)}/siteverify`,
       { secret: secretKey, response: validatedToken },
       { headers: { "Content-Type": "application/json" }, timeout: CAP_VERIFY_TIMEOUT_MS },
     );
@@ -223,7 +232,7 @@ export async function testCapConnectivity(): Promise<{
 
   try {
     const response = await axios.post(
-      `${apiEndpoint}/${siteKey}/challenge`,
+      `${apiEndpoint}/${encodeURIComponent(siteKey)}/challenge`,
       {},
       { headers: { "Content-Type": "application/json" }, timeout: CAP_VERIFY_TIMEOUT_MS },
     );

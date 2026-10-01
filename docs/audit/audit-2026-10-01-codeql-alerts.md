@@ -13,16 +13,16 @@
 
 ## 二、两名真修项
 
-### C1 `js/request-forgery` — `src/services/turnstile/cap.ts:149`（severity: error）
+### C1 `js/request-forgery` — `src/services/turnstile/cap.ts`（severity: error）
 
-- **症状**：`axios.post(\`${apiEndpoint}/${siteKey}/siteverify\`)`，`apiEndpoint` 来自 `CAP_API_ENDPOINT` 配置（管理端写入）→ CodeQL 判定「请求 URL 取决于用户提供值」。
-- **根因**：这是真实攻击面而非纯误报——虽然只有超级管理员能写该配置，但一旦写坏（或管理员账号被接管），服务端会按指令访问 `169.254.169.254`、`127.0.0.1`、内网等目标；写入侧原本只做了 `sanitizeString`（长度/字符）与去尾斜杠，没有任何 SSRF 防护。
-- **修复**：新增 `src/services/turnstile/capEndpoint.ts`
-  - 只接受 `http`/`https`，拒绝带凭据的 URL；
-  - 拒绝回环 / 私网 / 链路本地 / 云元数据（`169.254.`）/ `.internal` / `.local` / `metadata.`；
-  - 不支持子路径（显式判非法，避免静默截断导致请求打到别处）；
-  - **用解析后的部件重建 origin**，出站 URL 由重建值拼接（`cap.ts`、`verify.ts` 的 `resolveCapVerifyUrl`、`providers.ts` 下发给浏览器的地址都统一走它）。
-  - 写入侧（`updateCapConfig`）先校验、不通过直接拒绝并记日志；读取侧再校验一次（兜住历史脏值），非法值回落默认实例。
+- **症状**：`axios.post(\`${apiEndpoint}/${siteKey}/siteverify\`)` 的出站 URL 带污点（清单一轮修完仍报，锚点漂到新 commit）。
+- **根因（两轮）**：
+  1. 轮廓层：`apiEndpoint` 来自 `CAP_API_ENDPOINT` 配置，写入侧只做了 `sanitizeString` 与去尾斜杠，没有任何 SSRF 防护。
+  2. 真正的污点源：`/api/turnstile/cap-verify` 把 **请求体里的 `siteKey`** 当 `siteKeyOverride` 透传进了出站 URL 的路径段——客户端可控的路径片段，属真实缺陷（不只是配置面）。
+- **修复**：
+  - 新增 `src/services/turnstile/capEndpoint.ts`：只接受 `http`/`https`、拒凭据、拒回环/私网/链路本地/云元数据（`169.254.`）/`.internal`/`.local`/`metadata.`、不支持子路径，并用解析后的部件**重建 origin**；写入侧先校验再落库，读取侧再校验一次兜历史脏值（`cap.ts`、`verify.ts`、`providers.ts` 统一走它）。
+  - **彻底删掉 `siteKeyOverride` 参数**：站点密钥只认服务端配置，不再从请求体取；并对站点密钥做格式校验（Cap 为 `randomBytes(5).toString("hex")` = 10 位十六进制），写入侧非法即拒；拼进 URL 时再 `encodeURIComponent`（也是 CodeQL 对 request-forgery 认可的清洗器，见 `RequestForgeryCustomizations.qll` 的 `UriEncodingSanitizer`）。
+  - 新增 `src/tests/capEndpointGuard.test.ts` 钉住上述边界（回环/私网/元数据/子路径/带凭据/协议白名单、站点密钥格式）。
 
 ### C2 `js/incomplete-sanitization` — `src/utils/policyDocumentMarkdown.ts:19`（severity: warning）
 
