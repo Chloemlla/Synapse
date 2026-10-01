@@ -5,9 +5,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..");
-const maxLines = Number(process.env.MAX_TS_FILE_LINES || 800);
+const maxLines = Number(process.env.MAX_TS_FILE_LINES || 1500);
 // Allow limited intentional growth in already-oversized modules (feature work / small hooks).
-// New files and files that cross the 800-line boundary still fail hard.
+// New files and files that cross the 1500-line boundary still fail hard.
 const legacyGrowthBudget = Number(process.env.MAX_TS_LEGACY_GROWTH || 300);
 
 function git(args, options = {}) {

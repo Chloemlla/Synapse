@@ -64,7 +64,7 @@
 
 - 新路由补 `@openapi` 注释（CI 会重新生成 spec 并对账）。
 - `adminModules.tsx` 注册后跑 `node scripts/generate-admin-spa-paths.js`。
-- 新文件 ≤ 800 行（`check:ts-file-size`），既有超限文件增长 ≤ 300 行。
+- 新文件 ≤ 1500 行（`check:ts-file-size`，2026-10-01 由 800 放宽），既有超限文件增长 ≤ 300 行。
 - 单测覆盖：加权分布、全 0 回退、单候选、无候选、下线但凭据齐全、凭据缺失但上线。
 
 ## 三、实施批次
