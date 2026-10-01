@@ -48,6 +48,15 @@ import {
   testCaptchaProvider,
   updateCaptchaProviders,
 } from "../controllers/turnstile/providersHandlers";
+import {
+  getCaptchaAllocationPolicyHandler,
+  getCaptchaProviderStatsHandler,
+  getCaptchaWidgetSettingsHandler,
+  previewCaptchaSelectionHandler,
+  simulateCaptchaAllocationHandler,
+  updateCaptchaAllocationPolicyHandler,
+  updateCaptchaWidgetSettingsHandler,
+} from "../controllers/turnstile/allocationHandlers";
 import { getSyncStatus, syncIpBans } from "../controllers/turnstile/syncHandlers";
 import {
   adminLimiter,
@@ -315,7 +324,7 @@ router.post("/hcaptcha-verify", publicLimiter, verifyHCaptcha);
  * /api/turnstile/providers:
  *   get:
  *     summary: 获取人机验证供应商调度配置
- *     description: 返回三家人机验证供应商的上线状态、权重、归一化概率与凭据配置情况（需要管理员权限）
+ *     description: 返回三家人机验证供应商的上线状态、权重、优先级、场景权重、归一化概率、凭据与额度，以及分配策略与控件外观（需要管理员权限）
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -329,7 +338,7 @@ router.get("/providers", adminLimiter, authenticateAdmin, getCaptchaProviders);
  * /api/turnstile/providers:
  *   put:
  *     summary: 更新人机验证供应商调度配置
- *     description: 批量设置各供应商的上线状态与相对权重，保存后立即生效（需要超级管理员权限）
+ *     description: 批量设置各供应商的上线状态、相对权重、故障转移优先级与场景权重，保存后立即生效（需要超级管理员权限）
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -345,12 +354,23 @@ router.put(
     action: "system.captchaProvidersUpdate",
     extractDetail: (req) => ({
       providers: Array.isArray(req.body?.providers)
-        ? req.body.providers.map((item: { provider?: string; enabled?: boolean; weight?: number; monthlyQuota?: number }) => ({
-            provider: item?.provider,
-            enabled: item?.enabled !== false,
-            weight: item?.weight,
-            monthlyQuota: item?.monthlyQuota,
-          }))
+        ? req.body.providers.map(
+            (item: {
+              provider?: string;
+              enabled?: boolean;
+              weight?: number;
+              monthlyQuota?: number;
+              priority?: number;
+              scenarioWeights?: unknown;
+            }) => ({
+              provider: item?.provider,
+              enabled: item?.enabled !== false,
+              weight: item?.weight,
+              monthlyQuota: item?.monthlyQuota,
+              priority: item?.priority,
+              scenarioWeights: item?.scenarioWeights,
+            }),
+          )
         : [],
     }),
   }),
@@ -370,6 +390,116 @@ router.put(
  *         description: 额度快照与历史
  */
 router.get("/providers/quotas", adminLimiter, authenticateAdmin, getCaptchaQuotaHistory);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/policy:
+ *   get:
+ *     summary: 获取人机验证分配策略
+ *     description: 返回分配策略（加权随机 / 时间轮换 / 优先级故障转移、粘性窗口、灰度、故障转移次数、按场景策略）与可选值（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 分配策略
+ */
+router.get("/providers/policy", adminLimiter, authenticateAdmin, getCaptchaAllocationPolicyHandler);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/policy:
+ *   put:
+ *     summary: 更新人机验证分配策略
+ *     description: 保存分配策略，字段会被钳制到合法区间；保存后立即生效（需要超级管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 更新后的策略
+ */
+router.put(
+  "/providers/policy",
+  configLimiter,
+  authenticateSuperAdmin,
+  auditLog({ module: "system", action: "system.captchaAllocationPolicyUpdate" }),
+  updateCaptchaAllocationPolicyHandler,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/widgets:
+ *   get:
+ *     summary: 获取前端人机验证控件外观设置
+ *     description: 返回 theme / size / language / 是否展示供应商署名，以及逐家覆盖（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 控件外观设置
+ */
+router.get("/providers/widgets", adminLimiter, authenticateAdmin, getCaptchaWidgetSettingsHandler);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/widgets:
+ *   put:
+ *     summary: 更新前端人机验证控件外观设置
+ *     description: 统一调控 Turnstile / hCaptcha / trycap 三家控件的外观，保存后前端下次取配置即生效（需要超级管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 更新后的外观设置
+ */
+router.put(
+  "/providers/widgets",
+  configLimiter,
+  authenticateSuperAdmin,
+  auditLog({ module: "system", action: "system.captchaWidgetSettingsUpdate" }),
+  updateCaptchaWidgetSettingsHandler,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/simulate:
+ *   post:
+ *     summary: 人机验证分配模拟
+ *     description: 按草稿（可选的上线/权重/优先级/场景权重与策略覆盖）抽样 N 次，返回分布；不写库、不影响线上（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 分配分布
+ */
+router.post("/providers/simulate", adminLimiter, authenticateAdmin, simulateCaptchaAllocationHandler);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/selection:
+ *   get:
+ *     summary: 人机验证下发诊断
+ *     description: 按指定场景/指纹跑一次真实分配引擎，回答「现在会选谁」；force 指定供应商时一并返回其下发配置供实机预览（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 候选、选中项与解析后的控件外观
+ */
+router.get("/providers/selection", adminLimiter, authenticateAdmin, previewCaptchaSelectionHandler);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/stats:
+ *   get:
+ *     summary: 人机验证供应商近期统计
+ *     description: 按供应商聚合近 N 小时（1-720）的校验成功/失败次数与成功率（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 统计结果
+ */
+router.get("/providers/stats", adminLimiter, authenticateAdmin, getCaptchaProviderStatsHandler);
 
 /**
  * @openapi

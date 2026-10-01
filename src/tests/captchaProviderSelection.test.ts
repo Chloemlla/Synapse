@@ -2,12 +2,19 @@ const mockGetTurnstileKey = jest.fn();
 const mockGetHCaptchaKey = jest.fn();
 const mockGetCapKey = jest.fn();
 const mockGetProviderSettings = jest.fn();
+const mockGetAllocationPolicy = jest.fn();
+const mockGetWidgetSettings = jest.fn();
 
 jest.mock("../services/turnstile/models", () => ({
   getTurnstileKey: (...args: unknown[]) => mockGetTurnstileKey(...args),
   getHCaptchaKey: (...args: unknown[]) => mockGetHCaptchaKey(...args),
   getCapKey: (...args: unknown[]) => mockGetCapKey(...args),
   getCaptchaProviderSettingDocs: (...args: unknown[]) => mockGetProviderSettings(...args),
+  // 分配策略与控件外观在 providers.ts 里按「未配置 ⇒ 默认值」处理，测试默认都返回 null。
+  getCaptchaAllocationPolicyDoc: (...args: unknown[]) => mockGetAllocationPolicy(...args),
+  getCaptchaWidgetSettingsDoc: (...args: unknown[]) => mockGetWidgetSettings(...args),
+  upsertCaptchaAllocationPolicy: jest.fn(),
+  upsertCaptchaWidgetSettings: jest.fn(),
 }));
 
 // 额度模块会碰 Mongo；选择引擎的测试通过 mockQuotaExhausted 开关模拟「未用尽 / 已用尽」。
@@ -50,6 +57,8 @@ function setProviderConfig(options: { keys?: KeyMap; settings?: Array<{ provider
   mockGetHCaptchaKey.mockImplementation(async (key: string) => keys[key] ?? null);
   mockGetCapKey.mockImplementation(async (key: string) => keys[key] ?? null);
   mockGetProviderSettings.mockResolvedValue(options.settings ?? []);
+  mockGetAllocationPolicy.mockResolvedValue(null);
+  mockGetWidgetSettings.mockResolvedValue(null);
 }
 
 const ALL_KEYS: KeyMap = {

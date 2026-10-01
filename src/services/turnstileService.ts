@@ -59,7 +59,7 @@ export class TurnstileService {
   static testCapConnectivity = cap.testCapConnectivity;
   static isCapConfigKey = cap.isCapConfigKey;
 
-  // 供应商调度（上线/下线 + 权重 + 月额度）
+  // 供应商调度（上线/下线 + 权重 + 优先级 + 场景权重 + 月额度）
   static collectCaptchaProviders = providers.collectCaptchaProviders;
   static selectCaptchaProvider = providers.selectCaptchaProvider;
   static getProviderSecretPresence = providers.getProviderSecretPresence;
@@ -67,6 +67,13 @@ export class TurnstileService {
   static isCaptchaProviderId = providers.isCaptchaProviderId;
   static clampProviderWeight = providers.clampProviderWeight;
   static upsertCaptchaProviderSetting = providers.upsertCaptchaProviderSetting;
+
+  // 分配体系（策略 + 前端控件外观）
+  static getCaptchaAllocationPolicy = providers.getCaptchaAllocationPolicy;
+  static updateCaptchaAllocationPolicy = providers.updateCaptchaAllocationPolicy;
+  static getCaptchaWidgetSettings = providers.getCaptchaWidgetSettings;
+  static updateCaptchaWidgetSettings = providers.updateCaptchaWidgetSettings;
+  static resolveProviderWidgetSettings = providers.resolveProviderWidgetSettings;
 
   // 月度额度
   static clampMonthlyQuota = quota.clampMonthlyQuota;

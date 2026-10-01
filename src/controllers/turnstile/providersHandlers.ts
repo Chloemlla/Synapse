@@ -1,27 +1,49 @@
 import type { Request, Response } from "express";
 import { TurnstileService } from "../../services/turnstileService";
 import logger from "../../utils/logger";
+import {
+  DEFAULT_ALLOCATION_POLICY,
+  DEFAULT_WIDGET_SETTINGS,
+  clampProviderPriority,
+  normalizeScenarioWeights,
+} from "../../services/turnstile/allocation";
+import {
+  CAPTCHA_ALLOCATION_STRATEGIES,
+  CAPTCHA_ALLOCATION_STRATEGY_LABELS,
+  CAPTCHA_SCENARIOS,
+  CAPTCHA_SCENARIO_LABELS,
+} from "../../services/turnstile/types";
 import { requireAdmin, requireSuperAdmin } from "./_helpers";
 
 /**
- * 人机验证供应商调度（上线/下线 + 权重）。
+ * 人机验证供应商调度（上线/下线 + 权重 + 优先级 + 场景权重）。
  *
- * 与凭据配置分离：这里只动「用不用、用多少」，siteKey/secret 仍走各自的 *-config 接口。
+ * 与凭据配置分离：这里只动「用不用、用多少、排第几、哪个场景」，siteKey/secret 仍走各自的 *-config 接口。
+ * 分配策略与控件外观在 allocationHandlers.ts，本接口一次把它们的当前值一并带回，减少管理端往返。
  * 读：admin；写：superadmin。
  */
 export async function getCaptchaProviders(req: Request, res: Response) {
   try {
     if (!requireAdmin(req, res)) return;
 
-    const { providers, candidates } = await TurnstileService.collectCaptchaProviders();
+    const { providers, candidates, policy, widgets, scenario } = await TurnstileService.collectCaptchaProviders();
     const maskedSecrets = await TurnstileService.getProviderSecretPresence();
 
     res.json({
       success: true,
+      scenario,
       providers: providers.map((provider) => ({
         ...provider,
         secretKey: maskedSecrets[provider.provider] ?? null,
       })),
+      policy,
+      widgets,
+      scenarios: CAPTCHA_SCENARIOS.map((entry) => ({ value: entry, label: CAPTCHA_SCENARIO_LABELS[entry] })),
+      strategies: CAPTCHA_ALLOCATION_STRATEGIES.map((entry) => ({
+        value: entry,
+        label: CAPTCHA_ALLOCATION_STRATEGY_LABELS[entry],
+      })),
+      defaults: { policy: DEFAULT_ALLOCATION_POLICY, widgets: DEFAULT_WIDGET_SETTINGS },
       selection: {
         candidateCount: candidates.length,
         // 管理端用来解释「为什么现在不下发这家」的即时结论
@@ -54,10 +76,14 @@ export async function updateCaptchaProviders(req: Request, res: Response) {
 
       // 额度字段缺省 = 不改动现有设置；显式 0 = 解除限额。
       const hasQuota = entry.monthlyQuota !== undefined && entry.monthlyQuota !== null;
+      const hasPriority = entry.priority !== undefined && entry.priority !== null;
+      const hasScenarioWeights = entry.scenarioWeights !== undefined && entry.scenarioWeights !== null;
       const success = await TurnstileService.upsertCaptchaProviderSetting(provider, {
         enabled: entry.enabled !== false,
         weight: TurnstileService.clampProviderWeight(entry.weight),
         ...(hasQuota ? { monthlyQuota: TurnstileService.clampMonthlyQuota(entry.monthlyQuota) } : {}),
+        ...(hasPriority ? { priority: clampProviderPriority(entry.priority) } : {}),
+        ...(hasScenarioWeights ? { scenarioWeights: normalizeScenarioWeights(entry.scenarioWeights) ?? {} } : {}),
       });
 
       results.push({
@@ -72,8 +98,8 @@ export async function updateCaptchaProviders(req: Request, res: Response) {
       return res.status(500).json({ success: false, error: "供应商配置保存失败", results });
     }
 
-    const { providers } = await TurnstileService.collectCaptchaProviders();
-    res.json({ success: true, message: "配置已保存并立即生效", results, providers });
+    const { providers, policy, widgets } = await TurnstileService.collectCaptchaProviders();
+    res.json({ success: true, message: "配置已保存并立即生效", results, providers, policy, widgets });
   } catch (error) {
     logger.error("更新人机验证供应商配置失败", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
