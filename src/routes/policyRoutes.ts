@@ -3,12 +3,15 @@ import {
   cleanExpiredConsents,
   getCurrentPolicyVersion,
   getPolicyDocument,
-  getPolicyStatus,
   getPolicyStats,
   recordPolicyConsent,
   revokePolicyConsent,
-  verifyPolicyConsent,
 } from "../controllers/policyController";
+import {
+  getPolicyConsentHistory,
+  getPolicyStatus,
+  verifyPolicyConsent,
+} from "../controllers/policyStatusController";
 import { adminOnly } from "../middleware/adminOnly";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin } from "../middleware/auth";
@@ -448,11 +451,19 @@ router.post("/revoke", policyRateLimit, revokePolicyConsent);
  * /api/policy/document:
  *   get:
  *     summary: 获取服务条款与隐私政策条文
- *     description: 返回当前版本的完整政策条文（章节、重点提示、修订记录与联系方式）。版本号与 /api/policy/version 同源，前端政策页面直接渲染该返回值。
+ *     description: 返回当前版本的完整政策条文（章节、重点提示、修订记录与联系方式）。版本号与 /api/policy/version 同源，前端政策页面直接渲染该返回值。`?format=md`（或 `Accept: text/markdown`）返回同一份内容的 Markdown 存档副本，供用户离线保存并与同意记录里的 documentHash 对账。
  *     tags: [Policy]
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [json, md]
+ *         description: 省略或 json 返回 JSON；md 返回 text/markdown 存档副本
  *     responses:
  *       200:
- *         description: 政策条文
+ *         description: 政策条文（JSON）或 Markdown 存档
  *         content:
  *           application/json:
  *             schema:
@@ -463,12 +474,72 @@ router.post("/revoke", policyRateLimit, revokePolicyConsent);
  *                   example: true
  *                 document:
  *                   $ref: '#/components/schemas/PolicyDocument'
+ *           text/markdown:
+ *             schema:
+ *               type: string
+ *       304:
+ *         description: 条文未变化（ETag 匹配）
  *       429:
  *         description: 请求过于频繁
  *       500:
  *         description: 服务器内部错误
  */
 router.get("/document", policyRateLimit, getPolicyDocument);
+
+/**
+ * @swagger
+ * /api/policy/history:
+ *   get:
+ *     summary: 获取本设备的同意轨迹
+ *     description: |
+ *       按时间倒序返回本设备的历次同意记录（版本、同意时间、到期、来源、勾选项、条文指纹、
+ *       是否已撤回）。指纹从 `X-Fingerprint` 请求头读取；必须持有本端点此前下发的设备凭据 cookie
+ *       （或首访验证令牌），登录会话不能替代。entries[].state 为 active / expired / revoked / superseded。
+ *     tags: [Policy]
+ *     parameters:
+ *       - in: header
+ *         name: X-Fingerprint
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *         description: 返回条数上限，默认 20，服务端收敛到 1–50
+ *     responses:
+ *       200:
+ *         description: 同意轨迹
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 currentVersion:
+ *                   type: string
+ *                 documentHash:
+ *                   type: string
+ *                 limit:
+ *                   type: number
+ *                 entries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: 缺少设备指纹
+ *       403:
+ *         description: 未能证明设备归属
+ *       429:
+ *         description: 请求过于频繁
+ *       500:
+ *         description: 服务器内部错误
+ */
+router.get("/history", policyRateLimit, getPolicyConsentHistory);
 
 /**
  * @swagger

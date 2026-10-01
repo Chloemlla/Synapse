@@ -28,6 +28,7 @@ interface ConsentStore {
   __reset: () => void;
   __size: () => number;
   __get: (fingerprint: string, version: string) => Record<string, unknown> | undefined;
+  __mutate: (fingerprint: string, version: string, patch: Record<string, unknown>) => void;
 }
 
 jest.mock("../models/policyConsentModel", () => {
@@ -83,6 +84,13 @@ jest.mock("../models/policyConsentModel", () => {
       return latest;
     }
 
+    public static async findConsentHistory(fingerprint: string, limit = 20): Promise<StoredConsent[]> {
+      return [...consents.values()]
+        .filter((consent) => consent.fingerprint === fingerprint)
+        .sort((a, b) => (b.recordedAt?.getTime() ?? 0) - (a.recordedAt?.getTime() ?? 0))
+        .slice(0, limit);
+    }
+
     public static async updateMany(
       filter: { fingerprint: string; version?: string },
       update: Record<string, unknown> = {},
@@ -114,6 +122,10 @@ jest.mock("../models/policyConsentModel", () => {
     __reset: () => consents.clear(),
     __size: () => consents.size,
     __get: (fingerprint: string, version: string) => consents.get(keyOf(fingerprint, version)),
+    __mutate: (fingerprint: string, version: string, patch: Record<string, unknown>) => {
+      const found = consents.get(keyOf(fingerprint, version));
+      if (found) Object.assign(found, patch);
+    },
     PolicyConsent: FakePolicyConsent,
   };
 });
@@ -327,5 +339,78 @@ describe("政策同意的设备凭据闸门", () => {
       .set("Cookie", `policy_consent_token=${fingerprint}.${forgedSignature}`)
       .set("X-Fingerprint", fingerprint)
       .expect(403);
+  });
+
+  it("GET /api/policy/history 返回本设备同意轨迹，撤回后状态翻成 revoked", async () => {
+    const device = request.agent(app);
+    const fingerprint = "history-fingerprint";
+
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    const active = await device.get("/api/policy/history").set("X-Fingerprint", fingerprint).expect(200);
+    expect(active.body.entries).toHaveLength(1);
+    expect(active.body.entries[0]).toEqual(
+      expect.objectContaining({
+        version: CURRENT_POLICY_VERSION,
+        state: "active",
+        source: "feature",
+        agreements: [...POLICY_AGREEMENT_KEYS],
+        agreementsComplete: true,
+        missingAgreements: [],
+        documentHashMatchesCurrent: true,
+      }),
+    );
+    expect(typeof active.body.entries[0].recordedAt).toBe("string");
+    expect(typeof active.body.entries[0].expiresAt).toBe("string");
+
+    await device.post("/api/policy/revoke").send({ fingerprint }).expect(200);
+
+    const revoked = await device.get("/api/policy/history").set("X-Fingerprint", fingerprint).expect(200);
+    expect(revoked.body.entries[0]).toEqual(expect.objectContaining({ state: "revoked" }));
+    expect(typeof revoked.body.entries[0].revokedAt).toBe("string");
+  });
+
+  it("轨迹把过期与旧版本的记录分别标成 expired / superseded", async () => {
+    const device = request.agent(app);
+    const fingerprint = "history-state-fingerprint";
+    await device.post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    consentStore.__mutate(fingerprint, CURRENT_POLICY_VERSION, { expiresAt: new Date(Date.now() - 1000) });
+    const expired = await device.get("/api/policy/history").set("X-Fingerprint", fingerprint).expect(200);
+    expect(expired.body.entries[0].state).toBe("expired");
+
+    consentStore.__mutate(fingerprint, CURRENT_POLICY_VERSION, {
+      expiresAt: new Date(Date.now() + 86_400_000),
+      version: "0.9",
+      documentHash: "0".repeat(64),
+    });
+    const superseded = await device.get("/api/policy/history").set("X-Fingerprint", fingerprint).expect(200);
+    expect(superseded.body.entries[0]).toEqual(
+      expect.objectContaining({ state: "superseded", version: "0.9", documentHashMatchesCurrent: false }),
+    );
+  });
+
+  it("GET /api/policy/history 同样只认设备凭据，且空轨迹不是错误", async () => {
+    const fingerprint = "history-guard-fingerprint";
+    await request.agent(app).post("/api/policy/verify").send({ fingerprint }).expect(200);
+
+    const denied = await request(app).get("/api/policy/history").set("X-Fingerprint", fingerprint).expect(403);
+    expect(denied.body.code).toBe("DEVICE_CREDENTIAL_REQUIRED");
+
+    // 凭据与记录相互独立：凭据仍有效但库里没有记录时，回空数组而不是报错
+    const device = request.agent(app);
+    const emptyFingerprint = "history-empty-fingerprint";
+    await device.post("/api/policy/verify").send({ fingerprint: emptyFingerprint }).expect(200);
+    consentStore.__reset();
+
+    const empty = await device.get("/api/policy/history").set("X-Fingerprint", emptyFingerprint).expect(200);
+    expect(empty.body).toEqual(
+      expect.objectContaining({
+        success: true,
+        currentVersion: CURRENT_POLICY_VERSION,
+        documentHash: POLICY_DOCUMENT_HASH,
+        entries: [],
+      }),
+    );
   });
 });

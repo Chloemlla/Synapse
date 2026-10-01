@@ -33,6 +33,7 @@ export interface IPolicyConsent extends Document {
 export interface IPolicyConsentModel extends Model<IPolicyConsent> {
   findValidConsent(fingerprint: string, version: string): Promise<IPolicyConsent | null>;
   findLatestConsent(fingerprint: string): Promise<IPolicyConsent | null>;
+  findConsentHistory(fingerprint: string, limit?: number): Promise<IPolicyConsent[]>;
   cleanExpiredConsents(): Promise<{ deletedCount?: number }>;
   getStats(startDate?: Date, endDate?: Date): Promise<any[]>;
 }
@@ -141,6 +142,13 @@ policyConsentSchema.statics.findValidConsent = function (fingerprint: string, ve
 // 用于把「从未同意过」与「同意过但已过期 / 已被撤回」区分开 —— 后者才能给用户看到有意义的提示。
 policyConsentSchema.statics.findLatestConsent = function (fingerprint: string) {
   return this.findOne({ fingerprint }).sort({ recordedAt: -1 });
+};
+
+// 静态方法：该设备（指纹）的同意轨迹，按时间倒序。
+// 面板用它回答「本设备历次同意过哪些版本、什么时候、被撤回过吗」——透明性的一部分。
+policyConsentSchema.statics.findConsentHistory = function (fingerprint: string, limit = 20) {
+  const cap = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 50) : 20;
+  return this.find({ fingerprint }).sort({ recordedAt: -1 }).limit(cap);
 };
 
 // 静态方法：清理过期记录

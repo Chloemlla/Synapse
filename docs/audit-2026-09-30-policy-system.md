@@ -196,3 +196,60 @@ type-check（含 backend / frontend）。两次快照间隔 30 分钟后重取�
 
 P-01 ～ P-20 全部已修，无挂起项；每条编号均可在「三、改动去向」指回对应提交，
 反向也成立：本次改动的每个文件都能追溯到上面某条编号或「接口索引」中的新增入口。
+
+---
+
+## 五、第二轮：透明性、存档与可运维性
+
+第一轮把「同意记录是否可信、是否可运维」补齐后，第二轮补的是**用户能否自己看到并保存**，
+以及**代码结构能否继续承载功能**。编号沿用同一套清单。
+
+| 编号 | 严重度 | 位置 | 类型 | 状态 |
+|---|---|---|---|---|
+| P-21 | 维护性 | `src/controllers/policyController.ts`（792 行） | 接近 800 行 TS 文件闸门，继续加功能即硬失败 | ✅ 已拆 |
+| P-22 | 合规/UX | 条文只有 JSON/网页两种形态 | 用户无法离线保存「我同意的那份文本」 | ✅ 已修 |
+| P-23 | 透明性/UX | 用户端只能看到当前状态 | 看不到自己的同意轨迹（何时、哪个版本、是否撤回） | ✅ 已修 |
+| P-24 | 可运维性 | 管理端概览 | 「有效但勾选不完整」的存量规模不可见（门禁不认这些记录） | ✅ 已修 |
+| P-25 | UX | `PrivacyConsentPanel` / `PolicyConsentStatusPanel` | 同意临近到期无任何提示，只会在生成时被拦下 | ✅ 已修 |
+| P-26 | 合规对账 | 管理端概览 | 缺当前条文指纹基准值，无法与记录的预览对账 | ✅ 已修 |
+| P-27 | a11y/一致性 | `admin/ip-risk-log/ui.tsx` 的 `Th` | 表头未声明 scope，且默认居中与左对齐单元格错位 | ✅ 已修 |
+| P-28 | 文档 | 隐私契约 / 本清单 | 新增入口与边界未回写 | ✅ 已修 |
+
+### P-21 — policyController 逼近文件闸门（维护性）
+
+- **现状**：`policyController.ts` 一轮改动后 792 行（闸门 800，且「基线 ≤800、现值 >800」直接硬失败）。
+- **改法**：
+  - `services/policyDeviceCredential.ts`（新）：设备凭据的签发/校验/归属断言（含旧形态兼容与判龄）；
+  - `utils/policyRequest.ts`（新）：指纹来源顺序、指纹与版本参数归一化（三个端点共用一份判据）；
+  - `controllers/policyStatusController.ts`（新）：`/check`、`/status`、`/history` 与状态汇总；
+  - `policyController.ts` 只留写入与条文/统计端点，**792 → 397 行**。
+
+### P-22 — 条文存档（Markdown）
+
+- 后端 `GET /api/policy/document?format=md`（或 `Accept: text/markdown`）返回同一份内容的
+  Markdown，文件名 `synapse-policy-v<版本>-<指纹前 8 位>.md`，并回带 `X-Policy-Document-Hash`。
+- 渲染器 `utils/policyDocumentMarkdown.ts` 为纯函数，声明「渲染范围与 documentHash 的哈希载荷一致」，
+  由 `src/tests/policyDocumentMarkdown.test.ts` 钉住：每条正文/勾选文案/要点/提示都在，且确定性输出。
+- 前端政策页顶部新增「下载条文存档 (.md)」，落盘后可就地与同意记录里的指纹核对。
+
+### P-23 — 本设备同意轨迹
+
+- 后端 `GET /api/policy/history`（设备凭据门槛，`limit` 收敛 1–50，默认 20）：按时间倒序返回
+  `version / state(active|expired|revoked|superseded) / recordedAt / expiresAt / source / agreements /
+  missingAgreements / consentDocumentHash / documentHashMatchesCurrent / revokedAt`。
+- 前端「隐私与同意」面板新增可折叠轨迹（最近 10 条），每条标注状态、来源、勾选完整性与
+  条文指纹是否与当前一致。
+
+### P-24 / P-25 / P-26 / P-27
+
+- P-24：概览新增「有效但勾选不完整」计数（与列表筛选共用同一份 mongo 条件），点卡片直接切到
+  记录 tab 并打开该筛选；该筛选状态提到面板层，两个 tab 联动。
+- P-25：到期前 7 天在隐私面板与政策页状态卡片给出可操作提示；政策页在「临近到期 / 条文已更新」
+  时提供就地重新同意（`POST /api/policy/verify` 续期）。
+- P-26：管理端概览展示当前条文指纹并提供一键复制；记录表的「条文指纹」列是它的前 12 位。
+- P-27：`Th` 补 `scope="col"` 并改为左对齐，与 `Td` 内容对齐（影响所有复用该原语的管理端表格）。
+
+### 与第一轮的关系
+
+第一轮的编号（P-01 ～ P-20）无一回退；第二轮的改动都建立在第一轮的字段与端点之上
+（轨迹依赖 `revokedAt` 与 `documentHash`，计数依赖勾选完整性判定，存档依赖 `POLICY_DOCUMENT_HASH`）。

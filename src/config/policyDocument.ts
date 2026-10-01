@@ -83,12 +83,16 @@ export interface PolicyAgreement {
 export interface PolicyProcedures {
   consentValidityDays: number;
   documentEndpoint: string;
+  /** 条文存档副本（Markdown）入口：同一份内容，供用户离线保存 */
+  documentArchiveEndpoint: string;
   versionEndpoint: string;
   recordConsentEndpoint: string;
   revokeConsentEndpoint: string;
   checkConsentEndpoint: string;
   /** 一次取回「版本 + 本设备同意状态」的合并端点 */
   statusEndpoint: string;
+  /** 本设备的同意轨迹（历次同意与撤回） */
+  historyEndpoint: string;
 }
 
 export interface PolicyDocument {
@@ -448,11 +452,13 @@ export const POLICY_CONTACTS: PolicyContact[] = [
 export const POLICY_PROCEDURES: PolicyProcedures = {
   consentValidityDays: CONSENT_VALIDITY_DAYS,
   documentEndpoint: "GET /api/policy/document",
+  documentArchiveEndpoint: "GET /api/policy/document?format=md",
   versionEndpoint: "GET /api/policy/version",
   recordConsentEndpoint: "POST /api/policy/verify",
   revokeConsentEndpoint: "POST /api/policy/revoke",
   checkConsentEndpoint: "GET /api/policy/check",
   statusEndpoint: "GET /api/policy/status",
+  historyEndpoint: "GET /api/policy/history",
 };
 
 /**

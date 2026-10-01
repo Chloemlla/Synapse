@@ -75,7 +75,7 @@ The following may outlive account deletion for integrity reasons and must expire
 
 | Audience | What can be exported | What must not be exported |
 | --- | --- | --- |
-| End user | Own TTS job status/history they can already access; own policy consent state via `GET /api/policy/status` (device-credential gated); analytics export for own usage when enabled | Raw IPQS responses, IP bans, other users' fingerprints, security tokens |
+| End user | Own TTS job status/history they can already access; own policy consent state and consent timeline via `GET /api/policy/status` / `/api/policy/history` (device-credential gated); an offline Markdown archive of the accepted text via `GET /api/policy/document?format=md`; analytics export for own usage when enabled | Raw IPQS responses, IP bans, other users' fingerprints, security tokens |
 | Admin | User fingerprint summary, audit logs, ban records, temporary fingerprint stats | Password hashes, raw recovery secrets, signing keys |
 | Superadmin | Policy consent records incl. fingerprint/IP/revocation trail via `GET /api/admin/policy-consents` and the audited, 5000-row-capped `GET /api/admin/policy-consents/export` CSV | Password hashes, raw recovery secrets, signing keys, consent `checksum` / `documentHash` in full (12-char preview only) |
 | Automated privacy export (future) | Account profile + fingerprint history + owned job metadata | Ephemeral challenge tokens, third-party raw fraud payloads |

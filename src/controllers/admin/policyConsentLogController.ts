@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { POLICY_DOCUMENT_HASH } from "../../config/policyDocument";
 import { PolicyConsent } from "../../models/policyConsentModel";
 import { mongoose } from "../../services/mongoService";
 import {
@@ -308,6 +309,8 @@ export class PolicyConsentLogController {
       res.json({
         success: true,
         currentVersion: CURRENT_POLICY_VERSION,
+        // 当前条文的指纹：面板要与每条记录的 documentHashPreview 对账，先看到基准值
+        documentHash: POLICY_DOCUMENT_HASH,
         validityDays: CONSENT_VALIDITY_DAYS,
         agreementKeys: [...POLICY_AGREEMENT_KEYS],
         counts: { total, valid, expired, revoked, incomplete },
