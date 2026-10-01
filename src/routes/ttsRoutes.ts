@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { TtsController } from "../controllers/ttsController";
 import { ttsProviderController } from "../controllers/ttsProviderController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
@@ -126,7 +127,7 @@ router.get("/fish-audio-sample", ttsConfigReadLimiter, ttsProviderController.get
 router.get("/assets/:fileName", ttsAssetLimiter, TtsController.getAudioAsset);
 router.get("/jobs/:taskId", ttsJobReadLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.getJobStatus);
 router.get("/jobs/:taskId/result", ttsJobReadLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.getJobResult);
-router.get("/admin/history", ttsAdminOperationLimiter, authenticateAdmin, TtsController.getAllGenerations);
+router.get("/admin/history", ttsAdminOperationLimiter, authenticateAdmin, requireAdminScope, TtsController.getAllGenerations);
 router.patch(
   "/admin/history/:recordId/review",
   ttsAdminOperationLimiter,
@@ -383,7 +384,7 @@ router.delete("/clarity/config", ttsConfigWriteLimiter, authenticateSuperAdmin, 
  *                       changedAt:
  *                         type: string
  */
-router.get("/clarity/history", ttsConfigReadLimiter, authenticateAdmin, async (req, res) => {
+router.get("/clarity/history", ttsConfigReadLimiter, authenticateAdmin, requireAdminScope, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string, 10) || 20;
     const result = await ClarityService.getConfigHistory(limit);

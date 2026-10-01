@@ -1,6 +1,7 @@
 import express, { type Request } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { createLimiter } from "../middleware/rateLimiter";
-import { authMiddlewareV2 as authMiddleware, adminAuthMiddleware } from "../middleware/auth";
+import { authMiddlewareV2 as authMiddleware, adminAuthMiddleware, authenticateSuperAdmin } from "../middleware/auth";
 import { getOutEmailServiceStatus, resolveOutEmailDomain } from "../services/emailService";
 import { getOutEmailAuthStatus, getOutEmailQuota, sendOutEmail, sendOutEmailBatch, getOutEmailRecords, getOutEmailRecordById } from "../services/outEmailService";
 import { getClientIP } from "../utils/ipUtils";
@@ -237,9 +238,10 @@ router.post("/batch-send", outEmailLimiter, async (req, res) => {
 
 /**
  * GET /api/outemail/records
- * 查询对外邮件发送记录（溯源日志，仅管理员）
+ * 查询对外邮件发送记录（溯源日志，仅超级管理员）
+ * 邮件正文可能包含验证码/重置链接等凭证，因此从 admin 收窄到 superadmin。
  */
-router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, async (req, res) => {
+router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, authenticateSuperAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = parseInt(req.query.pageSize as string) || 20;
@@ -257,9 +259,9 @@ router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, 
 
 /**
  * GET /api/outemail/records/:id
- * 查询单条邮件记录的完整内容（仅管理员）
+ * 查询单条邮件记录的完整内容（仅超级管理员）
  */
-router.get("/records/:id", statusQueryLimiter, authMiddleware, adminAuthMiddleware, async (req, res) => {
+router.get("/records/:id", statusQueryLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, authenticateSuperAdmin, async (req, res) => {
   try {
     const id = firstString(req.params.id);
     if (!id) {

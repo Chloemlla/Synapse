@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import multer from "multer";
 import { fbiWantedController } from "../controllers/fbiWantedController";
 import { auditLog } from "../middleware/auditLog";
@@ -54,9 +55,9 @@ const uploadPhotoLimiter = createLimiter({
 });
 
 // 管理员API - 统一应用认证中间件
-router.get("/", adminLimiter, authenticateToken, authenticateAdmin, fbiWantedController.getAllWanted);
-router.get("/statistics", adminLimiter, authenticateToken, authenticateAdmin, fbiWantedController.getStatistics);
-router.get("/:id", adminLimiter, authenticateToken, authenticateAdmin, fbiWantedController.getWantedById);
+router.get("/", adminLimiter, authenticateToken, authenticateAdmin, requireAdminScope, fbiWantedController.getAllWanted);
+router.get("/statistics", adminLimiter, authenticateToken, authenticateAdmin, requireAdminScope, fbiWantedController.getStatistics);
+router.get("/:id", adminLimiter, authenticateToken, authenticateAdmin, requireAdminScope, fbiWantedController.getWantedById);
 router.post(
   "/",
   adminLimiter,

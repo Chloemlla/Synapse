@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
@@ -84,8 +85,8 @@ router.post(
   auditLog({ module: "system", action: "system.fingerprintCleanup" }),
   cleanupExpiredFingerprints,
 );
-router.get("/fingerprint-stats", adminLimiter, authenticateAdmin, getFingerprintStats);
-router.get("/ip-ban-stats", adminLimiter, authenticateAdmin, getIpBanStats);
+router.get("/fingerprint-stats", adminLimiter, authenticateAdmin, requireAdminScope, getFingerprintStats);
+router.get("/ip-ban-stats", adminLimiter, authenticateAdmin, requireAdminScope, getIpBanStats);
 
 // IP 封禁管理（管理员）
 router.post(
@@ -130,7 +131,7 @@ router.post(
 );
 
 // 调度器（管理员）
-router.get("/scheduler-status", adminLimiter, authenticateAdmin, getSchedulerStatus);
+router.get("/scheduler-status", adminLimiter, authenticateAdmin, requireAdminScope, getSchedulerStatus);
 router.post(
   "/manual-cleanup",
   adminLimiter,
@@ -268,7 +269,7 @@ router.delete(
  *       200:
  *         description: 获取成功
  */
-router.get("/hcaptcha-config", configLimiter, authenticateAdmin, getHCaptchaConfig);
+router.get("/hcaptcha-config", configLimiter, authenticateAdmin, requireAdminScope, getHCaptchaConfig);
 
 /**
  * @openapi
@@ -331,7 +332,7 @@ router.post("/hcaptcha-verify", publicLimiter, verifyHCaptcha);
  *       200:
  *         description: 供应商列表
  */
-router.get("/providers", adminLimiter, authenticateAdmin, getCaptchaProviders);
+router.get("/providers", adminLimiter, authenticateAdmin, requireAdminScope, getCaptchaProviders);
 
 /**
  * @openapi
@@ -389,7 +390,7 @@ router.put(
  *       200:
  *         description: 额度快照与历史
  */
-router.get("/providers/quotas", adminLimiter, authenticateAdmin, getCaptchaQuotaHistory);
+router.get("/providers/quotas", adminLimiter, authenticateAdmin, requireAdminScope, getCaptchaQuotaHistory);
 
 /**
  * @openapi
@@ -403,7 +404,7 @@ router.get("/providers/quotas", adminLimiter, authenticateAdmin, getCaptchaQuota
  *       200:
  *         description: 分配策略
  */
-router.get("/providers/policy", adminLimiter, authenticateAdmin, getCaptchaAllocationPolicyHandler);
+router.get("/providers/policy", adminLimiter, authenticateAdmin, requireAdminScope, getCaptchaAllocationPolicyHandler);
 
 /**
  * @openapi
@@ -437,7 +438,7 @@ router.put(
  *       200:
  *         description: 控件外观设置
  */
-router.get("/providers/widgets", adminLimiter, authenticateAdmin, getCaptchaWidgetSettingsHandler);
+router.get("/providers/widgets", adminLimiter, authenticateAdmin, requireAdminScope, getCaptchaWidgetSettingsHandler);
 
 /**
  * @openapi
@@ -471,7 +472,7 @@ router.put(
  *       200:
  *         description: 分配分布
  */
-router.post("/providers/simulate", adminLimiter, authenticateAdmin, simulateCaptchaAllocationHandler);
+router.post("/providers/simulate", adminLimiter, authenticateAdmin, requireAdminScope, simulateCaptchaAllocationHandler);
 
 /**
  * @openapi
@@ -485,7 +486,7 @@ router.post("/providers/simulate", adminLimiter, authenticateAdmin, simulateCapt
  *       200:
  *         description: 候选、选中项与解析后的控件外观
  */
-router.get("/providers/selection", adminLimiter, authenticateAdmin, previewCaptchaSelectionHandler);
+router.get("/providers/selection", adminLimiter, authenticateAdmin, requireAdminScope, previewCaptchaSelectionHandler);
 
 /**
  * @openapi
@@ -499,7 +500,7 @@ router.get("/providers/selection", adminLimiter, authenticateAdmin, previewCaptc
  *       200:
  *         description: 统计结果
  */
-router.get("/providers/stats", adminLimiter, authenticateAdmin, getCaptchaProviderStatsHandler);
+router.get("/providers/stats", adminLimiter, authenticateAdmin, requireAdminScope, getCaptchaProviderStatsHandler);
 
 /**
  * @openapi
@@ -536,7 +537,7 @@ router.post(
  *       200:
  *         description: 获取成功
  */
-router.get("/cap-config", configLimiter, authenticateAdmin, getCapConfigHandler);
+router.get("/cap-config", configLimiter, authenticateAdmin, requireAdminScope, getCapConfigHandler);
 
 /**
  * @openapi
@@ -600,6 +601,6 @@ router.post(
   auditLog({ module: "ipban", action: "ipban.sync" }),
   syncIpBans,
 );
-router.get("/sync-status", adminLimiter, authenticateAdmin, getSyncStatus);
+router.get("/sync-status", adminLimiter, authenticateAdmin, requireAdminScope, getSyncStatus);
 
 export default router;

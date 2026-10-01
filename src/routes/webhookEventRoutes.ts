@@ -1,4 +1,5 @@
 import { type Request, type Response, Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
 import { createLimiter } from "../middleware/routeLimiters";
@@ -19,8 +20,8 @@ const webhookEventWriteLimiter = createLimiter({
   message: "Webhook event 操作过于频繁，请稍后再试",
 });
 
-// List with pagination & filters
-router.get("/", webhookEventReadLimiter, authenticateAdmin, async (req: Request, res: Response) => {
+// 事件原文可能带第三方 payload（含令牌 / 用户数据）：列表与详情仅超管可读，统计/分组保留 admin 只读。
+router.get("/", webhookEventReadLimiter, authenticateSuperAdmin, async (req: Request, res: Response) => {
   try {
     const page = parseInt(firstStringOr(req.query.page, "1"), 10);
     const pageSize = parseInt(firstStringOr(req.query.pageSize, "20"), 10);
@@ -54,7 +55,7 @@ router.get("/", webhookEventReadLimiter, authenticateAdmin, async (req: Request,
 });
 
 // Summary statistics for the management dashboard
-router.get("/stats", webhookEventReadLimiter, authenticateAdmin, async (_req: Request, res: Response) => {
+router.get("/stats", webhookEventReadLimiter, authenticateAdmin, requireAdminScope, async (_req: Request, res: Response) => {
   try {
     const stats = await WebhookEventService.stats();
     res.json({ success: true, stats });
@@ -64,7 +65,7 @@ router.get("/stats", webhookEventReadLimiter, authenticateAdmin, async (_req: Re
 });
 
 // Group list by routeKey
-router.get("/groups", webhookEventReadLimiter, authenticateAdmin, async (_req: Request, res: Response) => {
+router.get("/groups", webhookEventReadLimiter, authenticateAdmin, requireAdminScope, async (_req: Request, res: Response) => {
   try {
     const rows = await WebhookEventService.groups();
     res.json({ success: true, groups: rows });
@@ -131,7 +132,7 @@ router.post(
 });
 
 // Get by id
-router.get("/:id", webhookEventReadLimiter, authenticateAdmin, async (req: Request, res: Response) => {
+router.get("/:id", webhookEventReadLimiter, authenticateSuperAdmin, async (req: Request, res: Response) => {
   try {
     const id = firstString(req.params.id);
     if (!id) return res.status(400).json({ success: false, error: "Invalid ID" });

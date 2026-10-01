@@ -2,7 +2,7 @@ import { Router } from "express";
 import { backendBuildInfo } from "../config/buildInfo";
 import { adminOnly } from "../middleware/adminOnly";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
-import { authMiddlewareV2 as authMiddleware } from "../middleware/auth";
+import { authenticateSuperAdmin, authMiddlewareV2 as authMiddleware } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { statusLimiter } from "../middleware/routeLimiters";
 import { profilingService } from "../services/profilingService";
@@ -50,7 +50,8 @@ router.get("/", statusLimiter, (_req, res) => {
   });
 });
 
-router.get("/profiling", statusLimiter, authenticateToken, adminOnly, (_req, res) => {
+// 性能快照包含进程内部细节（调用栈/内存分布）：与「系统管理」页面对齐为超管专属。
+router.get("/profiling", statusLimiter, authenticateToken, adminOnly, authenticateSuperAdmin, (_req, res) => {
   res.json(profilingService.getSnapshot());
 });
 

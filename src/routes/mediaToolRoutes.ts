@@ -1,4 +1,5 @@
 import { type Request, type RequestHandler } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { createMediaToolRouter } from "../mediaTool/http/mediaToolHttp";
 import { ensureMediaJobRecovery, getMediaToolRunner, getServerMediaCookiesStore, getServerMediaJobStore, getServerMediaSettingsStore, getServerTranscriptStore } from "../mediaTool/serverRuntime";

@@ -2,6 +2,7 @@ import express from "express";
 import { adminController } from "../../controllers/adminController";
 import { listReports as listBilibiliCookieReports, listAccountBindings as listBilibiliAccountBindings } from "../../controllers/bilibiliCookieReportController";
 import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middleware/auth";
+import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/adminScope";
 import { wsService } from "../../services/wsService";
 import broadcastRouter from "./broadcast";
 import configRouter from "./config";
@@ -21,23 +22,18 @@ const router = express.Router();
 const adminAuthMiddleware = (req: any, res: any, next: any) => {
   // 允许普通已登录用户访问的用户自助接口（在本路由前缀 /api/admin 下）
   // 注意：这里匹配的是路由内的路径（不含前缀），例如 '/user/profile'
-  // 用前缀 startsWith 覆盖，避免新增自助端点时再次漏配
-  const userSelfServicePrefixes = [
-    "/user/profile",
-    "/user/avatar",
-    "/user/fingerprint",
-  ];
-
-  if (
-    userSelfServicePrefixes.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))
-  ) {
+  // 用前缀 startsWith 覆盖，避免新增自助端点时再次漏配。
+  // 前缀定义与管理员范围守卫共用一处（middleware/adminScope.ts），不再各写一份。
+  if (isAdminUserSelfServicePath(`/api/admin${req.path || ""}`)) {
     return next();
   }
 
   if (!req.user || !isAdminRole(req.user.role)) {
     return res.status(403).json({ error: "需要管理员权限" });
   }
-  next();
+
+  // 普通管理员只能访问用户管理 / API Key / API Key 计费 / OAuth 管理；其余一律超管（fail-closed）。
+  requireAdminScope(req, res, next);
 };
 
 // 公告读取接口移到最前面，不加任何中间件

@@ -1,4 +1,5 @@
 import type { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
 import { libreChatService } from "../services/libreChatService";
@@ -9,7 +10,8 @@ import { normalizePagination } from "./libreChatRoutes.shared";
 export function registerLibreChatAdminRoutes(router: Router): void {
   // ================= 管理员接口（仅管理后台使用） =================
   // 列出用户概览
-  router.get("/admin/users", authenticateAdmin, async (req, res) => {
+  // 聊天历史属于用户内容：列表与详情从 admin 收窄到 superadmin。
+  router.get("/admin/users", authenticateSuperAdmin, async (req, res) => {
     try {
       const kw = (req.query.kw as string) || "";
       const { page, limit } = normalizePagination(req.query.page, req.query.limit);
@@ -26,7 +28,7 @@ export function registerLibreChatAdminRoutes(router: Router): void {
   });
 
   // 查看指定用户历史
-  router.get("/admin/users/:userId/history", authenticateAdmin, async (req, res) => {
+  router.get("/admin/users/:userId/history", authenticateSuperAdmin, async (req, res) => {
     try {
       const { userId } = req.params as { userId: string };
       const { page, limit } = normalizePagination(req.query.page, req.query.limit);
@@ -117,7 +119,7 @@ export function registerLibreChatAdminRoutes(router: Router): void {
 
   // ========== 管理聊天提供者配置（BASE_URL/API_KEY/MODEL，多组轮询&故障切换）===========
   // 列表（可选按 group 过滤），对 apiKey 做脱敏
-  router.get("/admin/providers", authenticateAdmin, async (req, res) => {
+  router.get("/admin/providers", authenticateAdmin, requireAdminScope, async (req, res) => {
     try {
       const group = typeof req.query.group === "string" ? req.query.group : undefined;
       const ChatProviderModel = (mongoose.models.ChatProvider as any) || mongoose.model("ChatProvider");

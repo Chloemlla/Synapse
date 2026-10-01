@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import crypto from "node:crypto";
 import { ShortUrlController } from "../controllers/shortUrlController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
@@ -91,7 +92,7 @@ router.delete("/shorturls/batch", shortUrlApiKeyAuth, authMiddleware, userManage
 router.delete("/shorturls/:code", shortUrlApiKeyAuth, authMiddleware, userManageLimiter, ShortUrlController.deleteShortUrl);
 
 // 管理员功能：导出所有短链数据
-router.get("/admin/export", authMiddleware, adminAuthMiddleware, adminLimiter, ShortUrlController.exportAllShortUrls);
+router.get("/admin/export", authMiddleware, adminAuthMiddleware, requireAdminScope, adminLimiter, ShortUrlController.exportAllShortUrls);
 
 // 管理员功能：删除所有短链数据
 router.delete(
@@ -131,7 +132,7 @@ const ShortUrlSettingModel =
 router.get(
   "/admin/aes-key",
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   adminSensitiveLimiter,
   adminLimiter,
   async (_req, res) => {

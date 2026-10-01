@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { EmailController } from "../controllers/emailController";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin, authMiddlewareV2 as authMiddleware, isAdminRole } from "../middleware/auth";
@@ -58,7 +59,7 @@ const domainExemptionLimiter = createLimiter({
 // 发信端点各自挂 emailSendLimiter，读/校验端点挂各自 limiter。
 // codeql[js/missing-rate-limiting] per-endpoint limiters apply after auth by design (G3-26); a router-wide limiter was removed to avoid throttling per-endpoint 40/min caps
 router.use(authMiddleware);
-router.use(adminAuthMiddleware);
+router.use(adminAuthMiddleware, requireAdminScope);
 
 /**
  * @openapi
@@ -508,7 +509,7 @@ router.post(
  *       500:
  *         description: 服务器错误
  */
-router.get("/quota", statusQueryLimiter, authMiddleware, adminAuthMiddleware, EmailController.getQuota);
+router.get("/quota", statusQueryLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, EmailController.getQuota);
 
 /**
  * @openapi
@@ -546,7 +547,15 @@ router.get("/quota", statusQueryLimiter, authMiddleware, adminAuthMiddleware, Em
  *       500:
  *         description: 服务器错误
  */
-router.get("/domains", statusQueryLimiter, authMiddleware, adminAuthMiddleware, EmailController.getDomains);
+// 发件域名配置与「邮件系统配置」页面对齐为超管专属（含域名验证状态与 DNS 接入信息）。
+router.get(
+  "/domains",
+  statusQueryLimiter,
+  authMiddleware,
+  adminAuthMiddleware, requireAdminScope,
+  authenticateSuperAdmin,
+  EmailController.getDomains,
+);
 
 /**
  * @openapi

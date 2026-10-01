@@ -41,6 +41,7 @@ import {
 } from 'react-icons/fa';
 
 import type { NavGroup, NavItem } from '@/layout/types';
+import { isPlainAdminAllowedAdminPath } from '@/utils/rbac';
 
 /**
  * Shared navigation configuration (SSOT) for AppSidebar + MobileNav + AdminHub.
@@ -62,6 +63,18 @@ function filterByVisibility(
   return items.filter((item) => {
     if (item.requiredRole === 'admin' && !ctx.isAdmin) return false;
     if (item.requiredRole === 'superadmin' && !ctx.isSuperAdmin) return false;
+    // 普通管理员只能看到用户管理 / API Key / API Key 计费 / OAuth 管理；其余管理端页面
+    // 一律超管（与后端 requireAdminScope 同口径，见 utils/rbac.ts）。
+    if (
+      ctx.isAdmin &&
+      !ctx.isSuperAdmin &&
+      'url' in item &&
+      typeof item.url === 'string' &&
+      item.url.startsWith('/admin/') &&
+      !isPlainAdminAllowedAdminPath(item.url)
+    ) {
+      return false;
+    }
     // Translation-gated items use a sentinel url check below via id/url.
     if ('url' in item && item.url === '/translate' && !ctx.canUseTranslation) {
       return false;

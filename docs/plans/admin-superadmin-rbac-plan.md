@@ -310,3 +310,14 @@ if ("role" in updates && updates.role !== "superadmin" && user.role === "superad
 - `src/utils/userBootstrapService.ts`(bootstrap superadmin)
 - `scripts/migrations/migrate-admin-to-superadmin.ts`(新建)
 - `frontend/src/navigation/navConfig.ts`、`hooks/useSidebarView.ts`、`hooks/useAuth.ts`(前端分层)
+
+---
+
+## 追加收窄（2026-10-01）
+
+用户要求把普通管理员的管理端范围再收一刀，并明确只保留三块业务（用户管理、API Key、OAuth 管理）+ API Key 计费视图。落地方式与证据见 `docs/audit/audit-2026-10-01-admin-scope-narrowing.md`：
+
+- 新增 `src/middleware/adminScope.ts`：**fail-closed** 的范围守卫（匿名/非管理员 → 403 `ADMIN_REQUIRED`；superadmin 放行；admin 仅 `PLAIN_ADMIN_ALLOWED_PREFIXES` 放行，其余 403 `ADMIN_SCOPE_FORBIDDEN`）。
+- `/api/admin` 子树在挂载级 adminAuthMiddleware 之后统一收口；独立管理端路由在各自 admin 守卫之后逐处插入。
+- 前端 `utils/rbac.ts` 白名单 + `navConfig.filterByVisibility` + `AdminHub` 深链守卫，普通 admin 只能看到并使用这四项。
+- 注意：本轮只做「范围收窄」，白名单内接口原有的写守卫（多为 `authenticateSuperAdmin`）继续生效，没有放宽任何写权限。

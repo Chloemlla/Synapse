@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { coinFlipController } from "../controllers/coinFlipController";
 import { authenticateAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
@@ -30,13 +31,13 @@ router.post("/flip", coinFlipLimiter, authenticateToken, coinFlipController.flip
 router.get("/results/:resultId", coinFlipLimiter, authenticateToken, coinFlipController.getResult.bind(coinFlipController));
 
 // 管理员接口：分页查看全部结果
-router.get("/results", coinFlipAdminLimiter, authenticateAdmin, coinFlipController.listResults.bind(coinFlipController));
+router.get("/results", coinFlipAdminLimiter, authenticateAdmin, requireAdminScope, coinFlipController.listResults.bind(coinFlipController));
 
 // 管理员接口：查看统计信息
 router.get(
   "/statistics",
   coinFlipAdminLimiter,
-  authenticateAdmin,
+  authenticateAdmin, requireAdminScope,
   coinFlipController.getStatistics.bind(coinFlipController),
 );
 

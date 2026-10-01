@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import mongoose from "mongoose";
 import multer from "multer";
 import { IPFSController } from "../controllers/ipfsController";
@@ -172,7 +173,7 @@ router.post("/upload", ipfsApiKeyAuth, uploadLimiter, upload.single("file"), IPF
  *       500:
  *         description: 服务器错误
  */
-router.get("/settings", settingsLimiter, authenticateAdmin, IPFSController.getConfig);
+router.get("/settings", settingsLimiter, authenticateAdmin, requireAdminScope, IPFSController.getConfig);
 
 /**
  * @openapi

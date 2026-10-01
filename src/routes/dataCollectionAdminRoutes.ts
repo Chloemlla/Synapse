@@ -1,4 +1,5 @@
 import { type Request, type Response, Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { auditLog } from "../middleware/auditLog";
@@ -14,6 +15,9 @@ const guard = [dataCollectionLimiter, authenticateToken, authenticateAdmin] as c
 
 // Super-admin-only guard for write operations
 const superAdminGuard = [dataCollectionLimiter, authenticateToken, authenticateSuperAdmin] as const;
+
+// 原始采集载荷可能包含用户提交的明文：只有超管能看 raw，列表/统计保持 admin 只读。
+const rawGuard = [dataCollectionLimiter, authenticateToken, authenticateSuperAdmin] as const;
 
 // GET /api/data-collection/admin/stats
 router.get("/stats", ...guard, async (_req: Request, res: Response) => {
@@ -87,7 +91,7 @@ router.get("/:id", ...guard, async (req: Request, res: Response) => {
 });
 
 // GET /api/data-collection/admin/:id/raw
-router.get("/:id/raw", ...guard, async (req: Request, res: Response) => {
+router.get("/:id/raw", ...rawGuard, async (req: Request, res: Response) => {
   try {
     const id = firstString(req.params.id);
     if (!id) return res.status(400).json({ success: false, message: "Invalid id" });

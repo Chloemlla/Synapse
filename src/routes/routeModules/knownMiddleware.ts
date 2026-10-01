@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { requireAdminScope } from "../../middleware/adminScope";
 import { adminOnly } from "../../middleware/adminOnly";
 import { authenticateToken } from "../../middleware/authenticateToken";
 import { authenticateAdmin, authMiddleware } from "../../middleware/auth";
@@ -88,6 +89,8 @@ export const knownAuthMiddleware = new Map<RequestHandler, string>([
   [authenticateAdmin, "authenticateAdmin"],
   [authenticateSuperAdmin, "authenticateSuperAdmin"],
   [adminOnly, "adminOnly"],
+  // 普通 admin 的管理范围守卫（fail-closed）：未允许的管理端路径一律拒绝。
+  [requireAdminScope, "requireAdminScope"],
   [nexaiRequestSignature, "nexaiRequestSignature"],
 ]);
 
@@ -105,6 +108,7 @@ export const knownAuthHandlerNames = new Set([
   "authenticateAdmin",
   "authenticateSuperAdmin",
   "adminOnly",
+  "requireAdminScope",
   "nexaiAuthRequired",
   "nexaiAuthOptional",
   "nexaiRequestSignature",

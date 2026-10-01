@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import {
   cleanExpiredConsents,
   getCurrentPolicyVersion,
@@ -638,7 +639,7 @@ router.get("/version", getCurrentPolicyVersion);
  *       500:
  *         description: 服务器内部错误
  */
-router.get("/admin/stats", adminRateLimit, authenticateToken, adminOnly, getPolicyStats);
+router.get("/admin/stats", adminRateLimit, authenticateToken, adminOnly, requireAdminScope, getPolicyStats);
 
 /**
  * @swagger

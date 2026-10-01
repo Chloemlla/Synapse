@@ -1,4 +1,5 @@
 import { type Request, type Response, Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin } from "../middleware/auth";
 import { type AuditLogQueryParams, AuditLogService } from "../services/auditLogService";
 import { firstString } from "../utils/httpParam";
@@ -6,7 +7,7 @@ import logger from "../utils/logger";
 
 const router = Router();
 
-router.use(authenticateAdmin);
+router.use(authenticateAdmin, requireAdminScope);
 
 function buildAuditLogQuery(req: Request): AuditLogQueryParams {
   return {

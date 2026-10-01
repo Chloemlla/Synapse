@@ -1,4 +1,5 @@
 import { type NextFunction, type Request, type Response, Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import adminOnly from "../middleware/adminOnly";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin } from "../middleware/auth";
@@ -271,7 +272,7 @@ router.post("/report-tampering", async (req, res) => {
   }
 });
 
-router.get("/admin/summary", authenticateToken, adminOnly, async (req, res) => {
+router.get("/admin/summary", authenticateToken, adminOnly, requireAdminScope, async (req, res) => {
   try {
     const limit = boundedNumber(req.query.limit, 20, 1, 100);
     const data = await tamperService.getSummary(limit);
@@ -282,7 +283,7 @@ router.get("/admin/summary", authenticateToken, adminOnly, async (req, res) => {
   }
 });
 
-router.get("/admin/events", authenticateToken, adminOnly, async (req, res) => {
+router.get("/admin/events", authenticateToken, adminOnly, requireAdminScope, async (req, res) => {
   try {
     const data = await tamperService.listTamperEvents({
       limit: boundedNumber(req.query.limit, 50, 1, 200),
@@ -297,7 +298,7 @@ router.get("/admin/events", authenticateToken, adminOnly, async (req, res) => {
   }
 });
 
-router.get("/admin/blocked", authenticateToken, adminOnly, async (_req, res) => {
+router.get("/admin/blocked", authenticateToken, adminOnly, requireAdminScope, async (_req, res) => {
   try {
     await tamperService.clearExpiredBlockedIPs();
     res.json({ success: true, data: tamperService.listBlockedIPs() });

@@ -17,7 +17,7 @@ import { getAdminNavGroups, getSuperAdminOnlyPaths } from '@/navigation/navConfi
 import { findAdminModuleNeighbors, indexAdminNavByUrl, resolveActiveAdminItem } from '@/navigation/adminNavIndex';
 import { useAdminNavPrefs } from '@/hooks/useAdminNavPrefs';
 import { useAuth } from '@/hooks/useAuth';
-import { isAdminRole, isSuperAdmin } from '@/utils/rbac';
+import { isAdminRole, isPlainAdminAllowedAdminModule, isSuperAdmin } from '@/utils/rbac';
 import { cn } from '@/lib/utils';
 
 import {
@@ -307,7 +307,9 @@ export const AdminModulePage: React.FC = () => {
 
   // Superadmin-only modules (per navConfig) are hidden from the hub for
   // plain admins; also block deep links so they never render the UI.
-  const isSuperAdminOnly = getSuperAdminOnlyPaths().has(`/admin/${module}`);
+  // 普通管理员只允许用户管理 / API Key / API Key 计费 / OAuth 管理（与后端 requireAdminScope 同口径）。
+  const isSuperAdminOnly =
+    getSuperAdminOnlyPaths().has(`/admin/${module}`) || !isPlainAdminAllowedAdminModule(module);
   if (isSuperAdminOnly && !isSuperAdmin(user?.role)) {
     return <SuperAdminGuard />;
   }

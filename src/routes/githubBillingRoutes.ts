@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { GitHubBillingController } from "../controllers/githubBillingController";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";

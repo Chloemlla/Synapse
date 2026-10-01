@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { ticketController } from "../controllers/ticketController";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin, isAdminRole } from "../middleware/auth";
+import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { ticketAdminLimiter, ticketReadLimiter, ticketWriteLimiter } from "../middleware/routeLimiters";
 
@@ -20,7 +21,8 @@ const adminOnly = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-router.get("/admin/all", ticketAdminLimiter, adminOnly, ticketController.getAllTickets);
+// 普通管理员看不了工单原文（用户内容）：与后端范围守卫口径一致。
+router.get("/admin/all", ticketAdminLimiter, adminOnly, requireAdminScope, ticketController.getAllTickets);
 router.patch(
   "/admin/:id/status",
   ticketAdminLimiter,

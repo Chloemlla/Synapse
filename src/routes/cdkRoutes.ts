@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import {
   batchDeleteCDKs,
   deleteAllCDKs,
@@ -54,9 +55,9 @@ router.post(
 router.get("/redeemed", authenticateToken, getUserRedeemedResources);
 
 // 管理员API
-router.get("/", cdkAdminLimiter, authenticateAdmin, getCDKs);
-router.get("/stats", cdkAdminLimiter, authenticateAdmin, getCDKStats);
-router.get("/total-count", cdkAdminLimiter, authenticateAdmin, getTotalCDKCount);
+router.get("/", cdkAdminLimiter, authenticateAdmin, requireAdminScope, getCDKs);
+router.get("/stats", cdkAdminLimiter, authenticateAdmin, requireAdminScope, getCDKStats);
+router.get("/total-count", cdkAdminLimiter, authenticateAdmin, requireAdminScope, getTotalCDKCount);
 router.post(
   "/generate",
   cdkAdminLimiter,
@@ -92,6 +93,13 @@ router.post(
   batchDeleteCDKs,
 );
 router.post("/ks/import", cdkAdminLimiter, authenticateSuperAdmin, auditLog({ module: "cdk", action: "cdk.import" }), importCDKs);
-router.get("/export", cdkAdminLimiter, authenticateAdmin, exportCDKs);
+// 导出会把可兑换凭证整批下发，非超管不得批量带走（与前端「CDK 管理」仅超管可见对齐）。
+router.get(
+  "/export",
+  cdkAdminLimiter,
+  authenticateSuperAdmin,
+  auditLog({ module: "system", action: "cdk.export" }),
+  exportCDKs,
+);
 
 export default router;

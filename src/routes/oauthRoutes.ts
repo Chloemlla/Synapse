@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { OAuthController } from "../controllers/oauthController";
 import { auditLog } from "../middleware/auditLog";
 import { adminAuthMiddleware, authMiddlewareV2 as authMiddleware } from "../middleware/auth";
@@ -103,12 +104,12 @@ router.post(
   OAuthController.authorize,
 );
 
-router.get("/clients", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, OAuthController.listClients);
+router.get("/clients", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, OAuthController.listClients);
 router.post(
   "/clients",
   oauthAdminLimiter,
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   auditLog({
     module: "oauth",
     action: "oauth.client.create",
@@ -117,12 +118,12 @@ router.post(
   }),
   OAuthController.createClient,
 );
-router.get("/clients/:clientId", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, OAuthController.getClient);
+router.get("/clients/:clientId", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, OAuthController.getClient);
 router.put(
   "/clients/:clientId",
   oauthAdminLimiter,
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   auditLog({
     module: "oauth",
     action: "oauth.client.update",
@@ -135,7 +136,7 @@ router.post(
   "/clients/:clientId/rotate-secret",
   oauthAdminLimiter,
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   auditLog({
     module: "oauth",
     action: "oauth.client.rotate_secret",
@@ -147,7 +148,7 @@ router.delete(
   "/clients/:clientId",
   oauthAdminLimiter,
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   auditLog({
     module: "oauth",
     action: "oauth.client.disable",
@@ -156,12 +157,12 @@ router.delete(
   OAuthController.deleteClient,
 );
 
-router.get("/grants", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, OAuthController.listGrants);
+router.get("/grants", oauthAdminLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, OAuthController.listGrants);
 router.post(
   "/grants/:grantId/revoke",
   oauthAdminLimiter,
   authMiddleware,
-  adminAuthMiddleware,
+  adminAuthMiddleware, requireAdminScope,
   auditLog({
     module: "oauth",
     action: "oauth.grant.revoke",

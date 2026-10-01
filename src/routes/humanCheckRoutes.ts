@@ -1,4 +1,5 @@
 import express from "express";
+import { requireAdminScope } from "../middleware/adminScope";
 import { SmartHumanCheckController } from "../controllers/humanCheckController";
 import adminOnly from "../middleware/adminOnly";
 import { auditLog } from "../middleware/auditLog";
@@ -59,11 +60,11 @@ router.get("/nonce", humanCheckLimiter, SmartHumanCheckController.issueNonce);
 router.post("/verify", verifyLimiter, SmartHumanCheckController.verifyToken);
 
 // 获取统计信息（管理端点）
-router.get("/stats", adminLimiter, authenticateToken, adminOnly, SmartHumanCheckController.getStats);
+router.get("/stats", adminLimiter, authenticateToken, adminOnly, requireAdminScope, SmartHumanCheckController.getStats);
 
 // 管理端：查询溯源记录（需要管理员权限）
-router.get("/traces", adminLimiter, authenticateToken, adminOnly, SmartHumanCheckController.listTraces);
-router.get("/trace/:id", adminLimiter, authenticateToken, adminOnly, SmartHumanCheckController.getTrace);
+router.get("/traces", adminLimiter, authenticateToken, adminOnly, requireAdminScope, SmartHumanCheckController.listTraces);
+router.get("/trace/:id", adminLimiter, authenticateToken, adminOnly, requireAdminScope, SmartHumanCheckController.getTrace);
 
 // 管理端：删除溯源记录（需要管理员权限）
 router.delete(
