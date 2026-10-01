@@ -196,6 +196,13 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
               <InfoBadge tone="rose">状态读取失败</InfoBadge>
             )}
             <span className="text-xs text-slate-500">当前条文 v{documentVersion}</span>
+            <Link
+              to="/profile"
+              className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline"
+              title="个人中心 · 隐私与同意里可以查看本设备的历次同意与撤回"
+            >
+              查看本设备同意轨迹
+            </Link>
           </div>
           <p className="mt-2 max-w-3xl text-xs leading-6 text-slate-500">
             {credentialMissing

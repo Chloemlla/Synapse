@@ -317,7 +317,10 @@ const PrivacyConsentPanel: React.FC = () => {
                   {presentation.label}
                 </span>
                 {status.hasValidConsent && status.expiresAt && (
-                  <span className="text-xs text-slate-600">有效期至 {formatDateTime(status.expiresAt)}</span>
+                  <span className="text-xs text-slate-600">
+                    有效期至 {formatDateTime(status.expiresAt)}
+                    {remainingDays !== null ? `（${remainingDays > 0 ? `剩 ${remainingDays} 天` : '今天到期'}）` : ''}
+                  </span>
                 )}
               </div>
             </div>

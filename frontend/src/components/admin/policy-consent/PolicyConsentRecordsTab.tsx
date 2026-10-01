@@ -26,6 +26,7 @@ import {
 } from '../ip-risk-log/ui';
 import {
   AgreementsCell,
+  CopyableMono,
   Mono,
   SOURCE_FILTER_OPTIONS,
   STATE_FILTER_OPTIONS,
@@ -330,10 +331,10 @@ const PolicyConsentRecordsTab: React.FC<{
                 <Td className="font-mono text-xs text-slate-600">{row.version || '-'}</Td>
                 <Td className="text-slate-600">{sourceLabel(row.source)}</Td>
                 <Td>
-                  <Mono value={row.fingerprint} max={20} title={row.fingerprint} />
+                  <CopyableMono value={row.fingerprint} max={20} label="复制设备指纹" />
                 </Td>
                 <Td>
-                  <Mono value={row.ipAddress} title={row.ipAddress} />
+                  <CopyableMono value={row.ipAddress} label="复制 IP" />
                 </Td>
                 <Td>
                   <AgreementsCell row={row} />

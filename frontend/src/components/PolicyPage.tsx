@@ -1,26 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { motion } from 'framer-motion';
 import {
-  FaAddressBook,
-  FaCheckCircle,
-  FaClock,
-  FaCode,
   FaCopy,
   FaDownload,
-  FaEnvelope,
   FaExclamationTriangle,
   FaFileAlt,
   FaFileContract,
-  FaGlobe,
   FaHistory,
   FaPrint,
   FaSyncAlt,
   FaVolumeUp,
 } from 'react-icons/fa';
-import type {
-  PolicyDocumentResponse,
-} from '../types/policy';
+import type { PolicyDocumentResponse } from '../types/policy';
 import { fetchPolicyArchive } from '../api/policy';
 import { usePolicyDocument } from '../hooks/usePolicyDocument';
 import { searchPolicySections, type PolicySearchResult } from '../utils/policySearch';
@@ -36,22 +27,36 @@ import {
   type InfoTone,
 } from './studioTheme';
 import PolicyToc from './policy/PolicyToc';
-import {
-  AgreementCard,
-  HighlightCard,
-  HighlightedText,
-  WarningCard,
-  formatSectionNumber,
-  resolveIcon,
-  resolveTone,
-} from './policy/policyCards';
+import { AgreementCard, HighlightCard, WarningCard } from './policy/policyCards';
 import PolicySearchBar, { PolicyReadingControls, READING_SCALES, type ReadingScale } from './policy/PolicySearchBar';
 import PolicyConsentStatusPanel from './policy/PolicyConsentStatusPanel';
+import PolicySectionPanel from './policy/PolicySectionPanel';
+import PolicyFooter from './policy/PolicyFooter';
 
 // 条文正文由后端单点维护（src/config/policyDocument.ts），本页只负责阅读体验：
 // 检索、定位、字号、打印、以及「本设备同意状态」的就地查看与同意。
 
 const READING_SCALE_STORAGE_KEY = 'policy-reading-scale';
+const LAST_SECTION_STORAGE_KEY = 'policy-last-section';
+
+/** 上次读到哪一章：长文重进时可以直接跳回去，不必重新滑。 */
+const readStoredSection = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(LAST_SECTION_STORAGE_KEY);
+    return raw && raw.trim() ? raw.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+/** 当前焦点是否在可输入元素内（用来避免「/」快捷键抢走键入）。 */
+const isTypingTarget = (target: EventTarget | null): boolean => {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  const tag = element.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable;
+};
 
 /** 条文接口的失败原因归一化成一句用户能看懂的中文提示。 */
 function resolveLoadError(err: unknown): string {
@@ -113,6 +118,8 @@ const PolicyPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [readingScale, setReadingScale] = useState<ReadingScale>(readStoredScale);
+  const [resumeSectionId, setResumeSectionId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // 条文存档下载的进行中状态与结果提示（成功/失败都说清楚，不弹全局通知）
   const [archiving, setArchiving] = useState(false);
   const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
@@ -136,6 +143,7 @@ const PolicyPage: React.FC = () => {
     if (!policy) return;
     const ids = policy.sections.map((section) => `policy-${section.id}`);
     let frame = 0;
+    let lastSaved = '';
 
     const update = () => {
       frame = 0;
@@ -149,6 +157,16 @@ const PolicyPage: React.FC = () => {
         if (element && element.getBoundingClientRect().top <= 140) current = id;
       }
       setActiveId(current);
+
+      // 只在章节切换时写 localStorage（避免每帧写盘）：下次进入可以「继续阅读」。
+      if (current && current !== lastSaved) {
+        lastSaved = current;
+        try {
+          window.localStorage.setItem(LAST_SECTION_STORAGE_KEY, current);
+        } catch {
+          // 隐私模式不可写：仅失去「继续阅读」能力
+        }
+      }
     };
 
     const onScroll = () => {
@@ -173,6 +191,37 @@ const PolicyPage: React.FC = () => {
     const element = document.getElementById(hash.slice(1));
     if (element) element.scrollIntoView({ block: 'start' });
   }, [policy]);
+
+  // 上次读到哪一章：带了 hash 深链时以深链为准，否则提供「继续阅读」入口（不自动跳，避免打断）。
+  useEffect(() => {
+    if (!policy) return;
+    if (window.location.hash.startsWith('#policy-')) {
+      setResumeSectionId(null);
+      return;
+    }
+    const stored = readStoredSection();
+    if (!stored) return;
+    const id = stored.replace(/^#/, '');
+    const index = policy.sections.findIndex((section) => `policy-${section.id}` === id);
+    // 首章不提示（那等于从顶部开始），也不提示已经不存在的章节
+    setResumeSectionId(index > 0 ? id : null);
+  }, [policy]);
+
+  // 「/」聚焦检索框：条文页最常用的动作，鼠标不必先找输入框。
+  // 正在输入（input/textarea/contenteditable）时不抢键。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+      const input = searchInputRef.current;
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const scrollToAnchor = useCallback((anchor: string) => {
     const element = document.getElementById(anchor);
@@ -373,16 +422,31 @@ const PolicyPage: React.FC = () => {
                     sectionMatchCount={search.matchedSectionIds.length}
                     sectionsTotal={policy.sections.length}
                     itemsTotal={itemsTotal}
+                    inputRef={searchInputRef}
                   />
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <PolicyReadingControls scale={readingScale} onChange={changeScale} />
-                    <button
-                      type="button"
-                      onClick={() => void copyAnchorLink(`policy-${visibleSections[0]?.id ?? policy.sections[0]?.id ?? ''}`)}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 print:hidden"
-                    >
-                      <FaCopy className="text-[11px]" /> 复制当前条文链接
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 print:hidden">
+                      {resumeSectionId && (
+                        <button
+                          type="button"
+                          onClick={() => scrollToAnchor(resumeSectionId)}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:border-sky-300"
+                          title="继续上次读到的那一章"
+                        >
+                          <FaHistory className="text-[11px]" />
+                          继续阅读：
+                          {policy.sections.find((section) => `policy-${section.id}` === resumeSectionId)?.title ?? '上次位置'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void copyAnchorLink(`policy-${visibleSections[0]?.id ?? policy.sections[0]?.id ?? ''}`)}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                      >
+                        <FaCopy className="text-[11px]" /> 复制当前条文链接
+                      </button>
+                    </div>
                   </div>
                   {archiveNotice && (
                     <p className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600" role="status">
@@ -452,78 +516,20 @@ const PolicyPage: React.FC = () => {
               )}
 
               {visibleSections.map((section, index) => {
-                const Icon = resolveIcon(section.icon);
-                const tone = resolveTone(section.emphasis, policy.sections.findIndex((item) => item.id === section.id));
                 const anchor = `policy-${section.id}`;
-                const copied = copiedId === anchor;
-                const matchedItems = search.matchedItemIndexes[section.id] ?? [];
                 return (
-                  <motion.section
+                  <PolicySectionPanel
                     key={section.id}
-                    id={`policy-${section.id}`}
-                    className="scroll-mt-24"
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.22, delay: Math.min(index * 0.03, 0.3) }}
-                  >
-                    <InfoPanel className="print:border-0 print:shadow-none">
-                      <InfoSectionTitle
-                        eyebrow={`第 ${formatSectionNumber(
-                          policy.sections.findIndex((item) => item.id === section.id),
-                        )} 章 / 共 ${policy.sections.length} 章`}
-                        title={section.title}
-                        description={section.summary}
-                        icon={Icon}
-                        tone={tone}
-                        action={(
-                          <button
-                            type="button"
-                            onClick={() => void copyAnchorLink(anchor)}
-                            aria-label={`复制「${section.title}」章节链接`}
-                            className={cn(
-                              'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition print:hidden',
-                              copied
-                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                : 'border-slate-200 bg-white/80 text-slate-500 hover:border-slate-300 hover:text-slate-700',
-                            )}
-                          >
-                            {copied ? <FaCheckCircle className="text-[11px]" /> : <FaCopy className="text-[11px]" />}
-                            {copied ? '已复制' : '复制链接'}
-                          </button>
-                        )}
-                      />
-                      <ul className="space-y-3 text-sm leading-7 text-slate-600">
-                        {section.items.map((item, itemIndex) => {
-                          const hit = matchedItems.includes(itemIndex);
-                          return (
-                            <li
-                              key={item}
-                              className={cn(
-                                'flex items-start gap-3 rounded-2xl border p-3',
-                                hit ? 'border-amber-200 bg-amber-50/60' : 'border-slate-100 bg-white/65',
-                              )}
-                            >
-                              <span className="mt-1 font-mono text-[11px] text-slate-400">
-                                {formatSectionNumber(policy.sections.findIndex((entry) => entry.id === section.id))}.
-                                {itemIndex + 1}
-                              </span>
-                              <span>
-                                <HighlightedText text={item} query={search.query} />
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      {section.emphasis === 'critical' && (
-                        <p className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3 text-xs leading-6 text-rose-700">
-                          本章节涉及账户处置、数据保留或自动化风控，请重点阅读。
-                        </p>
-                      )}
-                    </InfoPanel>
-                  </motion.section>
+                    section={section}
+                    index={policy.sections.findIndex((item) => item.id === section.id)}
+                    totalSections={policy.sections.length}
+                    matchedItemIndexes={search.matchedItemIndexes[section.id] ?? []}
+                    searchQuery={search.query}
+                    copied={copiedId === anchor}
+                    onCopy={() => void copyAnchorLink(anchor)}
+                  />
                 );
               })}
-
               <InfoPanel className="border-rose-100 print:border-0 print:shadow-none">
                 <InfoSectionTitle
                   title="重点风险提示"
@@ -538,119 +544,12 @@ const PolicyPage: React.FC = () => {
                 </div>
               </InfoPanel>
 
-              <InfoPanel className="print:border-0 print:shadow-none">
-                <InfoSectionTitle
-                  title="本次修订"
-                  description="版本变化意味着此前的同意不再覆盖新条文，依赖同意的功能会要求重新同意。"
-                  icon={FaHistory}
-                  tone="sky"
-                />
-                <div className="space-y-4">
-                  {policy.revisions.map((revision) => (
-                    <div key={revision.version} className="rounded-2xl border border-slate-100 bg-white/65 p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <InfoBadge tone="sky">v{revision.version}</InfoBadge>
-                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                          <FaClock className="text-[10px]" /> {revision.date}
-                        </span>
-                      </div>
-                      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                        {revision.changes.map((change) => (
-                          <li key={change} className="flex items-start gap-2">
-                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
-                            <span>
-                              <HighlightedText text={change} query={search.query} />
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                  <p className="text-xs leading-6 text-slate-500">{policy.historyNote}</p>
-                </div>
-              </InfoPanel>
-
-              <InfoPanel className="print:border-0 print:shadow-none">
-                <InfoSectionTitle
-                  title="联系方式与程序化入口"
-                  description="咨询、反馈、数据权利请求与侵权投诉请使用官方邮箱；自动化客户端可直接调用下列接口。"
-                  icon={FaAddressBook}
-                  tone="sky"
-                />
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {policy.contacts.map((contact) => (
-                    <a
-                      key={contact.email}
-                      href={`mailto:${contact.email}`}
-                      className="rounded-2xl border border-slate-200 bg-white/70 p-5 transition hover:-translate-y-0.5 hover:shadow-md"
-                    >
-                      <div className="flex items-start gap-3">
-                        <FaEnvelope className="mt-1 text-sky-600" />
-                        <div>
-                          <div className="font-semibold text-slate-950">{contact.label}</div>
-                          <div className="text-sm text-slate-600">{contact.email}</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-500">{contact.scope}</div>
-                        </div>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-                <div className="mt-5 rounded-2xl border border-slate-100 bg-white/65 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <FaCode className="text-slate-500" /> 接口说明
-                  </div>
-                  <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-2">
-                    {[
-                      { label: '获取条文', value: policy.procedures.documentEndpoint },
-                      { label: '条文存档', value: policy.procedures.documentArchiveEndpoint },
-                      { label: '获取版本', value: policy.procedures.versionEndpoint },
-                      { label: '记录同意', value: policy.procedures.recordConsentEndpoint },
-                      { label: '查询状态', value: policy.procedures.statusEndpoint },
-                      { label: '同意轨迹', value: policy.procedures.historyEndpoint },
-                      { label: '查询同意', value: policy.procedures.checkConsentEndpoint },
-                      { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
-                    ].map((entry) => (
-                      <div key={entry.value} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
-                        <dt className="text-slate-500">{entry.label}</dt>
-                        <dd className="font-mono text-[11px] text-slate-700">{entry.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500">
-                    <FaGlobe className="text-[10px]" />
-                    同意记录默认有效 {policy.procedures.consentValidityDays} 天，过期后需重新同意；
-                    顶部「下载条文存档」与 API 里的 md 格式是同一份内容。
-                  </p>
-                </div>
-              </InfoPanel>
-
-              <div className="space-y-1 px-1 text-xs leading-6 text-slate-400">
-                <p>
-                  本页条文版本 v{policy.version}，生效日期 {policy.effectiveDate}，最近修订 {policy.lastUpdated}。
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>条文指纹（sha256，可在同意记录中核对）：</span>
-                  <code className="break-all font-mono text-[11px] text-slate-500">{policy.documentHash}</code>
-                  <button
-                    type="button"
-                    onClick={() => void copyText(policy.documentHash, 'document-hash')}
-                    aria-label="复制条文指纹"
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition print:hidden',
-                      copiedId === 'document-hash'
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 bg-white/80 text-slate-500 hover:border-slate-300 hover:text-slate-700',
-                    )}
-                  >
-                    {copiedId === 'document-hash' ? (
-                      <FaCheckCircle className="text-[10px]" />
-                    ) : (
-                      <FaCopy className="text-[10px]" />
-                    )}
-                    {copiedId === 'document-hash' ? '已复制' : '复制指纹'}
-                  </button>
-                </div>
-              </div>
+              <PolicyFooter
+                policy={policy}
+                searchQuery={search.query}
+                copiedKey={copiedId}
+                onCopyHash={() => void copyText(policy.documentHash, "document-hash")}
+              />
             </div>
           </div>
         )}

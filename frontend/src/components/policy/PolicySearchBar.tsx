@@ -17,7 +17,9 @@ export const PolicySearchBar: React.FC<{
   sectionMatchCount: number;
   sectionsTotal: number;
   itemsTotal: number;
-}> = ({ value, onChange, itemMatchCount, sectionMatchCount, sectionsTotal, itemsTotal }) => {
+  /** 供外部的「/」快捷键把焦点交给检索框 */
+  inputRef?: React.Ref<HTMLInputElement>;
+}> = ({ value, onChange, itemMatchCount, sectionMatchCount, sectionsTotal, itemsTotal, inputRef }) => {
   const searching = value.trim().length > 0;
 
   return (
@@ -25,10 +27,11 @@ export const PolicySearchBar: React.FC<{
       <div className="relative min-w-0 flex-1">
         <FaSearch className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400" />
         <input
+          ref={inputRef}
           type="search"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={`在 ${sectionsTotal} 章 / ${itemsTotal} 条正文中检索（如「撤回」「保留」「Cookie」）`}
+          placeholder={`在 ${sectionsTotal} 章 / ${itemsTotal} 条正文中检索（按 / 快速聚焦）`}
           aria-label="在政策条文中检索"
           className={cn(studioFieldClassName, 'w-full pl-9 pr-9 text-sm')}
         />

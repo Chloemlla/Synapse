@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FaCheckCircle } from 'react-icons/fa';
 import type { PolicyConsentRow, PolicyConsentSource, PolicyConsentState } from '@/api/policyConsents';
 import type { BadgeStyle } from '../ip-risk-log/format';
@@ -70,6 +70,51 @@ export const Mono: React.FC<{ value: string | null | undefined; title?: string; 
   return (
     <span className="font-mono text-[11px] text-slate-600" title={title ?? value ?? undefined}>
       {display || '-'}
+    </span>
+  );
+};
+
+/**
+ * 带「复制」按钮的等宽值（设备指纹 / IP）。
+ * 支持排查时经常要把这两个值粘到工单里，而完整值在表格里会被截断。
+ */
+export const CopyableMono: React.FC<{
+  value: string | null | undefined;
+  title?: string;
+  max?: number;
+  /** 无障碍标签用，例如「复制设备指纹」 */
+  label: string;
+}> = ({ value, title, max, label }) => {
+  const [copied, setCopied] = useState(false);
+
+  if (!value) return <span className="font-mono text-[11px] text-slate-400">-</span>;
+
+  const display = max && value.length > max ? `${value.slice(0, max)}…` : value;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="font-mono text-[11px] text-slate-600" title={title ?? value}>
+        {display}
+      </span>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        aria-label={copied ? `${label}（已复制）` : label}
+        title={copied ? '已复制' : label}
+        className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+      >
+        {copied ? '已复制' : '复制'}
+      </button>
     </span>
   );
 };
