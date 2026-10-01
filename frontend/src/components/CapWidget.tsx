@@ -136,6 +136,7 @@ const CapWidget = ({
       element.setAttribute('data-cap-api-endpoint', `${apiEndpoint.replace(/\/+$/, '')}/${siteKey}/`);
       element.setAttribute('aria-label', ariaLabel);
       element.addEventListener('solve', (event: Event) => {
+        if (cancelled) return;
         const detail = (event as CustomEvent<{ token?: string }>).detail;
         const token = detail?.token ?? '';
         if (!token) {
@@ -147,10 +148,15 @@ const CapWidget = ({
       });
       element.addEventListener('error', (event: Event) => {
         resetToken();
+        if (cancelled) return;
         callbacksRef.current.onError?.((event as CustomEvent).detail);
       });
       element.addEventListener('reset', () => {
         resetToken();
+        // Cap 控件在断连/卸载时会自己走一遍 reset() 并派发 reset 事件，这**不是**用户令牌过期。
+        // 若据实上报，上层刚收到的「验证成功」会被立刻抹掉、只剩「验证码已过期」，且每次重挂都复现。
+        // 真正因超时过期时组件还挂在树上（cancelled 仍为 false），照常上报。
+        if (cancelled) return;
         callbacksRef.current.onExpire?.();
       });
       container.appendChild(element);

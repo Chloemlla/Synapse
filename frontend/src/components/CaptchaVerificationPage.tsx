@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion as m, AnimatePresence } from 'framer-motion';
 import { FaShieldAlt } from 'react-icons/fa';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
@@ -73,6 +73,9 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   const [isLoading, setIsLoading] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
+  // 验证成功是终态：成功后面板会卸载控件，而第三方控件在卸载时可能自发派发「过期」事件
+  // （Cap 的 disconnectedCallback 就会自己 reset 一次）。用 ref 记住终态，别让这类噪声把结果抹掉。
+  const succeededRef = useRef(false);
   const [fingerprint, setFingerprint] = useState('');
   // 每次重试换 key，强制三家组件里的任意一个重新挂载（等价于 reset）。
   const [widgetKey, setWidgetKey] = useState(0);
@@ -127,6 +130,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
       setIsLoading(true);
       setError('');
       setVerificationResult(null);
+      // 新一轮尝试开始，终态随之作废。
+      succeededRef.current = false;
 
       try {
         const payload: Record<string, unknown> = { token };
@@ -151,6 +156,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
           details: data.details,
         };
 
+        succeededRef.current = result.success;
         setVerificationResult(result);
 
         if (result.success) {
@@ -176,6 +182,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   );
 
   const handleChallengeExpire = useCallback(() => {
+    // 拿到后端确认的成功结果后，控件随之卸载；卸载触发的过期回调不该推翻已验证的事实。
+    if (succeededRef.current) return;
     setVerificationResult(null);
     setError('验证码已过期，请重新验证');
   }, []);
@@ -187,12 +195,14 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   }, []);
 
   const handleRetry = useCallback(() => {
+    succeededRef.current = false;
     setError('');
     setVerificationResult(null);
     setWidgetKey((value) => value + 1);
   }, []);
 
   const handleReselect = useCallback(() => {
+    succeededRef.current = false;
     setError('');
     setVerificationResult(null);
     setWidgetKey((value) => value + 1);
