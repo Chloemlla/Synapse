@@ -166,8 +166,10 @@ describe("请求闸门：哪几家可用、要不要验", () => {
 
 describe("统一校验入口：按供应商分派", () => {
   it("未声明供应商（老客户端）走 Turnstile 分支", async () => {
+    // 令牌长度必须过 validateToken 的下限（10 字符），否则先被判定 invalid_input，测不到分支本身
+    const token = "valid-token-value";
     // 没配 TURNSTILE_SECRET_KEY ⇒ Turnstile 分支 fail-closed，且不外呼 axios
-    await expect(verifyCaptchaChallenge({ token: "tok", remoteIp: "203.0.113.5" })).resolves.toBe(false);
+    await expect(verifyCaptchaChallenge({ token, remoteIp: "203.0.113.5" })).resolves.toBe(false);
     expect(mockAxiosPost).not.toHaveBeenCalled();
     expect(mockPersistTurnstileTrace).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "service_unavailable", errorCode: "SERVICE_UNAVAILABLE" }),
@@ -176,14 +178,14 @@ describe("统一校验入口：按供应商分派", () => {
 
   it("非法供应商名回落 Turnstile，不会走到 hCaptcha / trycap 的外呼", async () => {
     await expect(
-      verifyCaptchaChallenge({ token: "tok", provider: "recaptcha", remoteIp: "203.0.113.5" }),
+      verifyCaptchaChallenge({ token: "valid-token-value", provider: "recaptcha", remoteIp: "203.0.113.5" }),
     ).resolves.toBe(false);
     expect(mockAxiosPost).not.toHaveBeenCalled();
   });
 
   it("hCaptcha 供应商走 hCaptcha 校验（缺密钥时 fail-closed 且打上 hcaptcha 溯源标记）", async () => {
     await expect(
-      verifyCaptchaChallenge({ token: "tok", provider: "hcaptcha", remoteIp: "203.0.113.5" }),
+      verifyCaptchaChallenge({ token: "valid-token-value", provider: "hcaptcha", remoteIp: "203.0.113.5" }),
     ).resolves.toBe(false);
     expect(mockAxiosPost).not.toHaveBeenCalled();
     expect(mockPersistTurnstileTrace).toHaveBeenCalledWith(
@@ -193,7 +195,7 @@ describe("统一校验入口：按供应商分派", () => {
 
   it("trycap 供应商走 Cap 校验（缺密钥时 fail-closed 且打上 trycap 溯源标记）", async () => {
     await expect(
-      verifyCaptchaChallenge({ token: "tok", provider: "trycap", remoteIp: "203.0.113.5" }),
+      verifyCaptchaChallenge({ token: "valid-token-value", provider: "trycap", remoteIp: "203.0.113.5" }),
     ).resolves.toBe(false);
     expect(mockAxiosPost).not.toHaveBeenCalled();
     expect(mockPersistTurnstileTrace).toHaveBeenCalledWith(

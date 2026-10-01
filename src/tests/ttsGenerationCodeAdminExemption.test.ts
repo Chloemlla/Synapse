@@ -69,7 +69,14 @@ jest.mock("../services/policyConsentService", () => ({
 }));
 
 jest.mock("../services/turnstileService", () => ({
-  TurnstileService: { isEnabled: async () => false, verifyToken: async () => true },
+  TurnstileService: {
+    isEnabled: async () => false,
+    verifyToken: async () => true,
+    // 人机验证现在走三家共用的请求侧闸门（getCaptchaRequestPolicy + verifyCaptchaChallenge），
+    // 该用例只关心生成码闸门，这里统一按「不需要人机验证」处理。
+    getCaptchaRequestPolicy: async () => ({ required: false, enabledProviders: [] }),
+    verifyCaptchaChallenge: async () => true,
+  },
 }));
 
 jest.mock("../tts/tts.settings", () => ({
