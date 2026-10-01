@@ -26,10 +26,16 @@ const heavyChunkNames = ["documents", "pdf", "mermaid", "katex", "charts", "fing
  *
  * 这里用 Vite manifest 的 `imports`（静态依赖，不含 `dynamicImports`）还原首屏闭包，
  * 一旦这些重包重新回到首屏关键路径，CI 立刻红灯。
+ *
+ * 2026-10-01 放宽（用户要求）：实测基线 1629.8 KiB gzip（mermaid 仍在首屏闭包内），
+ * 因此预算由 800 KiB 调到 1800 KiB，并把 mermaid 登记为**已知例外**（仍会在日志里告警）。
+ * 收紧路径：把 mermaid 改成动态加载后，把预算降回 800 KiB 并从 `firstScreenAllowedNamePatterns` 移除例外。
  */
 const firstScreenForbiddenName =
   /^(?:mermaid|katex|diagrams|pdf|charts|code-highlight|prism|markdown|docx|swagger|hugeicons)[.-]/;
-const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 800) * 1024;
+/** 已登记的例外：仍在首屏闭包内但暂不判失败的重包（会在日志里以 warning 形式列出）。 */
+const firstScreenAllowedNamePatterns = [/^mermaid[.-]/];
+const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 1800) * 1024;
 
 /**
  * 从 manifest 还原入口的静态 import 闭包（不含 dynamicImports）。
@@ -135,11 +141,15 @@ for (const [source, item] of Object.entries(manifest)) {
 // 首屏静态闭包：重包不得回流，且闭包总量必须有预算。
 const firstScreen = collectEntryStaticClosure(manifest);
 const firstScreenAssets = [...firstScreen.files, ...firstScreen.css];
+const allowedLeaks = [];
 for (const relative of firstScreenAssets) {
   const name = assetBaseName(relative);
-  if (firstScreenForbiddenName.test(name)) {
-    failures.push(`heavy chunk leaked onto the first screen (static import of the entry): ${relative}`);
+  if (!firstScreenForbiddenName.test(name)) continue;
+  if (firstScreenAllowedNamePatterns.some((pattern) => pattern.test(name))) {
+    allowedLeaks.push(relative);
+    continue;
   }
+  failures.push(`heavy chunk leaked onto the first screen (static import of the entry): ${relative}`);
 }
 const firstScreenGzipBytes = firstScreenAssets.reduce((sum, relative) => {
   const file = path.join(distDir, relative);
@@ -159,6 +169,11 @@ console.log(`Total JS/CSS: ${(totalGzipBytes / 1024).toFixed(1)} KiB gzip`);
 console.log(
   `First-screen static closure: ${(firstScreenGzipBytes / 1024).toFixed(1)} KiB gzip across ${firstScreen.files.size} JS + ${firstScreen.css.size} CSS asset(s)`,
 );
+if (allowedLeaks.length > 0) {
+  console.log(
+    `  [allowed] 首屏闭包内已登记的重包例外（不判失败，仍计入总量）：${allowedLeaks.sort().join(", ")}`,
+  );
+}
 console.log(`  ${[...firstScreen.files].sort().join("\n  ")}`);
 if (firstScreen.css.size > 0) {
   console.log(`  css:\n  ${[...firstScreen.css].sort().join("\n  ")}`);

@@ -461,3 +461,25 @@ events.filter(e => e.pid === 7872 && e.tid === 14740 && e.name === 'RunTask' && 
 1. `pnpm run check:frontend-bundle` 通过，且打印的 first-screen 闭包里不含 `mermaid./katex./markdown./code-highlight./pdf./charts.`；
 2. 预发 Lighthouse（移动端 4G）：`/captcha-verify` 目标 **FCP < 1.5 s、TBT < 200 ms**（修复前实测 6.73 s / 749 ms）；
 3. 真实用户侧 `longtask` 观测：不应再出现 600 ms 级别的模块求值长任务。
+
+---
+
+## 九、首屏预算放宽记录（2026-10-01，用户要求）
+
+`scripts/governance/check-frontend-bundle.js` 的首屏守卫在 `691d8b1e`（react-icons 独立分块）上判失败：
+
+```
+- heavy chunk leaked onto the first screen (static import of the entry): assets/mermaid.D5bvW6eP.js
+- first-screen static closure is 1629.8 KiB gzip (budget 800 KiB)
+```
+
+按用户要求放宽，改动只有两处、都留了收紧路径：
+
+| 项 | 放宽前 | 放宽后 | 收紧条件 |
+| --- | --- | --- | --- |
+| 首屏静态闭包预算（`FRONTEND_FIRST_SCREEN_MAX_GZIP_KB` 默认值） | 800 KiB | **1800 KiB** | mermaid 动态化后降回 800 KiB |
+| 首屏重包禁止名单 | 命中即失败 | `mermaid` 登记为**已知例外**（仍打印 `[allowed]` 告警并计入总量） | 同上门槛达成后从 `firstScreenAllowedNamePatterns` 移除 |
+
+其余守卫（单 chunk ≤ 1800 KiB、总量 ≤ 4600 KiB、重包必须独立成 chunk、entry ≤ 220 KiB）**未放宽**。
+本文件 §一～§八 的优化结论仍然有效：放宽只是给「mermaid 仍在首屏闭包内」这一现状留出预算，
+不等于放弃 P0-1（重组件懒加载）的目标。
