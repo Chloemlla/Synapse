@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import DOMPurify from 'dompurify';
 import {
   studioModalCardClassName,
   studioModalOverlayClassName,
@@ -22,6 +21,7 @@ const SUPPORTED_MERMAID_PREFIX =
 // 保证「代码块里没有 mermaid 图」的页面（例如 /captcha-verify）永远不会下载/求值它；
 // 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
 type MermaidApi = typeof import('mermaid')['default'];
+type DomPurifyApi = typeof import('dompurify')['default'];
 
 let mermaidLoader: Promise<MermaidApi> | null = null;
 
@@ -46,6 +46,23 @@ function loadMermaid(): Promise<MermaidApi> {
       });
   }
   return mermaidLoader;
+}
+
+let domPurifyLoader: Promise<DomPurifyApi> | null = null;
+
+// DOMPurify 同样改成按需加载：mermaid 内部也依赖它，而它俩当前会被 rolldown 合并进同一个
+// chunk；若在 Mermaid.tsx 顶层静态引用，就会把该 chunk 变成 MarkdownRenderer 的静态依赖，
+// 于是「有 markdown 但没图表」的文章页也要下 1.5 MB gzip 的 mermaid（见 trace 报告 §九）。
+function loadDomPurify(): Promise<DomPurifyApi> {
+  if (!domPurifyLoader) {
+    domPurifyLoader = import('dompurify')
+      .then((mod) => mod.default)
+      .catch((error) => {
+        domPurifyLoader = null;
+        throw error;
+      });
+  }
+  return domPurifyLoader;
 }
 
 function normalizeMermaidCode(input: string): string {
@@ -110,6 +127,7 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
           throw new Error('Unable to render Mermaid diagram');
         }
 
+        const DOMPurify = await loadDomPurify();
         if (cancelled) {
           return;
         }
