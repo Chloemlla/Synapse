@@ -9,8 +9,7 @@ import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinuxDoAuthButton from './LinuxDoAuthButton';
 import MobileLoginPanel from './MobileLoginPanel';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import PasskeyVerifyModal from './PasskeyVerifyModal';
 import PolicyConsentChecklist from './PolicyConsentChecklist';
 import TOTPVerification from './TOTPVerification';
@@ -115,7 +114,6 @@ export const LoginPage: React.FC = () => {
     const { setNotification } = useNotification();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig({ usePublicConfig: true });
     const { authenticateWithPasskey, authenticateWithDiscoverablePasskey } = usePasskey();
     const prefersReducedMotion = useReducedMotion();
 
@@ -123,10 +121,14 @@ export const LoginPage: React.FC = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [turnstileToken, setTurnstileToken] = useState<string>('');
-    const [turnstileVerified, setTurnstileVerified] = useState(false);
-    const [turnstileError, setTurnstileError] = useState(false);
-    const [turnstileKey, setTurnstileKey] = useState(0);
+    const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+        required: false,
+        loading: true,
+        error: null,
+        provider: null,
+        solved: false,
+    });
     const [showTOTPVerification, setShowTOTPVerification] = useState(false);
     const [showPasskeyVerification, setShowPasskeyVerification] = useState(false);
     const [showVerificationSelector, setShowVerificationSelector] = useState(false);
@@ -205,7 +207,7 @@ export const LoginPage: React.FC = () => {
         if (savedUsername) { setUsername(savedUsername); setRememberMe(true); }
     }, []);
 
-    useEffect(() => { if (turnstileToken) setError(null); }, [turnstileToken]);
+    useEffect(() => { if (captcha?.token) setError(null); }, [captcha?.token]);
 
     // 已认证的管理员停留在 /login?redirectTo=/admin 时直接进入管理后台，
     // 覆盖 2FA/Passkey 登录成功后刷新、或登录成功后被弹回登录页等场景。
@@ -215,9 +217,10 @@ export const LoginPage: React.FC = () => {
         }
     }, [user, postLoginRedirect, navigate]);
 
-    const handleTurnstileVerify = (token: string) => { setTurnstileToken(token); setTurnstileVerified(true); setTurnstileError(false); };
-    const handleTurnstileExpire = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(false); };
-    const handleTurnstileError = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(true); };
+    // 人机验证由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
+    const handleCaptchaSolved = React.useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+    const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
+    const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -232,14 +235,20 @@ export const LoginPage: React.FC = () => {
             setNotification({ message: '请先阅读并勾选同意全部四项条款', type: 'warning' });
             return;
         }
-        if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+        if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
         try {
             if (rememberMe) { localStorage.setItem('rememberedUsername', sanitizedUsername); }
             else { localStorage.removeItem('rememberedUsername'); }
-            const result = await login(sanitizedUsername, password, turnstileConfig.siteKey ? turnstileToken : undefined, consentPayload);
+            const result = await login(
+                sanitizedUsername,
+                password,
+                captcha?.token,
+                consentPayload,
+                captcha?.provider,
+            );
             // 只在完整登录（无 2FA）时保存会话令牌供深链回传。
             // 2FA 未完成时 result.token 是 5 分钟的 2fa_pending 临时令牌，不得外泄给外部应用。
             if (result?.token && !result.requires2FA) {
@@ -274,10 +283,8 @@ export const LoginPage: React.FC = () => {
             const authError = err as AuthRequestError;
             const attemptFeedback = buildLoginAttemptStatus(authError);
             if (attemptFeedback) setAttemptStatus(attemptFeedback);
-            if (turnstileConfig.siteKey) {
-                setTurnstileToken('');
-                setTurnstileVerified(false);
-                setTurnstileKey(k => k + 1);
+            if (captchaStatus.required) {
+                setCaptcha(null);
             }
             setError(authError.message || '登录失败'); setNotification({ message: authError.message || '登录失败', type: 'error' });
         } finally { setLoading(false); }
@@ -424,15 +431,14 @@ export const LoginPage: React.FC = () => {
                                     disabled={loading}
                                 />
 
-                                {!turnstileConfigLoading && turnstileConfig.siteKey && (
-                                    <div role="group" aria-label="人机验证">
-                                        <TurnstileWidget key={turnstileKey} siteKey={turnstileConfig.siteKey} onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} onError={handleTurnstileError} size="normal" />
-                                        {turnstileVerified && <p className="mt-2 text-xs text-emerald-600" role="status" aria-live="polite">人机验证通过</p>}
-                                        {turnstileError && <p className="mt-2 text-xs text-rose-600" role="alert" aria-live="assertive">验证失败，请重新验证</p>}
-                                    </div>
-                                )}
+                                <ManagedCaptcha
+                                    scenario="default"
+                                    onSolved={handleCaptchaSolved}
+                                    onCleared={handleCaptchaCleared}
+                                    onStatusChange={handleCaptchaStatus}
+                                />
 
-                                <m.button type="submit" disabled={loading || (!!turnstileConfig.siteKey && !turnstileVerified)} aria-label={loading ? '正在登录' : '登录'} aria-busy={loading}
+                                <m.button type="submit" disabled={loading || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在登录' : '登录'} aria-busy={loading}
                                     className={authPrimaryButtonClassName}
                                     whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                     {loading ? '登录中...' : '登录'}

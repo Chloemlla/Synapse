@@ -5,8 +5,7 @@ import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinuxDoAuthButton from './LinuxDoAuthButton';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { AnimatePresence, LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { api } from '../api/api';
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaUser, FaVolumeUp, FaArrowLeft, FaUserPlus, FaCheckCircle, FaInfoCircle, FaTicketAlt } from 'react-icons/fa';
@@ -68,7 +67,6 @@ export const RegisterPage: React.FC = () => {
     const { user } = useAuth();
     const { setNotification } = useNotification();
     const navigate = useNavigate();
-    const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig({ usePublicConfig: true });
     const prefersReducedMotion = useReducedMotion();
 
     const [username, setUsername] = useState('');
@@ -81,10 +79,14 @@ export const RegisterPage: React.FC = () => {
     const [policyConsent, setPolicyConsent] = useState<PolicyConsentSelection>(createPolicyConsentSelection);
     const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({ score: 0, feedback: '' });
-    const [turnstileToken, setTurnstileToken] = useState<string>('');
-    const [turnstileVerified, setTurnstileVerified] = useState(false);
-    const [turnstileError, setTurnstileError] = useState(false);
-    const [turnstileKey, setTurnstileKey] = useState(0);
+    const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+        required: false,
+        loading: true,
+        error: null,
+        provider: null,
+        solved: false,
+    });
     const [showEmailVerify, setShowEmailVerify] = useState(false);
     const [pendingEmail, setPendingEmail] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -99,11 +101,12 @@ export const RegisterPage: React.FC = () => {
     const emailPattern = new RegExp(`^[\\w.-]+@(${allowedDomains.map(d => d.replace('.', '\\.')).join('|')})$`);
     const reservedUsernames = ['admin', 'root', 'system', 'test', 'administrator'];
 
-    useEffect(() => { if (turnstileToken) setError(null); }, [turnstileToken]);
+    useEffect(() => { if (captcha?.token) setError(null); }, [captcha?.token]);
 
-    const handleTurnstileVerify = (token: string) => { setTurnstileToken(token); setTurnstileVerified(true); setTurnstileError(false); };
-    const handleTurnstileExpire = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(false); };
-    const handleTurnstileError = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(true); };
+    // 人机验证由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
+    const handleCaptchaSolved = React.useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+    const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
+    const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
     const checkPasswordStrength = (pwd: string): PasswordStrength => {
         let score = 0; const feedback: string[] = [];
@@ -154,7 +157,7 @@ export const RegisterPage: React.FC = () => {
             setNotification({ message: '请先阅读并勾选同意全部四项条款', type: 'warning' });
             return;
         }
-        if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+        if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
@@ -166,13 +169,18 @@ export const RegisterPage: React.FC = () => {
             if (!fingerprint) { setError('无法获取设备信息，请稍后重试'); setLoading(false); return; }
             const requestBody: any = { username: sanitizedUsername, email: sanitizedEmail, password, fingerprint, clientIP, policyConsent: consentPayload };
             if (sanitizedInvitationCode) requestBody.invitationCode = sanitizedInvitationCode;
-            if (turnstileConfig.siteKey && turnstileToken) requestBody.cfToken = turnstileToken;
+            if (captcha?.token) {
+                // 三家共用契约：captchaProvider 告诉后端这次是哪个供应商签发的；cfToken 是老后端兼容字段。
+                requestBody.captchaToken = captcha.token;
+                requestBody.captchaProvider = captcha.provider;
+                requestBody.cfToken = captcha.token;
+            }
             const res = await api.post('/api/auth/register', requestBody);
             const data = res.data;
             if (data && data.needVerify) {
                 setNotification({ message: data.message || '验证链接已发送到您的邮箱，请点击链接完成注册', type: 'success' });
                 setError(''); setShowEmailVerify(true); setPendingEmail(sanitizedEmail);
-                setTurnstileToken(''); setTurnstileVerified(false); setTurnstileKey(k => k + 1);
+                setCaptcha(null);
             } else {
                 setError(data?.error || '注册失败'); setNotification({ message: data?.error || '注册失败', type: 'error' });
             }
@@ -286,13 +294,12 @@ export const RegisterPage: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {!turnstileConfigLoading && turnstileConfig.siteKey && (
-                                    <div role="group" aria-label="人机验证">
-                                        <TurnstileWidget key={turnstileKey} siteKey={turnstileConfig.siteKey} onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} onError={handleTurnstileError} size="normal" />
-                                        {turnstileVerified && <p className="mt-2 text-xs text-emerald-600" role="status" aria-live="polite">人机验证通过</p>}
-                                        {turnstileError && <p className="mt-2 text-xs text-rose-600" role="alert" aria-live="assertive">验证失败，请重新验证</p>}
-                                    </div>
-                                )}
+                                <ManagedCaptcha
+                                    scenario="default"
+                                    onSolved={handleCaptchaSolved}
+                                    onCleared={handleCaptchaCleared}
+                                    onStatusChange={handleCaptchaStatus}
+                                />
 
                                 <PolicyConsentChecklist
                                     selection={policyConsent}
@@ -301,7 +308,7 @@ export const RegisterPage: React.FC = () => {
                                     disabled={loading}
                                 />
 
-                                <m.button type="submit" disabled={loading || password !== confirmPassword || (!!turnstileConfig.siteKey && !turnstileVerified)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
+                                <m.button type="submit" disabled={loading || password !== confirmPassword || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
                                     className={authPrimaryButtonClassName}
                                     whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                     {loading ? '注册中...' : '创建账户'}

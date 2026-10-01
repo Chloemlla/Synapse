@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { FaEnvelope, FaLock, FaArrowLeft, FaVolumeUp, FaEye, FaEyeSlash, FaKey, FaCheckCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
@@ -45,7 +44,6 @@ export const ResetPasswordPage: React.FC = () => {
     const { setNotification } = useNotification();
     const navigate = useNavigate();
     const location = useLocation();
-    const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig({ usePublicConfig: true });
     const prefersReducedMotion = useReducedMotion();
 
     const [email, setEmail] = useState('');
@@ -57,10 +55,14 @@ export const ResetPasswordPage: React.FC = () => {
     const [success, setSuccess] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [turnstileToken, setTurnstileToken] = useState<string>('');
-    const [turnstileVerified, setTurnstileVerified] = useState(false);
-    const [turnstileError, setTurnstileError] = useState(false);
-    const [turnstileKey, setTurnstileKey] = useState(0);
+    const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+        required: false,
+        loading: true,
+        error: null,
+        provider: null,
+        solved: false,
+    });
 
     const effectiveCardVariants = React.useMemo(() => prefersReducedMotion ? FADE_VARIANTS : cardVariants, [prefersReducedMotion]);
     const effectiveCardTransition = React.useMemo(() => prefersReducedMotion ? NO_TRANSITION : CARD_TRANSITION, [prefersReducedMotion]);
@@ -68,11 +70,12 @@ export const ResetPasswordPage: React.FC = () => {
     const effectiveButtonTap = React.useMemo(() => prefersReducedMotion ? undefined : BUTTON_TAP, [prefersReducedMotion]);
 
     useEffect(() => { if (location.state && (location.state as any).email) setEmail((location.state as any).email); }, [location]);
-    useEffect(() => { if (turnstileToken) setError(null); }, [turnstileToken]);
+    useEffect(() => { if (captcha?.token) setError(null); }, [captcha?.token]);
 
-    const handleTurnstileVerify = (token: string) => { setTurnstileToken(token); setTurnstileVerified(true); setTurnstileError(false); };
-    const handleTurnstileExpire = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(false); };
-    const handleTurnstileError = () => { setTurnstileToken(''); setTurnstileVerified(false); setTurnstileError(true); };
+    // 人机验证由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
+    const handleCaptchaSolved = React.useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+    const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
+    const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setError(null);
@@ -82,7 +85,7 @@ export const ResetPasswordPage: React.FC = () => {
         if (!/^\d{8}$/.test(sanitizedCode)) { setError('验证码必须为8位数字'); return; }
         if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
         if (newPassword.length < 8) { setError('密码至少需要8个字符'); return; }
-        if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+        if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
@@ -91,7 +94,23 @@ export const ResetPasswordPage: React.FC = () => {
             const deviceName = navigator.userAgent || 'unknown';
             const response = await fetch(getApiBaseUrl() + '/api/auth/reset-password', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                body: JSON.stringify({ email: sanitizedEmail, code: sanitizedCode, newPassword, turnstileToken: turnstileConfig.siteKey ? turnstileToken : undefined, clientIP, deviceName, fingerprint }),
+                body: JSON.stringify({
+                    email: sanitizedEmail,
+                    code: sanitizedCode,
+                    newPassword,
+                    clientIP,
+                    deviceName,
+                    fingerprint,
+                    // 三家共用契约：captchaProvider 告诉后端这次是哪个供应商签发的；turnstileToken/cfToken 是老后端兼容字段。
+                    ...(captcha?.token
+                        ? {
+                            captchaToken: captcha.token,
+                            captchaProvider: captcha.provider,
+                            turnstileToken: captcha.token,
+                            cfToken: captcha.token,
+                        }
+                        : {}),
+                }),
                 credentials: 'include'
             });
             const data = await response.json();
@@ -191,15 +210,14 @@ export const ResetPasswordPage: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {!turnstileConfigLoading && turnstileConfig.siteKey && (
-                                        <div role="group" aria-label="人机验证">
-                                            <TurnstileWidget key={turnstileKey} siteKey={turnstileConfig.siteKey} onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} onError={handleTurnstileError} size="normal" />
-                                            {turnstileVerified && <p className="mt-2 text-xs text-emerald-600" role="status" aria-live="polite">验证通过</p>}
-                                            {turnstileError && <p className="mt-2 text-xs text-rose-600" role="alert" aria-live="assertive">验证失败，请重试</p>}
-                                        </div>
-                                    )}
+                                    <ManagedCaptcha
+                                        scenario="default"
+                                        onSolved={handleCaptchaSolved}
+                                        onCleared={handleCaptchaCleared}
+                                        onStatusChange={handleCaptchaStatus}
+                                    />
 
-                                    <m.button type="submit" disabled={loading || (!!turnstileConfig.siteKey && !turnstileVerified)} aria-label={loading ? '重置密码中...' : '重置密码'} aria-busy={loading}
+                                    <m.button type="submit" disabled={loading || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '重置密码中...' : '重置密码'} aria-busy={loading}
                                         className={authPrimaryButtonClassName}
                                         whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                         {loading ? '重置密码中...' : '重置密码'}

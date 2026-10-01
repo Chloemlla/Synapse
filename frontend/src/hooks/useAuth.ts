@@ -218,10 +218,10 @@ export const useAuth = () => {
         navigate('/welcome');
     }, [loadSavedAccounts, navigate, setUser]);
 
-    const login = useCallback(async (username: string, password: string, cfToken?: string, policyConsent?: PolicyConsentPayload): Promise<LoginResult> => {
+    const login = useCallback(async (username: string, password: string, cfToken?: string, policyConsent?: PolicyConsentPayload, captchaProvider?: string): Promise<LoginResult> => {
         try {
             // Delegate the actual API call + auth state mutation to the Zustand store.
-            const result = await storeLogin(username, password, cfToken, policyConsent);
+            const result = await storeLogin(username, password, cfToken, policyConsent, captchaProvider);
 
             if (result.requires2FA && result.twoFactorType && result.twoFactorType.length > 0) {
                 setPending2FA({ userId: result.user.id, type: result.twoFactorType, username: result.user.username });

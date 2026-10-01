@@ -34,7 +34,14 @@ interface AuthState {
   /** true until the initial session check has settled. */
   isLoading: boolean;
   error: string | null;
-  login: (username: string, password: string, cfToken?: string, policyConsent?: PolicyConsentPayload) => Promise<LoginResult>;
+  /** cfToken 为历史字段名；captchaProvider 是三家供应商共用下发链路里的「这次是谁签发的」。 */
+  login: (
+    username: string,
+    password: string,
+    cfToken?: string,
+    policyConsent?: PolicyConsentPayload,
+    captchaProvider?: string,
+  ) => Promise<LoginResult>;
   logout: () => void;
   checkAuth: () => Promise<void>;
   setUser: (user: User | null) => void;
@@ -66,7 +73,7 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       error: null,
 
-      login: async (username, password, cfToken, policyConsent) => {
+      login: async (username, password, cfToken, policyConsent, captchaProvider) => {
         set({ isLoading: true, error: null });
         try {
           // 设备指纹随登录一起上送：服务端用它给政策同意记录归档（拿不到时为 null，不影响登录）
@@ -75,6 +82,7 @@ export const useAuthStore = create<AuthState>()(
             identifier: username,
             password,
             ...(cfToken ? { cfToken } : {}),
+            ...(cfToken && captchaProvider ? { captchaProvider } : {}),
             ...(policyConsent ? { policyConsent } : {}),
             ...(fingerprint ? { fingerprint } : {}),
           });

@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { FaEnvelope, FaArrowLeft, FaVolumeUp, FaKey, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import { getFingerprint, getClientIP } from '../utils/fingerprint';
@@ -48,17 +47,20 @@ const BUTTON_TAP = { scale: 0.99 } as const;
 export const ForgotPasswordPage: React.FC = () => {
     const { user } = useAuth();
     const { setNotification } = useNotification();
-    const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig({ usePublicConfig: true });
     const prefersReducedMotion = useReducedMotion();
 
     const [email, setEmail] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
-    const [turnstileToken, setTurnstileToken] = useState<string>('');
-    const [turnstileVerified, setTurnstileVerified] = useState(false);
-    const [turnstileError, setTurnstileError] = useState(false);
-    const [turnstileKey, setTurnstileKey] = useState(0);
+    const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+        required: false,
+        loading: true,
+        error: null,
+        provider: null,
+        solved: false,
+    });
 
     const effectiveCardVariants = React.useMemo(() => prefersReducedMotion ? FADE_VARIANTS : cardVariants, [prefersReducedMotion]);
     const effectiveCardTransition = React.useMemo(() => prefersReducedMotion ? NO_TRANSITION : CARD_TRANSITION, [prefersReducedMotion]);
@@ -66,28 +68,15 @@ export const ForgotPasswordPage: React.FC = () => {
     const effectiveButtonTap = React.useMemo(() => prefersReducedMotion ? undefined : BUTTON_TAP, [prefersReducedMotion]);
 
     useEffect(() => {
-        if (turnstileToken) {
+        if (captcha?.token) {
             setError(null);
         }
-    }, [turnstileToken]);
+    }, [captcha?.token]);
 
-    const handleTurnstileVerify = (token: string) => {
-        setTurnstileToken(token);
-        setTurnstileVerified(true);
-        setTurnstileError(false);
-    };
-
-    const handleTurnstileExpire = () => {
-        setTurnstileToken('');
-        setTurnstileVerified(false);
-        setTurnstileError(false);
-    };
-
-    const handleTurnstileError = () => {
-        setTurnstileToken('');
-        setTurnstileVerified(false);
-        setTurnstileError(true);
-    };
+    // 人机验证由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
+    const handleCaptchaSolved = React.useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+    const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
+    const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -106,7 +95,7 @@ export const ForgotPasswordPage: React.FC = () => {
             return;
         }
 
-        if (turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+        if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证');
             setNotification({ message: '请先完成人机验证', type: 'warning' });
             return;
@@ -136,7 +125,15 @@ export const ForgotPasswordPage: React.FC = () => {
                     email: sanitizedEmail,
                     fingerprint: fingerprint,
                     clientIP: clientIP,
-                    turnstileToken: turnstileConfig.siteKey ? turnstileToken : undefined
+                    // 三家共用契约：captchaProvider 告诉后端这次是哪个供应商签发的；turnstileToken/cfToken 是老后端兼容字段。
+                    ...(captcha?.token
+                        ? {
+                            captchaToken: captcha.token,
+                            captchaProvider: captcha.provider,
+                            turnstileToken: captcha.token,
+                            cfToken: captcha.token,
+                        }
+                        : {}),
                 }),
                 credentials: 'include'
             });
@@ -259,24 +256,16 @@ export const ForgotPasswordPage: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {!turnstileConfigLoading && turnstileConfig.siteKey && (
-                                            <div role="group" aria-label="人机验证">
-                                                <TurnstileWidget
-                                                    key={turnstileKey}
-                                                    siteKey={turnstileConfig.siteKey}
-                                                    onVerify={handleTurnstileVerify}
-                                                    onExpire={handleTurnstileExpire}
-                                                    onError={handleTurnstileError}
-                                                    size="normal"
-                                                />
-                                                {turnstileVerified && <p className="mt-2 text-xs text-emerald-600" role="status" aria-live="polite">人机验证通过</p>}
-                                                {turnstileError && <p className="mt-2 text-xs text-rose-600" role="alert" aria-live="assertive">验证失败，请重新验证</p>}
-                                            </div>
-                                        )}
+                                        <ManagedCaptcha
+                                            scenario="default"
+                                            onSolved={handleCaptchaSolved}
+                                            onCleared={handleCaptchaCleared}
+                                            onStatusChange={handleCaptchaStatus}
+                                        />
 
                                         <m.button
                                             type="submit"
-                                            disabled={loading || (!!turnstileConfig.siteKey && !turnstileVerified)}
+                                            disabled={loading || (captchaStatus.required && !captcha?.token)}
                                             aria-label={loading ? '发送中...' : '发送重置链接'}
                                             aria-busy={loading}
                                             className={authPrimaryButtonClassName}
