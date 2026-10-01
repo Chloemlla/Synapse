@@ -3,7 +3,7 @@ import logger from "../../utils/logger";
 import { mongoose } from "../mongoService";
 import { HCAPTCHA_VERIFY_URL } from "./constants";
 import { getHCaptchaKey, HCaptchaSettingModel } from "./models";
-import { guardCaptchaQuota } from "./quotaGate";
+import { consumeConfiguredCaptchaQuota } from "./quota";
 import { assessClientRisk, recordVerificationOutcome } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { HCaptchaResponse } from "./types";
@@ -63,13 +63,35 @@ export async function verifyHCaptchaToken(token: string, remoteIp?: string, site
       return false;
     }
 
-    // 同 verify.ts 的 hCaptcha 分支：额度用尽就不外呼，由闸门落一条 quota_exhausted trace。
-    const quotaFailure = await guardCaptchaQuota("hcaptcha", {
-      traceId,
-      timestamp: new Date().toISOString(),
-      clientInfo: { ip: remoteIp || "unknown" },
-    });
-    if (quotaFailure) return false;
+    // 同 verify.ts 的 hCaptcha 分支：额度用尽就不外呼，并落一条 quota_exhausted trace。
+    const quota = await consumeConfiguredCaptchaQuota("hcaptcha");
+    if (!quota.allowed) {
+      logger.warn("hCaptcha 本月额度已用尽，本次不外呼", {
+        used: quota.snapshot.used,
+        limit: quota.snapshot.limit,
+        resetsAt: quota.snapshot.resetsAt,
+        traceId,
+      });
+
+      const riskAssessmentQuota = assessClientRisk(remoteIp || "unknown", undefined, undefined);
+      await persistTurnstileTrace({
+        traceId,
+        time: new Date(),
+        ip: remoteIp || "unknown",
+        ua: undefined,
+        success: false,
+        reason: "quota_exhausted",
+        errorCode: "QUOTA_EXHAUSTED",
+        errorMessage: `hCaptcha 本月额度已用尽（${quota.snapshot.used}/${quota.snapshot.limit}）`,
+        fingerprint: undefined,
+        riskLevel: riskAssessmentQuota.riskLevel,
+        riskScore: riskAssessmentQuota.riskScore,
+        riskReasons: riskAssessmentQuota.riskReasons,
+        verificationMethod: "hcaptcha",
+      });
+
+      return false;
+    }
 
     const formData = new URLSearchParams();
     formData.append("secret", secretKey);

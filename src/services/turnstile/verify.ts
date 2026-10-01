@@ -7,7 +7,7 @@ import { generateAccessToken } from "./accessToken";
 import { CAP_DEFAULT_API_ENDPOINT, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { isIpBanned, recordViolation } from "./ipBan";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
-import { guardCaptchaQuota } from "./quotaGate";
+import { consumeConfiguredCaptchaQuota } from "./quota";
 import { assessClientRisk, recordVerificationOutcome, translateTurnstileErrors } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { CapVerifyResponse, HCaptchaResponse, TurnstileResponse, TurnstileVerificationResult } from "./types";
@@ -322,8 +322,45 @@ export async function verifyTokenDetailed(
 
     // hCaptcha 是额度型供应商：先算额度再外呼，用尽即不外呼（fail-closed）。
     if (captchaType === "hcaptcha") {
-      const quotaFailure = await guardCaptchaQuota("hcaptcha", { traceId, timestamp, clientInfo });
-      if (quotaFailure) return quotaFailure;
+      const quota = await consumeConfiguredCaptchaQuota("hcaptcha");
+      if (!quota.allowed) {
+        const quotaRisk = assessClientRisk(validatedIp, userAgent, fingerprint);
+        recordVerificationOutcome(validatedIp, userAgent, false, new Date(), fingerprint);
+
+        await persistTurnstileTrace({
+          traceId,
+          time: new Date(),
+          ip: validatedIp,
+          ua: userAgent,
+          success: false,
+          reason: "quota_exhausted",
+          errorCode: "QUOTA_EXHAUSTED",
+          errorMessage: `hCaptcha 本月额度已用尽（${quota.snapshot.used}/${quota.snapshot.limit}）`,
+          fingerprint,
+          riskLevel: quotaRisk?.riskLevel,
+          riskScore: quotaRisk?.riskScore,
+          riskReasons: quotaRisk?.riskReasons,
+        });
+
+        logger.warn("hCaptcha 本月额度已用尽，本次不外呼", {
+          used: quota.snapshot.used,
+          limit: quota.snapshot.limit,
+          resetsAt: quota.snapshot.resetsAt,
+          traceId,
+        });
+
+        return {
+          success: false,
+          reason: "quota_exhausted",
+          errorCode: "QUOTA_EXHAUSTED",
+          errorMessage: "hCaptcha 本月额度已用尽",
+          retryable: true,
+          timestamp,
+          clientInfo,
+          riskAssessment: quotaRisk,
+          traceId,
+        };
+      }
     }
 
     const formData = new URLSearchParams();
