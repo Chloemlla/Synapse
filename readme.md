@@ -57,9 +57,14 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 
 - 🔐 多因素认证体系（密码 + TOTP + Passkey/WebAuthn + 邮箱验证 + 备份码）
 - 🔑 OIDC 登录提供方：本服务可作为下游应用的统一身份源
-- 🛡️ 多层安全防护（WAF + IP 封禁 + 速率限制 + 篡改检测 + 智能人机验证 + proxycheck.io IP 风险检测）
+- 🔒 全站统一「安全会话」：查看密钥 / 命令执行 / 双因素配置 / 第三方绑定共用一次强验证（密码 / TOTP / Passkey）
+- 🧬 单一 `AES_KEY` 主密钥，经 HKDF 派生 JWT 签名、密码 KEK、令牌签名与各内部签名/凭据密钥
+- 🛡️ 多层安全防护（WAF + IP 封禁 + 速率限制 + 篡改检测 + 智能人机验证 + proxycheck.io IP 风险检测 + WebRTC 泄露检测）
+- 🧩 人机验证供应商调度：Turnstile / hCaptcha / trycap 可按场景权重、优先级、粘性、灰度与月度额度下发
+- 📜 政策条文单点维护：登录/注册逐项同意、条文指纹留痕、用户端查看与撤回、管理端只读审计
 - 🎙️ 多提供商文本转语音（OpenAI / Fish Audio / 内置微软 Edge 朗读）
 - 🎧 语音转文本（录音转写）与媒体工具（B 站音频下载联动）
+- 🗂️ 生成记录自助管理（标题 / 备注 / 标签 / 软删除）
 - 🏪 完整的资源商店与 CDK 兑换系统
 - 📊 用户行为数据收集与分析（集成 Microsoft Clarity）
 - 🌐 WebSocket 实时通信
@@ -91,9 +96,12 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 篡改检测 | 前端关键元素篡改保护 | `tamperProtection.ts`, `TamperDetectionDemo` |
 | 智能人机验证 | 基于行为分析的人机识别 | `smartHumanCheckService.ts`, `SmartHumanCheck` |
 | Turnstile 验证码 | Cloudflare Turnstile 集成 | `turnstileAuth.ts`, `TurnstileWidget` |
-| 人机验证 | 验证方式由后端在 Turnstile / hCaptcha / trycap 间调度（`CaptchaVerificationPage`、`FirstVisitVerification`） | `CaptchaVerificationPage`, `HCaptchaWidget`, `TurnstileWidget`, `CapWidget` |
+| 人机验证 | 三家供应商（Turnstile / hCaptcha / trycap）统一下发链路，可按场景配置权重、优先级、粘性、灰度与月度额度，控件加载失败自动换家 | `ManagedCaptcha`, `CaptchaVerificationPage`, `HCaptchaWidget`, `TurnstileWidget`, `CapWidget` |
+| 安全会话 | 查看密钥 / 命令执行 / 双因素配置 / 第三方绑定共用一次强验证（密码 / TOTP / Passkey），TTL 内可复用 | `utils/securitySession.ts`, `EstablishSecuritySession` |
+| 主密钥派生 | 单一 `AES_KEY` 经 HKDF-SHA256 派生 JWT 签名、密码 KEK、令牌与内部签名密钥，旧 env 与存量密文双接受 | `config/keyDerivation.ts` |
+| 政策同意 | 登录/注册/TTS 逐项勾选，条文指纹留痕，用户端可查看与撤回，管理端只读审计 | `policyRoutes`, `PolicyConsentChecklist`, `PolicyConsentPanel` |
 | 首次访问检测 | 新设备/浏览器首次访问验证 | `FirstVisitVerification` |
-| IP 风险检测 | proxycheck.io IP 风险评分与自动阻断（出口探测 + HMAC 验签） | `ip-risk` 服务、`IP 风险缓存页` |
+| IP 风险检测 | proxycheck.io IP 风险评分与自动阻断（出口探测 + HMAC 验签 + WebRTC 泄露自判） | `ip-risk` 服务、`IP 风险缓存页` |
 | 指纹采集 | 浏览器指纹识别与追踪 | `FingerprintManager`, `FingerprintRequestModal` |
 | 重放保护 | 防止请求重放攻击 | `replayProtection.ts` |
 | 审计日志 | 全操作审计记录 | `auditLog.ts`, `AuditLogViewer` |
@@ -110,6 +118,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 
 - **语音合成**：支持多种语言、多种音色，文本转语音生成
 - **音频管理**：生成历史记录、音频文件缓存与预览
+- **记录自助管理**：生成记录可设置标题、备注与预设标签，删除为软删除（管理后台仍可见）
 - **生成统计**：用户生成次数统计与分析
 - **音频预览**：在线播放生成的音频文件
 
@@ -248,7 +257,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 > [!WARNING]
 > 管理后台包含命令执行、环境变量修改等高权限操作。请确保 `ADMIN_PASSWORD` 使用强密码，并严格限制管理员账户的分发。
 
-管理员专属功能，需要 `admin` 角色权限。
+管理员专属功能。超级管理员（superadmin）可用全部模块；普通管理员（admin）的管理端范围收窄为「用户管理 / API Key / API Key 计费 / OAuth 管理」，由 fail-closed 的 `adminScope` 守卫按前缀放行。
 
 | 功能 | 说明 | 前端组件 |
 |------|------|---------|
@@ -270,6 +279,9 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | LibreChat 管理 | LibreChat 集成管理 | `LibreChatAdminPage.tsx` |
 | Webhook 管理 | Webhook 事件查看与管理 | `WebhookEventsManager.tsx` |
 | 篡改检测演示 | 前端篡改保护演示 | `TamperDetectionDemo.tsx` |
+| 人机验证控制台 | 供应商上下线、场景权重/优先级/粘性/灰度、组件外观、月度额度与用量 | `CaptchaProviderAdmin.tsx` |
+| 政策同意记录 | 政策同意记录只读查看、版本/来源分布、逐条审计与 CSV 导出 | `PolicyConsentPanel.tsx` |
+| B 站数据管理 | B 站登录期 cookie 上报与账号绑定元数据（仅密文，无明文导出） | `BilibiliDataAdmin.tsx` |
 
 ### 11. 网络与集成
 
@@ -1724,6 +1736,47 @@ docker-compose up -d
 - 部署脚本修复（后端短 SHA 部署后永不更新、env 差集精确化、失败不再假绿）
 - 大量测试收尾（替身/mock 修复、单测真入门禁、覆盖率补齐）
 
+#### 09-27
+- 单一 `AES_KEY` 主密钥派生落地：JWT 签名、密码 KEK、验证令牌元数据、B 站凭据、重放签名、proxycheck HMAC 等统一改为 HKDF-SHA256 派生子密钥，旧 env 与存量密文双接受；生产启动校验改为 `AES_KEY`（过渡期兼容 `JWT_SECRET`）≥32
+- env-manager：验证安全会话后可查看主密钥与派生子密钥、轮换 `AES_KEY`、一键结束所有安全会话；查看密钥等敏感操作发安全通知邮件
+- WebRTC 泄露检测完善：采集 srflx 公网候选 + 多 STUN，服务端自判 `webrtcVsExit`，管理端 IP 风险日志支持按泄露筛选
+- 新增 B 站凭据与设备管理页；登录期 cookie 上报不依赖 Synapse 会话（只认设备 id，密文入库、仅元数据可读）
+- 安全加固：移除 test 环境万能管理口令后门、补齐 disabled 账户拦截（36 个路由）、`CF-Connecting-IP` 仅在显式信任 Cloudflare 时采信
+- 补 `broadcastLog` / `securityEvent` 缺失索引；消除 9 处 Mongoose 重复索引告警
+- 修复邮箱白名单点转义、星座判定整体错位、大小写转换快捷键劫持浏览器快捷键等
+- 文档分门别类整理并归置根目录审计报告
+
+#### 09-28
+- 全站统一「安全会话」：新增 `hasValidSecuritySession` 与前端 `EstablishSecuritySession`（密码 / TOTP / Passkey），命令端点与查看密钥改用安全会话，替换各自的管理操作口令
+- 管理后台可一键结束所有安全会话并轮换 `AES_KEY`
+- 出站邮件保留 HTML 排版（DOMPurify 净化后走 `text/html`，不再整体拍平为纯文本）
+
+#### 09-29
+- 政策体系：条文改由 `src/config/policyDocument.ts` 单点维护（版本升至 2.1），登录/注册强制逐项同意四份文件，同意记录带 `source` / `agreements`
+- 打通 TTS 政策同意链路（服务端签名 + 设备归属证明 + 前端勾选续跑）；用户端可查看并撤回同意（只认本设备同意凭据）；新增管理端政策同意记录只读面板
+- 安全会话收口：个人资料 / 第三方绑定 / 命令执行 / 查看密钥 / 轮换主密钥统一复用，双因素配置禁止仅凭密码建立会话；关闭 TOTP 在持有 TOTP / Passkey 安全会话时不再要求验证码
+- TTS 生成记录支持用户自助管理（标题 / 备注 / 标签 + 软删除，管理后台仍可见），并停用匿名生成链路
+- 已登录管理员访问共享口令端点（公共短链、服务器状态）免填口令
+- 全仓旧品牌字样 `hapx` / `hapxs` 统一为 `chloemlla.com`；清除 5 条 CodeQL 告警
+
+#### 09-30
+- 政策同意记录补齐 `documentHash` 与撤回留痕（`revokedAt` / `revokedIP` / `revokedReason`），有效期与有效性判定收敛，新增 `GET /api/policy/status` 与 `purge` 硬删除；管理端记录接口支持时间/完整性筛选与 CSV 导出
+- 政策页新增站内检索、字号切换、本设备同意状态与就地续期
+
+### 2026-10
+
+#### 10-01
+- 人机验证：新增 trycap（自托管 Cap）供应商，三家统一请求契约与下发链路，CDK 不再直连 Cloudflare；供应商分配支持场景权重（默认 / 首访 / 独立页）、策略（加权 / 轮询 / 故障转移）、粘性窗口、灰度与优先级
+- 人机验证控制台改为「总览 / 供应商 / 分配策略 / 组件外观 / 额度与用量」五页签，含分配模拟器与「现在会选谁」诊断；hCaptcha 月度额度 10000/月，用尽自动停止下发、下月自动恢复
+- 前端新增 `ManagedCaptcha`，登录 / 注册 / 忘记密码 / 重置密码 / TTS / 图床 / 抽奖 / 资源商店 / 挑战页统一接入，控件加载失败按策略自动换供应商；`/challenge`、`/hcaptcha-verify` 重定向到 `/captcha-verify`
+- 新增共享短期状态存储 `sharedStateStore`（Redis → Mongo → 内存三层，含 `claim` 原子申领与 `consume` 一次性读取）；安全会话改自包含令牌 + 共享撤销水位（跨实例收敛 ≤2s），令牌改用 AES-256-GCM 密封，彻底消除 CodeQL 1247 弱哈希告警
+- 未登录只放行 `/articles` 与「实用工具」组，其余内容 / 商店 / 娱乐页面及其接口同步收紧为必须登录
+- 普通管理员管理端范围收窄为「用户管理 / API Key / API Key 计费 / OAuth 管理」，新增 fail-closed 的 `adminScope` 范围守卫
+- 管理员效率包：⌘K 命令面板、模块置顶与最近访问、模块页工具条（面包屑 / 上下一模块 / 复制路径）
+- 前端首屏性能：入口不再静态加载 mermaid / katex / pdf / charts 与全量 Prism（新增 PrismLight 语法白名单），react-icons 独立分块；用 rolldown 原生 `codeSplitting.groups` 取代 `manualChunks`，修掉 mermaid 组递归吞依赖导致 `vite/preload-helper` 寄生的根因，CI 首屏静态闭包 1655.6 → 344.2 KiB gzip，预算收回 800 KiB
+- 移除前后端 31 项无用依赖并新增无用依赖静态审查脚本；全量升级 npm 依赖
+- TypeScript 单文件体量上限由 800 放宽到 1500；修 CodeQL `js/request-forgery`（Cap 端点 SSRF）与 `js/identity-replacement`；密码重置链接邮件不再受邮件共享日配额限制
+
 ---
 
 ## 📝 许可证
@@ -1746,4 +1799,4 @@ docker-compose up -d
 
 ---
 
-**版本**: 2026-09-26
+**版本**: 2026-10-01
