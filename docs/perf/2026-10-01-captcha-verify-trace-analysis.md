@@ -464,7 +464,9 @@ events.filter(e => e.pid === 7872 && e.tid === 14740 && e.name === 'RunTask' && 
 
 ---
 
-## 九、首屏预算放宽记录（2026-10-01，用户要求）
+## 九、首屏预算放宽 → 收回记录（2026-10-01）
+
+### 9.1 临时放宽（已撤销）
 
 `scripts/governance/check-frontend-bundle.js` 的首屏守卫在 `691d8b1e`（react-icons 独立分块）上判失败：
 
@@ -473,13 +475,32 @@ events.filter(e => e.pid === 7872 && e.tid === 14740 && e.name === 'RunTask' && 
 - first-screen static closure is 1629.8 KiB gzip (budget 800 KiB)
 ```
 
-按用户要求放宽，改动只有两处、都留了收紧路径：
+当时按用户要求临时放宽（只在 `0461f2e7` 存在过）：预算 800 → 1800 KiB，并把 `mermaid` 登记为
+`firstScreenAllowedNamePatterns` 例外。其余守卫（单 chunk ≤ 1800 KiB、总量 ≤ 4600 KiB、重包必须独立成 chunk、
+entry ≤ 220 KiB）未放宽。
 
-| 项 | 放宽前 | 放宽后 | 收紧条件 |
-| --- | --- | --- | --- |
-| 首屏静态闭包预算（`FRONTEND_FIRST_SCREEN_MAX_GZIP_KB` 默认值） | 800 KiB | **1800 KiB** | mermaid 动态化后降回 800 KiB |
-| 首屏重包禁止名单 | 命中即失败 | `mermaid` 登记为**已知例外**（仍打印 `[allowed]` 告警并计入总量） | 同上门槛达成后从 `firstScreenAllowedNamePatterns` 移除 |
+### 9.2 第二轮根因（`D:\Downloads\Trace-20261001T144130.json.gz`，14:41 线上首页）
 
-其余守卫（单 chunk ≤ 1800 KiB、总量 ≤ 4600 KiB、重包必须独立成 chunk、entry ≤ 220 KiB）**未放宽**。
-本文件 §一～§八 的优化结论仍然有效：放宽只是给「mermaid 仍在首屏闭包内」这一现状留出预算，
-不等于放弃 P0-1（重组件懒加载）的目标。
+14:41 的 trace 显示放宽期间 mermaid **仍然**被 `modulepreload`（`mermaid.D5bvW6eP.js`，4 887 411 B /
+1 535 111 B gzip；流式下载 692.3 ms、模块求值 318.5 ms，FCP 2 492 ms）。抓取线上 chunk 的模块图后定位到
+两个「寄生依赖」——它们本该在入口，却被 rolldown 合并进了 mermaid chunk：
+
+| 寄生者 | 证据 | 为什么致命 |
+| --- | --- | --- |
+| `dompurify` | 入口 `index.*.js`：`import{M as u,P as m}from"./mermaid.D5bvW6eP.js"`，随后 `u.sanitize(...)`（App.tsx 的 html 广播/公告消毒）；mermaid chunk 内含 `DOMPurify`/`setupDompurifyHooks` | chunk 级导入无法只取成员，入口被迫静态加载整个 1.5 MB gzip 的 mermaid |
+| Vite `__vitePreload` 助手（虚拟模块 `\0vite/preload-helper.js`） | 入口 `We.lazy(()=>m(()=>import("./MarkdownRenderer.*.js")...,__vite__mapDeps([...])))`；`useAuth.*.js`、`MarkdownRenderer.*.js` 也都 `import{P as i}from"./mermaid.*.js"` | 每个用 `React.lazy` 的 chunk 都静态依赖 mermaid；顺带让「有 markdown 但无图表」的文章也下载 mermaid |
+
+### 9.3 修复与收回（`60ebbed1`）
+
+| 项 | 改动 |
+| --- | --- |
+| `dompurify` | 固定进 `utils` 手动分块（入口本来就加载 `utils`，请求数不变） |
+| `\0vite/preload-helper.js` | `getManualChunk` 特判，单独成 `preload-helper` 小分块（不关 `build.modulePreload`，否则 lazy chunk 的 CSS 注入会一起失效） |
+| `BroadcastModal` | 视图层抽成 `BroadcastModalView.tsx` + `React.lazy`，Provider 保持轻量：`react-icons`（41.4 KiB gzip）、`framer-motion`、`DOMPurify`、`MarkdownRenderer` 全部离开入口 |
+| CI 守卫 | 预算收回 800 KiB，`firstScreenAllowedNamePatterns` 清空（机制保留，新增例外必须写明理由） |
+
+### 9.4 待 CI 复核的三件事
+
+1. `assets/mermaid.*.js` 是否已从首屏闭包消失（`[allowed]` 行应不再出现）；
+2. 首屏闭包 gzip 是否落到 ~300 KiB（预期：原 1628.4 KiB − mermaid 1313.2 KiB − icons 41.4 KiB）；
+3. `useAuth`/`MarkdownRenderer`/入口是否只从 `preload-helper` 取 `__vitePreload`。

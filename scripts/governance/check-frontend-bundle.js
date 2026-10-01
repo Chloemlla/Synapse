@@ -27,15 +27,18 @@ const heavyChunkNames = ["documents", "pdf", "mermaid", "katex", "charts", "fing
  * 这里用 Vite manifest 的 `imports`（静态依赖，不含 `dynamicImports`）还原首屏闭包，
  * 一旦这些重包重新回到首屏关键路径，CI 立刻红灯。
  *
- * 2026-10-01 放宽（用户要求）：实测基线 1629.8 KiB gzip（mermaid 仍在首屏闭包内），
- * 因此预算由 800 KiB 调到 1800 KiB，并把 mermaid 登记为**已知例外**（仍会在日志里告警）。
- * 收紧路径：把 mermaid 改成动态加载后，把预算降回 800 KiB 并从 `firstScreenAllowedNamePatterns` 移除例外。
+ * 2026-10-01 第二轮：上一轮 mermaid 改成动态 import 后仍被 modulepreload，根因是
+ * （1）DOMPurify（入口 App.tsx 需要）与（2）Vite 的 __vitePreload 助手（虚拟模块
+ * `\0vite/preload-helper.js`）都被 rolldown 合并进了 mermaid chunk —— chunk 级导入无法按需取成员，
+ * 于是入口被迫静态加载 1.5 MB gzip 的 mermaid。已在 vite.config.ts 里把这两者分别
+ * 固定到 `utils` / `preload-helper` 分块，并把 BroadcastModal 视图层拆成 lazy 模块，
+ * 因此这里收回临时放宽：预算回到 800 KiB，例外列表清空（保留机制，但新增例外必须写明理由）。
  */
 const firstScreenForbiddenName =
   /^(?:mermaid|katex|diagrams|pdf|charts|code-highlight|prism|markdown|docx|swagger|hugeicons)[.-]/;
-/** 已登记的例外：仍在首屏闭包内但暂不判失败的重包（会在日志里以 warning 形式列出）。 */
-const firstScreenAllowedNamePatterns = [/^mermaid[.-]/];
-const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 1800) * 1024;
+/** 已登记的例外：仍在首屏闭包内但暂不判失败的重包（会以 [allowed] 告警）。默认必须为空：重包回流请先修根因。 */
+const firstScreenAllowedNamePatterns = [];
+const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 800) * 1024;
 
 /**
  * 从 manifest 还原入口的静态 import 闭包（不含 dynamicImports）。
