@@ -10,7 +10,6 @@ import WsConnector from './components/WsConnector';
 import { ClientOriginProbe } from './components/ClientOriginProbe';
 import md5 from 'md5';
 import getApiBaseUrl from './api';
-import { fetchWithTimeout } from './utils/fetchWithTimeout';
 import { useFirstVisitDetection } from './hooks/useFirstVisitDetection';
 import { useConfigurationNoticeTrigger } from './hooks/useConfigurationNoticeTrigger';
 import { FirstVisitVerification } from './components/FirstVisitVerification';
