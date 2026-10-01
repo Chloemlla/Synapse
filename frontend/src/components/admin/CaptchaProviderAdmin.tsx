@@ -17,7 +17,20 @@ import { isSuperAdmin } from '@/utils/rbac';
 const API = `${getApiBaseUrl()}/api/turnstile`;
 
 type ProviderId = 'turnstile' | 'hcaptcha' | 'trycap';
-type SkipReason = 'ok' | 'scheduling_disabled' | 'credentials_missing';
+type SkipReason = 'ok' | 'scheduling_disabled' | 'credentials_missing' | 'quota_exhausted';
+
+interface QuotaSnapshot {
+  monthKey: string;
+  limit: number;
+  used: number;
+  /** -1 表示不限额 */
+  remaining: number;
+  percentage: number;
+  exhausted: boolean;
+  resetsAt: string;
+  exhaustedAt?: string;
+  lastUsedAt?: string;
+}
 
 interface ProviderRow {
   provider: ProviderId;
@@ -31,6 +44,7 @@ interface ProviderRow {
   credentialsConfigured: boolean;
   effective: boolean;
   reason: SkipReason;
+  quota: QuotaSnapshot;
   updatedAt?: string;
 }
 
@@ -41,21 +55,30 @@ interface CapConfigState {
   enabled: boolean;
 }
 
-type DraftRow = Pick<ProviderRow, 'provider' | 'enabled' | 'weight'>;
+type DraftRow = Pick<ProviderRow, 'provider' | 'enabled' | 'weight'> & { monthlyQuota: number };
 
 const WEIGHT_SLIDER_MAX = 100;
+
+/** 这两家不限额：trycap 自托管、Turnstile 当前免费额度不按调用计。仅 hCaptcha 按月计额度。 */
+const UNLIMITED_PROVIDERS: ProviderId[] = ['turnstile', 'trycap'];
 
 const REASON_TEXT: Record<SkipReason, string> = {
   ok: '正常参与下发',
   scheduling_disabled: '已下线：不参与下发',
   credentials_missing: '已上线但凭据不全：需补齐 Site Key 与 Secret Key',
+  quota_exhausted: '本月额度已用尽：已自动停止下发，下月自动恢复',
 };
 
 const PROVIDER_HINT: Record<ProviderId, string> = {
   turnstile: 'Cloudflare 托管，脚本与校验都走 challenges.cloudflare.com。',
-  hcaptcha: '第三方托管，返回 score 时低于 0.5 会被拒绝。',
+  hcaptcha: '第三方托管，返回 score 时低于 0.5 会被拒绝；免费额度按调用次数计，用尽后本月不再外呼。',
   trycap: '自托管 Cap（PoW + 浏览器 instrumentation），无第三方、无追踪，加速本地实例。',
 };
+
+function formatQuota(quota: QuotaSnapshot): string {
+  if (quota.limit <= 0) return `本月已用 ${quota.used}（不限额度）`;
+  return `本月已用 ${quota.used} / ${quota.limit}（剩余 ${Math.max(0, quota.remaining)}）`;
+}
 
 /** 与服务端 providers.ts 的归一化规则保持一致，保证面板预览值就是实际概率。 */
 function normalizePercentages(rows: DraftRow[]): Record<string, number> {
@@ -93,7 +116,16 @@ export default function CaptchaProviderAdmin() {
   const draftRows = useMemo<DraftRow[]>(() => Object.values(draft), [draft]);
   const percentages = useMemo(() => normalizePercentages(draftRows), [draftRows]);
   const dirty = useMemo(
-    () => rows.some((row) => draft[row.provider] && (draft[row.provider].enabled !== row.enabled || draft[row.provider].weight !== row.weight)),
+    () =>
+      rows.some((row) => {
+        const current = draft[row.provider];
+        if (!current) return false;
+        return (
+          current.enabled !== row.enabled ||
+          current.weight !== row.weight ||
+          current.monthlyQuota !== (row.quota?.limit ?? 0)
+        );
+      }),
     [draft, rows],
   );
 
@@ -118,7 +150,15 @@ export default function CaptchaProviderAdmin() {
       setRows(nextRows);
       setDraft(
         Object.fromEntries(
-          nextRows.map((row) => [row.provider, { provider: row.provider, enabled: row.enabled, weight: row.weight }]),
+          nextRows.map((row) => [
+            row.provider,
+            {
+              provider: row.provider,
+              enabled: row.enabled,
+              weight: row.weight,
+              monthlyQuota: row.quota?.limit ?? 0,
+            },
+          ]),
         ),
       );
 
@@ -157,13 +197,35 @@ export default function CaptchaProviderAdmin() {
     setDraft((prev) => ({ ...prev, [provider]: { ...prev[provider], ...patch } }));
   }, []);
 
+  const resetDraftFromRows = useCallback(() => {
+    setDraft(
+      Object.fromEntries(
+        rows.map((row) => [
+          row.provider,
+          {
+            provider: row.provider,
+            enabled: row.enabled,
+            weight: row.weight,
+            monthlyQuota: row.quota?.limit ?? 0,
+          },
+        ]),
+      ),
+    );
+  }, [rows]);
+
   const applyPreset = useCallback(
     (preset: 'even' | 'off' | 'reset' | ProviderId) => {
       setDraft((prev) => {
         const next: Record<string, DraftRow> = { ...prev };
         const providers = Object.keys(prev) as ProviderId[];
         if (preset === 'reset') {
-          for (const row of rows) next[row.provider] = { provider: row.provider, enabled: row.enabled, weight: row.weight };
+          for (const row of rows)
+            next[row.provider] = {
+              provider: row.provider,
+              enabled: row.enabled,
+              weight: row.weight,
+              monthlyQuota: row.quota?.limit ?? 0,
+            };
           return next;
         }
         for (const provider of providers) {
@@ -186,7 +248,12 @@ export default function CaptchaProviderAdmin() {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          providers: draftRows.map((row) => ({ provider: row.provider, enabled: row.enabled, weight: Number(row.weight) })),
+          providers: draftRows.map((row) => ({
+            provider: row.provider,
+            enabled: row.enabled,
+            weight: Number(row.weight),
+            ...(UNLIMITED_PROVIDERS.includes(row.provider) ? {} : { monthlyQuota: Number(row.monthlyQuota) }),
+          })),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -357,6 +424,10 @@ export default function CaptchaProviderAdmin() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
                     <FaCheckCircle className="h-3 w-3" /> 生效中
                   </span>
+                ) : current.enabled && row.quota?.exhausted ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-rose-700">
+                    <FaExclamationTriangle className="h-3 w-3" /> 额度用尽
+                  </span>
                 ) : !current.enabled ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
                     <FaExclamationTriangle className="h-3 w-3" /> 已下线
@@ -366,7 +437,17 @@ export default function CaptchaProviderAdmin() {
                     <FaExclamationTriangle className="h-3 w-3" /> 缺凭据
                   </span>
                 )}
-                <span className="text-slate-500">{REASON_TEXT[current.enabled ? (row.credentialsConfigured ? 'ok' : 'credentials_missing') : 'scheduling_disabled']}</span>
+                <span className="text-slate-500">
+                  {REASON_TEXT[
+                    row.quota?.exhausted && current.enabled
+                      ? 'quota_exhausted'
+                      : current.enabled
+                        ? row.credentialsConfigured
+                          ? 'ok'
+                          : 'credentials_missing'
+                        : 'scheduling_disabled'
+                  ]}
+                </span>
               </div>
 
               <div>
@@ -398,6 +479,49 @@ export default function CaptchaProviderAdmin() {
                   className={`${studioFieldClassName} mt-2 w-28`}
                   aria-label={`${row.label} 权重数值`}
                 />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 px-3 py-2">
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span>本月额度</span>
+                  <span className={row.quota?.exhausted ? 'font-medium text-rose-600' : 'font-medium text-slate-800'}>
+                    {row.quota ? formatQuota(row.quota) : '—'}
+                  </span>
+                </div>
+                {row.quota && row.quota.limit > 0 && (
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${row.quota.exhausted ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.min(100, row.quota.percentage)}%` }}
+                    />
+                  </div>
+                )}
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {UNLIMITED_PROVIDERS.includes(row.provider)
+                    ? '不限额：只计数不拦截'
+                    : `额度用尽后本月不再外呼，${row.quota ? new Date(row.quota.resetsAt).toLocaleDateString() : '下月'}自动恢复`}
+                </p>
+
+                {!UNLIMITED_PROVIDERS.includes(row.provider) && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-xs text-slate-600" htmlFor={`quota-${row.provider}`}>
+                      每月上限
+                    </label>
+                    <input
+                      id={`quota-${row.provider}`}
+                      type="number"
+                      min={0}
+                      max={10000000}
+                      value={current.monthlyQuota}
+                      disabled={!canWrite}
+                      onChange={(event) =>
+                        updateDraft(row.provider, { monthlyQuota: Math.max(0, Math.min(10000000, Number(event.target.value) || 0)) })
+                      }
+                      className={`${studioFieldClassName} w-28`}
+                    />
+                    <span className="text-[11px] text-slate-500">0 = 不限</span>
+                  </div>
+                )}
               </div>
 
               <dl className="space-y-1 text-xs text-slate-600">

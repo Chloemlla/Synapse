@@ -7,6 +7,7 @@ import { generateAccessToken } from "./accessToken";
 import { CAP_DEFAULT_API_ENDPOINT, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { isIpBanned, recordViolation } from "./ipBan";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
+import { guardCaptchaQuota } from "./quotaGate";
 import { assessClientRisk, recordVerificationOutcome, translateTurnstileErrors } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { CapVerifyResponse, HCaptchaResponse, TurnstileResponse, TurnstileVerificationResult } from "./types";
@@ -319,6 +320,12 @@ export async function verifyTokenDetailed(
       };
     }
 
+    // hCaptcha 是额度型供应商：先算额度再外呼，用尽即不外呼（fail-closed）。
+    if (captchaType === "hcaptcha") {
+      const quotaFailure = await guardCaptchaQuota("hcaptcha", { traceId, timestamp, clientInfo });
+      if (quotaFailure) return quotaFailure;
+    }
+
     const formData = new URLSearchParams();
     formData.append("secret", secretKey);
     formData.append("response", validatedToken);
@@ -341,8 +348,8 @@ export async function verifyTokenDetailed(
     const now = new Date();
     // trycap 用 { success, error } 表达失败，这里归一到 error-codes 形状，后面的通用失败分支无需分叉。
     const capError = captchaType === "trycap" ? (result as CapVerifyResponse).error : undefined;
-    const resultErrorCodes =
-      (result as TurnstileResponse | HCaptchaResponse)["error-codes"] || (capError ? [String(capError)] : []);
+    const legacyResult = result as TurnstileResponse | HCaptchaResponse;
+    const resultErrorCodes = legacyResult["error-codes"] || (capError ? [String(capError)] : []);
 
     if (!result.success) {
       const riskAssessment = assessClientRisk(validatedIp, userAgent, fingerprint);
@@ -359,8 +366,8 @@ export async function verifyTokenDetailed(
         fingerprint: fingerprint?.substring(0, 16),
         cfErrorCodes: errorCodes,
         errorMessages,
-        challengeTs: result.challenge_ts,
-        hostname: result.hostname,
+        challengeTs: legacyResult.challenge_ts,
+        hostname: legacyResult.hostname,
         riskAssessment: {
           level: riskAssessment.riskLevel,
           score: riskAssessment.riskScore,

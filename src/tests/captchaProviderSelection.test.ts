@@ -10,6 +10,28 @@ jest.mock("../services/turnstile/models", () => ({
   getCaptchaProviderSettingDocs: (...args: unknown[]) => mockGetProviderSettings(...args),
 }));
 
+// 额度模块会碰 Mongo；选择引擎的测试通过 mockQuotaExhausted 开关模拟「未用尽 / 已用尽」。
+let mockQuotaExhausted = false;
+jest.mock("../services/turnstile/quota", () => {
+  const build = (provider: string, limit: number) => ({
+    provider,
+    monthKey: "2026-10",
+    limit,
+    used: mockQuotaExhausted && provider === "hcaptcha" ? limit : 0,
+    remaining: limit > 0 ? (mockQuotaExhausted && provider === "hcaptcha" ? 0 : limit) : -1,
+    percentage: mockQuotaExhausted && provider === "hcaptcha" && limit > 0 ? 100 : 0,
+    exhausted: mockQuotaExhausted && provider === "hcaptcha" && limit > 0,
+    resetsAt: "2026-10-31T16:00:00.000Z",
+  });
+  return {
+    getCaptchaQuotaSnapshots: async () => ({
+      turnstile: build("turnstile", 0),
+      hcaptcha: build("hcaptcha", 10_000),
+      trycap: build("trycap", 0),
+    }),
+  };
+});
+
 import {
   CAPTCHA_PROVIDER_IDS,
   clampProviderWeight,
@@ -42,6 +64,7 @@ const ALL_KEYS: KeyMap = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockQuotaExhausted = false;
   setProviderConfig({});
 });
 
@@ -183,6 +206,30 @@ describe("collectCaptchaProviders", () => {
 
     expect(providers.every((provider) => provider.weight === 50)).toBe(true);
     expect(providers.every((provider) => provider.enabled)).toBe(true);
+  });
+
+  it("本月额度用尽 → 自动摘出候选，原因标为 quota_exhausted", async () => {
+    setProviderConfig({ keys: ALL_KEYS, settings: [] });
+    mockQuotaExhausted = true;
+
+    const { providers, candidates } = await collectCaptchaProviders();
+    const hcaptcha = providers.find((provider) => provider.provider === "hcaptcha");
+
+    expect(hcaptcha?.reason).toBe("quota_exhausted");
+    expect(hcaptcha?.effective).toBe(false);
+    expect(candidates.map((candidate) => candidate.provider)).not.toContain("hcaptcha");
+    // Turnstile / trycap 不限额，不受影响
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(["turnstile", "trycap"]);
+  });
+
+  it("额度用尽后仍能选出其他供应商，不会导致无人可下发", async () => {
+    setProviderConfig({ keys: ALL_KEYS, settings: [] });
+    mockQuotaExhausted = true;
+
+    const selection = await selectCaptchaProvider(() => 0);
+
+    expect(selection.enabled).toBe(true);
+    expect(selection.provider).not.toBe("hcaptcha");
   });
 });
 

@@ -70,7 +70,7 @@ export interface IpVerificationSessionResult {
   ipAddress: string;
   token?: string;
   expiresAt?: string;
-  issuedBy?: "auto" | "turnstile" | "hcaptcha";
+  issuedBy?: "auto" | "turnstile" | "hcaptcha" | "trycap";
   reason?: string;
   fraudScore?: number;
   riskFlags?: string[];
@@ -220,7 +220,7 @@ export class IpVerificationService {
   private static async issueToken(
     fingerprint: string,
     ipAddress: string,
-    issuedBy: "auto" | "turnstile" | "hcaptcha",
+    issuedBy: "auto" | "turnstile" | "hcaptcha" | "trycap",
     fraudScore?: number,
     riskFlags: string[] = [],
   ): Promise<IpVerificationSessionResult> {

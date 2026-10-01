@@ -5,6 +5,7 @@ import * as fingerprint from "./turnstile/fingerprint";
 import * as hcaptcha from "./turnstile/hcaptcha";
 import * as ipBan from "./turnstile/ipBan";
 import * as providers from "./turnstile/providers";
+import * as quota from "./turnstile/quota";
 import * as verify from "./turnstile/verify";
 
 export class TurnstileService {
@@ -58,11 +59,19 @@ export class TurnstileService {
   static testCapConnectivity = cap.testCapConnectivity;
   static isCapConfigKey = cap.isCapConfigKey;
 
-  // 供应商调度（上线/下线 + 权重）
+  // 供应商调度（上线/下线 + 权重 + 月额度）
   static collectCaptchaProviders = providers.collectCaptchaProviders;
   static selectCaptchaProvider = providers.selectCaptchaProvider;
   static getProviderSecretPresence = providers.getProviderSecretPresence;
+  static getProviderQuotaLimits = providers.getProviderQuotaLimits;
   static isCaptchaProviderId = providers.isCaptchaProviderId;
   static clampProviderWeight = providers.clampProviderWeight;
   static upsertCaptchaProviderSetting = providers.upsertCaptchaProviderSetting;
+
+  // 月度额度
+  static clampMonthlyQuota = quota.clampMonthlyQuota;
+  static getCaptchaQuotaSnapshot = quota.getCaptchaQuotaSnapshot;
+  static getCaptchaQuotaSnapshots = quota.getCaptchaQuotaSnapshots;
+  static consumeConfiguredCaptchaQuota = quota.consumeConfiguredCaptchaQuota;
+  static readCaptchaQuotaHistory = quota.readCaptchaQuotaHistory;
 }

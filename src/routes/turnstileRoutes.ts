@@ -44,6 +44,7 @@ import {
 } from "../controllers/turnstile/capHandlers";
 import {
   getCaptchaProviders,
+  getCaptchaQuotaHistory,
   testCaptchaProvider,
   updateCaptchaProviders,
 } from "../controllers/turnstile/providersHandlers";
@@ -344,16 +345,31 @@ router.put(
     action: "system.captchaProvidersUpdate",
     extractDetail: (req) => ({
       providers: Array.isArray(req.body?.providers)
-        ? req.body.providers.map((item: { provider?: string; enabled?: boolean; weight?: number }) => ({
+        ? req.body.providers.map((item: { provider?: string; enabled?: boolean; weight?: number; monthlyQuota?: number }) => ({
             provider: item?.provider,
             enabled: item?.enabled !== false,
             weight: item?.weight,
+            monthlyQuota: item?.monthlyQuota,
           }))
         : [],
     }),
   }),
   updateCaptchaProviders,
 );
+
+/**
+ * @openapi
+ * /api/turnstile/providers/quotas:
+ *   get:
+ *     summary: 获取人机验证供应商的本月额度与历史用量
+ *     description: 返回各供应商本月已用/上限/剩余/重置时间，以及逐月历史（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 额度快照与历史
+ */
+router.get("/providers/quotas", adminLimiter, authenticateAdmin, getCaptchaQuotaHistory);
 
 /**
  * @openapi

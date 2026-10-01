@@ -4,7 +4,7 @@ export interface IpVerificationTokenDoc {
   token: string;
   fingerprint: string;
   ipAddress: string;
-  issuedBy: "auto" | "turnstile" | "hcaptcha";
+  issuedBy: "auto" | "turnstile" | "hcaptcha" | "trycap";
   challengePassed: boolean;
   fraudScore?: number;
   riskFlags?: string[];
@@ -21,7 +21,7 @@ const IpVerificationTokenSchema = new mongoose.Schema<IpVerificationTokenDoc>(
     ipAddress: { type: String, required: true, index: true },
     issuedBy: {
       type: String,
-      enum: ["auto", "turnstile", "hcaptcha"],
+      enum: ["auto", "turnstile", "hcaptcha", "trycap"],
       required: true,
       default: "auto",
     },

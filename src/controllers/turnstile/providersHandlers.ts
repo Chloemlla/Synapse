@@ -52,9 +52,12 @@ export async function updateCaptchaProviders(req: Request, res: Response) {
         continue;
       }
 
+      // 额度字段缺省 = 不改动现有设置；显式 0 = 解除限额。
+      const hasQuota = entry.monthlyQuota !== undefined && entry.monthlyQuota !== null;
       const success = await TurnstileService.upsertCaptchaProviderSetting(provider, {
         enabled: entry.enabled !== false,
         weight: TurnstileService.clampProviderWeight(entry.weight),
+        ...(hasQuota ? { monthlyQuota: TurnstileService.clampMonthlyQuota(entry.monthlyQuota) } : {}),
       });
 
       results.push({
@@ -73,6 +76,31 @@ export async function updateCaptchaProviders(req: Request, res: Response) {
     res.json({ success: true, message: "配置已保存并立即生效", results, providers });
   } catch (error) {
     logger.error("更新人机验证供应商配置失败", error);
+    res.status(500).json({ success: false, error: "服务器内部错误" });
+  }
+}
+
+/** 本月额度历史（按供应商 + 月份），管理端图表用。 */
+export async function getCaptchaQuotaHistory(req: Request, res: Response) {
+  try {
+    if (!requireAdmin(req, res)) return;
+
+    const monthsRaw = Number.parseInt(String(req.query.months ?? "6"), 10);
+    const months = Number.isFinite(monthsRaw) ? monthsRaw : 6;
+
+    const [history, providers] = await Promise.all([
+      TurnstileService.readCaptchaQuotaHistory(months),
+      TurnstileService.collectCaptchaProviders(),
+    ]);
+
+    res.json({
+      success: true,
+      months,
+      history,
+      quotas: providers.providers.map((provider) => provider.quota),
+    });
+  } catch (error) {
+    logger.error("获取人机验证额度历史失败", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

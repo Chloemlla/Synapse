@@ -57,6 +57,7 @@ const CaptchaProviderSettingSchema = new mongoose.Schema<CaptchaProviderSettingD
     provider: { type: String, required: true, unique: true },
     enabled: { type: Boolean, default: true },
     weight: { type: Number, default: 0 },
+    monthlyQuota: { type: Number, default: undefined },
     updatedAt: { type: Date, default: Date.now },
   },
   { collection: "captcha_provider_settings" },
@@ -173,6 +174,10 @@ export async function getCaptchaProviderSettingDocs(): Promise<CaptchaProviderSe
       provider: doc.provider as CaptchaProviderId,
       enabled: doc.enabled !== false,
       weight: typeof doc.weight === "number" && Number.isFinite(doc.weight) ? doc.weight : 0,
+      monthlyQuota:
+        typeof (doc as { monthlyQuota?: unknown }).monthlyQuota === "number"
+          ? ((doc as { monthlyQuota: number }).monthlyQuota)
+          : undefined,
       updatedAt: doc.updatedAt,
     }));
   } catch (error) {
@@ -183,18 +188,26 @@ export async function getCaptchaProviderSettingDocs(): Promise<CaptchaProviderSe
 
 export async function upsertCaptchaProviderSetting(
   provider: CaptchaProviderId,
-  update: { enabled: boolean; weight: number },
+  update: { enabled: boolean; weight: number; monthlyQuota?: number },
 ): Promise<boolean> {
   try {
     if (!isConnected()) {
       logger.error("数据库连接不可用，无法更新人机验证供应商配置", { provider });
       return false;
     }
-    await CaptchaProviderSettingModel.findOneAndUpdate(
-      { provider },
-      { provider, enabled: update.enabled, weight: update.weight, updatedAt: new Date() },
-      { upsert: true, returnDocument: "after" },
-    );
+    const patch: Record<string, unknown> = {
+      provider,
+      enabled: update.enabled,
+      weight: update.weight,
+      updatedAt: new Date(),
+    };
+    // undefined = 不动现有额度设置；显式 0 = 解除限额。
+    if (update.monthlyQuota !== undefined) patch.monthlyQuota = update.monthlyQuota;
+
+    await CaptchaProviderSettingModel.findOneAndUpdate({ provider }, patch, {
+      upsert: true,
+      returnDocument: "after",
+    });
     return true;
   } catch (error) {
     logger.error("更新人机验证供应商配置失败", { provider, error });

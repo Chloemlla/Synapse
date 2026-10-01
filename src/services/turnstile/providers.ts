@@ -1,19 +1,23 @@
 import crypto from "node:crypto";
 import { CAP_DEFAULT_API_ENDPOINT } from "./constants";
 import { getCapKey, getCaptchaProviderSettingDocs, getHCaptchaKey, getTurnstileKey } from "./models";
-import type { CaptchaProviderId } from "./types";
+import { getCaptchaQuotaSnapshots, type CaptchaQuotaSnapshot } from "./quota";
+import { CAPTCHA_PROVIDER_IDS, type CaptchaProviderId } from "./types";
+
+// 供应商调度配置的读写落在 models.ts，这里透出给门面（turnstileService）与控制器。
+export { getCaptchaProviderSettingDocs, upsertCaptchaProviderSetting } from "./models";
+
+export { CAPTCHA_PROVIDER_IDS };
 
 /**
  * 人机验证供应商注册表 + 加权选择引擎。
  *
  * 设计要点（见 docs/plans/captcha-providers-trycap-2026-10-01.md）：
- * - 「上线/下线」与「凭据是否配置」解耦：下线即不参与下发；上线但缺凭据会带 reason 暴露给管理端，
- *   而不是静默消失。
+ * - 「上线/下线」「凭据是否配置」「本月额度是否用尽」三件事各自独立，任一不满足都不下发，
+ *   并带可解释的 reason 暴露给管理端，而不是静默消失。
  * - 权重是相对值，选中概率 = w / Σw；全 0 时退化为等概率，避免整条链路被配置错误打死。
  * - 随机源可注入，便于单测断言分布与边界。
  */
-
-export const CAPTCHA_PROVIDER_IDS: readonly CaptchaProviderId[] = ["turnstile", "hcaptcha", "trycap"] as const;
 
 export const CAPTCHA_PROVIDER_LABELS: Record<CaptchaProviderId, string> = {
   turnstile: "Cloudflare Turnstile",
@@ -26,7 +30,7 @@ export const DEFAULT_PROVIDER_WEIGHT = 50;
 export const MIN_PROVIDER_WEIGHT = 0;
 export const MAX_PROVIDER_WEIGHT = 1000;
 
-export type ProviderSkipReason = "ok" | "scheduling_disabled" | "credentials_missing";
+export type ProviderSkipReason = "ok" | "scheduling_disabled" | "credentials_missing" | "quota_exhausted";
 
 export interface CaptchaProviderSnapshot {
   provider: CaptchaProviderId;
@@ -39,9 +43,11 @@ export interface CaptchaProviderSnapshot {
   siteKey: string | null;
   secretConfigured: boolean;
   credentialsConfigured: boolean;
-  /** 真正会参与下发的判定（上线 && 凭据齐全 && 有 siteKey）。 */
+  /** 真正会参与下发的判定（上线 && 凭据齐全 && 有 siteKey && 本月额度未用尽）。 */
   effective: boolean;
   reason: ProviderSkipReason;
+  /** 本月额度：limit <= 0 表示不限额，remaining 为 -1。 */
+  quota: CaptchaQuotaSnapshot;
   updatedAt?: string;
 }
 
@@ -93,7 +99,10 @@ export function pickWeightedProvider<T extends { weight: number }>(
 ): T | null {
   if (entries.length === 0) return null;
 
-  const total = entries.reduce((sum, entry) => sum + (Number.isFinite(entry.weight) && entry.weight > 0 ? entry.weight : 0), 0);
+  const total = entries.reduce(
+    (sum, entry) => sum + (Number.isFinite(entry.weight) && entry.weight > 0 ? entry.weight : 0),
+    0,
+  );
 
   if (total <= 0) {
     const index = Math.min(entries.length - 1, Math.max(0, randomInt(0, entries.length)));
@@ -156,8 +165,17 @@ export async function getProviderSecretPresence(): Promise<Record<CaptchaProvide
   return Object.fromEntries(entries) as Record<CaptchaProviderId, string | null>;
 }
 
+/** 供应商的月度额度上限（0 = 不限额），由管理端设置覆盖默认值。 */
+export async function getProviderQuotaLimits(): Promise<Record<CaptchaProviderId, number | null>> {
+  const settingsDocs = await getCaptchaProviderSettingDocs();
+  const settingsMap = new Map(settingsDocs.map((doc) => [doc.provider, doc]));
+  return Object.fromEntries(
+    CAPTCHA_PROVIDER_IDS.map((provider) => [provider, settingsMap.get(provider)?.monthlyQuota ?? null]),
+  ) as Record<CaptchaProviderId, number | null>;
+}
+
 /**
- * 汇总三家供应商的完整状态，供管理端展示与选择使用。
+ * 汇总三家供应商的完整状态（调度 + 凭据 + 本月额度），供管理端展示与选择使用。
  * 权重缺失时按 DEFAULT_PROVIDER_WEIGHT 参与计算，但不会写库（避免读接口产生副作用）。
  */
 export async function collectCaptchaProviders(): Promise<{
@@ -166,22 +184,35 @@ export async function collectCaptchaProviders(): Promise<{
 }> {
   const settingsDocs = await getCaptchaProviderSettingDocs();
   const settingsMap = new Map(settingsDocs.map((doc) => [doc.provider, doc]));
+  const quotaLimits = Object.fromEntries(
+    CAPTCHA_PROVIDER_IDS.map((provider) => [provider, settingsMap.get(provider)?.monthlyQuota ?? null]),
+  ) as Record<CaptchaProviderId, number | null>;
 
-  const credentials = await Promise.all(
-    CAPTCHA_PROVIDER_IDS.map(async (provider) => [provider, await readProviderCredentials(provider)] as const),
-  );
+  const [credentials, quotaSnapshots] = await Promise.all([
+    Promise.all(
+      CAPTCHA_PROVIDER_IDS.map(async (provider) => [provider, await readProviderCredentials(provider)] as const),
+    ),
+    getCaptchaQuotaSnapshots(quotaLimits),
+  ]);
   const credentialsMap = new Map(credentials);
 
   const rows = CAPTCHA_PROVIDER_IDS.map((provider) => {
     const setting = settingsMap.get(provider);
     const credential = credentialsMap.get(provider) ?? { siteKey: null, secretConfigured: false, apiEndpoint: null };
+    const quota = quotaSnapshots[provider];
     const enabled = setting ? setting.enabled !== false : true;
     const weight = clampProviderWeight(setting?.weight ?? DEFAULT_PROVIDER_WEIGHT);
     const credentialsConfigured = !!credential.siteKey && credential.secretConfigured;
-    const effective = enabled && credentialsConfigured;
-    const reason: ProviderSkipReason = !enabled ? "scheduling_disabled" : credentialsConfigured ? "ok" : "credentials_missing";
+    const effective = enabled && credentialsConfigured && !quota.exhausted;
+    const reason: ProviderSkipReason = quota.exhausted
+      ? "quota_exhausted"
+      : !enabled
+        ? "scheduling_disabled"
+        : credentialsConfigured
+          ? "ok"
+          : "credentials_missing";
 
-    return { provider, enabled, weight, credential, effective, reason, updatedAt: setting?.updatedAt };
+    return { provider, enabled, weight, credential, quota, effective, reason, updatedAt: setting?.updatedAt };
   });
 
   const effectiveRows = rows.filter((row) => row.effective);
@@ -200,6 +231,7 @@ export async function collectCaptchaProviders(): Promise<{
       credentialsConfigured: !!row.credential.siteKey && row.credential.secretConfigured,
       effective: row.effective,
       reason: row.reason,
+      quota: row.quota,
       updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : undefined,
     };
   });

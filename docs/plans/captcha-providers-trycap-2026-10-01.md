@@ -49,7 +49,18 @@
 - 便利项：**平均分配**、**仅此一家**、**全部下线**、批量保存、连通性自检（Cap 打一次 challenge 验证 endpoint 与 siteKey）、未保存改动提示（离开/刷新前提醒）、保存后立即生效（无需重启）、时间戳展示。
 - 权限：读取 admin，写入与自检 superadmin；写操作全部挂 auditLog。
 
-### 5. 治理（B5）
+### 5. 月度额度（B5，对齐 proxycheck.io 的限额口径）
+
+- 口径与 `ipRiskService` 的 proxycheck 日配额一致：**先算额度再外呼，用尽即不外呼并落一条 `quota_exhausted` trace**；
+  计数落 Mongo（`captcha_monthly_quotas`，`provider + monthKey` 唯一），失败只告警、不阻断已拿到的结论。
+- 切分粒度是**月**（`Asia/Shanghai` 的 `YYYY-MM`）：hCaptcha 的免费额度按月给，按日切会在月中重置导致超发。
+- 默认额度：**hCaptcha 10,000 / 月**；**trycap 与 Cloudflare Turnstile 不限额**（`limit = 0` 表示不限，只计数不拦截）。
+  上限可在管理面板逐家覆盖（0 = 解除限额）。
+- 用尽的供应商会被**自动摘出下发候选**（reason `quota_exhausted`），避免把用户送到一个必然失败的验证码上；
+  下月 1 日 00:00（CST）计数自然归零，无需人工干预。
+- 管理端展示本月已用/上限/剩余/进度条/重置时间，并提供逐月历史接口 `GET /api/turnstile/providers/quotas`。
+
+### 6. 治理（B6）
 
 - 新路由补 `@openapi` 注释（CI 会重新生成 spec 并对账）。
 - `adminModules.tsx` 注册后跑 `node scripts/generate-admin-spa-paths.js`。
@@ -66,13 +77,15 @@
 | P4 | 前端选择与控件 | `utils/captchaSelection.ts`、`hooks/useCapConfig.ts`(新)、`components/CapWidget.tsx`(新)、`FirstVisitVerification.tsx`、`utils/fingerprint.ts` |
 | P5 | 管理面板 + 注册 + 生成物 | `components/admin/CaptchaProviderAdmin.tsx`(新)、`adminModules.tsx`、`src/generated/adminSpaModulePaths.ts` |
 | P6 | 安全头 + 测试 | `security/contentSecurityPolicy.ts`、`frontend/index.html`、`src/tests/captchaProviderSelection.test.ts`(新) |
+| P7 | 月度额度 + 自动下线 | `models/captchaQuotaModel.ts`(新)、`turnstile/quota.ts`(新)、`verify.ts`、`hcaptcha.ts`、`providers.ts`、面板额度区、`src/tests/captchaQuota.test.ts`(新) |
 
 ## 四、验收
 
 1. `/api/turnstile/providers` 能读到三家状态与归一化概率；PUT 改权重后 `secure-captcha-config` 的分布随之改变。
 2. 下线某家后，即使凭据齐全也不再下发该家。
 3. Cap 走通「challenge → widget 解题 → siteverify」；伪造/重放 token 必须失败。
-4. CI 全绿：tsc、quality-guardrails（文件体量/隐私契约）、admin SPA 路径漂移、openapi 漂移、审计策略。
+4. hCaptcha 额度：达到 10,000 后不再外呼、自动摘出候选、面板显示剩余与重置时间；turnstile/trycap 计数但不拦截。
+5. CI 全绿：tsc、quality-guardrails（文件体量/隐私契约）、admin SPA 路径漂移、openapi 漂移、审计策略。
 
 ## 五、风险
 
