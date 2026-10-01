@@ -14,7 +14,10 @@ export function registerLibreChatAdminRoutes(router: Router): void {
       const kw = (req.query.kw as string) || "";
       const { page, limit } = normalizePagination(req.query.page, req.query.limit);
       const includeDeleted = String(req.query.includeDeleted || "").toLowerCase() === "true";
-      const data = await (libreChatService as any).adminListUsers(kw, page, limit, includeDeleted);
+      // scope：all（默认）/ user（仅用户会话）/ system（仅系统内部服务会话，按组件名分组展示）。
+      const scopeParam = String(req.query.scope || "all").toLowerCase();
+      const scope = scopeParam === "user" || scopeParam === "system" ? scopeParam : "all";
+      const data = await (libreChatService as any).adminListUsers(kw, page, limit, includeDeleted, scope);
       res.json(data);
     } catch (error) {
       console.error("管理员获取用户列表错误:", error);

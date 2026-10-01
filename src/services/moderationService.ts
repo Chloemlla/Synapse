@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import logger from "../utils/logger";
 import type { User } from "../utils/userStorage";
 import { libreChatService } from "./libreChatService";
-import { deriveUserOwnerKey } from "./librechat/history";
+import { createInternalConversation } from "./librechat/conversations";
 import { mongoose } from "./mongoService";
 import * as userService from "./userService";
 
@@ -112,9 +112,15 @@ ${content}
 ${delimiter}
 只需要回复 "true" (违规) 或 "false" (不违规)，不要回复任何其他内容。`;
 
+      // 每次审查都是**全新会话**：内部审查不读也不追加同一会话的历史，
+      // 否则上一次审查的工单内容会作为上下文进入下一次，且注入语料会长期驻留。
+      const conversation = createInternalConversation("moderation", "check");
       const response = await libreChatService.sendMessage(
-        deriveUserOwnerKey("system:moderation:check"),
+        conversation.ownerKey,
         prompt,
+        undefined,
+        undefined,
+        { internal: conversation },
       );
 
       const trimmed = String(response || "").trim().toLowerCase();
@@ -195,9 +201,13 @@ ${content}
 ${delimiter}
 请用中文直接回复原因，字数控制在 50 字以内。`;
 
+      const conversation = createInternalConversation("moderation", "reason");
       const response = await libreChatService.sendMessage(
-        deriveUserOwnerKey("system:moderation:reason"),
+        conversation.ownerKey,
         prompt,
+        undefined,
+        undefined,
+        { internal: conversation },
       );
 
       return response || "内容违反社区准则。";

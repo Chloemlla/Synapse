@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { listUsers, getUserHistory, deleteUser, batchDeleteUsers, deleteAllUsers, AdminUserSummary, AdminUserHistoryItem } from '../api/librechatAdmin';
+import { listUsers, getUserHistory, deleteUser, batchDeleteUsers, deleteAllUsers, AdminUserSummary, AdminUserHistoryItem, AdminConversationScope } from '../api/librechatAdmin';
 import { AiErrorDetailsPanel } from './AiErrorDetailsPanel';
 import LibreChatGuestCleanup from './LibreChatGuestCleanup';
 import { useNotification } from './Notification';
@@ -30,6 +30,9 @@ import { studioModalCardClassName, studioSubPanelClassName } from './studioTheme
 const PAGE_SIZES = [10, 20, 50];
 
 const formatTs = (ts?: string | null) => ts ? new Date(ts).toLocaleString() : '';
+
+// 系统内部服务会话展示可读名（组件名开头），用户会话仍然展示 userId。
+const conversationDisplayName = (u: AdminUserSummary) => (u.kind === 'system' && u.name ? u.name : u.userId);
 
 type ApiErrorPayload = {
   error?: string;
@@ -69,6 +72,8 @@ const LibreChatAdminPage: React.FC = () => {
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit]);
   // 是否显示已删除用户
   const [includeDeleted, setIncludeDeleted] = useState(false);
+  // 会话范围：全部 / 仅用户会话 / 仅系统内部服务会话（按组件名分组展示）
+  const [scope, setScope] = useState<AdminConversationScope>('all');
 
   // Selected user details
   const [selectedUser, setSelectedUser] = useState<AdminUserSummary | null>(null);
@@ -87,7 +92,7 @@ const LibreChatAdminPage: React.FC = () => {
   const fetchUsers = async (toPage = page, showTip = false) => {
     setLoading(true);
     try {
-      const res = await listUsers({ kw, page: toPage, limit, includeDeleted });
+      const res = await listUsers({ kw, page: toPage, limit, includeDeleted, scope });
       setUsers(res.users || []);
       setTotal(res.total || 0);
       setPage(toPage);
@@ -117,7 +122,7 @@ const LibreChatAdminPage: React.FC = () => {
   useEffect(() => {
     fetchUsers(1, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit, includeDeleted]);
+  }, [limit, includeDeleted, scope]);
 
   // 同步全选状态
   useEffect(() => {
@@ -137,7 +142,7 @@ const LibreChatAdminPage: React.FC = () => {
   };
 
   const onDeleteUser = async (u: AdminUserSummary) => {
-    const yes = confirm(`确定删除用户 ${u.userId} 的全部聊天历史吗？该操作不可恢复。`);
+    const yes = confirm(`确定删除用户 ${conversationDisplayName(u)} 的全部聊天历史吗？该操作不可恢复。`);
     if (!yes) return;
     try {
       setActionLoading(true);
@@ -336,7 +341,7 @@ const LibreChatAdminPage: React.FC = () => {
                 <div className="relative">
                   <input
                     className="w-full px-4 py-2 pl-10 pr-10 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
-                    placeholder="搜索 userId (支持模糊)"
+                    placeholder="搜索 userId / 系统内部服务组件名（支持前缀）"
                     value={kw}
                     onChange={(e) => setKw(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') onSearch(); }}
@@ -379,6 +384,26 @@ const LibreChatAdminPage: React.FC = () => {
                 />
                 显示已删除
               </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 select-none">
+                <span>会话范围</span>
+                <select
+                  className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={scope}
+                  onChange={(e) => {
+                    const next = e.target.value as AdminConversationScope;
+                    setScope(next);
+                    setSelectedUser(null);
+                    setHistory([]);
+                    setHTotal(0);
+                    setNotification({ type: 'info', message: next === 'system' ? '已切换到系统内部服务会话' : next === 'user' ? '已切换到用户会话' : '已切换到全部会话' });
+                  }}
+                  disabled={loading || actionLoading}
+                >
+                  <option value="all">全部</option>
+                  <option value="user">仅用户会话</option>
+                  <option value="system">仅系统内部服务</option>
+                </select>
+              </label>
               {canWrite && (
               <motion.button
                 className="px-6 py-2 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition font-medium flex items-center gap-2"
@@ -410,6 +435,11 @@ const LibreChatAdminPage: React.FC = () => {
                 第 {page}/{totalPages} 页
               </div>
             </div>
+            {scope === 'system' && (
+              <p className="text-xs text-slate-500">
+                系统内部服务会话按「组件名:用途:标识」命名，同组件自动排在一起；每次言论审查都是独立会话，不复用上一轮对话。
+              </p>
+            )}
           </div>
 
           {/* 用户列表 */}
@@ -424,7 +454,7 @@ const LibreChatAdminPage: React.FC = () => {
               {users.length === 0 ? (
                 <div className="text-center py-8 text-slate-500">
                   <FaUsers className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                  暂无用户数据
+                  {scope === 'system' ? '暂无系统内部服务会话' : '暂无用户数据'}
                 </div>
               ) : (
                 <>
@@ -498,11 +528,26 @@ const LibreChatAdminPage: React.FC = () => {
                           />
                           )}
                           <div className="flex-1 min-w-0 max-w-full">
-                            <div className="flex items-center gap-2 mb-2">
-                              <FaUser className="text-blue-500 flex-shrink-0" />
-                              <span className="font-medium text-slate-800 truncate max-w-32" title={u.userId}>
-                                {u.userId.length > 24 ? `${u.userId.slice(0, 20)}...${u.userId.slice(-4)}` : u.userId}
-                              </span>
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              {u.kind === 'system' ? (
+                                <FaCode className="text-purple-500 flex-shrink-0" />
+                              ) : (
+                                <FaUser className="text-blue-500 flex-shrink-0" />
+                              )}
+                              {u.kind === 'system' ? (
+                                <span className="font-medium text-slate-800 truncate max-w-64" title={u.name || u.userId}>
+                                  {conversationDisplayName(u)}
+                                </span>
+                              ) : (
+                                <span className="font-medium text-slate-800 truncate max-w-32" title={u.userId}>
+                                  {u.userId.length > 24 ? `${u.userId.slice(0, 20)}...${u.userId.slice(-4)}` : u.userId}
+                                </span>
+                              )}
+                              {u.kind === 'system' && u.componentLabel && (
+                                <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs">
+                                  {u.componentLabel}
+                                </span>
+                              )}
                               <button
                                 className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                                 onClick={async () => {
@@ -621,8 +666,8 @@ const LibreChatAdminPage: React.FC = () => {
             )}
             {selectedUser && (
               <div className="flex items-center gap-2 text-sm text-slate-500 truncate max-w-48">
-                <span title={selectedUser.userId}>
-                  {selectedUser.userId.length > 24 ? `${selectedUser.userId.slice(0, 20)}...${selectedUser.userId.slice(-4)}` : selectedUser.userId} · 共 {hTotal} 条
+                <span title={selectedUser.userId} className="truncate">
+                  {conversationDisplayName(selectedUser).length > 32 ? `${conversationDisplayName(selectedUser).slice(0, 28)}...` : conversationDisplayName(selectedUser)} · 共 {hTotal} 条
                 </span>
                 <button
                   className="p-1 text-slate-400 hover:text-blue-600 transition-colors flex-shrink-0"

@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { type ITicket, type ITicketMessage, TicketModel } from "../models/ticketModel";
 import { EmailService, getDefaultEmailFrom } from "../services/emailService";
 import { libreChatService } from "../services/libreChatService";
-import { deriveUserOwnerKey } from "../services/librechat/history";
+import { createInternalConversation } from "../services/librechat/conversations";
 import type { ChatFailureDiagnostics } from "../services/librechat/types";
 import { ModerationService } from "../services/moderationService";
 import { mongoose } from "../services/mongoService";
@@ -105,8 +105,11 @@ export async function generateAiTicketResponse(ticketId: string) {
 
       try {
         let aiErrorDetails: ChatFailureDiagnostics | undefined;
+        // 一工单一会话：同一工单内保留上下文，工单之间互不串味；
+        // 会话名以组件名开头（`ticket-ai:reply:ticket-<id>`），管理端能认出归属。
+        const conversation = createInternalConversation("ticket-ai", "reply", `ticket-${ticketId}`);
         const aiResponse = await libreChatService.sendMessage(
-          deriveUserOwnerKey(`system:ticket:${ticketId}`),
+          conversation.ownerKey,
           aiMessage,
           (delta) => {
             // 通过 WebSocket 发送流式分片
@@ -115,6 +118,7 @@ export async function generateAiTicketResponse(ticketId: string) {
           (diagnostics) => {
             aiErrorDetails = diagnostics;
           },
+          { internal: conversation },
         );
 
         if (!aiResponse) {

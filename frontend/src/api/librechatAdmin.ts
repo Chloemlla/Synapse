@@ -3,6 +3,14 @@ import type { AiErrorDetails } from '../types/aiDiagnostics';
 
 export interface AdminUserSummary {
     userId: string;
+    /** user：普通用户会话；system：系统内部服务会话（言论审查 / 工单 AI 等）。 */
+    kind?: 'user' | 'system';
+    /** 系统内部服务会话名（组件名开头，如 `moderation:check:1a2b3c`）；用户会话为 null。 */
+    name?: string | null;
+    /** 系统内部服务组件名（如 `moderation`）。 */
+    component?: string | null;
+    /** 组件中文名，由后端给（如 `工单言论审查`）。 */
+    componentLabel?: string | null;
     total: number;
     updatedAt?: string;
     firstTs?: string | null;
@@ -30,9 +38,11 @@ export interface AdminUserHistoryResponse {
 // 统一的 LibreChat 接口前缀，API base URL 只从 api.ts 读取
 const BASE = `${getApiBaseUrl()}/api/librechat`;
 
-export async function listUsers(params: { kw?: string; page?: number; limit?: number; includeDeleted?: boolean }): Promise<AdminUsersResponse> {
-    const { kw = '', page = 1, limit = 20, includeDeleted = false } = params || {};
-    const res = await api.get(`${BASE}/admin/users`, { params: { kw, page, limit, includeDeleted } });
+export type AdminConversationScope = 'all' | 'user' | 'system';
+
+export async function listUsers(params: { kw?: string; page?: number; limit?: number; includeDeleted?: boolean; scope?: AdminConversationScope }): Promise<AdminUsersResponse> {
+    const { kw = '', page = 1, limit = 20, includeDeleted = false, scope = 'all' } = params || {};
+    const res = await api.get(`${BASE}/admin/users`, { params: { kw, page, limit, includeDeleted, scope } });
     return res.data as AdminUsersResponse;
 }
 

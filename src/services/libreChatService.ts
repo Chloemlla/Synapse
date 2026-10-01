@@ -21,6 +21,14 @@ import {
 } from "./librechat/diagnostics";
 import { SerialAtomicJsonWriter } from "./librechat/atomicJsonWriter";
 import {
+  internalServiceLabel,
+  isInternalServiceComponent,
+  listLegacyInternalOwnerKeys,
+  lookupLegacyInternalConversation,
+  type InternalConversation,
+  type InternalServiceComponent,
+} from "./librechat/conversations";
+import {
   assertConversationOwnerKey,
   isConversationOwnerKey,
   messageBelongsToOwner,
@@ -109,6 +117,31 @@ function shuffleInPlace<T>(arr: T[]): T[] {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+export interface SendMessageOptions {
+  /**
+   * 系统内部服务会话元数据（`createInternalConversation()` 的产物）：登记到历史文档，
+   * 管理端据此按组件名分组展示。普通用户会话不传。
+   */
+  internal?: Pick<InternalConversation, "component" | "name">;
+}
+
+/** 内部服务会话在历史文档上的投影（读写两用）。 */
+interface InternalConversationMeta {
+  component: InternalServiceComponent;
+  name: string;
+}
+
+/** 从历史文档上读回内部会话元数据；不完整或组件名不认识时返回 null。 */
+function readInternalConversationMeta(doc: {
+  internalComponent?: unknown;
+  internalName?: unknown;
+}): InternalConversationMeta | null {
+  const { internalComponent, internalName } = doc;
+  if (typeof internalName !== "string" || !internalName.trim()) return null;
+  if (!isInternalServiceComponent(internalComponent)) return null;
+  return { component: internalComponent, name: internalName.trim() };
 }
 
 class LibreChatService {
@@ -526,7 +559,11 @@ class LibreChatService {
     return this.getMemoryMessages(ownerKey);
   }
 
-  private async appendHistoryMessage(ownerKey: string, message: ChatMessage): Promise<number> {
+  private async appendHistoryMessage(
+    ownerKey: string,
+    message: ChatMessage,
+    internal?: InternalConversationMeta,
+  ): Promise<number> {
     await this.initializationPromise;
     if (mongoose.connection.readyState !== 1) await this.ensureFileHistoryLoaded();
     return this.withOwnerLock(ownerKey, async () => {
@@ -545,7 +582,13 @@ class LibreChatService {
       if (mongoose.connection.readyState === 1) {
         const atomicAppend = {
           $push: { messages: { $each: [safeMessage], $slice: -this.MAX_USER_MESSAGES } },
-          $set: { updatedAt: new Date(), deleted: false, deletedAt: null },
+          $set: {
+            updatedAt: new Date(),
+            deleted: false,
+            deletedAt: null,
+            // 内部服务会话的可读名只在首次写入时登记，后续追加保持一致。
+            ...(internal ? { internalComponent: internal.component, internalName: internal.name } : {}),
+          },
         };
         try {
           await ChatHistoryModel.findOneAndUpdate(
@@ -961,9 +1004,13 @@ class LibreChatService {
     message: string,
     onDelta?: (delta: string) => void,
     onFailure?: (diagnostics: ChatFailureDiagnostics) => void,
+    options: SendMessageOptions = {},
   ): Promise<string> {
     assertConversationOwnerKey(ownerKey);
     await this.initializationPromise;
+    const internalMeta = options.internal
+      ? { component: options.internal.component, name: options.internal.name }
+      : undefined;
     // 先将用户消息写入历史
     const userMsg: ChatMessage = {
       id: randomUUID(),
@@ -972,7 +1019,7 @@ class LibreChatService {
       timestamp: new Date().toISOString(),
       ownerKey,
     };
-    await this.appendHistoryMessage(ownerKey, userMsg);
+    await this.appendHistoryMessage(ownerKey, userMsg, internalMeta);
     logger.info("已保存 LibreChat 用户消息", { ownerKey, messageId: userMsg.id });
 
     // 若用户询问“你是什么模型”等同类问题，严格保持沉默并直接返回空字符串
@@ -1020,7 +1067,7 @@ class LibreChatService {
         ownerKey,
         aiErrorDetails,
       };
-      const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg);
+      const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg, internalMeta);
       logger.info("已保存 LibreChat 降级回复", { ownerKey, messageId: aiMsg.id, totalMessages });
 
       // 发送SSE通知：消息完成（降级回复）
@@ -1178,7 +1225,7 @@ class LibreChatService {
           timestamp: new Date().toISOString(),
           ownerKey,
         };
-        const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg);
+        const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg, internalMeta);
         logger.info("已保存 LibreChat AI 回复", { ownerKey, messageId: aiMsg.id, totalMessages });
 
         // 发送SSE通知：消息完成
@@ -1225,7 +1272,7 @@ class LibreChatService {
       ownerKey,
       aiErrorDetails,
     };
-    const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg);
+    const totalMessages = await this.appendHistoryMessage(ownerKey, aiMsg, internalMeta);
     logger.info("已保存 LibreChat 错误降级回复", { ownerKey, messageId: aiMsg.id, totalMessages });
 
     // 发送SSE通知：消息完成（降级回复）
@@ -1461,6 +1508,7 @@ class LibreChatService {
     page = 1,
     limit = 20,
     includeDeleted = false,
+    scope: "all" | "user" | "system" = "all",
   ): Promise<{ users: any[]; total: number }> {
     if (mongoose.connection.readyState !== 1) return { users: [], total: 0 };
 
@@ -1471,12 +1519,32 @@ class LibreChatService {
     // 安全处理搜索关键词，防止 NoSQL 注入
     const sanitizedKeyword = keyword.trim().slice(0, 128);
     const q: any = {};
+    const clauses: any[] = [];
 
     if (sanitizedKeyword) {
       // 使用安全的字符串匹配而不是正则表达式，防止 ReDoS 攻击
       const prefix = { $regex: `^${escapeRegex(sanitizedKeyword)}`, $options: "i" };
-      q.$or = [{ ownerKey: prefix }, { userId: prefix }];
+      // 内部服务会话名以组件名开头，所以按组件名搜也能命中（如 “moderation”）。
+      clauses.push({ $or: [{ ownerKey: prefix }, { userId: prefix }, { internalName: prefix }] });
     }
+
+    // 系统内部服务会话与用户会话分开看待：内部会话名可读且以组件名开头。
+    // `$in: [null, ""]` 同时命中缺失字段，才能把本次改造前写入的用户会话算作 user。
+    const legacyInternalOwnerKeys = listLegacyInternalOwnerKeys();
+    if (scope === "system") {
+      clauses.push({
+        $or: [
+          { internalName: { $exists: true, $nin: [null, ""] } },
+          { ownerKey: { $in: legacyInternalOwnerKeys } },
+        ],
+      });
+    } else if (scope === "user") {
+      clauses.push({ internalName: { $in: [null, ""] } });
+      clauses.push({ ownerKey: { $nin: legacyInternalOwnerKeys } });
+    }
+
+    if (clauses.length === 1) Object.assign(q, clauses[0]);
+    else if (clauses.length > 1) q.$and = clauses;
 
     if (!includeDeleted) q.deleted = { $ne: true };
     const total = await (mongoose.models.LibreChatHistory as any).countDocuments(q);
@@ -1514,6 +1582,8 @@ class LibreChatService {
           $project: {
             ownerKey: 1,
             userId: 1,
+            internalComponent: 1,
+            internalName: 1,
             updatedAt: 1,
             deleted: 1,
             deletedAt: 1,
@@ -1524,13 +1594,22 @@ class LibreChatService {
         },
       ])
       .exec();
-    const users = (docs || []).map((d: any) => ({
-      userId: d.ownerKey || d.userId,
-      total: d.total || 0,
-      updatedAt: d.updatedAt,
-      firstTs: d.firstTs || null,
-      lastTs: d.lastTs || null,
-    }));
+    const users = (docs || []).map((d: any) => {
+      const ownerKey = d.ownerKey || d.userId;
+      // 新写入的内部会话名直接落在历史文档上；改造前的遗留会话只能按写死的身份反推。
+      const internal = readInternalConversationMeta(d) ?? lookupLegacyInternalConversation(ownerKey);
+      return {
+        userId: ownerKey,
+        kind: internal ? "system" : "user",
+        name: internal?.name ?? null,
+        component: internal?.component ?? null,
+        componentLabel: internal ? internalServiceLabel(internal.component) : null,
+        total: d.total || 0,
+        updatedAt: d.updatedAt,
+        firstTs: d.firstTs || null,
+        lastTs: d.lastTs || null,
+      };
+    });
     return { users, total };
   }
 

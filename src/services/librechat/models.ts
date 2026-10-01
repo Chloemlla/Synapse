@@ -43,6 +43,11 @@ export const ChatHistorySchema = new mongoose.Schema(
     ownerKey: { type: String },
     userId: { type: String },
     messages: { type: Array, required: true, default: [] },
+    // 系统内部服务会话（工单言论审查 / QQ 群纪律审查 / 工单 AI 助手）的归属与可读名：
+    // 名一律以组件名开头（`<组件名>:<用途>:<标识>`），用户会话留空。ownerKey 是不可逆摘要，
+    // 管理端要按组件名分组展示，只能把可读名落在文档上。
+    internalComponent: { type: String },
+    internalName: { type: String },
     updatedAt: { type: Date, default: Date.now },
     deleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
@@ -57,6 +62,8 @@ export const LIBRECHAT_OWNER_INDEX = {
 
 ChatHistorySchema.index(LIBRECHAT_OWNER_INDEX.fields, LIBRECHAT_OWNER_INDEX.options);
 ChatHistorySchema.index({ updatedAt: -1 });
+// 管理端「系统内部服务」筛选与分组走这个索引。
+ChatHistorySchema.index({ internalComponent: 1, updatedAt: -1 });
 
 export const ChatHistoryModel: any =
   mongoose.models.LibreChatHistory || mongoose.model("LibreChatHistory", ChatHistorySchema);

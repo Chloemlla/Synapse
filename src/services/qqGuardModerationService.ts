@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import logger from "../utils/logger";
 import { libreChatService } from "./libreChatService";
-import { deriveUserOwnerKey } from "./librechat/history";
+import { createInternalConversation } from "./librechat/conversations";
 import { mongoose } from "./mongoService";
 import {
   QqGuardAuditModel,
@@ -16,8 +16,6 @@ import {
 } from "../models/qqGuardModel";
 import { EmailService } from "./emailService";
 import { RuntimeConfigService } from "./runtimeConfigService";
-
-const SERVICE_OWNER_KEY = deriveUserOwnerKey("system:qq-guard:moderate");
 
 export interface QqGuardModerateResult {
   verdict: QqGuardVerdict;
@@ -84,9 +82,14 @@ export class QqGuardModerationService {
     }
 
     try {
+      // 每次裁决单独开一个会话：不同群/不同人的消息绝不复用同一会话上下文。
+      const conversation = createInternalConversation("qq-guard", "moderate");
       const response = await libreChatService.sendMessage(
-        SERVICE_OWNER_KEY,
+        conversation.ownerKey,
         QqGuardModerationService.buildPrompt(content),
+        undefined,
+        undefined,
+        { internal: conversation },
       );
       const parsed = QqGuardModerationService.parseVerdict(response);
       if (parsed === null) {
