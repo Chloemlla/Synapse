@@ -530,3 +530,46 @@ Frontend bundle budget failed (2 violation(s)):
 （`MarkdownRenderer` → mermaid chunk 的 chunk 级导入无法按需取成员）。下一步应从产物侧定位是哪个入口可达模块
 把它拉进 `imports`（可用 `frontend/dist/.vite/manifest.json` 的 `imports` 链逐层回溯），而不是继续加预算。
 其余守卫（entry ≤ 220 KiB、单 chunk ≤ 1800 KiB、总量 ≤ 4600 KiB）未放宽。
+
+### 9.5 最终根因：rolldown 分组的 `includeDependenciesRecursively`（2026-10-01 第三轮）
+
+第二轮把 DOMPurify 与 `__vitePreload` 助手分别固定到独立分块后，CI 的 `[perf-chunk]` 诊断
+（run 36829639326 / 36830513997）显示两者**仍然**落在 mermaid chunk 里：
+
+```
+[perf-chunk] assets/mermaid.<hash>.js <-  vite/preload-helper.js, .../dompurify@3.4.16/... , .../mermaid@12.0.0/...
+线上 index.<hash>.js:  import{P as u}from"./mermaid.<hash>.js"   // P 即 __vitePreload
+```
+
+翻 rolldown 1.1.5 的源码与类型注释后确认机制：
+
+| 事实 | 出处 |
+| --- | --- |
+| `manualChunks` 只是兼容层，被翻译成**一个**动态命名的分组 | `rolldown/dist/shared/rolldown-build-*.mjs`：`effectiveChunksOption = { groups: [{ name(moduleId) { return manualChunks(...) } }] }` |
+| 分组的 `includeDependenciesRecursively` **默认 true**：组把模块收进 chunk 时会把它的依赖一起吞 | `CodeSplittingGroup.includeDependenciesRecursively`，`@default true` |
+| 高优先级分组会「先认领」，被认领的模块会从其他分组移除 | `CodeSplittingGroup.priority` 文档 |
+
+于是：mermaid 在 `mermaid` 分组里被收进 chunk 时，连同它的依赖 `dompurify` 与
+`\0vite/preload-helper.js` 一起被吞进 mermaid chunk；而 `__vitePreload` 是入口每个
+`React.lazy` 都要用的 → **入口被迫静态加载 1.5 MB gzip 的 mermaid**（与 manualChunks 怎么配无关，
+所以前两轮的独立分块尝试全部无效）。
+
+**修复（`40409ffb`）**：改用 rolldown 原生的 `output.codeSplitting.groups`
+
+```ts
+codeSplitting: {
+  groups: [
+    // 高优先级先认领 Vite 运行时助手，避免被 mermaid 组的依赖递归吞走
+    { name: 'vite-runtime', test: /vite[\/]preload-helper/, priority: 100 },
+    // 其余分块沿用原 getManualChunk 映射
+    { name: (moduleId: string) => getManualChunk(moduleId), priority: 0 },
+  ],
+}
+```
+
+配套：`Mermaid.tsx` 的 DOMPurify 改按需 `import('dompurify')`（避免 MarkdownRenderer 静态依赖
+mermaid chunk，让「有 markdown 没图表」的文章页不再下 mermaid）、`App.tsx` 去掉 DOMPurify
+（公告 html 在懒加载的 `AnnouncementModal` 里已消毒，原为双重消毒）。
+
+**复核项（下一次 main 构建）**：首屏闭包应不再出现 `assets/mermaid.*.js`，闭包 gzip 应从
+1655.6 KiB 降到 ≈300 KiB，`[perf-chunk]` 里 `vite/preload-helper.js` 应落在 `vite-runtime.*.js`。
