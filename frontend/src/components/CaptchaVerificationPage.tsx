@@ -180,7 +180,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
     setError('验证码已过期，请重新验证');
   }, []);
 
-  const handleChallengeError = useCallback((widgetError: unknown) => {
+  // 三家组件的 onError 签名不一（Turnstile 不传参，hCaptcha/trycap 传错误）：参数写成可选才能同时满足。
+  const handleChallengeError = useCallback((widgetError?: unknown) => {
     console.error('人机验证组件错误:', widgetError);
     setError('验证组件加载失败，请刷新页面重试');
   }, []);
