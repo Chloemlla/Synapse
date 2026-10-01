@@ -740,7 +740,9 @@ const App: React.FC = () => {
         <Route path="/smart-human-check" element={renderAdminRoute(<SmartHumanCheckTestPage />)} />
         <Route path="/notification-test" element={renderAdminRoute(<NotificationTestPage />)} />
         <Route path="/cdn-cgi" element={renderAnimatedRoute(<CloudflareChallengePage />)} />
-        <Route path="/captcha-verify" element={renderAdminRoute(<CaptchaVerificationPage />)} />
+        {/* 独立人机验证页：面向所有访客（含未登录）——首访门禁、/challenge 与 /hcaptcha-verify
+            老书签/外链都落在这里，不能挂管理员守卫。 */}
+        <Route path="/captcha-verify" element={renderAnimatedRoute(<CaptchaVerificationPage />)} />
         {/* 旧路径与短别名保留：老书签/外链（含 https://chloemlla.com/challenge）都落到人机验证页 */}
         <Route path="/hcaptcha-verify" element={<Navigate to="/captcha-verify" replace />} />
         <Route path="/challenge" element={<Navigate to="/captcha-verify" replace />} />
