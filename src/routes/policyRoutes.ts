@@ -451,7 +451,7 @@ router.post("/revoke", policyRateLimit, revokePolicyConsent);
  * /api/policy/document:
  *   get:
  *     summary: 获取服务条款与隐私政策条文
- *     description: 返回当前版本的完整政策条文（章节、重点提示、修订记录与联系方式）。版本号与 /api/policy/version 同源，前端政策页面直接渲染该返回值。`?format=md`（或 `Accept: text/markdown`）返回同一份内容的 Markdown 存档副本，供用户离线保存并与同意记录里的 documentHash 对账。
+ *     description: 返回当前版本的完整政策条文（章节、重点提示、修订记录与联系方式）。版本号与 /api/policy/version 同源，前端政策页面直接渲染该返回值。查询串带 `format=md`（或请求头 Accept 为 text/markdown）时，返回同一份内容的 Markdown 存档副本，供用户离线保存并与同意记录里的 documentHash 对账。
  *     tags: [Policy]
  *     parameters:
  *       - in: query
