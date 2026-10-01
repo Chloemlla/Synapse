@@ -43,7 +43,10 @@ const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
  *  - **邮箱变更验证码**落 sharedStateStore（TTL 即过期），不再散在进程内存里。
  */
 
-const TOKEN_VERSION = "v2";
+const TOKEN_VERSION = "v3";
+/** AES-256-GCM 参数：12 字节 IV（NIST 推荐）+ 16 字节认证标签。 */
+const GCM_IV_LENGTH = 12;
+const GCM_TAG_LENGTH = 16;
 const REVOCATION_KEY_PREFIX = "security-session:revoked:";
 const GLOBAL_REVOCATION_KEY = "security-session:revoked:global";
 // 水位只需要活过一个会话 TTL：10 分钟之后再老的令牌本身也已过期。
@@ -117,35 +120,49 @@ function base64UrlEncode(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
 }
 
-function signToken(payload: TokenPayload): string {
-  const body = base64UrlEncode(JSON.stringify(payload));
-  const signature = crypto.createHmac("sha256", signingKey()).update(`${TOKEN_VERSION}.${body}`).digest();
-  return `${TOKEN_VERSION}.${body}.${base64UrlEncode(signature)}`;
+/**
+ * 令牌封装：AES-256-GCM 密封（认证加密）而不是 HMAC 签名。
+ *
+ * 两个原因：
+ *  1. 负载（含 userId / 签发时间）不外泄：令牌落日志/浏览器 localStorage 时只有密文；
+ *  2. 语义上这是「用一个派生密钥密封一段短期状态」，不是「哈希口令」。
+ *     之前的 HMAC-SHA256 写法被 `js/insufficient-password-hash` 误判为「弱哈希口令」
+ *     （它的启发式把 createProfileVerificationSession 当作口令来源，见 CodeQL 告警 1247），
+ *     换成 AEAD 后既没有弱哈希语义，也保住了完整性与防篡改（GCM tag 校验）。
+ */
+function sealToken(payload: TokenPayload): string {
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
+  const cipher = crypto.createCipheriv("aes-256-gcm", signingKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [TOKEN_VERSION, base64UrlEncode(iv), base64UrlEncode(tag), base64UrlEncode(ciphertext)].join(".");
 }
 
-function parseToken(token: string): TokenPayload | null {
+function openToken(token: string): TokenPayload | null {
   if (typeof token !== "string") return null;
   const parts = token.split(".");
-  if (parts.length !== 3 || parts[0] !== TOKEN_VERSION) return null;
+  if (parts.length !== 4 || parts[0] !== TOKEN_VERSION) return null;
 
-  const [version, body, signature] = parts;
-  let expected: Buffer;
+  const [, ivPart, tagPart, ciphertextPart] = parts;
+  let plaintext: string;
   try {
-    expected = crypto.createHmac("sha256", signingKey()).update(`${version}.${body}`).digest();
+    const iv = Buffer.from(ivPart, "base64url");
+    const tag = Buffer.from(tagPart, "base64url");
+    if (iv.length !== GCM_IV_LENGTH || tag.length !== GCM_TAG_LENGTH) return null;
+
+    const decipher = crypto.createDecipheriv("aes-256-gcm", signingKey(), iv);
+    decipher.setAuthTag(tag);
+    plaintext = Buffer.concat([
+      decipher.update(Buffer.from(ciphertextPart, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
   } catch {
+    // 任何字节被动过（含 tag 不匹配）都会抛在这里：直接当无效令牌。
     return null;
   }
 
-  let provided: Buffer;
   try {
-    provided = Buffer.from(signature, "base64url");
-  } catch {
-    return null;
-  }
-  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) return null;
-
-  try {
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Partial<TokenPayload>;
+    const parsed = JSON.parse(plaintext) as Partial<TokenPayload>;
     if (typeof parsed.u !== "string" || !parsed.u) return null;
     if (typeof parsed.m !== "number" || !METHOD_BY_CODE[parsed.m]) return null;
     if (typeof parsed.iat !== "number" || !Number.isFinite(parsed.iat)) return null;
@@ -239,7 +256,7 @@ export function createProfileVerificationSession(
   const issuedAt = Math.max(now, watermark + 1);
   const expiresAt = issuedAt + PROFILE_VERIFICATION_TTL_MS;
   const session: ProfileVerificationSession = {
-    token: signToken({ u: userId, m: METHOD_CODES[method], iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
+    token: sealToken({ u: userId, m: METHOD_CODES[method], iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
     userId,
     method,
     createdAt: issuedAt,
@@ -252,7 +269,7 @@ export function createProfileVerificationSession(
 }
 
 export function validateProfileVerificationSession(userId: string, token: string): ProfileVerificationSession | null {
-  const payload = parseToken(token);
+  const payload = openToken(token);
   if (!payload) return null;
   if (payload.u !== userId) return null;
   if (payload.exp <= Date.now()) return null;

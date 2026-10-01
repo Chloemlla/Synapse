@@ -62,18 +62,23 @@ describe("安全会话：自包含令牌 + 共享撤销水位", () => {
     expect(validated?.expiresAt).toBe(session.expiresAt);
   });
 
-  it("签名字段被篡改、payload 被替换、userId 不匹配都拒绝", () => {
+  it("密文/认认标签被篡改、payload 被替换、userId 不匹配都拒绝", () => {
     const session = createProfileVerificationSession(USER_ID, "password");
-    const [version, body, signature] = session.token.split(".");
+    const [version, iv, tag, ciphertext] = session.token.split(".");
 
-    expect(validateProfileVerificationSession(USER_ID, `${version}.${body}.${signature.slice(0, -2)}xx`)).toBeNull();
+    // v3：AES-256-GCM 密封（iv.tag.ciphertext），任一字节被动过都会被认证标签挂掉。
+    expect(session.token.split(".")).toHaveLength(4);
+    expect(version).toBe("v3");
+    expect(validateProfileVerificationSession(USER_ID, `${version}.${iv}.${tag}.${ciphertext.slice(0, -2)}xx`)).toBeNull();
+    expect(validateProfileVerificationSession(USER_ID, `${version}.${iv}.${tag.slice(0, -2)}xx.${ciphertext}`)).toBeNull();
     expect(validateProfileVerificationSession(USER_ID, session.token)).not.toBeNull();
     expect(validateProfileVerificationSession("someone-else", session.token)).toBeNull();
     expect(validateProfileVerificationSession(USER_ID, "v1.opaque-legacy-token")).toBeNull();
+    expect(validateProfileVerificationSession(USER_ID, "v2.legacy-hmac-token.signature")).toBeNull();
 
-    // 换掉 payload 但沿用旧签名 → 验签失败。
-    const forgedBody = Buffer.from(JSON.stringify({ u: USER_ID, m: "passkey", iat: Date.now(), exp: Date.now() + 60_000, j: "x" })).toString("base64url");
-    expect(validateProfileVerificationSession(USER_ID, `${version}.${forgedBody}.${signature}`)).toBeNull();
+    // 没有密钥就造不出可用密文：自造一个「看起来合法」的 4 段令牌只会解密失败。
+    const forged = Buffer.from(JSON.stringify({ u: USER_ID, m: 2, iat: Date.now(), exp: Date.now() + 60_000, j: "x" })).toString("base64url");
+    expect(validateProfileVerificationSession(USER_ID, `${version}.${iv}.${tag}.${forged}`)).toBeNull();
   });
 
   it("过期令牌被拒绝", () => {
