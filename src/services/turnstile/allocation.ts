@@ -49,6 +49,21 @@ export interface CaptchaAllocationPolicyView {
   updatedAt?: string;
 }
 
+/**
+ * 归一化入参：既接受落库文档（updatedAt 是 Date），也接受已归一化过的视图（updatedAt 是 ISO 字符串）——
+ * 调用点会把「当前策略」与「草稿补丁」叠加后一起传来。
+ */
+export type CaptchaAllocationPolicyInput = Partial<Omit<CaptchaAllocationPolicyDoc, "updatedAt">> & {
+  updatedAt?: Date | string;
+};
+
+/** 统一把 Date / ISO 字符串 / 无效值收敛成 ISO 字符串或 undefined。 */
+function toIsoOrUndefined(value: unknown): string | undefined {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 export interface CaptchaWidgetSettingsView {
   theme: CaptchaWidgetTheme;
   size: CaptchaWidgetSize;
@@ -57,6 +72,10 @@ export interface CaptchaWidgetSettingsView {
   perProvider: Partial<Record<CaptchaProviderId, CaptchaWidgetProviderOverride>>;
   updatedAt?: string;
 }
+
+export type CaptchaWidgetSettingsInput = Partial<Omit<CaptchaWidgetSettingsDoc, "updatedAt">> & {
+  updatedAt?: Date | string;
+};
 
 export interface ResolvedWidgetSettings {
   theme: CaptchaWidgetTheme;
@@ -211,9 +230,7 @@ export function normalizeWidgetOverrides(
   return result;
 }
 
-export function normalizeAllocationPolicy(
-  raw: Partial<CaptchaAllocationPolicyDoc> | null | undefined,
-): CaptchaAllocationPolicyView {
+export function normalizeAllocationPolicy(raw: CaptchaAllocationPolicyInput | null | undefined): CaptchaAllocationPolicyView {
   const source = raw ?? {};
   return {
     strategy: isCaptchaAllocationStrategy(source.strategy) ? source.strategy : DEFAULT_ALLOCATION_POLICY.strategy,
@@ -228,13 +245,11 @@ export function normalizeAllocationPolicy(
         : DEFAULT_ALLOCATION_POLICY.rolloutControlProvider,
     failoverMaxAttempts: clampFailoverAttempts(source.failoverMaxAttempts),
     scenarioStrategies: normalizeScenarioStrategies(source.scenarioStrategies),
-    updatedAt: source.updatedAt ? new Date(source.updatedAt).toISOString() : undefined,
+    updatedAt: toIsoOrUndefined(source.updatedAt),
   };
 }
 
-export function normalizeWidgetSettings(
-  raw: Partial<CaptchaWidgetSettingsDoc> | null | undefined,
-): CaptchaWidgetSettingsView {
+export function normalizeWidgetSettings(raw: CaptchaWidgetSettingsInput | null | undefined): CaptchaWidgetSettingsView {
   const source = raw ?? {};
   return {
     theme: normalizeWidgetTheme(source.theme),
@@ -242,7 +257,7 @@ export function normalizeWidgetSettings(
     language: normalizeWidgetLanguage(source.language),
     showProviderLabel: source.showProviderLabel !== false,
     perProvider: normalizeWidgetOverrides(source.perProvider),
-    updatedAt: source.updatedAt ? new Date(source.updatedAt).toISOString() : undefined,
+    updatedAt: toIsoOrUndefined(source.updatedAt),
   };
 }
 
@@ -432,7 +447,7 @@ export function simulateAllocation(
   const excluded = options.exclude ?? [];
   const pool = candidates.filter((candidate) => !excluded.includes(candidate.provider));
   const counts = new Map<CaptchaProviderId, number>();
-  const bump = (provider: CaptchaProviderId | undefined) => {
+  const bump = (provider: CaptchaProviderId | null | undefined) => {
     if (!provider) return;
     counts.set(provider, (counts.get(provider) ?? 0) + 1);
   };
