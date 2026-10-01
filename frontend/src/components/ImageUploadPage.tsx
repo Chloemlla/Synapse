@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
@@ -12,6 +12,8 @@ import ManagedCaptcha, {
   type ManagedCaptchaStatus,
 } from './ManagedCaptcha';
 import { studioEyebrowPillClassName } from './studioTheme';
+import { useAuth } from '../hooks/useAuth';
+import { isAdminRole } from '../utils/rbac';
 import {
   FaImage,
   FaUpload,
@@ -311,6 +313,9 @@ function fixIpfsDomain(url: string) {
 
 const ImageUploadPage: React.FC = () => {
   const { setNotification } = useNotification();
+  const { user } = useAuth();
+  // 管理员身份直接跳过人机验证（与头像上传 / FBI 上传 / 抽奖 / CDK 同一豁免口径）。
+  const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -531,7 +536,7 @@ const ImageUploadPage: React.FC = () => {
   // 后端对每个上传请求都调用供应商 siteverify（令牌单次有效），
   // 所以批量场景必须逐文件取新令牌；超时返回 null 由调用方标记失败。
   const obtainFreshCaptcha = (): Promise<ManagedCaptchaChallenge | null> => {
-    if (!captchaStatus.required) return Promise.resolve(null);
+    if (isAdmin || !captchaStatus.required) return Promise.resolve(null);
 
     captchaChallengeRef.current = null;
     setCaptcha(null);
@@ -560,8 +565,8 @@ const ImageUploadPage: React.FC = () => {
   const handleUpload = async () => {
     if (!file) return;
 
-    // 检查人机验证（是否需要由管理端配置决定）
-    if (captchaStatus.required && !captcha?.token) {
+    // 检查人机验证（是否需要由管理端配置决定；管理员直接跳过）
+    if (!isAdmin && captchaStatus.required && !captcha?.token) {
       setError('请先完成人机验证');
       setNotification({ message: '请先完成人机验证', type: 'warning' });
       return;
@@ -574,7 +579,7 @@ const ImageUploadPage: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('source', 'imgupload'); // 标记来源
-      appendCaptchaFields(formData, captcha);
+      appendCaptchaFields(formData, isAdmin ? null : captcha);
       const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
       console.log('[图片上传] 开始上传:', { uploadUrl, fileName: file.name, fileSize: file.size });
       const res = await fetch(uploadUrl, {
@@ -677,8 +682,8 @@ const ImageUploadPage: React.FC = () => {
   const handleBatchUpload = async () => {
     if (batchFiles.length === 0) return;
 
-    // 检查人机验证（批量上传要求用户先完成一次验证）
-    if (captchaStatus.required && !captcha?.token) {
+    // 检查人机验证（批量上传要求用户先完成一次验证；管理员直接跳过）
+    if (!isAdmin && captchaStatus.required && !captcha?.token) {
       setNotification({ message: '请先完成人机验证', type: 'warning' });
       return;
     }
@@ -707,7 +712,7 @@ const ImageUploadPage: React.FC = () => {
         // G12-01：每个文件都需要一个「一次性」挑战令牌（后端逐请求校验）。
         // 第 1 个文件复用用户已完成的验证；后续文件重置控件等待新令牌。
         let challenge: ManagedCaptchaChallenge | null = null;
-        if (captchaStatus.required) {
+        if (!isAdmin && captchaStatus.required) {
           if (i === 0 && captchaChallengeRef.current) {
             challenge = captchaChallengeRef.current;
           } else {
@@ -1224,8 +1229,8 @@ const ImageUploadPage: React.FC = () => {
               </motion.div>
             )}
 
-            {/* 人机验证：三家供应商由 /admin/captcha-providers 统一调控 */}
-            {!captchaStatus.loading && captchaStatus.required && (
+            {/* 人机验证：三家供应商由 /admin/captcha-providers 统一调控；管理员直接跳过 */}
+            {!isAdmin && !captchaStatus.loading && captchaStatus.required && (
               <motion.div
                 className="mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4"
                 initial={{ opacity: 0, y: 10 }}

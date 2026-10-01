@@ -424,11 +424,12 @@ export class IPFSService {
     // 检查开发环境是否跳�?Turnstile 验证
     const devSkipTurnstile = await getDevSkipTurnstile();
 
-    // 对于本地开发环境的管理员请求，免除Turnstile验证
+    // 管理员身份直接跳过人机验证（与头像上传 / FBI 上传 / 抽奖 / CDK 同一豁免口径）；
+    // 另保留本地开发环境与 UA 绕过两条历史通道。
     const isLocalIp = context?.clientIp ? ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(context.clientIp) : false;
     const shouldSkipTurnstile =
       context?.shouldSkipTurnstile ||
-      (context?.isAdmin && isLocalIp && context?.isDev) ||
+      Boolean(context?.isAdmin) ||
       shouldBypassByUA ||
       (!isProduction && devSkipTurnstile);
 
@@ -443,7 +444,7 @@ export class IPFSService {
         devSkipTurnstile,
       });
     } else if (shouldSkipTurnstile) {
-      logger.info("[IPFS] 本地开发环境管理员请求，跳过Turnstile验证", {
+      logger.info("[IPFS] 管理员/已认证请求跳过人机验证", {
         clientIp: context?.clientIp,
         isAdmin: context?.isAdmin,
         isDev: context?.isDev,

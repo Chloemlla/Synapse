@@ -39,16 +39,17 @@ export class IPFSController {
         const authenticatedByOAuth = Boolean((req as any).oauthToken);
         const authenticatedByApiCredential = authenticatedByApiKey || authenticatedByOAuth;
 
-        // 检查是否为本地开发环境的管理员请求
-        const isLocalIp = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip);
+        // 管理员身份直接跳过人机验证（与头像上传 / FBI 上传 / 抽奖 / CDK 同一豁免口径）；
+        // API Key / OAuth 是机器凭据，同样不要求人机验证。
         const isDev = process.env.NODE_ENV !== "production";
-        const shouldSkipTurnstile = authenticatedByApiCredential || (isAdmin && isLocalIp && isDev);
+        const shouldSkipTurnstile = authenticatedByApiCredential || isAdmin;
 
         if (shouldSkipTurnstile) {
           logger.info("认证上传请求，将跳过Turnstile验证", {
             ip,
             actor: IPFSController.maskLogValue(userId),
             role: isAdmin ? "admin" : "user",
+            isAdmin,
             authMode: authenticatedByApiKey ? "api-key" : authenticatedByOAuth ? "oauth" : "session",
             isDev,
             environment: process.env.NODE_ENV || "development",
@@ -65,7 +66,7 @@ export class IPFSController {
         const useLegacyIpfs =
           req.body.useLegacyIpfs === "true" || req.body.useLegacyIpfs === true;
 
-        // 使用IPFS服务上传文件（传递上下文用于本机管理员免除Turnstile验证）
+        // 使用IPFS服务上传文件（传递上下文用于管理员豁免Turnstile验证）
         const uploadResult = await IPFSService.uploadFile(
           buffer,
           originalname,

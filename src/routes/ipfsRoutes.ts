@@ -6,6 +6,7 @@ import { IPFSController } from "../controllers/ipfsController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
+import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
 import { connectMongo } from "../services/mongoService";
 import logger from "../utils/logger";
 import { createLimiter } from "../middleware/routeLimiters";
@@ -131,7 +132,16 @@ const settingsLimiter = createLimiter({
  *                   type: string
  *                   description: 错误信息
  */
-router.post("/upload", ipfsApiKeyAuth, uploadLimiter, upload.single("file"), IPFSController.uploadImage);
+// 公开上传路径上先做一次「可选会话解析」：已登录用户（尤其是管理员）能被识别出身份，
+// 管理员随后在控制器里直接豁免人机验证；匿名/API Key 通道行为不变。
+router.post(
+  "/upload",
+  optionalAuthenticateToken,
+  ipfsApiKeyAuth,
+  uploadLimiter,
+  upload.single("file"),
+  IPFSController.uploadImage,
+);
 
 /**
  * @openapi
