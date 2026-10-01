@@ -26,6 +26,8 @@ const THIRD_PARTY_SCRIPT_HOSTS = [
   "https://*.hcaptcha.com",
   // trycap（Cap）：控件脚本与可选的 pako 回退包都从 jsdelivr 取。
   "https://cdn.jsdelivr.net",
+  // Cap 实例自身：Standalone 的 asset server 也可直接托管控件与 wasm（CAP_CUSTOM_WASM_URL 指向实例时）。
+  "https://cap.chloemlla.com",
   "https://www.googletagmanager.com",
   "https://www.google-analytics.com",
   "https://analytics.google.com",
@@ -59,8 +61,10 @@ const PRODUCTION_CONNECT_HOSTS = [
   "https://*.hcaptcha.com",
   "https://challenges.cloudflare.com",
   "https://*.cloudflare.com",
-  // trycap：WASM 求解器从 jsdelivr 下载；challenge/redeem 走实例地址（*.chloemlla.com 已覆盖）。
+  // trycap：WASM 求解器从 jsdelivr 下载；challenge/redeem 走实例地址。
+  // 实例地址显式列出（不依赖 https://*.chloemlla.com 通配），换自定义域名部署时这里要同步。
   "https://cdn.jsdelivr.net",
+  "https://cap.chloemlla.com",
   "https://www.google-analytics.com",
   "https://analytics.google.com",
   "https://www.google.com",
@@ -182,8 +186,12 @@ export function buildHelmetCspDirectives(): Record<string, Iterable<HelmetCspDir
     imgSrc: ["'self'", "data:", "blob:", "https:"],
     // Frontend bundles may inline woff2 as data URLs.
     fontSrc: ["'self'", "data:", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
-    scriptSrc: ["'self'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
-    scriptSrcElem: ["'self'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
+    // 'wasm-unsafe-eval'：只放行 WebAssembly 的编译/实例化，不放行 JS eval。
+    // trycap（Cap）的 PoW 求解器是 WASM，缺这一条时浏览器直接拦掉 WebAssembly.compile
+    // （控制台报 "because 'unsafe-eval' is not an allowed source of script"），
+    // 控件只能退化到约慢 10 倍的 JS 求解器，hashwx 挑战更是无解。
+    scriptSrc: ["'self'", "'wasm-unsafe-eval'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
+    scriptSrcElem: ["'self'", "'wasm-unsafe-eval'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
     scriptSrcAttr: ["'none'"],
     styleSrc: ["'self'", asHttpStyleElementSource, ...THIRD_PARTY_STYLE_HOSTS],
     styleSrcElem: ["'self'", asHttpStyleElementSource, ...THIRD_PARTY_STYLE_HOSTS],

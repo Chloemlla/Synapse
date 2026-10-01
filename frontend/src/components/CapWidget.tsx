@@ -112,9 +112,14 @@ const CapWidget = ({
       try {
         // 严格 CSP 下（script-src 只放行 nonce）不给 nonce，instrumentation 的内联脚本会被浏览器拦掉，
         // 表现为 instr_timeout / blocked。把页面自身的 nonce 透给 Cap 即可。
-        if (!window.CAP_SCRIPT_NONCE) {
+        // CAP_CSS_NONCE 作用在控件自己注入的 <style> 上（若后端把 style-src-elem 收成 nonce-only，
+        // 缺了它控件会变成无样式），一起透过去成本为零。
+        if (!window.CAP_SCRIPT_NONCE || !window.CAP_CSS_NONCE) {
           const nonceSource = document.querySelector<HTMLScriptElement>('script[nonce]')?.nonce;
-          if (nonceSource) window.CAP_SCRIPT_NONCE = nonceSource;
+          if (nonceSource) {
+            if (!window.CAP_SCRIPT_NONCE) window.CAP_SCRIPT_NONCE = nonceSource;
+            if (!window.CAP_CSS_NONCE) window.CAP_CSS_NONCE = nonceSource;
+          }
         }
         await loadScript();
       } catch (error) {

@@ -72,6 +72,8 @@ describe("contentSecurityPolicy", () => {
       expect(header).toMatch(/style-src[^;]*'unsafe-inline'/);
       expect(header).toMatch(/style-src-attr\s+'unsafe-inline'/);
       expect(header).toMatch(/script-src-attr\s+'none'/);
+      // trycap（Cap）的 WASM 求解器需要 wasm-unsafe-eval；它不等于 unsafe-eval（JS eval 仍然禁用）。
+      expect(header).toMatch(/script-src[^;]*'wasm-unsafe-eval'/);
       expect(header).not.toContain("'unsafe-eval'");
       expect(header).not.toMatch(/script-src[^;]*'unsafe-inline'/);
       // Must not combine style nonce + unsafe-inline (browsers ignore unsafe-inline then).
@@ -105,6 +107,11 @@ describe("contentSecurityPolicy", () => {
       const header = renderCspHeaderValue({ cspNonce: "n", cspSurface: "spa" }, { path: "/", nodeEnv: "production" });
       expect(header).toContain("https://challenges.cloudflare.com");
       expect(header).toContain("https://js.hcaptcha.com");
+      // trycap（Cap）：控件/wasm 取 jsdelivr，challenge/redeem 取 Cap 实例。
+      expect(header).toContain("https://cdn.jsdelivr.net");
+      expect(header).toContain("https://cap.chloemlla.com");
+      expect(header).toMatch(/connect-src[^;]*https:\/\/cap\.chloemlla\.com/);
+      expect(header).toMatch(/script-src[^;]*https:\/\/cap\.chloemlla\.com/);
       expect(header).toContain("https://accounts.google.com");
       expect(header).toContain("https://www.googletagmanager.com");
       expect(header).toContain("https://fonts.googleapis.com");

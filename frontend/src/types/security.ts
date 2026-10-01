@@ -30,9 +30,10 @@ export const SECURITY_CONFIG = {
   ALLOWED_ORIGINS: ['same-origin'],
   CSRF_TOKEN_HEADER: 'X-CSRF-Token',
   // Mirrors backend intent: no unsafe-eval; scripts use nonces; style attrs may be unsafe-inline.
+  // 'wasm-unsafe-eval' 是后端为 trycap（Cap）的 WASM 求解器保留的最小放行项（只允许编译 WebAssembly，不允许 JS eval）。
   CONTENT_SECURITY_POLICY: {
     'default-src': ["'self'"],
-    'script-src': ["'self'", "'nonce-backend'"],
+    'script-src': ["'self'", "'nonce-backend'", "'wasm-unsafe-eval'"],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", "'nonce-backend'"],
     'style-src-attr': ["'unsafe-inline'"],
