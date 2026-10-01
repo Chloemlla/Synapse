@@ -142,7 +142,7 @@ export class LinuxDoAuthController {
       return res.status(400).json({ error: "缺少 Linux.do 登录交换票据" });
     }
 
-    const payload = consumeLinuxDoLoginTicket(ticket);
+    const payload = await consumeLinuxDoLoginTicket(ticket);
     if (!payload) {
       return res.status(400).json({ error: "Linux.do 登录交换票据无效或已过期" });
     }

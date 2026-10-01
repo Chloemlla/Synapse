@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import axios from "axios";
 import { config } from "../config/config";
 import logger from "../utils/logger";
+import { sharedStateStore } from "./sharedStateStore";
 import { type AuthSessionMetadata } from "./authSessionService";
 import { UserStorage } from "../utils/userStorage";
 import {
@@ -89,46 +90,17 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 // Keep tickets long enough for App Link failure + manual paste / custom-scheme handoff.
 const TICKET_TTL_MS = 3 * 60 * 1000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
-// G2-19: 进程内 Map 容量上限，防攻击者用随机 state/ticket 持续放大内存。
-const MAX_OAUTH_STATES = 5000;
-const MAX_LOGIN_TICKETS = 5000;
+// OAuth state / 登录 ticket 都是「短期 + 必须跨实例可见」：落在 sharedStateStore（TTL 即过期，
+// 容量由存储层自己兜），不再用进程内 Map——否则回调打到另一台实例就 state 无效。
+const OAUTH_STATE_KEY_PREFIX = "linuxdo:oauth-state:";
+const LOGIN_TICKET_KEY_PREFIX = "linuxdo:login-ticket:";
 const TRUSTED_LINUXDO_DISCOVERY_URL = "https://connect.linux.do/.well-known/openid-configuration";
 const TRUSTED_LINUXDO_OAUTH_HOSTS = new Set(["connect.linux.do"]);
 const LINUXDO_FRONTEND_CALLBACK_PATH = "/auth/linuxdo/callback";
 const SYNAPSE_ANDROID_APP_DEEP_LINK = "synapse://linuxdo-callback";
 const RESERVED_USERNAMES = new Set(["admin", "administrator", "root", "system", "test"]);
 
-const oauthStateStore = new Map<string, LinuxDoStateRecord>();
-const loginTicketStore = new Map<string, LinuxDoTicketRecord>();
 let discoveryCache: LinuxDoDiscoveryCacheRecord | null = null;
-
-function cleanupExpiredStates(now = Date.now()): void {
-  for (const [state, record] of oauthStateStore.entries()) {
-    if (record.expiresAt <= now) {
-      oauthStateStore.delete(state);
-    }
-  }
-  if (oauthStateStore.size > MAX_OAUTH_STATES) {
-    const ordered = [...oauthStateStore.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    for (const [state] of ordered.slice(0, oauthStateStore.size - MAX_OAUTH_STATES)) {
-      oauthStateStore.delete(state);
-    }
-  }
-}
-
-function cleanupExpiredTickets(now = Date.now()): void {
-  for (const [ticket, record] of loginTicketStore.entries()) {
-    if (record.expiresAt <= now) {
-      loginTicketStore.delete(ticket);
-    }
-  }
-  if (loginTicketStore.size > MAX_LOGIN_TICKETS) {
-    const ordered = [...loginTicketStore.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    for (const [ticket] of ordered.slice(0, loginTicketStore.size - MAX_LOGIN_TICKETS)) {
-      loginTicketStore.delete(ticket);
-    }
-  }
-}
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -485,20 +457,22 @@ export async function createLinuxDoAuthorizationUrl(
     throw new Error("缺少 Linux.do 绑定目标用户");
   }
 
-  cleanupExpiredStates();
-
   const discoveryDocument = await getLinuxDoDiscoveryDocument();
   const state = crypto.randomBytes(24).toString("hex");
   const { codeVerifier, codeChallenge } = createPkcePair();
   const client = options.client ?? "web";
 
-  oauthStateStore.set(state, {
-    intent,
-    codeVerifier,
-    expiresAt: Date.now() + STATE_TTL_MS,
-    bindTargetUserId: options.bindTargetUserId,
-    client,
-  });
+  await sharedStateStore.set<LinuxDoStateRecord>(
+    `${OAUTH_STATE_KEY_PREFIX}${state}`,
+    {
+      intent,
+      codeVerifier,
+      expiresAt: Date.now() + STATE_TTL_MS,
+      bindTargetUserId: options.bindTargetUserId,
+      client,
+    },
+    STATE_TTL_MS,
+  );
 
   const params = new URLSearchParams({
     client_id: config.linuxdo.clientId,
@@ -514,16 +488,14 @@ export async function createLinuxDoAuthorizationUrl(
   return `${discoveryDocument.authorization_endpoint}?${params.toString()}`;
 }
 
-function consumeLinuxDoState(state: string): {
+async function consumeLinuxDoState(state: string): Promise<{
   intent: LinuxDoAuthIntent;
   codeVerifier: string;
   bindTargetUserId?: string;
   client: LinuxDoAuthClient;
-} {
-  cleanupExpiredStates();
-
-  const record = oauthStateStore.get(state);
-  oauthStateStore.delete(state);
+}> {
+  // 原子取出（消费即删除）：多实例下同一个 state 只可能被一次回调兑换成功。
+  const record = await sharedStateStore.consume<LinuxDoStateRecord>(`${OAUTH_STATE_KEY_PREFIX}${state}`);
 
   if (!record) {
     throw new Error("Linux.do 登录状态无效或已过期");
@@ -541,23 +513,22 @@ function consumeLinuxDoState(state: string): {
   };
 }
 
-export function issueLinuxDoLoginTicket(payload: LinuxDoExchangePayload): string {
-  cleanupExpiredTickets();
-
+export async function issueLinuxDoLoginTicket(payload: LinuxDoExchangePayload): Promise<string> {
   const ticket = crypto.randomBytes(24).toString("hex");
-  loginTicketStore.set(ticket, {
-    payload,
-    expiresAt: Date.now() + TICKET_TTL_MS,
-  });
+  await sharedStateStore.set<LinuxDoTicketRecord>(
+    `${LOGIN_TICKET_KEY_PREFIX}${ticket}`,
+    {
+      payload,
+      expiresAt: Date.now() + TICKET_TTL_MS,
+    },
+    TICKET_TTL_MS,
+  );
 
   return ticket;
 }
 
-export function consumeLinuxDoLoginTicket(ticket: string): LinuxDoExchangePayload | null {
-  cleanupExpiredTickets();
-
-  const record = loginTicketStore.get(ticket);
-  loginTicketStore.delete(ticket);
+export async function consumeLinuxDoLoginTicket(ticket: string): Promise<LinuxDoExchangePayload | null> {
+  const record = await sharedStateStore.consume<LinuxDoTicketRecord>(`${LOGIN_TICKET_KEY_PREFIX}${ticket}`);
 
   if (!record || record.expiresAt <= Date.now()) {
     return null;
@@ -581,7 +552,7 @@ export async function completeLinuxDoAuthorization(params: {
     throw new Error("Linux.do 登录未配置");
   }
 
-  const { intent, codeVerifier, bindTargetUserId, client } = consumeLinuxDoState(state);
+  const { intent, codeVerifier, bindTargetUserId, client } = await consumeLinuxDoState(state);
   const discoveryDocument = await getLinuxDoDiscoveryDocument();
   const accessToken = await exchangeAuthorizationCode({
     code,
@@ -673,7 +644,7 @@ export async function completeLinuxDoAuthorization(params: {
     ...providerLoginPayload,
     provider: "linuxdo",
   };
-  const ticket = issueLinuxDoLoginTicket(payload);
+  const ticket = await issueLinuxDoLoginTicket(payload);
   logger.info("[Linux.do Auth] OAuth callback completed", {
     userId: providerLoginPayload.user.id,
     username: providerLoginPayload.user.username,

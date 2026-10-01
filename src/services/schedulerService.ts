@@ -1,8 +1,16 @@
+import { randomUUID } from "node:crypto";
 import logger from "../utils/logger";
 import { GitHubBillingService } from "./githubBillingService";
 import { cleanupExpiredIPData } from "./ip";
 import { ipBanSyncService } from "./ipBanSyncService";
+import { sharedStateStore } from "./sharedStateStore";
 import { TurnstileService } from "./turnstileService";
+
+// 多实例任务锁：同一时刻只允许一个实例跑清理 / 双向同步轮。
+// TTL 略短于轮询间隔：即使持有者崩溃，锁也会在一个周期内自然过期。
+const CLEANUP_LOCK_KEY = "scheduler:lock:cleanup";
+const SYNC_LOCK_KEY = "scheduler:lock:ipban-sync";
+const TASK_LOCK_TTL_MS = 4 * 60 * 1000;
 
 interface CleanupResult {
   fingerprintCount: number;
@@ -168,6 +176,14 @@ class SchedulerService {
       logger.warn("[Scheduler] 清理任务正在进行中，跳过本轮");
       return undefined;
     }
+
+    // 多实例：同一轮只允许一个实例执行（单实例部署下内存层必然抢得到，开销可忽略）。
+    const lockOwner = `${process.pid}-${randomUUID()}`;
+    if (!(await sharedStateStore.claim(CLEANUP_LOCK_KEY, TASK_LOCK_TTL_MS, lockOwner))) {
+      logger.info("[Scheduler] 另一实例正在执行清理，跳过本轮");
+      return undefined;
+    }
+
     this.isCleanupRunning = true;
     const startTime = Date.now();
     try {
@@ -186,6 +202,11 @@ class SchedulerService {
       logger.error("定时清理任务失败", error);
     } finally {
       this.isCleanupRunning = false;
+      await sharedStateStore.release(CLEANUP_LOCK_KEY, lockOwner).catch((error) => {
+        logger.warn("[Scheduler] 释放清理任务锁失败（等 TTL 自然过期）", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       // G5-19: Redis 晚启动/重启后自愈——清理轮检测到 Redis 可用但同步未启用则动态启动。
       if (this.isRunning && !this.isSyncEnabled && ipBanSyncService.getStatus().redisAvailable) {
         this.startIPBanSync();
@@ -235,6 +256,14 @@ class SchedulerService {
       logger.warn("[Scheduler] 同步任务正在进行中，跳过本轮");
       return;
     }
+
+    // 多实例：双向同步同一时刻只允许一个实例跑（两边并发合并会互相覆盖）。
+    const lockOwner = `${process.pid}-${randomUUID()}`;
+    if (!(await sharedStateStore.claim(SYNC_LOCK_KEY, TASK_LOCK_TTL_MS, lockOwner))) {
+      logger.info("[Scheduler] 另一实例正在执行 IP 封禁同步，跳过本轮");
+      return;
+    }
+
     this.isSyncRunning = true;
     const startTime = Date.now();
     try {
@@ -257,6 +286,11 @@ class SchedulerService {
       logger.error("❌ IP 封禁同步失败:", error);
     } finally {
       this.isSyncRunning = false;
+      await sharedStateStore.release(SYNC_LOCK_KEY, lockOwner).catch((error) => {
+        logger.warn("[Scheduler] 释放同步任务锁失败（等 TTL 自然过期）", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       this.nextSync = this.isSyncEnabled ? new Date(Date.now() + this.SYNC_INTERVAL_MS) : undefined;
     }
   }

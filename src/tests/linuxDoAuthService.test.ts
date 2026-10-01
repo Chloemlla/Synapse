@@ -69,8 +69,8 @@ describe("linuxDoAuthService", () => {
     expect(buildLinuxDoAvatarUrl("//cdn.example.com/avatar.png")).toBe("https://cdn.example.com/avatar.png");
   });
 
-  it("consumes Linux.do login tickets only once", () => {
-    const ticket = issueLinuxDoLoginTicket({
+  it("consumes Linux.do login tickets only once", async () => {
+    const ticket = await issueLinuxDoLoginTicket({
       token: "jwt-token",
       user: {
         id: "1",
@@ -82,13 +82,13 @@ describe("linuxDoAuthService", () => {
       provider: "linuxdo",
     });
 
-    expect(consumeLinuxDoLoginTicket(ticket)).toEqual(
+    expect(await consumeLinuxDoLoginTicket(ticket)).toEqual(
       expect.objectContaining({
         token: "jwt-token",
         isNewUser: true,
       }),
     );
-    expect(consumeLinuxDoLoginTicket(ticket)).toBeNull();
+    expect(await consumeLinuxDoLoginTicket(ticket)).toBeNull();
   });
 
   it("keeps error redirects out of the backend callback when the frontend URL is misconfigured", () => {
