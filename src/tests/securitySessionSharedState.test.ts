@@ -19,6 +19,7 @@ import {
   clearProfileVerificationSessions,
   createEmailChangeChallenge,
   createProfileVerificationSession,
+  resetSecuritySessionCacheForTests,
   validateEmailChangeChallenge,
   validateProfileVerificationSession,
 } from "../services/profileUpdateVerificationService";
@@ -39,6 +40,8 @@ const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 describe("安全会话：自包含令牌 + 共享撤销水位", () => {
   beforeEach(() => {
     sharedStateStore.clearMemory();
+    // 每个用例都从「刚启动的干净进程」开始：用例会来回拨时钟，残留水位会让判定失真。
+    resetSecuritySessionCacheForTests();
     jest.restoreAllMocks();
   });
 
@@ -121,6 +124,7 @@ describe("安全会话：自包含令牌 + 共享撤销水位", () => {
 describe("邮箱变更验证码：落共享存储", () => {
   beforeEach(() => {
     sharedStateStore.clearMemory();
+    resetSecuritySessionCacheForTests();
     jest.restoreAllMocks();
   });
 

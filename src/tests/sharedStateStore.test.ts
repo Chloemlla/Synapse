@@ -15,7 +15,17 @@ const mockModel = {
     const id = filter?._id as string;
     const existing = mockState.get(id);
     const onlyExpired = Boolean(filter?.expiresAt?.$lte);
-    if (existing && !(onlyExpired && existing.expiresAt <= new Date())) {
+    if (existing && onlyExpired && existing.expiresAt > new Date()) {
+      // 真实 Mongo 的行为：条件不匹配 ⇒ 真要 upsert 就撞主键唯一约束。
+      if (options?.upsert) {
+        const duplicateKey = new Error("E11000 duplicate key error") as Error & { code: number };
+        duplicateKey.code = 11000;
+        throw duplicateKey;
+      }
+      return { matchedCount: 0, upsertedCount: 0 };
+    }
+    if (existing && !onlyExpired) {
+      mockState.set(id, { _id: id, value: update?.$set?.value, expiresAt: new Date(update?.$set?.expiresAt) });
       return { matchedCount: 1, upsertedCount: 0 };
     }
     if (!options?.upsert) return { matchedCount: 0, upsertedCount: 0 };

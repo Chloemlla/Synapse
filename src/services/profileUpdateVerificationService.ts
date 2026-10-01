@@ -207,18 +207,23 @@ export function createProfileVerificationSession(
   userId: string,
   method: ProfileVerificationMethod,
 ): ProfileVerificationSession {
+  const perUserKey = `${REVOCATION_KEY_PREFIX}${userId}`;
   const now = Date.now();
-  const expiresAt = now + PROFILE_VERIFICATION_TTL_MS;
+  // 时钟回拨或跨实例偏斜时，本地已知水位可能已经跑到 now 前面；此时把签发时间抬到
+  // 「已知水位 + 1ms」，保证新令牌在任何实例上都严格新于现有水位，不会被自己人的缓存误杀。
+  const watermark = Math.max(cachedWatermark(perUserKey), cachedWatermark(GLOBAL_REVOCATION_KEY));
+  const issuedAt = Math.max(now, watermark + 1);
+  const expiresAt = issuedAt + PROFILE_VERIFICATION_TTL_MS;
   const session: ProfileVerificationSession = {
-    token: signToken({ u: userId, m: method, iat: now, exp: expiresAt, j: crypto.randomUUID() }),
+    token: signToken({ u: userId, m: method, iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
     userId,
     method,
-    createdAt: now,
+    createdAt: issuedAt,
     expiresAt,
   };
 
-  // 「同一用户只保留最新一枚会话」：把该用户的水位推到此刻，旧令牌（iat 更早）立即失效。
-  setWatermark(`${REVOCATION_KEY_PREFIX}${userId}`, now);
+  // 「同一用户只保留最新一枚会话」：把该用户的水位推到签发时刻，旧令牌（iat 更早）立即失效。
+  setWatermark(perUserKey, issuedAt);
   return session;
 }
 
@@ -239,6 +244,12 @@ export function validateProfileVerificationSession(userId: string, token: string
     createdAt: payload.iat,
     expiresAt: payload.exp,
   };
+}
+
+/** 仅供测试：清空本地撤销水位缓存（不碰共享层，等价于「刚启动的干净进程」）。 */
+export function resetSecuritySessionCacheForTests(): void {
+  revocationCache.clear();
+  inFlightRefreshes.clear();
 }
 
 /** 结束该用户的全部安全会话（本地立即生效，跨实例 ≤ REVOCATION_REFRESH_MS 收敛）。 */
