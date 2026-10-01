@@ -345,7 +345,10 @@ class SharedStateStore {
             }
             if (keys.length >= 5_000) break;
           }
-          if (keys.length > 0) removed += await client.del(keys);
+          // redis v6 的 del 类型是单 key（可变参数写法在各版本不一致），逐个删：前缀清理不在热路径上。
+          for (const key of keys) {
+            removed += await client.del(key);
+          }
         } catch (error) {
           this.markRedisFailure(error);
         }
