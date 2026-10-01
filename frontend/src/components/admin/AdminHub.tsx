@@ -11,7 +11,7 @@ import {
   FaShieldAlt,
   FaStar,
 } from 'react-icons/fa';
-import { toast } from 'react-toastify';
+import { useNotification } from '../Notification';
 
 import { getAdminNavGroups, getSuperAdminOnlyPaths } from '@/navigation/navConfig';
 import { findAdminModuleNeighbors, indexAdminNavByUrl, resolveActiveAdminItem } from '@/navigation/adminNavIndex';
@@ -44,6 +44,7 @@ import {
  */
 export const AdminHub: React.FC = () => {
   const { user } = useAuth();
+  const { setNotification } = useNotification();
   const { pinned, recent, isPinned, togglePin, clearRecent } = useAdminNavPrefs();
 
   const groups = useMemo(
@@ -67,7 +68,10 @@ export const AdminHub: React.FC = () => {
 
   const handleTogglePin = (url: string, title: string) => {
     const nowPinned = togglePin({ url, title });
-    toast.success(nowPinned ? `已置顶「${title}」` : `已取消置顶「${title}」`);
+    setNotification({
+      type: 'success',
+      message: nowPinned ? `已置顶「${title}」` : `已取消置顶「${title}」`,
+    });
   };
 
   return (
@@ -240,6 +244,7 @@ export const AdminHub: React.FC = () => {
 export const AdminModulePage: React.FC = () => {
   const { module } = useParams<{ module: string }>();
   const { user } = useAuth();
+  const { setNotification } = useNotification();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { isPinned, togglePin } = useAdminNavPrefs();
@@ -339,7 +344,7 @@ export const AdminModulePage: React.FC = () => {
               type='button'
               onClick={() => {
                 const nowPinned = togglePin({ url: activeItem.url, title: activeItem.title });
-                toast.success(nowPinned ? '已置顶到侧边栏' : '已取消置顶');
+                setNotification({ type: 'success', message: nowPinned ? '已置顶到侧边栏' : '已取消置顶' });
               }}
               aria-pressed={pinnedNow}
               title={pinnedNow ? '取消置顶' : '置顶到侧边栏'}
@@ -366,11 +371,11 @@ export const AdminModulePage: React.FC = () => {
               if (clipboard?.writeText) {
                 void clipboard
                   .writeText(path)
-                  .then(() => toast.success(`已复制 ${path}`))
-                  .catch(() => toast.info(`当前路径：${path}`));
+                  .then(() => setNotification({ type: 'success', message: `已复制 ${path}` }))
+                  .catch(() => setNotification({ type: 'info', message: `当前路径：${path}` }));
                 return;
               }
-              toast.info(`当前路径：${path}`);
+              setNotification({ type: 'info', message: `当前路径：${path}` });
             }}
             title='复制当前模块路径'
             className={cn(

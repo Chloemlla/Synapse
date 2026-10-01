@@ -14,7 +14,7 @@ import {
   Filler
 } from 'chart.js';
 import api from '../api/api';
-import { toast } from 'react-toastify';
+import { useNotification } from './Notification';
 import {
   FaShieldAlt,
   FaExclamationTriangle,
@@ -94,6 +94,7 @@ interface DashboardStats {
 }
 
 const NexAISecurityDashboard: React.FC = () => {
+  const { setNotification } = useNotification();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [devices, setDevices] = useState<DeviceTracking[]>([]);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -125,7 +126,7 @@ const NexAISecurityDashboard: React.FC = () => {
     } catch (error: any) {
       console.error('Failed to fetch dashboard data:', error);
       if (error.response?.status !== 401) {
-        toast.error('加载数据失败');
+        setNotification({ type: 'error', message: '加载数据失败' });
       }
       setLoading(false);
     }

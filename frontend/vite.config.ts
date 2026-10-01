@@ -85,7 +85,6 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
   mermaid: ["mermaid"],
   katex: ["katex"],
   charts: ["chart.js", "react-chartjs-2"],
-  toast: ["react-toastify"],
   // Swagger UI is only reachable from the admin-only /api-docs route.
   swagger: ["swagger-ui-react"],
 };

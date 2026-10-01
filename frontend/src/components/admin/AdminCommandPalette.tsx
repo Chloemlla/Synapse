@@ -13,7 +13,7 @@ import {
   FaStar,
   FaSyncAlt,
 } from 'react-icons/fa';
-import { toast } from 'react-toastify';
+import { useNotification } from '../Notification';
 
 import type { ElementType } from 'react';
 import type { IconType } from 'react-icons';
@@ -93,6 +93,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
   onClose,
   groups,
 }) => {
+  const { setNotification } = useNotification();
   const navigate = useNavigate();
   const { pinned, recent, isPinned, togglePin, clearRecent } = useAdminNavPrefs();
   const [query, setQuery] = useState('');
@@ -153,11 +154,11 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
           if (clipboard?.writeText) {
             void clipboard
               .writeText(path)
-              .then(() => toast.success(`已复制 ${path}`))
-              .catch(() => toast.info(`当前路径：${path}`));
+              .then(() => setNotification({ type: 'success', message: `已复制 ${path}` }))
+              .catch(() => setNotification({ type: 'info', message: `当前路径：${path}` }));
             return;
           }
-          toast.info(`当前路径：${path}`);
+          setNotification({ type: 'info', message: `当前路径：${path}` });
         },
       },
       {
@@ -177,7 +178,8 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
         run: () => window.open(window.location.href, '_blank', 'noopener,noreferrer'),
       },
     ],
-    [],
+    // 这些动作直接闭包 setNotification / togglePin，一并进依赖，避免用到挂载时的旧引用。
+    [setNotification, togglePin],
   );
 
   const moduleEntries = useMemo<PaletteEntry[]>(() => {
@@ -484,7 +486,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
                               onClick={(event) => {
                                 event.stopPropagation();
                                 const nowPinned = togglePin({ url: entry.url!, title: entry.title });
-                                toast.success(nowPinned ? '已置顶到侧边栏' : '已取消置顶');
+                                setNotification({ type: 'success', message: nowPinned ? '已置顶到侧边栏' : '已取消置顶' });
                               }}
                               className={cn(
                                 'flex size-6 shrink-0 items-center justify-center rounded-md transition',

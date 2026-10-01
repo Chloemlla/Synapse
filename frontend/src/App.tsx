@@ -8,7 +8,6 @@ import { NotificationProvider } from './components/Notification';
 import { BroadcastModalProvider } from './components/BroadcastModal';
 import WsConnector from './components/WsConnector';
 import { ClientOriginProbe } from './components/ClientOriginProbe';
-import { ToastContainer } from 'react-toastify';
 import md5 from 'md5';
 import getApiBaseUrl from './api';
 import DOMPurify from 'dompurify';
@@ -647,7 +646,6 @@ const App: React.FC = () => {
     mql.addEventListener('change', update);
     return () => mql.removeEventListener('change', update);
   }, []);
-  const toastPosition = isDesktopViewport ? 'top-right' : 'bottom-center';
   // Desktop logged-in shell uses the left sidebar; mobile keeps MobileNav only.
   const useDesktopSidebar = Boolean(user) && isDesktopViewport;
   const openTOTPManager = React.useCallback(() => {
@@ -1473,7 +1471,6 @@ const App: React.FC = () => {
         <ClientOriginProbe />
         <ArticleCommandPalette />
         <LazyMotion features={domAnimation}>
-          <ToastContainer position={toastPosition} autoClose={4500} hideProgressBar newestOnTop limit={3} />
           {/* 公告弹窗 */}
           <AnnouncementModal
             open={!isAnnouncementSuppressed && showAnnouncement && !!announcement}
