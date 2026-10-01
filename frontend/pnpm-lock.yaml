@@ -139,9 +139,6 @@ importers:
       react-syntax-highlighter:
         specifier: ^16.1.1
         version: 16.1.1(react@19.3.0)
-      react-toastify:
-        specifier: ^11.1.0
-        version: 11.1.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       rehype-katex:
         specifier: ^7.0.1
         version: 7.0.1
@@ -3832,12 +3829,6 @@ packages:
     engines: {node: '>= 16.20.2'}
     peerDependencies:
       react: ^19.3.0
-
-  react-toastify@11.1.0:
-    resolution: {integrity: sha512-e9h23x3phN0wbFeB6yovmWp7lobzV4CaCH0LO8nVP6H7Y+3GbcLpIzMm9dJhcp1RXbpyfvjgpfXqO80QAmn7sg==}
-    peerDependencies:
-      react: ^19.3.0
-      react-dom: ^19.3.0
 
   react@19.3.0:
     resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
@@ -8650,12 +8641,6 @@ snapshots:
       prismjs: 1.30.0
       react: 19.3.0
       refractor: 5.0.0
-
-  react-toastify@11.1.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
-    dependencies:
-      clsx: 2.1.1
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
 
   react@19.3.0: {}
 
