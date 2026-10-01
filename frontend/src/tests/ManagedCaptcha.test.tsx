@@ -35,21 +35,28 @@ vi.mock('../utils/fingerprint', () => ({
 }));
 
 /** 三家控件的替身：暴露按钮触发 onVerify / onError / onExpire，验证组件的回调契约。 */
+// 控件被卸载后 React 仍可能从外部派发事件（Cap 的 disconnectedCallback 就会自己 reset 一次），
+// 所以这里把最后一次收到的 props 记下来，便于在替身卸载后手动触发一次「过期噪音」。
+const lastWidgetProps: Record<string, any> = {};
+
 function fakeWidget(name: string) {
   return {
-    default: (props: any) => (
-      <div data-testid={`${name}-widget`}>
-        <button type="button" onClick={() => props.onVerify(`tok-${name}`)}>
-          solve-{name}
-        </button>
-        <button type="button" onClick={() => props.onError?.(new Error('boom'))}>
-          fail-{name}
-        </button>
-        <button type="button" onClick={() => props.onExpire?.()}>
-          expire-{name}
-        </button>
-      </div>
-    ),
+    default: (props: any) => {
+      lastWidgetProps[name] = props;
+      return (
+        <div data-testid={`${name}-widget`}>
+          <button type="button" onClick={() => props.onVerify(`tok-${name}`)}>
+            solve-{name}
+          </button>
+          <button type="button" onClick={() => props.onError?.(new Error('boom'))}>
+            fail-{name}
+          </button>
+          <button type="button" onClick={() => props.onExpire?.()}>
+            expire-{name}
+          </button>
+        </div>
+      );
+    },
   };
 }
 
@@ -150,8 +157,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     expect(onCleared).toHaveBeenCalled();
   });
 
-  it('挑战过期时清掉页面持有的令牌并提示重新完成', async () => {
-    const onCleared = vi.fn();
+  it('挑战过期时清掉页面持有的令牌并提示重新完成', async () => {    const onCleared = vi.fn();
     setSelection({ enabled: true, siteKey: '0xsite', captchaConfig: { captchaType: 'turnstile' } });
 
     render(<ManagedCaptcha onCleared={onCleared} />);
@@ -169,5 +175,33 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     await screen.findByTestId('turnstile-widget');
     expect(h.getFingerprint).not.toHaveBeenCalled();
+  });
+
+  it('解出后再收到一次「过期」（Cap 卸载时自派发的 reset）不得回滚已验证结果', async () => {
+    const onSolved = vi.fn();
+    const onCleared = vi.fn();
+    setSelection({
+      enabled: true,
+      siteKey: 'cap-site',
+      captchaConfig: { captchaType: 'trycap' },
+      apiEndpoint: 'https://cap.example.com',
+    });
+
+    render(<ManagedCaptcha onSolved={onSolved} onCleared={onCleared} />);
+
+    (await screen.findByText('solve-trycap')).click();
+    await waitFor(() =>
+      expect(onSolved).toHaveBeenCalledWith({ token: 'tok-trycap', provider: 'trycap' }),
+    );
+    expect(await screen.findByText('人机验证通过')).toBeInTheDocument();
+
+    // 控件此时已被卸载（面板改渲染「人机验证通过」），而 Cap 在断开连接时会自己 reset 一次
+    // 并派发 reset；这一声噪声不得把刚拿到的令牌与通过状态抹掉成「验证已过期」。
+    lastWidgetProps.trycap?.onExpire?.();
+
+    await waitFor(() => expect(screen.getByText('人机验证通过')).toBeInTheDocument());
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('solve-trycap')).toBeNull();
   });
 });

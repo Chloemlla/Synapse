@@ -148,6 +148,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   } = useSecureCaptchaSelection({ fingerprint, scenario: 'first_visit' });
   // 控件加载失败时逐个排除（前端侧故障转移），重置验证时应清空。
   const failedProvidersRef = useRef<CaptchaType[]>([]);
+  // 挑战解出即终态：控件卸载/断连时可能自派发「过期」事件（Cap 的 disconnectedCallback 就会
+  // 自己 reset 一次），这声噪声不得把已拿到的令牌与「已验证」状态抹掉。
+  // 新一轮挑战（用户重试 resetChallenge / 供应商故障转移 handleChallengeError）会把终态置回 false。
+  const succeededRef = useRef(false);
 
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileVerified, setTurnstileVerified] = useState(false);
@@ -232,6 +236,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     (mode: VerificationMode = verificationMode) => {
       // 用户主动重试：清掉「已排除的供应商」，否则会一直被锁在备选名单上。
       failedProvidersRef.current = [];
+      // 新一轮挑战开始，终态作废。
+      succeededRef.current = false;
       if (mode === 'turnstile') {
         setTurnstileToken('');
         setTurnstileVerified(false);
@@ -258,10 +264,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
     setTurnstileVerified(true);
+    succeededRef.current = true;
     setError('');
   }, []);
 
   const handleTurnstileExpire = useCallback(() => {
+    if (succeededRef.current) return;
     setTurnstileToken('');
     setTurnstileVerified(false);
     setError('The check expired. Complete it again to continue.');
@@ -270,10 +278,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const handleHCaptchaVerify = useCallback((token: string) => {
     setHCaptchaToken(token);
     setHCaptchaVerified(true);
+    succeededRef.current = true;
     setError('');
   }, []);
 
   const handleHCaptchaExpire = useCallback(() => {
+    if (succeededRef.current) return;
     setHCaptchaToken('');
     setHCaptchaVerified(false);
     setError('The check expired. Complete it again to continue.');
@@ -282,10 +292,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const handleCapVerify = useCallback((token: string) => {
     setCapToken(token);
     setCapVerified(true);
+    succeededRef.current = true;
     setError('');
   }, []);
 
   const handleCapExpire = useCallback(() => {
+    if (succeededRef.current) return;
     setCapToken('');
     setCapVerified(false);
     setError('The check expired. Complete it again to continue.');
@@ -302,6 +314,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
     if (canRetry) {
       failedProvidersRef.current = [...attempted, current];
+      succeededRef.current = false;
       setError('');
       setNotification({ message: 'Switching to a backup verification provider...', type: 'info' });
       regenerateSelection({ exclude: failedProvidersRef.current });
