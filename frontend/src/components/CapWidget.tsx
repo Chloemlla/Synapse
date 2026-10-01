@@ -195,8 +195,12 @@ const CapWidget = ({
         resetToken();
         // Cap 控件在断连/卸载时会自己走一遍 reset() 并派发 reset 事件，这**不是**用户令牌过期。
         // 若据实上报，上层刚收到的「验证成功」会被立刻抹掉、只剩「验证码已过期」，且每次重挂都复现。
-        // 真正因超时过期时组件还挂在树上（cancelled 仍为 false），照常上报。
-        if (cancelled) return;
+        //
+        // 只靠 `cancelled` 不够：卸载时 React 的 useEffect 清理（passive effect）是在 DOM 变更
+        // **之后**才 flush 的，而 disconnectedCallback 在 DOM 变更时就已经派发了 reset —— 此时
+        // cancelled 仍是 false。所以再加一道「元素已经不在文档里」的判定：真正的超时过期发生时
+        // 控件还挂在树上（isConnected === true），照常上报。
+        if (cancelled || !element.isConnected) return;
         callbacksRef.current.onExpire?.();
       });
       container.appendChild(element);

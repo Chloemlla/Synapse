@@ -104,6 +104,10 @@ const ManagedCaptcha = ({
   const [widgetKey, setWidgetKey] = useState(0);
   const [solved, setSolved] = useState(false);
   const [widgetError, setWidgetError] = useState('');
+  // 验证成功是终态：成功后面板会卸载控件，而 Cap 控件在 disconnectedCallback 里自己会 reset 一次
+  // 并派发 reset 事件。若把这声噪声当真上报，就会变成「解出 → 显示过期 → 重挂 → 又自动解出」的循环。
+  // 用 ref 记住终态（同步生效，不跟 setState 的异步调度）——与 CaptchaVerificationPage 同一套做法。
+  const solvedRef = useRef(false);
 
   useEffect(() => {
     if (fingerprintOverride) {
@@ -146,6 +150,7 @@ const ManagedCaptcha = ({
 
   const reset = useCallback(() => {
     failedProvidersRef.current = [];
+    solvedRef.current = false;
     setSolved(false);
     setWidgetError('');
     setWidgetKey((value) => value + 1);
@@ -159,6 +164,7 @@ const ManagedCaptcha = ({
     (token: string) => {
       if (!providerMode || !token) return;
       setWidgetError('');
+      solvedRef.current = true;
       setSolved(true);
       onSolved?.({ token, provider: providerTypeOf(providerMode) });
     },
@@ -166,6 +172,9 @@ const ManagedCaptcha = ({
   );
 
   const handleExpire = useCallback(() => {
+    // 成功之后控件会被卸载，卸载噪音产生的 reset 不得回滚已经拿到的令牌；
+    // 真需要重新验证时走上层显式 reset()（它会把 solvedRef 置回 false）。
+    if (solvedRef.current) return;
     setSolved(false);
     setWidgetError('验证已过期，请重新完成');
     setWidgetKey((value) => value + 1);
@@ -181,6 +190,7 @@ const ManagedCaptcha = ({
       !attempted.includes(current) &&
       attempted.length + 1 < attempts;
 
+    solvedRef.current = false;
     setSolved(false);
     onCleared?.();
 
