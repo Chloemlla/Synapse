@@ -61,11 +61,16 @@ interface RevocationCacheEntry {
 
 interface TokenPayload {
   u: string;
-  m: ProfileVerificationMethod;
+  /** 验证方式编码（0=password / 1=totp / 2=passkey）：令牌内不出现明文方式名。 */
+  m: number;
   iat: number;
   exp: number;
   j: string;
 }
+
+/** 验证方式 ↔ 令牌内数字编码，只在这一层做映射。 */
+const METHOD_CODES: Record<ProfileVerificationMethod, number> = { password: 0, totp: 1, passkey: 2 };
+const METHOD_BY_CODE: Record<number, ProfileVerificationMethod> = { 0: "password", 1: "totp", 2: "passkey" };
 
 /** 本地撤销水位缓存：同步校验的唯一依据，由 sharedStateStore 异步刷新。 */
 const revocationCache = new Map<string, RevocationCacheEntry>();
@@ -74,19 +79,38 @@ const inFlightRefreshes = new Set<string>();
 /** JWT_SECRET 缺失时的进程内兑底签名键（仅开发环境，不跨实例/跨重启）。 */
 let processScopedKey: Buffer | null = null;
 
+/** 子密钥派生的固定盐与迭代数（确定性：同一 JWT_SECRET 必得同一子密钥）。 */
+const SUBKEY_SALT = "synapse:security-session:v2";
+const SUBKEY_ITERATIONS = 150_000;
+const SUBKEY_LENGTH = 32;
+let cachedSigningKey: Buffer | null = null;
+
 function signingKey(): Buffer {
+  if (cachedSigningKey) return cachedSigningKey;
+
   const secret = typeof config.jwtSecret === "string" && config.jwtSecret ? config.jwtSecret : "";
   if (!secret) {
     // 开发环境没配 JWT_SECRET 时退化为进程内随机密钥：令牌不再跨实例/跨重启有效，
     // 但不会静默削弱签名强度。生产启动诊断会拦住缺失的 JWT_SECRET。
     if (!processScopedKey) {
-      processScopedKey = crypto.randomBytes(32);
+      processScopedKey = crypto.randomBytes(SUBKEY_LENGTH);
       logger.warn("[SecuritySession] JWT_SECRET 缺失，安全会话令牌仅在当前进程内有效");
     }
-    return crypto.createHash("sha256").update(processScopedKey!).digest();
+    cachedSigningKey = processScopedKey;
+    return cachedSigningKey;
   }
-  // 不跨协议复用同一把密钥：用 JWT_SECRET 派生独立用途的签名键。
-  return crypto.createHash("sha256").update(`security-session\u0000${secret}`).digest();
+
+  // 不跨协议复用同一把密钥：从 JWT_SECRET 派生独立用途的子密钥。
+  // 用 PBKDF2（固定盐 + 高迭代）而不是裸 SHA-256：这是标准的密钥派生写法，
+  // 派生结果只用作 HMAC 子密钥，不作口令存储。
+  cachedSigningKey = crypto.pbkdf2Sync(
+    `security-session\u0000${secret}`,
+    SUBKEY_SALT,
+    SUBKEY_ITERATIONS,
+    SUBKEY_LENGTH,
+    "sha256",
+  );
+  return cachedSigningKey;
 }
 
 function base64UrlEncode(input: Buffer | string): string {
@@ -123,7 +147,7 @@ function parseToken(token: string): TokenPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Partial<TokenPayload>;
     if (typeof parsed.u !== "string" || !parsed.u) return null;
-    if (parsed.m !== "password" && parsed.m !== "totp" && parsed.m !== "passkey") return null;
+    if (typeof parsed.m !== "number" || !METHOD_BY_CODE[parsed.m]) return null;
     if (typeof parsed.iat !== "number" || !Number.isFinite(parsed.iat)) return null;
     if (typeof parsed.exp !== "number" || !Number.isFinite(parsed.exp)) return null;
     return {
@@ -215,7 +239,7 @@ export function createProfileVerificationSession(
   const issuedAt = Math.max(now, watermark + 1);
   const expiresAt = issuedAt + PROFILE_VERIFICATION_TTL_MS;
   const session: ProfileVerificationSession = {
-    token: signToken({ u: userId, m: method, iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
+    token: signToken({ u: userId, m: METHOD_CODES[method], iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
     userId,
     method,
     createdAt: issuedAt,
@@ -240,7 +264,7 @@ export function validateProfileVerificationSession(userId: string, token: string
   return {
     token,
     userId,
-    method: payload.m,
+    method: METHOD_BY_CODE[payload.m] as ProfileVerificationMethod,
     createdAt: payload.iat,
     expiresAt: payload.exp,
   };

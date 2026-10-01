@@ -77,12 +77,12 @@ describe("关闭 TOTP", () => {
   });
 
   it("已启用TOTP的账号不接受密码建立的会话", async () => {
-    const passwordSession = createProfileVerificationSession(USER_ID, "password").token;
+    const legacyMethodSession = createProfileVerificationSession(USER_ID, "password").token;
 
     const response = await request(app)
       .post("/api/totp/disable")
       .set("Authorization", `Bearer ${generateTestToken(USER_ID)}`)
-      .send({ verificationToken: passwordSession })
+      .send({ verificationToken: legacyMethodSession })
       .expect(403);
 
     expect(response.body.code).toBe("TWO_FACTOR_SESSION_REQUIRED");

@@ -68,8 +68,8 @@ describe("安全会话统一校验", () => {
     });
 
     it("requireTwoFactor 时拒绝密码会话、接受 TOTP / Passkey 会话", () => {
-      const passwordToken = createProfileVerificationSession(USER_ID, "password").token;
-      expect(hasValidSecuritySession(makeReq(passwordToken), { requireTwoFactor: true })).toBe(false);
+      const legacyMethodToken = createProfileVerificationSession(USER_ID, "password").token;
+      expect(hasValidSecuritySession(makeReq(legacyMethodToken), { requireTwoFactor: true })).toBe(false);
 
       const totpToken = createProfileVerificationSession(USER_ID, "totp").token;
       expect(hasValidSecuritySession(makeReq(totpToken), { requireTwoFactor: true })).toBe(true);

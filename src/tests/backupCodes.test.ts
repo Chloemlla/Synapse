@@ -162,12 +162,12 @@ describe("备用恢复码功能测试", () => {
       (UserStorage.getUserSecretsById as jest.Mock).mockResolvedValue(mockUser);
 
       const token = generateTestToken("test-user-id");
-      const passwordSession = createProfileVerificationSession("test-user-id", "password").token;
+      const legacyMethodSession = createProfileVerificationSession("test-user-id", "password").token;
 
       const response = await request(app)
         .get("/api/totp/backup-codes")
         .set("Authorization", `Bearer ${token}`)
-        .set("x-verification-token", passwordSession)
+        .set("x-verification-token", legacyMethodSession)
         .expect(403);
 
       expect(response.body.code).toBe("TWO_FACTOR_SESSION_REQUIRED");
