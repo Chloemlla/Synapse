@@ -1,101 +1,129 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaCheckCircle, FaExclamationTriangle, FaPlug, FaSave, FaSync, FaTrash } from 'react-icons/fa';
-import getApiBaseUrl from '@/api';
+import { FaCheckCircle, FaCloudUploadAlt, FaExclamationTriangle, FaLock, FaSync } from 'react-icons/fa';
 import { SimpleLoadingSpinner } from '@/components/LoadingSpinner';
 import { useNotification } from '@/components/Notification';
 import {
-  studioDangerButtonClassName,
-  studioFieldClassName,
   studioPanelClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
 } from '@/components/studioTheme';
 import { useAuth } from '@/hooks/useAuth';
-import { authFetch } from '@/components/env-manager/api';
 import { isSuperAdmin } from '@/utils/rbac';
+import AllocationTab from './captcha-providers/AllocationTab';
+import OverviewTab from './captcha-providers/OverviewTab';
+import ProvidersTab from './captcha-providers/ProvidersTab';
+import QuotaTab from './captcha-providers/QuotaTab';
+import WidgetsTab from './captcha-providers/WidgetsTab';
+import * as api from './captcha-providers/api';
+import {
+  PROVIDER_ORDER,
+  clampNumber,
+  type AllocationPolicy,
+  type ApiResult,
+  type CapConfigKey,
+  type CapConfigState,
+  type ProviderDraft,
+  type ProviderId,
+  type ProviderOverview,
+  type ProviderRow,
+  type ProviderStatsResponse,
+  type QuotaHistoryEntry,
+  type Scenario,
+  type Strategy,
+  type WidgetProviderOverride,
+  type WidgetSettings,
+} from './captcha-providers/types';
 
-const API = `${getApiBaseUrl()}/api/turnstile`;
+/**
+ * 人机验证控制台（/admin/captcha-providers）。
+ *
+ * 四件事被收在这一个页面里（读 admin、写 superadmin）：
+ * 1. 供应商调度：上线、权重、优先级、按场景权重、月度额度、自检；
+ * 2. 分配体系：策略（加权随机 / 时间轮换 / 优先级故障转移）、粘性窗口、灰度、故障转移次数、按场景策略；
+ * 3. 统一外观：三家前端控件共用的 theme/size/language/署名开关 + 逐家覆盖 + 样式预览；
+ * 4. 观测：生效矩阵、分配模拟、当下选谁诊断、逐月额度与近期成功率。
+ *
+ * 工程约束：所有写操作走同一个「草稿 → 保存全部」闸门（Ctrl/Cmd+S），离开前有未保存提醒。
+ */
 
-type ProviderId = 'turnstile' | 'hcaptcha' | 'trycap';
-type SkipReason = 'ok' | 'scheduling_disabled' | 'credentials_missing' | 'quota_exhausted';
+type TabKey = 'overview' | 'providers' | 'allocation' | 'widgets' | 'quota';
 
-interface QuotaSnapshot {
-  monthKey: string;
-  limit: number;
-  used: number;
-  /** -1 表示不限额 */
-  remaining: number;
-  percentage: number;
-  exhausted: boolean;
-  resetsAt: string;
-  exhaustedAt?: string;
-  lastUsedAt?: string;
-}
+const TABS: Array<{ key: TabKey; label: string; hint: string }> = [
+  { key: 'overview', label: '总览', hint: 'KPI、生效矩阵与近 24h 成功率' },
+  { key: 'providers', label: '供应商', hint: '上线/下线、权重、优先级、额度与自检' },
+  { key: 'allocation', label: '分配策略', hint: '策略、粘性、灰度、模拟与诊断' },
+  { key: 'widgets', label: '组件外观', hint: '三家控件的统一外观与逐家覆盖' },
+  { key: 'quota', label: '额度与用量', hint: '本月额度与逐月历史' },
+];
 
-interface ProviderRow {
-  provider: ProviderId;
-  label: string;
-  enabled: boolean;
-  weight: number;
-  percentage: number;
-  siteKey: string | null;
-  secretKey: string | null;
-  secretConfigured: boolean;
-  credentialsConfigured: boolean;
-  effective: boolean;
-  reason: SkipReason;
-  quota: QuotaSnapshot;
-  updatedAt?: string;
-}
-
-interface CapConfigState {
-  siteKey: string | null;
-  secretKey: string | null;
-  apiEndpoint: string;
-  enabled: boolean;
-}
-
-type DraftRow = Pick<ProviderRow, 'provider' | 'enabled' | 'weight'> & { monthlyQuota: number };
-
-const WEIGHT_SLIDER_MAX = 100;
-
-/** 这两家不限额：trycap 自托管、Turnstile 当前免费额度不按调用计。仅 hCaptcha 按月计额度。 */
-const UNLIMITED_PROVIDERS: ProviderId[] = ['turnstile', 'trycap'];
-
-const REASON_TEXT: Record<SkipReason, string> = {
-  ok: '正常参与下发',
-  scheduling_disabled: '已下线：不参与下发',
-  credentials_missing: '已上线但凭据不全：需补齐 Site Key 与 Secret Key',
-  quota_exhausted: '本月额度已用尽：已自动停止下发，下月自动恢复',
-};
-
-const PROVIDER_HINT: Record<ProviderId, string> = {
-  turnstile: 'Cloudflare 托管，脚本与校验都走 challenges.cloudflare.com。',
-  hcaptcha: '第三方托管，返回 score 时低于 0.5 会被拒绝；免费额度按调用次数计，用尽后本月不再外呼。',
-  trycap: '自托管 Cap（PoW/hashwx）：无第三方、无追踪。站点密钥需保持 instrumentation 关闭——该功能要求 CSP 放行 unsafe-eval，本仓生产 CSP 刻意不放行。',
-};
-
-function formatQuota(quota: QuotaSnapshot): string {
-  if (quota.limit <= 0) return `本月已用 ${quota.used}（不限额度）`;
-  return `本月已用 ${quota.used} / ${quota.limit}（剩余 ${Math.max(0, quota.remaining)}）`;
-}
-
-/** 与服务端 providers.ts 的归一化规则保持一致，保证面板预览值就是实际概率。 */
-function normalizePercentages(rows: DraftRow[]): Record<string, number> {
-  const active = rows.filter((row) => row.enabled);
-  const positives = active.map((row) => (row.weight > 0 ? row.weight : 0));
-  const total = positives.reduce((sum, weight) => sum + weight, 0);
-  const map: Record<string, number> = {};
-  if (active.length === 0) return map;
-  if (total <= 0) {
-    const even = Math.round((100 / active.length) * 10) / 10;
-    for (const row of active) map[row.provider] = even;
-    return map;
+function buildProviderDrafts(rows: ProviderRow[]): Record<ProviderId, ProviderDraft> {
+  const drafts = {} as Record<ProviderId, ProviderDraft>;
+  for (const provider of PROVIDER_ORDER) {
+    drafts[provider] = {
+      provider,
+      enabled: false,
+      weight: 0,
+      priority: 50,
+      monthlyQuota: 0,
+      scenarioWeights: { default: '', first_visit: '', standalone: '' },
+    };
   }
-  active.forEach((row, index) => {
-    map[row.provider] = Math.round((positives[index] / total) * 1000) / 10;
-  });
-  return map;
+  for (const row of rows) {
+    drafts[row.provider] = {
+      provider: row.provider,
+      enabled: row.enabled,
+      weight: row.weight,
+      priority: row.priority,
+      monthlyQuota: row.quota?.limit ?? 0,
+      scenarioWeights: {
+        default: row.scenarioWeights.default ?? '',
+        first_visit: row.scenarioWeights.first_visit ?? '',
+        standalone: row.scenarioWeights.standalone ?? '',
+      },
+    };
+  }
+  return drafts;
+}
+
+function canonicalProvider(draft: ProviderDraft): string {
+  return JSON.stringify([
+    draft.enabled,
+    draft.weight,
+    draft.priority,
+    draft.monthlyQuota,
+    draft.scenarioWeights.default,
+    draft.scenarioWeights.first_visit,
+    draft.scenarioWeights.standalone,
+  ]);
+}
+
+function canonicalPolicy(policy: AllocationPolicy): string {
+  return JSON.stringify([
+    policy.strategy,
+    policy.rotationSeconds,
+    policy.stickyEnabled,
+    policy.stickyTtlMinutes,
+    policy.rolloutPercent,
+    policy.rolloutControlProvider,
+    policy.failoverMaxAttempts,
+    (['default', 'first_visit', 'standalone'] as Scenario[]).map((scenario) => [
+      scenario,
+      policy.scenarioStrategies[scenario] ?? null,
+    ]),
+  ]);
+}
+
+function canonicalWidgets(widgets: WidgetSettings): string {
+  return JSON.stringify([
+    widgets.theme,
+    widgets.size,
+    widgets.language,
+    widgets.showProviderLabel,
+    PROVIDER_ORDER.map((provider) => {
+      const override = widgets.perProvider[provider];
+      return [provider, override?.theme ?? null, override?.size ?? null, override?.language ?? null];
+    }),
+  ]);
 }
 
 export default function CaptchaProviderAdmin() {
@@ -103,252 +131,328 @@ export default function CaptchaProviderAdmin() {
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
 
-  const [rows, setRows] = useState<ProviderRow[]>([]);
-  const [draft, setDraft] = useState<Record<string, DraftRow>>({});
-  const [capConfig, setCapConfig] = useState<CapConfigState | null>(null);
-  const [capInput, setCapInput] = useState({ siteKey: '', secretKey: '', apiEndpoint: '' });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState<ProviderId | null>(null);
-  const [savingCap, setSavingCap] = useState(false);
-  const dirtyRef = useRef(false);
-
-  const draftRows = useMemo<DraftRow[]>(() => Object.values(draft), [draft]);
-  const percentages = useMemo(() => normalizePercentages(draftRows), [draftRows]);
-  const dirty = useMemo(
-    () =>
-      rows.some((row) => {
-        const current = draft[row.provider];
-        if (!current) return false;
-        return (
-          current.enabled !== row.enabled ||
-          current.weight !== row.weight ||
-          current.monthlyQuota !== (row.quota?.limit ?? 0)
-        );
-      }),
-    [draft, rows],
+  const notify = useCallback(
+    (message: string, type: 'success' | 'error' | 'warning' | 'info') => setNotification({ message, type }),
+    [setNotification],
   );
 
+  const [tab, setTab] = useState<TabKey>('overview');
+  const [overview, setOverview] = useState<ProviderOverview | null>(null);
+  const [drafts, setDrafts] = useState<Record<ProviderId, ProviderDraft> | null>(null);
+  const [policy, setPolicy] = useState<AllocationPolicy | null>(null);
+  const [widgets, setWidgets] = useState<WidgetSettings | null>(null);
+  const [capConfig, setCapConfig] = useState<CapConfigState | null>(null);
+  const [capInput, setCapInput] = useState({ siteKey: '', secretKey: '', apiEndpoint: '' });
+  const [stats, setStats] = useState<ProviderStatsResponse | null>(null);
+  const [statsHours, setStatsHours] = useState(24);
+  const [quotaMonths, setQuotaMonths] = useState(6);
+  const [quotaHistory, setQuotaHistory] = useState<QuotaHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savingCap, setSavingCap] = useState(false);
+  const [testing, setTesting] = useState<ProviderId | null>(null);
+  const [loadingQuota, setLoadingQuota] = useState(false);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const dirtyRef = useRef(false);
+
+  const applyOverview = useCallback((data: ProviderOverview) => {
+    setOverview(data);
+    setDrafts(buildProviderDrafts(data.providers));
+    setPolicy(data.policy);
+    setWidgets(data.widgets);
+  }, []);
+
+  const loadStats = useCallback(
+    async (hours: number) => {
+      setLoadingStats(true);
+      try {
+        const result = await api.fetchProviderStats(hours);
+        if (result.ok && result.data) setStats(result.data);
+        else setStats(null);
+      } finally {
+        setLoadingStats(false);
+      }
+    },
+    [],
+  );
+
+  const loadQuota = useCallback(
+    async (months: number) => {
+      setLoadingQuota(true);
+      try {
+        const result = await api.fetchQuotaHistory(months);
+        if (!result.ok || !result.data) {
+          notify(result.error || '读取额度历史失败', 'error');
+          setQuotaHistory([]);
+          return;
+        }
+        setQuotaHistory(result.data.history);
+      } finally {
+        setLoadingQuota(false);
+      }
+    },
+    [notify],
+  );
+
+  const loadAll = useCallback(
+    async (options: { silent?: boolean; hours?: number; months?: number } = {}) => {
+      if (options.silent) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const [overviewResult, capResult] = await Promise.all([api.fetchProviderOverview(), api.fetchCapConfig()]);
+
+        if (!overviewResult.ok || !overviewResult.data) {
+          notify(overviewResult.error || '获取供应商配置失败', 'error');
+          return false;
+        }
+        applyOverview(overviewResult.data);
+        if (capResult.ok && capResult.data) {
+          setCapConfig(capResult.data);
+          setCapInput((prev) => ({ ...prev, apiEndpoint: capResult.data?.apiEndpoint ?? prev.apiEndpoint }));
+        }
+        void loadStats(options.hours ?? statsHours);
+        return true;
+      } finally {
+        setRefreshing(false);
+        setLoading(false);
+      }
+    },
+    [applyOverview, loadStats, notify, statsHours],
+  );
+
+  useEffect(() => {
+    void loadAll();
+    // 只在挂载时拉一次；后续刷新走显式按钮/保存回读。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ===== 草稿改动统计 =====
+  const providersDirty = useMemo(() => {
+    if (!overview || !drafts) return false;
+    const base = buildProviderDrafts(overview.providers);
+    return PROVIDER_ORDER.some((provider) => canonicalProvider(base[provider]) !== canonicalProvider(drafts[provider]));
+  }, [drafts, overview]);
+
+  const policyDirty = useMemo(() => {
+    if (!overview || !policy) return false;
+    return canonicalPolicy(overview.policy) !== canonicalPolicy(policy);
+  }, [overview, policy]);
+
+  const widgetsDirty = useMemo(() => {
+    if (!overview || !widgets) return false;
+    return canonicalWidgets(overview.widgets) !== canonicalWidgets(widgets);
+  }, [overview, widgets]);
+
+  const dirtyCount = (providersDirty ? 1 : 0) + (policyDirty ? 1 : 0) + (widgetsDirty ? 1 : 0);
+  const dirty = dirtyCount > 0;
   dirtyRef.current = dirty;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const saveAll = useCallback(async () => {
+    if (!canWrite || saving || !drafts || !policy || !widgets) return;
+    if (!dirty) {
+      notify('没有需要保存的改动', 'info');
+      return;
+    }
+    setSaving(true);
     try {
-      const [providersRes, capRes] = await Promise.all([
-        authFetch(`${API}/providers`, { credentials: 'include' }),
-        authFetch(`${API}/cap-config`, { credentials: 'include' }),
-      ]);
+      const jobs: Array<Promise<ApiResult<unknown>>> = [];
+      if (providersDirty) jobs.push(api.saveProviderDrafts(PROVIDER_ORDER.map((provider) => drafts[provider])));
+      if (policyDirty) jobs.push(api.savePolicy(policy));
+      if (widgetsDirty) jobs.push(api.saveWidgetSettings(widgets));
 
-      if (!providersRes.ok) {
-        const data = await providersRes.json().catch(() => ({}));
-        setNotification({ message: data.error || `获取供应商配置失败（HTTP ${providersRes.status}）`, type: 'error' });
+      const results = await Promise.all(jobs);
+      const failed = results.filter((result) => !result.ok);
+      if (failed.length > 0) {
+        notify(`保存失败：${failed.map((result) => result.error).join('；')}`, 'error');
         return;
       }
-
-      const data = await providersRes.json();
-      const nextRows: ProviderRow[] = Array.isArray(data.providers) ? data.providers : [];
-      setRows(nextRows);
-      setDraft(
-        Object.fromEntries(
-          nextRows.map((row) => [
-            row.provider,
-            {
-              provider: row.provider,
-              enabled: row.enabled,
-              weight: row.weight,
-              monthlyQuota: row.quota?.limit ?? 0,
-            },
-          ]),
-        ),
-      );
-
-      if (capRes.ok) {
-        const capData = await capRes.json();
-        setCapConfig({
-          siteKey: capData.siteKey ?? null,
-          secretKey: capData.secretKey ?? null,
-          apiEndpoint: capData.apiEndpoint ?? '',
-          enabled: Boolean(capData.enabled),
-        });
-        setCapInput((prev) => ({ ...prev, apiEndpoint: capData.apiEndpoint ?? '' }));
-      }
-    } catch (error) {
-      setNotification({ message: `获取失败：${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
+      notify(`已保存 ${results.length} 组配置，立即生效`, 'success');
+      await loadAll({ silent: true });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }, [setNotification]);
+  }, [canWrite, dirty, drafts, loadAll, notify, policy, policyDirty, providersDirty, saving, widgets, widgetsDirty]);
 
+  // 未保存提醒 + Ctrl/Cmd+S
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    const guard = (event: BeforeUnloadEvent) => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!dirtyRef.current) return;
       event.preventDefault();
       event.returnValue = '';
     };
-    window.addEventListener('beforeunload', guard);
-    return () => window.removeEventListener('beforeunload', guard);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveAll();
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [saveAll]);
+
+  useEffect(() => {
+    if (tab === 'quota') void loadQuota(quotaMonths);
+  }, [loadQuota, quotaMonths, tab]);
+
+  // ===== 草稿编辑 =====
+  const updateProvider = useCallback((provider: ProviderId, patch: Partial<ProviderDraft>) => {
+    setDrafts((prev) => (prev ? { ...prev, [provider]: { ...prev[provider], ...patch } } : prev));
   }, []);
 
-  const updateDraft = useCallback((provider: ProviderId, patch: Partial<DraftRow>) => {
-    setDraft((prev) => ({ ...prev, [provider]: { ...prev[provider], ...patch } }));
-  }, []);
-
-  const resetDraftFromRows = useCallback(() => {
-    setDraft(
-      Object.fromEntries(
-        rows.map((row) => [
-          row.provider,
-          {
-            provider: row.provider,
-            enabled: row.enabled,
-            weight: row.weight,
-            monthlyQuota: row.quota?.limit ?? 0,
-          },
-        ]),
-      ),
-    );
-  }, [rows]);
+  const updateScenarioWeight = useCallback(
+    (provider: ProviderId, scenario: Scenario, value: number | '') => {
+      setDrafts((prev) => {
+        if (!prev) return prev;
+        const current = prev[provider];
+        return {
+          ...prev,
+          [provider]: { ...current, scenarioWeights: { ...current.scenarioWeights, [scenario]: value } },
+        };
+      });
+    },
+    [],
+  );
 
   const applyPreset = useCallback(
-    (preset: 'even' | 'off' | 'reset' | ProviderId) => {
-      setDraft((prev) => {
-        const next: Record<string, DraftRow> = { ...prev };
-        const providers = Object.keys(prev) as ProviderId[];
-        if (preset === 'reset') {
-          for (const row of rows)
-            next[row.provider] = {
-              provider: row.provider,
-              enabled: row.enabled,
-              weight: row.weight,
-              monthlyQuota: row.quota?.limit ?? 0,
-            };
-          return next;
-        }
-        for (const provider of providers) {
-          if (preset === 'even') next[provider] = { ...prev[provider], enabled: true, weight: 50 };
-          else if (preset === 'off') next[provider] = { ...prev[provider], enabled: false };
-          else next[provider] = { ...prev[provider], enabled: provider === preset, weight: provider === preset ? 100 : 0 };
+    (preset: 'even' | 'off' | 'only' | 'reset', provider?: ProviderId) => {
+      if (!overview) return;
+      if (preset === 'reset') {
+        setDrafts(buildProviderDrafts(overview.providers));
+        return;
+      }
+      setDrafts((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        for (const id of PROVIDER_ORDER) {
+          const current = prev[id];
+          if (preset === 'even') next[id] = { ...current, enabled: true, weight: 50 };
+          else if (preset === 'off') next[id] = { ...current, enabled: false };
+          else next[id] = { ...current, enabled: id === provider, weight: id === provider ? 100 : 0 };
         }
         return next;
       });
     },
-    [rows],
+    [overview],
   );
 
-  const save = useCallback(async () => {
-    if (!canWrite || saving || !dirty) return;
-    setSaving(true);
-    try {
-      const res = await authFetch(`${API}/providers`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          providers: draftRows.map((row) => ({
-            provider: row.provider,
-            enabled: row.enabled,
-            weight: Number(row.weight),
-            ...(UNLIMITED_PROVIDERS.includes(row.provider) ? {} : { monthlyQuota: Number(row.monthlyQuota) }),
-          })),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        setNotification({ message: data.error || '保存失败', type: 'error' });
+  const updatePolicy = useCallback((patch: Partial<AllocationPolicy>) => {
+    setPolicy((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const updateScenarioStrategy = useCallback((scenario: Scenario, strategy: Strategy | '') => {
+    setPolicy((prev) => {
+      if (!prev) return prev;
+      const scenarioStrategies = { ...prev.scenarioStrategies };
+      if (strategy === '') delete scenarioStrategies[scenario];
+      else scenarioStrategies[scenario] = strategy;
+      return { ...prev, scenarioStrategies };
+    });
+  }, []);
+
+  const updateWidgets = useCallback((patch: Partial<WidgetSettings>) => {
+    setWidgets((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const updateProviderOverride = useCallback((provider: ProviderId, patch: WidgetProviderOverride) => {
+    setWidgets((prev) => {
+      if (!prev) return prev;
+      const cleaned: WidgetProviderOverride = {};
+      if (patch.theme !== undefined) cleaned.theme = patch.theme;
+      if (patch.size !== undefined) cleaned.size = patch.size;
+      if (patch.language !== undefined) cleaned.language = patch.language;
+      const perProvider = { ...prev.perProvider };
+      if (Object.keys(cleaned).length === 0) delete perProvider[provider];
+      else perProvider[provider] = cleaned;
+      return { ...prev, perProvider };
+    });
+  }, []);
+
+  const clearProviderOverride = useCallback((provider: ProviderId) => {
+    setWidgets((prev) => {
+      if (!prev) return prev;
+      const perProvider = { ...prev.perProvider };
+      delete perProvider[provider];
+      return { ...prev, perProvider };
+    });
+  }, []);
+
+  // ===== 凭据与自检 =====
+  const saveCapKey = useCallback(
+    async (key: CapConfigKey) => {
+      if (!canWrite || savingCap) return;
+      const value = key === 'CAP_SITE_KEY' ? capInput.siteKey.trim() : key === 'CAP_SECRET_KEY' ? capInput.secretKey.trim() : capInput.apiEndpoint.trim();
+      if (!value) {
+        notify('请先填写要保存的值', 'error');
         return;
       }
-      setNotification({ message: '已保存，立即生效（无需重启）', type: 'success' });
-      await load();
-    } catch (error) {
-      setNotification({ message: `保存失败：${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  }, [canWrite, dirty, draftRows, load, saving, setNotification]);
+      setSavingCap(true);
+      try {
+        const result = await api.saveCapConfigKey(key, value);
+        if (!result.ok) {
+          notify(result.error || '保存失败', 'error');
+          return;
+        }
+        notify('trycap 配置已保存', 'success');
+        setCapInput({ siteKey: '', secretKey: '', apiEndpoint: key === 'CAP_API_ENDPOINT' ? value : capInput.apiEndpoint });
+        await loadAll({ silent: true });
+      } finally {
+        setSavingCap(false);
+      }
+    },
+    [canWrite, capInput, loadAll, notify, savingCap],
+  );
+
+  const deleteCapKey = useCallback(
+    async (key: CapConfigKey) => {
+      if (!canWrite) return;
+      if (!window.confirm(`确定删除 ${key} ？该供应商可能因此立即停止下发。`)) return;
+      setSavingCap(true);
+      try {
+        const result = await api.deleteCapConfigKey(key);
+        if (!result.ok) {
+          notify(result.error || '删除失败', 'error');
+          return;
+        }
+        notify('已删除', 'success');
+        await loadAll({ silent: true });
+      } finally {
+        setSavingCap(false);
+      }
+    },
+    [canWrite, loadAll, notify],
+  );
 
   const runTest = useCallback(
     async (provider: ProviderId) => {
       if (!canWrite) return;
       setTesting(provider);
       try {
-        const res = await authFetch(`${API}/providers/${provider}/test`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const data = await res.json().catch(() => ({}));
-        const ok = Boolean(data?.result?.ok);
-        const detail = data?.result?.error || (ok ? `连通正常（${data?.result?.latencyMs ?? 0}ms）` : '检查未通过');
-        setNotification({ message: `${provider} 自检：${detail}`, type: ok ? 'success' : 'error' });
-      } catch (error) {
-        setNotification({ message: `自检失败：${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
+        const result = await api.testProvider(provider);
+        const payload = result.data?.result;
+        const ok = Boolean(payload?.ok);
+        const detail = payload?.error || (ok ? `连通正常（${payload?.latencyMs ?? 0}ms）` : '检查未通过');
+        notify(`${provider} 自检：${detail}`, ok ? 'success' : 'error');
       } finally {
         setTesting(null);
       }
     },
-    [canWrite, setNotification],
+    [canWrite, notify],
   );
 
-  const saveCapKey = useCallback(
-    async (key: 'CAP_SITE_KEY' | 'CAP_SECRET_KEY' | 'CAP_API_ENDPOINT') => {
-      if (!canWrite || savingCap) return;
-      const value =
-        key === 'CAP_SITE_KEY' ? capInput.siteKey.trim() : key === 'CAP_SECRET_KEY' ? capInput.secretKey.trim() : capInput.apiEndpoint.trim();
-      if (!value) {
-        setNotification({ message: '请先填写要保存的值', type: 'error' });
-        return;
-      }
-      setSavingCap(true);
-      try {
-        const res = await authFetch(`${API}/cap-config`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key, value }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) {
-          setNotification({ message: data.error || '保存失败', type: 'error' });
-          return;
-        }
-        setNotification({ message: 'trycap 配置已保存', type: 'success' });
-        setCapInput({ siteKey: '', secretKey: '', apiEndpoint: value });
-        await load();
-      } catch (error) {
-        setNotification({ message: `保存失败：${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
-      } finally {
-        setSavingCap(false);
-      }
-    },
-    [canWrite, capInput, load, savingCap, setNotification],
+  // ===== 模拟与诊断（直接透传给页签，壳不持有瞬时结果） =====
+  const runSimulate = useCallback(
+    (payload: api.SimulatePayload) => api.simulateAllocation(payload),
+    [],
   );
+  const runPreview = useCallback((query: api.SelectionQuery) => api.fetchSelectionPreview(query), []);
 
-  const deleteCapKey = useCallback(
-    async (key: 'CAP_SITE_KEY' | 'CAP_SECRET_KEY' | 'CAP_API_ENDPOINT') => {
-      if (!canWrite) return;
-      if (!window.confirm(`确定删除 ${key} ？该供应商可能因此立即停止下发。`)) return;
-      setSavingCap(true);
-      try {
-        const res = await authFetch(`${API}/cap-config/${key}`, { method: 'DELETE', credentials: 'include' });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) {
-          setNotification({ message: data.error || '删除失败', type: 'error' });
-          return;
-        }
-        setNotification({ message: '已删除', type: 'success' });
-        await load();
-      } finally {
-        setSavingCap(false);
-      }
-    },
-    [canWrite, load, setNotification],
-  );
-
-  if (loading) {
+  if (loading || !overview || !drafts || !policy || !widgets) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <SimpleLoadingSpinner size={0.75} />
@@ -356,285 +460,188 @@ export default function CaptchaProviderAdmin() {
     );
   }
 
+  const tabDirty: Record<TabKey, boolean> = {
+    overview: dirty,
+    providers: providersDirty,
+    allocation: policyDirty,
+    widgets: widgetsDirty,
+    quota: false,
+  };
+
   return (
-    <div className="space-y-6">
-      <div className={`${studioPanelClassName} p-5`}>
+    <div className="space-y-5 pb-24">
+      <header className={`${studioPanelClassName} p-5`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">人机验证供应商</h2>
+            <h2 className="text-lg font-semibold text-slate-800">人机验证控制台</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              三家供应商共用同一套下发链路：<b>上线/下线</b>决定是否参与，<b>权重</b>是相对值（自动归一化，见每行右侧概率）。
-              保存后立即生效，无需重启。
+              三家供应商共用同一套下发链路：<b>上线/下线</b>决定是否参与，<b>权重</b>是相对值（自动归一化），
+              <b>分配策略</b>决定怎么选，<b>组件外观</b>统一调控前端三家控件。保存后立即生效，无需重启。
             </p>
+            {!canWrite && (
+              <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-700">
+                <FaLock className="h-3 w-3" /> 当前账号是只读管理员：可以查看全部状态与诊断，保存类操作需超级管理员
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => void load()} className={studioSecondaryButtonClassName}>
-              <FaSync className="mr-2 inline h-3.5 w-3.5" /> 刷新
+            <button type="button" onClick={() => void loadAll({ silent: true })} disabled={refreshing} className={studioSecondaryButtonClassName}>
+              <FaSync className="mr-2 inline h-3.5 w-3.5" /> {refreshing ? '刷新中...' : '刷新'}
             </button>
             <button
               type="button"
-              onClick={() => void save()}
+              onClick={() => void saveAll()}
               disabled={!canWrite || saving || !dirty}
               className={studioPrimaryButtonClassName}
             >
-              <FaSave className="mr-2 inline h-3.5 w-3.5" /> {saving ? '保存中...' : dirty ? '保存改动' : '已同步'}
+              <FaCloudUploadAlt className="mr-2 inline h-4 w-4" />
+              {saving ? '保存中...' : dirty ? `保存全部（${dirtyCount} 组）` : '已同步'}
             </button>
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-500">快捷操作：</span>
-          <button type="button" disabled={!canWrite} onClick={() => applyPreset('even')} className={studioSecondaryButtonClassName}>
-            平均分配
-          </button>
-          <button type="button" disabled={!canWrite} onClick={() => applyPreset('off')} className={studioSecondaryButtonClassName}>
-            全部下线
-          </button>
-          <button type="button" disabled={!canWrite || !dirty} onClick={() => applyPreset('reset')} className={studioSecondaryButtonClassName}>
-            撤销改动
-          </button>
-          {dirty && <span className="text-amber-600">有未保存的改动（离开页面会提示）</span>}
-        </div>
-      </div>
+        <nav className="mt-4 flex flex-wrap gap-2" aria-label="人机验证控制台页签">
+          {TABS.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={() => setTab(entry.key)}
+              aria-current={tab === entry.key}
+              className={`rounded-full border px-4 py-2 text-xs font-medium transition ${
+                tab === entry.key ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-400'
+              }`}
+            >
+              {entry.label}
+              {tabDirty[entry.key] ? <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" /> : null}
+            </button>
+          ))}
+        </nav>
+        <p className="mt-2 text-[11px] text-slate-500">{TABS.find((entry) => entry.key === tab)?.hint}</p>
+      </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {rows.map((row) => {
-          const current = draft[row.provider] ?? { provider: row.provider, enabled: row.enabled, weight: row.weight };
-          const preview = percentages[row.provider] ?? (current.enabled ? 0 : null);
-          return (
-            <div key={row.provider} className={`${studioPanelClassName} flex flex-col gap-3 p-5`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-800">{row.label}</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{PROVIDER_HINT[row.provider]}</p>
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={current.enabled}
-                    disabled={!canWrite}
-                    onChange={(event) => updateDraft(row.provider, { enabled: event.target.checked })}
-                  />
-                  {current.enabled ? '已上线' : '已下线'}
-                </label>
-              </div>
+      {tab === 'overview' && (
+        <OverviewTab
+          canWrite={canWrite}
+          notify={notify}
+          rows={overview.providers}
+          policy={policy}
+          widgets={widgets}
+          candidateCount={overview.selection.candidateCount}
+          dirty={dirty}
+          stats={stats}
+          statsHours={statsHours}
+          loadingStats={loadingStats}
+          onStatsHoursChange={(hours) => {
+            setStatsHours(hours);
+            void loadStats(hours);
+          }}
+          onApplyPreset={(preset) => applyPreset(preset)}
+          onRefresh={() => void loadAll({ silent: true })}
+          refreshing={refreshing}
+        />
+      )}
 
-              <div className="flex items-center gap-2 text-xs">
-                {current.enabled && row.credentialsConfigured ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
-                    <FaCheckCircle className="h-3 w-3" /> 生效中
-                  </span>
-                ) : current.enabled && row.quota?.exhausted ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-rose-700">
-                    <FaExclamationTriangle className="h-3 w-3" /> 额度用尽
-                  </span>
-                ) : !current.enabled ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
-                    <FaExclamationTriangle className="h-3 w-3" /> 已下线
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-700">
-                    <FaExclamationTriangle className="h-3 w-3" /> 缺凭据
-                  </span>
-                )}
-                <span className="text-slate-500">
-                  {REASON_TEXT[
-                    row.quota?.exhausted && current.enabled
-                      ? 'quota_exhausted'
-                      : current.enabled
-                        ? row.credentialsConfigured
-                          ? 'ok'
-                          : 'credentials_missing'
-                        : 'scheduling_disabled'
-                  ]}
-                </span>
-              </div>
+      {tab === 'providers' && (
+        <ProvidersTab
+          canWrite={canWrite}
+          notify={notify}
+          rows={overview.providers}
+          drafts={drafts}
+          scenarios={overview.scenarios}
+          testing={testing}
+          dirty={providersDirty}
+          onChange={updateProvider}
+          onScenarioWeightChange={updateScenarioWeight}
+          onTest={(provider) => void runTest(provider)}
+          onApplyPreset={applyPreset}
+          capConfig={capConfig}
+          capInput={capInput}
+          onCapInputChange={(patch) => setCapInput((prev) => ({ ...prev, ...patch }))}
+          onSaveCapKey={(key) => void saveCapKey(key)}
+          onDeleteCapKey={(key) => void deleteCapKey(key)}
+          savingCap={savingCap}
+        />
+      )}
 
-              <div>
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>相对权重</span>
-                  <span className="font-medium text-slate-800">
-                    {current.weight}
-                    {preview !== null && preview !== undefined ? ` · 约 ${preview}%` : ''}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={WEIGHT_SLIDER_MAX}
-                  step={1}
-                  value={Math.min(current.weight, WEIGHT_SLIDER_MAX)}
-                  disabled={!canWrite || !current.enabled}
-                  onChange={(event) => updateDraft(row.provider, { weight: Number(event.target.value) })}
-                  className="mt-2 w-full"
-                  aria-label={`${row.label} 权重`}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  max={1000}
-                  value={current.weight}
-                  disabled={!canWrite || !current.enabled}
-                  onChange={(event) => updateDraft(row.provider, { weight: Math.max(0, Math.min(1000, Number(event.target.value) || 0)) })}
-                  className={`${studioFieldClassName} mt-2 w-28`}
-                  aria-label={`${row.label} 权重数值`}
-                />
-              </div>
+      {tab === 'allocation' && (
+        <AllocationTab
+          canWrite={canWrite}
+          notify={notify}
+          policy={policy}
+          savedPolicy={overview.policy}
+          scenarios={overview.scenarios}
+          strategies={overview.strategies}
+          rows={overview.providers}
+          drafts={drafts}
+          dirty={policyDirty}
+          onChange={updatePolicy}
+          onScenarioStrategyChange={updateScenarioStrategy}
+          onReset={() => setPolicy(overview.policy)}
+          onSimulate={runSimulate}
+          onPreview={runPreview}
+        />
+      )}
 
-              <div className="rounded-2xl border border-slate-200 px-3 py-2">
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>本月额度</span>
-                  <span className={row.quota?.exhausted ? 'font-medium text-rose-600' : 'font-medium text-slate-800'}>
-                    {row.quota ? formatQuota(row.quota) : '—'}
-                  </span>
-                </div>
-                {row.quota && row.quota.limit > 0 && (
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className={`h-full rounded-full ${row.quota.exhausted ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                      style={{ width: `${Math.min(100, row.quota.percentage)}%` }}
-                    />
-                  </div>
-                )}
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {UNLIMITED_PROVIDERS.includes(row.provider)
-                    ? '不限额：只计数不拦截'
-                    : `额度用尽后本月不再外呼，${row.quota ? new Date(row.quota.resetsAt).toLocaleDateString() : '下月'}自动恢复`}
-                </p>
+      {tab === 'widgets' && (
+        <WidgetsTab
+          canWrite={canWrite}
+          notify={notify}
+          widgets={widgets}
+          defaults={overview.defaults.widgets}
+          rows={overview.providers}
+          scenarios={overview.scenarios}
+          dirty={widgetsDirty}
+          onChange={updateWidgets}
+          onProviderOverrideChange={updateProviderOverride}
+          onClearOverride={clearProviderOverride}
+          onReset={() => setWidgets(overview.widgets)}
+          onPreview={runPreview}
+        />
+      )}
 
-                {!UNLIMITED_PROVIDERS.includes(row.provider) && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <label className="text-xs text-slate-600" htmlFor={`quota-${row.provider}`}>
-                      每月上限
-                    </label>
-                    <input
-                      id={`quota-${row.provider}`}
-                      type="number"
-                      min={0}
-                      max={10000000}
-                      value={current.monthlyQuota}
-                      disabled={!canWrite}
-                      onChange={(event) =>
-                        updateDraft(row.provider, { monthlyQuota: Math.max(0, Math.min(10000000, Number(event.target.value) || 0)) })
-                      }
-                      className={`${studioFieldClassName} w-28`}
-                    />
-                    <span className="text-[11px] text-slate-500">0 = 不限</span>
-                  </div>
-                )}
-              </div>
+      {tab === 'quota' && (
+        <QuotaTab
+          canWrite={canWrite}
+          notify={notify}
+          rows={overview.providers}
+          quotas={overview.providers.map((row) => row.quota)}
+          history={quotaHistory}
+          months={quotaMonths}
+          onMonthsChange={(months) => setQuotaMonths(clampNumber(months, 1, 24))}
+          loading={loadingQuota}
+          onRefresh={() => void loadQuota(quotaMonths)}
+        />
+      )}
 
-              <dl className="space-y-1 text-xs text-slate-600">
-                <div className="flex justify-between gap-2">
-                  <dt>Site Key</dt>
-                  <dd className="truncate font-mono text-slate-800">{row.siteKey || '未设置'}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt>Secret Key</dt>
-                  <dd className="font-mono text-slate-800">{row.secretKey || '未设置'}</dd>
-                </div>
-                {row.updatedAt && (
-                  <div className="flex justify-between gap-2">
-                    <dt>最近更新</dt>
-                    <dd className="text-slate-800">{new Date(row.updatedAt).toLocaleString()}</dd>
-                  </div>
-                )}
-              </dl>
-
-              <div className="mt-auto flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!canWrite || testing === row.provider}
-                  onClick={() => void runTest(row.provider)}
-                  className={studioSecondaryButtonClassName}
-                >
-                  <FaPlug className="mr-2 inline h-3 w-3" /> {testing === row.provider ? '自检中...' : '自检'}
-                </button>
-                <button
-                  type="button"
-                  disabled={!canWrite}
-                  onClick={() => applyPreset(row.provider)}
-                  className={studioSecondaryButtonClassName}
-                >
-                  仅用此家
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className={`${studioPanelClassName} p-5`}>
-        <h3 className="text-base font-semibold text-slate-800">trycap（Cap）凭据</h3>
-        <p className="mt-1 text-sm leading-6 text-slate-600">
-          指向你自己的 Cap 实例。Site Key 是公开值（下发到浏览器），Secret Key 只留在服务端，用于 <code>/siteverify</code>。
-          留空表示不修改当前值。
-        </p>
-
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="block text-xs font-medium text-slate-600">Site Key（当前：{capConfig?.siteKey || '未设置'}）</label>
-            <div className="mt-1 flex gap-2">
-              <input
-                value={capInput.siteKey}
+      {dirty && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-xs text-amber-700">
+              <FaExclamationTriangle className="h-3.5 w-3.5" />
+              有未保存改动：{providersDirty ? '供应商 ' : ''}
+              {policyDirty ? '分配策略 ' : ''}
+              {widgetsDirty ? '组件外观' : ''}·离开页面会提示
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDrafts(buildProviderDrafts(overview.providers));
+                  setPolicy(overview.policy);
+                  setWidgets(overview.widgets);
+                }}
                 disabled={!canWrite}
-                onChange={(event) => setCapInput((prev) => ({ ...prev, siteKey: event.target.value }))}
-                className={studioFieldClassName}
-                placeholder="10 位十六进制，例如 a1b2c3d4e5"
-              />
-              <button type="button" disabled={!canWrite || savingCap} onClick={() => void saveCapKey('CAP_SITE_KEY')} className={studioPrimaryButtonClassName}>
-                保存
+                className={studioSecondaryButtonClassName}
+              >
+                全部撤销
+              </button>
+              <button type="button" onClick={() => void saveAll()} disabled={!canWrite || saving} className={studioPrimaryButtonClassName}>
+                <FaCheckCircle className="mr-2 inline h-3.5 w-3.5" /> {saving ? '保存中...' : '保存全部（Ctrl/Cmd+S）'}
               </button>
             </div>
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600">Secret Key（当前：{capConfig?.secretKey || '未设置'}）</label>
-            <div className="mt-1 flex gap-2">
-              <input
-                value={capInput.secretKey}
-                disabled={!canWrite}
-                onChange={(event) => setCapInput((prev) => ({ ...prev, secretKey: event.target.value }))}
-                className={studioFieldClassName}
-                placeholder="sk- 开头，创建时只显示一次"
-                type="password"
-              />
-              <button type="button" disabled={!canWrite || savingCap} onClick={() => void saveCapKey('CAP_SECRET_KEY')} className={studioPrimaryButtonClassName}>
-                保存
-              </button>
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600">实例地址</label>
-            <div className="mt-1 flex gap-2">
-              <input
-                value={capInput.apiEndpoint}
-                disabled={!canWrite}
-                onChange={(event) => setCapInput((prev) => ({ ...prev, apiEndpoint: event.target.value }))}
-                className={studioFieldClassName}
-                placeholder="https://cap.example.com"
-              />
-              <button type="button" disabled={!canWrite || savingCap} onClick={() => void saveCapKey('CAP_API_ENDPOINT')} className={studioPrimaryButtonClassName}>
-                保存
-              </button>
-              <button type="button" disabled={!canWrite || savingCap} onClick={() => void deleteCapKey('CAP_API_ENDPOINT')} className={studioDangerButtonClassName}>
-                <FaTrash className="inline h-3 w-3" />
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">改地址后请同步更新 CSP 里的 connect-src / script-src，否则浏览器会拦下 Cap 的请求。</p>
-          </div>
         </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" disabled={!canWrite || savingCap} onClick={() => void deleteCapKey('CAP_SITE_KEY')} className={studioDangerButtonClassName}>
-            删除 Site Key
-          </button>
-          <button type="button" disabled={!canWrite || savingCap} onClick={() => void deleteCapKey('CAP_SECRET_KEY')} className={studioDangerButtonClassName}>
-            删除 Secret Key
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
