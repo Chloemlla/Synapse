@@ -100,7 +100,7 @@ export function useLottery() {
   }, []);
 
   // 参与抽奖
-  const participateInLottery = useCallback(async (roundId: string, cfToken?: string): Promise<LotteryWinner> => {
+  const participateInLottery = useCallback(async (roundId: string, cfToken?: string, captchaProvider?: string): Promise<LotteryWinner> => {
     if (!user) {
       throw new Error('请先登录');
     }
@@ -109,7 +109,7 @@ export function useLottery() {
     setError(null);
     
     try {
-      const winner = await lotteryApi.participateInLottery(roundId, cfToken);
+      const winner = await lotteryApi.participateInLottery(roundId, cfToken, captchaProvider);
       
       // 更新相关数据
       await Promise.all([

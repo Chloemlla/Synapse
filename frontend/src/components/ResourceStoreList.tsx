@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -39,10 +39,14 @@ import {
   studioPillClassName,
   studioPrimaryButtonClassName,
 } from "./studioTheme";
-import { TurnstileWidget } from "./TurnstileWidget";
-import { useTurnstileConfig } from "../hooks/useTurnstileConfig";
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from "./ManagedCaptcha";
 import { useAuth } from "../hooks/useAuth";
 import { isAdminRole } from "../utils/rbac";
+import { getCaptchaDisplayName } from "../utils/captchaSelection";
 
 function formatRedeemedDate(value: Date | string): string {
   return new Date(value).toLocaleDateString("zh-CN", {
@@ -100,12 +104,20 @@ export default function ResourceStoreList() {
   } | null>(null);
   const [pendingCDKCode, setPendingCDKCode] = useState("");
   const [redeemedCount, setRedeemedCount] = useState(0);
-  const { config: turnstileConfig, loading: turnstileConfigLoading } =
-    useTurnstileConfig();
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const [turnstileVerified, setTurnstileVerified] = useState(false);
-  const [turnstileError, setTurnstileError] = useState("");
-  const [turnstileKey, setTurnstileKey] = useState("turnstile-initial");
+  // 人机验证：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）。
+  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false,
+    loading: true,
+    error: null,
+    provider: null,
+    solved: false,
+  });
+  const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+  const handleCaptchaCleared = useCallback(() => setCaptcha(null), []);
+  const handleCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
+  const providerLabel = captchaStatus.provider ? getCaptchaDisplayName(captchaStatus.provider) : "人机验证";
 
   const { user } = useAuth();
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
@@ -170,13 +182,6 @@ export default function ResourceStoreList() {
     }
   }, [activeTab]);
 
-  const resetTurnstile = (message = "") => {
-    setTurnstileToken("");
-    setTurnstileVerified(false);
-    setTurnstileError(message);
-    setTurnstileKey(`turnstile-${Date.now()}`);
-  };
-
   const handleRedeemCDK = async (forceRedeem = false) => {
     const codeToRedeem = forceRedeem ? pendingCDKCode : cdkCode;
 
@@ -185,11 +190,7 @@ export default function ResourceStoreList() {
       return;
     }
 
-    if (
-      !isAdmin &&
-      !!turnstileConfig.siteKey &&
-      (!turnstileVerified || !turnstileToken)
-    ) {
+    if (!isAdmin && captchaStatus.required && !captcha?.token) {
       setError("请先完成人机验证");
       return;
     }
@@ -220,16 +221,18 @@ export default function ResourceStoreList() {
       if (user?.role) {
         requestParams.userRole = user.role;
       }
-      if (!isAdmin && !!turnstileConfig.siteKey && turnstileToken) {
-        requestParams.cfToken = turnstileToken;
+      if (!isAdmin && captcha?.token) {
+        // cfToken 为历史字段名；captchaProvider 告诉后端这次是哪个供应商签发的。
+        requestParams.cfToken = captcha.token;
+        requestParams.captchaToken = captcha.token;
+        requestParams.captchaProvider = captcha.provider;
       }
-
       const result = await cdksApi.redeemCDK(requestParams);
       setSuccess(`兑换成功：${result.resource.title}`);
       setCdkCode("");
       setPendingCDKCode("");
       setShowDuplicateDialog(false);
-      resetTurnstile("");
+      setCaptcha(null);
       fetchRedeemedResourcesCount();
       if (activeTab === "owned") {
         fetchRedeemedResources();
@@ -249,6 +252,8 @@ export default function ResourceStoreList() {
           id: err.response.data.resourceId,
         });
         setPendingCDKCode(codeToRedeem);
+        // 挑战令牌一次性：首次兑换已核销过它，强制兑换前必须重新验证。
+        captchaRef.current?.reset();
         setShowDuplicateDialog(true);
       } else {
         setError("兑换失败，CDK 无效或已经使用");
@@ -279,11 +284,11 @@ export default function ResourceStoreList() {
       label: "Security",
       value: isAdmin
         ? "管理员免验证"
-        : turnstileConfig.siteKey
-          ? turnstileVerified
-            ? "Turnstile 已通过"
-            : "等待 Turnstile"
-          : "未启用验证",
+        : !captchaStatus.required
+          ? "未启用验证"
+          : captcha?.token
+            ? `${providerLabel} 已通过`
+            : `等待 ${providerLabel}`,
       tone: "violet" as const,
     },
   ];
@@ -611,12 +616,7 @@ export default function ResourceStoreList() {
                 <button
                   type="button"
                   onClick={() => handleRedeemCDK()}
-                  disabled={
-                    cdkLoading ||
-                    (!isAdmin &&
-                      !!turnstileConfig.siteKey &&
-                      !turnstileVerified)
-                  }
+                  disabled={cdkLoading || (!isAdmin && captchaStatus.required && !captcha?.token)}
                   className={cn(studioPrimaryButtonClassName, "w-full")}
                 >
                   {cdkLoading ? <FaSync className="animate-spin" /> : <FaKey />}
@@ -624,30 +624,14 @@ export default function ResourceStoreList() {
                 </button>
               </div>
 
-              {!isAdmin &&
-              !turnstileConfigLoading &&
-              turnstileConfig.siteKey ? (
+              {!isAdmin ? (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
-                    {turnstileVerified ? (
-                      <FaCheckCircle className="text-emerald-500" />
-                    ) : (
-                      <FaExclamationTriangle className="text-amber-500" />
-                    )}
-                    {turnstileVerified ? "验证已通过" : "请先完成人机验证"}
-                  </div>
-                  <TurnstileWidget
-                    key={turnstileKey}
-                    siteKey={turnstileConfig.siteKey}
-                    onVerify={(token) => {
-                      setTurnstileToken(token);
-                      setTurnstileVerified(true);
-                      setTurnstileError("");
-                      setTurnstileKey(token);
-                    }}
-                    onExpire={() => resetTurnstile("验证已过期，请重新完成")}
-                    onError={() => resetTurnstile("验证失败，请重试")}
-                    size="normal"
+                  <ManagedCaptcha
+                    ref={captchaRef}
+                    scenario="default"
+                    onSolved={handleCaptchaSolved}
+                    onCleared={handleCaptchaCleared}
+                    onStatusChange={handleCaptchaStatus}
                   />
                 </div>
               ) : null}
@@ -673,18 +657,6 @@ export default function ResourceStoreList() {
                     className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
                   >
                     {success}
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-              <AnimatePresence>
-                {turnstileError ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700"
-                  >
-                    {turnstileError}
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -733,9 +705,9 @@ export default function ResourceStoreList() {
                   <span className="font-semibold text-slate-900">
                     {isAdmin
                       ? "Admin bypass"
-                      : turnstileConfig.siteKey
-                        ? "Turnstile enabled"
-                        : "Disabled"}
+                      : !captchaStatus.required
+                        ? "Disabled"
+                        : `${providerLabel} enabled`}
                   </span>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
@@ -6,8 +6,11 @@ import DOMPurify from 'dompurify';
 import CryptoJS from 'crypto-js';
 import { imageDataApi } from '../api/imageData';
 import { openDB, deleteDB, type IDBPDatabase } from 'idb';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from './ManagedCaptcha';
 import { studioEyebrowPillClassName } from './studioTheme';
 import {
   FaImage,
@@ -325,9 +328,10 @@ const ImageUploadPage: React.FC = () => {
   const batchFileInputRef = useRef<HTMLInputElement>(null);
   // G12-12：预览 object URL 的清理引用
   const previewUrlRef = useRef<string | null>(null);
-  // G12-01：Turnstile 一次性 token 的 ref 版（供批量上传逐文件取新 token）
-  const turnstileTokenRef = useRef<string>('');
-  const turnstileResolveRef = useRef<((token: string) => void) | null>(null);
+  // G12-01：挑战令牌一次性的 ref 版（供批量上传逐文件取新令牌）
+  const captchaChallengeRef = useRef<ManagedCaptchaChallenge | null>(null);
+  const captchaResolveRef = useRef<((challenge: ManagedCaptchaChallenge) => void) | null>(null);
+  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
 
   // 新增闪烁效果状态
   const [flashingImages, setFlashingImages] = useState<Set<string>>(new Set());
@@ -336,12 +340,15 @@ const ImageUploadPage: React.FC = () => {
   const [storedImages, setStoredImages] = useState<any[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
-  // Turnstile 相关状态
-  const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig();
-  const [turnstileToken, setTurnstileToken] = useState<string>('');
-  const [turnstileVerified, setTurnstileVerified] = useState(false);
-  const [turnstileError, setTurnstileError] = useState(false);
-  const [turnstileKey, setTurnstileKey] = useState(0);
+  // 人机验证状态：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）
+  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false,
+    loading: true,
+    error: null,
+    provider: null,
+    solved: false,
+  });
 
   // 加载本地图片
   React.useEffect(() => {
@@ -394,11 +401,9 @@ const ImageUploadPage: React.FC = () => {
     setUploadedUrl(null);
     setError(null);
 
-    // 重置Turnstile状态
-    setTurnstileToken('');
-    turnstileTokenRef.current = '';
-    setTurnstileVerified(false);
-    setTurnstileKey(k => k + 1);
+    // 重置人机验证状态
+    setCaptcha(null);
+    captchaChallengeRef.current = null;
 
     // G12-12：先 revoke 旧预览 URL 再创建新的，避免反复挑图泄漏 blob 内存
     if (previewUrlRef.current) {
@@ -475,11 +480,9 @@ const ImageUploadPage: React.FC = () => {
     setUploadedUrl(null);
     setError(null);
 
-    // 重置Turnstile状态
-    setTurnstileToken('');
-    turnstileTokenRef.current = '';
-    setTurnstileVerified(false);
-    setTurnstileKey(k => k + 1);
+    // 重置人机验证状态
+    setCaptcha(null);
+    captchaChallengeRef.current = null;
 
     // 清空文件输入框
     if (fileInputRef.current) {
@@ -508,60 +511,57 @@ const ImageUploadPage: React.FC = () => {
     setNotification({ message: '已清空批量上传队列', type: 'success' });
   };
 
-  // Turnstile 验证处理函数
-  const handleTurnstileVerify = (token: string) => {
-    turnstileTokenRef.current = token;
-    setTurnstileToken(token);
-    setTurnstileVerified(true);
-    setTurnstileError(false);
-    // G12-01：唤醒等待新 token 的批量上传流程
-    turnstileResolveRef.current?.(token);
-    turnstileResolveRef.current = null;
-  };
+  // 人机验证回调：三家共用同一套下发链路，页面只关心 { token, provider }
+  const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => {
+    captchaChallengeRef.current = challenge;
+    setCaptcha(challenge);
+    // G12-01：唤醒等待新令牌的批量上传流程
+    captchaResolveRef.current?.(challenge);
+    captchaResolveRef.current = null;
+  }, []);
 
-  const handleTurnstileExpire = () => {
-    turnstileTokenRef.current = '';
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setTurnstileError(false);
-  };
+  const handleCaptchaCleared = useCallback(() => {
+    captchaChallengeRef.current = null;
+    setCaptcha(null);
+  }, []);
 
-  const handleTurnstileError = () => {
-    turnstileTokenRef.current = '';
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setTurnstileError(true);
-  };
+  const handleCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
-  // G12-01：重置 Turnstile 控件并等待新的「一次性」token。
-  // 后端对每个上传请求都调用 Cloudflare siteverify（token 单次有效），
-  // 所以批量场景必须逐文件取新 token；超时返回 null 由调用方标记失败。
-  const obtainFreshTurnstileToken = (): Promise<string | null> => {
-    if (!turnstileConfig.siteKey) return Promise.resolve(null);
+  // G12-01：重置控件并等待新的「一次性」挑战令牌。
+  // 后端对每个上传请求都调用供应商 siteverify（令牌单次有效），
+  // 所以批量场景必须逐文件取新令牌；超时返回 null 由调用方标记失败。
+  const obtainFreshCaptcha = (): Promise<ManagedCaptchaChallenge | null> => {
+    if (!captchaStatus.required) return Promise.resolve(null);
 
-    turnstileTokenRef.current = '';
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setTurnstileError(false);
-    setTurnstileKey(k => k + 1);
+    captchaChallengeRef.current = null;
+    setCaptcha(null);
+    captchaRef.current?.reset();
 
     return new Promise((resolve) => {
       const timeout = window.setTimeout(() => {
-        turnstileResolveRef.current = null;
+        captchaResolveRef.current = null;
         resolve(null);
       }, 30000);
-      turnstileResolveRef.current = (token) => {
+      captchaResolveRef.current = (challenge) => {
         window.clearTimeout(timeout);
-        resolve(token);
+        resolve(challenge);
       };
     });
+  };
+
+  /** 统一把挑战令牌写进上传表单（cfToken 为历史字段名，captchaProvider 说明供应商）。 */
+  const appendCaptchaFields = (formData: FormData, challenge: ManagedCaptchaChallenge | null) => {
+    if (!challenge?.token) return;
+    formData.append('cfToken', challenge.token);
+    formData.append('captchaToken', challenge.token);
+    formData.append('captchaProvider', challenge.provider);
   };
 
   const handleUpload = async () => {
     if (!file) return;
 
-    // 检查Turnstile验证
-    if (!!turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+    // 检查人机验证（是否需要由管理端配置决定）
+    if (captchaStatus.required && !captcha?.token) {
       setError('请先完成人机验证');
       setNotification({ message: '请先完成人机验证', type: 'warning' });
       return;
@@ -574,9 +574,7 @@ const ImageUploadPage: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('source', 'imgupload'); // 标记来源
-      if (!!turnstileConfig.siteKey && turnstileToken) {
-        formData.append('cfToken', turnstileToken);
-      }
+      appendCaptchaFields(formData, captcha);
       const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
       console.log('[图片上传] 开始上传:', { uploadUrl, fileName: file.name, fileSize: file.size });
       const res = await fetch(uploadUrl, {
@@ -593,11 +591,10 @@ const ImageUploadPage: React.FC = () => {
         setUploadedShortUrl(result.data.shortUrl || null);
         setNotification({ message: '上传成功', type: 'success' });
 
-        // 重置Turnstile状态
-        setTurnstileToken('');
-        turnstileTokenRef.current = '';
-        setTurnstileVerified(false);
-        setTurnstileKey(k => k + 1);
+        // 重置人机验证状态（令牌一次性）
+        setCaptcha(null);
+        captchaChallengeRef.current = null;
+        captchaRef.current?.reset();
 
         // 生成图片数据验证信息
         let imageId: string;
@@ -657,6 +654,8 @@ const ImageUploadPage: React.FC = () => {
         });
       } else if (result?.error) {
         setUploadedShortUrl(null);
+        // 挑战令牌一次性：失败后重新验证
+        captchaRef.current?.reset();
         setError(result.error);
         setNotification({ message: result.error, type: 'error' });
         console.error('[图片上传] 上传失败，错误:', result.error);
@@ -667,6 +666,7 @@ const ImageUploadPage: React.FC = () => {
       }
     } catch (e: any) {
       setUploading(false);
+      captchaRef.current?.reset();
       setError(e?.message || '上传失败');
       setNotification({ message: e?.message || '上传失败', type: 'error' });
       console.error('[图片上传] 异常:', e);
@@ -677,8 +677,8 @@ const ImageUploadPage: React.FC = () => {
   const handleBatchUpload = async () => {
     if (batchFiles.length === 0) return;
 
-    // 检查Turnstile验证（批量上传要求用户先完成一次验证）
-    if (!!turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+    // 检查人机验证（批量上传要求用户先完成一次验证）
+    if (captchaStatus.required && !captcha?.token) {
       setNotification({ message: '请先完成人机验证', type: 'warning' });
       return;
     }
@@ -704,15 +704,15 @@ const ImageUploadPage: React.FC = () => {
           [fileName]: { status: 'uploading', progress: 0 }
         }));
 
-        // G12-01：每个文件都需要一个「一次性」Turnstile token（后端逐请求校验）。
-        // 第 1 个文件复用用户已完成的验证；后续文件重置控件等待新 token。
-        let token: string | null = null;
-        if (!!turnstileConfig.siteKey) {
-          if (i === 0 && turnstileVerified && turnstileTokenRef.current) {
-            token = turnstileTokenRef.current;
+        // G12-01：每个文件都需要一个「一次性」挑战令牌（后端逐请求校验）。
+        // 第 1 个文件复用用户已完成的验证；后续文件重置控件等待新令牌。
+        let challenge: ManagedCaptchaChallenge | null = null;
+        if (captchaStatus.required) {
+          if (i === 0 && captchaChallengeRef.current) {
+            challenge = captchaChallengeRef.current;
           } else {
-            token = await obtainFreshTurnstileToken();
-            if (!token) {
+            challenge = await obtainFreshCaptcha();
+            if (!challenge) {
               const errorMsg = '人机验证失败或超时，请重试';
               results.push({ name: fileName, ok: false });
               setBatchProgress(prev => ({
@@ -728,9 +728,7 @@ const ImageUploadPage: React.FC = () => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('source', 'batch-imgupload'); // 标记批量上传来源
-        if (token) {
-          formData.append('cfToken', token);
-        }
+        appendCaptchaFields(formData, challenge);
 
         console.log(`[批量上传] 上传文件 ${i + 1}/${batchFiles.length}:`, fileName);
 
@@ -934,11 +932,10 @@ const ImageUploadPage: React.FC = () => {
       });
     }
 
-    // 重置 Turnstile 状态
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    turnstileTokenRef.current = '';
-    setTurnstileKey(k => k + 1);
+    // 重置人机验证状态
+    setCaptcha(null);
+    captchaChallengeRef.current = null;
+    captchaRef.current?.reset();
   };
 
   // 3. 拖拽上传相关事件
@@ -1227,35 +1224,22 @@ const ImageUploadPage: React.FC = () => {
               </motion.div>
             )}
 
-            {/* Turnstile 人机验证 */}
-            {!turnstileConfigLoading && turnstileConfig.siteKey && typeof turnstileConfig.siteKey === 'string' && (
+            {/* 人机验证：三家供应商由 /admin/captcha-providers 统一调控 */}
+            {!captchaStatus.loading && captchaStatus.required && (
               <motion.div
                 className="mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                <div className="mb-3 text-center text-sm text-slate-700">
-                  人机验证
-                  {turnstileVerified && (
-                    <span className="ml-2 font-medium text-emerald-600">✓ 验证通过</span>
-                  )}
-                </div>
-
-                <TurnstileWidget
-                  key={turnstileKey}
-                  siteKey={turnstileConfig.siteKey}
-                  onVerify={handleTurnstileVerify}
-                  onExpire={handleTurnstileExpire}
-                  onError={handleTurnstileError}
-                  size="normal"
+                <div className="mb-3 text-center text-sm text-slate-700">人机验证</div>
+                <ManagedCaptcha
+                  ref={captchaRef}
+                  scenario="default"
+                  onSolved={handleCaptchaSolved}
+                  onCleared={handleCaptchaCleared}
+                  onStatusChange={handleCaptchaStatus}
                 />
-
-                {turnstileError && (
-                  <div className="mt-2 text-center text-sm text-rose-600">
-                    验证失败，请重新验证
-                  </div>
-                )}
               </motion.div>
             )}
 
@@ -1349,7 +1333,7 @@ const ImageUploadPage: React.FC = () => {
                 <motion.button
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
                   onClick={handleBatchUpload}
-                  disabled={batchUploading || batchFiles.length === 0 || (!!turnstileConfig.siteKey && !turnstileVerified)}
+                  disabled={batchUploading || batchFiles.length === 0 || (captchaStatus.required && !captcha?.token)}
                   whileTap={{ scale: 0.98 }}
                 >
                   {batchUploading ? '批量上传中…' : `开始批量上传 (${batchFiles.length} 个文件)`}
@@ -1360,7 +1344,7 @@ const ImageUploadPage: React.FC = () => {
             <motion.button
               className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
               onClick={handleUpload}
-              disabled={!file || uploading || (!!turnstileConfig.siteKey && !turnstileVerified)}
+              disabled={!file || uploading || (captchaStatus.required && !captcha?.token)}
               whileTap={{ scale: 0.98 }}
             >
               {uploading ? '上传中…' : '上传图片'}

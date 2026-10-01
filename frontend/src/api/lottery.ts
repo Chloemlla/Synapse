@@ -74,11 +74,18 @@ export async function getRoundDetails(roundId: string): Promise<LotteryRound> {
 }
 
 // 参与抽奖
-export async function participateInLottery(roundId: string, cfToken?: string): Promise<LotteryWinner> {
+export async function participateInLottery(
+  roundId: string,
+  cfToken?: string,
+  captchaProvider?: string,
+): Promise<LotteryWinner> {
   const body: any = {};
 
   if (cfToken) {
+    // cfToken 为历史字段名；captchaProvider 告诉后端这次是哪个供应商签发的。
     body.cfToken = cfToken;
+    body.captchaToken = cfToken;
+    if (captchaProvider) body.captchaProvider = captchaProvider;
   }
 
   return apiRequest<LotteryWinner>(`/rounds/${roundId}/participate`, {

@@ -1,6 +1,7 @@
-import { FaChartLine, FaExclamationTriangle, FaSync } from 'react-icons/fa';
+import { FaChartLine, FaExclamationTriangle, FaExternalLinkAlt, FaSync } from 'react-icons/fa';
 import { studioPanelClassName, studioSecondaryButtonClassName } from '@/components/studioTheme';
 import {
+  CAPTCHA_COVERAGE,
   REASON_TEXT,
   STRATEGY_TEXT,
   type AllocationPolicy,
@@ -153,6 +154,47 @@ export default function OverviewTab(props: OverviewTabProps) {
                 `${row.label} = 默认 ${row.effectiveScenarioWeights.default} / 首访 ${row.effectiveScenarioWeights.first_visit} / 独立页 ${row.effectiveScenarioWeights.standalone}`,
             )
             .join('；')}
+        </p>
+      </section>
+
+      <section className={`${studioPanelClassName} p-5`}>
+        <header className="flex flex-wrap items-baseline justify-between gap-3">
+          <h3 className="text-base font-semibold text-slate-800">接管范围</h3>
+          <p className="text-xs text-slate-500">
+            以下页面共用同一套下发链路 —— 本面板的上线/权重/优先级/策略/外观一改，对这些页面同时生效。
+          </p>
+        </header>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          {CAPTCHA_COVERAGE.map((group) => (
+            <div key={group.scenario} className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-800">{group.label}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
+              <ul className="mt-3 space-y-1.5">
+                {group.pages.map((page) => (
+                  <li key={`${group.scenario}-${page.name}`} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-700">{page.name}</span>
+                    {page.path && (
+                      <a
+                        href={page.path}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800"
+                      >
+                        {page.path}
+                        <FaExternalLinkAlt className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-3 text-[11px] leading-5 text-slate-500">
+          场景权重分别对应三个场景（默认 / 首访 / 独立页）；内容页与业务页共用「默认」那一列。
+          三家供应商的校验都由后端统一入口分派，页面不再各自写死 Turnstile。
         </p>
       </section>
 

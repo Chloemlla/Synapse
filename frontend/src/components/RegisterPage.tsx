@@ -5,7 +5,11 @@ import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinuxDoAuthButton from './LinuxDoAuthButton';
-import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
+import ManagedCaptcha, {
+    type ManagedCaptchaChallenge,
+    type ManagedCaptchaRef,
+    type ManagedCaptchaStatus,
+} from './ManagedCaptcha';
 import { AnimatePresence, LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { api } from '../api/api';
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaUser, FaVolumeUp, FaArrowLeft, FaUserPlus, FaCheckCircle, FaInfoCircle, FaTicketAlt } from 'react-icons/fa';
@@ -80,6 +84,7 @@ export const RegisterPage: React.FC = () => {
     const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({ score: 0, feedback: '' });
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -180,7 +185,8 @@ export const RegisterPage: React.FC = () => {
             if (data && data.needVerify) {
                 setNotification({ message: data.message || '验证链接已发送到您的邮箱，请点击链接完成注册', type: 'success' });
                 setError(''); setShowEmailVerify(true); setPendingEmail(sanitizedEmail);
-                setCaptcha(null);
+                // 挑战令牌一次性：注册请求已核销过它，下一次必须重新验证
+                captchaRef.current?.reset();
             } else {
                 setError(data?.error || '注册失败'); setNotification({ message: data?.error || '注册失败', type: 'error' });
             }
@@ -295,6 +301,7 @@ export const RegisterPage: React.FC = () => {
                                 </div>
 
                                 <ManagedCaptcha
+                                    ref={captchaRef}
                                     scenario="default"
                                     onSolved={handleCaptchaSolved}
                                     onCleared={handleCaptchaCleared}

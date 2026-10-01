@@ -9,7 +9,11 @@ import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinuxDoAuthButton from './LinuxDoAuthButton';
 import MobileLoginPanel from './MobileLoginPanel';
-import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
+import ManagedCaptcha, {
+    type ManagedCaptchaChallenge,
+    type ManagedCaptchaRef,
+    type ManagedCaptchaStatus,
+} from './ManagedCaptcha';
 import PasskeyVerifyModal from './PasskeyVerifyModal';
 import PolicyConsentChecklist from './PolicyConsentChecklist';
 import TOTPVerification from './TOTPVerification';
@@ -122,6 +126,7 @@ export const LoginPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -284,7 +289,8 @@ export const LoginPage: React.FC = () => {
             const attemptFeedback = buildLoginAttemptStatus(authError);
             if (attemptFeedback) setAttemptStatus(attemptFeedback);
             if (captchaStatus.required) {
-                setCaptcha(null);
+                // 挑战令牌一次性：失败后必须重新验证（reset 会清状态并重挂控件）
+                captchaRef.current?.reset();
             }
             setError(authError.message || '登录失败'); setNotification({ message: authError.message || '登录失败', type: 'error' });
         } finally { setLoading(false); }
@@ -432,6 +438,7 @@ export const LoginPage: React.FC = () => {
                                 />
 
                                 <ManagedCaptcha
+                                    ref={captchaRef}
                                     scenario="default"
                                     onSolved={handleCaptchaSolved}
                                     onCleared={handleCaptchaCleared}

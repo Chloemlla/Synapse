@@ -11,6 +11,9 @@ export interface TtsRequest {
    */
   provider?: TtsProviderId;
   cfToken?: string;
+  /** 人机验证令牌与供应商（三家共用同一套下发链路）；cfToken 为历史字段名。 */
+  captchaToken?: string;
+  captchaProvider?: string;
   fingerprint?: string;
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
@@ -8,8 +8,11 @@ import { zhCN } from 'date-fns/locale';
 import { useNotification } from './Notification';
 import { isAdminRole } from '../utils/rbac';
 import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
-import { TurnstileWidget } from './TurnstileWidget';
-import { useTurnstileConfig } from '../hooks/useTurnstileConfig';
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from './ManagedCaptcha';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -31,8 +34,6 @@ import {
   FaGift,
   FaCrown,
   FaMedal,
-  FaCheckCircle,
-  FaExclamationTriangle
 } from 'react-icons/fa';
 
 const lotteryPanelClass = studioSurfaceClassName;
@@ -70,30 +71,30 @@ const PrizeDisplay: React.FC<{ prize: any }> = ({ prize }) => {
 };
 
 // 抽奖轮次卡片组件
-const LotteryRoundCard: React.FC<{ 
-  round: LotteryRound; 
-  onParticipate: (roundId: string, cfToken?: string) => void;
+const LotteryRoundCard: React.FC<{
+  round: LotteryRound;
+  /** 三家供应商共用同一套下发链路：提交时把令牌 + 供应商一起交给后端。 */
+  onParticipate: (roundId: string, challenge?: ManagedCaptchaChallenge | null) => void;
   loading: boolean;
-  turnstileVerified?: boolean;
-  turnstileToken?: string;
   isAdmin?: boolean;
-  turnstileConfig?: any;
-  turnstileConfigLoading?: boolean;
-  onTurnstileVerify?: (token: string) => void;
-  onTurnstileExpire?: () => void;
-  onTurnstileError?: () => void;
-}> = ({ 
-  round, 
-  onParticipate, 
-  loading, 
-  turnstileVerified = false,
-  turnstileToken = '',
+  captcha?: ManagedCaptchaChallenge | null;
+  captchaStatus?: ManagedCaptchaStatus;
+  /** 供父级在令牌被核销后重置挑战。 */
+  captchaRef?: React.Ref<ManagedCaptchaRef>;
+  onCaptchaSolved?: (challenge: ManagedCaptchaChallenge) => void;
+  onCaptchaCleared?: () => void;
+  onCaptchaStatus?: (status: ManagedCaptchaStatus) => void;
+}> = ({
+  round,
+  onParticipate,
+  loading,
   isAdmin = false,
-  turnstileConfig,
-  turnstileConfigLoading = false,
-  onTurnstileVerify,
-  onTurnstileExpire,
-  onTurnstileError
+  captcha = null,
+  captchaStatus,
+  captchaRef,
+  onCaptchaSolved,
+  onCaptchaCleared,
+  onCaptchaStatus
 }) => {
   const { user } = useAuth();
   const hasParticipated = round.participants.includes(user?.id || '');
@@ -147,10 +148,10 @@ const LotteryRoundCard: React.FC<{
         {user && (
           <div className="flex flex-col gap-2">
             <motion.button
-              onClick={() => onParticipate(round.id, turnstileToken)}
-              disabled={!isActive || hasParticipated || loading || (!isAdmin && !!turnstileConfig?.siteKey && !turnstileVerified)}
+              onClick={() => onParticipate(round.id, captcha)}
+              disabled={!isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)}
               className={`${
-                !isActive || hasParticipated || loading || (!isAdmin && !!turnstileConfig?.siteKey && !turnstileVerified)
+                !isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)
                   ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500'
                   : studioPrimaryButtonClassName
               }`}
@@ -158,31 +159,17 @@ const LotteryRoundCard: React.FC<{
             >
               {loading ? '抽奖中...' : hasParticipated ? '已参与' : '立即参与'}
             </motion.button>
-            
-            {/* Turnstile 验证组件（非管理员用户） */}
-            {!isAdmin && !turnstileConfigLoading && turnstileConfig?.siteKey && typeof turnstileConfig.siteKey === 'string' && (
-              <div className="mt-2">
-                <div className="flex items-center gap-2 mb-2">
-                  {turnstileVerified ? (
-                    <>
-                      <FaCheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-sm font-medium text-emerald-700">已完成</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaExclamationTriangle className="w-4 h-4 text-yellow-500" />
-                      <span className="text-sm text-slate-600">请完成人机验证</span>
-                    </>
-                  )}
-                </div>
-                <TurnstileWidget
-                  siteKey={turnstileConfig.siteKey}
-                  onVerify={onTurnstileVerify || (() => {})}
-                  onExpire={onTurnstileExpire || (() => {})}
-                  onError={onTurnstileError || (() => {})}
-                  size="normal"
-                />
-              </div>
+
+            {/* 人机验证组件（非管理员用户）：三家供应商由 /admin/captcha-providers 统一调控 */}
+            {!isAdmin && (
+              <ManagedCaptcha
+                ref={captchaRef}
+                scenario="default"
+                compact
+                onSolved={onCaptchaSolved}
+                onCleared={onCaptchaCleared}
+                onStatusChange={onCaptchaStatus}
+              />
             )}
           </div>
         )}
@@ -405,56 +392,42 @@ const LotteryPage: React.FC = () => {
 
   const [winner, setWinner] = useState<LotteryWinner | null>(null);
   
-  // Turnstile 相关状态
-  const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig();
-  const [turnstileToken, setTurnstileToken] = useState<string>('');
-  const [turnstileVerified, setTurnstileVerified] = useState<boolean>(false);
-  const [turnstileError, setTurnstileError] = useState<string>('');
-  const [turnstileKey, setTurnstileKey] = useState<string>('');
+  // 人机验证：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）。
+  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false,
+    loading: true,
+    error: null,
+    provider: null,
+    solved: false,
+  });
 
   // 检查是否为管理员（superadmin 同样视为管理员）
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
 
-  // Turnstile 回调函数
-  const handleTurnstileVerify = (token: string) => {
-    setTurnstileToken(token);
-    setTurnstileVerified(true);
-    setTurnstileError('');
-    setTurnstileKey(token);
-  };
+  const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+  const handleCaptchaCleared = useCallback(() => setCaptcha(null), []);
+  const handleCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
-  const handleTurnstileExpire = () => {
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setTurnstileError('');
-    setTurnstileKey('');
-  };
-
-  const handleTurnstileError = () => {
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setTurnstileError('验证失败，请重试');
-    setTurnstileKey('');
-  };
-
-  const handleParticipate = async (roundId: string, cfToken?: string) => {
+  const handleParticipate = async (roundId: string, challenge?: ManagedCaptchaChallenge | null) => {
     try {
-      // 检查非管理员用户的 Turnstile 验证
-      if (!isAdmin && !!turnstileConfig.siteKey && (!turnstileVerified || !turnstileToken)) {
+      // 检查非管理员用户的人机验证（是否需要由管理端配置决定）
+      if (!isAdmin && captchaStatus.required && !challenge?.token) {
         setNotification({ message: '请先完成人机验证', type: 'error' });
         return;
       }
 
-      const result = await participateInLottery(roundId, cfToken);
+      const result = await participateInLottery(roundId, challenge?.token, challenge?.provider);
       setWinner(result);
       setNotification({ message: `恭喜获得 ${result.prizeName}！`, type: 'success' });
-      
-      // 重置 Turnstile 状态
-      setTurnstileToken('');
-      setTurnstileVerified(false);
-      setTurnstileKey('');
+
+      // 挑战令牌是一次性的：参与成功后必须重新验证
+      captchaRef.current?.reset();
     } catch (err) {
       const msg = err instanceof Error ? err.message : '参与抽奖失败';
+      // 挑战令牌一次性：失败后重新验证，避免拿已核销的令牌反复重试
+      if (captchaStatus.required) captchaRef.current?.reset();
       setNotification({ message: msg, type: 'error' });
     }
   };
@@ -550,14 +523,13 @@ const LotteryPage: React.FC = () => {
                   round={round}
                   onParticipate={handleParticipate}
                   loading={loading}
-                  turnstileVerified={turnstileVerified}
-                  turnstileToken={turnstileToken}
                   isAdmin={isAdmin}
-                  turnstileConfig={turnstileConfig}
-                  turnstileConfigLoading={turnstileConfigLoading}
-                  onTurnstileVerify={handleTurnstileVerify}
-                  onTurnstileExpire={handleTurnstileExpire}
-                  onTurnstileError={handleTurnstileError}
+                  captcha={captcha}
+                  captchaStatus={captchaStatus}
+                  captchaRef={captchaRef}
+                  onCaptchaSolved={handleCaptchaSolved}
+                  onCaptchaCleared={handleCaptchaCleared}
+                  onCaptchaStatus={handleCaptchaStatus}
                 />
               ))}
             </div>

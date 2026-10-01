@@ -239,6 +239,56 @@ export const LANGUAGE_CHOICES: readonly Option[] = [
   { value: 'ja', label: '日本語' },
 ];
 
+/**
+ * 「接管范围」：这些页面的前端控件与后端校验都走同一套下发链路（secure-captcha-config →
+ * 按供应商渲染 → 按供应商校验），所以本面板的上线/权重/优先级/策略/外观一改就全站生效。
+ */
+export interface CoveragePage {
+  name: string;
+  /** 页面路径；空串表示无固定路由（挂在业务流程里）。 */
+  path: string;
+}
+
+export interface CoverageGroup {
+  scenario: string;
+  label: string;
+  description: string;
+  pages: readonly CoveragePage[];
+}
+
+export const CAPTCHA_COVERAGE: readonly CoverageGroup[] = [
+  {
+    scenario: 'default',
+    label: '内容页 / 业务页（默认场景）',
+    description: '登录、注册、密码、语音生成、图床上传、抽奖、资源商店',
+    pages: [
+      { name: '登录', path: '/login' },
+      { name: '注册', path: '/register' },
+      { name: '忘记密码', path: '/forgot-password' },
+      { name: '重置密码', path: '/reset-password' },
+      { name: '语音生成（TTS）', path: '/tts' },
+      { name: '图床上传', path: '/image-upload' },
+      { name: '抽奖', path: '/lottery' },
+      { name: '资源商店 / CDK 兑换', path: '/store' },
+    ],
+  },
+  {
+    scenario: 'first_visit',
+    label: '首访门禁',
+    description: '首次访问本站时强制过一遍，签发访问令牌',
+    pages: [{ name: '首访验证（全站）', path: '/' }],
+  },
+  {
+    scenario: 'standalone',
+    label: '独立验证页',
+    description: '可单独访问或嵌入的验证页',
+    pages: [
+      { name: '人机验证页', path: '/captcha-verify' },
+      { name: 'Cloudflare 挑战页', path: '/cdn-cgi' },
+    ],
+  },
+];
+
 export function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));

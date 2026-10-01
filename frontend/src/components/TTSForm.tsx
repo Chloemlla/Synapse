@@ -3,8 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FishAudioCatalogItem, TtsProviderId, TtsProviderOption, TtsRequest, TtsResponse } from "../types/tts";
 import { getApiBaseUrl } from "../api/api";
 import { useNotification } from "./Notification";
-import { TurnstileWidget } from "./TurnstileWidget";
-import { useTurnstileConfig } from "../hooks/useTurnstileConfig";
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from "./ManagedCaptcha";
 import { useIsAdmin } from "../hooks/useRBAC";
 import { TTS_POLICY_CONSENT_REQUIRED, TtsApiError } from "../types/ttsErrors";
 import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
@@ -112,11 +115,16 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [cooldown, setCooldown] = useState(false);
   const [cooldownTime, setCooldownTime] = useState(0);
   const { setNotification } = useNotification();
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const [turnstileVerified, setTurnstileVerified] = useState(false);
-  const [turnstileError, setTurnstileError] = useState(false);
-  // 只在需要丢弃已核销的 CF 令牌时递增：变化会让 TurnstileWidget 重挂，回到未验证状态。
-  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0);
+  // 人机验证：三家人机验证供应商共用同一套下发链路（/admin/captcha-providers 调控）。
+  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false,
+    loading: true,
+    error: null,
+    provider: null,
+    solved: false,
+  });
+  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
   const [providerConfig, setProviderConfig] = useState(FALLBACK_TTS_PROVIDER_CONFIG);
   const [providerConfigLoading, setProviderConfigLoading] = useState(true);
   const [usingProviderFallback, setUsingProviderFallback] = useState(false);
@@ -142,8 +150,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [policyConsentRequired, setPolicyConsentRequired] = useState(false);
   const fishModelPageRef = useRef(1);
   const fishDefaultPageRef = useRef(1);
-
-  const { config: turnstileConfig, loading: turnstileConfigLoading } = useTurnstileConfig();
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -387,12 +393,14 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     if (usesSelectableVoice && !voice) {
       return "请选择声音";
     }
-    if (turnstileConfig.enabled && (!turnstileVerified || !turnstileToken)) {
+    if (captchaStatus.required && !captcha?.token) {
       return "请完成人机验证";
     }
 
     return null;
   }, [
+    captcha?.token,
+    captchaStatus.required,
     cooldown,
     cooldownTime,
     generationCode,
@@ -400,9 +408,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     model,
     providerConfigLoading,
     text,
-    turnstileConfig.enabled,
-    turnstileToken,
-    turnstileVerified,
     usesSelectableVoice,
     voice,
   ]);
@@ -418,7 +423,9 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         speed: supportsSpeedAdjustment ? speed : 1,
         generationCode,
         provider: activeProviderConfig.provider,
-        ...(turnstileConfig.enabled && { cfToken: turnstileToken }),
+        ...(captcha?.token
+          ? { cfToken: captcha.token, captchaToken: captcha.token, captchaProvider: captcha.provider }
+          : {}),
       });
 
       setPolicyConsentRequired(false);
@@ -431,9 +438,13 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     } catch (submitError) {
       const message =
         submitError instanceof Error ? submitError.message : "生成失败，请稍后重试";
-      setPolicyConsentRequired(
-        submitError instanceof TtsApiError && submitError.code === TTS_POLICY_CONSENT_REQUIRED,
-      );
+      const needsConsent =
+        submitError instanceof TtsApiError && submitError.code === TTS_POLICY_CONSENT_REQUIRED;
+      setPolicyConsentRequired(needsConsent);
+      // 挑战令牌一次性：走到这里说明它多半已被核销（人机验证在政策门禁之前），重新验证。
+      if (!needsConsent && captchaStatus.required) {
+        captchaRef.current?.reset();
+      }
       setNotification({
         message,
         type: "error",
@@ -441,6 +452,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     }
   }, [
     activeProviderConfig.provider,
+    captcha,
+    captchaStatus.required,
     generationCode,
     model,
     onSubmit,
@@ -450,8 +463,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     speed,
     supportsSpeedAdjustment,
     text,
-    turnstileConfig.enabled,
-    turnstileToken,
     usesSelectableVoice,
     voice,
   ]);
@@ -472,42 +483,27 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     [submitRequest, validateForm],
   );
 
-  // 同意落库后续跑这次生成。人机验证开启时不能直接重试：CF 令牌是一次性的，
-  // 而后端的校验顺序里 Turnstile 在政策门禁之前，说明令牌已被核销，重发只会撞
-  // TTS_TURNSTILE_FAILED。这里清掉令牌并重挂控件（key 变化触发 remount），让用户重新验证。
+  // 同意落库后续跑这次生成。人机验证开启时不能直接重试：挑战令牌是一次性的，
+  // 而后端的校验顺序里人机验证在政策门禁之前，说明令牌已被核销，重发只会撞
+  // TTS_CAPTCHA_FAILED。这里清掉令牌并重挂控件，让用户重新验证。
   const handlePolicyConsentAccepted = useCallback(() => {
     setPolicyConsentRequired(false);
 
-    if (turnstileConfig.enabled) {
-      setTurnstileToken("");
-      setTurnstileVerified(false);
-      setTurnstileError(false);
-      setTurnstileWidgetKey((prev) => prev + 1);
+    if (captchaStatus.required) {
+      setCaptcha(null);
+      captchaRef.current?.reset();
       setNotification({ message: "已确认政策，请重新完成人机验证后再生成", type: "success" });
       return;
     }
 
     setNotification({ message: "已确认政策，正在重新生成语音...", type: "success" });
     void submitRequest();
-  }, [setNotification, submitRequest, turnstileConfig.enabled]);
+  }, [setNotification, submitRequest, captchaStatus.required]);
 
-  const handleTurnstileVerify = (token: string) => {
-    setTurnstileToken(token);
-    setTurnstileVerified(true);
-    setTurnstileError(false);
-  };
-
-  const handleTurnstileExpire = () => {
-    setTurnstileToken("");
-    setTurnstileVerified(false);
-    setTurnstileError(false);
-  };
-
-  const handleTurnstileError = () => {
-    setTurnstileToken("");
-    setTurnstileVerified(false);
-    setTurnstileError(true);
-  };
+  // 人机验证由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
+  const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+  const handleCaptchaCleared = useCallback(() => setCaptcha(null), []);
+  const handleCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
   const handleLoadMore = useCallback(async (source: "model" | "default-voices") => {
     const isModel = source === "model";
@@ -988,53 +984,42 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           </div>
         </motion.div>
 
-        {turnstileConfig.enabled && turnstileConfig.siteKey && !turnstileConfigLoading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 1.0 }}
+          className="space-y-3"
+        >
+          <motion.label
+            className={cn(studioEyebrowClassName, "mb-3 block")}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 1.0 }}
-            className="space-y-3"
+            transition={{ duration: 0.3, delay: 1.1 }}
           >
-            <motion.label
-              className={cn(studioEyebrowClassName, "mb-3 block")}
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 1.1 }}
-            >
-              人机验证
-              <span className="text-red-500 ml-1">*</span>
-            </motion.label>
+            人机验证
+            <span className="text-red-500 ml-1">*</span>
+          </motion.label>
 
-            <TurnstileWidget
-              key={turnstileWidgetKey}
-              siteKey={turnstileConfig.siteKey}
-              onVerify={handleTurnstileVerify}
-              onExpire={handleTurnstileExpire}
-              onError={handleTurnstileError}
-              size={isNarrowViewport ? "compact" : "normal"}
-            />
+          {/* 三家供应商共用同一套下发链路；是否要求验证由管理端配置决定。 */}
+          <ManagedCaptcha
+            ref={captchaRef}
+            scenario="default"
+            compact={isNarrowViewport}
+            onSolved={handleCaptchaSolved}
+            onCleared={handleCaptchaCleared}
+            onStatusChange={handleCaptchaStatus}
+          />
 
-            {turnstileError && (
-              <motion.div
-                className="rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-              >
-                验证失败，请重新验证
-              </motion.div>
-            )}
-
-            <motion.div
-              className="flex min-w-0 items-start space-x-2 text-sm text-slate-600"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 1.3 }}
-            >
-              <FaLock className="w-4 h-4 text-slate-500" />
-              <span className="min-w-0 break-words">请完成人机验证以证明您是人类用户</span>
-            </motion.div>
+          <motion.div
+            className="flex min-w-0 items-start space-x-2 text-sm text-slate-600"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, delay: 1.3 }}
+          >
+            <FaLock className="w-4 h-4 text-slate-500" />
+            <span className="min-w-0 break-words">请完成人机验证以证明您是人类用户</span>
           </motion.div>
-        )}
+        </motion.div>
 
         <AnimatePresence>
           {displayError && (
