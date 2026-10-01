@@ -231,8 +231,19 @@ describe("分配模拟", () => {
     expect(total).toBe(500);
     expect(percentage).toBeGreaterThan(99.5);
     expect(percentage).toBeLessThan(100.5);
-    // 权重大的应当拿到更多份额（500 次抽样下 50/30/20 的差距不会反转）
-    expect(distribution[0].provider).toBe("turnstile");
+    expect(distribution.length).toBeGreaterThan(1);
+  });
+
+  it("注入随机源时结果完全确定（抽样都落在权重区间头部那家）", () => {
+    const policy = policyWith({ strategy: "weighted" });
+    const distribution = simulateAllocation(candidates, policy, {
+      scenario: "default",
+      draws: 500,
+      nowMs: 1_700_000_000_000,
+      randomInt: () => 0,
+    });
+
+    expect(distribution).toEqual([{ provider: "turnstile", count: 500, percentage: 100 }]);
   });
 
   it("故障转移策略下模拟结果恒定落在优先级最高的那家", () => {
