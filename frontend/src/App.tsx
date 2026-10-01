@@ -10,8 +10,7 @@ import WsConnector from './components/WsConnector';
 import { ClientOriginProbe } from './components/ClientOriginProbe';
 import md5 from 'md5';
 import getApiBaseUrl from './api';
-import DOMPurify from 'dompurify';
-import { reportFingerprintOnce } from './utils/fingerprint';
+import { fetchWithTimeout } from './utils/fetchWithTimeout';
 import { useFirstVisitDetection } from './hooks/useFirstVisitDetection';
 import { useConfigurationNoticeTrigger } from './hooks/useConfigurationNoticeTrigger';
 import { FirstVisitVerification } from './components/FirstVisitVerification';
@@ -20,6 +19,7 @@ import FingerprintRequestModal from './components/FingerprintRequestModal';
 import { setFirstVisitVerificationEnabled } from './utils/firstVisitVerificationConfig';
 import { onIpVerificationRequired } from './utils/ipVerification';
 import { recordRecentFeature } from './utils/recentFeature';
+import { reportFingerprintOnce } from './utils/fingerprint';
 import { fetchWithTimeout } from './utils/fetchWithTimeout';
 import { afterFirstPaintIdle } from './utils/scheduleAfterPaint';
 import ArticleCommandPalette from './components/ArticleCommandPalette';
@@ -1479,7 +1479,7 @@ const App: React.FC = () => {
             onClose={handleCloseAnnouncement}
             onCloseToday={handleCloseToday}
             onCloseForever={handleCloseForever}
-            content={announcement?.content ? (announcement.format === 'html' ? DOMPurify.sanitize(announcement.content) : announcement.content) : ''}
+            content={announcement?.content || ''}
             format={announcement?.format || 'markdown'}
             // 新增：内容区自适应高度，超出可滚动
             contentClassName="max-h-[60vh] sm:max-h-[50vh] overflow-y-auto px-2 sm:px-4"

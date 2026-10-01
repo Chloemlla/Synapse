@@ -70,7 +70,10 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
   icons: ["react-icons"],
   // Hugeicons is only needed by the shadcn sidebar primitives.
   hugeicons: ["@hugeicons/core-free-icons", "@hugeicons/react"],
-  utils: ["axios", "clsx", "tailwind-merge", "dompurify"],
+  utils: ["axios", "clsx", "tailwind-merge"],
+  // dompurify 单独成块（而不是并进 utils）：它同时被入口（公告 html）与 mermaid 内部依赖，
+  // 并进多依赖的 utils 组时实测未生效（仍被合并进 mermaid chunk），单依赖分块与 katex 同构。
+  sanitize: ["dompurify"],
   auth: ["@simplewebauthn/browser", "qrcode.react"],
   fingerprint: ["@fingerprintjs/fingerprintjs"],
   animations: ["framer-motion"],
@@ -550,6 +553,24 @@ export default defineConfig(({ mode, command }) => {
       };
 
     // 使用 Vite 插件的形式执行构建后的任务，因为 writeBundle 不能再作为 output option
+    config.plugins.push({
+      name: "perf-chunk-diagnostics",
+      apply: "build",
+      enforce: "post" as const,
+      // 只打几行日志：把「重包 / Vite 运行时助手」的最终归属 chunk 与模块 id 写进构建日志。
+      // 背景：DOMPurify 与 \0vite/preload-helper 曾被 rolldown 合并进 mermaid chunk，
+      // 导致入口静态依赖 1.5 MB gzip 的 mermaid（见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md §九）。
+      generateBundle(_options: any, bundle: any) {
+        const watch = ["dompurify", "preload-helper", "react-icons", "mermaid", "katex"];
+        for (const [fileName, output] of Object.entries<any>(bundle)) {
+          const moduleIds: string[] = output?.type === "chunk" ? output.moduleIds || [] : [];
+          const hits = moduleIds.filter((id) => watch.some((needle) => id.includes(needle)));
+          if (hits.length > 0) {
+            console.log(`[perf-chunk] ${fileName} <- ${hits.join(", ")}`);
+          }
+        }
+      },
+    } as any);
     config.plugins.push({
       name: "post-build-obfuscate-and-protect",
       apply: "build",
