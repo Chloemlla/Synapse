@@ -504,3 +504,29 @@ entry ≤ 220 KiB）未放宽。
 1. `assets/mermaid.*.js` 是否已从首屏闭包消失（`[allowed]` 行应不再出现）；
 2. 首屏闭包 gzip 是否落到 ~300 KiB（预期：原 1628.4 KiB − mermaid 1313.2 KiB − icons 41.4 KiB）；
 3. `useAuth`/`MarkdownRenderer`/入口是否只从 `preload-helper` 取 `__vitePreload`。
+
+---
+
+## 十、首屏预算第二次放宽（2026-10-01，用户要求）
+
+第二轮（`60ebbed1`）把 DOMPurify 与 Vite preload 助手从 mermaid chunk 里拆出后，预算曾收回 800 KiB；
+但 `d8653f56` 的 CI 产物显示根因**没有真的修掉**：
+
+```
+assets/mermaid.D5bvW6eP.js: 1313.2 KiB gzip
+Frontend bundle budget failed (2 violation(s)):
+  - heavy chunk leaked onto the first screen (static import of the entry): assets/mermaid.D5bvW6eP.js
+  - first-screen static closure is 1655.6 KiB gzip (budget 800 KiB)
+```
+
+按用户要求再次放宽（`scripts/governance/check-frontend-bundle.js`）：
+
+| 项 | 放宽前 | 放宽后 | 收紧条件 |
+| --- | --- | --- | --- |
+| 首屏静态闭包预算（`FRONTEND_FIRST_SCREEN_MAX_GZIP_KB` 默认值） | 800 KiB | **1750 KiB**（实测 1655.6 + 余量） | mermaid 不再被入口静态加载后降回 800 KiB |
+| 首屏重包禁止名单例外 | 空 | `mermaid`（打印 `[allowed]` 告警并计入总量） | 同上，根因修好后清空 |
+
+**根因仍未修**：`Mermaid.tsx` 用的是动态 `import('mermaid')`，但 rolldown 产物里入口仍静态拿到 mermaid chunk
+（`MarkdownRenderer` → mermaid chunk 的 chunk 级导入无法按需取成员）。下一步应从产物侧定位是哪个入口可达模块
+把它拉进 `imports`（可用 `frontend/dist/.vite/manifest.json` 的 `imports` 链逐层回溯），而不是继续加预算。
+其余守卫（entry ≤ 220 KiB、单 chunk ≤ 1800 KiB、总量 ≤ 4600 KiB）未放宽。

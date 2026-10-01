@@ -36,9 +36,10 @@ const heavyChunkNames = ["documents", "pdf", "mermaid", "katex", "charts", "fing
  */
 const firstScreenForbiddenName =
   /^(?:mermaid|katex|diagrams|pdf|charts|code-highlight|prism|markdown|docx|swagger|hugeicons)[.-]/;
-/** 已登记的例外：仍在首屏闭包内但暂不判失败的重包（会以 [allowed] 告警）。默认必须为空：重包回流请先修根因。 */
-const firstScreenAllowedNamePatterns = [];
-const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 800) * 1024;
+// 2026-10-01 第三轮（用户要求放宽）：CI 产物里 mermaid 仍被入口静态加载（1313.2 KiB gzip），
+// 先把 mermaid 记为例外（仍会打印 [allowed] 告警并计入首屏总量）；根因修好后应清空这一行。
+const firstScreenAllowedNamePatterns = [/^mermaid[.-]/];
+const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 1750) * 1024;
 
 /**
  * 从 manifest 还原入口的静态 import 闭包（不含 dynamicImports）。
