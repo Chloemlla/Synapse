@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { applyCapCreditsBranding, type CapCreditsBrandingDisposer } from '../utils/capCreditsBranding';
 
 /**
  * trycap（Cap）控件封装。
@@ -105,6 +106,7 @@ const CapWidget = ({
 
   useEffect(() => {
     let cancelled = false;
+    let disposeBranding: CapCreditsBrandingDisposer | null = null;
     const container = containerRef.current;
     if (!container || !siteKey) return;
 
@@ -153,6 +155,11 @@ const CapWidget = ({
       });
       container.appendChild(element);
       elementRef.current = element;
+
+      // Cap 的 CDN 脚本会在控件的 open shadow root 里插入 trycap.dev 署名链接，
+      // 并反复把它复位、点击时 preventDefault 后跳去 trycap.dev。
+      // 这里把它持续覆写成 chloemlla（详见 utils/capCreditsBranding）。
+      disposeBranding = applyCapCreditsBranding(element);
     };
 
     void mount();
@@ -160,6 +167,8 @@ const CapWidget = ({
     return () => {
       cancelled = true;
       resetToken();
+      disposeBranding?.();
+      disposeBranding = null;
       elementRef.current = null;
       container.replaceChildren();
     };
