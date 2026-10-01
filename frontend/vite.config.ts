@@ -112,10 +112,9 @@ const jsYamlDefaultInteropPlugin = {
 function getManualChunk(id: string): string | undefined {
   // Normalize Windows paths so node_modules matching is reliable.
   const normalized = id.replace(/\\/g, "/");
-  // Vite 的 __vitePreload 助手是虚拟模块（\0vite/preload-helper.js）。实测：给它单独开一个
-  // 新 chunk（返回值 "preload-helper"）会被 rolldown 合并进 mermaid chunk，于是入口 + 每个
-  // lazy chunk 都静态依赖 1.5 MB gzip 的 mermaid。改成挂到「入口本来就会加载的 utils 分组」，
-  // 不新建可被合并的小 chunk，从而切断这条边。
+  // Vite 的 __vitePreload 助手是虚拟模块（\0vite/preload-helper.js）。它的独立分组由
+  // codeSplitting.groups 里 priority=100 的 vite-runtime 组负责；这里再兜一层：
+  // 万一测试没命中，也让它落到入口本来就会加载的 utils 组，不新建可被吞并的小 chunk。
   if (normalized.includes("vite/preload-helper")) return "utils";
   for (const [chunkName, deps] of Object.entries(MANUAL_CHUNKS)) {
     if (deps.some((dep) => matchesPackage(normalized, dep))) {
@@ -465,7 +464,19 @@ export default defineConfig(({ mode, command }) => {
           return false;
         },
         output: {
-          manualChunks: getManualChunk,
+          // 不用 manualChunks：它的兼容层只能生成一个默认组，而组的
+          // `includeDependenciesRecursively` 默认为 true —— 组把模块收进 chunk 时，
+          // 会连依赖一起吞。mermaid 组因此把 `\0vite/preload-helper.js`（入口每个
+          // React.lazy 都要用）与 dompurify 一起拉进 mermaid chunk，于是入口被迫静态
+          // 加载 1.5 MB gzip 的 mermaid（CI 的 [perf-chunk] 诊断已证实）。
+          // 改用 rolldown 原生的 codeSplitting.groups：给 Vite 运行时助手一个高优先级
+          // 独立组，先于 mermaid 组认领它；其余分块沿用 getManualChunk 的映射。
+          codeSplitting: {
+            groups: [
+              { name: "vite-runtime", test: /vite[\\/]preload-helper/, priority: 100 },
+              { name: (moduleId: string) => getManualChunk(moduleId), priority: 0 },
+            ],
+          },
           entryFileNames: "assets/[name].[hash].js",
           chunkFileNames: "assets/[name].[hash].js",
           assetFileNames: (assetInfo: any) => {
@@ -531,7 +542,12 @@ export default defineConfig(({ mode, command }) => {
     config.build.rollupOptions = config.build.rollupOptions || {};
     if (!config.build.rollupOptions.output)
       config.build.rollupOptions.output = {
-        manualChunks: getManualChunk,
+        codeSplitting: {
+          groups: [
+            { name: "vite-runtime", test: /vite[\\/]preload-helper/, priority: 100 },
+            { name: (moduleId: string) => getManualChunk(moduleId), priority: 0 },
+          ],
+        },
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
         assetFileNames: (assetInfo: any) => {
