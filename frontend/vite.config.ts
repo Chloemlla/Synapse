@@ -64,8 +64,10 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
     "@radix-ui/react-dialog",
     "@base-ui/react",
     "class-variance-authority",
-    "react-icons",
   ],
+  // react-icons 单独成块：BroadcastModal（入口静态可达）只用 fa 的 5 个图标，
+  // 不能因为它在 ui 组里就把 radix / base-ui 一起拉上首屏。
+  icons: ["react-icons"],
   // Hugeicons is only needed by the shadcn sidebar primitives.
   hugeicons: ["@hugeicons/core-free-icons", "@hugeicons/react"],
   utils: ["axios", "clsx", "tailwind-merge"],
