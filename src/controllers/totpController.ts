@@ -748,18 +748,7 @@ export class TOTPController {
   }
 
   private static async normalizeBackupCodesForStorage(codes: string[]): Promise<string[]> {
-    if (!Array.isArray(codes)) return [];
-    const out: string[] = [];
-    for (const code of codes) {
-      if (
-        typeof code === "string" &&
-        (code.startsWith("$2a$") || code.startsWith("$2b$") || code.startsWith("$2y$"))
-      ) {
-        out.push(code);
-      } else {
-        out.push(...(await TOTPService.hashBackupCodes([code])));
-      }
-    }
-    return out;
+    // 归一规则（已哈希原样保留 / 明文转哈希）与登录路径共用，见 TOTPService。
+    return TOTPService.normalizeBackupCodesForStorage(codes);
   }
 }

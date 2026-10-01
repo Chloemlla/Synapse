@@ -11,6 +11,7 @@ import {
 } from "../../services/profileUpdateVerificationService";
 import { hasValidSecuritySession, requestVerificationToken } from "../../utils/securitySession";
 import {
+  generateBackupCodeUsedEmailHtml,
   generateEmailChangeNewNoticeHtml,
   generateEmailChangeOldNoticeHtml,
   generateVerificationCodeEmailHtml,
@@ -216,6 +217,8 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
     const method = typeof req.body?.method === "string" ? req.body.method : "";
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const verificationCode = typeof req.body?.verificationCode === "string" ? req.body.verificationCode.trim() : "";
+    // 恢复码：认证器丢失时的兑底凭证，与登录路径同名字段（backupCode）。
+    const backupCode = typeof req.body?.backupCode === "string" ? req.body.backupCode.trim() : "";
 
     if (!method || !["password", "totp", "passkey"].includes(method)) {
       return res.status(400).json({ error: "无效的验证方式" });
@@ -232,19 +235,59 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
         return res.status(400).json({ error: "当前账户未启用 TOTP" });
       }
 
-      if (!/^\d{6}$/.test(verificationCode)) {
-        return res.status(400).json({ error: "请输入 6 位 TOTP 验证码" });
-      }
+      if (backupCode) {
+        // 恢复码是 TOTP 的离线兑底：认证器丢了也必须能建立安全会话（否则双因素配置类操作被锁死）。
+        // 校验/报废/通知与登录路径同一套：归一格式 → bcrypt 比对 → 原子报废用掉的那一枚。
+        if (!dbUser.backupCodes || dbUser.backupCodes.length === 0) {
+          return res.status(400).json({ error: "当前账户没有可用的恢复码" });
+        }
 
-      // G2-13: 带 counter 重放防护（原子消费）
-      const totpCheck = TOTPService.verifyTokenWithCounter(verificationCode, dbUser.totpSecret);
-      let isValid = totpCheck.valid;
-      if (isValid && totpCheck.counter !== null) {
-        isValid = await UserStorage.consumeTotpCounter(dbUser.id, totpCheck.counter);
-      }
+        const verifyResult = await TOTPService.verifyBackupCode(backupCode, dbUser.backupCodes);
+        if (!verifyResult.matched) {
+          logger.warn("[AdminRoutes] 恢复码验证失败（建立安全会话）", { userId: dbUser.id, method });
+          return res.status(401).json({ error: "恢复码错误" });
+        }
 
-      if (!isValid) {
-        return res.status(401).json({ error: "TOTP 验证失败" });
+        const remainingCodes = await TOTPService.normalizeBackupCodesForStorage(verifyResult.remainingHashes);
+        await UserStorage.updateUser(dbUser.id, { backupCodes: remainingCodes });
+        logger.info("[AdminRoutes] 恢复码验证成功并已报废（建立安全会话）", {
+          userId: dbUser.id,
+          username: dbUser.username,
+          remainingCount: remainingCodes.length,
+        });
+        if (remainingCodes.length === 0) {
+          logger.warn("[AdminRoutes] 用户所有备用恢复码已用完", { userId: dbUser.id });
+        }
+
+        // 安全通知邮件（恢复码被使用是必须触达用户的安全事件），不占用也不受验证码发送配额限制。
+        try {
+          const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+          const device = req.headers["user-agent"] || "unknown";
+          sendEmail({
+            to: dbUser.email,
+            subject: "Synapse 备用恢复码已使用通知",
+            html: generateBackupCodeUsedEmailHtml(dbUser.username, remainingCodes.length, time, getClientIP(req), device),
+            logTag: "恢复码使用通知",
+            checkQuota: false,
+          }).catch((notifyError) => logger.warn("[恢复码使用通知] 邮件发送异常", notifyError));
+        } catch (notifyError) {
+          logger.warn("[恢复码使用通知] 发送通知邮件失败", notifyError);
+        }
+      } else {
+        if (!/^\d{6}$/.test(verificationCode)) {
+          return res.status(400).json({ error: "请输入 6 位 TOTP 验证码或 8 位恢复码" });
+        }
+
+        // G2-13: 带 counter 重放防护（原子消费）
+        const totpCheck = TOTPService.verifyTokenWithCounter(verificationCode, dbUser.totpSecret);
+        let isValid = totpCheck.valid;
+        if (isValid && totpCheck.counter !== null) {
+          isValid = await UserStorage.consumeTotpCounter(dbUser.id, totpCheck.counter);
+        }
+
+        if (!isValid) {
+          return res.status(401).json({ error: "TOTP 验证失败" });
+        }
       }
     }
 

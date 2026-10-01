@@ -219,6 +219,8 @@ export const verifyIdentity = async (data: {
   method: 'password' | 'totp' | 'passkey';
   password?: string;
   verificationCode?: string;
+  /** 认证器不可用时的兑底：8 位备用恢复码（与登录路径同名字段）。 */
+  backupCode?: string;
   passkeyResponse?: unknown;
   clientOrigin?: string;
 }): Promise<ApiResponse & { verificationToken?: string; expiresAt?: number }> => {

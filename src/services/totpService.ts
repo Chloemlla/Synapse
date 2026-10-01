@@ -329,6 +329,26 @@ export class TOTPService {
   }
 
   /**
+   * G2-14: 恢复码落库前的归一：已哈希的条目原样保留，明文条目转 bcrypt 哈希。
+   * 生成/报废/重新生成都要走它，避免把明文（或二次哈希）写回库里。
+   */
+  public static async normalizeBackupCodesForStorage(codes: string[]): Promise<string[]> {
+    if (!Array.isArray(codes)) return [];
+    const out: string[] = [];
+    for (const code of codes) {
+      if (
+        typeof code === "string" &&
+        (code.startsWith("$2a$") || code.startsWith("$2b$") || code.startsWith("$2y$"))
+      ) {
+        out.push(code);
+      } else {
+        out.push(...(await TOTPService.hashBackupCodes([code])));
+      }
+    }
+    return out;
+  }
+
+  /**
    * G2-14: 把明文恢复码转换为 bcrypt 哈希数组（落库存哈希，明文只返回给用户一次）。
    */
   public static async hashBackupCodes(codes: string[]): Promise<string[]> {

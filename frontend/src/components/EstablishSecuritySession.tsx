@@ -39,6 +39,9 @@ export default function EstablishSecuritySession({
 
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [backupCode, setBackupCode] = useState('');
+  // TOTP 卡片两种输入：认证器 6 位验证码 / 8 位备用恢复码（认证器丢失时的兑底）。
+  const [totpMode, setTotpMode] = useState<'code' | 'backup'>('code');
   const [submitting, setSubmitting] = useState<'password' | 'totp' | 'passkey' | null>(null);
   // null = 尚未探测到（比如 /api/totp/status 请求失败）
   const [factors, setFactors] = useState<{ totp: boolean; passkey: boolean } | null>(null);
@@ -88,6 +91,8 @@ export default function EstablishSecuritySession({
       setSession(res.verificationToken, typeof res.expiresAt === 'number' ? res.expiresAt : null, kind);
       setPassword('');
       setTotpCode('');
+      setBackupCode('');
+      setTotpMode('code');
       setNotification({ message: '安全会话已建立', type: 'success' });
       onEstablished?.();
     },
@@ -117,6 +122,21 @@ export default function EstablishSecuritySession({
   };
 
   const verifyTotp = () => {
+    if (totpMode === 'backup') {
+      // 与后端同口径：去掉分隔符、统一大写后的 8 位字母数字。
+      const normalized = backupCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (normalized.length !== 8) {
+        setNotification({ message: '请输入 8 位备用恢复码', type: 'warning' });
+        return;
+      }
+      void runVerify(
+        'totp',
+        () => verifyIdentity({ method: 'totp', backupCode: normalized }),
+        '恢复码验证失败',
+      );
+      return;
+    }
+
     if (!/^\d{6}$/.test(totpCode.trim())) {
       setNotification({ message: '请输入 6 位 TOTP 验证码', type: 'warning' });
       return;
@@ -190,25 +210,54 @@ export default function EstablishSecuritySession({
         </div>
       )}
 
-      {/* TOTP（开启后展示） */}
+      {/* TOTP（开启后展示；认证器不可用时可用备用恢复码） */}
       {totpAvailable ? (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-          <div className="text-sm font-medium text-slate-700">TOTP 验证码</div>
-          <div className="mb-2 text-xs text-slate-500">使用认证器应用生成的 6 位验证码</div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium text-slate-700">
+              {totpMode === 'backup' ? '备用恢复码' : 'TOTP 验证码'}
+            </div>
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              disabled={submitting !== null}
+              onClick={() => setTotpMode(totpMode === 'backup' ? 'code' : 'backup')}
+            >
+              {totpMode === 'backup' ? '改用认证器验证码' : '认证器不可用？改用恢复码'}
+            </button>
+          </div>
+          <div className="mb-2 text-xs text-slate-500">
+            {totpMode === 'backup'
+              ? '输入生成双因素时保存的 8 位恢复码，每个恢复码只能使用一次'
+              : '使用认证器应用生成的 6 位验证码'}
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              inputMode="numeric"
-              maxLength={6}
-              value={totpCode}
-              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') verifyTotp();
-              }}
-              placeholder="6 位验证码"
-              className={studioFieldClassName}
-            />
+            {totpMode === 'backup' ? (
+              <input
+                value={backupCode}
+                maxLength={8}
+                onChange={(e) => setBackupCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') verifyTotp();
+                }}
+                placeholder="8 位恢复码"
+                className={studioFieldClassName}
+              />
+            ) : (
+              <input
+                inputMode="numeric"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') verifyTotp();
+                }}
+                placeholder="6 位验证码"
+                className={studioFieldClassName}
+              />
+            )}
             <button type="button" disabled={submitting !== null} onClick={verifyTotp} className={studioPrimaryButtonClassName}>
-              {submitting === 'totp' ? '验证中…' : '使用 TOTP 验证'}
+              {submitting === 'totp' ? '验证中…' : totpMode === 'backup' ? '使用恢复码验证' : '使用 TOTP 验证'}
             </button>
           </div>
         </div>
