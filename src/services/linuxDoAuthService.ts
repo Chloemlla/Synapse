@@ -672,7 +672,7 @@ export function getLinuxDoErrorRedirect(message: string): string {
 }
 
 export function resetLinuxDoAuthStateForTests(): void {
-  oauthStateStore.clear();
-  loginTicketStore.clear();
+  // state / ticket 现在落 sharedStateStore：测试只清进程内存层（Redis/Mongo 不在测试环境里）。
+  sharedStateStore.clearMemory();
   discoveryCache = null;
 }

@@ -135,7 +135,7 @@ export class LinuxDoAuthController {
     );
   }
 
-  public static exchangeTicket(req: Request, res: Response) {
+  public static async exchangeTicket(req: Request, res: Response) {
     const { ticket } = req.body ?? {};
 
     if (!ticket || typeof ticket !== "string") {
