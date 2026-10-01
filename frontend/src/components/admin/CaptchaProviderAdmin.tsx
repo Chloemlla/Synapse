@@ -72,7 +72,7 @@ const REASON_TEXT: Record<SkipReason, string> = {
 const PROVIDER_HINT: Record<ProviderId, string> = {
   turnstile: 'Cloudflare 托管，脚本与校验都走 challenges.cloudflare.com。',
   hcaptcha: '第三方托管，返回 score 时低于 0.5 会被拒绝；免费额度按调用次数计，用尽后本月不再外呼。',
-  trycap: '自托管 Cap（PoW + 浏览器 instrumentation），无第三方、无追踪，加速本地实例。',
+  trycap: '自托管 Cap（PoW/hashwx）：无第三方、无追踪。站点密钥需保持 instrumentation 关闭——该功能要求 CSP 放行 unsafe-eval，本仓生产 CSP 刻意不放行。',
 };
 
 function formatQuota(quota: QuotaSnapshot): string {

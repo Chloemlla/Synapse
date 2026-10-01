@@ -11,7 +11,10 @@ import CryptoJS from 'crypto-js';
 export enum CaptchaType {
   TURNSTILE = 'turnstile',
   HCAPTCHA = 'hcaptcha',
-  /** 自托管 Cap（trycap）：无第三方、无追踪的 PoW + instrumentation 验证。 */
+  /** 自托管 Cap（trycap）：无第三方、无追踪的 PoW（hashwx）验证。
+   *  注意：Cap 的 instrumentation 只有在 CSP 允许 'unsafe-eval' 时才可能通过
+   *  （载荷用 eval 做反篡改探针，被拦后不回消息 → 20s 超时）。本仓生产 CSP 刻意禁 eval，
+   *  所以站点密钥必须保持 instrumentation:false，详见 docs/audit/audit-2026-10-01-cap-instrumentation-csp.md。 */
   TRYCAP = 'trycap'
 }
 

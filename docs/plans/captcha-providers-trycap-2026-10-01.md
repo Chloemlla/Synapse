@@ -89,6 +89,6 @@
 
 ## 五、风险
 
-- R1：Cap 的 challenge 默认协议是 `hashwx`（记忆硬化），无头浏览器验证可能被拦；生产 key 建议保持 `instrumentation: true`，自动化验证另建临时 key。
+- R1：Cap 的 challenge 默认协议是 `hashwx`（记忆硬化），无头浏览器验证可能被拦；~~生产 key 建议保持 `instrumentation: true`，自动化验证另建临时 key~~ → **已更正（2026-10-01）**：本仓生产 CSP 不放行 `'unsafe-eval'`，而 instrumentation 载荷靠 `eval` 做反篡改探针，被拦后不回消息 → 20s 超时，验证码 100% 失败；因此生产 key 的 `instrumentation` 必须为 **false**（PoW/hashwx 保留），自动化验证仍另建临时 key。详见 `docs/audit/audit-2026-10-01-cap-instrumentation-csp.md`。
 - R2：权重语义若被理解为「绝对概率」会与归一化结果不符 —— 面板上明确标注「相对权重，自动归一化」。
 - R3：新增第三方脚本来源会扩大 CSP 白名单，仅放行 jsdelivr 与 Cap 自有域名，不放行 `unsafe-inline`/`unsafe-eval`。
