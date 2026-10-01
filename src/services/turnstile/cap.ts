@@ -1,7 +1,6 @@
 import axios from "axios";
 import logger from "../../utils/logger";
 import { isConnected } from "../mongoService";
-import { sanitizeCapEndpoint } from "./capEndpoint";
 import { CAP_VERIFY_TIMEOUT_MS } from "./constants";
 import { CapSettingModel, getCapKey, invalidateCapKeyCache } from "./models";
 import { isValidCapSiteKey, sanitizeCapEndpoint, validateCapEndpoint } from "./capEndpoint";
