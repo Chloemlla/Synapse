@@ -64,7 +64,7 @@ export interface PolicyConsentOverviewResponse {
   validityDays: number;
   /** 当前版本要求逐项勾选的文件键名（POLICY_AGREEMENT_KEYS）。 */
   agreementKeys: string[];
-  counts: { total: number; valid: number; expired: number; revoked: number };
+  counts: { total: number; valid: number; expired: number; revoked: number; incomplete: number };
   versions: PolicyConsentGroupRow[];
   sources: PolicyConsentGroupRow[];
   /** 趋势窗口（天） */

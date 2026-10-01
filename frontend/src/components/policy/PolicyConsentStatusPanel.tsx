@@ -160,6 +160,20 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
   };
 
   const presentation = status ? describeStatus(status, documentHash) : null;
+  // 临近到期提前告知（同 PrivacyConsentPanel）：7 天内给一条可操作提示，
+  // 而不是等用户在生成时被门禁拦下才发现。
+  const remainingDays = (() => {
+    if (!status?.expiresAt) return null;
+    const target = new Date(status.expiresAt).getTime();
+    if (!Number.isFinite(target)) return null;
+    return Math.ceil((target - Date.now()) / (24 * 60 * 60 * 1000));
+  })();
+  const expiringSoon = Boolean(status?.hasValidConsent && remainingDays !== null && remainingDays >= 0 && remainingDays <= 7);
+  // 同意记录对应的条文与当前条文不是同一份：同意仍有效，但值得给一个就地重签的入口
+  const staleDocument = Boolean(
+    status?.hasValidConsent && status.consentDocumentHash && documentHash && status.consentDocumentHash !== documentHash,
+  );
+  const canReConsent = !status?.hasValidConsent || expiringSoon || staleDocument;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 print:hidden">
@@ -199,7 +213,7 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
           >
             <FaSyncAlt className={cn('text-[11px]', loading && 'animate-spin')} /> 刷新状态
           </button>
-          {!status?.hasValidConsent && (
+          {canReConsent && (
             <button
               type="button"
               onClick={() => {
@@ -210,7 +224,7 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
               aria-expanded={open}
             >
               <FaCheckCircle className="text-[11px]" />
-              {open ? '收起同意清单' : '在页面内同意条款'}
+              {open ? '收起同意清单' : status?.hasValidConsent ? '重新同意（续期）' : '在页面内同意条款'}
             </button>
           )}
         </div>
@@ -227,6 +241,16 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
         <p className="mt-3 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs leading-5 text-rose-700">
           <FaExclamationCircle className="mt-0.5 shrink-0" />
           <span>{error}</span>
+        </p>
+      )}
+
+      {status?.hasValidConsent && expiringSoon && (
+        <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs leading-5 text-amber-800">
+          <FaExclamationTriangle className="mt-0.5 shrink-0" />
+          <span>
+            本设备同意将在 {remainingDays === 0 ? '今天' : `约 ${remainingDays} 天后`}到期；
+            到期后继续使用依赖同意的功能会被要求重新逐项勾选，也可以现在就在下方重新同意。
+          </span>
         </p>
       )}
 

@@ -41,10 +41,13 @@ import {
  * （撤回时间 / IP / 原因）与条文指纹一并展示（见 docs/audit-2026-09-30-policy-system.md P-12/P-19）。
  * 右上角导出按钮走同一套筛选条件，服务端封顶 5000 行且有审计留痕。
  */
-const PolicyConsentRecordsTab: React.FC<{ refreshNonce: number; agreementKeys: string[] }> = ({
-  refreshNonce,
-  agreementKeys,
-}) => {
+const PolicyConsentRecordsTab: React.FC<{
+  refreshNonce: number;
+  agreementKeys: string[];
+  /** 「仅看勾选不完整」由概览卡片驱动，状态提到面板层，两个 tab 才能联动 */
+  incompleteOnly: boolean;
+  onIncompleteOnlyChange: (next: boolean) => void;
+}> = ({ refreshNonce, agreementKeys, incompleteOnly, onIncompleteOnlyChange }) => {
   const reportError = useErrorNotice();
   const { setNotification } = useNotification();
 
@@ -58,7 +61,6 @@ const PolicyConsentRecordsTab: React.FC<{ refreshNonce: number; agreementKeys: s
   const [to, setTo] = useState('');
   const [source, setSource] = useState<PolicyConsentSource | ''>('');
   const [state, setState] = useState<PolicyConsentState>('valid');
-  const [incompleteOnly, setIncompleteOnly] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE_OPTIONS[1] ?? 50);
   const [offset, setOffset] = useState(0);
   const [manualNonce, setManualNonce] = useState(0);
@@ -122,7 +124,7 @@ const PolicyConsentRecordsTab: React.FC<{ refreshNonce: number; agreementKeys: s
     setTo('');
     setSource('');
     setState('valid');
-    setIncompleteOnly(false);
+    onIncompleteOnlyChange(false);
     setOffset(0);
   };
 
@@ -251,7 +253,7 @@ const PolicyConsentRecordsTab: React.FC<{ refreshNonce: number; agreementKeys: s
         <button
           type="button"
           onClick={() => {
-            setIncompleteOnly((current) => !current);
+            onIncompleteOnlyChange(!incompleteOnly);
             setOffset(0);
           }}
           aria-pressed={incompleteOnly}

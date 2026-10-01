@@ -40,6 +40,16 @@ const SOURCE_LABELS: Record<string, string> = {
   feature: '功能使用时同意',
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 距到期还有多少天（向上取整）；无法解析时返回 null。 */
+const daysUntil = (iso?: string): number | null => {
+  if (!iso) return null;
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return null;
+  return Math.ceil((target - Date.now()) / DAY_MS);
+};
+
 const sourceLabel = (source?: string): string =>
   source ? SOURCE_LABELS[source] ?? source : '未记录';
 
@@ -173,6 +183,10 @@ const PrivacyConsentPanel: React.FC = () => {
   const staleDocument = Boolean(
     status?.hasValidConsent && status.consentDocumentHash && status.documentHash && status.consentDocumentHash !== status.documentHash,
   );
+  // 临近到期提前告知：同意是按设备记录的，到期后依赖同意的功能会直接要求重新勾选，
+  // 等被拦下才知道不如提前说一声（7 天内提醒）。
+  const remainingDays = daysUntil(status?.expiresAt);
+  const expiringSoon = Boolean(status?.hasValidConsent && remainingDays !== null && remainingDays >= 0 && remainingDays <= 7);
 
   return (
     <section
@@ -317,6 +331,20 @@ const PrivacyConsentPanel: React.FC = () => {
               <FaExclamationTriangle className="mt-0.5 shrink-0" />
               <span>
                 这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在政策页重新同意。
+              </span>
+            </p>
+          )}
+
+          {expiringSoon && (
+            <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+              <FaExclamationTriangle className="mt-0.5 shrink-0" />
+              <span>
+                本设备同意将在 {remainingDays === 0 ? '今天' : `约 ${remainingDays} 天后`}到期。
+                到期后依赖同意的功能会要求重新逐项勾选（约 1 分钟），可现在就到{' '}
+                <Link to="/policy" className="font-semibold underline underline-offset-2">
+                  政策页
+                </Link>{' '}
+                重新同意。
               </span>
             </p>
           )}

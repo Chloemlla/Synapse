@@ -31,6 +31,8 @@ const PolicyConsentPanel: React.FC = () => {
   const [autoRefreshMs, setAutoRefreshMs] = useState(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [trendDays, setTrendDays] = useState(7);
+  // 「仅看勾选不完整」：概览卡片与记录 tab 共用，点击卡片即切到筛选后的列表
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
 
   const [overview, setOverview] = useState<PolicyConsentOverviewResponse | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -151,10 +153,23 @@ const PolicyConsentPanel: React.FC = () => {
 
       <div className="mt-5">
         {tab === 'overview' ? (
-          <PolicyConsentOverviewTab overview={overview} loading={overviewLoading} error={overviewError} />
+          <PolicyConsentOverviewTab
+            overview={overview}
+            loading={overviewLoading}
+            error={overviewError}
+            onFocusIncomplete={() => {
+              setIncompleteOnly(true);
+              setTab('records');
+            }}
+          />
         ) : null}
         {tab === 'records' ? (
-          <PolicyConsentRecordsTab refreshNonce={refreshNonce} agreementKeys={overview?.agreementKeys ?? []} />
+          <PolicyConsentRecordsTab
+            refreshNonce={refreshNonce}
+            agreementKeys={overview?.agreementKeys ?? []}
+            incompleteOnly={incompleteOnly}
+            onIncompleteOnlyChange={setIncompleteOnly}
+          />
         ) : null}
       </div>
     </InfoQueryShell>

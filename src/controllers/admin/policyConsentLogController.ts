@@ -151,17 +151,23 @@ function buildConsentFilter(filters: ConsentFilters, now: Date): any {
   if (filters.agreementsIncomplete) {
     // 勾选不完整：缺 agreements 字段（agreements 引入前的老记录），或没有覆盖全部四份文件。
     // 这类记录不会被门禁当作有效同意（见 hasValidPolicyConsent），面板需要能一眼筛出来。
-    filter.$and = [
-      {
-        $or: [
-          { agreements: { $exists: false } },
-          { agreements: { $not: { $all: [...POLICY_AGREEMENT_KEYS] } } },
-        ],
-      },
-    ];
+    filter.$and = [buildIncompleteAgreementsFilter()];
   }
 
   return filter;
+}
+
+/**
+ * 「勾选不完整」的 mongo 过滤条件：缺 agreements 字段，或没有 `$all` 覆盖全部四份文件。
+ * 列表筛选与概览计数共用一份，避免两处口径漂移。
+ */
+function buildIncompleteAgreementsFilter(): Record<string, unknown> {
+  return {
+    $or: [
+      { agreements: { $exists: false } },
+      { agreements: { $not: { $all: [...POLICY_AGREEMENT_KEYS] } } },
+    ],
+  };
 }
 
 interface ConsentRow {
@@ -260,7 +266,7 @@ export class PolicyConsentLogController {
       const trendDays = parseTrendDays((req.query as Record<string, unknown>).days);
       const trendSince = new Date(now.getTime() - trendDays * DAY_MS);
 
-      const [total, valid, expired, revoked, versionGroups, sourceGroups, recentTrend, collectionInfo] =
+      const [total, valid, expired, revoked, incomplete, versionGroups, sourceGroups, recentTrend, collectionInfo] =
         await Promise.all([
           PolicyConsent.countDocuments({}).exec(),
           PolicyConsent.countDocuments({ isValid: true, expiresAt: { $gt: now } }).exec(),
@@ -269,6 +275,12 @@ export class PolicyConsentLogController {
           }).exec(),
           // 已撤销（含被重新同意顶替前的手动撤回）：revokedAt 现在真会落库（schema 已声明）
           PolicyConsent.countDocuments({ revokedAt: { $ne: null } }).exec(),
+          // 名义上仍有效、但勾选没覆盖四份文件的存量记录：门禁不认它们，面板需要能看到规模
+          PolicyConsent.countDocuments({
+            ...buildIncompleteAgreementsFilter(),
+            isValid: true,
+            expiresAt: { $gt: now },
+          }).exec(),
           PolicyConsent.aggregate([
             { $group: { _id: "$version", count: { $sum: 1 } } },
             { $sort: { count: -1 } },
@@ -298,7 +310,7 @@ export class PolicyConsentLogController {
         currentVersion: CURRENT_POLICY_VERSION,
         validityDays: CONSENT_VALIDITY_DAYS,
         agreementKeys: [...POLICY_AGREEMENT_KEYS],
-        counts: { total, valid, expired, revoked },
+        counts: { total, valid, expired, revoked, incomplete },
         versions: normalizeGroupRows(versionGroups),
         sources: normalizeGroupRows(sourceGroups),
         trendDays,

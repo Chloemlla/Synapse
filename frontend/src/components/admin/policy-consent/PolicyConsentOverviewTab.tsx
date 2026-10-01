@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   FaCheckCircle,
+  FaExclamationTriangle,
   FaFileSignature,
   FaHourglassHalf,
   FaUndoAlt,
@@ -16,7 +17,9 @@ const PolicyConsentOverviewTab: React.FC<{
   overview: PolicyConsentOverviewResponse | null;
   loading: boolean;
   error: string | null;
-}> = ({ overview, loading, error }) => {
+  /** 点「勾选不完整」卡片时跳到记录 tab 并带上该筛选 */
+  onFocusIncomplete: () => void;
+}> = ({ overview, loading, error, onFocusIncomplete }) => {
   const counts = overview?.counts;
   const maxVersion = Math.max(1, ...(overview?.versions.map((row) => row.count) ?? [1]));
   const maxSource = Math.max(1, ...(overview?.sources.map((row) => row.count) ?? [1]));
@@ -43,7 +46,7 @@ const PolicyConsentOverviewTab: React.FC<{
         </InfoPanel>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <InfoMetricCard
           label="记录总量（含已过期）"
           value={counts ? formatCount(counts.total) : '—'}
@@ -72,6 +75,20 @@ const PolicyConsentOverviewTab: React.FC<{
           icon={FaUndoAlt}
           tone="amber"
         />
+        <button
+          type="button"
+          onClick={onFocusIncomplete}
+          title="这些记录名义上仍有效，但勾选没覆盖四份文件，功能门禁不会认它们；点击查看并导出"
+          className="text-left transition hover:-translate-y-0.5"
+        >
+          <InfoMetricCard
+            label="有效但勾选不完整"
+            value={counts ? formatCount(counts.incomplete) : '—'}
+            detail="门禁不认这些记录 → 点击查看明细"
+            icon={FaExclamationTriangle}
+            tone="rose"
+          />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
