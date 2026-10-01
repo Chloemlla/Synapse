@@ -125,7 +125,9 @@ function auditTarget(targetLabel, packageJsonPath) {
       }
 
       // @types/x 的可用性取决于 x 是否在源码里被引用（类型包本身不会被 import）。
-      const typesTarget = name.startsWith("@types/") ? name.slice("@types/".length).replace(/^node$/, "node") : null;
+      // 注意：这里不再对 `node` 做任何“归一化”——`.replace(/^node$/, "node")` 是替换成自己，
+      // 既没有行为也没有意义（CodeQL js/identity-replacement 1266）。
+      const typesTarget = name.startsWith("@types/") ? name.slice("@types/".length) : null;
       if (typesTarget && codeHits.length === 0) {
         const targetPattern = referencePatterns(typesTarget.split("/").slice(-1)[0]).importPattern;
         for (const entry of CORPUS.code) {
