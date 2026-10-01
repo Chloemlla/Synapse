@@ -136,16 +136,20 @@ class SharedStateStore {
   /**
    * 原子申领（「同一时刻只有一个实例能拿到」）：
    * Redis `SET NX PX`；Mongo 以 `_id` 为主键 upsert（已存在且未过期 ⇒ 抢不到）；内存层为单实例语义。
+   *
+   * 传入 `owner` 时写入的值就是 owner，配合 `release(key, owner)` 实现「只有持有者能解锁」，
+   * 避免一个过期后被别人抢走的锁又被前一持有者误删。
    */
-  public async claim(key: string, ttlMs: number): Promise<boolean> {
+  public async claim(key: string, ttlMs: number, owner?: string): Promise<boolean> {
     const ttl = Math.max(1, Math.floor(ttlMs));
     const expiresAt = Date.now() + ttl;
+    const claimValue = owner ?? "1";
 
     if (this.redisConfigured) {
       const client = await this.getRedisClient();
       if (client) {
         try {
-          const result = await client.set(this.redisKey(key), "1", { NX: true, PX: ttl });
+          const result = await client.set(this.redisKey(key), claimValue, { NX: true, PX: ttl });
           return result === "OK";
         } catch (error) {
           this.markRedisFailure(error);
@@ -158,7 +162,7 @@ class SharedStateStore {
         // 过滤条件只匹配「不存在或已过期」，因此命中即等于抢到（过期文档被顺带续期）。
         const result = await SharedStateModel.updateOne(
           { _id: key, expiresAt: { $lte: new Date() } },
-          { $set: { value: 1, expiresAt: new Date(expiresAt) } },
+          { $set: { value: claimValue, expiresAt: new Date(expiresAt) } },
           { upsert: true },
         );
         if ((result?.upsertedCount ?? 0) > 0 || (result?.matchedCount ?? 0) > 0) return true;
@@ -176,9 +180,46 @@ class SharedStateStore {
     this.warnMemoryFallback();
     const existing = this.memory.get(key);
     if (existing && existing.expiresAt > Date.now()) return false;
-    this.memory.set(key, { value: 1, expiresAt });
+    this.memory.set(key, { value: claimValue, expiresAt });
     this.sweepMemory();
     return true;
+  }
+
+  /** 释放自己持有的锁：只有当前值等于 `owner` 才删（Redis 走 Lua，Mongo 走带条件 deleteOne）。 */
+  public async release(key: string, owner: string): Promise<boolean> {
+    if (this.redisConfigured) {
+      const client = await this.getRedisClient();
+      if (client) {
+        try {
+          const result = (await (client as any).eval(
+            'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end',
+            { keys: [this.redisKey(key)], arguments: [owner] },
+          )) as number;
+          if (result > 0) return true;
+        } catch (error) {
+          this.markRedisFailure(error);
+        }
+      }
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const result = await SharedStateModel.deleteOne({ _id: key, value: owner });
+        if ((result?.deletedCount ?? 0) > 0) return true;
+      } catch (error) {
+        logger.warn("[SharedState] Mongo 释放锁失败", {
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const entry = this.memory.get(key);
+    if (entry && entry.value === owner) {
+      this.memory.delete(key);
+      return true;
+    }
+    return false;
   }
 
   public async set<T>(key: string, value: T, ttlMs: number): Promise<boolean> {
@@ -294,8 +335,14 @@ class SharedStateStore {
       if (client) {
         try {
           const keys: string[] = [];
-          for await (const key of client.scanIterator({ MATCH: `${this.redisKey(prefix)}*`, COUNT: 200 })) {
-            keys.push(key);
+          for await (const keyOrKeys of client.scanIterator({ MATCH: `${this.redisKey(prefix)}*`, COUNT: 200 })) {
+            // @redis/client v5 的 scanIterator 按批产出数组（旧版产出单个 key），两种都吃得下。
+            // 同款处理见 redisService.ts 的批量 GET 路径。
+            const batch = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+            for (const key of batch) {
+              keys.push(key);
+              if (keys.length >= 5_000) break;
+            }
             if (keys.length >= 5_000) break;
           }
           if (keys.length > 0) removed += await client.del(keys);
