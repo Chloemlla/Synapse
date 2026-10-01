@@ -5,7 +5,10 @@ interface HCaptchaWidgetProps {
   onVerify: (token: string) => void;
   onExpire?: () => void;
   onError?: (error: any) => void;
-  size?: 'normal' | 'compact' | 'invisible';
+  size?: 'normal' | 'compact' | 'invisible' | 'flexible';
+  /** 管理端统一调控（/admin/captcha-providers → 组件外观）。 */
+  theme?: 'auto' | 'light' | 'dark';
+  language?: string;
   tabIndex?: number;
   'aria-label'?: string;
 }
@@ -37,6 +40,8 @@ const HCaptchaWidget = ({
   onExpire,
   onError,
   size = 'normal',
+  theme = 'auto',
+  language,
   tabIndex,
   'aria-label': ariaLabel = 'hCaptcha 人机验证',
   ref
@@ -53,7 +58,11 @@ const HCaptchaWidget = ({
     try {
       const widgetId = window.hcaptcha.render(containerRef.current, {
         sitekey: siteKey,
-        size,
+        // hCaptcha 没有 flexible 尺寸，自适应需求用 normal 承载。
+        size: size === 'flexible' ? 'normal' : size,
+        // auto 交给控件按系统主题自选（hCaptcha 不接受 auto 字面量）。
+        theme: theme === 'auto' ? undefined : theme,
+        ...(language && language !== 'auto' ? { language } : {}),
         tabindex: tabIndex,
         callback: (token: string) => {
           onVerify(token);
@@ -72,7 +81,7 @@ const HCaptchaWidget = ({
       console.error('Failed to render hCaptcha widget:', error);
       onError?.(error);
     }
-  }, [siteKey, size, tabIndex, onVerify, onExpire, onError]);
+  }, [siteKey, size, theme, language, tabIndex, onVerify, onExpire, onError]);
 
   const loadHCaptchaScript = useCallback(() => {
     if (isLoadingRef.current || window.hcaptcha) {

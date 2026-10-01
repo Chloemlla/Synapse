@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, m } from 'framer-motion';
 import {
   FaArrowRight,
@@ -142,7 +142,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     siteKey: secureSiteKey,
     apiEndpoint: secureApiEndpoint,
     enabled: secureEnabled,
-  } = useSecureCaptchaSelection({ fingerprint });
+    widget: secureWidget,
+    failoverMaxAttempts,
+    regenerateSelection,
+  } = useSecureCaptchaSelection({ fingerprint, scenario: 'first_visit' });
+  // 控件加载失败时逐个排除（前端侧故障转移），重置验证时应清空。
+  const failedProvidersRef = useRef<CaptchaType[]>([]);
 
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileVerified, setTurnstileVerified] = useState(false);
@@ -225,6 +230,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
   const resetChallenge = useCallback(
     (mode: VerificationMode = verificationMode) => {
+      // 用户主动重试：清掉「已排除的供应商」，否则会一直被锁在备选名单上。
+      failedProvidersRef.current = [];
       if (mode === 'turnstile') {
         setTurnstileToken('');
         setTurnstileVerified(false);
@@ -260,12 +267,6 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     setError('The check expired. Complete it again to continue.');
   }, []);
 
-  const handleTurnstileError = useCallback(() => {
-    setTurnstileToken('');
-    setTurnstileVerified(false);
-    setError('The verification widget did not load correctly. Refresh and retry.');
-  }, []);
-
   const handleHCaptchaVerify = useCallback((token: string) => {
     setHCaptchaToken(token);
     setHCaptchaVerified(true);
@@ -276,12 +277,6 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     setHCaptchaToken('');
     setHCaptchaVerified(false);
     setError('The check expired. Complete it again to continue.');
-  }, []);
-
-  const handleHCaptchaError = useCallback(() => {
-    setHCaptchaToken('');
-    setHCaptchaVerified(false);
-    setError('The verification widget did not load correctly. Refresh and retry.');
   }, []);
 
   const handleCapVerify = useCallback((token: string) => {
@@ -296,11 +291,25 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     setError('The check expired. Complete it again to continue.');
   }, []);
 
-  const handleCapError = useCallback(() => {
-    setCapToken('');
-    setCapVerified(false);
+  /** 控件加载失败 → 排除这一家、按分配策略换下一家（上限由管理端下发）。 */
+  const handleChallengeError = useCallback(() => {
+    const current = secureCaptchaConfig?.captchaType;
+    const attempted = failedProvidersRef.current;
+    const canRetry =
+      current !== undefined &&
+      !attempted.includes(current) &&
+      attempted.length + 1 < Math.max(1, failoverMaxAttempts);
+
+    if (canRetry) {
+      failedProvidersRef.current = [...attempted, current];
+      setError('');
+      setNotification({ message: 'Switching to a backup verification provider...', type: 'info' });
+      regenerateSelection({ exclude: failedProvidersRef.current });
+      return;
+    }
+
     setError('The verification widget did not load correctly. Refresh and retry.');
-  }, []);
+  }, [failoverMaxAttempts, regenerateSelection, secureCaptchaConfig?.captchaType, setNotification]);
 
   const handleVerify = useCallback(async () => {
     if (!verificationMode || !currentToken || !isVerified) return;
@@ -516,27 +525,34 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                         <TurnstileWidget
                           key={turnstileKey}
                           siteKey={secureSiteKey}
+                          theme={secureWidget.theme}
+                          language={secureWidget.language}
+                          size={secureWidget.size}
                           onVerify={handleTurnstileVerify}
                           onExpire={handleTurnstileExpire}
-                          onError={handleTurnstileError}
+                          onError={handleChallengeError}
                         />
                       ) : verificationMode === 'trycap' ? (
                         <CapWidget
                           key={capKey}
                           siteKey={secureSiteKey}
                           apiEndpoint={secureApiEndpoint || ''}
+                          theme={secureWidget.theme}
+                          language={secureWidget.language}
                           onVerify={handleCapVerify}
                           onExpire={handleCapExpire}
-                          onError={handleCapError}
+                          onError={handleChallengeError}
                         />
                       ) : (
                         <HCaptchaWidget
                           key={hcaptchaKey}
                           siteKey={secureSiteKey}
+                          theme={secureWidget.theme}
+                          language={secureWidget.language}
                           onVerify={handleHCaptchaVerify}
                           onExpire={handleHCaptchaExpire}
-                          onError={handleHCaptchaError}
-                          size="normal"
+                          onError={handleChallengeError}
+                          size={secureWidget.size}
                         />
                       )}
                     </Suspense>
@@ -602,10 +618,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             </div>
           </div>
 
-          <p className="mt-5 text-xs text-[#8b97a6]">
-            Powered by {verificationMode ? serviceLabel : 'the site verification provider'} · tokens are never
-            stored in logs or URLs.
-          </p>
+          {secureWidget.showProviderLabel && (
+            <p className="mt-5 text-xs text-[#8b97a6]">
+              Powered by {verificationMode ? serviceLabel : 'the site verification provider'} · tokens are never
+              stored in logs or URLs.
+            </p>
+          )}
         </div>
 
         <div className="border-t border-[#eef2f7] bg-[#fafbfe] px-5 py-7 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">

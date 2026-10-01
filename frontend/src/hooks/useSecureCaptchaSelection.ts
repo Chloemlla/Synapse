@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { generateSecureCaptchaSelection, CaptchaType, EncryptedCaptchaSelection } from '../utils/captchaSelection';
+import {
+  generateSecureCaptchaSelection,
+  normalizeCaptchaWidgetAppearance,
+  CaptchaType,
+  DEFAULT_CAPTCHA_WIDGET_APPEARANCE,
+  type CaptchaScenario,
+  type CaptchaWidgetAppearance,
+  type EncryptedCaptchaSelection,
+} from '../utils/captchaSelection';
 import getApiBaseUrl from '../api';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
@@ -11,15 +19,29 @@ interface SecureCaptchaConfig {
     /** 仅 trycap 返回：Cap 实例地址（用于拼 data-cap-api-endpoint）。 */
     apiEndpoint?: string;
   };
+  /** 管理端统一调控的控件外观（theme/size/language/是否展示供应商署名）。 */
+  widget: CaptchaWidgetAppearance;
+  scenario: CaptchaScenario;
+  strategy: string;
+  reason: string;
+  /** 控件加载失败后最多换几家（含首次），来自管理端分配策略。 */
+  failoverMaxAttempts: number;
 }
 
 interface UseSecureCaptchaSelectionOptions {
   fingerprint: string;
-  // availableTypes 已移除，由后端决定
+  /** 下发场景：首访门禁传 first_visit，独立验证页传 standalone，其余默认 default。 */
+  scenario?: CaptchaScenario;
+}
+
+export interface RegenerateOptions {
+  /** 已经失败过的供应商（控件加载不出来时逐个排除，等于前端侧的故障转移）。 */
+  exclude?: CaptchaType[];
 }
 
 const MAX_INIT_FAILURES = 5; // 连续失败达到上限后停止自动重试，避免打爆 publicLimiter
 const INIT_FAILURE_BACKOFF_MS = 2000; // 失败后的基础退避时间
+const DEFAULT_FAILOVER_ATTEMPTS = 2;
 
 export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOptions) => {
   const [captchaConfig, setCaptchaConfig] = useState<SecureCaptchaConfig | null>(null);
@@ -28,11 +50,12 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
   const [encryptedSelection, setEncryptedSelection] = useState<EncryptedCaptchaSelection | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
 
-  const { fingerprint } = options;
+  const { fingerprint, scenario = 'default' } = options;
 
   // 用 ref 持有可变状态，避免把它们放进 useCallback 依赖导致回调随 loading 重建
   const loadingRef = useRef(false);
   const failureCountRef = useRef(0);
+  const excludeRef = useRef<CaptchaType[]>([]);
 
   /**
    * 生成安全的CAPTCHA选择并获取配置
@@ -54,7 +77,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       setLoading(true);
       setError(null);
 
-      // 生成加密的随机选择（后端会忽略选择结果，按上线开关 + 权重自行决定验证码类型）
+      // 生成加密的随机选择（后端会忽略选择结果，按上线开关 + 权重 + 场景策略自行决定验证码类型）
       const selection = generateSecureCaptchaSelection(fingerprint, [
         CaptchaType.TURNSTILE,
         CaptchaType.HCAPTCHA,
@@ -73,7 +96,9 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
           encryptedData: selection.encryptedData,
           timestamp: selection.timestamp,
           hash: selection.hash,
-          fingerprint
+          fingerprint,
+          scenario,
+          ...(excludeRef.current.length > 0 ? { exclude: excludeRef.current } : {}),
         })
       });
 
@@ -94,14 +119,24 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
           enabled: Boolean(data?.config?.enabled),
           siteKey: typeof data?.config?.siteKey === 'string' ? data.config.siteKey : '',
           apiEndpoint: typeof data?.config?.apiEndpoint === 'string' ? data.config.apiEndpoint : undefined,
-        }
+        },
+        widget: normalizeCaptchaWidgetAppearance(data?.widget),
+        scenario,
+        strategy: typeof data?.strategy === 'string' ? data.strategy : 'weighted',
+        reason: typeof data?.reason === 'string' ? data.reason : '',
+        failoverMaxAttempts:
+          typeof data?.failoverMaxAttempts === 'number' && data.failoverMaxAttempts > 0
+            ? Math.min(3, Math.round(data.failoverMaxAttempts))
+            : DEFAULT_FAILOVER_ATTEMPTS,
       });
 
       console.log('后端CAPTCHA选择成功:', {
         type: data.captchaType,
         enabled: data.config.enabled,
+        scenario,
+        excluded: excludeRef.current,
         timestamp: new Date(selection.timestamp).toISOString(),
-        note: '验证码类型由后端决定'
+        note: '验证码类型由后端按场景权重与分配策略决定'
       });
 
       failureCountRef.current = 0;
@@ -127,19 +162,27 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fingerprint]);
+  }, [fingerprint, scenario]);
 
   /**
-   * 重新生成选择
+   * 重新生成选择；传 exclude 时把已经加载失败的供应商排除掉（前端侧故障转移）。
    */
-  const regenerateSelection = useCallback(() => {
+  const regenerateSelection = useCallback((regenerateOptions: RegenerateOptions = {}) => {
+    if (regenerateOptions.exclude) {
+      excludeRef.current = regenerateOptions.exclude;
+    }
     failureCountRef.current = 0;
     setCaptchaConfig(null);
     setEncryptedSelection(null);
     setError(null);
     setHasInitialized(false);
-    generateAndFetchConfig();
+    void generateAndFetchConfig();
   }, [generateAndFetchConfig]);
+
+  // 换指纹/换场景即换一轮分配，排除名单随之作废。
+  useEffect(() => {
+    excludeRef.current = [];
+  }, [fingerprint, scenario]);
 
   /**
    * 检查选择是否过期
@@ -175,6 +218,14 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
     isTryCap: captchaConfig?.captchaType === CaptchaType.TRYCAP,
     siteKey: typeof captchaConfig?.config.siteKey === 'string' ? captchaConfig.config.siteKey : '',
     apiEndpoint: captchaConfig?.config.apiEndpoint,
-    enabled: captchaConfig?.config.enabled || false
+    enabled: captchaConfig?.config.enabled || false,
+    /** 管理端下发的外观；尚未拿到配置时用默认值，控件不会因为缺省值而报错。 */
+    widget: captchaConfig?.widget ?? DEFAULT_CAPTCHA_WIDGET_APPEARANCE,
+    scenario: captchaConfig?.scenario ?? scenario,
+    strategy: captchaConfig?.strategy ?? '',
+    reason: captchaConfig?.reason ?? '',
+    failoverMaxAttempts: captchaConfig?.failoverMaxAttempts ?? DEFAULT_FAILOVER_ATTEMPTS,
+    /** 当前已排除（加载失败）的供应商，用于展示「已自动换到下一家」。 */
+    excluded: excludeRef.current,
   };
 };

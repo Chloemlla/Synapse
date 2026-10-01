@@ -5,12 +5,16 @@ interface TurnstileWidgetProps {
   onVerify: (token: string) => void;
   onExpire: () => void;
   onError: () => void;
-  size?: 'normal' | 'compact';
+  size?: 'normal' | 'compact' | 'flexible';
+  /** 管理端统一调控（/admin/captcha-providers → 组件外观）。 */
+  theme?: 'auto' | 'light' | 'dark';
+  language?: string;
 }
 
 interface TurnstileRenderOptions {
   sitekey: string;
-  size?: 'normal' | 'compact';
+  size?: 'normal' | 'compact' | 'flexible';
+  theme?: 'auto' | 'light' | 'dark';
   language?: string;
   callback?: (token: string) => void;
   'expired-callback'?: () => void;
@@ -199,6 +203,8 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
   onExpire,
   onError,
   size = 'normal',
+  theme = 'auto',
+  language,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -238,6 +244,8 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
       debugTurnstile('Turnstile render options', {
         sitekey: maskSiteKey(cleanSiteKey),
         size,
+        theme,
+        language,
         callback: typeof onVerify,
         'expired-callback': typeof onExpire,
         'error-callback': typeof onError,
@@ -247,6 +255,8 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: cleanSiteKey,
         size,
+        theme,
+        ...(language && language !== 'auto' ? { language } : {}),
         callback: (token: string) => {
           debugTurnstile('Turnstile callback triggered', { tokenLength: token.length });
           verifiedRef.current = true;
@@ -269,7 +279,7 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
       console.error('Turnstile render error:', error);
       onError();
     }
-  }, [siteKey, size]); // 移除回调函数依赖，避免无限循环
+  }, [siteKey, size, theme, language]); // 移除回调函数依赖，避免无限循环
 
   useEffect(() => {
     let mounted = true;
@@ -320,7 +330,7 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
       mountedRef.current = false;
       renderWidget();
     }
-  }, [siteKey, size]); // 移除 renderWidget 依赖，避免无限循环
+  }, [siteKey, size, theme, language]); // 移除 renderWidget 依赖，避免无限循环
 
   return (
     <div className="turnstile-widget">

@@ -181,3 +181,71 @@ export function getCaptchaDisplayName(type: CaptchaType): string {
       return '未知验证方式';
   }
 }
+
+/**
+ * 下发场景：与后端 `CaptchaScenario`（src/services/turnstile/types.ts）一一对应。
+ * 场景决定用哪套权重与分配策略 —— 首访门禁与独立验证页可以分配给不同供应商。
+ */
+export type CaptchaScenario = 'default' | 'first_visit' | 'standalone';
+
+export const CAPTCHA_SCENARIOS: readonly CaptchaScenario[] = ['default', 'first_visit', 'standalone'];
+
+export type CaptchaWidgetTheme = 'auto' | 'light' | 'dark';
+export type CaptchaWidgetSize = 'normal' | 'compact' | 'flexible';
+
+/** 管理端在 /admin/captcha-providers 统一调控的控件外观（公开项，经 secure-captcha-config 下发）。 */
+export interface CaptchaWidgetAppearance {
+  theme: CaptchaWidgetTheme;
+  size: CaptchaWidgetSize;
+  language: string;
+  showProviderLabel: boolean;
+}
+
+export const DEFAULT_CAPTCHA_WIDGET_APPEARANCE: CaptchaWidgetAppearance = {
+  theme: 'auto',
+  size: 'normal',
+  language: 'auto',
+  showProviderLabel: true,
+};
+
+const WIDGET_THEMES: readonly CaptchaWidgetTheme[] = ['auto', 'light', 'dark'];
+const WIDGET_SIZES: readonly CaptchaWidgetSize[] = ['normal', 'compact', 'flexible'];
+const LANGUAGE_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+/** 防御性归一化：后端已校验，前端再兜一层，避免坏配置把控件渲染成空白。 */
+export function normalizeCaptchaWidgetAppearance(value: unknown): CaptchaWidgetAppearance {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const theme = WIDGET_THEMES.includes(source.theme as CaptchaWidgetTheme)
+    ? (source.theme as CaptchaWidgetTheme)
+    : DEFAULT_CAPTCHA_WIDGET_APPEARANCE.theme;
+  const size = WIDGET_SIZES.includes(source.size as CaptchaWidgetSize)
+    ? (source.size as CaptchaWidgetSize)
+    : DEFAULT_CAPTCHA_WIDGET_APPEARANCE.size;
+  const language =
+    typeof source.language === 'string' && source.language && source.language !== 'auto' && LANGUAGE_PATTERN.test(source.language)
+      ? source.language
+      : DEFAULT_CAPTCHA_WIDGET_APPEARANCE.language;
+
+  return {
+    theme,
+    size,
+    language,
+    showProviderLabel: source.showProviderLabel !== false,
+  };
+}
+
+/** 深色主题下给 Cap 宿主用的 CSS 变量（Cap 用 --cap-* 变量描述自己的外观）。 */
+export function getCapThemeStyle(theme: CaptchaWidgetTheme): Record<string, string> | undefined {
+  const prefersDark =
+    theme === 'dark' ||
+    (theme === 'auto' && typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-color-scheme: dark)').matches));
+  if (!prefersDark) return undefined;
+  return {
+    '--cap-background': '#1e1e2e',
+    '--cap-color': '#cdd6f4',
+    '--cap-border-color': '#45475a',
+    '--cap-invalid-border-color': '#f38ba8',
+    '--cap-checkbox-background': '#313244',
+    '--cap-checkbox-border-color': '#585b70',
+  };
+}

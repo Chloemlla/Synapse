@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { applyCapCreditsBranding, type CapCreditsBrandingDisposer } from '../utils/capCreditsBranding';
+import { getCapThemeStyle, type CaptchaWidgetTheme } from '../utils/captchaSelection';
 
 /**
  * trycap（Cap）控件封装。
@@ -24,6 +25,9 @@ interface CapWidgetProps {
   onVerify: (token: string) => void;
   onExpire?: () => void;
   onError?: (error: unknown) => void;
+  /** 管理端统一调控（/admin/captcha-providers → 组件外观）。 */
+  theme?: CaptchaWidgetTheme;
+  language?: string;
   'aria-label'?: string;
 }
 
@@ -50,6 +54,8 @@ const CapWidget = ({
   onVerify,
   onExpire,
   onError,
+  theme = 'auto',
+  language,
   'aria-label': ariaLabel = 'trycap 人机验证',
   ref,
 }: CapWidgetInternalProps) => {
@@ -135,6 +141,8 @@ const CapWidget = ({
       // 尾斜杠是 Cap 端点约定的一部分，缺了会 404。
       element.setAttribute('data-cap-api-endpoint', `${apiEndpoint.replace(/\/+$/, '')}/${siteKey}/`);
       element.setAttribute('aria-label', ariaLabel);
+      // 文本语言由控件自己的 i18n 表决定（data-cap-lang），auto 时不设，跟随浏览器。
+      if (language && language !== 'auto') element.setAttribute('data-cap-lang', language);
       element.addEventListener('solve', (event: Event) => {
         if (cancelled) return;
         const detail = (event as CustomEvent<{ token?: string }>).detail;
@@ -178,7 +186,7 @@ const CapWidget = ({
       elementRef.current = null;
       container.replaceChildren();
     };
-  }, [apiEndpoint, siteKey, ariaLabel, loadScript, resetToken]);
+  }, [apiEndpoint, siteKey, ariaLabel, language, loadScript, resetToken]);
 
   useImperativeHandle(
     ref,
@@ -206,7 +214,17 @@ const CapWidget = ({
     [resetToken],
   );
 
-  return <div ref={containerRef} role="region" aria-label={ariaLabel} className="cap-widget-container" />;
+  return (
+    <div
+      ref={containerRef}
+      role="region"
+      aria-label={ariaLabel}
+      className="cap-widget-container"
+      // Cap 只用 --cap-* CSS 变量描述外观，自定义属性会继承进 shadow root；
+      // 深色主题在宿主上给出变量即可，无需侵入控件内部样式。
+      style={getCapThemeStyle(theme)}
+    />
+  );
 };
 
 CapWidget.displayName = 'CapWidget';

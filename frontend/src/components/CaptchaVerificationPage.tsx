@@ -76,6 +76,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   // 验证成功是终态：成功后面板会卸载控件，而第三方控件在卸载时可能自发派发「过期」事件
   // （Cap 的 disconnectedCallback 就会自己 reset 一次）。用 ref 记住终态，别让这类噪声把结果抹掉。
   const succeededRef = useRef(false);
+  // 控件加载失败时逐个排除，等于前端侧的故障转移（次数上限由管理端分配策略下发）。
+  const failedProvidersRef = useRef<CaptchaType[]>([]);
   const [fingerprint, setFingerprint] = useState('');
   // 每次重试换 key，强制三家组件里的任意一个重新挂载（等价于 reset）。
   const [widgetKey, setWidgetKey] = useState(0);
@@ -99,7 +101,9 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
     siteKey,
     apiEndpoint,
     enabled,
-  } = useSecureCaptchaSelection({ fingerprint });
+    widget,
+    failoverMaxAttempts,
+  } = useSecureCaptchaSelection({ fingerprint, scenario: 'standalone' });
 
   const providerMode = useMemo<ProviderMode | null>(() => {
     if (!captchaConfig || !enabled || !siteKey) return null;
@@ -189,13 +193,33 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   }, []);
 
   // 三家组件的 onError 签名不一（Turnstile 不传参，hCaptcha/trycap 传错误）：参数写成可选才能同时满足。
-  const handleChallengeError = useCallback((widgetError?: unknown) => {
-    console.error('人机验证组件错误:', widgetError);
-    setError('验证组件加载失败，请刷新页面重试');
-  }, []);
+  const handleChallengeError = useCallback(
+    (widgetError?: unknown) => {
+      console.error('人机验证组件错误:', widgetError);
+
+      const current = captchaConfig?.captchaType;
+      const attempted = failedProvidersRef.current;
+      const canRetry =
+        current !== undefined &&
+        !attempted.includes(current) &&
+        attempted.length + 1 < Math.max(1, failoverMaxAttempts);
+
+      if (canRetry) {
+        failedProvidersRef.current = [...attempted, current];
+        setError('');
+        setVerificationResult(null);
+        regenerateSelection({ exclude: failedProvidersRef.current });
+        return;
+      }
+
+      setError('验证组件加载失败，请刷新页面重试');
+    },
+    [captchaConfig?.captchaType, failoverMaxAttempts, regenerateSelection],
+  );
 
   const handleRetry = useCallback(() => {
     succeededRef.current = false;
+    failedProvidersRef.current = [];
     setError('');
     setVerificationResult(null);
     setWidgetKey((value) => value + 1);
@@ -203,6 +227,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
 
   const handleReselect = useCallback(() => {
     succeededRef.current = false;
+    failedProvidersRef.current = [];
     setError('');
     setVerificationResult(null);
     setWidgetKey((value) => value + 1);
@@ -251,7 +276,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
             <FaShieldAlt className="text-xl sm:text-2xl" />
           </m.div>
           <div className="mb-3 flex justify-center">
-            <InfoBadge>{providerLabel}</InfoBadge>
+            <InfoBadge>{widget.showProviderLabel ? providerLabel : '安全校验'}</InfoBadge>
           </div>
           <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-2">{title}</h1>
           <p className="text-sm leading-6 text-slate-600">{description}</p>
@@ -278,6 +303,9 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
                   <TurnstileWidget
                     key={widgetKey}
                     siteKey={siteKey}
+                    theme={widget.theme}
+                    language={widget.language}
+                    size={widget.size}
                     onVerify={handleChallengeToken}
                     onExpire={handleChallengeExpire}
                     onError={handleChallengeError}
@@ -287,6 +315,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
                     key={widgetKey}
                     siteKey={siteKey}
                     apiEndpoint={apiEndpoint || ''}
+                    theme={widget.theme}
+                    language={widget.language}
                     onVerify={handleChallengeToken}
                     onExpire={handleChallengeExpire}
                     onError={handleChallengeError}
@@ -295,10 +325,12 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
                   <HCaptchaWidget
                     key={widgetKey}
                     siteKey={siteKey}
+                    theme={widget.theme}
+                    language={widget.language}
                     onVerify={handleChallengeToken}
                     onExpire={handleChallengeExpire}
                     onError={handleChallengeError}
-                    size="normal"
+                    size={widget.size}
                   />
                 )}
               </Suspense>
@@ -387,9 +419,11 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
                       </div>
                     )}
 
-                    <p className="mt-3 text-xs text-slate-500">
-                      本次验证方式: {providerLabel}
-                    </p>
+                    {widget.showProviderLabel && (
+                      <p className="mt-3 text-xs text-slate-500">
+                        本次验证方式: {providerLabel}
+                      </p>
+                    )}
                   </div>
                 </div>
               </m.div>
@@ -460,11 +494,13 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
         </div>
 
         {/* 底部信息 */}
-        <div className="mt-8 pt-6 border-t border-slate-200">
-          <p className="text-xs text-slate-500 text-center">
-            此验证由 {providerLabel} 提供技术支持
-          </p>
-        </div>
+        {widget.showProviderLabel && (
+          <div className="mt-8 pt-6 border-t border-slate-200">
+            <p className="text-xs text-slate-500 text-center">
+              此验证由 {providerLabel} 提供技术支持
+            </p>
+          </div>
+        )}
           </InfoPanel>
         </m.div>
       </InfoQueryShell>
