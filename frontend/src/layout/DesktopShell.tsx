@@ -1,5 +1,7 @@
+import { Suspense, lazy, useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode, Ref } from 'react';
 import { useLocation } from 'react-router-dom';
+import { FaSearch } from 'react-icons/fa';
 
 import {
   SidebarInset,
@@ -13,6 +15,11 @@ import { checkIsActive, isNavLink } from './url-utils';
 import { AppSidebar } from './app-sidebar';
 import { getSidebarDefaultOpen } from './cookies';
 import type { NavGroup } from './types';
+
+// 命令面板只在管理员工作区里才需要 ⇒ 懒加载，普通用户不进这个 chunk。
+const AdminCommandPalette = lazy(
+  () => import('@/components/admin/AdminCommandPalette'),
+);
 
 type DesktopShellProps = {
   children: ReactNode;
@@ -59,6 +66,25 @@ export default function DesktopShell({
     Boolean(viewState.view),
   );
 
+  const isAdminView = viewState.view?.id === 'admin';
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // ⌘/Ctrl + K：管理员随时唤起模块搜索；非管理员工作区不注册监听，也不挂载面板。
+  useEffect(() => {
+    if (!isAdminView) {
+      setPaletteOpen(false);
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAdminView]);
+
   return (
     <SidebarProvider
       defaultOpen={getSidebarDefaultOpen()}
@@ -95,6 +121,25 @@ export default function DesktopShell({
             <div className='min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-slate-800'>
               {headerLabel}
             </div>
+            {isAdminView ? (
+              <button
+                type='button'
+                onClick={() => setPaletteOpen(true)}
+                title='搜索管理模块（⌘/Ctrl + K）'
+                aria-label='搜索管理模块'
+                className={cn(
+                  'ml-2 hidden shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5',
+                  'text-xs font-medium text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-700 sm:flex',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2',
+                )}
+              >
+                <FaSearch className='size-3' aria-hidden='true' />
+                <span>搜索模块</span>
+                <kbd className='rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-semibold text-slate-400'>
+                  ⌘K
+                </kbd>
+              </button>
+            ) : null}
             <div className='ml-auto flex shrink-0 items-center gap-2'>{headerEnd}</div>
           </header>
           <div
@@ -108,6 +153,16 @@ export default function DesktopShell({
           </div>
         </SidebarInset>
       </div>
+
+      {isAdminView ? (
+        <Suspense fallback={null}>
+          <AdminCommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            groups={viewState.navGroups}
+          />
+        </Suspense>
+      ) : null}
     </SidebarProvider>
   );
 }
