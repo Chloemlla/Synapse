@@ -40,7 +40,7 @@ class FBIWantedAPI {
     return response.json();
   }
 
-  // ===== 公开API（无需认证） =====
+  // ===== 通缉犯数据 API（登录后可用） =====
 
   /**
    * 获取公开通缉犯列表
@@ -54,7 +54,7 @@ class FBIWantedAPI {
     });
 
     const response = await fetchWithTimeout(`${API_BASE}/api/fbi-wanted/public/list?${queryParams}`, {
-      credentials: 'omit',
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
       },
@@ -72,7 +72,7 @@ class FBIWantedAPI {
    */
   async getPublicById(id: string): Promise<FBIApiResponse<FBIWanted>> {
     const response = await fetchWithTimeout(`${API_BASE}/api/fbi-wanted/public/${id}`, {
-      credentials: 'omit',
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
       },
@@ -90,7 +90,7 @@ class FBIWantedAPI {
    */
   async getPublicStatistics(): Promise<FBIApiResponse<FBIStatistics>> {
     const response = await fetchWithTimeout(`${API_BASE}/api/fbi-wanted/public/statistics`, {
-      credentials: 'omit',
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
       },

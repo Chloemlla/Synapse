@@ -25,17 +25,27 @@ const participationLimiter = createLimiter({
 
 // 公开接口 - 无需认证（已限流）
 // 涉及数据库读取：区块链数据
-router.get("/blockchain", lotteryLimiter, lotteryController.getBlockchainData.bind(lotteryController));
+router.get("/blockchain", lotteryLimiter, authenticateToken, lotteryController.getBlockchainData.bind(lotteryController));
 // 涉及数据库读取：所有抽奖轮次
-router.get("/rounds", lotteryLimiter, lotteryController.getLotteryRounds.bind(lotteryController));
+router.get("/rounds", lotteryLimiter, authenticateToken, lotteryController.getLotteryRounds.bind(lotteryController));
 // 涉及数据库读取：活跃轮次
-router.get("/rounds/active", lotteryLimiter, lotteryController.getActiveRounds.bind(lotteryController));
+router.get(
+  "/rounds/active",
+  lotteryLimiter,
+  authenticateToken,
+  lotteryController.getActiveRounds.bind(lotteryController),
+);
 // 涉及数据库读取：单轮详情
-router.get("/rounds/:roundId", lotteryLimiter, lotteryController.getRoundDetails.bind(lotteryController));
+router.get(
+  "/rounds/:roundId",
+  lotteryLimiter,
+  authenticateToken,
+  lotteryController.getRoundDetails.bind(lotteryController),
+);
 // 涉及数据库读取：排行榜
-router.get("/leaderboard", lotteryLimiter, lotteryController.getLeaderboard.bind(lotteryController));
+router.get("/leaderboard", lotteryLimiter, authenticateToken, lotteryController.getLeaderboard.bind(lotteryController));
 // 涉及数据库读取：统计信息
-router.get("/statistics", lotteryLimiter, lotteryController.getStatistics.bind(lotteryController));
+router.get("/statistics", lotteryLimiter, authenticateToken, lotteryController.getStatistics.bind(lotteryController));
 
 // 需要认证的接口（已限流）
 // 涉及数据库读取：用户抽奖记录

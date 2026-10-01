@@ -689,10 +689,10 @@ const App: React.FC = () => {
   const renderAppRoutes = React.useCallback(
     () => (
       <>
-        <Route path="/legacy-api-choice" element={renderAnimatedRoute(<LegacyApiChoicePage />)} />
+        <Route path="/legacy-api-choice" element={renderProtectedRoute(<LegacyApiChoicePage />)} />
         <Route path="/api-docs" element={renderAdminRoute(<ApiDocs />)} />
         <Route path="/policy" element={renderAnimatedRoute(<PolicyPage />)} />
-        <Route path="/fbi-wanted" element={renderAnimatedRoute(<FBIWantedPublic />)} />
+        <Route path="/fbi-wanted" element={renderProtectedRoute(<FBIWantedPublic />)} />
         <Route path="/welcome" element={renderAnimatedRoute(<WelcomePage />)} />
         <Route path="/login" element={renderAnimatedRoute(<LoginPage />)} />
         <Route path="/register" element={renderAnimatedRoute(<RegisterPage />)} />
@@ -703,13 +703,14 @@ const App: React.FC = () => {
         <Route path="/forgot-password" element={renderAnimatedRoute(<ForgotPasswordPage />)} />
         <Route path="/reset-password" element={renderAnimatedRoute(<ResetPasswordLinkPage />)} />
         <Route path="/verify-email" element={renderAnimatedRoute(<EmailVerifyPage />)} />
-        <Route path="/" element={renderAnimatedRoute(<HomeHub />)} />
+        {/* 首页是会员功能入口：未登录访客只允许 /articles 与「实用工具」组（navConfig.ts 的 tools 分组），其余一律回登录 */}
+        <Route path="/" element={renderProtectedRoute(<HomeHub />)} />
         {/* TTS:仅登录用户可用(后端同样强制);闸门是为了不给访客渲染一个必然 401 的表单 */}
         <Route path="/tts" element={renderProtectedRoute(<TtsPage />)} />
         {/* 语音转文本:普通登录用户可用的核心功能(后端 /api/transcribe) */}
         <Route path="/transcribe" element={renderProtectedRoute(<SpeechToTextPage />)} />
-        <Route path="/lottery" element={renderAnimatedRoute(<LotteryPage />)} />
-        <Route path="/anti-counterfeit" element={renderAnimatedRoute(<AntiCounterfeitPage />)} />
+        <Route path="/lottery" element={renderProtectedRoute(<LotteryPage />)} />
+        <Route path="/anti-counterfeit" element={renderProtectedRoute(<AntiCounterfeitPage />)} />
         {/* Static admin routes first (higher specificity than /admin/:module) */}
         <Route path="/admin/lottery" element={renderAdminRoute(<SuperAdminGuard><LotteryAdmin /></SuperAdminGuard>)} />
         <Route path="/admin/users" element={renderAdminRoute(<UserManagement />)} />
@@ -721,15 +722,15 @@ const App: React.FC = () => {
         <Route path="/admin/:module" element={renderAdminRoute(<AdminModulePage />)} />
         <Route path="/nexai-security" element={renderAdminRoute(<NexAISecurityDashboard />)} />
         <Route path="/github-billing" element={renderAdminRoute(<GitHubBillingDashboard />)} />
-        <Route path="/logshare" element={renderAnimatedRoute(<LogShare />)} />
+        <Route path="/logshare" element={renderProtectedRoute(<LogShare />)} />
         <Route path="/case-converter" element={renderAnimatedRoute(<CaseConverter />)} />
         <Route path="/word-count" element={renderAnimatedRoute(<WordCountPageSimple />)} />
         <Route path="/age-calculator" element={renderAnimatedRoute(<AgeCalculatorPage />)} />
         <Route path="/vt-ratios" element={renderAnimatedRoute(<VtRatioExplorer />)} />
         <Route path="/email-sender" element={renderAdminRoute(<SuperAdminGuard><EmailSender /></SuperAdminGuard>)} />
-        <Route path="/profile" element={renderAnimatedRoute(<UserProfile />)} />
+        <Route path="/profile" element={renderProtectedRoute(<UserProfile />)} />
         <Route path="/outemail" element={renderAdminRoute(<OutEmail />)} />
-        <Route path="/support" element={renderAnimatedRoute(<TicketSystem />)} />
+        <Route path="/support" element={renderProtectedRoute(<TicketSystem />)} />
         <Route path="/modlist" element={renderAdminRoute(<ModListPage />)} />
         <Route path="/smart-human-check" element={renderAdminRoute(<SmartHumanCheckTestPage />)} />
         <Route path="/notification-test" element={renderAdminRoute(<NotificationTestPage />)} />
@@ -740,12 +741,12 @@ const App: React.FC = () => {
         <Route path="/artifacts/:shortId" element={renderAnimatedRoute(<ArtifactSharePage />)} />
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
-        <Route path="/tiger-adventure" element={renderAnimatedRoute(<TigerAdventure />)} />
-        <Route path="/coin-flip" element={renderAnimatedRoute(<CoinFlip />)} />
+        <Route path="/tiger-adventure" element={renderProtectedRoute(<TigerAdventure />)} />
+        <Route path="/coin-flip" element={renderProtectedRoute(<CoinFlip />)} />
         <Route path="/markdown-export" element={renderAnimatedRoute(<MarkdownExportPage />)} />
         <Route path="/articles" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
         <Route path="/articles/:slug" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
-        <Route path="/campus-emergency" element={renderAnimatedRoute(<CampusEmergencyPage />)} />
+        <Route path="/campus-emergency" element={renderProtectedRoute(<CampusEmergencyPage />)} />
         <Route path="/tamper-detection-demo" element={renderAdminRoute(<TamperDetectionDemo />)} />
         {/* 演示中心仅对管理员开放（G9-04：navConfig 里位于 isAdmin 分支，路由表统一守卫） */}
         <Route path="/demo" element={renderAdminRoute(<DemoHub />)} />
@@ -753,8 +754,8 @@ const App: React.FC = () => {
         <Route path="/demo/meditation" element={renderAdminRoute(<MeditationAppDemo />)} />
         <Route path="/demo/music" element={renderAdminRoute(<MusicPlayerDemo />)} />
         <Route path="/demo/finance" element={renderAdminRoute(<FinanceAppDemo />)} />
-        <Route path="/store" element={renderAnimatedRoute(<ResourceStoreList />)} />
-        <Route path="/store/resources/:id" element={renderAnimatedRoute(<ResourceStoreDetail />)} />
+        <Route path="/store" element={renderProtectedRoute(<ResourceStoreList />)} />
+        <Route path="/store/resources/:id" element={renderProtectedRoute(<ResourceStoreDetail />)} />
         <Route path="/public-shortlink" element={renderAnimatedRoute(<PublicShortLinkCreator />)} />
         <Route path="*" element={renderAnimatedRoute(<NotFoundPage path={location.pathname} />)} />
       </>

@@ -1,7 +1,7 @@
 import express from "express";
 import { coinFlipController } from "../controllers/coinFlipController";
 import { authenticateAdmin } from "../middleware/auth";
-import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
+import { authenticateToken } from "../middleware/authenticateToken";
 import { createLimiter } from "../middleware/routeLimiters";
 
 const router = express.Router();
@@ -23,11 +23,11 @@ const coinFlipAdminLimiter = createLimiter({
   message: "管理员查看过于频繁，请稍后再试",
 });
 
-// 公开接口：抛硬币（登录用户可选，登录后记录身份）
-router.post("/flip", coinFlipLimiter, optionalAuthenticateToken, coinFlipController.flip.bind(coinFlipController));
+// 需登录：抛硬币（身份从会话取，不再接受匿名投掷）
+router.post("/flip", coinFlipLimiter, authenticateToken, coinFlipController.flip.bind(coinFlipController));
 
-// 公开接口：按唯一结果 ID 校验单次结果
-router.get("/results/:resultId", coinFlipLimiter, coinFlipController.getResult.bind(coinFlipController));
+// 需登录：按唯一结果 ID 校验单次结果
+router.get("/results/:resultId", coinFlipLimiter, authenticateToken, coinFlipController.getResult.bind(coinFlipController));
 
 // 管理员接口：分页查看全部结果
 router.get("/results", coinFlipAdminLimiter, authenticateAdmin, coinFlipController.listResults.bind(coinFlipController));

@@ -31,9 +31,9 @@ const publicLimiter = createLimiter({
 });
 
 // 公开API - 使用 /public 前缀明确区分
-router.get("/public/list", publicLimiter, fbiWantedController.getAllWanted);
-router.get("/public/statistics", publicLimiter, fbiWantedController.getStatistics);
-router.get("/public/:id", publicLimiter, fbiWantedController.getWantedById);
+router.get("/public/list", publicLimiter, authenticateToken, fbiWantedController.getAllWanted);
+router.get("/public/statistics", publicLimiter, authenticateToken, fbiWantedController.getStatistics);
+router.get("/public/:id", publicLimiter, authenticateToken, fbiWantedController.getWantedById);
 
 // ===== 管理员路由（需要认证+管理员权限） =====
 
