@@ -253,8 +253,11 @@ describe("selectCaptchaProvider", () => {
   it("多候选时按权重选中 trycap 并带上实例地址", async () => {
     setProviderConfig({
       keys: ALL_KEYS,
+      // 三家都在线：只有 trycap 有权重，随机源取下界 0 时必然落到权重区间内的它。
+      // （未写进 settings 的供应商默认 weight 50 且在线，所以必须显式补上 hcaptcha，否则 0 会先命中它。）
       settings: [
         { provider: "turnstile", enabled: true, weight: 0 },
+        { provider: "hcaptcha", enabled: true, weight: 0 },
         { provider: "trycap", enabled: true, weight: 100 },
       ],
     });
@@ -273,9 +276,11 @@ describe("selectCaptchaProvider", () => {
   it("权重全 0 时仍能选出在线候选（不死锁）", async () => {
     setProviderConfig({
       keys: ALL_KEYS,
+      // 只让这两家进候选（trycap 显式下线），权重全 0 → 退化为等概率，仍必须选出有人可下发。
       settings: [
         { provider: "turnstile", enabled: true, weight: 0 },
         { provider: "hcaptcha", enabled: true, weight: 0 },
+        { provider: "trycap", enabled: false, weight: 0 },
       ],
     });
 
