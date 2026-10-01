@@ -36,10 +36,12 @@ const heavyChunkNames = ["documents", "pdf", "mermaid", "katex", "charts", "fing
  */
 const firstScreenForbiddenName =
   /^(?:mermaid|katex|diagrams|pdf|charts|code-highlight|prism|markdown|docx|swagger|hugeicons)[.-]/;
-// 2026-10-01 第三轮（用户要求放宽）：CI 产物里 mermaid 仍被入口静态加载（1313.2 KiB gzip），
-// 先把 mermaid 记为例外（仍会打印 [allowed] 告警并计入首屏总量）；根因修好后应清空这一行。
-const firstScreenAllowedNamePatterns = [/^mermaid[.-]/];
-const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 1750) * 1024;
+// 2026-10-01 第三轮：mermaid 寄生的根因（rolldown 分组 includeDependenciesRecursively）已在
+// 40409ffb 修好，实测首屏闭包 1655.6 → **344.2 KiB gzip**（mermaid 完全离开入口），
+// 因此这里收回临时放宽：预算回到 800 KiB，例外列表清空。
+// 实测数据：CI run 36832134469，[perf-chunk] 显示 \0vite/preload-helper.js 已独立成 vite-runtime chunk。
+const firstScreenAllowedNamePatterns = [];
+const firstScreenMaxGzipBytes = Number(process.env.FRONTEND_FIRST_SCREEN_MAX_GZIP_KB || 800) * 1024;
 
 /**
  * 从 manifest 还原入口的静态 import 闭包（不含 dynamicImports）。
