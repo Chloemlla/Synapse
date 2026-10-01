@@ -74,6 +74,9 @@ type ProviderMode = 'turnstile' | 'hcaptcha' | 'trycap';
 
 const DEFAULT_FAILOVER_ATTEMPTS = 2;
 
+/** trycap 在报「验证已过期」前允许静默重挂的次数（Cap 控件挂载后会自己重新解题）。 */
+const TRY_CAP_REARM_LIMIT = 2;
+
 function providerModeOf(type: CaptchaType | null | undefined): ProviderMode | null {
   if (type === CaptchaType.TRYCAP) return 'trycap';
   if (type === CaptchaType.HCAPTCHA) return 'hcaptcha';
@@ -108,6 +111,10 @@ const ManagedCaptcha = ({
   // 并派发 reset 事件。若把这声噪声当真上报，就会变成「解出 → 显示过期 → 重挂 → 又自动解出」的循环。
   // 用 ref 记住终态（同步生效，不跟 setState 的异步调度）——与 CaptchaVerificationPage 同一套做法。
   const solvedRef = useRef(false);
+  // trycap 的静默重挂计数：Cap 控件在断连/重挂/内部重取挑战时都会自己 reset 并派发 reset，
+  // 这不是「用户令牌失效」。对 trycap 先静默换一张挑战（Cap 挂载后会自动解题），
+  // 连续超过上限仍拿不到新令牌才报错，避免真卡死时无声无息。
+  const tryCapRearmCountRef = useRef(0);
 
   useEffect(() => {
     if (fingerprintOverride) {
@@ -151,6 +158,7 @@ const ManagedCaptcha = ({
   const reset = useCallback(() => {
     failedProvidersRef.current = [];
     solvedRef.current = false;
+    tryCapRearmCountRef.current = 0;
     setSolved(false);
     setWidgetError('');
     setWidgetKey((value) => value + 1);
@@ -165,6 +173,7 @@ const ManagedCaptcha = ({
       if (!providerMode || !token) return;
       setWidgetError('');
       solvedRef.current = true;
+      tryCapRearmCountRef.current = 0;
       setSolved(true);
       onSolved?.({ token, provider: providerTypeOf(providerMode) });
     },
@@ -175,11 +184,23 @@ const ManagedCaptcha = ({
     // 成功之后控件会被卸载，卸载噪音产生的 reset 不得回滚已经拿到的令牌；
     // 真需要重新验证时走上层显式 reset()（它会把 solvedRef 置回 false）。
     if (solvedRef.current) return;
+
+    // trycap：reset 不是「用户令牌失效」的可靠信号（Cap 官方控件在断连、重挂、内部重取
+    // 挑战时都会自己 reset 一次），而且它的控件挂载后会自动重新解题。
+    // 所以这里先静默换一张挑战：不清掉页面持有的令牌、不弹「验证已过期」。
+    // 超时/失效令牌最终由后端校验拍板，页面拿到失败再走自己的 captchaRef.reset()。
+    if (providerMode === 'trycap' && tryCapRearmCountRef.current < TRY_CAP_REARM_LIMIT) {
+      tryCapRearmCountRef.current += 1;
+      setWidgetError('');
+      setWidgetKey((value) => value + 1);
+      return;
+    }
+
     setSolved(false);
     setWidgetError('验证已过期，请重新完成');
     setWidgetKey((value) => value + 1);
     onCleared?.();
-  }, [onCleared]);
+  }, [onCleared, providerMode]);
 
   /** 控件加载/解题失败 → 排除这一家，按管理端策略换下一家（上限 failoverMaxAttempts）。 */
   const handleWidgetError = useCallback(() => {
@@ -191,6 +212,7 @@ const ManagedCaptcha = ({
       attempted.length + 1 < attempts;
 
     solvedRef.current = false;
+    tryCapRearmCountRef.current = 0;
     setSolved(false);
     onCleared?.();
 

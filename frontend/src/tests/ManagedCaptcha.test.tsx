@@ -204,4 +204,45 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText('solve-trycap')).toBeNull();
   });
+
+  it('trycap 未解出时的过期事件按「静默重挂」处理：不清令牌、不弹过期提示', async () => {
+    const onCleared = vi.fn();
+    setSelection({
+      enabled: true,
+      siteKey: 'cap-site',
+      captchaConfig: { captchaType: 'trycap' },
+      apiEndpoint: 'https://cap.example.com',
+    });
+
+    render(<ManagedCaptcha onCleared={onCleared} />);
+
+    await screen.findByTestId('trycap-widget');
+    // 尚未解出就收到 reset：Cap 控件在重挂/内部重取挑战时就会这样，不能当成「页面令牌失效」。
+    lastWidgetProps.trycap?.onExpire?.();
+
+    await waitFor(() => expect(screen.getByTestId('trycap-widget')).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(screen.queryByText('人机验证通过')).toBeNull();
+  });
+
+  it('trycap 连续静默重挂超过上限后才提示过期（真卡死时不能无声无息）', async () => {
+    const onCleared = vi.fn();
+    setSelection({
+      enabled: true,
+      siteKey: 'cap-site',
+      captchaConfig: { captchaType: 'trycap' },
+      apiEndpoint: 'https://cap.example.com',
+    });
+
+    render(<ManagedCaptcha onCleared={onCleared} />);
+
+    await screen.findByTestId('trycap-widget');
+    for (let i = 0; i < 3; i += 1) {
+      lastWidgetProps.trycap?.onExpire?.();
+    }
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('验证已过期');
+    expect(onCleared).toHaveBeenCalled();
+  });
 });
