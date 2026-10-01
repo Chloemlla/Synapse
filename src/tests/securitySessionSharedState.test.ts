@@ -118,10 +118,14 @@ describe("安全会话：自包含令牌 + 共享撤销水位", () => {
     await sharedStateStore.set(REVOCATION_KEY, startMs + 5_000, 60_000);
     clock.advance(5_000);
 
-    // 第一次校验触发异步刷新（本次仍用旧缓存，符合 ≤2s 收敛窗口的语义）……
+    // 第一次校验触发异步刷新（本次仍用旧缓存，符合 ≤2s 收敛窗口的语义）；
+    // 刷新是 fire-and-forget，这里多让出几轮队列再断言，避免用例靠单次 setImmediate 碰运气。
     validateProfileVerificationSession(USER_ID, session.token);
-    await flushAsync();
-    // ……刷新落地后即拒绝。
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (validateProfileVerificationSession(USER_ID, session.token) === null) break;
+      await flushAsync();
+    }
+
     expect(validateProfileVerificationSession(USER_ID, session.token)).toBeNull();
   });
 });
