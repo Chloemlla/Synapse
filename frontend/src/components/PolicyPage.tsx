@@ -7,6 +7,7 @@ import {
   FaClock,
   FaCode,
   FaCopy,
+  FaDownload,
   FaEnvelope,
   FaExclamationTriangle,
   FaFileAlt,
@@ -20,6 +21,7 @@ import {
 import type {
   PolicyDocumentResponse,
 } from '../types/policy';
+import { fetchPolicyArchive } from '../api/policy';
 import { usePolicyDocument } from '../hooks/usePolicyDocument';
 import { searchPolicySections, type PolicySearchResult } from '../utils/policySearch';
 import { cn } from '../utils/cn';
@@ -111,6 +113,9 @@ const PolicyPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [readingScale, setReadingScale] = useState<ReadingScale>(readStoredScale);
+  // 条文存档下载的进行中状态与结果提示（成功/失败都说清楚，不弹全局通知）
+  const [archiving, setArchiving] = useState(false);
+  const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -203,6 +208,29 @@ const PolicyPage: React.FC = () => {
     [copyText],
   );
 
+  // 下载条文存档副本：用户可以把「我同意的那份文本」存到本地，并凭指纹与同意记录对账。
+  const handleDownloadArchive = useCallback(async () => {
+    setArchiving(true);
+    setArchiveNotice(null);
+    try {
+      const { filename, content } = await fetchPolicyArchive();
+      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setArchiveNotice(`已下载条文存档：${filename}`);
+    } catch (err) {
+      setArchiveNotice(resolveLoadError(err));
+    } finally {
+      setArchiving(false);
+    }
+  }, []);
+
   const highlightTones: InfoTone[] = useMemo(() => ['sky', 'emerald', 'rose'], []);
 
   const search: PolicySearchResult = useMemo(
@@ -256,6 +284,18 @@ const PolicyPage: React.FC = () => {
                   <FaPrint className="text-[12px]" /> 打印 / 另存为 PDF
                 </span>
               </InfoPrimaryButton>
+              <button
+                type="button"
+                className={studioSecondaryButtonClassName}
+                onClick={() => void handleDownloadArchive()}
+                disabled={archiving}
+                title="下载当前条文的 Markdown 存档副本（含版本与条文指纹，可与同意记录对账）"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <FaDownload className={cn('text-[12px]', archiving && 'animate-pulse')} />
+                  {archiving ? '正在生成存档…' : '下载条文存档 (.md)'}
+                </span>
+              </button>
               <button
                 type="button"
                 className={studioSecondaryButtonClassName}
@@ -344,6 +384,12 @@ const PolicyPage: React.FC = () => {
                       <FaCopy className="text-[11px]" /> 复制当前条文链接
                     </button>
                   </div>
+                  {archiveNotice && (
+                    <p className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600" role="status">
+                      <FaDownload className="mt-0.5 shrink-0 text-slate-400" />
+                      <span>{archiveNotice}</span>
+                    </p>
+                  )}
                 </div>
               </InfoPanel>
 
@@ -556,9 +602,11 @@ const PolicyPage: React.FC = () => {
                   <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-2">
                     {[
                       { label: '获取条文', value: policy.procedures.documentEndpoint },
+                      { label: '条文存档', value: policy.procedures.documentArchiveEndpoint },
                       { label: '获取版本', value: policy.procedures.versionEndpoint },
                       { label: '记录同意', value: policy.procedures.recordConsentEndpoint },
                       { label: '查询状态', value: policy.procedures.statusEndpoint },
+                      { label: '同意轨迹', value: policy.procedures.historyEndpoint },
                       { label: '查询同意', value: policy.procedures.checkConsentEndpoint },
                       { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
                     ].map((entry) => (
@@ -570,7 +618,8 @@ const PolicyPage: React.FC = () => {
                   </dl>
                   <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500">
                     <FaGlobe className="text-[10px]" />
-                    同意记录默认有效 {policy.procedures.consentValidityDays} 天，过期后需重新同意。
+                    同意记录默认有效 {policy.procedures.consentValidityDays} 天，过期后需重新同意；
+                    顶部「下载条文存档」与 API 里的 md 格式是同一份内容。
                   </p>
                 </div>
               </InfoPanel>

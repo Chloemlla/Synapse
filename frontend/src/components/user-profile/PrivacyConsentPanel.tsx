@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FaCheckCircle,
+  FaChevronDown,
   FaExclamationCircle,
   FaExclamationTriangle,
+  FaHistory,
   FaShieldAlt,
   FaSyncAlt,
   FaTrashAlt,
@@ -11,8 +13,11 @@ import {
 } from 'react-icons/fa';
 import {
   DeviceCredentialRequiredError,
+  fetchPolicyConsentHistory,
   fetchPolicyConsentStatus,
   revokePolicyConsent,
+  type PolicyConsentHistoryEntry,
+  type PolicyConsentHistoryState,
   type PolicyConsentStatus,
 } from '../../api/policy';
 import { getBackendErrorMessage } from '../../utils/backendError';
@@ -38,6 +43,14 @@ const SOURCE_LABELS: Record<string, string> = {
   login: '登录时同意',
   register: '注册时同意',
   feature: '功能使用时同意',
+};
+
+// 轨迹里每条记录的状态文案：与后端 entries[].state 一一对应
+const HISTORY_STATE_LABELS: Record<PolicyConsentHistoryState, { label: string; className: string }> = {
+  active: { label: '有效', className: 'bg-emerald-100 text-emerald-700' },
+  expired: { label: '已过期', className: 'bg-slate-100 text-slate-600' },
+  revoked: { label: '已撤回', className: 'bg-rose-100 text-rose-700' },
+  superseded: { label: '属于旧版本', className: 'bg-amber-100 text-amber-700' },
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -128,6 +141,21 @@ const PrivacyConsentPanel: React.FC = () => {
   // 本浏览器拿不到该设备的同意凭据（换设备、清了站点数据，或从未在此同意过）。
   // 这是空状态，不是故障，不该渲染成红色错误。
   const [credentialMissing, setCredentialMissing] = useState(false);
+  // 同意轨迹（历次同意与撤回）：单独加载，失败不影响状态卡片的展示
+  const [history, setHistory] = useState<PolicyConsentHistoryEntry[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      setHistory(await fetchPolicyConsentHistory(undefined, 10));
+    } catch {
+      // 轨迹是辅助信息：拿不到就不展示（状态卡片已经能说明当下情况），不报错打断用户
+      setHistory(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
@@ -150,7 +178,8 @@ const PrivacyConsentPanel: React.FC = () => {
 
   useEffect(() => {
     void loadStatus();
-  }, [loadStatus]);
+    void loadHistory();
+  }, [loadStatus, loadHistory]);
 
   const handleRevoke = async (purge: boolean) => {
     if (purge) setPurging(true);
@@ -168,6 +197,7 @@ const PrivacyConsentPanel: React.FC = () => {
       // 处理成功后无条件重查：提示语之外，状态标签也必须反映服务端的真实结果。
       // 放在成功分支里，失败时的错误文案才不会被 loadStatus 开头的 setError(null) 抹掉。
       await loadStatus();
+      await loadHistory();
     } catch (actionError) {
       setConfirming(null);
       setError(describeError(actionError, purge ? '删除同意记录失败，请稍后重试' : '撤回同意失败，请稍后重试'));
@@ -445,6 +475,55 @@ const PrivacyConsentPanel: React.FC = () => {
           </div>
         </div>
       ) : null}
+
+      {history && history.length > 0 && (
+        <details className="group mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 sm:px-4">
+          <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600 transition hover:text-slate-800">
+            <FaHistory className="text-slate-400" />
+            本设备同意轨迹（最近 {history.length} 条）
+            <FaChevronDown className="ml-auto text-[10px] text-slate-400 transition-transform group-open:rotate-180" />
+          </summary>
+          <ol className="mt-3 space-y-2.5">
+            {history.map((entry) => {
+              const state = HISTORY_STATE_LABELS[entry.state] ?? HISTORY_STATE_LABELS.expired;
+              return (
+                <li
+                  key={entry.id}
+                  className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-[11px] leading-5 text-slate-600"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold', state.className)}>
+                      {state.label}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">v{entry.version}</span>
+                    <span>{entry.recordedAt ? formatDateTime(entry.recordedAt) : '时间未记录'}</span>
+                    <span className="text-slate-400">·</span>
+                    <span>{sourceLabel(entry.source)}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>
+                      勾选：{entry.agreementsComplete ? '四份齐全' : `缺 ${entry.missingAgreements.length} 份`}
+                    </span>
+                    <span className="text-slate-400">·</span>
+                    <span title={entry.consentDocumentHash ?? '早期记录没有条文指纹'}>
+                      条文指纹：{entry.documentHashMatchesCurrent ? '与当前一致' : '与当前不一致'}
+                    </span>
+                    {entry.revokedAt && (
+                      <>
+                        <span className="text-slate-400">·</span>
+                        <span className="text-rose-600">撤回于 {formatDateTime(entry.revokedAt)}</span>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="mt-2 text-[10px] leading-4 text-slate-400">
+            {historyLoading ? '正在刷新轨迹…' : '轨迹由服务端按设备指纹记录，最多展示最近 10 条。'}
+          </p>
+        </details>
+      )}
     </section>
   );
 };

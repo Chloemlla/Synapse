@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, apiWithRetry } from './api';
 import { getFingerprint } from '../utils/fingerprint';
 import { isPolicyAgreementSetComplete, missingPolicyAgreements } from '../utils/policyConsent';
 
@@ -81,6 +81,34 @@ interface RevokePolicyConsentResponse {
   purged?: boolean;
 }
 
+/** 轨迹里一条记录的状态：当前有效 / 已过期 / 已撤回 / 属于旧版本。 */
+export type PolicyConsentHistoryState = 'active' | 'expired' | 'revoked' | 'superseded';
+
+export interface PolicyConsentHistoryEntry {
+  id: string;
+  version: string;
+  state: PolicyConsentHistoryState;
+  recordedAt: string | null;
+  expiresAt: string | null;
+  source?: string;
+  agreements: string[];
+  agreementsComplete: boolean;
+  missingAgreements: string[];
+  consentDocumentHash?: string;
+  /** 该条记录的条文指纹是否与当前条文一致 */
+  documentHashMatchesCurrent: boolean;
+  revokedAt: string | null;
+  revokedReason?: string;
+}
+
+interface PolicyHistoryResponse {
+  success: boolean;
+  currentVersion?: string;
+  documentHash?: string;
+  limit?: number;
+  entries?: PolicyConsentHistoryEntry[];
+}
+
 export interface RevokePolicyConsentResult {
   revokedCount: number;
   /** 本次是否真的改动了有效记录（false = 本来就无需撤回） */
@@ -146,6 +174,12 @@ export async function recordPolicyConsent(fingerprintInput?: string): Promise<Re
   };
 }
 
+const readHeader = (headers: unknown, name: string): string => {
+  if (!headers || typeof headers !== 'object') return '';
+  const value = (headers as Record<string, unknown>)[name];
+  return value === undefined || value === null ? '' : String(value);
+};
+
 const toAgreements = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
@@ -201,6 +235,51 @@ export async function fetchPolicyVersion(): Promise<{ version: string; validityD
     throw new Error('无法获取当前政策版本，请稍后重试');
   }
   return { version, validityDays: data.validityDays, documentHash: data.documentHash };
+}
+
+/**
+ * 本设备的同意轨迹（GET /api/policy/history）。
+ *
+ * 只对持有该设备同意凭据的浏览器开放；没有凭据时抛 DeviceCredentialRequiredError。
+ * 返回的每一条都带状态（active/expired/revoked/superseded）与条文指纹是否与当前一致，
+ * 用户据此可以自行核对「我同意过几次、分别同意的是哪份文本」。
+ */
+export async function fetchPolicyConsentHistory(
+  fingerprintInput?: string,
+  limit = 10,
+): Promise<PolicyConsentHistoryEntry[]> {
+  const fingerprint = await resolveFingerprint(fingerprintInput);
+
+  try {
+    const { data } = await api.get<PolicyHistoryResponse>('/api/policy/history', {
+      headers: { 'X-Fingerprint': fingerprint },
+      params: { limit },
+    });
+    return Array.isArray(data.entries) ? data.entries : [];
+  } catch (error) {
+    throw toPolicyRequestError(error);
+  }
+}
+
+/**
+ * 下载条文存档副本（GET /api/policy/document?format=md）。
+ *
+ * 返回 Markdown 文本与建议文件名；落盘动作由调用方完成（便于同时提示错误）。
+ */
+export async function fetchPolicyArchive(): Promise<{ filename: string; content: string }> {
+  const response = await apiWithRetry.get<string>('/api/policy/document', {
+    params: { format: 'md' },
+    responseType: 'text',
+  });
+
+  const content = typeof response.data === 'string' ? response.data : String(response.data ?? '');
+  if (!content.trim()) {
+    throw new Error('条文存档内容为空，请稍后重试');
+  }
+
+  const disposition = readHeader(response.headers, 'content-disposition');
+  const matched = /filename="?([^";]+)"?/.exec(disposition);
+  return { filename: matched?.[1] || 'synapse-policy-archive.md', content };
 }
 
 /**

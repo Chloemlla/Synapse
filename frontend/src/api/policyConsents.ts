@@ -61,6 +61,8 @@ export interface PolicyConsentCollectionInfo {
 export interface PolicyConsentOverviewResponse {
   success: boolean;
   currentVersion: string;
+  /** 当前条文的指纹（sha256）：与每条记录的 documentHashPreview 对账的基准值 */
+  documentHash: string;
   validityDays: number;
   /** 当前版本要求逐项勾选的文件键名（POLICY_AGREEMENT_KEYS）。 */
   agreementKeys: string[];

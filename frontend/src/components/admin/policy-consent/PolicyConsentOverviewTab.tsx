@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FaCheckCircle,
+  FaCopy,
   FaExclamationTriangle,
   FaFileSignature,
   FaHourglassHalf,
@@ -8,9 +9,45 @@ import {
 } from 'react-icons/fa';
 import type { PolicyConsentOverviewResponse } from '@/api/policyConsents';
 import { InfoBadge, InfoMetricCard, InfoPanel } from '@/components/studioTheme';
+import { cn } from '@/lib/utils';
 import { formatCount } from '../ip-risk-log/format';
 import { SectionNote } from '../ip-risk-log/ui';
 import { sourceLabel } from './shared';
+
+/** 可复制的条文指纹：合规对账时经常要把它粘到工单/报告里。 */
+const CopyableHash: React.FC<{ value: string }> = ({ value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <code className="break-all font-mono text-[11px] text-slate-600">{value}</code>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        aria-label="复制条文指纹"
+        className={cn(
+          'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition',
+          copied
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-slate-200 bg-white/80 text-slate-500 hover:border-slate-300 hover:text-slate-700',
+        )}
+      >
+        {copied ? <FaCheckCircle className="text-[9px]" /> : <FaCopy className="text-[9px]" />}
+        {copied ? '已复制' : '复制'}
+      </button>
+    </span>
+  );
+};
 
 /** 政策同意面板的概览 tab（计数 / 版本与来源分布 / 趋势 / 集合索引）。 */
 const PolicyConsentOverviewTab: React.FC<{
@@ -183,6 +220,17 @@ const PolicyConsentOverviewTab: React.FC<{
               <InfoBadge tone="amber" className="text-[10px]">集合尚未创建</InfoBadge>
             )}
             <span className="text-xs text-slate-400">需勾选：{overview.agreementKeys.join(', ')}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 px-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">当前条文指纹</span>
+            {overview.documentHash ? (
+              <CopyableHash value={overview.documentHash} />
+            ) : (
+              <span className="text-xs text-slate-400">未提供</span>
+            )}
+            <span className="text-[11px] text-slate-400">
+              每条记录的「条文指纹」列是它的前 12 位；不一致说明那条同意对应的是另一份文本。
+            </span>
           </div>
           {overview.collection.indexes.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5 px-1">
