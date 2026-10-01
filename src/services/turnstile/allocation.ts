@@ -447,14 +447,16 @@ export function simulateAllocation(
   const excluded = options.exclude ?? [];
   const pool = candidates.filter((candidate) => !excluded.includes(candidate.provider));
   const counts = new Map<CaptchaProviderId, number>();
-  const bump = (provider: CaptchaProviderId | null | undefined) => {
+  const bump = (provider: CaptchaProviderId | undefined) => {
     if (!provider) return;
     counts.set(provider, (counts.get(provider) ?? 0) + 1);
   };
 
   for (let index = 0; index < draws; index += 1) {
     const fingerprint = options.fingerprint ?? `simulate-fp-${index % 1000}`;
-    bump(pickCandidate(pool, policy, strategy, options.scenario, fingerprint, options.nowMs, randomInt));
+    // pickCandidate 返回的是候选（T | null），计数的键必须是供应商 id —— 早期漏了 .provider，
+    // 靠放宽 bump 参数类型把编译错压下去，会让直方图按对象实例分桶（每次抽样都是新键，全为 1）。
+    bump(pickCandidate(pool, policy, strategy, options.scenario, fingerprint, options.nowMs, randomInt)?.provider);
   }
 
   const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
