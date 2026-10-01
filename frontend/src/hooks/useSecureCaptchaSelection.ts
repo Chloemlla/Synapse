@@ -8,6 +8,8 @@ interface SecureCaptchaConfig {
   config: {
     enabled: boolean;
     siteKey: string;
+    /** 仅 trycap 返回：Cap 实例地址（用于拼 data-cap-api-endpoint）。 */
+    apiEndpoint?: string;
   };
 }
 
@@ -52,8 +54,12 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       setLoading(true);
       setError(null);
 
-      // 生成加密的随机选择（后端会忽略选择结果，自行决定验证码类型）
-      const selection = generateSecureCaptchaSelection(fingerprint, [CaptchaType.TURNSTILE, CaptchaType.HCAPTCHA]);
+      // 生成加密的随机选择（后端会忽略选择结果，按上线开关 + 权重自行决定验证码类型）
+      const selection = generateSecureCaptchaSelection(fingerprint, [
+        CaptchaType.TURNSTILE,
+        CaptchaType.HCAPTCHA,
+        CaptchaType.TRYCAP,
+      ]);
       setEncryptedSelection(selection);
 
       // 向后端请求对应的配置
@@ -87,6 +93,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
         config: {
           enabled: Boolean(data?.config?.enabled),
           siteKey: typeof data?.config?.siteKey === 'string' ? data.config.siteKey : '',
+          apiEndpoint: typeof data?.config?.apiEndpoint === 'string' ? data.config.apiEndpoint : undefined,
         }
       });
 
@@ -165,7 +172,9 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
     // 便利方法
     isTurnstile: captchaConfig?.captchaType === CaptchaType.TURNSTILE,
     isHCaptcha: captchaConfig?.captchaType === CaptchaType.HCAPTCHA,
+    isTryCap: captchaConfig?.captchaType === CaptchaType.TRYCAP,
     siteKey: typeof captchaConfig?.config.siteKey === 'string' ? captchaConfig.config.siteKey : '',
+    apiEndpoint: captchaConfig?.config.apiEndpoint,
     enabled: captchaConfig?.config.enabled || false
   };
 };

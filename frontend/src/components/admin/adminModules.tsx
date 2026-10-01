@@ -51,6 +51,7 @@ export const ADMIN_MODULE_LOADERS = {
   shorturlmigration: () => import('@/components/ShortUrlMigrationManager'),
   command: () => import('@/components/CommandManager'),
   humancheck: () => import('@/components/SmartHumanCheckTraces'),
+  'captcha-providers': () => import('@/components/admin/CaptchaProviderAdmin'),
   logshare: () => import('@/components/LogShare'),
   'media-tool': () => import('@/components/admin/MediaToolAdmin'),
   fbiwanted: () => import('@/components/FBIWantedManager'),

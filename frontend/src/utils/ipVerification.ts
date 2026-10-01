@@ -4,7 +4,7 @@ import { isFirstVisitVerificationEnabled } from './firstVisitVerificationConfig'
 import { getApiBaseUrl } from '../api/api';
 import { fetchWithTimeout } from './fetchWithTimeout';
 
-export type IpCaptchaType = 'turnstile' | 'hcaptcha';
+export type IpCaptchaType = 'turnstile' | 'hcaptcha' | 'trycap';
 
 export interface IpVerificationSession {
   success: boolean;
@@ -14,7 +14,7 @@ export interface IpVerificationSession {
   ipAddress: string;
   token?: string;
   expiresAt?: string;
-  issuedBy?: 'auto' | 'turnstile' | 'hcaptcha';
+  issuedBy?: 'auto' | 'turnstile' | 'hcaptcha' | 'trycap';
   reason?: string;
   fraudScore?: number;
   riskFlags?: string[];
@@ -25,7 +25,7 @@ interface StoredIpVerificationToken {
   token: string;
   fingerprint: string;
   expiresAt: number;
-  issuedBy?: 'auto' | 'turnstile' | 'hcaptcha';
+  issuedBy?: 'auto' | 'turnstile' | 'hcaptcha' | 'trycap';
 }
 
 const STORAGE_KEY = 'chloemlla.com_ip_verification_token_v1';
@@ -123,7 +123,7 @@ function normalizeSessionPayload(payload: Partial<IpVerificationSession>, finger
     token: typeof payload.token === 'string' ? payload.token : undefined,
     expiresAt: typeof payload.expiresAt === 'string' ? payload.expiresAt : undefined,
     issuedBy:
-      payload.issuedBy === 'turnstile' || payload.issuedBy === 'hcaptcha' || payload.issuedBy === 'auto'
+      payload.issuedBy === 'turnstile' || payload.issuedBy === 'hcaptcha' || payload.issuedBy === 'trycap' || payload.issuedBy === 'auto'
         ? payload.issuedBy
         : undefined,
     reason: typeof payload.reason === 'string' ? payload.reason : undefined,

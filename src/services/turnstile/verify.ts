@@ -4,13 +4,29 @@ import { TempFingerprintModel } from "../../models/tempFingerprintModel";
 import logger from "../../utils/logger";
 import { mongoose } from "../mongoService";
 import { generateAccessToken } from "./accessToken";
-import { HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
+import { CAP_DEFAULT_API_ENDPOINT, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { isIpBanned, recordViolation } from "./ipBan";
-import { getHCaptchaKey, getTurnstileKey } from "./models";
+import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
 import { assessClientRisk, recordVerificationOutcome, translateTurnstileErrors } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
-import type { HCaptchaResponse, TurnstileResponse, TurnstileVerificationResult } from "./types";
+import type { CapVerifyResponse, HCaptchaResponse, TurnstileResponse, TurnstileVerificationResult } from "./types";
 import { validateFingerprint, validateIpAddress, validateToken } from "./validators";
+
+export type CaptchaVerificationType = "turnstile" | "hcaptcha" | "trycap";
+
+function captchaServiceLabel(captchaType: CaptchaVerificationType): string {
+  if (captchaType === "hcaptcha") return "hCaptcha";
+  if (captchaType === "trycap") return "trycap";
+  return "Turnstile";
+}
+
+/** 解析 trycap 的校验 URL：{endpoint}/{siteKey}/siteverify，endpoint 未配置时用默认实例。 */
+async function resolveCapVerifyUrl(): Promise<string | null> {
+  const [siteKey, endpoint] = await Promise.all([getCapKey("CAP_SITE_KEY"), getCapKey("CAP_API_ENDPOINT")]);
+  if (!siteKey) return null;
+  const base = (endpoint || CAP_DEFAULT_API_ENDPOINT).replace(/\/+$/, "");
+  return `${base}/${siteKey}/siteverify`;
+}
 
 export async function verifyToken(token: string, remoteIp?: string): Promise<boolean> {
   const traceId = generateUniqueTraceId();
@@ -171,7 +187,7 @@ export async function verifyTokenDetailed(
   remoteIp: string,
   userAgent?: string,
   fingerprint?: string,
-  captchaType: "turnstile" | "hcaptcha" = "turnstile",
+  captchaType: CaptchaVerificationType = "turnstile",
 ): Promise<TurnstileVerificationResult> {
   const timestamp = new Date().toISOString();
   const clientInfo = { ip: remoteIp, userAgent, fingerprint };
@@ -254,20 +270,24 @@ export async function verifyTokenDetailed(
     }
 
     let secretKey: string | null;
-    let verifyUrl: string;
+    let verifyUrl: string | null;
     let serviceName: string;
 
     if (captchaType === "hcaptcha") {
       secretKey = await getHCaptchaKey("HCAPTCHA_SECRET_KEY");
       verifyUrl = HCAPTCHA_VERIFY_URL;
       serviceName = "hCaptcha";
+    } else if (captchaType === "trycap") {
+      secretKey = await getCapKey("CAP_SECRET_KEY");
+      verifyUrl = await resolveCapVerifyUrl();
+      serviceName = "trycap";
     } else {
       secretKey = await getTurnstileKey("TURNSTILE_SECRET_KEY");
       verifyUrl = VERIFY_URL;
       serviceName = "Turnstile";
     }
 
-    if (!secretKey) {
+    if (!secretKey || !verifyUrl) {
       const riskAssessment = assessClientRisk(validatedIp, userAgent, fingerprint);
       recordVerificationOutcome(validatedIp, userAgent, false, new Date(), fingerprint);
 
@@ -304,22 +324,34 @@ export async function verifyTokenDetailed(
     formData.append("response", validatedToken);
     formData.append("remoteip", validatedIp);
 
-    const response = await axios.post<TurnstileResponse | HCaptchaResponse>(verifyUrl, formData, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      timeout: 10000,
-    });
+    // trycap（Cap Standalone）的 /siteverify 收 JSON；另两家收 form-urlencoded。
+    const response =
+      captchaType === "trycap"
+        ? await axios.post<CapVerifyResponse>(
+            verifyUrl,
+            { secret: secretKey, response: validatedToken },
+            { headers: { "Content-Type": "application/json" }, timeout: 10000 },
+          )
+        : await axios.post<TurnstileResponse | HCaptchaResponse>(verifyUrl, formData, {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            timeout: 10000,
+          });
 
     const result = response.data;
     const now = new Date();
+    // trycap 用 { success, error } 表达失败，这里归一到 error-codes 形状，后面的通用失败分支无需分叉。
+    const capError = captchaType === "trycap" ? (result as CapVerifyResponse).error : undefined;
+    const resultErrorCodes =
+      (result as TurnstileResponse | HCaptchaResponse)["error-codes"] || (capError ? [String(capError)] : []);
 
     if (!result.success) {
       const riskAssessment = assessClientRisk(validatedIp, userAgent, fingerprint);
 
-      const errorCodes = result["error-codes"] || [];
+      const errorCodes = resultErrorCodes;
       const errorMessages =
-        captchaType === "hcaptcha"
-          ? errorCodes.map((code) => `hCaptcha错误: ${code}`)
-          : translateTurnstileErrors(errorCodes);
+        captchaType === "turnstile"
+          ? translateTurnstileErrors(errorCodes)
+          : errorCodes.map((code) => `${captchaServiceLabel(captchaType)}错误: ${code}`);
 
       logger.warn(`${serviceName}验证失败 - 详细评分信息`, {
         ip: validatedIp,
@@ -350,7 +382,7 @@ export async function verifyTokenDetailed(
         success: false,
         reason: "verification_failed",
         errorCode: "VERIFICATION_FAILED",
-        errorMessage: `${serviceName}验证失败: ${result["error-codes"]?.join(", ") || "未知错误"}`,
+        errorMessage: `${serviceName}验证失败: ${resultErrorCodes.join(", ") || "未知错误"}`,
         fingerprint,
         riskLevel: riskAssessment?.riskLevel,
         riskScore: riskAssessment?.riskScore,
@@ -429,7 +461,7 @@ export async function verifyTokenDetailed(
       riskReasons: riskAssessment?.riskReasons,
     });
 
-    const requestUrl = captchaType === "hcaptcha" ? HCAPTCHA_VERIFY_URL : VERIFY_URL;
+    const requestUrl = captchaType === "hcaptcha" ? HCAPTCHA_VERIFY_URL : captchaType === "trycap" ? await resolveCapVerifyUrl() : VERIFY_URL;
     logger.error("CAPTCHA验证过程中发生错误", {
       error: error instanceof Error ? error.message : error,
       ip: remoteIp,
@@ -458,7 +490,7 @@ export async function verifyTempFingerprint(
   cfToken: string,
   remoteIp?: string,
   userAgent?: string,
-  captchaType: "turnstile" | "hcaptcha" = "turnstile",
+  captchaType: CaptchaVerificationType = "turnstile",
 ): Promise<{ success: boolean; accessToken?: string; details?: TurnstileVerificationResult; traceId?: string }> {
   const traceId = generateUniqueTraceId();
 
@@ -671,7 +703,7 @@ export async function verifyTempFingerprint(
       isValid = detailedResult.success;
 
       if (!isValid) {
-        logger.warn(`${captchaType === "hcaptcha" ? "hCaptcha" : "Turnstile"}详细验证失败`, {
+        logger.warn(`${captchaServiceLabel(captchaType)}详细验证失败`, {
           fingerprint: `${validatedFingerprint.substring(0, 8)}...`,
           ipAddress: validatedIp,
           reason: !detailedResult.success ? detailedResult.reason : "unknown",

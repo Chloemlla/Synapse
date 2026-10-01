@@ -1,6 +1,12 @@
 import logger from "../../utils/logger";
 import { isConnected, mongoose } from "../mongoService";
-import type { HCaptchaSettingDoc, TurnstileSettingDoc } from "./types";
+import type {
+  CapSettingDoc,
+  CaptchaProviderId,
+  CaptchaProviderSettingDoc,
+  HCaptchaSettingDoc,
+  TurnstileSettingDoc,
+} from "./types";
 
 type TurnstileKeyName = "TURNSTILE_SECRET_KEY" | "TURNSTILE_SITE_KEY";
 
@@ -32,6 +38,33 @@ export const TurnstileSettingModel =
 export const HCaptchaSettingModel =
   (mongoose.models.HCaptchaSetting as mongoose.Model<HCaptchaSettingDoc>) ||
   mongoose.model<HCaptchaSettingDoc>("HCaptchaSetting", HCaptchaSettingSchema);
+
+const CapSettingSchema = new mongoose.Schema<CapSettingDoc>(
+  {
+    key: { type: String, required: true },
+    value: { type: String, required: true },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { collection: "cap_settings" },
+);
+
+export const CapSettingModel =
+  (mongoose.models.CapSetting as mongoose.Model<CapSettingDoc>) ||
+  mongoose.model<CapSettingDoc>("CapSetting", CapSettingSchema);
+
+const CaptchaProviderSettingSchema = new mongoose.Schema<CaptchaProviderSettingDoc>(
+  {
+    provider: { type: String, required: true, unique: true },
+    enabled: { type: Boolean, default: true },
+    weight: { type: Number, default: 0 },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { collection: "captcha_provider_settings" },
+);
+
+export const CaptchaProviderSettingModel =
+  (mongoose.models.CaptchaProviderSetting as mongoose.Model<CaptchaProviderSettingDoc>) ||
+  mongoose.model<CaptchaProviderSettingDoc>("CaptchaProviderSetting", CaptchaProviderSettingSchema);
 
 export function invalidateTurnstileKeyCache(keyName?: TurnstileKeyName): void {
   if (keyName) {
@@ -87,6 +120,86 @@ export async function getHCaptchaKey(keyName: "HCAPTCHA_SECRET_KEY" | "HCAPTCHA_
 
   const envKey = process.env[keyName]?.trim();
   return envKey && envKey.length > 0 ? envKey : null;
+}
+
+type CapKeyName = "CAP_SITE_KEY" | "CAP_SECRET_KEY" | "CAP_API_ENDPOINT";
+
+const CAP_KEY_CACHE_TTL_MS = 60_000;
+const capKeyCache = new Map<CapKeyName, { value: string | null; expiresAt: number }>();
+
+export function invalidateCapKeyCache(keyName?: CapKeyName): void {
+  if (keyName) {
+    capKeyCache.delete(keyName);
+    return;
+  }
+  capKeyCache.clear();
+}
+
+/** Cap 配置与 Turnstile 同构：先读 Mongo，再回退环境变量，带 60s 缓存。 */
+export async function getCapKey(keyName: CapKeyName): Promise<string | null> {
+  const now = Date.now();
+  const cached = capKeyCache.get(keyName);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  let value: string | null = null;
+  try {
+    if (isConnected()) {
+      const doc = await CapSettingModel.findOne({ key: keyName }).lean().exec();
+      if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
+        value = doc.value.trim();
+      }
+    }
+  } catch (error) {
+    logger.error("获取Cap配置失败", { keyName, error: error instanceof Error ? error.message : String(error) });
+  }
+
+  if (!value) {
+    const envValue = process.env[keyName]?.trim();
+    value = envValue && envValue.length > 0 ? envValue : null;
+  }
+
+  capKeyCache.set(keyName, { value, expiresAt: now + CAP_KEY_CACHE_TTL_MS });
+  return value;
+}
+
+/** 读取全部供应商的调度配置（上线开关 + 权重）；缺失的供应商由调用方补默认值。 */
+export async function getCaptchaProviderSettingDocs(): Promise<CaptchaProviderSettingDoc[]> {
+  try {
+    if (!isConnected()) return [];
+    const docs = await CaptchaProviderSettingModel.find({}).lean().exec();
+    return docs.map((doc) => ({
+      provider: doc.provider as CaptchaProviderId,
+      enabled: doc.enabled !== false,
+      weight: typeof doc.weight === "number" && Number.isFinite(doc.weight) ? doc.weight : 0,
+      updatedAt: doc.updatedAt,
+    }));
+  } catch (error) {
+    logger.error("读取人机验证供应商调度配置失败", error);
+    return [];
+  }
+}
+
+export async function upsertCaptchaProviderSetting(
+  provider: CaptchaProviderId,
+  update: { enabled: boolean; weight: number },
+): Promise<boolean> {
+  try {
+    if (!isConnected()) {
+      logger.error("数据库连接不可用，无法更新人机验证供应商配置", { provider });
+      return false;
+    }
+    await CaptchaProviderSettingModel.findOneAndUpdate(
+      { provider },
+      { provider, enabled: update.enabled, weight: update.weight, updatedAt: new Date() },
+      { upsert: true, returnDocument: "after" },
+    );
+    return true;
+  } catch (error) {
+    logger.error("更新人机验证供应商配置失败", { provider, error });
+    return false;
+  }
 }
 
 const SHCTraceSchema = new mongoose.Schema(

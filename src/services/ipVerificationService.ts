@@ -649,7 +649,7 @@ export class IpVerificationService {
     ipAddressInput: string,
     captchaToken: string,
     userAgent?: string,
-    captchaType: "turnstile" | "hcaptcha" = "turnstile",
+    captchaType: "turnstile" | "hcaptcha" | "trycap" = "turnstile",
   ): Promise<IpVerificationSessionResult> {
     const fingerprint = normalizeFingerprint(fingerprintInput);
     const ipAddress = normalizeIpAddress(ipAddressInput);

@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { isAdminRole } from "../../middleware/auth";
 import { TurnstileService } from "../../services/turnstileService";
@@ -34,12 +33,16 @@ export async function getPublicConfig(_req: Request, res: Response) {
   try {
     const config = await TurnstileService.getConfig();
     const hcaptchaConfig = await TurnstileService.getHCaptchaConfig();
+    const capConfig = await TurnstileService.getCapConfig();
 
     res.json({
       enabled: config.enabled,
       siteKey: config.siteKey,
       hcaptchaEnabled: hcaptchaConfig.enabled,
       hcaptchaSiteKey: hcaptchaConfig.siteKey,
+      capEnabled: capConfig.enabled,
+      capSiteKey: capConfig.siteKey,
+      capApiEndpoint: capConfig.apiEndpoint,
     });
   } catch (error) {
     console.error("获取公共配置失败:", error);
@@ -82,49 +85,25 @@ export async function verifyTurnstileToken(req: Request, res: Response) {
 export async function secureCaptchaConfig(_req: Request, res: Response) {
   try {
     // G4-24: 该端点只返回验证码类型与公开 siteKey，无敏感信息。
-    // 删除自研 HMAC/AES（密钥全部由客户端值推导，零安全增益，纯安全剧场）与时间戳校验，
-    // 只保留按服务端配置随机选择验证码类型的逻辑。
-    let captchaType;
-    let config;
-
-    const turnstileConfig = await TurnstileService.getConfig();
-    const hcaptchaConfig = await TurnstileService.getHCaptchaConfig();
-
-    const candidates: Array<{ type: string; config: { enabled: boolean; siteKey: string | null } }> = [];
-    if (turnstileConfig.enabled && turnstileConfig.siteKey) {
-      candidates.push({
-        type: "turnstile",
-        config: { enabled: turnstileConfig.enabled, siteKey: turnstileConfig.siteKey },
-      });
-    }
-    if (hcaptchaConfig.enabled && hcaptchaConfig.siteKey) {
-      candidates.push({
-        type: "hcaptcha",
-        config: { enabled: hcaptchaConfig.enabled, siteKey: hcaptchaConfig.siteKey },
-      });
-    }
-
-    if (candidates.length === 0) {
-      captchaType = "turnstile";
-      config = { enabled: false, siteKey: null };
-    } else if (candidates.length === 1) {
-      captchaType = candidates[0].type;
-      config = candidates[0].config;
-    } else {
-      // G4-24: Node 18+ 始终提供 crypto.randomInt，删除回落到 Math.random 的永不可达死分支
-      const index = crypto.randomInt(0, candidates.length);
-      captchaType = candidates[index].type;
-      config = candidates[index].config;
-    }
+    // 选择逻辑已抽到 services/turnstile/providers（上线开关 + 相对权重），这里只负责组装响应。
+    const selection = await TurnstileService.selectCaptchaProvider();
 
     logger.debug("后端CAPTCHA选择", {
-      type: captchaType,
-      selectionMethod: candidates.length > 1 ? "random" : candidates.length === 1 ? "single-available" : "fallback-disabled",
-      configEnabled: config.enabled,
-      hasSiteKey: !!config.siteKey,
+      type: selection.provider,
+      selectionMethod: selection.reason,
+      configEnabled: selection.enabled,
+      hasSiteKey: !!selection.siteKey,
     });
 
-    res.json({ success: true, captchaType, config });
+    res.json({
+      success: true,
+      captchaType: selection.provider,
+      config: {
+        enabled: selection.enabled,
+        siteKey: selection.siteKey,
+        ...(selection.provider === "trycap" ? { apiEndpoint: selection.apiEndpoint } : {}),
+      },
+    });
   } catch (error) {
     logger.error("获取安全CAPTCHA配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });

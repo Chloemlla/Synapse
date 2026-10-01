@@ -24,6 +24,8 @@ const THIRD_PARTY_SCRIPT_HOSTS = [
   "https://*.cloudflare.com",
   "https://js.hcaptcha.com",
   "https://*.hcaptcha.com",
+  // trycap（Cap）：控件脚本与可选的 pako 回退包都从 jsdelivr 取。
+  "https://cdn.jsdelivr.net",
   "https://www.googletagmanager.com",
   "https://www.google-analytics.com",
   "https://analytics.google.com",
@@ -57,6 +59,8 @@ const PRODUCTION_CONNECT_HOSTS = [
   "https://*.hcaptcha.com",
   "https://challenges.cloudflare.com",
   "https://*.cloudflare.com",
+  // trycap：WASM 求解器从 jsdelivr 下载；challenge/redeem 走实例地址（*.chloemlla.com 已覆盖）。
+  "https://cdn.jsdelivr.net",
   "https://www.google-analytics.com",
   "https://analytics.google.com",
   "https://www.google.com",

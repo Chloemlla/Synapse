@@ -18,6 +18,7 @@ export const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   "USER_STORAGE_MODE",
   "TURNSTILE_SECRET_KEY",
   "HCAPTCHA_SECRET_KEY",
+  "CAP_SECRET_KEY",
   "RESEND_API_KEY",
 ]);
 

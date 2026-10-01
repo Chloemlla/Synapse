@@ -36,6 +36,17 @@ import {
   updateHCaptchaConfig,
   verifyHCaptcha,
 } from "../controllers/turnstile/hcaptchaHandlers";
+import {
+  deleteCapConfigHandler,
+  getCapConfigHandler,
+  updateCapConfigHandler,
+  verifyCap,
+} from "../controllers/turnstile/capHandlers";
+import {
+  getCaptchaProviders,
+  testCaptchaProvider,
+  updateCaptchaProviders,
+} from "../controllers/turnstile/providersHandlers";
 import { getSyncStatus, syncIpBans } from "../controllers/turnstile/syncHandlers";
 import {
   adminLimiter,
@@ -297,6 +308,143 @@ router.delete(
  *         description: 验证结果
  */
 router.post("/hcaptcha-verify", publicLimiter, verifyHCaptcha);
+
+/**
+ * @openapi
+ * /api/turnstile/providers:
+ *   get:
+ *     summary: 获取人机验证供应商调度配置
+ *     description: 返回三家人机验证供应商的上线状态、权重、归一化概率与凭据配置情况（需要管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 供应商列表
+ */
+router.get("/providers", adminLimiter, authenticateAdmin, getCaptchaProviders);
+
+/**
+ * @openapi
+ * /api/turnstile/providers:
+ *   put:
+ *     summary: 更新人机验证供应商调度配置
+ *     description: 批量设置各供应商的上线状态与相对权重，保存后立即生效（需要超级管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 更新结果
+ */
+router.put(
+  "/providers",
+  configLimiter,
+  authenticateSuperAdmin,
+  auditLog({
+    module: "system",
+    action: "system.captchaProvidersUpdate",
+    extractDetail: (req) => ({
+      providers: Array.isArray(req.body?.providers)
+        ? req.body.providers.map((item: { provider?: string; enabled?: boolean; weight?: number }) => ({
+            provider: item?.provider,
+            enabled: item?.enabled !== false,
+            weight: item?.weight,
+          }))
+        : [],
+    }),
+  }),
+  updateCaptchaProviders,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/providers/{provider}/test:
+ *   post:
+ *     summary: 人机验证供应商自检
+ *     description: 对指定供应商做一次不消耗验证码令牌的连通性/凭据检查（需要超级管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 自检结果
+ */
+router.post(
+  "/providers/:provider/test",
+  adminLimiter,
+  authenticateSuperAdmin,
+  auditLog({
+    module: "system",
+    action: "system.captchaProviderTest",
+    extractDetail: (req) => ({ provider: req.params.provider }),
+  }),
+  testCaptchaProvider,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/cap-config:
+ *   get:
+ *     summary: 获取 trycap（Cap）配置
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get("/cap-config", configLimiter, authenticateAdmin, getCapConfigHandler);
+
+/**
+ * @openapi
+ * /api/turnstile/cap-config:
+ *   post:
+ *     summary: 更新 trycap（Cap）配置
+ *     description: 支持 CAP_SITE_KEY / CAP_SECRET_KEY / CAP_API_ENDPOINT（需要超级管理员权限）
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ */
+router.post(
+  "/cap-config",
+  configLimiter,
+  authenticateSuperAdmin,
+  auditLog({ module: "system", action: "system.capConfigUpdate" }),
+  updateCapConfigHandler,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/cap-config/{key}:
+ *   delete:
+ *     summary: 删除 trycap（Cap）配置
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.delete(
+  "/cap-config/:key",
+  configLimiter,
+  authenticateSuperAdmin,
+  auditLog({
+    module: "system",
+    action: "system.capConfigDelete",
+    extractDetail: (req) => ({ key: req.params.key }),
+  }),
+  deleteCapConfigHandler,
+);
+
+/**
+ * @openapi
+ * /api/turnstile/cap-verify:
+ *   post:
+ *     summary: 验证 trycap（Cap）token
+ *     responses:
+ *       200:
+ *         description: 验证结果
+ */
+router.post("/cap-verify", publicLimiter, verifyCap);
 
 // IP 封禁同步（管理员）
 router.post(

@@ -75,3 +75,29 @@ export interface HCaptchaSettingDoc {
   value: string;
   updatedAt?: Date;
 }
+
+export interface CapSettingDoc {
+  key: string;
+  value: string;
+  updatedAt?: Date;
+}
+
+/** 人机验证供应商标识。前端仅需 siteKey，secret 只留在服务端。 */
+export type CaptchaProviderId = "turnstile" | "hcaptcha" | "trycap";
+
+/**
+ * 供应商调度配置（与凭据解耦）：enabled 是上线/下线开关，weight 是相对权重。
+ * 凭据仍存在各自的 *_settings 集合里，这里只管「用不用、用多少」。
+ */
+export interface CaptchaProviderSettingDoc {
+  provider: CaptchaProviderId;
+  enabled: boolean;
+  weight: number;
+  updatedAt?: Date;
+}
+
+/** Cap Standalone 的 /siteverify 响应（与 reCAPTCHA 同构）。 */
+export interface CapVerifyResponse {
+  success: boolean;
+  error?: string;
+}

@@ -503,6 +503,12 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            title: '人机验证供应商',
+            url: '/admin/captcha-providers',
+            icon: FaShieldAlt as IconType,
+            requiredRole: 'admin',
+          },
+          {
             title: '人机验证日志',
             url: '/admin/humancheck',
             icon: FaBug as IconType,
@@ -621,6 +627,7 @@ export const ADMIN_TAB_TO_PATH: Record<string, string> = {
   shorturlmigration: '/admin/shorturlmigration',
   command: '/admin/command',
   humancheck: '/admin/humancheck',
+  'captcha-providers': '/admin/captcha-providers',
   logshare: '/admin/logshare',
   'media-tool': '/admin/media-tool',
   fbiwanted: '/admin/fbiwanted',

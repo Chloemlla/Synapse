@@ -56,7 +56,7 @@ router.post("/complete", sessionLimiter, async (req, res) => {
   try {
     const fingerprint = typeof req.body?.fingerprint === "string" ? req.body.fingerprint : "";
     const captchaToken = typeof req.body?.captchaToken === "string" ? req.body.captchaToken : "";
-    const captchaType = req.body?.captchaType === "hcaptcha" ? "hcaptcha" : "turnstile";
+    const captchaType = ["hcaptcha", "trycap"].includes(req.body?.captchaType) ? req.body.captchaType : "turnstile";
 
     const result = await IpVerificationService.completeVerification(
       fingerprint,

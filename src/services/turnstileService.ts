@@ -1,8 +1,10 @@
 import * as accessToken from "./turnstile/accessToken";
+import * as cap from "./turnstile/cap";
 import * as config from "./turnstile/config";
 import * as fingerprint from "./turnstile/fingerprint";
 import * as hcaptcha from "./turnstile/hcaptcha";
 import * as ipBan from "./turnstile/ipBan";
+import * as providers from "./turnstile/providers";
 import * as verify from "./turnstile/verify";
 
 export class TurnstileService {
@@ -46,4 +48,21 @@ export class TurnstileService {
   static getHCaptchaConfig = hcaptcha.getHCaptchaConfig;
   static updateHCaptchaConfig = hcaptcha.updateHCaptchaConfig;
   static deleteHCaptchaConfig = hcaptcha.deleteHCaptchaConfig;
+
+  // Cap (trycap)
+  static verifyCapToken = cap.verifyCapToken;
+  static isCapEnabled = cap.isCapEnabled;
+  static getCapConfig = cap.getCapConfig;
+  static updateCapConfig = cap.updateCapConfig;
+  static deleteCapConfig = cap.deleteCapConfig;
+  static testCapConnectivity = cap.testCapConnectivity;
+  static isCapConfigKey = cap.isCapConfigKey;
+
+  // 供应商调度（上线/下线 + 权重）
+  static collectCaptchaProviders = providers.collectCaptchaProviders;
+  static selectCaptchaProvider = providers.selectCaptchaProvider;
+  static getProviderSecretPresence = providers.getProviderSecretPresence;
+  static isCaptchaProviderId = providers.isCaptchaProviderId;
+  static clampProviderWeight = providers.clampProviderWeight;
+  static upsertCaptchaProviderSetting = providers.upsertCaptchaProviderSetting;
 }

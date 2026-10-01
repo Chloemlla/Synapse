@@ -544,7 +544,7 @@ export const reportTempFingerprint = async (
 };
 
 // 验证临时指纹
-export const verifyTempFingerprint = async (fingerprint: string, cfToken: string, captchaType: 'turnstile' | 'hcaptcha' = 'turnstile'): Promise<{ success: boolean; accessToken?: string }> => {
+export const verifyTempFingerprint = async (fingerprint: string, cfToken: string, captchaType: 'turnstile' | 'hcaptcha' | 'trycap' = 'turnstile'): Promise<{ success: boolean; accessToken?: string }> => {
   if (!isFirstVisitVerificationEnabled()) {
     return { success: true };
   }

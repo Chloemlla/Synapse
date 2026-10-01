@@ -10,7 +10,9 @@ import CryptoJS from 'crypto-js';
 // CAPTCHA 验证方式枚举
 export enum CaptchaType {
   TURNSTILE = 'turnstile',
-  HCAPTCHA = 'hcaptcha'
+  HCAPTCHA = 'hcaptcha',
+  /** 自托管 Cap（trycap）：无第三方、无追踪的 PoW + instrumentation 验证。 */
+  TRYCAP = 'trycap'
 }
 
 // 加密选择结果的接口
@@ -36,7 +38,7 @@ export interface CaptchaSelection {
  */
 export function generateSecureCaptchaSelection(
   fingerprint: string,
-  availableTypes: CaptchaType[] = [CaptchaType.TURNSTILE, CaptchaType.HCAPTCHA]
+  availableTypes: CaptchaType[] = [CaptchaType.TURNSTILE, CaptchaType.HCAPTCHA, CaptchaType.TRYCAP]
 ): EncryptedCaptchaSelection {
   // 生成时间戳（毫秒）
   const timestamp = Date.now();
@@ -170,6 +172,8 @@ export function getCaptchaDisplayName(type: CaptchaType): string {
       return 'Cloudflare Turnstile';
     case CaptchaType.HCAPTCHA:
       return 'hCaptcha';
+    case CaptchaType.TRYCAP:
+      return 'trycap';
     default:
       return '未知验证方式';
   }

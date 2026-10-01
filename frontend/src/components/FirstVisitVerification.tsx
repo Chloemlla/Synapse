@@ -23,6 +23,7 @@ const TurnstileWidget = lazy(() =>
   import('./TurnstileWidget').then((module) => ({ default: module.TurnstileWidget })),
 );
 const HCaptchaWidget = lazy(() => import('./HCaptchaWidget'));
+const CapWidget = lazy(() => import('./CapWidget'));
 
 interface FirstVisitVerificationProps {
   onVerificationComplete: () => void;
@@ -34,7 +35,7 @@ interface FirstVisitVerificationProps {
   challengeReason?: string;
 }
 
-type VerificationMode = 'turnstile' | 'hcaptcha' | null;
+type VerificationMode = 'turnstile' | 'hcaptcha' | 'trycap' | null;
 
 interface BanState {
   isBanned: boolean;
@@ -139,6 +140,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     loading: secureSelectionLoading,
     error: secureSelectionError,
     siteKey: secureSiteKey,
+    apiEndpoint: secureApiEndpoint,
     enabled: secureEnabled,
   } = useSecureCaptchaSelection({ fingerprint });
 
@@ -148,6 +150,9 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const [hcaptchaToken, setHCaptchaToken] = useState('');
   const [hcaptchaVerified, setHCaptchaVerified] = useState(false);
   const [hcaptchaKey, setHCaptchaKey] = useState(0);
+  const [capToken, setCapToken] = useState('');
+  const [capVerified, setCapVerified] = useState(false);
+  const [capKey, setCapKey] = useState(0);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [banState, setBanState] = useState<BanState>({
@@ -175,10 +180,16 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       return null;
     }
 
+    if (secureCaptchaConfig.captchaType === CaptchaType.TRYCAP) return 'trycap';
     return secureCaptchaConfig.captchaType === CaptchaType.HCAPTCHA ? 'hcaptcha' : 'turnstile';
   }, [secureCaptchaConfig, secureEnabled, secureSiteKey]);
 
-  const serviceLabel = verificationMode === 'hcaptcha' ? 'hCaptcha' : 'Cloudflare Turnstile';
+  const serviceLabel =
+    verificationMode === 'trycap'
+      ? 'trycap'
+      : verificationMode === 'hcaptcha'
+        ? 'hCaptcha'
+        : 'Cloudflare Turnstile';
 
   const configError = useMemo(() => {
     if (secureSelectionLoading) return '';
@@ -196,14 +207,18 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (verificationMode === 'hcaptcha') {
       return hcaptchaVerified && Boolean(hcaptchaToken);
     }
+    if (verificationMode === 'trycap') {
+      return capVerified && Boolean(capToken);
+    }
     return false;
-  }, [hcaptchaToken, hcaptchaVerified, turnstileToken, turnstileVerified, verificationMode]);
+  }, [capToken, capVerified, hcaptchaToken, hcaptchaVerified, turnstileToken, turnstileVerified, verificationMode]);
 
   const currentToken = useMemo(() => {
     if (verificationMode === 'turnstile') return turnstileToken;
     if (verificationMode === 'hcaptcha') return hcaptchaToken;
+    if (verificationMode === 'trycap') return capToken;
     return '';
-  }, [hcaptchaToken, turnstileToken, verificationMode]);
+  }, [capToken, hcaptchaToken, turnstileToken, verificationMode]);
 
   // 0 = 解析验证码配置，1 = 等待人机挑战，2 = 挑战已过、正在换发会话令牌
   const reviewStepIndex = secureSelectionLoading || !verificationMode ? 0 : isVerified ? 2 : 1;
@@ -221,6 +236,13 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         setHCaptchaToken('');
         setHCaptchaVerified(false);
         setHCaptchaKey((value) => value + 1);
+        return;
+      }
+
+      if (mode === 'trycap') {
+        setCapToken('');
+        setCapVerified(false);
+        setCapKey((value) => value + 1);
       }
     },
     [verificationMode],
@@ -259,6 +281,24 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const handleHCaptchaError = useCallback(() => {
     setHCaptchaToken('');
     setHCaptchaVerified(false);
+    setError('The verification widget did not load correctly. Refresh and retry.');
+  }, []);
+
+  const handleCapVerify = useCallback((token: string) => {
+    setCapToken(token);
+    setCapVerified(true);
+    setError('');
+  }, []);
+
+  const handleCapExpire = useCallback(() => {
+    setCapToken('');
+    setCapVerified(false);
+    setError('The check expired. Complete it again to continue.');
+  }, []);
+
+  const handleCapError = useCallback(() => {
+    setCapToken('');
+    setCapVerified(false);
     setError('The verification widget did not load correctly. Refresh and retry.');
   }, []);
 
@@ -479,6 +519,15 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                           onVerify={handleTurnstileVerify}
                           onExpire={handleTurnstileExpire}
                           onError={handleTurnstileError}
+                        />
+                      ) : verificationMode === 'trycap' ? (
+                        <CapWidget
+                          key={capKey}
+                          siteKey={secureSiteKey}
+                          apiEndpoint={secureApiEndpoint || ''}
+                          onVerify={handleCapVerify}
+                          onExpire={handleCapExpire}
+                          onError={handleCapError}
                         />
                       ) : (
                         <HCaptchaWidget
