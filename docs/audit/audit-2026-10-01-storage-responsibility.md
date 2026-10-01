@@ -45,18 +45,30 @@
 ### S1 进程内状态承担「跨实例共享」职责（P2 · 当前单实例下不是线上缺陷）
 
 - **证据**：
-  - `src/services/profileUpdateVerificationService.ts:36-39`：`profileVerificationSessions` / `pendingEmailChangeChallenges`（安全会话与邮箱变更验证码，10 分钟 TTL）；
+  - ✅ **安全会话与邮箱变更验证码**：已改为自包含 HMAC 令牌 + 共享撤销水位（详下），
+    `src/services/profileUpdateVerificationService.ts` + `src/services/sharedStateStore.ts`；
   - `src/services/linuxDoAuthService.ts:101`：`oauthStateStore`（OAuth state / PKCE，容量上限 5000）、`loginTicketStore`；
   - `src/services/accountMergeService.ts:87`：`mergeSessions`（账号合并预览/确认，15 分钟 TTL）；
   - `src/services/clientProbeService.ts`：`probeSessions` / `usedNonces`；
   - `src/services/smartHumanCheckService.ts:526-535`：10 个 abuse 计数 Map（nonce 已在 Redis，计数没有）；
   - `src/services/schedulerService.ts:38`：`isRunning` 重入保护是进程内布尔值，定时清理/双向同步在多实例下会重复执行。
 - **症状（多实例时）**：A 实例签发的安全会话在 B 实例 403；OAuth 回调打到另一实例直接 state 无效；账号合并预览消失；abuse 限额被放大 N 倍；清理任务重复跑（幂等但放大 DB 负载，IP 封禁双向同步并发合并时可能互相覆盖）。
-- **建议改法**（按代价从小到大）：
-  1. 多数枚举型状态（安全会话、OAuth state、合并会话、abuse 计数）迁到 `sharedRateLimitStore`/`nonceStore` 同款的「Redis 优先 + 内存回退」模式；安全会话校验目前是**同步**函数（`hasValidSecuritySession`），需要先改异步或改为**自包含签名令牌 + Redis 撤销表**，属独立一轮改造；
-  2. 或先明确写死「单实例部署」前提：在 `docs/reference/backend-mongo-persistence-detail.md` 与部署文档里写明，扩容前必须先完成这一轮；
-  3. 调度器加分布式锁（Redis `SET NX PX` 或 Mongo `findOneAndUpdate` 抢占 + TTL），保证清理/同步同一时刻只有一个实例在跑。
-- **去向**：挂起（本轮只记录；改法已定，需与扩容决策一起做）。
+- **已完成（安全会话 + 邮箱验证码）**：
+  - 令牌自包含：`v2.<base64url(payload)>.<base64url(hmac)>`（密钥由 `JWT_SECRET` 派生独立用途键），
+    校验 = 验签 + 时间比较 ⇒ **跨实例、跨重启**都成立，且签发**不需要**任何共享读（保住同步 API，无涟漪）；
+  - 撤销：同用户重新建立会话 / 显式结束会话 ⇒ 写共享撤销水位
+    （`sharedStateStore` 的 `security-session:revoked:<userId>`、全局 `…:revoked:global`），
+    本地保留水位缓存并异步刷新；
+  - 邮箱变更验证码与失败计数整体落 `sharedStateStore`（TTL 即过期），不再随实例丢失。
+  - **取舍（已在代码注释与本文写出）**：① 跨实例撤销收敛窗口 ≤ 2s（本地水位缓存刷新间隔），
+    单实例内是立即生效；② 同一毫秒内为同一用户签发两枚会话时，较早那枚不会被水位覆盖
+    （水位严格小于才判失效，否则刚签发的那枚会被自己写下的水位误杀）；
+    ③ 部署时在陈的旧版不透明令牌（64 位 hex）全部失效，用户需重新建立会话（TTL 本来只有 10 分钟）。
+- **待办**：OAuth state / 登录 ticket、账号合并会话、探针会话与 nonce、人机验证 abuse 计数、
+  调度器分布式锁 ⇒ 全部改走 `sharedStateStore`（原语已具备：`set/get/delete/deleteByPrefix/claim/consume`）。
+- **建议改法（剩余项）**：逐个把进程内 Map 换成 `sharedStateStore`（调用点本来就是 async）；
+  调度器用 `claim()` 做任务锁（TTL 设成预期单轮耗时上界）。
+- **去向**：部分已修（S1 的安全会话 + 邮箱验证码），其余挂起。
 
 ### S2 可丢弃的缓存放在 Mongo，靠应用级清理兜底（P3 · 可接受但要知其代价）
 

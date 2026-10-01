@@ -368,7 +368,7 @@ router.post("/user/profile/email/send-code", authMiddleware, async (req, res) =>
       return res.status(400).json({ error: "该邮箱已被其他账户使用" });
     }
 
-    const challenge = createEmailChangeChallenge(dbUser.id, newEmail);
+    const challenge = await createEmailChangeChallenge(dbUser.id, newEmail);
     if (!challenge.success || !challenge.code) {
       return res.status(429).json({ error: challenge.error || "验证码发送过于频繁，请稍后再试" });
     }
@@ -382,7 +382,7 @@ router.post("/user/profile/email/send-code", authMiddleware, async (req, res) =>
     });
 
     if (!result.success) {
-      clearEmailChangeChallenge(dbUser.id);
+      await clearEmailChangeChallenge(dbUser.id);
       return res.status(500).json({ error: result.error || "验证码发送失败，请稍后重试" });
     }
 
@@ -451,7 +451,7 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
         return res.status(400).json({ error: "该邮箱已被其他账户使用" });
       }
 
-      const challengeResult = validateEmailChangeChallenge(dbUser.id, rawEmail, emailVerificationCode);
+      const challengeResult = await validateEmailChangeChallenge(dbUser.id, rawEmail, emailVerificationCode);
       if (!challengeResult.success) {
         return res.status(challengeResult.status).json({ error: challengeResult.error || "邮箱验证码校验失败" });
       }
@@ -496,7 +496,7 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
     }
 
     if (emailChanged) {
-      clearEmailChangeChallenge(dbUser.id);
+      await clearEmailChangeChallenge(dbUser.id);
     }
     // 改密后旧的二次验证凭据不再是「当前凭据」，立即作废安全会话；
     // 仅改邮箱/头像时保留会话，供同一 TTL 内的其他敏感操作继续复用。
