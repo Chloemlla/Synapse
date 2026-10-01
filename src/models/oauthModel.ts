@@ -80,8 +80,6 @@ const OAuthClientSchema = new mongoose.Schema<OAuthClientDoc>(
     rateLimitPerMinute: { type: Number, default: 120, min: 1, max: 1000 },
     enabled: { type: Boolean, default: true, index: true },
     lastUsedAt: { type: Date, default: null },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
 );
@@ -100,8 +98,6 @@ const OAuthAuthorizationCodeSchema = new mongoose.Schema<OAuthAuthorizationCodeD
     nonce: { type: String, default: null },
     expiresAt: { type: Date, required: true },
     usedAt: { type: Date, default: null },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
 );
@@ -117,8 +113,6 @@ const OAuthGrantSchema = new mongoose.Schema<OAuthGrantDoc>(
     scopes: { type: [String], required: true },
     revokedAt: { type: Date, default: null, index: true },
     lastUsedAt: { type: Date, default: null },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
 );
@@ -140,8 +134,6 @@ const OAuthTokenSchema = new mongoose.Schema<OAuthTokenDoc>(
     lastUsedAt: { type: Date, default: null },
     lastUsedIp: { type: String, default: null },
     usageCount: { type: Number, default: 0 },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
 );

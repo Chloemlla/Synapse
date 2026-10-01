@@ -494,7 +494,9 @@ async function loadOAuthClient(clientId: string): Promise<OAuthClientDoc | null>
   const existing = (await OAuthClientModel.findOne({ clientId }).lean()) as OAuthClientDoc | null;
   if (existing || clientId !== PILIPLUS_CLIENT_ID) return existing;
 
-  const now = new Date();
+  // 时间戳交给 schema 的 { timestamps: true } 维护。
+  // 之前这里在 $setOnInsert 里手写 createdAt/updatedAt，而 timestamps 又会往 $set 里放 updatedAt，
+  // 两个操作符争同一路径 → MongoDB error 40（ConflictingUpdateOperators）。
   return (await OAuthClientModel.findOneAndUpdate(
     { clientId: PILIPLUS_CLIENT_ID },
     {
@@ -512,8 +514,6 @@ async function loadOAuthClient(clientId: string): Promise<OAuthClientDoc | null>
         rateLimitPerMinute: 120,
         enabled: true,
         lastUsedAt: null,
-        createdAt: now,
-        updatedAt: now,
       },
     },
     { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
@@ -646,18 +646,16 @@ async function loadActiveOAuthAuthorizingUser(userId: string): Promise<User> {
 }
 
 async function upsertGrant(clientId: string, userId: string, scopes: string[]): Promise<OAuthGrantDoc> {
-  const now = new Date();
+  // 时间戳交给 { timestamps: true } 维护，避免与 schema 默认值在 $set/$setOnInsert 上争同一路径。
   const update = {
     $set: {
       scopes,
       revokedAt: null,
-      updatedAt: now,
     },
     $setOnInsert: {
       grantId: `og_${crypto.randomBytes(12).toString("hex")}`,
       clientId,
       userId,
-      createdAt: now,
     },
   };
 
