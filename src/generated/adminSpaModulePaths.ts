@@ -71,6 +71,7 @@ export const FRONTEND_SPA_ROUTE_PATHS = [
   "/captcha-verify",
   "/case-converter",
   "/cdn-cgi",
+  "/challenge",
   "/coin-flip",
   "/demo",
   "/demo/finance",

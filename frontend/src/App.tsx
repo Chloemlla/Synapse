@@ -30,7 +30,7 @@ import { studioModalOverlayClassName } from './components/studioTheme';
 // 性能：只在非验证类页面启用。Clarity 的脚本求值 + 会话回放采集会占用主线程
 // （trace 实测 124 ms）+ 持续产生逐帧 DOM 变更，和 /captcha-verify 的 cap PoW 直接抢 CPU。
 // 见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md。
-const CLARITY_DISABLED_ROUTES = new Set(['/captcha-verify', '/hcaptcha-verify']);
+const CLARITY_DISABLED_ROUTES = new Set(['/captcha-verify', '/hcaptcha-verify', '/challenge']);
 
 function isClarityDisabledPath(pathname: string): boolean {
   return CLARITY_DISABLED_ROUTES.has(pathname.replace(/\/+$/, '') || '/');
@@ -742,8 +742,9 @@ const App: React.FC = () => {
         <Route path="/notification-test" element={renderAdminRoute(<NotificationTestPage />)} />
         <Route path="/cdn-cgi" element={renderAnimatedRoute(<CloudflareChallengePage />)} />
         <Route path="/captcha-verify" element={renderAdminRoute(<CaptchaVerificationPage />)} />
-        {/* 旧路径保留：老书签/外链仍能落到新页面（SPA 清单里也保留，避免被 308 到 API） */}
+        {/* 旧路径与短别名保留：老书签/外链（含 https://chloemlla.com/challenge）都落到人机验证页 */}
         <Route path="/hcaptcha-verify" element={<Navigate to="/captcha-verify" replace />} />
+        <Route path="/challenge" element={<Navigate to="/captcha-verify" replace />} />
         <Route path="/artifacts/:shortId" element={renderAnimatedRoute(<ArtifactSharePage />)} />
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
@@ -806,6 +807,7 @@ const App: React.FC = () => {
       '/cdn-cgi': 'Synapse - Cloudflare 验证',
       '/captcha-verify': 'Synapse - 人机验证',
       '/hcaptcha-verify': 'Synapse - 人机验证',
+      '/challenge': 'Synapse - 人机验证',
       '/artifacts': 'NexAI Artifacts',
       '/image-upload': 'Synapse - 图片上传',
       '/librechat': 'Synapse - LibreChat',
