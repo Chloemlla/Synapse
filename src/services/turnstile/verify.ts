@@ -4,7 +4,8 @@ import { TempFingerprintModel } from "../../models/tempFingerprintModel";
 import logger from "../../utils/logger";
 import { mongoose } from "../mongoService";
 import { generateAccessToken } from "./accessToken";
-import { CAP_DEFAULT_API_ENDPOINT, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
+import { sanitizeCapEndpoint } from "./capEndpoint";
+import { HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { isIpBanned, recordViolation } from "./ipBan";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
 import { consumeConfiguredCaptchaQuota } from "./quota";
@@ -21,12 +22,11 @@ function captchaServiceLabel(captchaType: CaptchaVerificationType): string {
   return "Turnstile";
 }
 
-/** 解析 trycap 的校验 URL：{endpoint}/{siteKey}/siteverify，endpoint 未配置时用默认实例。 */
+/** 解析 trycap 的校验 URL：{endpoint}/{siteKey}/siteverify。地址经 SSRF 校验后再拼，非法值回落到默认实例。 */
 async function resolveCapVerifyUrl(): Promise<string | null> {
   const [siteKey, endpoint] = await Promise.all([getCapKey("CAP_SITE_KEY"), getCapKey("CAP_API_ENDPOINT")]);
   if (!siteKey) return null;
-  const base = (endpoint || CAP_DEFAULT_API_ENDPOINT).replace(/\/+$/, "");
-  return `${base}/${siteKey}/siteverify`;
+  return `${sanitizeCapEndpoint(endpoint)}/${siteKey}/siteverify`;
 }
 
 export async function verifyToken(token: string, remoteIp?: string): Promise<boolean> {

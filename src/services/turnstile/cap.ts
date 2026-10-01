@@ -1,8 +1,10 @@
 import axios from "axios";
 import logger from "../../utils/logger";
 import { isConnected } from "../mongoService";
-import { CAP_DEFAULT_API_ENDPOINT, CAP_VERIFY_TIMEOUT_MS } from "./constants";
+import { sanitizeCapEndpoint } from "./capEndpoint";
+import { CAP_VERIFY_TIMEOUT_MS } from "./constants";
 import { CapSettingModel, getCapKey, invalidateCapKeyCache } from "./models";
+import { sanitizeCapEndpoint, validateCapEndpoint } from "./capEndpoint";
 import { assessClientRisk, recordVerificationOutcome } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { CapVerifyResponse } from "./types";
@@ -13,8 +15,8 @@ export type CapConfigKey = "CAP_SITE_KEY" | "CAP_SECRET_KEY" | "CAP_API_ENDPOINT
 const CAP_CONFIG_KEYS: readonly CapConfigKey[] = ["CAP_SITE_KEY", "CAP_SECRET_KEY", "CAP_API_ENDPOINT"];
 
 function normalizeEndpoint(endpoint: string | null): string {
-  const base = (endpoint || CAP_DEFAULT_API_ENDPOINT).trim();
-  return base.replace(/\/+$/, "");
+  // 所有读取点都过一遍校验：即使库里已被写坏，出站请求也只会拿到校验过（或默认）的 origin。
+  return sanitizeCapEndpoint(endpoint);
 }
 
 export function maskCapSecret(secretKey: string | null): string | null {
@@ -61,12 +63,21 @@ export async function updateCapConfig(key: CapConfigKey, value: string): Promise
       return false;
     }
 
+    // 地址类配置在写入侧就把关：内网/元数据目标、带凭据的 URL、子路径都在这里拒掉。
+    if (key === "CAP_API_ENDPOINT") {
+      const check = validateCapEndpoint(validatedValue);
+      if (!check.ok) {
+        logger.warn("Cap 实例地址校验未通过", { reason: check.reason });
+        return false;
+      }
+    }
+
     if (!isConnected()) {
       logger.error("数据库连接不可用，无法更新 Cap 配置", { key });
       return false;
     }
 
-    const storedValue = key === "CAP_API_ENDPOINT" ? normalizeEndpoint(validatedValue) : validatedValue;
+    const storedValue = key === "CAP_API_ENDPOINT" ? sanitizeCapEndpoint(validatedValue) : validatedValue;
 
     await CapSettingModel.findOneAndUpdate(
       { key },

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { CAP_DEFAULT_API_ENDPOINT } from "./constants";
+import { sanitizeCapEndpoint } from "./capEndpoint";
 import { getCapKey, getCaptchaProviderSettingDocs, getHCaptchaKey, getTurnstileKey } from "./models";
 import { getCaptchaQuotaSnapshots, type CaptchaQuotaSnapshot } from "./quota";
 import { CAPTCHA_PROVIDER_IDS, type CaptchaProviderId } from "./types";
@@ -150,7 +150,7 @@ async function readProviderCredentials(provider: CaptchaProviderId): Promise<Pro
   return {
     siteKey,
     secretConfigured: !!secretKey,
-    apiEndpoint: apiEndpoint ? apiEndpoint.replace(/\/+$/, "") : CAP_DEFAULT_API_ENDPOINT,
+    apiEndpoint: sanitizeCapEndpoint(apiEndpoint),
   };
 }
 

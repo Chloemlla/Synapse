@@ -16,7 +16,10 @@ export interface PolicyMarkdownOptions {
   generatedAt?: Date;
 }
 
-const escapeCell = (value: string): string => value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+const escapeCell = (value: string): string =>
+  // 反斜杠必须先生处理：否则输入 `\|` 会被替换成 `\\|`，Markdown 表格里读作
+  // “转义反斜杠 + 列分隔符”，单元格被撑开（CodeQL js/incomplete-sanitization）。
+  value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
 const formatGeneratedAt = (value: Date): string => {
   const pad = (n: number) => String(n).padStart(2, "0");
