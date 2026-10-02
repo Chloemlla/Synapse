@@ -173,8 +173,9 @@ step `outcome`。
 - 用户存储**只支持 MongoDB**：`USER_STORAGE_MODE` 只接受 `mongo`，传别的值直接抛错。
   `MONGO_URI`（优先）/ `MONGODB_URI` + `MONGO_DB`。Redis 可选，缺失时安全降级（限流退内存档）。
 - 管理端接口分两档：`admin`（只读业务 + 用户/API Key/OAuth 管理）与 `superadmin`（系统级写操作）。
-  普通管理员的页面范围应可在线调整、**不得在前后端写死页面清单**；
-  当前收窄规则在 `src/middleware/adminScope.ts`（固定前缀白名单），改造中。
+  普通管理员能看哪些页面由**运行时配置**（Mongo `admin_scope_configs`，默认集合 + 按用户覆盖）决定，
+  页面与 API 的对应关系登记在 `src/config/adminPages.ts`。**两侧都不要写死页面清单**：
+  加新功能只需在登记表里加一条，授权由超管在线调整。
 - 密码一律 bcrypt 哈希；日志与接口响应里绝不出现密码、令牌、密钥。
 - IP 封禁是最外层守卫（支持单 IP 与 CIDR，存 Redis（若有）或 Mongo）。
 - 新增路由必须配限流器；不要在子路由重复挂同一个限流器实例（会让一次请求过两遍、额度减半）。

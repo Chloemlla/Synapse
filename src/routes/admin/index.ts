@@ -4,6 +4,7 @@ import { listReports as listBilibiliCookieReports, listAccountBindings as listBi
 import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middleware/auth";
 import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/adminScope";
 import { wsService } from "../../services/wsService";
+import adminScopeRouter from "./adminScope";
 import broadcastRouter from "./broadcast";
 import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
@@ -19,7 +20,7 @@ import usersRouter from "./users";
 const router = express.Router();
 
 // 管理员权限检查中间件
-const adminAuthMiddleware = (req: any, res: any, next: any) => {
+const adminAuthMiddleware = async (req: any, res: any, next: any) => {
   // 允许普通已登录用户访问的用户自助接口（在本路由前缀 /api/admin 下）
   // 注意：这里匹配的是路由内的路径（不含前缀），例如 '/user/profile'
   // 用前缀 startsWith 覆盖，避免新增自助端点时再次漏配。
@@ -32,8 +33,8 @@ const adminAuthMiddleware = (req: any, res: any, next: any) => {
     return res.status(403).json({ error: "需要管理员权限" });
   }
 
-  // 普通管理员只能访问用户管理 / API Key / API Key 计费 / OAuth 管理；其余一律超管（fail-closed）。
-  requireAdminScope(req, res, next);
+  // 普通管理员的可用范围由运行时配置的页面授权决定（fail-closed）。
+  await requireAdminScope(req, res, next);
 };
 
 // 公告读取接口移到最前面，不加任何中间件
@@ -62,6 +63,8 @@ router.use(async (req: any, res: any, next: any) => {
 });
 
 // 子路由挂载（按业务领域拆分）
+// 页面授权自身：GET /admin-scope/me 对任何管理员开放，其余走超管。
+router.use(adminScopeRouter);
 router.use(usersRouter);
 router.use(configRouter);
 router.use(shortlinksRouter);

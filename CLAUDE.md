@@ -123,10 +123,16 @@ frontend/src/
 
 - `admin`：只读业务 + 用户管理、API Key、OAuth 客户端/授权管理；
 - `superadmin`：系统级写操作（运行时配置、危险开关、维护动作）；
-- 管理端范围当前由 `src/middleware/adminScope.ts` 用固定前缀白名单收窄（用户管理、API Key、
-  API Key 计费、OAuth）；守卫挂在**认证之后**且自身 fail-closed（匿名/非管理员直接 403）。
-  目标形态是「普通管理员可访问哪些管理页面」由**运行时配置**下发、按前端模块注册表枚举，
-  两例都不写死页面清单。
+- **普通管理员的页面授权是运行时可配的，不是写死的**：
+  - 页面登记表 `src/config/adminPages.ts`：每个页面声明自己的 API 前缀（`apiPrefixes`）。
+    新增页面在这一处加一条即可；**未登记前缀的页面只能给超管**（fail-closed：漏登记是功能缺失，不是权力漏洞）。
+  - 授权配置：Mongo 集合 `admin_scope_configs`（`defaultPages` + `perUser` 覆盖），
+    由 `services/adminScopeConfigService.ts` 读取（进程内 15s 缓存），超管通过
+    `/api/admin/admin-scope/setting`（GET/PUT/DELETE）在线调整；文档不存在时按历史默认集合。
+  - 任意管理员可用 `GET /api/admin/admin-scope/me` 拿自己可见的页面列表（前端据此过滤入口）。
+  - 守卫 `src/middleware/adminScope.ts` 的判定顺序：用户自助端点 → 管理员身份 →
+    只要求身份的自检端点（`/api/admin/verify-access`、`.../admin-scope/me`）→ 超管 → 页面授权。
+    403 会带上 `requiredPages`，直接告出「该给谁开哪个页面」。
 - 被**封停**的账户统一返回 `403 { error, code: "ACCOUNT_SUSPENDED", supportEmail }`
   （`src/services/providerAuthErrors.ts` 提供类型与响应体构造函数）；被**禁用**的账户是
   `403 { error: "账户已被禁用" }`（无 code）。第三方（Google/LinuxDo）与移动端登录必须抛
@@ -257,9 +263,10 @@ frontend/src/
 **新增一个前端页面**：建组件 → `App.tsx` 加 `React.lazy` + `<Route>` → 补 `routeConfig.titles`
 （`/admin/<module>` 还要在 `adminModules.tsx` 登记）。生成物由 CI 的 drift 闸门兜住。
 
-**新增一个管理面板页面**：只改 `adminModules.tsx` 的 `ADMIN_MODULE_LOADERS`。
-深链放行清单（`src/generated/adminSpaModulePaths.ts`）由该注册表生成，因此会自动带上新模块；
-管理员页面权限也应以此为唯一数据源（当前收窄规则仍是 `adminScope.ts` 里的固定白名单，改造中）。
+**新增一个管理面板页面**：只改 `adminModules.tsx` 的 `ADMIN_MODULE_LOADERS`；
+深链放行清单（`src/generated/adminSpaModulePaths.ts`）由该注册表生成，因此会自动带上新模块。
+要让页面能授给普通管理员，再到 `src/config/adminPages.ts` 里加一条（key 与 `/admin/<key>` 对齐 + `apiPrefixes`），
+然后在超管界面的页面授权里勾上；前端入口会自动跟随授权结果。
 
 **新增依赖**：走 `AGENTS.md` §7 的通路（只改清单，锁文件由 CI 的 `Update Lockfiles` 工作流重生）。
 
