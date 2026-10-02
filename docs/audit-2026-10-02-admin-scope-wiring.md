@@ -141,6 +141,19 @@ PY
 - 改动：新增确认式「清空队列」按钮，与 `clear-history` 一样带 `verificationToken`（复用全站安全会话），
   成功后清空本地队列并提示实际清掉的条数。
 
+### WIRE-09（阻塞级 / 已修）`/api/admin/admin-scope/*` 少了挂载前缀，整个页面授权接口 404
+
+- 位置：`src/routes/admin/index.ts:73`（`router.use(adminScopeRouter)`）
+- 现象（生产实测）：浏览器控制台 / 服务端日志 `404 Not Found: GET /api/admin/admin-scope/me`。
+- 根因：`adminScope.ts` 内部只声明了 `/me`、`/setting`，而挂载时没带 `/admin-scope` 前缀 →
+  真实路径变成 `/api/admin/me`；而三处约定都指向带前缀的路径：`adminScope.ts` 的注释、
+  `middleware/adminScope.ts` 的 `ADMIN_ANY_ROLE_PREFIXES`（`/api/admin/admin-scope/me`）、前端 `api/adminScope.ts`。
+  后果：守卫白名单匹配不上真实路径（普通管理员反而会被页面授权判 403），前端全部 404 并回退到最小集合。
+- 修法：`router.use("/admin-scope", adminScopeRouter)`。另：`/me`、`/setting` 这种**顶层短路径**极易与
+  后续新增的 admin 子路由撞车（目前全仓无同名路由），带前缀后也避开了这个隐患。
+- 教训：**接口“存在”不等于“可达”**——类型检查、生成物闸门、单元测试全绿都盖不住挂载前缀写错，
+  只有真打到那个 URL 才能发现。同类问题以后先 `curl` 一次真实路径（未登录期望 401/403，不是 404）。
+
 ---
 
 ## 3. 验证方式（本机静态部分）

@@ -70,7 +70,11 @@ router.use(async (req: any, res: any, next: any) => {
 
 // 子路由挂载（按业务领域拆分）
 // 页面授权自身：GET /admin-scope/me 对任何管理员开放，其余走超管。
-router.use(adminScopeRouter);
+// 必须带 `/admin-scope` 前缀：router 内部只声明了 `/me`、`/setting`，
+// 而守卫白名单（middleware/adminScope.ts 的 ADMIN_ANY_ROLE_PREFIXES）与前端调的都是
+// `/api/admin/admin-scope/*`。少写这截前缀会让真实路径变成 `/api/admin/me`
+// （前端 404、白名单匹配不上），且 `/me` 这种短路径极易与后续新增路由撞车。
+router.use("/admin-scope", adminScopeRouter);
 router.use(usersRouter);
 router.use(configRouter);
 router.use(shortlinksRouter);
