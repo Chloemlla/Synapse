@@ -23,6 +23,9 @@ jest.mock("../controllers/authController", () => ({
     sendVerifyEmail: jest.fn(mockNoopHandler),
     forgotPassword: jest.fn(mockNoopHandler),
     validateResetToken: jest.fn(mockNoopHandler),
+    // 账号安全中心（da80d741）新增的控制器方法：替身漏一个导出，路由注册时就会抛
+    // 「argument handler must be a function」，整套件以「看起来像业务坏了」的方式挂掉。
+    getSecuritySummary: jest.fn(mockNoopHandler),
     resetPasswordLink: jest.fn(mockNoopHandler),
     resetPassword: jest.fn(mockNoopHandler),
   },
