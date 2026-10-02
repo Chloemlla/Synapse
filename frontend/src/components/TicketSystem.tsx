@@ -121,6 +121,20 @@ function writeFocusModePreference(value: boolean): void {
   }
 }
 
+/**
+ * 手机端切换「列表 ↔ 详情」后把外层滚动容器拉回顶部：移动端滚动在文档或
+ * #app-main-content 上，不复位会直接停在对话中段。
+ */
+function scrollTicketPaneToTop(): void {
+  if (typeof window === "undefined") return;
+  try {
+    document.getElementById("app-main-content")?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
+  } catch {
+    // 滚动失败不影响功能
+  }
+}
+
 
 const TicketSystem: React.FC = () => {
   const { user } = useAuth();
@@ -397,6 +411,12 @@ const TicketSystem: React.FC = () => {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  // 手机端在「列表 / 详情 / 新建」切换后回到顶部（见 scrollTicketPaneToTop）。
+  useEffect(() => {
+    if (!isMobile) return;
+    scrollTicketPaneToTop();
+  }, [isMobile, showDetailOnMobile, isCreating]);
 
   const hoverScale = useCallback((scale: number, enabled: boolean = true) => (
     enabled && !prefersReducedMotion ? { scale } : undefined
@@ -745,12 +765,8 @@ const TicketSystem: React.FC = () => {
     <div
       className={cn(
         studioPageClassName,
-        // 桌面端至少占满工作台主窗：主窗高度 = 100svh - 外壳 header(3.5rem) - 主窗 py-6(3rem)。
-        // 原来写死 640px，1080p 上会在下方留出约 300px 空白，而列表只能看到三四行。
-        //
-        // 注意用 min-h 而不是 h：定高 + 子元素最小高度（工作区 22rem）在矮窗口下会让内容溢出
-        // 页面的盒子，直接画到后面的页脚上（现象就是工单台与 footer 重合）。min-h 让页面
-        // 至少一屏高、内容多高就多高，页脚永远排在工单台下方。
+        // 桌面端至少占满主窗（100svh - 外壳 header 3.5rem - 主窗 py-6）。用 min-h 而非定高：
+        // 定高 + 工作区 22rem 下限会让内容溢出页面盒子、画到页脚上（工单台与 footer 重合）。
         "md:flex md:min-h-[calc(100svh-8rem)] md:flex-col md:py-0",
       )}
       style={{ fontFamily: studioPageFont }}
@@ -800,10 +816,12 @@ const TicketSystem: React.FC = () => {
         )}
 
         {/*
-          桌面端：flex-1 吃满剩余高度（不再写死 640px），手机仍用 min-height 滚动。
-          md:min-h-[22rem] 是矮窗口（≈640px 高）的底线：此时整页改为滚动，而不是把列表压到几行。
+          手机：面板不定高也不裁切，整页文档滚动（嵌套的 overflow-hidden + 内层滚动区会吃掉手势，
+          表现为「滑不动」）。
+          桌面（md+）：flex-1 吃满主窗、面板定高 + 内部滚动；md:min-h-[22rem] 是矮窗口的底线，
+          此时整页改为滚动，而不是把列表压到几行。
         */}
-        <div className="flex min-h-[min(560px,72svh)] flex-col gap-3 md:min-h-[22rem] md:flex-1 md:flex-row md:gap-4 lg:gap-6">
+        <div className="flex min-h-[min(420px,50svh)] flex-col gap-3 md:min-h-[22rem] md:flex-1 md:flex-row md:gap-4 lg:gap-6">
           {/* 左侧列表 */}
           <AnimatePresence mode="wait">
             {(!isMobile || !showDetailOnMobile) && (
@@ -812,7 +830,7 @@ const TicketSystem: React.FC = () => {
                 className={cn(
                   // 列表宽度随视口平滑变化：窄屏保住 17rem 可读下限，宽屏最多 26rem，
                   // 中间按 24vw 过渡，而不是 21/23/25rem 三档跳变（拉窗口时不会突然抽一下）。
-                  "w-full h-full flex flex-col overflow-hidden md:w-[clamp(17rem,24vw,26rem)] md:shrink-0",
+                  "w-full flex flex-col md:h-full md:overflow-hidden md:w-[clamp(17rem,24vw,26rem)] md:shrink-0",
                   studioPanelClassName,
                   "p-0 sm:p-0",
                 )}
@@ -920,7 +938,7 @@ const TicketSystem: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto overscroll-contain hover-scrollbar">
+                <div className="flex-1 hover-scrollbar md:overflow-y-auto md:overscroll-contain">
                   {loading ? (
                     <div className="flex flex-col items-center justify-center p-12 space-y-3">
                       <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
@@ -981,7 +999,11 @@ const TicketSystem: React.FC = () => {
             {(!isMobile || showDetailOnMobile) && (
               <motion.div
                 key="detail-container"
-                className={cn("flex-1 w-full h-full flex flex-col overflow-hidden relative", studioMainSurfaceClassName, "p-0 sm:p-0")}
+                className={cn(
+                  "w-full flex flex-col relative md:flex-1 md:h-full md:overflow-hidden",
+                  studioMainSurfaceClassName,
+                  "p-0 sm:p-0",
+                )}
                 initial={isMobile ? { opacity: 0, x: 20 } : { opacity: 0 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={isMobile ? { opacity: 0, x: 20 } : undefined}
@@ -1011,7 +1033,7 @@ const TicketSystem: React.FC = () => {
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.98 }}
-                      className="h-full overflow-y-auto p-5 sm:p-8"
+                      className="p-5 sm:p-8 md:h-full md:overflow-y-auto"
                     >
                       <div className="max-w-xl mx-auto">
                         <div className="mb-5 flex items-center gap-3">
@@ -1163,7 +1185,7 @@ const TicketSystem: React.FC = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="flex flex-col h-full"
+                      className="flex flex-col md:h-full"
                     >
                       {/* Detail header */}
                       <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-slate-50/40 p-4 sm:p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1254,7 +1276,7 @@ const TicketSystem: React.FC = () => {
                       </div>
 
                       {/* Messages */}
-                      <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar">
+                      <div className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto md:overscroll-contain">
                         {selectedTicket.messages.map((msg, idx) => {
                           const isAi = msg.senderRole === "ai" || msg.isAi;
                           const isMe = msg.senderId === user?.id;
