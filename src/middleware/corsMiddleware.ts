@@ -47,6 +47,22 @@ const CORS_EXPOSED_HEADERS = [
   "Content-Disposition",
   "Content-Type",
   "Cache-Control",
+  // 以下都是「用响应头传分页/导出/通知结果」的自定义头。生产是同镜像同源（CORS 不生效），
+  // 但本地 dev（3001 → 3000）与任何跨域部署下，不暴露就等于前端读不到 —— 而前端都有回退
+  // 默认值，所以表现为静默降级（导出不显示条数、分页总量恒为默认值），不会报错。
+  "X-Audit-Log-Export-Count",
+  "X-Audit-Log-Export-Max-Rows",
+  "X-Export-Rows",
+  "X-Export-Truncated",
+  "X-Total-Count",
+  "X-Page",
+  "X-Page-Size",
+  "X-Has-More",
+  "X-Require-Fingerprint",
+  "X-Fingerprint-Hash",
+  "X-Policy-Document-Hash",
+  "X-TTS-Watermark-Id",
+  "X-TTS-Asset-Expires-At",
 ];
 
 function matchesOriginPattern(origin: string, pattern: string): boolean {

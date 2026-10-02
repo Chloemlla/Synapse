@@ -247,11 +247,17 @@ function normalizeGroupRows(docs: unknown): GroupRow[] {
   }));
 }
 
-/** CSV 单元格转义：含分隔符 / 引号 / 换行时加引号并把内部引号翻倍。 */
+/**
+ * CSV 单元格转义：含分隔符 / 引号 / 换行时加引号并把内部引号翻倍；
+ * 同时对以 `=` `+` `-` `@` 开头的值前置单引号——记录里的 userAgent / 设备指纹 / 来源
+ * 都是终端可控的，不中和的话管理员导出后 Excel 会把它当公式求值（CSV injection / DDE）。
+ * 口径与 `src/services/auditLogService.ts` 的 csvCell 保持一致，避免同仓两套写法。
+ */
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  const neutralized = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\r\n]/.test(neutralized) ? `"${neutralized.replace(/"/g, '""')}"` : neutralized;
 }
 
 export class PolicyConsentLogController {
