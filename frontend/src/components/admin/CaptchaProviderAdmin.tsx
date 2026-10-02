@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaCheckCircle, FaCloudUploadAlt, FaExclamationTriangle, FaLock, FaSync } from 'react-icons/fa';
 import { SimpleLoadingSpinner } from '@/components/LoadingSpinner';
 import { useNotification } from '@/components/Notification';
+import { useConfirm } from '@/components/confirm/ConfirmDialogProvider';
 import {
   studioPanelClassName,
   studioPrimaryButtonClassName,
@@ -130,6 +131,7 @@ export default function CaptchaProviderAdmin() {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
 
   const notify = useCallback(
     (message: string, type: 'success' | 'error' | 'warning' | 'info') => setNotification({ message, type }),
@@ -411,7 +413,13 @@ export default function CaptchaProviderAdmin() {
   const deleteCapKey = useCallback(
     async (key: CapConfigKey) => {
       if (!canWrite) return;
-      if (!window.confirm(`确定删除 ${key} ？该供应商可能因此立即停止下发。`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定删除 ${key} ？该供应商可能因此立即停止下发。`,
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       setSavingCap(true);
       try {
         const result = await api.deleteCapConfigKey(key);

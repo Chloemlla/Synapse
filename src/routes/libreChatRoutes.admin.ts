@@ -57,12 +57,19 @@ export function registerLibreChatAdminRoutes(router: Router): void {
   });
 
   // 一键清理全部 guest 遗留历史（登录化后孤儿，软删语义同单用户删除）—— 须在 /admin/users/:userId 之前注册
+  // 这个端点**不接收任何参数**，所以必须在服务端要求显式 confirm：否则一个误发的 DELETE
+  // 就会把全部游客历史清掉（同文件的 /admin/users/all 早有这层门控，这里漏了）。
   router.delete(
     "/admin/users/guests",
     authenticateSuperAdmin,
     auditLog({ module: "api", action: "libreChat.deleteGuestHistories" }),
     async (req, res) => {
     try {
+      const { confirm } = (req.body ?? {}) as { confirm?: boolean };
+      if (confirm !== true) {
+        res.status(400).json({ error: "该操作会清理全部 guest 遗留历史，请在请求体里显式传 confirm: true" });
+        return;
+      }
       const ret = await libreChatService.adminDeleteGuestHistories();
       res.json({ message: `已清理 ${ret.deleted} 条 guest 遗留历史`, ...ret });
     } catch (error) {

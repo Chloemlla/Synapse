@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FaCopy, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
 import { api } from "../api/api";
 import { useNotification } from "./Notification";
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import ConfirmModal from "./ConfirmModal";
 import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
@@ -78,6 +79,7 @@ const buildInviteDraft = (invite: RegistrationInvite): InviteEditDraft => ({
 
 const RegistrationInviteManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [invites, setInvites] = useState<RegistrationInvite[]>([]);
@@ -244,7 +246,13 @@ const RegistrationInviteManager: React.FC = () => {
   };
 
   const deleteInvite = async (invite: RegistrationInvite) => {
-    if (!window.confirm(`确认删除邀请码 ${invite.code}？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确认删除邀请码 ${invite.code}？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/api/admin/registration-invites/${invite.id}`);
       setInvites((current) => current.filter((item) => item.id !== invite.id));

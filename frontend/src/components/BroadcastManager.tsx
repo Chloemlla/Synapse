@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getApiBaseUrl } from '../api/api';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -165,6 +166,7 @@ const formatRelativeDuration = (timestamp?: number) => {
 const BroadcastManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('broadcast');
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   // Only superadmins may push broadcasts; regular admins get read-only access.
   const canWrite = isSuperAdmin(user?.role);
@@ -294,7 +296,13 @@ const BroadcastManager: React.FC = () => {
   }, [setNotification]);
 
   const handleKick = async (userId: string) => {
-    if (!window.confirm(`确定断开用户 ${userId} 的全部在线连接？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定断开用户 ${userId} 的全部在线连接？`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     setKickingUser(userId);
     try {
       const res = await api('/api/admin/ws/kick', {

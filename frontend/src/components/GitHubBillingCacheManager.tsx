@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaDatabase, FaClock, FaTrash, FaSync, FaUsers, FaChartLine, FaEye, FaHdd, FaFire } from 'react-icons/fa';
 import { useNotification } from '../components/Notification';
+import { useConfirm } from '../components/confirm/ConfirmDialogProvider';
 import { getApiBaseUrl } from '../api/api';
 import { buildIpVerificationHeaders } from '../utils/ipVerification';
 import { useAuth } from '../hooks/useAuth';
@@ -46,6 +47,7 @@ const GitHubBillingCacheManager: React.FC = () => {
     const [clearingExpired, setClearingExpired] = useState(false);
     const [loadingStage, setLoadingStage] = useState<'idle' | 'customers' | 'metrics' | 'complete'>('idle');
     const { setNotification } = useNotification();
+    const confirm = useConfirm();
     const { user } = useAuth();
     const canWrite = isSuperAdmin(user?.role);
 
@@ -128,7 +130,13 @@ const GitHubBillingCacheManager: React.FC = () => {
 
     // 清除指定客户缓存
     const clearCustomerCache = async (customerId: string) => {
-        if (!window.confirm(`确定清除客户「${customerId}」的缓存？`)) return;
+        const ok = await confirm({
+          title: '确认执行该操作？',
+          description: `确定清除客户「${customerId}」的缓存？`,
+          tone: 'danger',
+          confirmLabel: '清理',
+        });
+        if (!ok) return;
         setClearingCache(customerId);
         try {
             const headers = await getVerificationHeaders();
@@ -159,7 +167,13 @@ const GitHubBillingCacheManager: React.FC = () => {
 
     // 清除所有过期缓存
     const clearExpiredCache = async () => {
-        if (!window.confirm('确定清除全部过期缓存条目？')) return;
+        const ok = await confirm({
+          title: '确认执行该操作？',
+          description: '确定清除全部过期缓存条目？',
+          tone: 'danger',
+          confirmLabel: '清理',
+        });
+        if (!ok) return;
         setClearingExpired(true);
         try {
             const headers = await getVerificationHeaders();

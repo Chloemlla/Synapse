@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { getApiBaseUrl } from '../api/api';
 import { motion } from 'framer-motion';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { FaListAlt, FaSync, FaSearch, FaEye, FaTimes, FaTrash, FaCopy, FaClipboard } from 'react-icons/fa';
@@ -151,6 +152,7 @@ const SmartHumanCheckTraces: React.FC = () => {
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchView, setBatchView] = useState<null | { ids: string[]; items: any[] }>(null);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   // Zoom and auto-fit
@@ -499,7 +501,13 @@ const SmartHumanCheckTraces: React.FC = () => {
   const deleteSelected = useCallback(async () => {
     const ids = requireSelection();
     if (!ids) return;
-    if (!window.confirm(`确定删除选中的 ${ids.length} 条日志吗？该操作不可恢复。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除选中的 ${ids.length} 条日志吗？该操作不可恢复。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setBatchLoading(true);
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/human-check/traces`, {

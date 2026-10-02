@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getApiBaseUrl } from '../api/api';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -190,6 +191,7 @@ const normalizePermissionSelection = (current: string[], permission: string) => 
 
 const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   // Only superadmins may create/revoke/adjust API keys; regular admins get read-only access.
   const canWrite = isSuperAdmin(user?.role);
@@ -363,7 +365,13 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   };
 
   const handleRevoke = async (keyId: string) => {
-    if (!confirm(`确定吊销 ${keyId}？吊销后该 Key 将立即失效，需手动重新启用。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定吊销 ${keyId}？吊销后该 Key 将立即失效，需手动重新启用。`,
+      tone: 'danger',
+      confirmLabel: '吊销',
+    });
+    if (!ok) return;
     try {
       await apiJson<never>(`/api/apikeys/${keyId}/revoke`, { method: 'POST' });
       setNotification({ message: '已吊销', type: 'success' });
@@ -384,7 +392,13 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   };
 
   const handleDelete = async (keyId: string) => {
-    if (!confirm(`确定永久删除 ${keyId}？此操作不可恢复。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定永久删除 ${keyId}？此操作不可恢复。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       await apiJson<never>(`/api/apikeys/${keyId}`, { method: 'DELETE' });
       setNotification({ message: '已删除', type: 'success' });

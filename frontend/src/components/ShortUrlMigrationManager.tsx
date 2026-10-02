@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSync, FaChartBar, FaExclamationTriangle, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getApiBaseUrl } from '../api/api';
@@ -32,6 +33,7 @@ interface MigrationResult {
 
 const ShortUrlMigrationManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [stats, setStats] = useState<MigrationStats | null>(null);
@@ -70,7 +72,13 @@ const ShortUrlMigrationManager: React.FC = () => {
   const executeMigration = async () => {
     if (!canWrite) return;
 
-    if (!window.confirm('确定要执行短链迁移吗？这将把所有的 ipfs.crossbell.io 域名替换为 ipfs.chloemlla.com')) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要执行短链迁移吗？这将把所有的 ipfs.crossbell.io 域名替换为 ipfs.chloemlla.com',
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (ok) {
       return;
     }
 

@@ -7,6 +7,7 @@ import {
   AdminUserSummary,
 } from '../api/librechatAdmin';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { studioDangerButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioTileClassName } from './studioTheme';
 import { useAuth } from '../hooks/useAuth';
@@ -51,6 +52,7 @@ function errText(error: unknown, fallback: string): string {
  */
 const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -84,7 +86,12 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
   };
 
   const onSingleDelete = async (u: AdminUserSummary) => {
-    const yes = window.confirm(`确定删除 guest 历史 ${u.userId} 的全部聊天记录吗？该操作不可恢复。`);
+    const yes = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 guest 历史 ${u.userId} 的全部聊天记录吗？该操作不可恢复。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
     if (!yes) return;
     setBusy(true);
     try {
@@ -108,7 +115,12 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
       setNotification({ type: 'warning', message: '请先选择要删除的 guest 历史' });
       return;
     }
-    const yes = window.confirm(`确定删除选中的 ${selectedIds.length} 条 guest 历史吗？该操作不可恢复。`);
+    const yes = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除选中的 ${selectedIds.length} 条 guest 历史吗？该操作不可恢复。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
     if (!yes) return;
     setBusy(true);
     try {
@@ -123,8 +135,20 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
   };
 
   const onClearAll = async () => {
-    if (!window.confirm('确定一键清理全部 guest（游客）遗留历史吗？这些历史不属于任何登录账号，删除不可恢复。')) return;
-    if (!window.confirm('再次确认：将清空所有 guest: 开头的孤儿历史记录。确定继续吗？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定一键清理全部 guest（游客）遗留历史吗？这些历史不属于任何登录账号，删除不可恢复。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
+    const okAgain = await confirm({
+      title: '确认执行该操作？',
+      description: '再次确认：将清空所有 guest: 开头的孤儿历史记录。确定继续吗？',
+      tone: 'danger',
+      confirmLabel: '清空',
+    });
+    if (!okAgain) return;
     setBusy(true);
     try {
       const res = await deleteGuestHistories();

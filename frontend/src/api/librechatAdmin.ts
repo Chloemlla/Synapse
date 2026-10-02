@@ -68,6 +68,7 @@ export async function deleteAllUsers(): Promise<{ deleted: number; message: stri
 }
 
 export async function deleteGuestHistories(): Promise<{ deleted: number; message: string }> {
-    const res = await api.delete(`${BASE}/admin/users/guests`);
+    // 服务端要求显式 confirm（该端点不接收其它参数，与 deleteAllUsers 同口径）。
+    const res = await api.delete(`${BASE}/admin/users/guests`, { data: { confirm: true } });
     return res.data as { deleted: number; message: string };
 }

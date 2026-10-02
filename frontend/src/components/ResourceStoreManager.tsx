@@ -4,6 +4,8 @@ import { FaPlus, FaEdit, FaTrash, FaSearch, FaSync, FaInfoCircle, FaExclamationT
 import { Link } from 'react-router-dom';
 import { resourcesApi, Resource } from '../api/resources';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { studioPanelClassName } from './studioTheme';
@@ -426,6 +428,8 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
 export default function ResourceStoreManager() {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
+  const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -514,14 +518,20 @@ export default function ResourceStoreManager() {
   };
 
   const handleDelete = async (resource: Resource) => {
-    if (window.confirm(`确定要删除资源"${resource.title}"吗？此操作不可撤销。`)) {
-      try {
-        await resourcesApi.deleteResource(resource.id);
-        fetchResources(); // 重新获取资源列表
-      } catch (error) {
-        console.error('删除资源失败:', error);
-        alert('删除资源失败，请重试');
-      }
+    const ok = await confirm({
+      title: `删除资源「${resource.title}」？`,
+      description: '该资源会从商店下架，已生成的 CDK 不再能兑换它。此操作不可撤销。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
+    try {
+      await resourcesApi.deleteResource(resource.id);
+      fetchResources(); // 重新获取资源列表
+      setNotification({ type: 'success', message: '资源已删除' });
+    } catch (error) {
+      console.error('删除资源失败:', error);
+      setNotification({ type: 'error', message: '删除资源失败，请重试' });
     }
   };
 

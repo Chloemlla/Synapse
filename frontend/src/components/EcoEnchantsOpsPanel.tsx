@@ -23,6 +23,7 @@ import api from "../api/api";
 import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
 import { useNotification } from "./Notification";
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -316,6 +317,7 @@ function InstanceDetailSection({
   onBack: () => void;
 }) {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [instance, setInstance] = useState<OpsInstance | null>(null);
@@ -429,7 +431,13 @@ function InstanceDetailSection({
   const handleFileDelete = useCallback(async () => {
     if (!canWrite) return;
     if (!fileDeletePath.trim()) return;
-    if (!window.confirm(`确定删除远程文件「${fileDeletePath}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除远程文件「${fileDeletePath}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setFileOpsLoading(true);
     try {
       await api.post(`${API_BASE}/ops/instances/${instanceId}/files/delete`, {
@@ -458,7 +466,13 @@ function InstanceDetailSection({
   const handleRestoreBackup = useCallback(
     async (backupId: string) => {
       if (!canWrite) return;
-      if (!window.confirm(`确定恢复备份「${backupId.slice(0, 16)}...」？此操作不可撤销。`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定恢复备份「${backupId.slice(0, 16)}...」？此操作不可撤销。`,
+        tone: 'danger',
+        confirmLabel: '确认',
+      });
+      if (!ok) return;
       setRestoringId(backupId);
       try {
         await api.post(`${API_BASE}/ops/instances/${instanceId}/backups/${backupId}/restore`);

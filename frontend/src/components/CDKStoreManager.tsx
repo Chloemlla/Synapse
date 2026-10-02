@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { cn } from '../utils/cn';
 import { studioPanelClassName } from './studioTheme';
 
@@ -703,6 +704,7 @@ export default function CDKStoreManager() {
   const [exportingUnused, setExportingUnused] = useState(false);
   const [exportingUsed, setExportingUsed] = useState(false);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
 
   // 虚拟滚动相关状态
   const [containerHeight, setContainerHeight] = useState(600);
@@ -805,7 +807,13 @@ export default function CDKStoreManager() {
 
   const handleDelete = async (cdk: CDK) => {
     // 使用浏览器原生确认对话框，因为这是关键操作
-    if (window.confirm(`确定要删除CDK"${cdk.code}"吗？此操作不可撤销。`)) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定要删除CDK"${cdk.code}"吗？此操作不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (ok) {
       try {
         await cdksApi.deleteCDK(cdk.id);
         setNotification({
@@ -877,7 +885,13 @@ export default function CDKStoreManager() {
     const cdkCodes = selectedCDKObjects.map(cdk => cdk.code).join(', ');
 
     // 使用浏览器原生确认对话框，因为这是关键操作
-    if (window.confirm(`确定要删除以下${selectedCDKs.size}个CDK吗？\n${cdkCodes}\n\n此操作不可撤销。`)) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定要删除以下${selectedCDKs.size}个CDK吗？\n${cdkCodes}\n\n此操作不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (ok) {
       setBatchDeleting(true);
       try {
         const result = await cdksApi.batchDeleteCDKs(selectedArray);

@@ -17,6 +17,7 @@ import api from "../api/api";
 import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
 import { useNotification } from "./Notification";
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -234,6 +235,7 @@ const SectionShell: React.FC<{
 
 const EcoEnchantsAdminPage: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [health, setHealth] = useState<EcoHealth | null>(null);
@@ -533,7 +535,13 @@ const EcoEnchantsAdminPage: React.FC = () => {
       setNotification({ message: "请输入要吊销的授权 ID", type: "warning" });
       return;
     }
-    if (!window.confirm(`确定吊销授权「${licenseId}」？此操作不可撤销。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定吊销授权「${licenseId}」？此操作不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     await runSubmit(
       "license-revoke",
       async () => {

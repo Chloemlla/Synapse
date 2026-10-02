@@ -16,6 +16,7 @@ import type { AdminTranscriptItem, MediaJobRecord, MediaTarget } from '../../../
 import TranscriptView from '../../speech-to-text/TranscriptView';
 import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
+import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 import {
   EmptyHint,
   ErrLine,
@@ -42,6 +43,7 @@ const KIND_LABEL: Record<string, string> = {
  * 支持取消 / 重试 / 删除(超级管理员),产物可预览文本或直接下载。
  */
 export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
+  const confirm = useConfirm();
   const [jobs, setJobs] = useState<MediaJobRecord[]>([]);
   const [detail, setDetail] = useState<Record<string, MediaJobRecord>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -105,7 +107,15 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
   }, [expandedId, detail, jobs, loadDetail]);
 
   const act = async (action: 'cancel' | 'retry' | 'delete', job: MediaJobRecord) => {
-    if (action === 'delete' && !window.confirm('删除该任务?转写正文入库记录与产物文件会一并删除(下载的媒体也会删,上传的入参音频保留)。此操作不可恢复。')) return;
+    if (action === 'delete') {
+      const ok = await confirm({
+        title: '删除该任务？',
+        description: '转写正文入库记录与产物文件会一并删除（已下载的媒体也会删，上传的入参音频保留）。此操作不可恢复。',
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
+    }
     setPendingAction(`${action}:${job.id}`);
     setError(null);
     setFlash(null);

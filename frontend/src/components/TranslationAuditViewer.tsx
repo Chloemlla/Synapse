@@ -13,6 +13,7 @@ import {
   FaUserSlash,
 } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getBackendErrorMessage } from '../utils/backendError';
@@ -36,6 +37,7 @@ const PAGE_SIZE = 20;
 
 const TranslationAuditViewer: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [logs, setLogs] = useState<TranslationLogEntry[]>([]);
@@ -143,7 +145,17 @@ const TranslationAuditViewer: React.FC = () => {
       CLEAR_TRANSLATION_RESTRICTIONS: `确定清除用户「${selectedUser.id}」的翻译限制？`,
     };
     const confirmMessage = confirmMessages[action];
-    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    if (confirmMessage) {
+      // 惩罚动作（限制翻译 / 撤销页面权限 / 暂停账号 / 删除用户）都是不可逆的：
+      // 统一走组件化确认，并在文案里带上目标用户。
+      const ok = await confirm({
+        title: '确认执行该处置？',
+        description: confirmMessage,
+        tone: 'danger',
+        confirmLabel: '确认执行',
+      });
+      if (!ok) return;
+    }
 
     setPenaltyLoading(true);
     try {

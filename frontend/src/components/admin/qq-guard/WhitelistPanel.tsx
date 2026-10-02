@@ -3,6 +3,7 @@ import { FaTrashAlt, FaUserPlus, FaUsers } from 'react-icons/fa';
 import { qqGuardApi } from '../../../api/qqGuard';
 import type { QqGuardWhitelistRow } from '../../../api/qqGuard';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
+import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 import {
   InfoSectionTitle,
   studioPrimaryButtonClassName,
@@ -16,6 +17,7 @@ import { cx, formatDateTime } from './ui';
  * bot 命令轮询/启动时同步合并，生效后其群消息不再送 AI、不被撤回。
  */
 export const WhitelistPanel: React.FC = () => {
+  const confirm = useConfirm();
   const [items, setItems] = useState<QqGuardWhitelistRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,13 @@ export const WhitelistPanel: React.FC = () => {
   };
 
   const remove = async (uid: string) => {
-    if (!window.confirm(`确认将成员 ${uid} 移出白名单？移出后其消息将重新接受 AI 审查。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确认将成员 ${uid} 移出白名单？移出后其消息将重新接受 AI 审查。`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     setMsg(null);

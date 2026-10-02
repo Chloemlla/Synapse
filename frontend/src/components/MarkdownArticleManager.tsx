@@ -4,6 +4,7 @@ import { FaRegFileAlt } from 'react-icons/fa';
 import { markdownArticleApi, type MarkdownArticle, type MarkdownArticleSummary } from '../api/markdownArticles';
 import MarkdownRenderer, { copyTextToClipboard } from './MarkdownRenderer';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import {
@@ -100,6 +101,7 @@ const MarkdownArticleManager: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published'>('all');
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -276,7 +278,13 @@ const MarkdownArticleManager: React.FC = () => {
 
   const deleteArticle = async (article: MarkdownArticleSummary) => {
     if (!canWrite) return;
-    if (!window.confirm(`确认删除「${article.title}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确认删除「${article.title}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setIsSaving(true);
     try {
       await markdownArticleApi.remove(article.id);
