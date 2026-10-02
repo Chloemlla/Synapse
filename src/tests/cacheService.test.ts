@@ -30,7 +30,8 @@ beforeEach(() => {
 describe("cacheService 内存档", () => {
   it("buildKey 统一补 cache: 前缀并丢弃空片段", () => {
     expect(cacheService.buildKey("recommendation", "user", "u1", undefined)).toBe("cache:recommendation:user:u1");
-    expect(cacheService.buildKey("cache:already", 3)).toBe("cache:already:3");
+    expect(cacheService.buildKey("recommendation", "popular", 5)).toBe("cache:recommendation:popular:5");
+    expect(cacheService.buildKey("")).toBe("cache:");
   });
 
   it("set/get 往返 JSON 值", async () => {

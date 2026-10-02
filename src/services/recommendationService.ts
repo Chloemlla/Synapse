@@ -180,7 +180,9 @@ export class RecommendationService {
       if (!history || (history.generations || []).length < HISTORY_THRESHOLD) {
         logger.info(`[RecommendationService] 用户 ${userId} 历史记录不足，返回热门推荐`);
         const popularStyles = await this.getPopularStyles(limit + excludedStyleIds.size);
-        return this.buildPopularRecommendations(popularStyles, excludedStyleIds, likedStyleIds, settings, limit);
+        // 热门榜本身已是完整候选池（聚合为空时 getPopularStyles 已回落到内置默认风格），
+        // 所以不再拿内置默认风格补位 —— 否则短偏好用户会把每个冷启动风格都看一遍。
+        return this.buildPopularRecommendations(popularStyles, excludedStyleIds, likedStyleIds, settings, limit, false);
       }
 
       return this.analyzeHistoryForRecommendations(
@@ -538,10 +540,12 @@ export class RecommendationService {
     likedStyleIds: Set<string>,
     settings: RecommendationSettings | null | undefined,
     limit: number,
+    /** 候选不足时是否用内置默认风格补位（历史路径补位，纯热门路径不补）。 */
+    padWithDefaults = true,
   ): Recommendation[] {
     const result: Recommendation[] = [];
     const seen = new Set<string>();
-    const candidates = [...styles, ...DEFAULT_POPULAR_STYLES];
+    const candidates = padWithDefaults ? [...styles, ...DEFAULT_POPULAR_STYLES] : [...styles];
     for (const style of candidates) {
       if (result.length >= limit) break;
       if (!style?.id || excludedStyleIds.has(style.id) || seen.has(style.id)) continue;
