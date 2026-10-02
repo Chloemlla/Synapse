@@ -21,8 +21,34 @@ const adminOnly = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+// ── 管理端（superadmin） ──
+// 静态段路由必须排在 `/admin/:id...` 之前：否则 PATCH /admin/bulk/status 会被
+// `/admin/:id/status` 先匹配掉（id="bulk"），批量操作直接失效。
+//
 // 普通管理员看不了工单原文（用户内容）：与后端范围守卫口径一致。
 router.get("/admin/all", ticketAdminLimiter, adminOnly, requireAdminScope, ticketController.getAllTickets);
+router.get("/admin/stats", ticketAdminLimiter, adminOnly, requireAdminScope, ticketController.getTicketStats);
+router.patch(
+  "/admin/bulk/status",
+  ticketAdminLimiter,
+  authenticateSuperAdmin,
+  auditLog({
+    module: "other",
+    action: "ticket.bulkStatusChange",
+    extractDetail: (req) => ({
+      status: req.body?.status,
+      count: Array.isArray(req.body?.ids) ? req.body.ids.length : 0,
+    }),
+  }),
+  ticketController.bulkUpdateStatus,
+);
+router.patch(
+  "/admin/:id",
+  ticketAdminLimiter,
+  authenticateSuperAdmin,
+  auditLog({ module: "other", action: "ticket.updateFields", extractTarget: (req) => ({ targetId: req.params.id }) }),
+  ticketController.updateTicketFields,
+);
 router.patch(
   "/admin/:id/status",
   ticketAdminLimiter,
@@ -45,10 +71,14 @@ router.delete(
   ticketController.adminDeleteMessage,
 );
 
-// 用户接口
+// ── 用户接口 ──
 router.post("/", ticketWriteLimiter, ticketController.createTicket);
 router.get("/", ticketReadLimiter, ticketController.getUserTickets);
+// `/unread-count` 必须排在 `/:id` 之前，否则会被当成工单 ID（id 校验会返回 400）。
+router.get("/unread-count", ticketReadLimiter, ticketController.getUnreadCount);
 router.get("/:id", ticketReadLimiter, ticketController.getTicketById);
 router.post("/:id/messages", ticketWriteLimiter, ticketController.replyToTicket);
+// 属主自助关闭；客服侧走 PATCH /admin/:id
+router.patch("/:id/close", ticketWriteLimiter, ticketController.closeOwnTicket);
 
 export default router;

@@ -31,6 +31,8 @@ const ticketMessageSchema = new mongoose.Schema({
   senderRole: { type: String, enum: ["user", "admin", "ai"], required: true },
   content: { type: String, required: true },
   isAi: { type: Boolean, default: false },
+  // 内部备注：仅 superadmin 可见，永不下发给工单属主（列表/详情/WS 三处都要过滤）。
+  visibility: { type: String, enum: ["public", "internal"], default: "public" },
   aiErrorDetails: { type: ticketAiErrorDetailsSchema },
   createdAt: { type: Date, default: Date.now },
 });
@@ -52,7 +54,21 @@ const ticketSchema = new mongoose.Schema(
       enum: ["low", "medium", "high"],
       default: "medium",
     },
+    /** 工单分类：让管理端能按主题分流（缺陷 / 功能 / 账号 / 计费 / 其他）。 */
+    category: {
+      type: String,
+      enum: ["bug", "feature", "account", "billing", "other"],
+      default: "other",
+      index: true,
+    },
+    /** 受理人：superadmin 认领工单，便于「我的工单 / 未分配」筛选。 */
+    assigneeId: { type: String, default: null, index: true },
+    assigneeName: { type: String, default: null },
     messages: [ticketMessageSchema],
+    // 未读状态：分别记录用户侧 / 客服侧最后一次打开该工单的时间。
+    // 列表摘要据此算 hasUnread（最后一条来自对方且晚于本侧已读时间）。
+    userLastReadAt: { type: Date, default: null },
+    adminLastReadAt: { type: Date, default: null },
   },
   {
     collection: "tickets",
@@ -92,9 +108,12 @@ export interface ITicketMessage {
   senderRole: "user" | "admin" | "ai";
   content: string;
   isAi?: boolean;
+  visibility?: "public" | "internal";
   aiErrorDetails?: ITicketAiErrorDetails;
   createdAt: Date;
 }
+
+export type TicketCategory = "bug" | "feature" | "account" | "billing" | "other";
 
 export interface ITicket {
   _id: string;
@@ -104,7 +123,12 @@ export interface ITicket {
   description: string;
   status: "open" | "in-progress" | "resolved" | "closed";
   priority: "low" | "medium" | "high";
+  category: TicketCategory;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
   messages: ITicketMessage[];
   createdAt: Date;
   updatedAt: Date;
+  userLastReadAt?: Date | null;
+  adminLastReadAt?: Date | null;
 }

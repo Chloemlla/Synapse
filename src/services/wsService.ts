@@ -643,6 +643,19 @@ class WsService {
   }
 
   /**
+   * 单独广播「内部备注」变更。
+   *
+   * 内部备注不能走 notifyTicketUpdate：那个方法把同一份 view 同时发给属主与管理员，
+   * 属主会因此看到只给客服看的备注。这里只广播给管理员。
+   */
+  notifyTicketInternalNote(userId: string, ticket: any) {
+    this.broadcastToAdminsExcluding(userId, {
+      type: "ticket:update",
+      data: toTicketView(ticket, true, { includeInternal: true }),
+    });
+  }
+
+  /**
    * 通知工单处理进度（审查、AI生成等）
    */
   notifyTicketProcess(userId: string, ticketId: string, step: TicketProcessStep) {
