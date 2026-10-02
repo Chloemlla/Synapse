@@ -53,7 +53,7 @@ export function useLottery() {
       if (Array.isArray(data.data)) {
         setAllRounds(data.data);
       } else {
-        console.error('❌ 响应数据格式错误，期望数组格式');
+        console.error(' 响应数据格式错误，期望数组格式');
         setError('响应数据格式错误');
       }
     } catch (err) {

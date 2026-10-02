@@ -1,11 +1,47 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Home, ClipboardList, BarChart3, User, Plus, ChevronLeft, ChevronRight,
-  ChevronRight as ArrowRight, Wallet, CreditCard, Banknote, Building2,
-  ShoppingBag, Car, Film, Home as HomeIcon2, Pill, Book, MoreHorizontal,
-  DollarSign, TrendingUp, Gift, LogOut, Settings
+  Banknote,
+  BarChart3,
+  Book,
+  Building2,
+  Car,
+  ChevronLeft,
+  ChevronRight,
+  ChevronRight as ArrowRight,
+  ClipboardList,
+  CreditCard,
+  DollarSign,
+  FaChartLine,
+  FaCircle,
+  FaCreditCard,
+  FaFilm,
+  FaGem,
+  FaGift,
+  FaHome,
+  FaMoneyBillWave,
+  FaPills,
+  FaShoppingBag,
+  FaTaxi,
+  FaUniversity,
+  FaUtensils,
+  FaWallet,
+  Film,
+  Gift,
+  Home,
+  Home as HomeIcon2,
+  LogOut,
+  MoreHorizontal,
+  Pill,
+  Plus,
+  Settings
 } from 'lucide-react';
-import { FaWallet } from 'react-icons/fa';
+import {
+  FaBook,
+  ShoppingBag,
+  TrendingUp,
+  User,
+  Wallet
+} from 'react-icons/fa';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell } from './studioTheme';
 
 // 记账理财APP UI展示页面 (Bento设计风格)
@@ -360,9 +396,9 @@ const FinanceAppDemo: React.FC = () => {
                   {/* 账户卡片网格 - 跨2列 */}
                   <div className="col-span-2 grid grid-cols-3 gap-2.5">
                     {[
-                      { icon: '💵', name: '现金', balance: '528' },
-                      { icon: '🏦', name: '银行卡', balance: '8,926' },
-                      { icon: '💳', name: '支付宝', balance: '3,132' }
+                      { icon: <FaMoneyBillWave />, name: '现金', balance: '528' },
+                      { icon: <FaUniversity />, name: '银行卡', balance: '8,926' },
+                      { icon: <FaCreditCard />, name: '支付宝', balance: '3,132' }
                     ].map((account, idx) => (
                       <div key={idx} className="bg-[#f8f9fa] border border-black/5 rounded-[16px] p-4 text-center hover:bg-white hover:scale-105 hover:border-[#667eea] transition-all duration-300">
                         <div className="text-[28px] mb-2">{account.icon}</div>
@@ -381,10 +417,10 @@ const FinanceAppDemo: React.FC = () => {
                   {/* 交易列表 - 跨2列 */}
                   <div className="col-span-2 space-y-2">
                     {[
-                      { icon: '🍜', name: '餐饮', note: '午餐', amount: '-42.00', time: '今天 12:30', color: 'from-orange-400 to-orange-500' },
-                      { icon: '🚕', name: '交通', note: '打车', amount: '-28.50', time: '今天 09:15', color: 'from-blue-400 to-blue-500' },
-                      { icon: '🛍️', name: '购物', note: '淘宝', amount: '-158.00', time: '昨天 20:45', color: 'from-pink-400 to-pink-500' },
-                      { icon: '💰', name: '工资', note: '月薪', amount: '+8,500.00', time: '10-15', color: 'from-green-400 to-green-500' }
+                      { icon: <FaUtensils />, name: '餐饮', note: '午餐', amount: '-42.00', time: '今天 12:30', color: 'from-orange-400 to-orange-500' },
+                      { icon: <FaTaxi />, name: '交通', note: '打车', amount: '-28.50', time: '今天 09:15', color: 'from-blue-400 to-blue-500' },
+                      { icon: <FaShoppingBag />, name: '购物', note: '淘宝', amount: '-158.00', time: '昨天 20:45', color: 'from-pink-400 to-pink-500' },
+                      { icon: <FaWallet />, name: '工资', note: '月薪', amount: '+8,500.00', time: '10-15', color: 'from-green-400 to-green-500' }
                     ].map((trans, idx) => (
                       <div key={idx} className="bg-white border border-black/6 rounded-[16px] p-3.5 flex items-center gap-3 hover:border-[#667eea] hover:translate-x-1 transition-all duration-300">
                         <div className={`w-12 h-12 rounded-[14px] bg-gradient-to-br ${trans.color} flex items-center justify-center text-[22px]`}>
@@ -473,13 +509,13 @@ const FinanceAppDemo: React.FC = () => {
                 <div className="flex-1 px-5 py-5 overflow-y-auto no-scrollbar">
                   <div className="grid grid-cols-4 gap-4 mb-5">
                     {[
-                      { icon: '🍜', name: '餐饮' },
-                      { icon: '🛍️', name: '购物' },
-                      { icon: '🚕', name: '交通' },
-                      { icon: '🎬', name: '娱乐' },
-                      { icon: '🏠', name: '住房' },
-                      { icon: '💊', name: '医疗' },
-                      { icon: '📚', name: '教育' },
+                      { icon: <FaUtensils />, name: '餐饮' },
+                      { icon: <FaShoppingBag />, name: '购物' },
+                      { icon: <FaTaxi />, name: '交通' },
+                      { icon: <FaFilm />, name: '娱乐' },
+                      { icon: <FaHome />, name: '住房' },
+                      { icon: <FaPills />, name: '医疗' },
+                      { icon: <FaBook />, name: '教育' },
                       { icon: '⋯', name: '其他' }
                     ].map((cat, idx) => (
                       <button
@@ -578,15 +614,15 @@ const FinanceAppDemo: React.FC = () => {
                 <div className="px-5 space-y-4">
                   {[
                     { date: '今天', items: [
-                      { icon: '🍜', name: '餐饮', note: '午餐', amount: '-42.00', time: '12:30', color: 'from-orange-400 to-orange-500' },
-                      { icon: '🚕', name: '交通', note: '打车', amount: '-28.50', time: '09:15', color: 'from-blue-400 to-blue-500' }
+                      { icon: <FaUtensils />, name: '餐饮', note: '午餐', amount: '-42.00', time: '12:30', color: 'from-orange-400 to-orange-500' },
+                      { icon: <FaTaxi />, name: '交通', note: '打车', amount: '-28.50', time: '09:15', color: 'from-blue-400 to-blue-500' }
                     ]},
                     { date: '昨天', items: [
-                      { icon: '🛍️', name: '购物', note: '淘宝', amount: '-158.00', time: '20:45', color: 'from-pink-400 to-pink-500' },
-                      { icon: '🎬', name: '娱乐', note: '电影票', amount: '-86.00', time: '19:30', color: 'from-yellow-400 to-yellow-500' }
+                      { icon: <FaShoppingBag />, name: '购物', note: '淘宝', amount: '-158.00', time: '20:45', color: 'from-pink-400 to-pink-500' },
+                      { icon: <FaFilm />, name: '娱乐', note: '电影票', amount: '-86.00', time: '19:30', color: 'from-yellow-400 to-yellow-500' }
                     ]},
                     { date: '10月15日', items: [
-                      { icon: '💰', name: '工资', note: '月薪', amount: '+8,500.00', time: '09:00', color: 'from-green-400 to-green-500' }
+                      { icon: <FaWallet />, name: '工资', note: '月薪', amount: '+8,500.00', time: '09:00', color: 'from-green-400 to-green-500' }
                     ]}
                   ].map((day, dayIdx) => (
                     <div key={dayIdx}>
@@ -777,9 +813,9 @@ const FinanceAppDemo: React.FC = () => {
                 <div className="bg-white rounded-[15px] p-5 shadow-sm">
                   <h3 className="text-base font-semibold text-[#2c3e50] mb-3">消费习惯</h3>
                   {[
-                    { icon: '🍜', name: '餐饮', percent: 35 },
-                    { icon: '🛍️', name: '购物', percent: 25 },
-                    { icon: '🚕', name: '交通', percent: 20 }
+                    { icon: <FaUtensils />, name: '餐饮', percent: 35 },
+                    { icon: <FaShoppingBag />, name: '购物', percent: 25 },
+                    { icon: <FaTaxi />, name: '交通', percent: 20 }
                   ].map((habit, idx) => (
                     <div key={idx} className="flex items-center gap-3 mb-4 last:mb-0">
                       <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white text-xs font-bold flex items-center justify-center">
@@ -819,10 +855,10 @@ const FinanceAppDemo: React.FC = () => {
                 {/* 账户列表 */}
                 <div className="space-y-3">
                   {[
-                    { icon: '💵', name: '现金', balance: '528.00', color: 'from-yellow-400 to-orange-400' },
-                    { icon: '🏦', name: '中国银行', balance: '8,926.50', color: 'from-[#667eea] to-[#764ba2]' },
-                    { icon: '💳', name: '支付宝', balance: '3,132.00', color: 'from-blue-400 to-blue-500' },
-                    { icon: '💚', name: '微信', balance: '0.00', color: 'from-green-400 to-green-500' }
+                    { icon: <FaMoneyBillWave />, name: '现金', balance: '528.00', color: 'from-yellow-400 to-orange-400' },
+                    { icon: <FaUniversity />, name: '中国银行', balance: '8,926.50', color: 'from-[#667eea] to-[#764ba2]' },
+                    { icon: <FaCreditCard />, name: '支付宝', balance: '3,132.00', color: 'from-blue-400 to-blue-500' },
+                    { icon: <FaCircle />, name: '微信', balance: '0.00', color: 'from-green-400 to-green-500' }
                   ].map((account, idx) => (
                     <div
                       key={idx}
@@ -861,13 +897,13 @@ const FinanceAppDemo: React.FC = () => {
                   <h3 className="text-base font-bold text-[#2c3e50] mb-4">支出分类</h3>
                   <div className="grid grid-cols-4 gap-3">
                     {[
-                      { icon: '🍜', name: '餐饮', amount: '650', color: 'from-orange-400 to-orange-500' },
-                      { icon: '🛍️', name: '购物', amount: '520', color: 'from-pink-400 to-pink-500' },
-                      { icon: '🚕', name: '交通', amount: '380', color: 'from-blue-400 to-blue-500' },
-                      { icon: '🎬', name: '娱乐', amount: '310', color: 'from-yellow-400 to-yellow-500' },
-                      { icon: '🏠', name: '住房', amount: '0', color: 'from-purple-400 to-purple-500' },
-                      { icon: '💊', name: '医疗', amount: '0', color: 'from-red-400 to-red-500' },
-                      { icon: '📚', name: '教育', amount: '0', color: 'from-green-400 to-green-500' },
+                      { icon: <FaUtensils />, name: '餐饮', amount: '650', color: 'from-orange-400 to-orange-500' },
+                      { icon: <FaShoppingBag />, name: '购物', amount: '520', color: 'from-pink-400 to-pink-500' },
+                      { icon: <FaTaxi />, name: '交通', amount: '380', color: 'from-blue-400 to-blue-500' },
+                      { icon: <FaFilm />, name: '娱乐', amount: '310', color: 'from-yellow-400 to-yellow-500' },
+                      { icon: <FaHome />, name: '住房', amount: '0', color: 'from-purple-400 to-purple-500' },
+                      { icon: <FaPills />, name: '医疗', amount: '0', color: 'from-red-400 to-red-500' },
+                      { icon: <FaBook />, name: '教育', amount: '0', color: 'from-green-400 to-green-500' },
                       { icon: '⋯', name: '其他', amount: '0', color: 'from-gray-400 to-gray-500' }
                     ].map((cat, idx) => (
                       <div
@@ -889,9 +925,9 @@ const FinanceAppDemo: React.FC = () => {
                   <h3 className="text-base font-bold text-[#2c3e50] mb-4">收入分类</h3>
                   <div className="grid grid-cols-4 gap-3">
                     {[
-                      { icon: '💰', name: '工资', amount: '8,500', color: 'from-green-400 to-green-500' },
-                      { icon: '📈', name: '理财', amount: '0', color: 'from-blue-400 to-blue-500' },
-                      { icon: '🎁', name: '红包', amount: '0', color: 'from-red-400 to-red-500' },
+                      { icon: <FaWallet />, name: '工资', amount: '8,500', color: 'from-green-400 to-green-500' },
+                      { icon: <FaChartLine />, name: '理财', amount: '0', color: 'from-blue-400 to-blue-500' },
+                      { icon: <FaGift />, name: '红包', amount: '0', color: 'from-red-400 to-red-500' },
                       { icon: '⋯', name: '其他', amount: '0', color: 'from-gray-400 to-gray-500' }
                     ].map((cat, idx) => (
                       <div
@@ -921,12 +957,12 @@ const FinanceAppDemo: React.FC = () => {
                 {/* 个人信息头部 */}
                 <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-8 pb-7 text-white flex items-center gap-5 rounded-b-2xl shadow-md">
                   <div className="w-[70px] h-[70px] rounded-full bg-white flex items-center justify-center text-[32px] shadow-lg">
-                    💰
+                    <FaWallet className="shrink-0" aria-hidden />
                   </div>
                   <div className="flex-1">
                     <h2 className="text-xl font-bold mb-1">理财达人</h2>
                     <div className="inline-block px-3 py-1 bg-yellow-500/30 rounded-[12px] text-xs mb-2">
-                      💎 记账365天
+                      <FaGem className="inline" aria-hidden /> 记账365天
                     </div>
                     <div className="text-[13px] opacity-90">坚持记账，财务自由</div>
                   </div>

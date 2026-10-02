@@ -1,6 +1,22 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaTerminal, FaServer, FaList, FaHistory, FaPlay, FaPlus, FaEye, FaTrash, FaSync, FaArrowLeft, FaInfoCircle, FaChartLine, FaSpaceShuttle } from 'react-icons/fa';
+import {
+  AnimatePresence } from 'framer-motion';
+import { FaTerminal,
+  FaArrowLeft,
+  FaChartLine,
+  FaCircle,
+  FaEye,
+  FaHistory,
+  FaInfoCircle,
+  FaList,
+  FaPlay,
+  FaPlus,
+  FaServer,
+  FaSpaceShuttle,
+  FaSync,
+  FaTrash,
+  motion
+} from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { api } from '../api/index';
@@ -367,11 +383,11 @@ const CommandManager: React.FC = () => {
       // 检查是否为加密数据
       if (response.data.data && response.data.iv && typeof response.data.data === 'string' && typeof response.data.iv === 'string') {
         try {
-          console.log('🔐 开始解密执行历史数据...');
+          console.log(' 开始解密执行历史数据...');
                               
           const decryptedData = await maybeDecryptCommandResponse(response.data);
           
-          console.log('✅ 解密成功，获取到执行历史数据');
+          console.log(' 解密成功，获取到执行历史数据');
           
           if (Array.isArray(decryptedData)) {
             setCommandHistory(decryptedData);
@@ -581,17 +597,17 @@ const CommandManager: React.FC = () => {
   const getStatusLevelIcon = (level: string) => {
     switch (level) {
       case 'excellent':
-        return '🟢';
+        return <FaCircle className="text-emerald-500" aria-hidden />;
       case 'good':
-        return '🔵';
+        return <FaCircle className="text-blue-500" aria-hidden />;
       case 'warning':
-        return '🟡';
+        return <FaCircle className="text-amber-500" aria-hidden />;
       case 'critical':
-        return '🟠';
+        return <FaCircle className="text-orange-500" aria-hidden />;
       case 'danger':
-        return '🔴';
+        return <FaCircle className="text-rose-500" aria-hidden />;
       default:
-        return '⚪';
+        return <FaCircle className="text-slate-400" aria-hidden />;
     }
   };
 
@@ -1374,7 +1390,7 @@ const CommandManager: React.FC = () => {
                   </div>
                   
                   <div className="mt-3 text-sm text-slate-600">
-                    <p className="font-medium mb-1">📈 系统状态总结:</p>
+                    <p className="font-medium mb-1"><FaChartLine className="inline" aria-hidden /> 系统状态总结:</p>
                     <p>
                       {analyzeMemoryUsage(serverStatus.memory_usage).level === 'excellent' && analyzeCPUUsage(serverStatus.cpu_usage_percent).level === 'excellent' 
                         ? '系统运行状态优秀，资源充足，可以稳定处理大量请求。'

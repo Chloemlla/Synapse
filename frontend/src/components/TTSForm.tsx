@@ -1,23 +1,32 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { FishAudioCatalogItem, TtsProviderId, TtsProviderOption, TtsRequest, TtsResponse } from "../types/tts";
-import { getApiBaseUrl } from "../api/api";
-import { useNotification } from "./Notification";
-import ManagedCaptcha, {
-  type ManagedCaptchaChallenge,
-  type ManagedCaptchaRef,
-  type ManagedCaptchaStatus,
-} from "./ManagedCaptcha";
-import { useIsAdmin } from "../hooks/useRBAC";
-import { TTS_POLICY_CONSENT_REQUIRED, TtsApiError } from "../types/ttsErrors";
+import {
+  AnimatePresence } from "framer-motion";
+import { FishAudioCatalogItem,
+  FaCog,
+  FaLightbulb,
+  FaMicrophone,
+  FaRobot,
+  FaVolumeUp,
+  TtsApiError } from "../types/ttsErrors";
 import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
 import {
   FaLock,
-  FaMicrophone,
-  FaRobot,
-  FaCog,
-  FaVolumeUp,
-} from "react-icons/fa";
+  TtsProviderId,
+  TtsProviderOption,
+  TtsRequest,
+  TtsResponse } from "../types/tts";
+import { getApiBaseUrl } from "../api/api";
+import { useNotification } from "./Notification";
+import ManagedCaptcha,
+  motion,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+  {
+  type ManagedCaptchaChallenge,
+  } from "./ManagedCaptcha";
+import { useIsAdmin } from "../hooks/useRBAC";
+import { TTS_POLICY_CONSENT_REQUIRED
+} from 'react-icons/fa';
 import { cn } from "../utils/cn";
 import {
   studioEyebrowClassName,
@@ -633,7 +642,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             rows={4}
             placeholder={`请输入要转换的文本...
 
-💡 提示：
+<FaLightbulb className="inline" aria-hidden /> 提示：
 • 支持中英文混合
 • 标点符号会影响语音节奏
 • 建议使用完整句子获得更好效果`}

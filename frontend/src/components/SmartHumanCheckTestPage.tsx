@@ -88,10 +88,10 @@ const SmartHumanCheckTestPage: React.FC = () => {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data && data.success) {
-        setVerifyMsg('后端验证成功 ✅');
+        setVerifyMsg('后端验证成功');
       } else {
         const reason = (data && (data.error || data.reason)) || `HTTP ${res.status}`;
-        setVerifyMsg(`后端验证失败 ❌：${String(reason)}`);
+        setVerifyMsg(`后端验证失败：${String(reason)}`);
       }
     } catch (e) {
       console.error('验证请求异常:', e);

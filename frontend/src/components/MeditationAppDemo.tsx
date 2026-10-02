@@ -1,11 +1,60 @@
 import React, { useEffect, useRef, Activity } from 'react';
 import {
-  Home, Star, BarChart3, User, ChevronLeft, ChevronRight, MoreHorizontal,
-  Search, Settings, Play, RotateCcw, Pause, Square, Plus, Minus,
-  Heart, CloudRain, Waves, Trees, Moon, Radio as RadioIcon, Flame,
-  Mountain, Bug, Bell, LogOut, Trophy, Award, Sunrise, Crown, CheckCircle
+  Award,
+  BarChart3,
+  Bell,
+  Bug,
+  CheckCircle
 } from 'lucide-react';
-import { FaLeaf } from 'react-icons/fa';
+import {
+  FaBell,
+  ChevronLeft,
+  ChevronRight,
+  CloudRain,
+  Crown,
+  FaBroadcastTower,
+  FaBug,
+  FaCloudRain,
+  FaCloudSun,
+  FaCrown,
+  FaFire,
+  FaGem,
+  FaHeadphones,
+  FaLeaf,
+  FaMedal,
+  FaMoon,
+  FaMountain,
+  FaPlay,
+  FaSpa,
+  FaStar,
+  FaSun,
+  FaTag,
+  FaTree,
+  FaTrophy,
+  FaWater,
+  Flame,
+  Heart,
+  Home,
+  LogOut,
+  Minus,
+  Moon,
+  MoreHorizontal,
+  Mountain,
+  Pause,
+  Play,
+  Plus,
+  Radio as RadioIcon,
+  RotateCcw,
+  Search,
+  Settings,
+  Square,
+  Star,
+  Sunrise,
+  Trees,
+  Trophy,
+  User,
+  Waves
+} from 'react-icons/fa';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell, studioSecondaryButtonClassName } from './studioTheme';
 
 // 冥想APP UI展示页面
@@ -363,7 +412,7 @@ const MeditationAppDemo: React.FC = () => {
                 {/* 顶部横幅 */}
                 <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-9 pb-4 text-white">
                   <div className="text-sm opacity-90 mb-2">10月23日 星期三 14:30</div>
-                  <div className="text-2xl font-light mb-4">下午好 🌤️</div>
+                  <div className="text-2xl font-light mb-4">下午好 <FaCloudSun className="inline" aria-hidden /></div>
                   
                   {/* 今日冥想卡片 */}
                   <div className="bg-white/20 backdrop-blur-md rounded-[15px] p-4">
@@ -400,13 +449,13 @@ const MeditationAppDemo: React.FC = () => {
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-2xl font-light">{scene.title}</h3>
                           <div className="w-10 h-10 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center">
-                            ▶️
+                            <FaPlay className="shrink-0" aria-hidden />
                           </div>
                         </div>
                         <p className="text-sm opacity-90 mb-2">{scene.desc}</p>
                         <div className="flex items-center gap-3 text-xs opacity-80">
-                          <span>🏷️ {scene.tag}</span>
-                          <span>🎧 {scene.plays}</span>
+                          <span><FaTag className="inline" aria-hidden /> {scene.tag}</span>
+                          <span><FaHeadphones className="inline" aria-hidden /> {scene.plays}</span>
                         </div>
                       </div>
                     </div>
@@ -463,7 +512,7 @@ const MeditationAppDemo: React.FC = () => {
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <div className="text-7xl font-extralight text-white">20</div>
                       <div className="text-base text-white/80 mt-1">分钟</div>
-                      <div className="mt-4 text-[32px]">🌧️</div>
+                      <div className="mt-4 text-[32px]"><FaCloudRain aria-hidden /></div>
                     </div>
                   </div>
 
@@ -554,7 +603,7 @@ const MeditationAppDemo: React.FC = () => {
                 
                 <div className="relative z-10 flex flex-col items-center px-5 pt-20">
                   {/* 成就图标 */}
-                  <div className="text-[80px] animate-pulse">🏆</div>
+                  <div className="text-[80px] animate-pulse"><FaTrophy aria-hidden /></div>
                   
                   {/* 完成信息 */}
                   <h2 className="text-5xl font-extralight text-[#2c3e50] mt-6 mb-2">完成</h2>
@@ -587,7 +636,7 @@ const MeditationAppDemo: React.FC = () => {
 
                   {/* 成就徽章 */}
                   <div className="w-full mt-6 bg-gradient-to-r from-[#ffd700] to-[#ffed4e] rounded-2xl p-4 text-center">
-                    <span className="text-base font-medium text-[#2c3e50]">🌟 解锁新成就：专注新星</span>
+                    <span className="text-base font-medium text-[#2c3e50]"><FaStar className="inline" aria-hidden /> 解锁新成就：专注新星</span>
                   </div>
 
                   {/* 操作按钮 */}
@@ -651,10 +700,10 @@ const MeditationAppDemo: React.FC = () => {
                   <h3 className="text-base font-semibold text-[#2c3e50] mb-4">最常使用场景</h3>
                   <div className="space-y-3">
                     {[
-                      { name: '雨声', icon: '🌧️', percent: 35, time: '42min', color: '#667eea' },
-                      { name: '海浪', icon: '🌊', percent: 28, time: '34min', color: '#4facfe' },
-                      { name: '森林', icon: '🌲', percent: 22, time: '26min', color: '#56ab2f' },
-                      { name: '夜晚', icon: '🌙', percent: 15, time: '18min', color: '#3498db' }
+                      { name: '雨声', icon: <FaCloudRain />, percent: 35, time: '42min', color: '#667eea' },
+                      { name: '海浪', icon: <FaWater />, percent: 28, time: '34min', color: '#4facfe' },
+                      { name: '森林', icon: <FaTree />, percent: 22, time: '26min', color: '#56ab2f' },
+                      { name: '夜晚', icon: <FaMoon />, percent: 15, time: '18min', color: '#3498db' }
                     ].map((scene, idx) => (
                       <div key={idx} className="flex items-center gap-3">
                         <span className="text-xl">{scene.icon}</span>
@@ -680,7 +729,7 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 时间分布 */}
                 <div className="mx-5 mt-5 mb-20 bg-white rounded-[15px] p-5 shadow-sm text-center">
-                  <span className="text-2xl">🌙</span>
+                  <span className="text-2xl"><FaMoon aria-hidden /></span>
                   <h3 className="text-base font-semibold text-[#2c3e50] mt-2 mb-1">最活跃时段</h3>
                   <p className="text-sm text-[#95a5a6]">晚上 21:00-23:00</p>
                 </div>
@@ -709,12 +758,12 @@ const MeditationAppDemo: React.FC = () => {
                 {/* 成就徽章网格 */}
                 <div className="p-5 grid grid-cols-2 gap-4">
                   {[
-                    { icon: '🥇', name: '初学者', desc: '完成首次冥想', unlocked: true, date: '2025-10-15', color: '#ffd700' },
-                    { icon: '⭐', name: '专注新星', desc: '连续冥想3天', unlocked: true, date: '2025-10-18', color: '#ffd700' },
-                    { icon: '🌅', name: '早起鸟', desc: '早晨冥想10次', unlocked: true, date: '2025-10-20', color: '#ffd700' },
-                    { icon: '🌙', name: '夜猫子', desc: '夜晚冥想10次', unlocked: true, date: '2025-10-22', color: '#ffd700' },
-                    { icon: '🏆', name: '冥想大师', desc: '累计100小时', unlocked: false, progress: '78/100小时', color: '#d0d0d0' },
-                    { icon: '👑', name: '全勤王', desc: '连续冥想30天', unlocked: false, progress: '7/30天', color: '#d0d0d0' }
+                    { icon: <FaMedal />, name: '初学者', desc: '完成首次冥想', unlocked: true, date: '2025-10-15', color: '#ffd700' },
+                    { icon: <FaStar />, name: '专注新星', desc: '连续冥想3天', unlocked: true, date: '2025-10-18', color: '#ffd700' },
+                    { icon: <FaSun />, name: '早起鸟', desc: '早晨冥想10次', unlocked: true, date: '2025-10-20', color: '#ffd700' },
+                    { icon: <FaMoon />, name: '夜猫子', desc: '夜晚冥想10次', unlocked: true, date: '2025-10-22', color: '#ffd700' },
+                    { icon: <FaTrophy />, name: '冥想大师', desc: '累计100小时', unlocked: false, progress: '78/100小时', color: '#d0d0d0' },
+                    { icon: <FaCrown />, name: '全勤王', desc: '连续冥想30天', unlocked: false, progress: '7/30天', color: '#d0d0d0' }
                   ].map((achievement, idx) => (
                     <div 
                       key={idx} 
@@ -840,7 +889,7 @@ const MeditationAppDemo: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-[#95a5a6]">获得成就</span>
-                      <span className="text-base font-semibold text-[#2c3e50]">2个 🏆</span>
+                      <span className="text-base font-semibold text-[#2c3e50]">2个 <FaTrophy className="inline" aria-hidden /></span>
                     </div>
                   </div>
                 </div>
@@ -888,14 +937,14 @@ const MeditationAppDemo: React.FC = () => {
                 {/* 场景卡片网格 */}
                 <div className="p-5 grid grid-cols-2 gap-4 pb-20">
                   {[
-                    { icon: '🌧️', name: '雨声', time: '15min', plays: '12.3k', color: 'from-[#667eea] to-[#764ba2]', liked: true },
-                    { icon: '🌊', name: '海浪', time: '20min', plays: '8.9k', color: 'from-[#4facfe] to-[#00f2fe]', liked: false },
-                    { icon: '🌲', name: '森林', time: '25min', plays: '15.6k', color: 'from-[#56ab2f] to-[#a8e063]', liked: true },
-                    { icon: '📻', name: '白噪音', time: '30min', plays: '6.2k', color: 'from-[#bdc3c7] to-[#ecf0f1]', liked: false },
-                    { icon: '🔥', name: '篝火', time: '20min', plays: '9.4k', color: 'from-[#f12711] to-[#f5af19]', liked: false },
-                    { icon: '🏔️', name: '山谷风', time: '18min', plays: '7.8k', color: 'from-[#89f7fe] to-[#66a6ff]', liked: true },
-                    { icon: '🦗', name: '虫鸣', time: '22min', plays: '5.6k', color: 'from-[#11998e] to-[#38ef7d]', liked: false },
-                    { icon: '🔔', name: '音钵', time: '15min', plays: '11.2k', color: 'from-[#ffd89b] to-[#19547b]', liked: true }
+                    { icon: <FaCloudRain />, name: '雨声', time: '15min', plays: '12.3k', color: 'from-[#667eea] to-[#764ba2]', liked: true },
+                    { icon: <FaWater />, name: '海浪', time: '20min', plays: '8.9k', color: 'from-[#4facfe] to-[#00f2fe]', liked: false },
+                    { icon: <FaTree />, name: '森林', time: '25min', plays: '15.6k', color: 'from-[#56ab2f] to-[#a8e063]', liked: true },
+                    { icon: <FaBroadcastTower />, name: '白噪音', time: '30min', plays: '6.2k', color: 'from-[#bdc3c7] to-[#ecf0f1]', liked: false },
+                    { icon: <FaFire />, name: '篝火', time: '20min', plays: '9.4k', color: 'from-[#f12711] to-[#f5af19]', liked: false },
+                    { icon: <FaMountain />, name: '山谷风', time: '18min', plays: '7.8k', color: 'from-[#89f7fe] to-[#66a6ff]', liked: true },
+                    { icon: <FaBug />, name: '虫鸣', time: '22min', plays: '5.6k', color: 'from-[#11998e] to-[#38ef7d]', liked: false },
+                    { icon: <FaBell />, name: '音钵', time: '15min', plays: '11.2k', color: 'from-[#ffd89b] to-[#19547b]', liked: true }
                   ].map((scene, idx) => (
                     <div
                       key={idx}
@@ -939,13 +988,13 @@ const MeditationAppDemo: React.FC = () => {
                 <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-10 pb-8 text-white">
                   <div className="flex items-center gap-5">
                     <div className="w-[70px] h-[70px] rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center text-[32px]">
-                      🧘
+                      <FaSpa className="shrink-0" aria-hidden />
                     </div>
                     <div className="flex-1">
                       <h2 className="text-2xl font-light mb-1">冥想者</h2>
                       <p className="text-sm opacity-90 mb-2">保持平静，专注当下</p>
                       <div className="inline-block px-3 py-1 bg-yellow-500/30 backdrop-blur-sm rounded-[12px] text-xs">
-                        💎 VIP会员
+                        <FaGem className="inline" aria-hidden /> VIP会员
                       </div>
                     </div>
                   </div>

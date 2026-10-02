@@ -154,7 +154,7 @@ class IntegrityChecker {
       this.isInitialized = true;
 
       if (this.debugMode) {
-        this.safeLog("log", "🔒 完整性检查器已初始化，调试模式已启用");
+        this.safeLog("log", " 完整性检查器已初始化，调试模式已启用");
       }
     }, this.initializationDelay);
   }
@@ -298,13 +298,13 @@ class IntegrityChecker {
   // 启用调试模式
   public enableDebugMode(): void {
     this.debugMode = true;
-    this.safeLog("log", "🔍 完整性检查器调试模式已启用");
+    this.safeLog("log", " 完整性检查器调试模式已启用");
   }
 
   // 禁用调试模式
   public disableDebugMode(): void {
     this.debugMode = false;
-    this.safeLog("log", "🔍 完整性检查器调试模式已禁用");
+    this.safeLog("log", " 完整性检查器调试模式已禁用");
   }
 
   // 获取调试信息
@@ -326,7 +326,7 @@ class IntegrityChecker {
     // 确保页面完全加载后再捕获基准内容
     if (document.readyState !== "complete") {
       if (this.debugMode) {
-        this.safeLog("log", "⏳ 等待页面完全加载...", document.readyState);
+        this.safeLog("log", " 等待页面完全加载...", document.readyState);
       }
       setTimeout(() => this.captureBaselineContent(), 500);
       return;
@@ -335,7 +335,7 @@ class IntegrityChecker {
     // 确保DOM已经渲染完成
     if (!document.body || document.body.children.length === 0) {
       if (this.debugMode) {
-        this.safeLog("log", "⏳ 等待DOM渲染完成...");
+        this.safeLog("log", " 等待DOM渲染完成...");
       }
       setTimeout(() => this.captureBaselineContent(), 500);
       return;
@@ -349,14 +349,14 @@ class IntegrityChecker {
       // 验证基准内容是否有效
       if (!this.originalPageContent || this.originalPageContent.length < 100) {
         if (this.debugMode) {
-          this.safeLog("warn", "⚠️ 基准内容无效，重新尝试捕获...");
+          this.safeLog("warn", "️ 基准内容无效，重新尝试捕获...");
         }
         setTimeout(() => this.captureBaselineContent(), 1000);
         return;
       }
 
       if (this.debugMode) {
-        this.safeLog("log", "📸 基准内容已捕获:", {
+        this.safeLog("log", " 基准内容已捕获:", {
           length: this.originalPageContent.length,
           checksum: this.baselineChecksum.substring(0, 16) + "...",
           criticalTexts: this.extractCriticalTexts(),
@@ -372,7 +372,7 @@ class IntegrityChecker {
       // 设置品牌保护区域的完整性基准
       this.setupBrandProtectionBaseline();
     } catch (error) {
-      this.safeLog("error", "❌ 捕获基准内容时出错:", error);
+      this.safeLog("error", " 捕获基准内容时出错:", error);
       // 延迟重试
       setTimeout(() => this.captureBaselineContent(), 2000);
     }
@@ -648,7 +648,7 @@ class IntegrityChecker {
     // 如果基准长度为0，说明基准内容没有正确捕获，忽略这次检查
     if (baseline === 0 || baseline < 1000) {
       if (this.debugMode) {
-        this.safeLog("warn", "⚠️ 基准长度无效，重新捕获基准内容");
+        this.safeLog("warn", "️ 基准长度无效，重新捕获基准内容");
       }
       this.captureBaselineContent();
       return;
@@ -660,7 +660,7 @@ class IntegrityChecker {
     // 大幅提高阈值：只有变化超过30%才认为是异常
     if (percentage < 30) {
       if (this.debugMode) {
-        this.safeLog("log", "✅ 内容长度变化在正常范围内:", {
+        this.safeLog("log", " 内容长度变化在正常范围内:", {
           baseline,
           current,
           difference: diff,
@@ -673,7 +673,7 @@ class IntegrityChecker {
     if (this.debugMode) {
       this.safeLog(
         "warn",
-        `⚠️ 内容长度变化较大: 基准=${baseline}, 当前=${current}, 变化=${percentage.toFixed(2)}%`
+        `内容长度变化较大: 基准=${baseline}, 当前=${current}, 变化=${percentage.toFixed(2)}%`
       );
     }
 
@@ -755,7 +755,7 @@ class IntegrityChecker {
       if (this.debugMode) {
         this.safeLog(
           "log",
-          "🚨 检测到代理特征:",
+          "检测到代理特征:",
           proxySignatures.filter((sig) => sig.test(currentContent))
         );
       }
@@ -781,7 +781,7 @@ class IntegrityChecker {
       result.hasProxyTampering = true;
 
       if (this.debugMode) {
-        this.safeLog("log", "⚠️ 检测到缺失的关键文本:", missingTexts);
+        this.safeLog("log", "️ 检测到缺失的关键文本:", missingTexts);
       }
     }
 
@@ -799,7 +799,7 @@ class IntegrityChecker {
       confidenceScore += 10; // 降低权重
 
       if (this.debugMode) {
-        this.safeLog("log", "📏 内容长度异常:", {
+        this.safeLog("log", " 内容长度异常:", {
           original: this.originalPageContent.length,
           current: currentContent.length,
           difference: lengthDiff,
@@ -814,7 +814,7 @@ class IntegrityChecker {
       confidenceScore -= 50; // 大幅降低置信度
 
       if (this.debugMode) {
-        this.safeLog("log", "✅ 检测到正常页面更新，大幅降低篡改置信度");
+        this.safeLog("log", " 检测到正常页面更新，大幅降低篡改置信度");
       }
     }
 
@@ -822,14 +822,14 @@ class IntegrityChecker {
     if (this.isTrustedUrl(window.location.href)) {
       confidenceScore -= 40;
       if (this.debugMode) {
-        this.safeLog("log", "✅ 在可信域名，降低篡改置信度");
+        this.safeLog("log", " 在可信域名，降低篡改置信度");
       }
     }
 
     result.confidence = Math.max(0, Math.min(100, confidenceScore));
 
     if (this.debugMode) {
-      this.safeLog("log", "🔍 内容变化分析结果:", {
+      this.safeLog("log", " 内容变化分析结果:", {
         hasProxyTampering: result.hasProxyTampering,
         confidence: result.confidence,
         replacedTexts: result.replacedTexts,
@@ -846,12 +846,12 @@ class IntegrityChecker {
       this.falsePositiveCount++;
 
       if (this.debugMode) {
-        this.safeLog("log", "🤔 可能的误报，置信度较低:", changes.confidence);
+        this.safeLog("log", " 可能的误报，置信度较低:", changes.confidence);
       }
 
       if (this.falsePositiveCount >= this.MAX_FALSE_POSITIVES) {
         if (this.debugMode) {
-          this.safeLog("warn", "⚠️ 误报次数过多，调整检测策略");
+          this.safeLog("warn", "️ 误报次数过多，调整检测策略");
         }
         this.adjustDetectionStrategy();
         return;
@@ -862,10 +862,10 @@ class IntegrityChecker {
     // 重置误报计数
     this.falsePositiveCount = 0;
 
-    this.safeLog("error", "🚨 检测到代理篡改行为！", changes);
+    this.safeLog("error", " 检测到代理篡改行为！", changes);
 
     if (this.debugMode) {
-      this.safeLog("log", "🔍 篡改详情:", {
+      this.safeLog("log", " 篡改详情:", {
         confidence: changes.confidence,
         replacedTexts: changes.replacedTexts,
         hasProxyTampering: changes.hasProxyTampering,
@@ -900,7 +900,7 @@ class IntegrityChecker {
     }
 
     if (this.debugMode) {
-      this.safeLog("log", "⚙️ 已大幅调整检测策略，关闭严格模式，减少误报");
+      this.safeLog("log", "️ 已大幅调整检测策略，关闭严格模式，减少误报");
     }
   }
 
@@ -909,7 +909,7 @@ class IntegrityChecker {
     this.isInRecoveryMode = true;
 
     if (this.debugMode) {
-      this.safeLog("log", "🔄 执行紧急恢复...");
+      this.safeLog("log", " 执行紧急恢复...");
     }
 
     try {
@@ -923,11 +923,11 @@ class IntegrityChecker {
       setTimeout(() => {
         this.isInRecoveryMode = false;
         if (this.debugMode) {
-          this.safeLog("log", "✅ 紧急恢复完成，退出恢复模式");
+          this.safeLog("log", " 紧急恢复完成，退出恢复模式");
         }
       }, 5000);
     } catch (error) {
-      this.safeLog("error", "❌ 紧急恢复失败:", error);
+      this.safeLog("error", " 紧急恢复失败:", error);
       this.isInRecoveryMode = false;
     }
   }
@@ -958,7 +958,7 @@ class IntegrityChecker {
       animation: networkWarning 2s infinite;
     `;
     warning.innerHTML = `
-      <div style="font-size: 1.2em; margin-bottom: 5px;">🚨 网络篡改检测</div>
+      <div style="font-size: 1.2em; margin-bottom: 5px;">网络篡改检测</div>
       <div style="font-size: 0.9em;">检测到通过代理服务器的内容篡改！系统已启动紧急恢复模式。</div>
     `;
     document.body.prepend(warning);
@@ -1007,7 +1007,7 @@ class IntegrityChecker {
         }
       }
     } catch (error) {
-      this.safeLog("error", "❌ 检查关键文本替换时出错:", error);
+      this.safeLog("error", " 检查关键文本替换时出错:", error);
     }
   }
 
@@ -1041,7 +1041,7 @@ class IntegrityChecker {
           // 检查是否是安全的DOM变化
           if (this.isSafeDOMChange(mutation)) {
             if (this.debugMode) {
-              this.safeLog("log", "✅ 检测到安全的DOM变化，跳过检查");
+              this.safeLog("log", " 检测到安全的DOM变化，跳过检查");
             }
             return;
           }
@@ -1049,7 +1049,7 @@ class IntegrityChecker {
           // 如果在豁免页面，跳过检查
           if (this.isExemptPage()) {
             if (this.debugMode) {
-              this.safeLog("log", "✅ 在豁免页面，跳过完整性检查");
+              this.safeLog("log", " 在豁免页面，跳过完整性检查");
             }
             return;
           }
@@ -1504,19 +1504,19 @@ class IntegrityChecker {
         if (this.debugMode) {
           this.safeLog(
             "warn",
-            `⚠️ 篡改报告发送失败: ${response.status} ${response.statusText}`
+            `篡改报告发送失败: ${response.status} ${response.statusText}`
           );
         }
         return false;
       }
 
       if (this.debugMode) {
-        this.safeLog("log", "✅ 篡改报告已成功发送");
+        this.safeLog("log", " 篡改报告已成功发送");
       }
       return true;
     } catch (error) {
       if (this.debugMode) {
-        this.safeLog("error", "❌ 篡改报告发送错误:", error);
+        this.safeLog("error", " 篡改报告发送错误:", error);
       }
       return false;
     }
@@ -1609,7 +1609,7 @@ class IntegrityChecker {
       animation: networkWarning 2s infinite;
     `;
     warning.innerHTML = `
-      <div style="font-size: 1.2em; margin-bottom: 5px;">🚨 网络篡改检测</div>
+      <div style="font-size: 1.2em; margin-bottom: 5px;">网络篡改检测</div>
       <div style="font-size: 0.9em;">检测到通过代理服务器的内容篡改！系统已启动紧急恢复模式。</div>
     `;
     document.body.prepend(warning);
@@ -1633,7 +1633,7 @@ class IntegrityChecker {
   // 重新初始化完整性检查器
   public reinitialize(): void {
     if (this.debugMode) {
-      this.safeLog("log", "🔄 重新初始化完整性检查器...");
+      this.safeLog("log", " 重新初始化完整性检查器...");
     }
 
     // 清理现有状态
@@ -1649,7 +1649,7 @@ class IntegrityChecker {
     this.captureBaselineContent();
 
     if (this.debugMode) {
-      this.safeLog("log", "✅ 完整性检查器重新初始化完成");
+      this.safeLog("log", " 完整性检查器重新初始化完成");
     }
   }
 
@@ -1668,14 +1668,14 @@ class IntegrityChecker {
   public resetErrors(): void {
     this.resetErrorCount();
     if (this.debugMode) {
-      this.safeLog("log", "🔄 错误计数已重置");
+      this.safeLog("log", " 错误计数已重置");
     }
   }
 
   // 手动捕获基准内容
   public captureBaseline(): void {
     if (this.debugMode) {
-      console.log("📸 手动捕获基准内容...");
+      console.log(" 手动捕获基准内容...");
     }
     this.captureBaselineContent();
   }
@@ -1684,7 +1684,7 @@ class IntegrityChecker {
   public pause(): void {
     this.isInRecoveryMode = true;
     if (this.debugMode) {
-      console.log("⏸️ 完整性检查已暂停");
+      console.log("️ 完整性检查已暂停");
     }
   }
 
@@ -1692,7 +1692,7 @@ class IntegrityChecker {
   public resume(): void {
     this.isInRecoveryMode = false;
     if (this.debugMode) {
-      console.log("▶️ 完整性检查已恢复");
+      console.log("️ 完整性检查已恢复");
     }
   }
 
@@ -1709,7 +1709,7 @@ class IntegrityChecker {
       if (this.errorCount >= this.MAX_ERRORS) {
         // 如果超过最大错误数量，只在冷却期后显示一次
         if (now - this.lastErrorTime > this.ERROR_COOLDOWN) {
-          console.warn("⚠️ 错误数量过多，已暂停错误输出。请检查页面状态。");
+          console.warn("️ 错误数量过多，已暂停错误输出。请检查页面状态。");
           this.lastErrorTime = now;
         }
         return;
@@ -1754,7 +1754,7 @@ class IntegrityChecker {
           if (this.debugMode) {
             this.safeLog(
               "warn",
-              "🛡️ 拦截到完整性检查相关错误:",
+              "拦截到完整性检查相关错误:",
               event.error.message
             );
           }
@@ -1774,7 +1774,7 @@ class IntegrityChecker {
         event.preventDefault();
 
         if (this.debugMode) {
-          this.safeLog("warn", "🛡️ 拦截到完整性检查Promise错误:", event.reason);
+          this.safeLog("warn", "️ 拦截到完整性检查Promise错误:", event.reason);
         }
         return false;
       }
@@ -1841,7 +1841,7 @@ class IntegrityChecker {
   public enableStrictDetection(): void {
     this.enableStrictMode = true;
     if (this.debugMode) {
-      this.safeLog("log", "🔒 已启用严格检测模式");
+      this.safeLog("log", " 已启用严格检测模式");
     }
   }
 
@@ -1849,7 +1849,7 @@ class IntegrityChecker {
   public disableStrictDetection(): void {
     this.enableStrictMode = false;
     if (this.debugMode) {
-      this.safeLog("log", "🔓 已禁用严格检测模式，降低误报率");
+      this.safeLog("log", " 已禁用严格检测模式，降低误报率");
     }
   }
 
@@ -1880,7 +1880,7 @@ class IntegrityChecker {
     }
 
     if (this.debugMode) {
-      this.safeLog("log", "🚫 完整性检查已完全禁用");
+      this.safeLog("log", " 完整性检查已完全禁用");
     }
   }
 
@@ -1894,7 +1894,7 @@ class IntegrityChecker {
     try {
       operation();
     } catch (error) {
-      this.safeLog("error", "❌ DOM操作失败:", error);
+      this.safeLog("error", " DOM操作失败:", error);
       // 不抛出错误，避免影响页面正常功能
     }
   }
@@ -1905,7 +1905,7 @@ class IntegrityChecker {
       if (node.textContent && node.textContent !== originalText) {
         node.textContent = originalText;
         if (this.debugMode) {
-          this.safeLog("log", "✅ 文本已安全恢复:", originalText);
+          this.safeLog("log", " 文本已安全恢复:", originalText);
         }
       }
     });
@@ -1974,7 +1974,7 @@ class IntegrityChecker {
 
       try {
         if (this.debugMode) {
-          this.safeLog("log", "🔍 手动触发完整性检查...", options);
+          this.safeLog("log", " 手动触发完整性检查...", options);
         }
 
         const { checkType = "all", elementId, forceCheck = false } = options;
@@ -2038,7 +2038,7 @@ class IntegrityChecker {
     return new Promise((resolve) => {
       try {
         if (this.debugMode) {
-          this.safeLog("log", "📤 手动报告篡改事件...", eventData);
+          this.safeLog("log", " 手动报告篡改事件...", eventData);
         }
 
         const tamperEvent: TamperEvent = {
@@ -2093,7 +2093,7 @@ class IntegrityChecker {
       const { recoveryType = "soft", showWarning = true } = options;
 
       if (this.debugMode) {
-        this.safeLog("log", "🔄 手动触发恢复模式...", options);
+        this.safeLog("log", " 手动触发恢复模式...", options);
       }
 
       if (recoveryType === "emergency") {
@@ -2126,7 +2126,7 @@ class IntegrityChecker {
   }): { success: boolean; message: string } {
     try {
       if (this.debugMode) {
-        this.safeLog("log", "🧪 模拟篡改事件...", options);
+        this.safeLog("log", " 模拟篡改事件...", options);
       }
 
       const {
@@ -2324,7 +2324,7 @@ class IntegrityChecker {
    */
   private handleBrandTampering(elementId: string, element: Element): void {
     if (this.debugMode) {
-      this.safeLog("error", "🚨 检测到品牌标识篡改！", {
+      this.safeLog("error", " 检测到品牌标识篡改！", {
         elementId,
         element: element.outerHTML,
       });
@@ -2384,10 +2384,10 @@ class IntegrityChecker {
       }
 
       if (this.debugMode) {
-        this.safeLog("log", "✅ 品牌元素已恢复:", elementId);
+        this.safeLog("log", " 品牌元素已恢复:", elementId);
       }
     } catch (error) {
-      this.safeLog("error", "❌ 恢复品牌元素失败:", { elementId, error });
+      this.safeLog("error", " 恢复品牌元素失败:", { elementId, error });
     }
   }
 
@@ -2436,7 +2436,7 @@ class IntegrityChecker {
     `;
 
     warning.innerHTML = `
-      <div style="font-size: 3em; margin-bottom: 20px;">🚨</div>
+      <div style="font-size: 3em; margin-bottom: 20px;"></div>
       <h1 style="font-size: 2em; margin-bottom: 10px;">严重安全警告</h1>
       <p style="font-size: 1.2em; margin-bottom: 20px;">检测到品牌标识被恶意篡改！</p>
       <p style="font-size: 1em; opacity: 0.9;">元素ID: ${elementId}</p>
@@ -2479,7 +2479,7 @@ class IntegrityChecker {
    */
   private activateBrandProtectionMode(): void {
     if (this.debugMode) {
-      this.safeLog("log", "🛡️ 激活品牌保护模式");
+      this.safeLog("log", "️ 激活品牌保护模式");
     }
 
     // 增加检查频率
@@ -2495,7 +2495,7 @@ class IntegrityChecker {
       clearInterval(brandProtectionInterval);
       this.networkCheckInterval = 1000;
       if (this.debugMode) {
-        this.safeLog("log", "🛡️ 品牌保护模式已结束，恢复正常监控");
+        this.safeLog("log", "️ 品牌保护模式已结束，恢复正常监控");
       }
     }, 300000);
   }
@@ -2510,7 +2510,7 @@ class IntegrityChecker {
       const expectedText = "Synapse";
       if (brandTextElement.textContent !== expectedText) {
         if (this.debugMode) {
-          this.safeLog("warn", "🚨 品牌文本被篡改:", {
+          this.safeLog("warn", " 品牌文本被篡改:", {
             expected: expectedText,
             actual: brandTextElement.textContent,
           });
@@ -2527,7 +2527,7 @@ class IntegrityChecker {
       const actualSrc = brandIcon.getAttribute("src");
       if (actualSrc !== expectedSrc) {
         if (this.debugMode) {
-          this.safeLog("warn", "🚨 品牌图标被篡改", { expectedSrc, actualSrc });
+          this.safeLog("warn", " 品牌图标被篡改", { expectedSrc, actualSrc });
         }
         this.handleBrandTampering("app-brand-icon", brandIcon);
       }
@@ -2553,7 +2553,7 @@ class IntegrityChecker {
 
         if (missingAttributes.length > 0) {
           if (this.debugMode) {
-            this.safeLog("warn", "🚨 品牌元素关键属性被移除:", {
+            this.safeLog("warn", " 品牌元素关键属性被移除:", {
               elementId: id,
               missingAttributes,
             });
@@ -2586,7 +2586,7 @@ class IntegrityChecker {
           this.setIntegrity(id, element.innerHTML);
 
           if (this.debugMode) {
-            this.safeLog("log", `🛡️ 品牌保护基准已设置: ${id}`, {
+            this.safeLog("log", `️ 品牌保护基准已设置: ${id}`, {
               contentLength: element.innerHTML.length,
               textContent: element.textContent?.substring(0, 50) + "...",
             });
@@ -2610,7 +2610,7 @@ class IntegrityChecker {
         this.setIntegrity("brand-icon-path", pathData);
       }
     } catch (error) {
-      this.safeLog("error", "❌ 设置品牌保护基准失败:", error);
+      this.safeLog("error", " 设置品牌保护基准失败:", error);
     }
   }
 
@@ -2652,7 +2652,7 @@ class IntegrityChecker {
     }
 
     if (this.debugMode) {
-      this.safeLog("log", "✅ 品牌元素属性已恢复:", elementId);
+      this.safeLog("log", " 品牌元素属性已恢复:", elementId);
     }
   }
 
@@ -2774,7 +2774,7 @@ class IntegrityChecker {
         exemptReasons,
       };
     } catch (error) {
-      this.safeLog("error", "❌ 检查豁免状态时出错:", error);
+      this.safeLog("error", " 检查豁免状态时出错:", error);
       return {
         isExempt: false,
         isTrustedUrl: false,

@@ -7,15 +7,16 @@ import { useNotification } from './Notification';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import {
-  FaBullhorn, 
-  FaEdit, 
-  FaSave, 
-  FaTrash, 
-  FaTimes,
+  FaBullhorn,
+  FaCode,
+  FaEdit,
   FaEye,
   FaEyeSlash,
+  FaLock,
   FaMarkdown,
-  FaCode
+  FaSave,
+  FaTimes,
+  FaTrash
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { studioModalCardClassName, studioSubPanelClassName } from './studioTheme';
@@ -193,7 +194,7 @@ const AnnouncementManager: React.FC = () => {
           transition={{ duration: 0.6 }}
         >
           <h2 className="text-2xl font-bold text-red-700 mb-3 flex items-center gap-2">
-            🔒
+            <FaLock className="shrink-0" aria-hidden />
             访问被拒绝
           </h2>
           <div className="text-slate-600 space-y-2">

@@ -1,29 +1,32 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Doughnut, Bar } from 'react-chartjs-2';
+import {
+  ArcElement,
+  Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
+  CategoryScale,
+  Doughnut,
+  FaChartBar,
+  FaClock,
+  FaExclamationCircle,
+  FaExclamationTriangle,
+  FaFilter,
+  FaGlobe,
+  FaMobileAlt,
+  FaUsers,
   Filler
 } from 'chart.js';
 import api from '../api/api';
 import { useNotification } from './Notification';
 import {
   FaShieldAlt,
-  FaExclamationTriangle,
-  FaMobileAlt,
-  FaUsers,
-  FaChartBar,
-  FaClock,
-  FaFilter,
-  FaExclamationCircle
+  Legend,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Title,
+  Tooltip
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { studioModalCardClassName, studioSubPanelClassName, studioSurfaceClassName } from './studioTheme';
@@ -590,7 +593,7 @@ const NexAISecurityDashboard: React.FC = () => {
                                 <p className="text-[11px] flex items-center gap-1"><FaUsers className="w-2.5 h-2.5" /> {event.userId}</p>
                               )}
                               {event.ipAddress && (
-                                <p className="text-[11px] flex items-center gap-1">🌐 {event.ipAddress}</p>
+                                <p className="text-[11px] flex items-center gap-1"><FaGlobe className="inline" aria-hidden /> {event.ipAddress}</p>
                               )}
                               <p className="text-[11px] flex items-center gap-1"><FaShieldAlt className="w-2.5 h-2.5" /> 风险值: {event.riskScore || 'N/A'}</p>
                             </div>

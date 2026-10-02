@@ -11,17 +11,19 @@ import { getBackendErrorMessage } from '../utils/backendError';
 import { AnimatePresence } from 'framer-motion';
 import { deleteAllRounds } from '../api/lottery';
 import CryptoJS from 'crypto-js';
-import { 
-  FaChartBar, 
-  FaList,
+import {
+  FaBullseye,
+  FaChartBar,
   FaDice,
-  FaTrophy,
   FaEdit,
-  FaTrash,
-  FaPlay,
+  FaExclamationTriangle,
+  FaList,
+  FaLock,
   FaPause,
+  FaPlay,
   FaRedo,
-  FaExclamationTriangle
+  FaTrash,
+  FaTrophy
 } from 'react-icons/fa';
 import { studioPanelClassName } from './studioTheme';
 import { cn } from '../utils/cn';
@@ -55,7 +57,7 @@ function decryptAES256(encryptedData: string, iv: string, key: string): string {
     
     return result;
   } catch (error) {
-    console.error('❌ AES-256解密失败:', error);
+    console.error(' AES-256解密失败:', error);
     throw new Error('解密失败');
   }
 }
@@ -147,7 +149,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
       transition={{ duration: 0.6 }}
     >
       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        🎯
+        <FaBullseye className="shrink-0" aria-hidden />
         创建抽奖轮次
       </h3>
       
@@ -465,7 +467,7 @@ const LotteryAdmin: React.FC = () => {
           transition={{ duration: 0.6 }}
         >
           <h2 className="text-2xl font-bold text-red-700 mb-3 flex items-center gap-2">
-            🔒
+            <FaLock className="shrink-0" aria-hidden />
             访问被拒绝
           </h2>
           <div className="text-slate-600 space-y-2">

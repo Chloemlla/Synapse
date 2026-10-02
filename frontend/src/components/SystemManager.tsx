@@ -203,7 +203,7 @@ export default function SystemManager() {
 
   const handleSyncIPBans = async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定立即同步 IP 封禁数据（MongoDB ↔ Redis）？')) return;
+    if (!window.confirm('确定立即同步 IP 封禁数据（MongoDB 与 Redis）？')) return;
     setSyncing(true);
     try {
       const result = await turnstileApi.syncIPBans();

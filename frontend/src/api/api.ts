@@ -204,7 +204,7 @@ api.interceptors.response.use(
         if (shouldRetry && retryCount < MAX_RETRIES) {
             (originalRequest as { _retryCount?: number })._retryCount = retryCount + 1;
 
-            console.log(`🔄 API请求失败，${RETRY_DELAY / 1000}秒后重试:`, {
+            console.log(` API请求失败，${RETRY_DELAY / 1000}秒后重试:`, {
                 url: originalRequest.url,
                 method: originalRequest.method,
                 error: error.message,
@@ -217,7 +217,7 @@ api.interceptors.response.use(
                 // 等待指定时间后重试
                 await delay(RETRY_DELAY);
 
-                console.log(`🔄 开始重试API请求:`, {
+                console.log(` 开始重试API请求:`, {
                     url: originalRequest.url,
                     method: originalRequest.method,
                     attempt: retryCount + 2,
@@ -226,7 +226,7 @@ api.interceptors.response.use(
                 // 重新发送请求
                 return api(originalRequest);
             } catch (retryError) {
-                console.error(`❌ API请求重试失败，不再尝试:`, {
+                console.error(` API请求重试失败，不再尝试:`, {
                     url: originalRequest.url,
                     method: originalRequest.method,
                     originalError: error.message,
@@ -242,7 +242,7 @@ api.interceptors.response.use(
         // 不符合重试条件或已经重试过，直接返回错误
         const finalRetryCount = (originalRequest as { _retryCount?: number })._retryCount ?? 0;
         if (finalRetryCount > 0) {
-            console.error(`❌ API请求最终失败:`, {
+            console.error(` API请求最终失败:`, {
                 url: originalRequest.url,
                 method: originalRequest.method,
                 error: error.message,

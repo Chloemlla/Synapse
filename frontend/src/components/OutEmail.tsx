@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../api/api';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+  AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { FaEnvelope, FaShieldAlt, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaSync, FaArrowLeft } from 'react-icons/fa';
+import { FaEnvelope,
+  FaArrowLeft,
+  FaCheckCircle,
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaShieldAlt,
+  FaSync,
+  FaUserSecret,
+  api } from '../api/api';
+import { motion
+} from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
 import { useAuth } from '../hooks/useAuth';
@@ -260,7 +270,7 @@ const OutEmail: React.FC = () => {
             <div className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-500">
               Admin Only
             </div>
-            <div className="mt-6 text-7xl">🤡</div>
+            <div className="mt-6 text-7xl"><FaUserSecret aria-hidden /></div>
             <h1 className="mt-4 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">
               你不是管理员，禁止访问
             </h1>

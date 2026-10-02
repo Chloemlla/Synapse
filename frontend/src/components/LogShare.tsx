@@ -599,7 +599,7 @@ const LogShare: React.FC = React.memo(() => {
           resolvedResult = normalizeQueryResult(await decryptLogSharePayload(res.data, adminPassword));
           setQueryResult(resolvedResult);
         } catch (decryptError: any) {
-          console.error('🔓 [LogShare] 解密失败:', decryptError);
+          console.error(' [LogShare] 解密失败:', decryptError);
           setError('数据解密失败: ' + (decryptError?.message || '未知错误'));
           return;
         }
@@ -671,7 +671,7 @@ const LogShare: React.FC = React.memo(() => {
         try {
           setQueryResult(normalizeQueryResult(await decryptLogSharePayload(res.data, adminPassword)));
         } catch (decryptError: any) {
-          console.error('🔓 [LogShare] 解密失败:', decryptError);
+          console.error(' [LogShare] 解密失败:', decryptError);
           setNotification({ message: '数据解密失败: ' + (decryptError?.message || '未知错误'), type: 'error' });
           return;
         }

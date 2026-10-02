@@ -54,7 +54,7 @@ type PaletteEntry = {
   url?: string;
   /** 本地动作（不回跳路由） */
   run?: () => void;
-  /** 模块条目：允许 ★ 置顶 */
+  /** 模块条目：允许置顶 */
   pinnable?: boolean;
   /** 额外可匹配文本（路径等），命中时不高亮标题 */
   keywords?: string[];
@@ -529,7 +529,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
             <span>
               <kbd className='rounded border border-slate-200 bg-white px-1 py-0.5 font-semibold'>↵</kbd> 打开
             </span>
-            <span className='hidden sm:inline'>★ 置顶到侧边栏</span>
+            <span className='hidden sm:inline'><FaStar className="inline" aria-hidden /> 置顶到侧边栏</span>
           </span>
           <span className='text-slate-400'>共 {moduleEntries.length} 个模块</span>
         </div>

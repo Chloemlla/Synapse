@@ -9,8 +9,8 @@ import { signedFetch } from './requestSigner';
 export const testTamperAPI = async () => {
   const apiUrl = `${getApiBaseUrl()}/api/tamper/report-tampering`;
   
-  console.log('🧪 开始测试篡改检测API...');
-  console.log('📍 API地址:', apiUrl);
+  console.log(' 开始测试篡改检测API...');
+  console.log(' API地址:', apiUrl);
   
   const testEvent = {
     eventType: 'test_event',
@@ -32,7 +32,7 @@ export const testTamperAPI = async () => {
   };
   
   try {
-    console.log('📤 发送测试数据:', testEvent);
+    console.log(' 发送测试数据:', testEvent);
     const body = JSON.stringify(testEvent);
     
     const response = await signedFetch(apiUrl, {
@@ -43,22 +43,22 @@ export const testTamperAPI = async () => {
       body
     });
     
-    console.log('📥 响应状态:', response.status, response.statusText);
+    console.log(' 响应状态:', response.status, response.statusText);
     
     if (response.ok) {
       const result = await response.json();
-      console.log('✅ API测试成功!');
-      console.log('📋 响应数据:', result);
+      console.log(' API测试成功!');
+      console.log(' 响应数据:', result);
       return { success: true, data: result };
     } else {
       const errorText = await response.text();
-      console.error('❌ API测试失败!');
-      console.error('📋 错误响应:', errorText);
+      console.error(' API测试失败!');
+      console.error(' 错误响应:', errorText);
       return { success: false, error: errorText, status: response.status };
     }
   } catch (error) {
-    console.error('❌ API测试异常!');
-    console.error('📋 错误详情:', error);
+    console.error(' API测试异常!');
+    console.error(' 错误详情:', error);
     return { success: false, error: String(error) };
   }
 };

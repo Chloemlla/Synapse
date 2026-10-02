@@ -1,6 +1,31 @@
 import React, { useEffect, useState, startTransition } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { FaTrash, FaCopy, FaSearch, FaSync, FaDice, FaLink, FaPlus, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaList, FaToggleOn, FaToggleOff, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaDownload, FaFileAlt, FaUpload } from 'react-icons/fa';
+import {
+  AnimatePresence,
+  FaAngleDoubleLeft,
+  FaAngleDoubleRight,
+  FaArrowLeft,
+  FaCheckCircle,
+  FaChevronLeft,
+  FaChevronRight,
+  FaCopy,
+  FaDice,
+  FaDownload,
+  FaExclamationTriangle,
+  FaFileAlt,
+  FaInfoCircle,
+  FaLink,
+  FaList,
+  FaPlus,
+  FaSearch,
+  FaSync,
+  FaToggleOff,
+  FaToggleOn,
+  FaUpload,
+  FaUserSecret,
+  motion,
+  useReducedMotion } from 'framer-motion';
+import { FaTrash
+} from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import getApiBaseUrl from '../api';
@@ -553,7 +578,7 @@ const ShortLinkManager: React.FC = () => {
   if (!user || !isSuperAdmin(user.role)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <span style={{ fontSize: 120, lineHeight: 1 }}>🤡</span>
+        <span style={{ fontSize: 120, lineHeight: 1 }}><FaUserSecret aria-hidden /></span>
         <div className="text-3xl font-bold mt-6 mb-2 text-rose-600 drop-shadow-lg">你不是管理员，禁止访问！</div>
         <div className="text-lg text-[#023047]/50 mb-8">请用管理员账号登录后再来玩哦~<br /><span className="text-rose-400">（小丑竟是你自己）</span></div>
         <div className="text-base text-[#023047]/30 italic mt-4">仅限管理员使用，恶搞界面仅供娱乐。</div>

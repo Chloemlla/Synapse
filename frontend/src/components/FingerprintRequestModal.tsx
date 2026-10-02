@@ -42,7 +42,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
         setError('');
 
         try {
-            console.log('🔍 用户确认上报指纹...');
+            console.log(' 用户确认上报指纹...');
             // 用户主动点击上报按钮，强制立即上报（绕过5分钟节流限制）
             await reportFingerprintOnce(true);
 
@@ -188,7 +188,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                                 {isSubmitted
                                     ? '您的浏览器指纹已成功上报，感谢您的配合！'
                                     : hasDismissedOnce
-                                        ? '⚠️ 您已经关闭过一次指纹请求，这是最后的机会。您必须立即上报才能继续使用，无法再次关闭此窗口。'
+                                        ? '您已经关闭过一次指纹请求，这是最后的机会。您必须立即上报才能继续使用，无法再次关闭此窗口。'
                                         : '管理员请求上报您的浏览器指纹，用于安全验证和用户识别。此过程不会收集任何个人信息。'
                                 }
                             </p>

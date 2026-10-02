@@ -69,7 +69,7 @@ export const useFingerprintRequest = () => {
       }
 
       const data = await response.json();
-      console.log('✅ 已记录用户永久关闭指纹请求:', data);
+      console.log(' 已记录用户永久关闭指纹请求:', data);
       
       // 更新本地状态
       setRequestStatus(prev => ({
@@ -89,14 +89,14 @@ export const useFingerprintRequest = () => {
   const handleDismiss = useCallback((shouldTrack: boolean = true): void => {
     // 如果不需要tracking（例如用户点击X按钮或背景关闭），直接返回
     if (!shouldTrack) {
-      console.log('🔓 普通关闭，不进行 dismissal tracking');
+      console.log(' 普通关闭，不进行 dismissal tracking');
       return;
     }
 
     const userId = getUserId();
     if (!userId || !requestStatus.requireFingerprintAt) return;
 
-    console.log('⏰ 用户主动跳过，记录 dismissal tracking（1小时冷却）');
+    console.log(' 用户主动跳过，记录 dismissal tracking（1小时冷却）');
     const dismissKey = `fp_request_dismissed_${userId}_${requestStatus.requireFingerprintAt}`;
     localStorage.setItem(dismissKey, Date.now().toString());
     
@@ -154,7 +154,7 @@ export const useFingerprintRequest = () => {
   // 标记指纹请求为已完成（清除请求标志）
   // 注意：此函数现在不需要调用后端，因为 /api/turnstile/fingerprint/report 已经清除了标志
   const markFingerprintRequestCompleted = useCallback((): void => {
-    console.log('✅ 指纹请求完成，立即更新本地状态');
+    console.log(' 指纹请求完成，立即更新本地状态');
     // 立即更新本地状态，允许弹窗关闭
     setRequestStatus(prev => ({
       ...prev,

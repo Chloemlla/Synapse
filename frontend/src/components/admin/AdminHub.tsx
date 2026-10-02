@@ -40,7 +40,7 @@ import {
  * `/admin` index — module hub with grouped cards linking into drill-in routes.
  *
  * 效率增强：置顶/最近访问专区（与侧边栏、⌘K 命令面板共用同一份偏好），
- * 每张卡片可直接 ★ 置顶；顶部给出 ⌘K 提示，快速搜索入口不再靠"记住路径"。
+ * 每张卡片可直接置顶；顶部给出 ⌘K 提示，快速搜索入口不再靠"记住路径"。
  */
 export const AdminHub: React.FC = () => {
   const { user } = useAuth();
@@ -163,7 +163,7 @@ export const AdminHub: React.FC = () => {
             按 <kbd className='rounded border border-slate-200 bg-white px-1 py-0.5 font-semibold'>⌘/Ctrl</kbd>
             {' + '}
             <kbd className='rounded border border-slate-200 bg-white px-1 py-0.5 font-semibold'>K</kbd>
-            {' '}搜索模块；卡片右上角 ★ 可置顶
+            {' '}搜索模块；卡片右上角 <FaStar className="inline" aria-hidden /> 可置顶
           </span>
         </div>
 

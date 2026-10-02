@@ -1,14 +1,31 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+  AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import {
-  FaBullhorn, FaPaperPlane, FaUsers, FaHistory,
-  FaUserSlash, FaClipboardList, FaSyncAlt, FaUserAlt,
-  FaCrown, FaPlug, FaLock, FaLockOpen, FaUserCheck,
-  FaUserSecret, FaHashtag,
+  FaBullhorn,
+  FaBell,
+  FaCircle,
+  FaClipboardList,
+  FaCrown,
+  FaExclamationTriangle,
+  FaHashtag,
+  FaHistory,
+  FaInfoCircle,
+  FaLock,
+  FaLockOpen,
+  FaPaperPlane,
+  FaPlug,
+  FaSyncAlt,
+  FaUserAlt,
+  FaUserCheck,
+  FaUserSecret,
+  FaUserSlash,
+  FaUsers,
+  motion
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { studioFieldClassName, studioSurfaceClassName, studioTextareaClassName, studioTileClassName } from './studioTheme';
@@ -57,10 +74,10 @@ interface BroadcastLogItem {
 
 // ========== 常量 ==========
 
-const LEVEL_OPTIONS: { value: BroadcastLevel; label: string; color: string; emoji: string }[] = [
-  { value: 'info', label: '通知', color: 'bg-slate-100 text-slate-700 border-slate-300', emoji: 'ℹ️' },
-  { value: 'warn', label: '警告', color: 'bg-yellow-100 text-yellow-700 border-yellow-300', emoji: '⚠️' },
-  { value: 'error', label: '紧急', color: 'bg-red-100 text-red-700 border-red-300', emoji: '🚨' },
+const LEVEL_OPTIONS: { value: BroadcastLevel; label: string; color: string; icon: React.ReactNode }[] = [
+  { value: 'info', label: '通知', color: 'bg-slate-100 text-slate-700 border-slate-300', icon: <FaInfoCircle /> },
+  { value: 'warn', label: '警告', color: 'bg-yellow-100 text-yellow-700 border-yellow-300', icon: <FaExclamationTriangle /> },
+  { value: 'error', label: '紧急', color: 'bg-red-100 text-red-700 border-red-300', icon: <FaCircle /> },
 ];
 
 const AUDIENCE_OPTIONS: { value: BroadcastAudience; label: string; description: string; icon: React.ReactNode }[] = [
@@ -336,7 +353,7 @@ const BroadcastManager: React.FC = () => {
               className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
                 level === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
-              <span>{opt.emoji}</span><span>{opt.label}</span>
+              <span>{opt.icon}</span><span>{opt.label}</span>
             </motion.button>
           ))}
         </div>
@@ -422,7 +439,7 @@ const BroadcastManager: React.FC = () => {
               className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
                 broadcastDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
-              {d === 'toast' ? '🔔 通知条' : '📋 弹窗'}
+              {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
             </motion.button>
           ))}
         </div>
@@ -457,7 +474,7 @@ const BroadcastManager: React.FC = () => {
       {message.trim() && (
         <div className={`p-4 rounded-2xl border ${selectedLevel.color}`}>
           <div className="text-xs font-medium mb-1 opacity-70">预览</div>
-          <div className="text-sm">{selectedLevel.emoji} {message.trim()}</div>
+          <div className="text-sm">{selectedLevel.icon} {message.trim()}</div>
         </div>
       )}
 
@@ -504,7 +521,7 @@ const BroadcastManager: React.FC = () => {
               className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
                 directLevel === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
-              <span>{opt.emoji}</span><span>{opt.label}</span>
+              <span>{opt.icon}</span><span>{opt.label}</span>
             </motion.button>
           ))}
         </div>
@@ -548,7 +565,7 @@ const BroadcastManager: React.FC = () => {
               className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
                 directDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
-              {d === 'toast' ? '🔔 通知条' : '📋 弹窗'}
+              {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
             </motion.button>
           ))}
         </div>
@@ -738,7 +755,7 @@ const BroadcastManager: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${lvl.color}`}>
-                        {lvl.emoji} {lvl.label}
+                        {lvl.icon} {lvl.label}
                       </span>
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
                         {getAudienceLabel(log.audience)}
@@ -778,7 +795,7 @@ const BroadcastManager: React.FC = () => {
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <div className="flex items-center gap-2 mb-2">
               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${lvl.color}`}>
-                {lvl.emoji} {lvl.label}
+                {lvl.icon} {lvl.label}
               </span>
               <span className="text-sm font-medium text-slate-700 group-hover:text-slate-600 transition">{tpl.label}</span>
             </div>

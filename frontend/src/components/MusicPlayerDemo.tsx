@@ -1,11 +1,41 @@
 import React from 'react';
-import { 
-  Search, User, Home, Play, Radio, Heart, MessageCircle, MoreHorizontal,
-  ChevronLeft, ChevronRight, Repeat, Shuffle, SkipBack, SkipForward,
-  Pause, Share2, Music, Download, Clock, Settings, HelpCircle, LogOut,
-  List, ChevronUp, X, Plus
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Clock,
+  Download,
+  FaFire,
+  FaHome,
+  FaMusic,
+  FaPlay,
+  FaSearch,
+  FaUser,
+  Heart,
+  HelpCircle,
+  Home,
+  List,
+  LogOut,
+  MessageCircle,
+  MoreHorizontal,
+  Music,
+  Pause,
+  Play,
+  Plus
 } from 'lucide-react';
-import { FaMusic } from 'react-icons/fa';
+import {
+  FaBroadcastTower,
+  Radio,
+  Repeat,
+  Search,
+  Settings,
+  Share2,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  User,
+  X
+} from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell, studioStrongBadgeClassName } from './studioTheme';
 
@@ -154,11 +184,11 @@ const MusicPlayerDemo: React.FC = () => {
                 {/* 底部导航 */}
                 <div className="fixed bottom-0 left-0 right-0 h-[60px] bg-[#181818] border-t border-[#282828] flex items-center justify-around z-20">
                   {[
-                    { icon: '🏠', label: '首页', active: true },
-                    { icon: '🔍', label: '发现', active: false },
-                    { icon: '▶️', label: '播放', active: false },
-                    { icon: '📻', label: '电台', active: false },
-                    { icon: '👤', label: '我的', active: false }
+                    { icon: <FaHome />, label: '首页', active: true },
+                    { icon: <FaSearch />, label: '发现', active: false },
+                    { icon: <FaPlay />, label: '播放', active: false },
+                    { icon: <FaBroadcastTower />, label: '电台', active: false },
+                    { icon: <FaUser />, label: '我的', active: false }
                   ].map((nav, idx) => (
                     <div key={idx} className="flex flex-col items-center gap-0.5">
                       <span className="text-xl">{nav.icon}</span>
@@ -305,7 +335,7 @@ const MusicPlayerDemo: React.FC = () => {
                     { text: '好不容易又能再多爱一天', current: true },
                     { text: '但故事的最后你好像还是说了拜拜', current: false },
                     { text: '', current: false },
-                    { text: '🎵', current: false },
+                    { text: <FaMusic aria-hidden />, current: false },
                     { text: '', current: false },
                     { text: '为什么一定要这样', current: false }
                   ].map((line, idx) => (
@@ -533,7 +563,7 @@ const MusicPlayerDemo: React.FC = () => {
                 <div className="bg-gradient-to-br from-[#1DB954] to-[#1ed760] px-5 pt-7 pb-6 rounded-b-[12px]">
                   <div className="flex items-center gap-4">
                     <div className="w-[65px] h-[65px] rounded-full bg-white flex items-center justify-center text-[28px]">
-                      🎵
+                      <FaMusic className="shrink-0" aria-hidden />
                     </div>
                     <div className="flex-1 text-white">
                       <h2 className="text-lg font-bold mb-0.5">音乐爱好者</h2>
@@ -651,7 +681,7 @@ const MusicPlayerDemo: React.FC = () => {
                       key={idx}
                       className="flex items-center gap-3 px-5 py-3 border-b border-[#282828]"
                     >
-                      {song.hot && <span className="text-sm">🔥</span>}
+                      {song.hot && <span className="text-sm"><FaFire aria-hidden /></span>}
                       <div className="w-5 text-center text-sm text-[#b3b3b3] font-medium">
                         {idx + 1}
                       </div>
@@ -685,7 +715,7 @@ const MusicPlayerDemo: React.FC = () => {
                   <div className="text-2xl font-bold text-[#1DB954]">Music</div>
                   <div className="flex items-center gap-3">
                     <div className="px-4 py-2 bg-[#2a2a2a] rounded-full flex items-center gap-2">
-                      <span className="text-sm text-white">🔍</span>
+                      <span className="text-sm text-white"><FaSearch aria-hidden /></span>
                       <span className="text-sm text-[#b3b3b3]">搜索</span>
                     </div>
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-xs text-white font-bold">

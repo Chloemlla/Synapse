@@ -305,7 +305,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries: num
       }
 
       // 如果是重试成功，记录日志
-      console.log(`✅ 重试成功:`, {
+      console.log(` 重试成功:`, {
         url,
         attempt: attempt + 1,
         status: response.status
@@ -333,7 +333,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries: num
         break;
       }
 
-      console.log(`🔄 请求失败，${RETRY_DELAY / 1000}秒后重试:`, {
+      console.log(` 请求失败，${RETRY_DELAY / 1000}秒后重试:`, {
         url,
         attempt: attempt + 1,
         error: lastError.message,
@@ -351,11 +351,11 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries: num
 
 // 上报指纹（仅登录用户）
 export const reportFingerprintOnce = async (forceReport: boolean = false): Promise<void> => {
-  console.log('🔍 开始指纹上报流程...', forceReport ? '(强制上报)' : '');
+  console.log(' 开始指纹上报流程...', forceReport ? '(强制上报)' : '');
 
   // 未登录用户不进行请求
   if (!isUserLoggedIn()) {
-    console.log('👤 用户未登录，跳过指纹上报');
+    console.log(' 用户未登录，跳过指纹上报');
     return;
   }
 
@@ -367,17 +367,17 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
     const REPORT_INTERVAL = 5 * 60 * 1000; // 5分钟内不重复上报
     
     if (lastReportTime && (now - parseInt(lastReportTime)) < REPORT_INTERVAL) {
-      console.log('⏰ 指纹已在上报间隔内上报过，跳过本次上报');
+      console.log(' 指纹已在上报间隔内上报过，跳过本次上报');
       return;
     }
   } else {
-    console.log('⚡ 用户主动请求，强制立即上报');
+    console.log(' 用户主动请求，强制立即上报');
   }
 
-  console.log('✅ 用户已登录，开始生成指纹...');
+  console.log(' 用户已登录，开始生成指纹...');
   const fingerprint = await getFingerprint();
   if (!fingerprint) {
-    console.error('❌ 无法生成指纹');
+    console.error(' 无法生成指纹');
     return;
   }
 
@@ -407,17 +407,17 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
     }
   };
 
-  console.log('🔑 指纹生成成功:', fingerprint.substring(0, 8) + '...');
+  console.log(' 指纹生成成功:', fingerprint.substring(0, 8) + '...');
   const apiUrl = `${getApiBaseUrl()}/api/turnstile/fingerprint/report`;
 
-  console.log('🌐 准备发送请求到:', apiUrl);
+  console.log(' 准备发送请求到:', apiUrl);
 
   const requestPayload = {
     fingerprint,
     deviceSignals
   };
 
-  console.log('📤 准备发送指纹上报请求:', {
+  console.log(' 准备发送指纹上报请求:', {
     fingerprint: fingerprint.substring(0, 8) + '...',
     signalGroups: Object.keys(deviceSignals),
   });
@@ -433,7 +433,7 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
       body: JSON.stringify(requestPayload)
     });
 
-    console.log('📡 收到响应:', {
+    console.log(' 收到响应:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
@@ -442,7 +442,7 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
 
     if (response.ok) {
       const data = await response.json().catch(() => ({}));
-      console.log('✅ 指纹上报成功:', {
+      console.log(' 指纹上报成功:', {
         ...data,
         fingerprint: fingerprint.substring(0, 8) + '...',
         url: apiUrl
@@ -452,7 +452,7 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
       localStorage.setItem('lastFingerprintReport', now.toString());
     } else {
       const errorData = await response.json().catch(() => ({}));
-      console.warn('⚠️ 指纹上报失败:', {
+      console.warn('️ 指纹上报失败:', {
         status: response.status,
         statusText: response.statusText,
         error: errorData,
@@ -463,7 +463,7 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
       localStorage.setItem('lastFingerprintReport', now.toString());
     }
   } catch (error) {
-    console.error('❌ 指纹上报请求失败（包含重试）:', {
+    console.error(' 指纹上报请求失败（包含重试）:', {
       error: error instanceof Error ? error.message : error,
       stack: error instanceof Error ? error.stack : undefined,
       url: apiUrl,
