@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import RecommendationFeedbackModel from "../models/recommendationFeedbackModel";
 import RecommendationHistoryModel from "../models/recommendationHistoryModel";
 import UserPreferencesModel from "../models/userPreferencesModel";
+import { cacheService } from "../services/cacheService";
 import { RecommendationService } from "../services/recommendationService";
 import type { GenerationRecord, VoiceStyle } from "../types/recommendation";
 import logger from "../utils/logger";
@@ -13,6 +15,13 @@ jest.mock("../models/recommendationHistoryModel", () => ({
 jest.mock("../models/userPreferencesModel", () => ({
   __esModule: true,
   default: { findOne: jest.fn() },
+}));
+
+// RC-2：推荐现在会读反馈集合排除负反馈；未 mock 的真模型会因未连接 Mongo 而挂住。
+jest.mock("../models/recommendationFeedbackModel", () => ({
+  __esModule: true,
+  default: { find: jest.fn(), findOneAndUpdate: jest.fn(), aggregate: jest.fn() },
+  RECOMMENDATION_FEEDBACK_KINDS: ["like", "dislike", "not_interested"],
 }));
 
 jest.mock("../utils/logger", () => ({
@@ -66,8 +75,20 @@ function mockHistory(generations: GenerationRecord[] | null) {
   );
 }
 
+/** RC-2：反馈查询链（find().select().lean()）。默认空反馈。 */
+function mockFeedback(rows: Array<{ styleId: string; feedback: string }> = []) {
+  (RecommendationFeedbackModel.find as jest.Mock).mockReturnValue({
+    select: () => ({ lean: () => Promise.resolve(rows) }),
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  // RC-3：推荐结果与热门榜都带进程内缓存，测试间必须隔离，否则后面的用例会拿到前一个的缓存值。
+  cacheService.clearMemory();
+  mockFeedback();
+  // 现在降级路径也会读偏好（RC-5），没有显式设定的用例需要默认值，否则 findOne().lean() 会解 undefined。
+  (UserPreferencesModel.findOne as jest.Mock).mockReturnValue(chain(null));
 });
 
 describe("recommendationService.getPersonalizedRecommendations", () => {
@@ -87,7 +108,8 @@ describe("recommendationService.getPersonalizedRecommendations", () => {
       reason: "社区热门推荐",
       sampleAudioUrl: "/samples/hot-1.mp3",
     });
-    expect(UserPreferencesModel.findOne).not.toHaveBeenCalled();
+    // RC-5：降级路径也会读反馈与偏好（用好恶过滤热门候选），所以不再断言「未查询偏好」。
+    expect(RecommendationFeedbackModel.find).toHaveBeenCalledWith({ userId: "u1" });
   });
 
   it("完全无历史时也走热门，且数据库聚合为空时用内置默认风格", async () => {
@@ -111,8 +133,8 @@ describe("recommendationService.getPersonalizedRecommendations", () => {
     expect(recs[1].similarityScore).toBeCloseTo(0.9, 10);
     expect(recs[2].similarityScore).toBeCloseTo(0.8, 10);
     expect(recs[0].reason).toBe("基于您的使用历史（使用5次）");
-    // 补位的是热门风格，相似度固定在 0.4
-    expect(recs[3]).toMatchObject({ similarityScore: 0.4, reason: "社区热门推荐" });
+    // 补位的是热门风格，相似度固定在 0.5（与降级路径保持一致，不再是 0.4）
+    expect(recs[3]).toMatchObject({ similarityScore: 0.5, reason: "社区热门推荐" });
   });
 
   it("相似度不会低于 0.5", async () => {
@@ -207,7 +229,9 @@ describe("recommendationService.recordSelection", () => {
     expect(update.$inc).toEqual({ totalCount: 1 });
     expect(update.$set.lastUpdated).toBeInstanceOf(Date);
 
-    const record = update.$push.generations as GenerationRecord;
+    // RC-1：$push 现在带 $each + $slice（保留最近 300 条），记录在 $each[0]。
+    expect(update.$push.generations.$slice).toBe(-300);
+    const record = update.$push.generations.$each[0] as GenerationRecord;
     expect(record.id).toMatch(/^gen-\d+-/);
     expect(record.voiceStyle.id).toBe("popular-2");
     expect(record.textLength).toBe(text.length);
@@ -224,7 +248,7 @@ describe("recommendationService.recordSelection", () => {
     await service.recordSelection("u1", "unknown-style", long);
 
     const call = (RecommendationHistoryModel.findOneAndUpdate as jest.Mock).mock.calls[0];
-    const record = call[1].$push.generations as GenerationRecord;
+    const record = call[1].$push.generations.$each[0] as GenerationRecord;
     expect(record.textContent).toHaveLength(1000);
     expect(record.textLength).toBe(1500);
     expect(record.contentType).toBe("article");
@@ -232,14 +256,15 @@ describe("recommendationService.recordSelection", () => {
     expect(record.voiceStyle).toMatchObject({ id: "unknown-style", name: "自定义风格", speed: 1 });
   });
 
-  it("空文本按 short/en-US 处理", async () => {
+  it("空文本按 short/平台默认语言处理", async () => {
     (RecommendationHistoryModel.findOneAndUpdate as jest.Mock).mockResolvedValue({ ok: 1 });
     await service.recordSelection("u1", "popular-1");
 
     const call = (RecommendationHistoryModel.findOneAndUpdate as jest.Mock).mock.calls[0];
-    const record = call[1].$push.generations as GenerationRecord;
+    const record = call[1].$push.generations.$each[0] as GenerationRecord;
     expect(record.contentType).toBe("short");
-    expect(record.language).toBe("en-US");
+    // RC-4：空文本以前会因以 0 做除法得到 NaN 而错判为 en-US，现在直接回平台默认语言。
+    expect(record.language).toBe("zh-CN");
     expect(record.textContent).toBe("");
   });
 
