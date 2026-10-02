@@ -289,7 +289,12 @@ export const fetchLinkedAccounts = async (): Promise<LinkedAccount[]> => {
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || '获取第三方账号失败');
+  if (!res.ok) {
+    // 封停账户在 /api/admin/* 上一律 403 + ACCOUNT_SUSPENDED；这些调用点是 raw fetch，
+    // 不经过 api.ts 拦截器，不在这里分类就弹不出申诉入口。
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'profile-linked-accounts');
+    throw new Error(result.error || '获取第三方账号失败');
+  }
   return Array.isArray(result.accounts) ? result.accounts : [];
 };
 
@@ -305,7 +310,10 @@ export const startLinkedAccountBind = async (
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || '启动第三方账号绑定失败');
+  if (!res.ok) {
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'profile-linked-bind-start');
+    throw new Error(result.error || '启动第三方账号绑定失败');
+  }
   return result;
 };
 
@@ -348,7 +356,10 @@ export const unlinkLinkedAccount = async (
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || '解绑第三方账号失败');
+  if (!res.ok) {
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'profile-linked-unlink');
+    throw new Error(result.error || '解绑第三方账号失败');
+  }
   return Array.isArray(result.accounts) ? result.accounts : [];
 };
 
@@ -363,7 +374,10 @@ export const fetchAccountMergePreview = async (
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || '获取合并预览失败');
+  if (!res.ok) {
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'profile-merge-preview');
+    throw new Error(result.error || '获取合并预览失败');
+  }
   return result;
 };
 
@@ -382,7 +396,10 @@ export const confirmAccountMerge = async (data: {
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || '确认账号合并失败');
+  if (!res.ok) {
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'profile-merge-confirm');
+    throw new Error(result.error || '确认账号合并失败');
+  }
   return result;
 };
 

@@ -15,10 +15,15 @@ import { AccountSuspendedError } from "./providerAuthErrors";
 const BIND_SESSION_TTL_MS = 5 * 60 * 1000;
 // G2-19: 容量上限，防内存无限增长。
 const MAX_BIND_SESSIONS = 5000;
+// 一个绑定会话允许的密码错误次数：只有 IP 级 loginLimiter 兜底时，
+// 拿到一个有 5 分钟有效期的 bind token（URL fragment）就能持续试密；
+// 计满即作废整个会话，逼攻击者重新走一遍第三方授权。
+const MAX_BIND_PASSWORD_ATTEMPTS = 5;
 
 interface ProviderBindSessionRecord {
   profile: AccountProviderProfile;
   expiresAt: number;
+  failedAttempts: number;
 }
 
 export interface ProviderBindSessionView {
@@ -116,6 +121,7 @@ export function issueProviderBindSession(profile: AccountProviderProfile): Provi
   const record: ProviderBindSessionRecord = {
     profile,
     expiresAt: Date.now() + BIND_SESSION_TTL_MS,
+    failedAttempts: 0,
   };
   providerBindSessions.set(token, record);
 
@@ -199,7 +205,13 @@ export async function confirmProviderBindSession(params: {
 
   const user = await UserStorage.authenticateUser(identifier, params.password);
   if (!user) {
-    throw new Error("用户名/邮箱或密码错误");
+    record.failedAttempts = (record.failedAttempts || 0) + 1;
+    const remaining = MAX_BIND_PASSWORD_ATTEMPTS - record.failedAttempts;
+    if (remaining <= 0) {
+      providerBindSessions.delete(params.sessionToken);
+      throw new Error("密码尝试次数过多，请返回登录页重新发起第三方登录");
+    }
+    throw new Error(`用户名/邮箱或密码错误，还可尝试 ${remaining} 次`);
   }
   if ((user as any).accountStatus === "suspended") {
     throw new AccountSuspendedError();

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { FaArrowLeft, FaCheck, FaClock, FaEnvelope, FaImage, FaLock, FaUser } from "react-icons/fa";
+import { FaArrowLeft, FaCheck, FaClock, FaEnvelope, FaEye, FaEyeSlash, FaImage, FaLock, FaUser } from "react-icons/fa";
 import getApiBaseUrl from "../api";
 import { useAuth } from "../hooks/useAuth";
 import type { User } from "../types/auth";
@@ -14,11 +14,13 @@ import {
   authCardBodyClassName,
   authCardClassName,
   authCheckboxClassName,
+  authFieldActionClassName,
   authFieldClassName,
   authFieldIconClassName,
   authFrameClassName,
   authInfoPanelClassName,
   authLabelClassName,
+  authMutedLinkClassName,
   authPageShellClassName,
   authPasswordFieldClassName,
   authPrimaryButtonClassName,
@@ -81,12 +83,34 @@ function formatRemainingTime(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+/**
+ * 读取绑定会话令牌：query 优先、URL fragment 兜底。
+ *
+ * 后端 `buildProviderBindPageRedirect`（Linux.do 的"需要绑定已有账号"两条路径）把令牌放在
+ * fragment（G2-38：避免进浏览器历史 / Referer / 服务端日志），而 Google 一侧历史上是 query。
+ * 只读其中一种就会让另一条登录链路在绑定页报"缺少第三方登录绑定会话"——两种都要认。
+ */
+export function readProviderBindSessionToken(searchParams: URLSearchParams): string {
+  const fromQuery = searchParams.get("sessionToken");
+  if (fromQuery) {
+    return fromQuery;
+  }
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const hash = window.location.hash.replace(/^#/, "");
+  return new URLSearchParams(hash).get("sessionToken") || "";
+}
+
 const ProviderBindPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { loginWithToken } = useAuth();
   const { setNotification } = useNotification();
-  const sessionToken = searchParams.get("sessionToken") || "";
+  const sessionToken = useMemo(
+    () => readProviderBindSessionToken(searchParams),
+    [searchParams],
+  );
   const [session, setSession] = useState<ProviderBindSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -94,6 +118,7 @@ const ProviderBindPage: React.FC = () => {
   const [identifier, setIdentifier] = useState("");
   const [emailLocked, setEmailLocked] = useState(false);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [syncUsername, setSyncUsername] = useState(true);
   const [syncAvatar, setSyncAvatar] = useState(true);
   const [terms, setTerms] = useState<Record<TermKey, boolean>>(initialTerms);
@@ -119,6 +144,15 @@ const ProviderBindPage: React.FC = () => {
   }, [now, session?.expiresAt]);
   const sessionExpired = Boolean(session) && remainingSeconds <= 0;
   const providerEmailLabel = session?.provider === "linuxdo" ? "Linux.do 返回邮箱" : "Google 返回邮箱";
+  // 按钮被禁用时给出"到底缺什么"，不要让用户对着置灰按钮猜（原实现只置灰、无任何说明）。
+  const submitHint = useMemo(() => {
+    if (!session) return "";
+    if (sessionExpired) return "绑定会话已过期，请重新发起第三方登录";
+    if (!allTermsAccepted) return `请先勾选全部服务条款确认项（${acceptedTermCount}/${TERMS.length}）`;
+    if (!identifier.trim()) return "请填写已有账号的邮箱或用户名";
+    if (!password) return "请填写该账号的密码";
+    return "";
+  }, [acceptedTermCount, allTermsAccepted, identifier, password, session, sessionExpired]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,7 +278,15 @@ const ProviderBindPage: React.FC = () => {
         if (!response.ok) {
           maybeEmitPenaltyAppealFromResponse(data, response.status, "provider-bind-confirm");
         }
-        throw new Error(data?.conflictReason || data?.error || "第三方登录绑定失败。");
+        // 冲突要给"下一步怎么办"：只报一句冲突，用户会反复重试同一个第三方账号。
+        if (data?.status === "conflict") {
+          throw new Error(
+            `${data?.conflictReason || "该第三方身份已绑定到其他账号"}。如需更换，请先在原账号中解绑，或换一个本站账号登录。`,
+          );
+        }
+        throw new Error(data?.error || (response.status === 429
+          ? "尝试次数过多，请返回登录页重新发起第三方登录。"
+          : "第三方登录绑定失败。"));
       }
       if (!data?.token || !data?.user) {
         throw new Error(data?.error || "绑定完成后未返回登录凭证。");
@@ -453,7 +495,7 @@ const ProviderBindPage: React.FC = () => {
                   <FaLock className={authFieldIconClassName} />
                   <input
                     id="provider-bind-password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     className={authPasswordFieldClassName}
@@ -461,6 +503,21 @@ const ProviderBindPage: React.FC = () => {
                     autoFocus={emailLocked}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className={authFieldActionClassName}
+                    aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                    aria-pressed={showPassword}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <FaEyeSlash className="h-4 w-4" /> : <FaEye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <div className="mt-2 text-right">
+                  <Link to="/forgot-password" className={cn(authMutedLinkClassName, "text-xs")}>
+                    忘记密码？
+                  </Link>
                 </div>
               </div>
             </div>
@@ -500,7 +557,11 @@ const ProviderBindPage: React.FC = () => {
             </div>
 
             {error ? (
-              <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
+              >
                 {error}
               </div>
             ) : null}
@@ -517,6 +578,9 @@ const ProviderBindPage: React.FC = () => {
                 </>
               )}
             </button>
+            {!submitting && submitHint ? (
+              <p className="mt-3 text-center text-xs leading-5 text-slate-500">{submitHint}</p>
+            ) : null}
           </div>
         </form>
 

@@ -421,8 +421,8 @@ async function fetchLinuxDoUserProfile(accessToken: string, userinfoEndpoint: st
 // G2-03: 已删除死代码 upsertLinuxDoUser（旧的「按邮箱静默并号」实现）。
 // Linux.do 登录已统一走 completeLinuxDoAuthorization → issueProviderBindSession 的安全绑定路径。
 
-function createLinuxDoErrorRedirect(message: string): string {
-  return buildLinuxDoFrontendRedirect({ error: message });
+function createLinuxDoErrorRedirect(message: string, code?: string): string {
+  return buildLinuxDoFrontendRedirect(code ? { error: message, code } : { error: message });
 }
 
 export function getLinuxDoConfigSummary(): LinuxDoConfigSummary {
@@ -667,8 +667,8 @@ export async function completeLinuxDoAuthorization(params: {
   };
 }
 
-export function getLinuxDoErrorRedirect(message: string): string {
-  return createLinuxDoErrorRedirect(message);
+export function getLinuxDoErrorRedirect(message: string, code?: string): string {
+  return createLinuxDoErrorRedirect(message, code);
 }
 
 export function resetLinuxDoAuthStateForTests(): void {

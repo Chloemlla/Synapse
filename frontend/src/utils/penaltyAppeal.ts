@@ -167,6 +167,24 @@ export function maybeEmitPenaltyAppealFromResponse(
   return result;
 }
 
+/**
+ * 给「错误经 URL 参数回传」的场景用（OAuth 回调只能 302 回前端，带不了 HTTP 状态码）。
+ * 只按文案/`code` 判定，拿不到封停特征时返回 null。
+ */
+export function maybeEmitPenaltyAppealFromMessage(
+  message: string,
+  source = 'redirect',
+  code?: string,
+): PenaltyAppealPayload | null {
+  const text = asText(message);
+  const result = classifyPenaltyAppeal(code ? { error: text, code } : { error: text }, {
+    errorText: text,
+    source,
+  });
+  if (result) emitPenaltyAppealRequired(result);
+  return result;
+}
+
 export function maybeEmitPenaltyAppealFromError(
   error: unknown,
   source = 'api',

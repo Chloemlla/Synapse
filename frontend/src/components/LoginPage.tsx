@@ -470,13 +470,13 @@ export const LoginPage: React.FC = () => {
                                         />
                                         <GoogleAuthButton
                                             intent="login"
-                                            label="使用 Google 登录或注册"
-                                            description="使用 Google 账号快速登录，首次登录自动创建本地账户"
+                                            label="使用 Google 登录"
+                                            description="用 Google 账号登录；尚未关联本站账号时会引导你绑定一个已有账号"
                                         />
                                         <LinuxDoAuthButton
                                             intent="login"
-                                            label="使用 Linux.do 登录或注册"
-                                            description="复用 Linux.do 论坛账号，首次登录自动创建本地账户"
+                                            label="使用 Linux.do 登录"
+                                            description="用 Linux.do 论坛账号登录；尚未关联本站账号时会引导你绑定一个已有账号"
                                         />
                                 <div className={authInfoPanelClassName}>
                                     <div className="flex items-start gap-3">

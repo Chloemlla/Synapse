@@ -21,6 +21,7 @@ import {
   studioModalCardClassName,
   studioModalOverlayClassName,
   studioPageClassName,
+  studioPanelClassName,
   studioPrimaryButtonClassName,
 } from './studioTheme';
 
@@ -1485,8 +1486,146 @@ const UserProfile: React.FC = () => {
             <ProfileSidebarSummary
               profile={profile}
               totpStatus={totpStatus}
-              linkedAccounts={linkedAccounts}
+              linkedAccounts={displayedLinkedAccounts}
             />
+
+            {/* 第三方账号绑定 / 解绑
+                这段 JSX 在 29384a62「deeper UI splits」被整段删除、只留下 handler/state/ref，
+                导致「绑定第三方账号」按钮（handleScrollToLinkedAccounts）滚动到一个不存在的节点，
+                而且没有任何入口能绑定/解绑第三方账号。这里按删除前的结构还原并补齐状态反馈。 */}
+            <m.section
+              id="linked-accounts"
+              ref={linkedAccountsSectionRef}
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.24 }}
+              className={studioPanelClassName}
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 sm:h-10 sm:w-10">
+                    <FaLink />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold text-slate-900">第三方账号</div>
+                    <div className="truncate text-sm text-slate-500">{linkedAccountSummary}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadLinkedAccounts()}
+                  disabled={linkedAccountsLoading || submitting}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  title="刷新"
+                  aria-label="刷新第三方账号状态"
+                >
+                  <FaSyncAlt className={linkedAccountsLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+
+              {!isSecuritySessionActive ? (
+                <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12px] leading-5 text-amber-700">
+                  绑定或解绑第三方账号前，请先在上方建立安全会话。
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                {displayedLinkedAccounts.map((account) => {
+                  const isGoogle = account.provider === 'google';
+                  const isBound = account.status === 'bound';
+                  const isMergeRequired = account.status === 'merge_required';
+                  const statusTone =
+                    account.status === 'bound'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : account.status === 'merge_required'
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : account.status === 'conflict'
+                          ? 'border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border-slate-200 bg-slate-50 text-slate-500';
+
+                  return (
+                    <div
+                      key={account.provider}
+                      className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-3.5"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
+                          {isGoogle ? <FaGoogle /> : <FaLink />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">{account.label}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusTone}`}>
+                              {getLinkedAccountStatusLabel(account.status)}
+                            </span>
+                          </div>
+                          <div className="mt-1 break-words text-[12px] leading-5 text-slate-500">
+                            {account.providerUsername || account.providerEmail || account.conflictReason || '未绑定'}
+                          </div>
+                          {account.linkedAt ? (
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              绑定于 {formatDateTime(account.linkedAt)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {isMergeRequired ? (
+                        <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-700">
+                          该 {account.label} 身份已属于另一个本站账号，合并后才能在本账号使用。
+                        </div>
+                      ) : null}
+
+                      {googleBindActive && isGoogle ? (
+                        <div className="mt-3 rounded-[18px] border border-slate-200 bg-white p-2">
+                          <div className="mb-2 text-center text-[11px] text-slate-500">
+                            请在下方 Google 按钮中选择要绑定的账号
+                          </div>
+                          <div ref={googleBindButtonRef} className="flex min-h-[44px] w-full items-center justify-center" />
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {!isMergeRequired ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStartLinkedAccountBind(account.provider)}
+                            disabled={submitting || !account.canBind}
+                            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isGoogle ? <FaGoogle /> : <FaExternalLinkAlt />}
+                            {isBound ? '刷新绑定信息' : '绑定'}
+                          </button>
+                        ) : null}
+                        {isBound && (
+                          <button
+                            type="button"
+                            onClick={() => void handleUnlinkLinkedAccount(account.provider)}
+                            disabled={submitting || !account.canUnlink}
+                            className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <FaUnlink />
+                            解绑
+                          </button>
+                        )}
+                        {isMergeRequired && (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenMergePreview(account)}
+                            disabled={submitting}
+                            className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-2 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <FaExclamationCircle />
+                            查看合并预览
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </m.section>
+
 {/* Tips */}
             <m.section
               initial={{ opacity: 0, y: 24 }}

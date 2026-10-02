@@ -155,7 +155,12 @@ const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
           if (!data.session?.sessionToken) {
             throw new Error("Google 登录绑定会话创建失败");
           }
-          navigate(`/auth/provider/bind?sessionToken=${encodeURIComponent(data.session.sessionToken)}`);
+          // 与后端 buildProviderBindPageRedirect 保持一致：sessionToken 走 URL fragment。
+          // 走 query 会让一次性绑定令牌进入浏览器历史/Referer/访问日志，且与 Linux.do 一侧的
+          // 跳转契约不一致（那边放 fragment，ProviderBindPage 只读 query 时绑定页必失败）。
+          navigate(
+            `/auth/provider/bind#${new URLSearchParams({ sessionToken: data.session.sessionToken }).toString()}`,
+          );
           return;
         }
 
@@ -286,7 +291,11 @@ const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
             )}
           />
           {authenticating ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white/95 px-3 text-center">
+            <div
+              role="status"
+              aria-live="polite"
+              className="absolute inset-0 flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white/95 px-3 text-center"
+            >
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
               <p className="mt-2 text-xs font-medium text-slate-700">正在完成 Google 登录...</p>
               <p className="mt-1 text-[11px] leading-4 text-slate-500">如果没有自动跳转，请返回登录页重试。</p>

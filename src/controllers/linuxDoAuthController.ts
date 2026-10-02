@@ -15,6 +15,11 @@ import { buildProviderBindPageRedirect } from "../services/providerBindSessionSe
 import { getClientIP } from "../utils/ipUtils";
 import { getAuthSessionMetadata, touchAuthSession } from "../services/authSessionService";
 import logger from "../utils/logger";
+import {
+  ACCOUNT_SUSPENDED_CODE,
+  buildAccountSuspendedBody,
+  isAccountSuspendedFailure,
+} from "../services/providerAuthErrors";
 
 function parseIntent(value: unknown): LinuxDoAuthIntent {
   return value === "register" ? "register" : "login";
@@ -88,6 +93,12 @@ export class LinuxDoAuthController {
       return res.redirect(302, redirectUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Linux.do 登录回调失败";
+      // 封停是预期内的拒绝：带上 code 让前端回调页能弹申诉入口（错误经由 URL 参数回传，
+      // 不走 HTTP 响应体，所以这里必须把 code 也一并带过去）。
+      if (isAccountSuspendedFailure(error)) {
+        logger.warn("[Linux.do Auth] 封停账户登录被拒", { path: "callback" });
+        return res.redirect(302, getLinuxDoErrorRedirect(message, ACCOUNT_SUSPENDED_CODE));
+      }
       logger.error("[Linux.do Auth] OAuth callback failed", {
         message,
         codePresent: Boolean(code),
@@ -136,24 +147,35 @@ export class LinuxDoAuthController {
   }
 
   public static async exchangeTicket(req: Request, res: Response) {
-    const { ticket } = req.body ?? {};
+    try {
+      const { ticket } = req.body ?? {};
 
-    if (!ticket || typeof ticket !== "string") {
-      return res.status(400).json({ error: "缺少 Linux.do 登录交换票据" });
-    }
+      if (!ticket || typeof ticket !== "string") {
+        return res.status(400).json({ error: "缺少 Linux.do 登录交换票据" });
+      }
 
-    const payload = await consumeLinuxDoLoginTicket(ticket);
-    if (!payload) {
-      return res.status(400).json({ error: "Linux.do 登录交换票据无效或已过期" });
-    }
+      const payload = await consumeLinuxDoLoginTicket(ticket);
+      if (!payload) {
+        return res.status(400).json({ error: "Linux.do 登录交换票据无效或已过期" });
+      }
 
-    touchAuthSession(payload.user.id, payload.token, getAuthSessionMetadata(req, { ipAddress: getClientIP(req) })).catch((error) => {
-      logger.warn("[Linux.do Auth] 记录 ticket 兑换会话活动失败", {
-        userId: payload.user.id,
-        error: error instanceof Error ? error.message : String(error),
+      touchAuthSession(payload.user.id, payload.token, getAuthSessionMetadata(req, { ipAddress: getClientIP(req) })).catch((error) => {
+        logger.warn("[Linux.do Auth] 记录 ticket 兑换会话活动失败", {
+          userId: payload.user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
 
-    return res.json(payload);
+      return res.json(payload);
+    } catch (error) {
+      if (isAccountSuspendedFailure(error)) {
+        logger.warn("[Linux.do Auth] 封停账户 ticket 兑换被拒");
+        return res.status(403).json(
+          buildAccountSuspendedBody(error instanceof Error ? error.message : undefined),
+        );
+      }
+      logger.error("[Linux.do Auth] ticket 兑换失败", error);
+      return res.status(500).json({ error: "Linux.do 登录交换失败" });
+    }
   }
 }

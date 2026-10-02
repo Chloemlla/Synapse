@@ -21,6 +21,9 @@ export function ProfileSidebarSummary({
   totpStatus,
   linkedAccounts,
 }: ProfileSidebarSummaryProps) {
+  const boundAccountCount = linkedAccounts.filter((account) => account.status === "bound").length;
+  const accountStatusLabel = profile?.accountStatus === "suspended" ? "已暂停" : "正常";
+
   return (
     <>
       {/* Account info */}
@@ -76,7 +79,7 @@ export function ProfileSidebarSummary({
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between gap-3">
             <span className="text-slate-500">账户状态</span>
-            <span className="font-medium text-slate-900">{profile?.accountStatus || "active"}</span>
+            <span className="font-medium text-slate-900">{accountStatusLabel}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-slate-500">TOTP</span>
@@ -88,7 +91,7 @@ export function ProfileSidebarSummary({
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-slate-500">绑定账号数</span>
-            <span className="font-medium text-slate-900">{linkedAccounts.length}</span>
+            <span className="font-medium text-slate-900">{boundAccountCount}</span>
           </div>
           {linkedAccounts.slice(0, 3).map((account) => (
             <div key={`${account.provider}-${account.providerUserId || account.label}`} className="flex items-center justify-between gap-3">

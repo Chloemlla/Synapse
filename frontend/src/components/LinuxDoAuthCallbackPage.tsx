@@ -15,11 +15,11 @@ import {
   authSecondaryButtonClassName,
   authTitleClassName,
 } from "./authStudioTheme";
-import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
+import { maybeEmitPenaltyAppealFromMessage, maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 
 function buildSynapseAndroidDeepLink(params: URLSearchParams): string {
   const deepLink = new URL("synapse://linuxdo-callback");
-  const keys = ["ticket", "intent", "error", "status", "mergeToken", "sessionToken", "client"];
+  const keys = ["ticket", "intent", "error", "code", "status", "mergeToken", "sessionToken", "client"];
   for (const key of keys) {
     const value = params.get(key);
     if (value) {
@@ -92,6 +92,9 @@ export const LinuxDoAuthCallbackPage: React.FC = () => {
       }
       setStatus(intent === "bind" ? "Linux.do 绑定失败，正在返回个人主页..." : "Linux.do 登录失败，正在返回登录页...");
       setNotification({ message: error, type: "error" });
+      // 回调错误只能经 URL 参数回传（302 带不了 HTTP 状态码）：封停要靠文案/`code` 认出来，
+      // 否则被驳回的用户只会看到一句“账户已被封停”却没有任何申诉入口。
+      maybeEmitPenaltyAppealFromMessage(error, "linuxdo-callback", params.get("code") || undefined);
       window.setTimeout(() => navigate(intent === "bind" ? "/profile" : "/login", { replace: true }), 800);
       return;
     }
@@ -116,8 +119,11 @@ export const LinuxDoAuthCallbackPage: React.FC = () => {
 
       if (bindStatus === "conflict") {
         setStatus("Linux.do 绑定存在冲突，正在返回个人主页...");
-        setNotification({ message: "当前账户已绑定另一个 Linux.do 身份", type: "error" });
-        window.setTimeout(() => navigate("/profile", { replace: true }), 800);
+        setNotification({
+          message: "当前账号已绑定另一个 Linux.do 身份。如需更换，请在个人主页先解绑后再试。",
+          type: "error",
+        });
+        window.setTimeout(() => navigate("/profile", { replace: true }), 1200);
         return;
       }
 

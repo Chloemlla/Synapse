@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import getApiBaseUrl from "../api";
 import { useAuthProviderStore } from "../stores/authProviderStore";
 import { cn } from "../utils/cn";
@@ -21,6 +21,7 @@ const LinuxDoAuthButton: React.FC<LinuxDoAuthButtonProps> = ({
   className = "",
 }) => {
   const { linuxdo: config, loading } = useAuthProviderStore();
+  const [redirecting, setRedirecting] = useState(false);
   const startUrl = useMemo(
     () => `${getApiBaseUrl()}/api/auth/linuxdo/start?intent=${intent}`,
     [intent],
@@ -33,10 +34,17 @@ const LinuxDoAuthButton: React.FC<LinuxDoAuthButtonProps> = ({
   return (
     <button
       type="button"
-      onClick={() => window.location.assign(startUrl)}
+      onClick={() => {
+        if (redirecting) return;
+        // 授权是整页跳转，页面卸载前用户需要看到“已受理”，否则慢网下会反复点击。
+        setRedirecting(true);
+        window.location.assign(startUrl);
+      }}
+      disabled={redirecting}
+      aria-busy={redirecting}
       className={cn(
         authElevatedPanelClassName,
-        "flex w-full items-center justify-center gap-3 px-4 py-3.5 text-sm font-semibold text-slate-900 transition hover:border-slate-300 hover:bg-white",
+        "flex w-full items-center justify-center gap-3 px-4 py-3.5 text-sm font-semibold text-slate-900 transition hover:border-slate-300 hover:bg-white disabled:cursor-wait disabled:opacity-70",
         className,
       )}
     >
@@ -48,7 +56,7 @@ const LinuxDoAuthButton: React.FC<LinuxDoAuthButtonProps> = ({
         referrerPolicy="no-referrer"
       />
       <span className="flex flex-col items-start">
-        <span>{label}</span>
+        <span>{redirecting ? "正在跳转 Linux.do…" : label}</span>
         {description ? (
           <span className="text-[11px] font-normal leading-5 text-slate-500">{description}</span>
         ) : null}

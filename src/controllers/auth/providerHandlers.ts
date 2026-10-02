@@ -131,7 +131,12 @@ export function getProviderBindSession(req: Request, res: Response) {
 
   const session = getProviderBindSessionView(sessionToken);
   if (!session) {
-    return res.status(404).json({ error: "第三方登录绑定会话已过期，请返回登录页重试" });
+    // 与 confirmProviderBind 的"已过期"分支统一成 410：同一种状态不该在两个接口上
+    // 分别表现为 404 与 410（前端两处提示也因此能对齐）。
+    return res.status(410).json({
+      error: "第三方登录绑定会话已过期，请返回登录页重试",
+      code: "PROVIDER_BIND_SESSION_EXPIRED",
+    });
   }
 
   return res.json({ success: true, session });
@@ -167,7 +172,13 @@ export async function confirmProviderBind(req: Request, res: Response) {
       fallbackMessage: "第三方登录绑定失败",
       logLabel: "[Auth] Provider bind confirm failed",
       statusFromMessage: (text) =>
-        text.includes("用户名/邮箱或密码错误") ? 401 : text.includes("已过期") ? 410 : 400,
+        text.includes("尝试次数过多")
+          ? 429
+          : text.includes("用户名/邮箱或密码错误")
+            ? 401
+            : text.includes("已过期")
+              ? 410
+              : 400,
     });
   }
 }
