@@ -77,6 +77,9 @@ export const ADMIN_MODULE_LOADERS = {
   'email-traceability': () => import('@/components/EmailTraceability'),
   'tts-history': () => import('@/components/TtsGenerationManager'),
   system: () => import('@/components/SystemManager'),
+  // 普通管理员页面授权：仅超管（navConfig requiredRole=superadmin，路由侧 adminScope.ts 硬校角色）。
+  // 故意不进 src/config/adminPages.ts 的可授权清单，避免它自己被授给普通管理员。
+  'admin-scope': () => import('@/components/admin/AdminScopeManager'),
   'debug-console': () => import('@/components/admin/DebugConsole'),
   'bilibili-sync': () => import('@/components/BilibiliSyncAdmin'),
   'bilibili-data': () => import('@/components/BilibiliDataAdmin'),

@@ -41,7 +41,7 @@ import {
 } from 'react-icons/fa';
 
 import type { NavGroup, NavItem } from '@/layout/types';
-import { isPlainAdminAllowedAdminPath } from '@/utils/rbac';
+import { adminModuleFromUrl, adminPageKeyForModule, normalizeGrantedPages } from '@/utils/rbac';
 
 /**
  * Shared navigation configuration (SSOT) for AppSidebar + MobileNav + AdminHub.
@@ -54,7 +54,22 @@ export type NavVisibilityContext = {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   canUseTranslation: boolean;
+  /**
+   * 服务端返回的「普通管理员可见页面」集合（`GET /api/admin/admin-scope/me` → `pages`）。
+   * `undefined` = 尚未拿到（按 `utils/rbac` 的回退集合判定）。超管不参与该判定。
+   */
+  grantedAdminPages?: readonly string[];
 };
+
+/** 某个管理入口是否在授权范围内（超管由调用方短路）。 */
+function isAdminItemGranted(item: NavItem, ctx: NavVisibilityContext): boolean {
+  const url = 'url' in item && typeof item.url === 'string' ? item.url : '';
+  const explicit = 'requiredPage' in item ? item.requiredPage : undefined;
+  const module = explicit ?? adminModuleFromUrl(url) ?? url.replace(/^\//, '');
+  if (!module) return true;
+  const pageKey = adminPageKeyForModule(module);
+  return normalizeGrantedPages(ctx.grantedAdminPages).includes(pageKey);
+}
 
 function filterByVisibility(
   items: NavItem[],
@@ -63,15 +78,15 @@ function filterByVisibility(
   return items.filter((item) => {
     if (item.requiredRole === 'admin' && !ctx.isAdmin) return false;
     if (item.requiredRole === 'superadmin' && !ctx.isSuperAdmin) return false;
-    // 普通管理员只能看到用户管理 / API Key / API Key 计费 / OAuth 管理；其余管理端页面
-    // 一律超管（与后端 requireAdminScope 同口径，见 utils/rbac.ts）。
+    // 普通管理员能看到哪些管理页面，以**服务端授权**为准（`GET /api/admin/admin-scope/me`）；
+    // 拿不到授权时回退到历史最小集合（fail-closed，见 utils/rbac.ts）。
     if (
       ctx.isAdmin &&
       !ctx.isSuperAdmin &&
       'url' in item &&
       typeof item.url === 'string' &&
-      item.url.startsWith('/admin/') &&
-      !isPlainAdminAllowedAdminPath(item.url)
+      (item.url.startsWith('/admin/') || Boolean('requiredPage' in item && item.requiredPage)) &&
+      !isAdminItemGranted(item, ctx)
     ) {
       return false;
     }
@@ -438,6 +453,15 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             icon: FaEnvelope as IconType,
           },
           {
+            // 邮件溯源与外部邮件共用 /api/outemail（登记表里只有一个授权 key `outemail`，
+            // label 已改成「邮件外发与溯源」）：只授一个入口却放开同一批接口才是不一致，
+            // 所以这里显式把两个入口都绑到同一个页面 key。
+            title: '邮件溯源',
+            url: '/admin/email-traceability',
+            icon: FaEnvelope as IconType,
+            requiredPage: 'outemail',
+          },
+          {
             title: '短链管理',
             url: '/admin/shortlink',
             icon: FaLink as IconType,
@@ -499,6 +523,9 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: '安全监控',
             url: '/nexai-security',
             icon: FaShieldAlt as IconType,
+            // 该页调 /api/nexai/security/*（登记表 key = nexai-security）：不绑页面 key 的话，
+            // 普通管理员在导航里看得到、点进去接口全 403。
+            requiredPage: 'nexai-security',
           },
         ],
         ctx,
@@ -592,6 +619,14 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            // 页面授权本身永远只能超管：路由侧 adminScope.ts 也已硬校 superadmin，
+            // 且故意不在 adminPages 登记（不进「可授权页面」清单，以免被授给普通管理员）。
+            title: '页面授权',
+            url: '/admin/admin-scope',
+            icon: FaUserShield as IconType,
+            requiredRole: 'superadmin',
+          },
+          {
             // Passkey 现场诊断：读 `passkeyDebugLog` 内存单例（刷新即空）。页面无后端 API，
             // 因此 adminPages 登记为 apiPrefixes: []（仅超管），与 requiredRole 一致。
             title: '调试控制台',
@@ -603,6 +638,8 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: '篡改检测',
             url: '/tamper-detection-demo',
             icon: FaBug as IconType,
+            // 该页调 /api/tamper/admin/*（登记表 key = tamper-detection-demo）。
+            requiredPage: 'tamper-detection-demo',
           },
         ],
         ctx,
@@ -746,11 +783,20 @@ export function getMobileAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: '安全监控',
             url: '/nexai-security',
             icon: FaShieldAlt as IconType,
+            requiredPage: 'nexai-security',
           },
           {
             title: '系统管理',
             url: '/admin/system',
             icon: FaBars as IconType,
+            requiredRole: 'superadmin',
+          },
+          {
+            // 移动端是单层平铺组，桌面端的安全与系统组里的入口这里也得有一份，
+            // 否则手机上超管找不到配置页（这是本轮新增的入口，不能只在桌面出现）。
+            title: '页面授权',
+            url: '/admin/admin-scope',
+            icon: FaUserShield as IconType,
             requiredRole: 'superadmin',
           },
         ],

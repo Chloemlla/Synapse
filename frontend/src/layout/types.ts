@@ -22,6 +22,12 @@ type BaseNavItem = {
    * non-admins and `'superadmin'` to hide from read-only admins.
    */
   requiredRole?: 'admin' | 'superadmin' | 'user';
+  /**
+   * 该入口对应的授权页面 key（`src/config/adminPages.ts` 的 `key`）。
+   * 缺省时由 URL 推导（`/admin/store/cdks` → `store/cdks`）；仅当入口 URL 与页面 key
+   * 不一致时才需要显式写（例如 `/admin/email-traceability` 共用 `outemail` 的授权）。
+   */
+  requiredPage?: string;
 };
 
 /**

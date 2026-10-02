@@ -16,8 +16,9 @@ import { useNotification } from '../Notification';
 import { getAdminNavGroups, getSuperAdminOnlyPaths } from '@/navigation/navConfig';
 import { findAdminModuleNeighbors, indexAdminNavByUrl, resolveActiveAdminItem } from '@/navigation/adminNavIndex';
 import { useAdminNavPrefs } from '@/hooks/useAdminNavPrefs';
+import { useAdminScope } from '@/hooks/useAdminScope';
 import { useAuth } from '@/hooks/useAuth';
-import { isAdminRole, isPlainAdminAllowedAdminModule, isSuperAdmin } from '@/utils/rbac';
+import { canAccessAdminModule, isAdminRole, isSuperAdmin } from '@/utils/rbac';
 import { cn } from '@/lib/utils';
 
 import {
@@ -46,6 +47,8 @@ export const AdminHub: React.FC = () => {
   const { user } = useAuth();
   const { setNotification } = useNotification();
   const { pinned, recent, isPinned, togglePin, clearRecent } = useAdminNavPrefs();
+  // 普通管理员能看到哪些卡片，以服务端授权为准（拿不到时自动回退到默认集合）。
+  const { grantedPages: grantedAdminPages, degraded: scopeDegraded, loading: scopeLoading } = useAdminScope();
 
   const groups = useMemo(
     () =>
@@ -53,8 +56,9 @@ export const AdminHub: React.FC = () => {
         isAdmin: isAdminRole(user?.role),
         isSuperAdmin: isSuperAdmin(user?.role),
         canUseTranslation: user?.isTranslationEnabled !== false,
+        grantedAdminPages,
       }).filter((g) => g.id !== 'admin-hub'),
-    [user?.role, user?.isTranslationEnabled],
+    [user?.role, user?.isTranslationEnabled, grantedAdminPages],
   );
 
   const byUrl = useMemo(() => indexAdminNavByUrl(groups), [groups]);
@@ -92,6 +96,14 @@ export const AdminHub: React.FC = () => {
             </>
           }
         />
+
+        {scopeDegraded ? (
+          <InfoPanel className='border-amber-200 bg-amber-50/60'>
+            <p className='text-sm text-amber-800'>
+              页面授权服务暂时不可用，当前按<strong>默认可见页面</strong>展示；若你刚被授权了新页面，稍后刷新即可。
+            </p>
+          </InfoPanel>
+        ) : null}
 
         {pinnedItems.length > 0 || recentItems.length > 0 ? (
           <InfoPanel>
@@ -248,6 +260,8 @@ export const AdminModulePage: React.FC = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { isPinned, togglePin } = useAdminNavPrefs();
+  // 深链守卫同样以服务端授权为准：导航里隐藏的页面，直接输 URL 也不应渲染。
+  const { grantedPages: grantedAdminPages, loading: scopeLoading } = useAdminScope();
 
   const groups = useMemo(
     () =>
@@ -255,8 +269,9 @@ export const AdminModulePage: React.FC = () => {
         isAdmin: isAdminRole(user?.role),
         isSuperAdmin: isSuperAdmin(user?.role),
         canUseTranslation: user?.isTranslationEnabled !== false,
+        grantedAdminPages,
       }).filter((g) => g.id !== 'admin-hub'),
-    [user?.role, user?.isTranslationEnabled],
+    [user?.role, user?.isTranslationEnabled, grantedAdminPages],
   );
 
   const activeItem = useMemo(
@@ -310,12 +325,22 @@ export const AdminModulePage: React.FC = () => {
 
   const Component = AdminModuleComponents[module];
 
-  // Superadmin-only modules (per navConfig) are hidden from the hub for
-  // plain admins; also block deep links so they never render the UI.
-  // 普通管理员只允许用户管理 / API Key / API Key 计费 / OAuth 管理（与后端 requireAdminScope 同口径）。
+  // 超管专属模块（navConfig 里 requiredRole=superadmin）与「未授权的普通管理员模块」
+  // 都不渲染 UI，也不让深链绕过：授权集合来自 GET /api/admin/admin-scope/me。
   const isSuperAdminOnly =
-    getSuperAdminOnlyPaths().has(`/admin/${module}`) || !isPlainAdminAllowedAdminModule(module);
+    getSuperAdminOnlyPaths().has(`/admin/${module}`) ||
+    !canAccessAdminModule(user?.role, module, grantedAdminPages);
   if (isSuperAdminOnly && !isSuperAdmin(user?.role)) {
+    // 授权还在拉取时先等一下，避免把「未裁定的可见页面」闪成拒绝页。
+    if (scopeLoading) {
+      return (
+        <InfoQueryShell className='logshare-admin-surface'>
+          <InfoPanel>
+            <div className='py-16 text-center text-sm text-slate-500'>正在校验页面授权…</div>
+          </InfoPanel>
+        </InfoQueryShell>
+      );
+    }
     return <SuperAdminGuard />;
   }
 

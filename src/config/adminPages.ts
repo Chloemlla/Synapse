@@ -72,11 +72,18 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "coin-flip", label: "抛硬币", apiPrefixes: ["/api/coin-flip"] },
   { key: "lottery", label: "抽奖管理", apiPrefixes: ["/api/lottery"] },
   { key: "command", label: "命令管理", apiPrefixes: ["/api/command"] },
-  { key: "outemail", label: "邮件发送", apiPrefixes: ["/api/outemail", "/api/email"] },
+  { key: "outemail", label: "邮件外发与溯源", apiPrefixes: ["/api/outemail", "/api/email"] },
   { key: "captcha-providers", label: "验证码渠道", apiPrefixes: ["/api/turnstile"] },
   { key: "humancheck", label: "人机验证", apiPrefixes: ["/api/human-check"] },
-  { key: "tamper", label: "篡改检测", apiPrefixes: ["/api/tamper"] },
+  // 篡改检测演示页（路由 /tamper-detection-demo）自己就调 /api/tamper/admin/*。
+  // 之前这里叫 `tamper`、而演示页登记成 []，于是「导航指向的页面」与「持有 API 范围的页面」是
+  // 两个 key：把 tamper-detection-demo 授给普通管理员只会放出入口，请求仍 403；而 `tamper` 这个
+  // key 没有任何入口能点到。已合并成演示页这一个 key（API 范围跟着页面走）。
+  { key: "tamper-detection-demo", label: "篡改检测", apiPrefixes: ["/api/tamper"] },
   { key: "ipfs", label: "IPFS 上传", apiPrefixes: ["/api/ipfs"] },
+  // 以下是「只有页面外壳、没有自己的 API 范围」的登记：API 由别的 key 覆盖
+  // （例如 /admin/store 的数据来自 store/cdks + store/resources），或该页暂无服务端接口。
+  // 授给普通管理员时它们只能放出入口，因此管理界面里要标注「无 API 范围」。
 
   // 以下页面尚未登记 API 范围：授给普通管理员只会放出导航入口，页面内请求仍 403。
   // 需要放开时按上面同样的格式补 `apiPrefixes`（前缀取自该页面实际请求）。
@@ -94,9 +101,8 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "ip-ban", label: "IP 封禁", apiPrefixes: [] },
   { key: "mail-system", label: "邮件系统", apiPrefixes: [] },
   { key: "shorturlmigration", label: "短链迁移", apiPrefixes: [] },
-  { key: "nexai-security", label: "NexAI 安全", apiPrefixes: [] },
-  { key: "tamper-detection-demo", label: "篡改检测演示", apiPrefixes: [] },
-  { key: "email-sender", label: "邮件发送（总览）", apiPrefixes: [] },
+  { key: "nexai-security", label: "NexAI 安全", apiPrefixes: ["/api/nexai/security"] },
+  { key: "email-sender", label: "邮件发送（总览）", apiPrefixes: ["/api/outemail", "/api/email"] },
   { key: "tickets", label: "工单管理", apiPrefixes: [] },
 ];
 
