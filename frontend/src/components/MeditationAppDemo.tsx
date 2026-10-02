@@ -1,17 +1,12 @@
 import React, { useEffect, useRef, Activity } from 'react';
 import {
-  Award,
-  BarChart3,
-  Bell,
-  Bug,
-  CheckCircle
+  Home, Star, BarChart3, User, ChevronLeft, ChevronRight, MoreHorizontal,
+  Search, Settings, Play, RotateCcw, Pause, Square, Plus, Minus,
+  Heart, CloudRain, Waves, Trees, Moon, Radio as RadioIcon, Flame,
+  Mountain, Bug, Bell, LogOut, Trophy, Award, Sunrise, Crown, CheckCircle
 } from 'lucide-react';
 import {
   FaBell,
-  ChevronLeft,
-  ChevronRight,
-  CloudRain,
-  Crown,
   FaBroadcastTower,
   FaBug,
   FaCloudRain,
@@ -32,28 +27,6 @@ import {
   FaTree,
   FaTrophy,
   FaWater,
-  Flame,
-  Heart,
-  Home,
-  LogOut,
-  Minus,
-  Moon,
-  MoreHorizontal,
-  Mountain,
-  Pause,
-  Play,
-  Plus,
-  Radio as RadioIcon,
-  RotateCcw,
-  Search,
-  Settings,
-  Square,
-  Star,
-  Sunrise,
-  Trees,
-  Trophy,
-  User,
-  Waves
 } from 'react-icons/fa';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell, studioSecondaryButtonClassName } from './studioTheme';
 

@@ -1,46 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Banknote,
-  BarChart3,
-  Book,
-  Building2,
-  Car,
-  ChevronLeft,
-  ChevronRight,
-  ChevronRight as ArrowRight,
-  ClipboardList,
-  CreditCard,
-  DollarSign,
-  FaChartLine,
-  FaCircle,
-  FaCreditCard,
-  FaFilm,
-  FaGem,
-  FaGift,
-  FaHome,
-  FaMoneyBillWave,
-  FaPills,
-  FaShoppingBag,
-  FaTaxi,
-  FaUniversity,
-  FaUtensils,
-  FaWallet,
-  Film,
-  Gift,
-  Home,
-  Home as HomeIcon2,
-  LogOut,
-  MoreHorizontal,
-  Pill,
-  Plus,
-  Settings
+  Home, ClipboardList, BarChart3, User, Plus, ChevronLeft, ChevronRight,
+  ChevronRight as ArrowRight, Wallet, CreditCard, Banknote, Building2,
+  ShoppingBag, Car, Film, Home as HomeIcon2, Pill, Book, MoreHorizontal,
+  DollarSign, TrendingUp, Gift, LogOut, Settings
 } from 'lucide-react';
 import {
-  FaBook,
-  ShoppingBag,
-  TrendingUp,
-  User,
-  Wallet
+  FaBook, FaChartLine, FaCircle, FaCreditCard, FaFilm, FaGem, FaGift, FaHome, FaMoneyBillWave,
+  FaPills, FaShoppingBag, FaTaxi, FaUniversity, FaUtensils, FaWallet,
 } from 'react-icons/fa';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell } from './studioTheme';
 

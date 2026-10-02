@@ -1,31 +1,6 @@
 import React, { useEffect, useState, startTransition } from 'react';
-import {
-  AnimatePresence,
-  FaAngleDoubleLeft,
-  FaAngleDoubleRight,
-  FaArrowLeft,
-  FaCheckCircle,
-  FaChevronLeft,
-  FaChevronRight,
-  FaCopy,
-  FaDice,
-  FaDownload,
-  FaExclamationTriangle,
-  FaFileAlt,
-  FaInfoCircle,
-  FaLink,
-  FaList,
-  FaPlus,
-  FaSearch,
-  FaSync,
-  FaToggleOff,
-  FaToggleOn,
-  FaUpload,
-  FaUserSecret,
-  motion,
-  useReducedMotion } from 'framer-motion';
-import { FaTrash
-} from 'react-icons/fa';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { FaTrash, FaCopy, FaSearch, FaSync, FaDice, FaLink, FaPlus, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaList, FaToggleOn, FaToggleOff, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaDownload, FaFileAlt, FaUpload, FaUserSecret } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import getApiBaseUrl from '../api';

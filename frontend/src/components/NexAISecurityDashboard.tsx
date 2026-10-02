@@ -1,32 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  ArcElement,
-  Bar } from 'react-chartjs-2';
+import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   BarElement,
   CategoryScale,
-  Doughnut,
-  FaChartBar,
-  FaClock,
-  FaExclamationCircle,
-  FaExclamationTriangle,
-  FaFilter,
-  FaGlobe,
-  FaMobileAlt,
-  FaUsers,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
   Filler
 } from 'chart.js';
 import api from '../api/api';
 import { useNotification } from './Notification';
 import {
   FaShieldAlt,
-  Legend,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Title,
-  Tooltip
+  FaExclamationTriangle,
+  FaMobileAlt,
+  FaUsers,
+  FaChartBar,
+  FaClock,
+  FaFilter,
+  FaExclamationCircle,
+  FaGlobe
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { studioModalCardClassName, studioSubPanelClassName, studioSurfaceClassName } from './studioTheme';

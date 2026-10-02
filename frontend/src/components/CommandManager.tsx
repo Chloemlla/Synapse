@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AnimatePresence } from 'framer-motion';
-import { FaTerminal,
+  FaTerminal,
   FaArrowLeft,
   FaChartLine,
   FaCircle,
@@ -14,8 +14,7 @@ import { FaTerminal,
   FaServer,
   FaSpaceShuttle,
   FaSync,
-  FaTrash,
-  motion
+  FaTrash
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';

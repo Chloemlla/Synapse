@@ -1,18 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import {
-  AnimatePresence } from 'framer-motion';
+import { api } from '../api/api';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { FaEnvelope,
-  FaArrowLeft,
-  FaCheckCircle,
-  FaExclamationTriangle,
-  FaInfoCircle,
-  FaShieldAlt,
-  FaSync,
-  FaUserSecret,
-  api } from '../api/api';
-import { motion
-} from 'react-icons/fa';
+import { FaEnvelope, FaShieldAlt, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaSync, FaArrowLeft, FaUserSecret } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
 import { useAuth } from '../hooks/useAuth';

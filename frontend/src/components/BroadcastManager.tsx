@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import {
-  FaBullhorn,
   FaBell,
+  FaBullhorn,
   FaCircle,
   FaClipboardList,
   FaCrown,
@@ -24,8 +23,7 @@ import {
   FaUserCheck,
   FaUserSecret,
   FaUserSlash,
-  FaUsers,
-  motion
+  FaUsers
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { studioFieldClassName, studioSurfaceClassName, studioTextareaClassName, studioTileClassName } from './studioTheme';

@@ -1,41 +1,11 @@
 import React from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Clock,
-  Download,
-  FaFire,
-  FaHome,
-  FaMusic,
-  FaPlay,
-  FaSearch,
-  FaUser,
-  Heart,
-  HelpCircle,
-  Home,
-  List,
-  LogOut,
-  MessageCircle,
-  MoreHorizontal,
-  Music,
-  Pause,
-  Play,
-  Plus
+import { 
+  Search, User, Home, Play, Radio, Heart, MessageCircle, MoreHorizontal,
+  ChevronLeft, ChevronRight, Repeat, Shuffle, SkipBack, SkipForward,
+  Pause, Share2, Music, Download, Clock, Settings, HelpCircle, LogOut,
+  List, ChevronUp, X, Plus
 } from 'lucide-react';
-import {
-  FaBroadcastTower,
-  Radio,
-  Repeat,
-  Search,
-  Settings,
-  Share2,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-  User,
-  X
-} from 'react-icons/fa';
+import { FaBroadcastTower, FaFire, FaHome, FaMusic, FaPlay, FaSearch, FaUser } from 'react-icons/fa';
 import { cn } from '../utils/cn';
 import { InfoBadge, InfoPanel, InfoQueryHero, InfoQueryShell, studioStrongBadgeClassName } from './studioTheme';
 
