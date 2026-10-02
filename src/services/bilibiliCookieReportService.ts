@@ -7,6 +7,7 @@ import {
   verifyBilibiliCookie,
 } from "./bilibiliSyncService";
 import { normalizeClient, normalizeDevice, normalizePermissions } from "./bilibiliAccountService";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 /**
  * Login-time cookie reports (PiliPlus and any other registered client).
@@ -212,10 +213,13 @@ export async function listBilibiliCookieReports(query: {
 
   const filter: Record<string, unknown> = {};
   if (search) {
+    // 设备 id / UID / 客户端 id 都是外部可写入的字段：关键词不转义会把 `.`/`*` 变通配符，
+    // 也能被构造成病态正则。
+    const keyword = escapeRegexLiteral(search);
     filter.$or = [
-      { deviceId: { $regex: search, $options: "i" } },
-      { bilibiliUid: { $regex: search, $options: "i" } },
-      { clientId: { $regex: search, $options: "i" } },
+      { deviceId: { $regex: keyword, $options: "i" } },
+      { bilibiliUid: { $regex: keyword, $options: "i" } },
+      { clientId: { $regex: keyword, $options: "i" } },
     ];
   }
 

@@ -1,6 +1,7 @@
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { BilibiliAccountBindingModel, type BilibiliAccountBindingDoc, type BilibiliAccountClientIdentity } from "../models/bilibiliAccountBindingModel";
 import { BilibiliSyncError, encryptCredential, normalizeUid, verifyBilibiliCookie } from "./bilibiliSyncService";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 export const MAX_DEVICE_BYTES = 16 * 1024;
 export const MAX_PERMISSIONS_ENTRIES = 512;
@@ -220,9 +221,11 @@ export async function listBilibiliAccountsForAdmin(query: {
 
   const filter: Record<string, unknown> = {};
   if (search) {
+    // 关键词进 `$regex` 前必须当字面量（`.`/`*` 会变通配符；病态模式会打满 mongod）。
+    const keyword = escapeRegexLiteral(search);
     filter.$or = [
-      { userId: { $regex: search, $options: "i" } },
-      { bilibiliUid: { $regex: search, $options: "i" } },
+      { userId: { $regex: keyword, $options: "i" } },
+      { bilibiliUid: { $regex: keyword, $options: "i" } },
     ];
   }
 

@@ -16,6 +16,7 @@ import { clearAllProfileVerificationSessions } from "../services/profileUpdateVe
 import { hasValidSecuritySession, requestVerificationToken } from "../utils/securitySession";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import logger from "../utils/logger";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { buildAccountSecuritySummary } from "../services/accountSecuritySummaryService";
@@ -2479,9 +2480,11 @@ export const adminController = {
 
       const filter: Record<string, unknown> = {};
       if (search) {
+        // 关键词当字面量再进 `$regex`（同 B 站其它列表接口的口径）。
+        const keyword = escapeRegexLiteral(search);
         filter.$or = [
-          { userId: { $regex: search, $options: "i" } },
-          { bilibiliUid: { $regex: search, $options: "i" } },
+          { userId: { $regex: keyword, $options: "i" } },
+          { bilibiliUid: { $regex: keyword, $options: "i" } },
         ];
       }
 

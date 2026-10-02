@@ -15,6 +15,7 @@ import { containsHtmlTag } from "./outEmailHtmlProbe";
 import { sanitizeEmailHtml } from "../utils/announcementHtml";
 import { recordUsage, validateApiKey } from "./apiKeyService";
 import { UserStorage } from "../utils/userStorage";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 const OutEmailRecordSchema = new mongoose.Schema(
   {
@@ -343,11 +344,13 @@ export async function getOutEmailRecords(params: {
   const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
   const filter: Record<string, any> = {};
 
+  // `to` / `subject` 是运营手输的关键词：不转义的话 `.`/`*` 会变成通配符（搜出来的记录与
+  // 关键词不符），病态模式还能触发 Mongo 侧灾难性回溯。
   if (params.to) {
-    filter.to = { $regex: params.to, $options: "i" };
+    filter.to = { $regex: escapeRegexLiteral(params.to), $options: "i" };
   }
   if (params.subject) {
-    filter.subject = { $regex: params.subject, $options: "i" };
+    filter.subject = { $regex: escapeRegexLiteral(params.subject), $options: "i" };
   }
   if (params.startDate || params.endDate) {
     filter.sentAt = {};
