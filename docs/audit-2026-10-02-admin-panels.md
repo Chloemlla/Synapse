@@ -292,3 +292,40 @@
 | — | `EnvManager` 的 Project Lumen 保管库同步 | 既有实现已覆盖（`SelfContainedProjectLumenConfigSection` + `LumenServerConfigSection`），本轮只做只读核对，未发现缺陷 |
 | — | `DataCollectionManager` / `FingerprintManager` / `LotteryAdmin` / `AdminStoreDashboard` / `FBIWantedManager` / `LibreChatAdminPage` / `TamperDetectionDemo` 的逐行审计 | 本轮为抽样（关键词/参数/鉴权形态 + 跨模块一致性检查），未做逐行通读；这些模块的鉴权链在 `routeModules/*.ts` 里已逐条声明并集中受 `routeGovernance` 校验 |
 | — | 新增接口的 CI 验证 | 本机不构建/不测试；以 `main` 上 workflow 结论为最终裁决者（本机仅做括号/结构静态检查） |
+
+---
+
+## 4. CI 实测与存量红灯归因
+
+本轮改动推送后（`c14ac5b6`）在各 job 上的实际结论：
+
+| Job | 结论 | 说明 |
+|---|---|---|
+| `type-check` / `type-check-frontend` / `type-check-backend` | ✅ success | 首轮曾因 `DebugConsole.tsx` 的 `{ action, timestamp, ...entry }` 展开顺序报 TS2783（`PasskeyDebugEntry` 带索引签名），前端 type-check、Node verification、Docker 镜像构建、前端体积预算四个 job 一起红 —— 单点编译错连坐，已改写成展开在前、显式字段在后（`c14ac5b6`） |
+| `Frontend bundle budget` | ✅ success（含 `Enforce frontend bundle budget` 步骤，非 skipped） | 本轮新增约 1500 行前端代码未撞预算 |
+| `Governance checks` / `Mongo replica integration` / `Browser cookie smoke` | ✅ success | 含源码体积闸门、隐私契约、openapi 漂移、admin SPA 路径漂移 |
+| `CodeQL Analyze (javascript / typescript / python)` | ✅ success | 本轮新增路由/服务未引入新的 code scanning 告警 |
+| `Publish Docker (amd64)` | ✅ success | |
+| `Node verification` | ❌ failure（**存量，与本轮无关**） | 见下 |
+
+**存量红灯归因（按方法论"同一 job 在父提交上的历史结论"举证）**：
+
+- `Node verification` 自 `f41a346d`（`feat(admin-scope): ...`，本会话之外的提交）起连续 10 个提交均为 `failure`；
+  更早的 `13c0188f` / `bef397c3` / `7e2409d1` 均为 `success`。
+- 逐提交比对：在本轮第一个提交之前（其父提交 `4659ce35`）与同一时期提交 `2b696e66` 上，该 job 的失败
+  **签名与计数完全一致** —— `Test Suites: 3 failed, 1 skipped, 151 passed, 154 of 155 total` /
+  `Tests: 2 failed, 2 skipped, 1444 passed, 1448 total`，失败的三个套件也相同：
+  `recommendationService.test.ts`、`cacheService.test.ts`、`authRoutes.test.ts`。
+  本轮推送后仍是同一组 → **本轮改动没有新增/减少任何失败**。
+- 三条根因均在并发会话的改动范围内，与本审计的 21 个模块无关：
+  - `authRoutes.test.ts` 整套件加载失败：`TypeError: argument handler must be a function`，位置是
+    `src/routes/authRoutes.ts:271` 的 `authMobileLoginLimiter`（该文件的移动端登录限流器由
+    `da80d741` 引入）；
+  - `recommendationService.test.ts`：`历史不足 10 条时降级为热门推荐` 期望 2 条、实得 5 条
+    （`UserPreferencesModel` 替身缺件，属 `2b696e66` 的推荐服务改动）；
+  - `cacheService.test.ts`：`buildKey 统一补 cache: 前缀并丢弃空片段`（同属 `2b696e66` 新增的缓存层）。
+- 因此本轮**不把它们算作自己的失败、也不代改**：三处都在并发会话正在改动的文件上，替对方回滚或猜测语义
+  容易把别人的在飞工作改坏（`AGENTS.md`：别人的 WIP 既不入自己的提交也不代为回滚）。
+  并发会话随即在 `edc64697`（`fix(recommendation): 纯热门路径不再用内置默认风格补位，并修 buildKey 断言`）
+  里自行修了其中的两项，也从侧面印证了归因。
+
