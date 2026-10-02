@@ -270,6 +270,89 @@
   日期按本地 `YYYY-MM-DD` 生成，与页面 `type="date"` 输入同格式（用 ISO 串会让输入框显示为空）。
 - 去向：**已修**（提交 `106a636a`）。
 
+### FEA-04（功能缺失 / 中）管理总览缺系统级概览
+
+- 位置：`frontend/src/components/AdminDashboard.tsx`（原本只渲染邮件溯源 + AdminHub）
+- 缺陷细节：想回答「现在多少用户被停用 / 多少 Key 被停用 / 最近一天多少失败请求 /
+  封了多少 IP」得逐个页面点进去看。
+- 修法：新增 `services/adminOverviewService` + `GET /api/admin/overview`（四类跨集合计数
+  并行取，任一集合不可用返回 `null` + `warnings` 而非 0；页面登记为 `overview`，
+  刻意不进默认普通管理员页面集合），前端新增 `AdminOverviewPanel`（403 时整块隐藏）。
+- 去向：**已修**（提交 `88ff84ef`）。
+
+### LOT-01（并发正确性 / 高）抽奖参与是「读-改-写整体覆盖」，并发下会丢中奖记录
+
+- 位置：`src/services/lotteryService.ts` 的 `participateInLottery`
+- 缺陷细节：流程是「读轮次 → 判断是否已参与 → 扣奖品库存 → 整体回写
+  `participants` / `winners` / `prizes`」。两个并发请求（双击、两个设备、两个用户同时抽）
+  各自读到同一份旧快照，后写的那次**整体覆盖**前一次 —— 前一位的中奖记录被静默抹掉，
+  库存也可能被重复扣减。G7-08 补上了"落库"，但落库本身不是原子的。
+- 修法：新增 `sharedStateStore.withLock(key, ttl, fn)`（复用既有 claim/release 原子申领，
+  Redis → Mongo → 进程内存三级降级），参与动作按轮次维度串行；落库前再读一次轮次，
+  挡住"同一用户重复参与"与"奖品已被抢空"这两种可判定状态（锁只覆盖本实例）。
+- 去向：**已修**（提交 `d4f4f3d1`）。
+
+### LOT-02（信息外泄 / 中）抽奖全部 500 分支把 `error.message` 回给调用方
+
+- 位置：`src/controllers/lotteryController.ts`（11 处）
+- 缺陷细节：`/api/lottery/blockchain`、`/rounds`、`/leaderboard` 等**任意登录用户可调**，
+  而 500 统一返回裸 `error.message` —— Mongo/驱动的内部细节（集合名、索引冲突、
+  provider 响应片段）会漏出去。
+- 修法：500 统一通用文案 + 服务端记日志；参与抽奖那条 400 分支做区分：
+  业务拒因（已参与过 / 已结束 / 奖品领完 / 人机验证失败）原样透出，其余收敛。
+  顺带修掉 `/leaderboard?limit=` 的裸 `parseInt`（负值让 Mongo `.limit()` 抛错）。
+- 去向：**已修**（提交 `d4f4f3d1`）。
+
+### LIB-01（破坏性操作缺门控 / 中）`DELETE /admin/users/guests` 无需任何确认参数
+
+- 位置：`src/routes/libreChatRoutes.admin.ts`
+- 缺陷细节：该端点不接收任何参数，却可以直接清掉**全部**游客遗留历史；同文件的
+  `/admin/users/all` 早要求 `confirm: true`，这里漏了。
+- 修法：要求显式 `confirm: true`（400 提示），前端调用同步补上。
+- 去向：**已修**（提交 `4b12ff7e`）。
+
+### FING-01（可用性 + 输入边界 / 中）指纹上报的 `deviceSignals` 无边界
+
+- 位置：`src/controllers/turnstile/fingerprintHandlers.ts`
+- 缺陷细节：客户端可把任意大的对象塞进 `deviceSignals`，原实现原样写进用户文档；
+  每人保留 20 条，累积足以把文档推到 Mongo 的 16MB 上限 —— 之后该用户的任何
+  `updateUser` 都会失败。**纯客户端可触发**的可用性问题。
+  另外指纹 id 只查了 `typeof === "string"`（长度/字符集不限，而仓库里早有
+  `validateFingerprint` 可用），5 处 `console.log` 把 canvas / navigator 明细、
+  IP、UA 与即将落库的整条记录全量打了出来。
+- 修法：只保留 `screen` / `timezone` / `canvas` / `navigator` / `window` 五个分组，
+  单组序列化超 4KB 时降级为 `{ truncated, bytes }`；指纹 id 走 `validateFingerprint`
+  （长度 8–200 + `[A-Za-z0-9_-]`，SHA-256 抛错的 base64 兜底路径先剔字符再校）；
+  UA 截 512；调试日志收敛成两条结构化 logger。
+- 去向：**已修**（提交 `6363ac2d`）。
+
+### STORE-01（可用性 / 低）商店仪表盘用假 0 掩盖统计失败
+
+- 位置：`frontend/src/components/AdminStoreDashboard.tsx`
+- 缺陷细节：取统计失败时写入 `{resources:0, cdks:0}`（注释写的是"防止组件崩溃"），
+  管理员会以为商店是空的；同类问题在 `AdminDashboard` 的邮件溯源块也存在
+  （普通管理员调 superadmin 专属接口必然 403，`Promise.allSettled` 的回退值渲染成 0）。
+- 修法：失败时保留 `stats = null`、卡片显示「—」+ 明确提示，功能入口不受影响；
+  邮件溯源块改为按角色决定是否请求。
+- 去向：**已修**（提交 `6363ac2d`，`AdminDashboard` 部分在 `88ff84ef`）。
+
+### FE-09（一致性 / 低）74 处原生 `confirm` 未收口（跨整个前端）
+
+- 位置：`frontend/src/**` 共 36 个文件
+- 缺陷细节：除了上一轮的 26 处，全仓另有 74 处 `window.confirm`（含
+  `components/env-manager/**` 下 21 个配置分区）。除了样式不一致，更实际的问题是
+  部分嵌入式 WebView 会屏蔽原生确认框并**静默返回 false**（表现为"点了没反应"），
+  且破坏性操作没有任何视觉分级。
+- 修法：全部改走 `components/confirm/ConfirmDialogProvider`；转换时保留原文案原文进
+  `description`，补标题 / 危险态 / 确认按钮文案；同作用域多处确认用 `ok` / `okAgain`
+  区分；`await` 落到非 async 函数的几处（`MarkdownExportPage.clearContent`、
+  `MobileNav` 两个 handler）一并改成 async。
+  全仓 `window.confirm` 现在为 **0**（provider 自身的兜底实现与测试除外）。
+- 去向：**已修**（提交 `ac07f7f7` / `4b12ff7e` / `6d0c21ae`）。
+  备注：曾尝试一次性 codemod 批量转换，产出把 `if (!ok) ) return;`、把 import 插进
+  多行 import 块中间等破损形态 —— 已整体回滚改为按文件转换 + 逐份 `git diff` 核对
+  （含"每个 `await confirm` 都有对应 import 与 hook""括号增量与 HEAD 一致"两道静态断言）。
+
 ---
 
 ## 2. 本轮改动（按提交）
@@ -278,6 +361,12 @@
 |---|---|---|
 | `909edf25` | `httpParam.boundedInt` + 3 处条数收敛；`/command/p` 字段名兼容与 400/404；`commandStorage` 拆查询值与正文校验；`cpu_usage_percent` 改真实采样；队列加 200 条上限 | ROB-01, FUNC-01, SEC-04, COR-01 |
 | `c32c0a63` | 新增 `utils/regexEscape`，4 处未转义 `$regex` 改用它 | SEC-02 |
+| `88ff84ef` | 管理总览新增 `GET /api/admin/overview` + 概览面板（跨集合计数、失败不显示 0） | FEA-04 |
+| `d4f4f3d1` | 抽奖并发加锁 + 500 不再回裸 error + `/leaderboard` limit 收敛 | LOT-01, LOT-02 |
+| `4b12ff7e` | 24 处 confirm 迁移；B 站/LibreChat guest 清理加服务端 confirm 门控 | FE-09, LIB-01 |
+| `6363ac2d` | 指纹上报输入边界与日志卫生；商店仪表盘不再用假 0 | FING-01, STORE-01 |
+| `6d0c21ae` | 前端原生 confirm 清零（最后 36 个文件） | FE-09 |
+| `6c484167` | 正则字面量转义收敛到 `utils/regexEscape` 单一实现（18 处） | SEC-02 |
 | `a8484b00` | 政策同意 CSV 公式注入中和；CORS `exposedHeaders` 补齐 | SEC-03, SEC-01 |
 | `6d24a16f` | IP 封禁名单接口（service + model.source + controller + route）；B 站凭据上报精确删除接口 | FEA-01, FEA-02 |
 | `0a6efb0e` | 短链管理两条主路径 `console.log` → 结构化 logger | FE-07 |
@@ -294,16 +383,11 @@
 
 | 编号 | 内容 | 不修理由 |
 |---|---|---|
-| FUNC-01（前端半） | `CommandManager.removeCommand` 只看 HTTP 状态、不校验响应体 `status` 就乐观更新本地队列 | 该文件本轮正被另一会话改造（工作树为脏），避免覆盖对方 WIP |
-| FE-06 | 存量 19 处 `window.confirm` 统一替换为组件化确认 | 跨 8 个文件、纯风格一致性，收益低于回归风险；本轮只在新增/改动的危险操作上收敛 |
-| FE-07 | `src/routes/admin/shortlinks.ts` 剩余 12 处 `console.*`（创建/删除/校验等次级处理器） | 主路径已修；余下为纯日志卫生，单独一轮更清晰 |
-| SEC-02 | 仓库里 6 处功能等价的私有正则转义副本统一到 `utils/regexEscape` | 它们本来就正确工作，替换是纯重构；需要逐个核对字符类差异（`auditLogService` 用的就是更宽的字符集），不适合与安全修复混在同一提交 |
-| — | `AdminDashboard` 只有邮件溯源一块数据 | 需要新后端聚合接口（用户/Key/审计/封禁计数），涉及跨集合统计与缓存口径，需产品确认口径后单独做 |
-| — | `EnvManager` 的 Project Lumen 保管库同步 | 既有实现已覆盖（`SelfContainedProjectLumenConfigSection` + `LumenServerConfigSection`），本轮只做只读核对，未发现缺陷 |
-| — | `DataCollectionManager` / `FingerprintManager` / `LotteryAdmin` / `AdminStoreDashboard` / `FBIWantedManager` / `LibreChatAdminPage` / `TamperDetectionDemo` 的逐行审计 | 本轮为抽样（关键词/参数/鉴权形态 + 跨模块一致性检查），未做逐行通读；这些模块的鉴权链在 `routeModules/*.ts` 里已逐条声明并集中受 `routeGovernance` 校验 |
-| — | 新增接口的 CI 验证 | 本机不构建/不测试；以 `main` 上 workflow 结论为最终裁决者（本机仅做括号/结构静态检查） |
-
----
+| SEC-02（残留 1 份） | `src/services/emailService.ts:187` 仍有一份私有的 `escapeRegExp` | 该文件本轮全程由另一会话改造（工作树为脏），不代改对方在飞工作；它的实现与共用版等价，不影响正确性 |
+| — | `AdminDashboard` 的邮件溯源块 | 已改为按角色决定是否请求；若希望普通管理员也能看到那块数据，需要后端放宽 `/api/outemail/*` 的权限口径，属产品决策 |
+| — | `DataCollectionManager` / `TamperDetectionDemo` / `FBIWantedManager` / `LibreChatAdminPage` 的剩余行 | 本轮已逐行走过路由层守卫（`routeModules/*.ts` 声明 + `routeGovernance` 校验）、参数边界、破坏性操作门控与错误文案四类；未发现新缺陷，故不改动。"逐行读完但结论是没问题"与"没看"在文档里必须能区分，这里属于前者 |
+| — | 抽奖的用户记录计数器竞态 | 同一用户在不同轮次并发参与时，`updateUserRecord` 的读-改-写仍可能丢计数（只影响排行榜统计，不影响奖品库存与中奖记录）。修复需要按用户维度再加一层锁，收益低于复杂度 |
+| — | 新增接口的 CI 验证 | 本机不构建/不测试；以 `main` 上 workflow 结论为最终裁决者（本机只做括号/结构静态检查与逐份 diff 核对） |
 
 ## 4. CI 实测与存量红灯归因
 
