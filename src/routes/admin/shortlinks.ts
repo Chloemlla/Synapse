@@ -16,28 +16,24 @@ const router = express.Router();
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/shortlinks", authenticateToken, async (req, res) => {
   try {
-    console.log("🔐 [ShortLinkManager] 开始处理短链列表加密请求...");
-    console.log("   用户ID:", req.user?.id);
-    console.log("   用户名:", req.user?.username);
-    console.log("   用户角色:", req.user?.role);
-    console.log("   请求IP:", req.ip);
+    // 身份字段只进结构化日志（原来 5 行 console.log 把 id/用户名/角色/IP 裸打完事，
+    // 既绕过 logger 的级别与脱敏，也不受日志开关控制）。
+    logger.debug("[ShortLinkManager] 短链列表请求", {
+      userId: req.user?.id,
+      role: req.user?.role,
+      ip: req.ip,
+    });
 
     // 检查管理员权限
     if (!req.user || !isAdminRole(req.user.role)) {
-      console.log("❌ [ShortLinkManager] 权限检查失败：非管理员用户");
       return res.status(403).json({ error: "需要管理员权限" });
     }
-
-    console.log("✅ [ShortLinkManager] 权限检查通过");
 
     // 获取管理员token作为加密密钥（优先从 Authorization header，其次从 cookie）
     const token = getTokenFromRequest(req);
     if (!token) {
-      console.log("❌ [ShortLinkManager] Token为空");
       return res.status(401).json({ error: "未携带Token，请先登录" });
     }
-
-    console.log("✅ [ShortLinkManager] Token获取成功，长度:", token.length);
 
     // 输入验证和清理
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -62,44 +58,19 @@ router.get("/shortlinks", authenticateToken, async (req, res) => {
       .skip((page - 1) * pageSize)
       .limit(pageSize);
 
-    console.log("📊 [ShortLinkManager] 获取到短链数量:", items.length);
-    console.log("   总数:", total);
-
     // 准备加密数据
     const responseData = { total, items };
     const jsonData = JSON.stringify(responseData);
-    console.log("📝 [ShortLinkManager] JSON数据准备完成，长度:", jsonData.length);
 
-    // 使用AES-256-CBC加密数据
-    console.log("🔐 [ShortLinkManager] 开始AES-256-CBC加密...");
+    // 使用AES-256-CBC加密数据。密钥由管理员 token 派生；中间步骤不再逐步打日志
+    // （旧写法把「生成密钥/生成 IV/IV 十六进制/各段长度」全打在 stdout 上，纯噪声）。
     const algorithm = "aes-256-cbc";
-
-    // 生成密钥
-    console.log("   生成密钥...");
     const key = crypto.createHash("sha256").update(token).digest();
-    console.log("   密钥生成完成，长度:", key.length);
-
-    // 生成IV
-    console.log("   生成初始化向量(IV)...");
     const iv = crypto.randomBytes(16);
-    console.log("   IV生成完成，长度:", iv.length);
-    console.log("   IV (hex):", iv.toString("hex"));
-
-    // 创建加密器
-    console.log("   创建加密器...");
     const cipher = crypto.createCipheriv(algorithm, key, iv);
 
-    // 执行加密
-    console.log("   开始加密数据...");
     let encrypted = cipher.update(jsonData, "utf8", "hex");
     encrypted += cipher.final("hex");
-
-    console.log("✅ [ShortLinkManager] 加密完成");
-    console.log("   原始数据长度:", jsonData.length);
-    console.log("   加密后数据长度:", encrypted.length);
-    console.log("   加密算法:", algorithm);
-    console.log("   密钥长度:", key.length);
-    console.log("   IV长度:", iv.length);
 
     // 返回加密后的数据
     const response = {
@@ -108,14 +79,15 @@ router.get("/shortlinks", authenticateToken, async (req, res) => {
       iv: iv.toString("hex"),
     };
 
-    console.log("📤 [ShortLinkManager] 准备返回加密数据");
-    console.log("   响应数据大小:", JSON.stringify(response).length);
+    logger.debug("[ShortLinkManager] 短链列表已加密返回", {
+      count: items.length,
+      total,
+      payloadBytes: jsonData.length,
+    });
 
     res.json(response);
-
-    console.log("✅ [ShortLinkManager] 短链列表加密请求处理完成");
   } catch (error) {
-    console.error("❌ [ShortLinkManager] 获取短链列表失败:", error);
+    logger.error("[ShortLinkManager] 获取短链列表失败", { error });
     res.status(500).json({ error: "获取短链列表失败" });
   }
 });
@@ -328,26 +300,24 @@ router.post(
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.post("/shortlinks/migrate", authenticateToken, auditLog({ module: "shorturl", action: "shorturl.migrate" }), async (req, res) => {
   try {
-    console.log("🔐 [ShortUrlMigration] 开始处理短链迁移请求...");
-    console.log("   用户ID:", req.user?.id);
-    console.log("   用户名:", req.user?.username);
-    console.log("   用户角色:", req.user?.role);
-    console.log("   请求IP:", req.ip);
+    logger.debug("[ShortUrlMigration] 迁移请求", {
+      userId: req.user?.id,
+      role: req.user?.role,
+      ip: req.ip,
+    });
 
     // 检查管理员权限
     if (!req.user || !isSuperAdmin(req)) {
-      console.log("❌ [ShortUrlMigration] 权限检查失败：非管理员用户");
       return res.status(403).json({ error: "需要管理员权限" });
     }
-
-    console.log("✅ [ShortUrlMigration] 权限检查通过");
 
     // 执行迁移
     const result = await shortUrlMigrationService.detectAndFixOldDomainUrls();
 
-    console.log("📊 [ShortUrlMigration] 迁移完成");
-    console.log("   检查记录数:", result.totalChecked);
-    console.log("   修正记录数:", result.totalFixed);
+    logger.info("[ShortUrlMigration] 迁移完成", {
+      totalChecked: result.totalChecked,
+      totalFixed: result.totalFixed,
+    });
 
     res.json({
       success: true,
@@ -355,7 +325,7 @@ router.post("/shortlinks/migrate", authenticateToken, auditLog({ module: "shortu
       data: result,
     });
   } catch (error) {
-    console.error("❌ [ShortUrlMigration] 短链迁移失败:", error);
+    logger.error("[ShortUrlMigration] 短链迁移失败", { error });
     res.status(500).json({ error: "短链迁移失败" });
   }
 });
