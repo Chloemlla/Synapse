@@ -20,6 +20,13 @@ import {
   type AuditLogStats,
 } from '../api/auditLog';
 import { cn } from '../utils/cn';
+import {
+  builtInAuditLogPresets,
+  createCustomAuditLogPreset,
+  readCustomAuditLogPresets,
+  writeCustomAuditLogPresets,
+  type AuditLogPreset,
+} from '../utils/auditLogPresets';
 import { studioFieldClassName, studioInfoRowClassName, studioSurfaceClassName, studioTileClassName } from './studioTheme';
 
 const MODULE_LABELS: Record<string, string> = {
@@ -97,6 +104,14 @@ const AuditLogViewer: React.FC = () => {
   const [filters, setFilters] = useState<AuditLogQuery>(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<AuditLogQuery>(DEFAULT_FILTERS);
   const [queryVersion, setQueryVersion] = useState(0);
+  // 筛选预设：内置几条常用条件 + 允许把当前筛选存成自己的（localStorage，只存条件）。
+  const [customPresets, setCustomPresets] = useState<AuditLogPreset[]>(() => readCustomAuditLogPresets());
+  const [presetDraftName, setPresetDraftName] = useState('');
+  const [showPresetInput, setShowPresetInput] = useState(false);
+  const presets = useMemo(
+    () => [...builtInAuditLogPresets(), ...customPresets],
+    [customPresets],
+  );
 
   const fetchLogs = useCallback(async (query: AuditLogQuery, nextPage: number, nextPageSize: number) => {
     setLoading(true);
@@ -226,6 +241,31 @@ const AuditLogViewer: React.FC = () => {
     setQueryVersion((value) => value + 1);
   };
 
+  /** 套用预设：同时写进草稿与已应用状态，否则输入框会显示旧值、看着像没生效。 */
+  const applyPreset = (preset: AuditLogPreset) => {
+    const next = { ...DEFAULT_FILTERS, ...preset.query };
+    setFilters(next);
+    setAppliedFilters(next);
+    setPage(1);
+    setQueryVersion((value) => value + 1);
+  };
+
+  const savePreset = () => {
+    const created = createCustomAuditLogPreset(presetDraftName, filters);
+    if (!created) {
+      setNotification({ message: '请先填预设名称，并至少设置一个筛选条件', type: 'warning' });
+      return;
+    }
+    setCustomPresets(writeCustomAuditLogPresets([...customPresets, created]));
+    setPresetDraftName('');
+    setShowPresetInput(false);
+    setNotification({ message: `已保存预设「${created.name}」`, type: 'success' });
+  };
+
+  const deletePreset = (id: string) => {
+    setCustomPresets(writeCustomAuditLogPresets(customPresets.filter((preset) => preset.id !== id)));
+  };
+
   const exportCsv = async () => {
     setExporting(true);
     try {
@@ -338,6 +378,89 @@ const AuditLogViewer: React.FC = () => {
         >
           <FaSync className={loading ? 'animate-spin' : ''} />
         </button>
+      </div>
+
+      {/* 快速筛选：18 个维度每次重填太慢，值班复盘几乎总是重复同样几组条件 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-400">快速筛选</span>
+        {presets.map((preset) => (
+          <span
+            key={preset.id}
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white py-1 pr-1 pl-3 text-xs font-medium text-slate-600"
+          >
+            <button
+              type="button"
+              onClick={() => applyPreset(preset)}
+              className="transition hover:text-indigo-600"
+              title={Object.keys(preset.query).length > 0 ? JSON.stringify(preset.query) : undefined}
+            >
+              {preset.name}
+            </button>
+            {preset.builtIn ? null : (
+              <button
+                type="button"
+                onClick={() => deletePreset(preset.id)}
+                aria-label={`删除预设 ${preset.name}`}
+                className="flex size-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+              >
+                <FaTimes className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </span>
+        ))}
+
+        {showPresetInput ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white py-1 pr-1 pl-3">
+            <input
+              autoFocus
+              value={presetDraftName}
+              onChange={(event) => setPresetDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') savePreset();
+                if (event.key === 'Escape') setShowPresetInput(false);
+              }}
+              placeholder="预设名称"
+              maxLength={24}
+              className="w-24 bg-transparent text-xs text-slate-700 outline-none"
+              aria-label="预设名称"
+            />
+            <button
+              type="button"
+              onClick={savePreset}
+              className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white"
+            >
+              保存
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPresetInput(false)}
+              aria-label="取消保存预设"
+              className="flex size-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+            >
+              <FaTimes className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowPresetInput(true)}
+            disabled={activeFilters.length === 0}
+            className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs font-medium text-slate-500 transition hover:border-slate-400 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            title={activeFilters.length === 0 ? '先设置至少一个筛选条件' : '把当前筛选条件存为预设'}
+          >
+            + 存为预设
+          </button>
+        )}
+
+        {activeFilters.length > 0 ? (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-xs font-medium text-slate-400 transition hover:text-slate-600"
+          >
+            清空筛选
+          </button>
+        ) : null}
       </div>
 
       {showFilters ? (
