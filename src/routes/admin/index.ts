@@ -16,6 +16,7 @@ import crashReportsRouter from "./crashReports";
 import integrationsRouter from "./integrations";
 import ipRiskLogsRouter from "./ipRiskLogs";
 import mobileTokensRouter from "./mobileTokens";
+import overviewRouter from "./overview";
 import policyConsentsRouter from "./policyConsents";
 import profileRouter from "./profile";
 import qqGuardRouter from "./qqGuard";
@@ -87,6 +88,8 @@ router.use(integrationsRouter);
 router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
 router.use(mobileTokensRouter);
+// 管理总览的系统级汇总（跨集合计数；默认仅超管，页面授权里可单独放开）。
+router.use(overviewRouter);
 router.use(policyConsentsRouter);
 
 // Bilibili Sync 管理（PiliPlus 配置数据）

@@ -27,6 +27,9 @@ export interface AdminPageDefinition {
 export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   // 总览：任何人都能看到自己的入口列表，本身不需要额外 API。
   { key: "dashboard", label: "管理总览", apiPrefixes: [] },
+  // 系统级汇总（跨集合计数）。刻意不放进 DEFAULT_PLAIN_ADMIN_PAGES：
+  // 默认只有超管能拿到数据，要放开时由超管在页面授权里单独勾选。
+  { key: "overview", label: "系统概览", apiPrefixes: ["/api/admin/overview"] },
   { key: "users", label: "用户管理", apiPrefixes: ["/api/admin/users"] },
   { key: "apikeys", label: "API Key 管理", apiPrefixes: ["/api/apikeys"] },
   {

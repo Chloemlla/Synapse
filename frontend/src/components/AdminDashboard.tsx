@@ -6,6 +6,9 @@ import { api } from '@/api';
 import { ADMIN_TAB_TO_PATH } from '@/navigation/navConfig';
 
 import { AdminHub } from './admin/AdminHub';
+import AdminOverviewPanel from './admin/AdminOverviewPanel';
+import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdmin } from '@/utils/rbac';
 import { studioMetricToneClassName, studioPanelClassName, studioPrimaryButtonClassName } from './studioTheme';
 
 interface ServiceStatus {
@@ -34,6 +37,10 @@ interface RecordCount {
 const AdminDashboard: React.FC = () => {
   const [searchParams] = useSearchParams();
   const tab = searchParams.get('tab');
+  const { user } = useAuth();
+  // 邮件溯源接口是 superadmin 专属：普通管理员调只会拿到 403，前端却会用 allSettled 的回退值
+  // 渲染出一排 0（看起来像「今天没发过邮件」）。所以按角色决定是否请求。
+  const canReadEmailTraceability = isSuperAdmin(user?.role);
 
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [quota, setQuota] = useState<QuotaInfo>({ used: 0, total: 0, resetAt: '' });
@@ -41,6 +48,10 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!canReadEmailTraceability) {
+      setLoading(false);
+      return;
+    }
     async function fetchData() {
       try {
         const [statusRes, quotaRes, recordsRes] = await Promise.allSettled([
@@ -63,7 +74,7 @@ const AdminDashboard: React.FC = () => {
       }
     }
     fetchData();
-  }, []);
+  }, [canReadEmailTraceability]);
 
   if (tab) {
     const mapped = ADMIN_TAB_TO_PATH[tab];
@@ -74,10 +85,14 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* 系统级概览（跨集合计数；无 overview 页面授权时整块隐藏） */}
+      <AdminOverviewPanel />
+
       {/* 原有 AdminHub 内容 */}
       <AdminHub />
 
-      {/* 邮件溯源看板 */}
+      {/* 邮件溯源看板（superadmin 专属） */}
+      {canReadEmailTraceability ? (
       <div className={studioPanelClassName}>
         <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-xl bg-slate-50 text-slate-600">
@@ -144,6 +159,7 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
       </div>
+      ) : null}
     </div>
   );
 };
