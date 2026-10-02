@@ -1,32 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { FishAudioCatalogItem, TtsProviderId, TtsProviderOption, TtsRequest, TtsResponse } from "../types/tts";
+import { getApiBaseUrl } from "../api/api";
+import { useNotification } from "./Notification";
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from "./ManagedCaptcha";
+import { useIsAdmin } from "../hooks/useRBAC";
+import { TTS_POLICY_CONSENT_REQUIRED, TtsApiError } from "../types/ttsErrors";
+import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
 import {
-  AnimatePresence } from "framer-motion";
-import { FishAudioCatalogItem,
   FaCog,
   FaLightbulb,
+  FaLock,
   FaMicrophone,
   FaRobot,
   FaVolumeUp,
-  TtsApiError } from "../types/ttsErrors";
-import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
-import {
-  FaLock,
-  TtsProviderId,
-  TtsProviderOption,
-  TtsRequest,
-  TtsResponse } from "../types/tts";
-import { getApiBaseUrl } from "../api/api";
-import { useNotification } from "./Notification";
-import ManagedCaptcha,
-  motion,
-  type ManagedCaptchaRef,
-  type ManagedCaptchaStatus,
-  {
-  type ManagedCaptchaChallenge,
-  } from "./ManagedCaptcha";
-import { useIsAdmin } from "../hooks/useRBAC";
-import { TTS_POLICY_CONSENT_REQUIRED
-} from 'react-icons/fa';
+} from "react-icons/fa";
 import { cn } from "../utils/cn";
 import {
   studioEyebrowClassName,
