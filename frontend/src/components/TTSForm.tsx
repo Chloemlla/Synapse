@@ -632,14 +632,15 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                   : "hover:border-slate-300",
             )}
             rows={4}
-            placeholder={`请输入要转换的文本...
-
-<FaLightbulb className="inline" aria-hidden /> 提示：
-• 支持中英文混合
-• 标点符号会影响语音节奏
-• 建议使用完整句子获得更好效果`}
+            placeholder={`请输入要转换的文本...`}
             whileFocus={{ scale: 1.005 }}
           />
+          {/* 提示文案不再只放在 placeholder 里：一输入就消失，且 placeholder 是字符串，
+              塞不进图标（emoji 改造时曾把 JSX 写进这里的模板字符串，浏览器会把标签原样显示）。 */}
+          <div className="mt-2 flex items-start gap-2 text-xs leading-5 text-slate-500 sm:text-[13px]">
+            <FaLightbulb className="mt-0.5 shrink-0 text-amber-400" aria-hidden />
+            <span>支持中英文混合；标点符号会影响语音节奏，建议使用完整句子获得更好效果。</span>
+          </div>
           {text.length > MAX_TEXT_LENGTH * 0.8 && (
             <motion.div
               className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${
