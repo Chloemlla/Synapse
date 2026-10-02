@@ -8,10 +8,11 @@ import {
   FaRedo,
   FaSearch,
   FaShieldAlt,
+  FaTrash,
   FaUserTag,
 } from 'react-icons/fa';
 import { useAuth } from '@/hooks/useAuth';
-import { isAdminRole } from '@/utils/rbac';
+import { isAdminRole, isSuperAdmin } from '@/utils/rbac';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -133,6 +134,8 @@ const statusBadge = (status: string) =>
 const BilibiliDataAdmin: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = isAdminRole(user?.role);
+  // 删除是隐私删除权路径：只对超管开放，且按 (clientId, deviceId, uid) 精确命中。
+  const canDelete = isSuperAdmin(user?.role);
 
   const [tab, setTab] = useState<BilibiliTab>('reports');
   const [keyword, setKeyword] = useState('');
@@ -141,6 +144,30 @@ const BilibiliDataAdmin: React.FC = () => {
   const [pagination, setPagination] = useState<Pagination>(EMPTY_PAGINATION);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<CookieReportRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDeleteReport = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const path = [deleteTarget.clientId, deleteTarget.deviceId, deleteTarget.uid]
+        .map((part) => encodeURIComponent(part))
+        .join('/');
+      const res = await fetch(`/api/admin/bilibili-reports/${path}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      setDeleteTarget(null);
+      await fetchData(tab, pagination.page, keyword);
+    } catch (e) {
+      setError(getErrorMessage(e, '删除上报记录失败'));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const fetchData = useCallback(
     async (currentTab: BilibiliTab, page: number, searchTerm: string) => {
@@ -329,6 +356,7 @@ const BilibiliDataAdmin: React.FC = () => {
                       <th className='px-3 py-3'>上报次数</th>
                       <th className='px-3 py-3'>首次 / 最近</th>
                       <th className='px-3 py-3'>设备 id</th>
+                      {canDelete ? <th className='px-3 py-3 text-right'>操作</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -357,11 +385,25 @@ const BilibiliDataAdmin: React.FC = () => {
                             {row.deviceId.slice(0, 12)}…
                           </code>
                         </td>
+                        {canDelete ? (
+                          <td className='px-3 py-3 text-right'>
+                            <button
+                              type='button'
+                              onClick={() => setDeleteTarget(row)}
+                              title='删除这条上报记录（仅删除密文存档，操作会写入审计日志）'
+                              aria-label={`删除 UID ${row.uid} 在设备 ${row.deviceId} 上的上报记录`}
+                              className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50'
+                            >
+                              <FaTrash className='h-3 w-3' />
+                              删除
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                     {reports.length === 0 && !loading && (
                       <tr>
-                        <td colSpan={7} className='px-3 py-10 text-center text-slate-400'>
+                        <td colSpan={canDelete ? 8 : 7} className='px-3 py-10 text-center text-slate-400'>
                           暂无记录
                         </td>
                       </tr>
@@ -442,6 +484,40 @@ const BilibiliDataAdmin: React.FC = () => {
           </InfoPanel>
         </>
       )}
+
+      {deleteTarget ? (
+        <div
+          role='dialog'
+          aria-modal='true'
+          aria-label='确认删除上报记录'
+          className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm'
+        >
+          <div className='w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-xl'>
+            <h3 className='flex items-center gap-2 text-base font-semibold text-slate-900'>
+              <FaTrash className='h-4 w-4 text-rose-500' aria-hidden='true' />
+              删除上报记录
+            </h3>
+            <p className='mt-2 text-sm leading-6 text-slate-600'>
+              将删除 UID <strong>{deleteTarget.uid}</strong> 在设备 <strong>{deleteTarget.deviceId}</strong>
+              （客户端 {deleteTarget.clientId}）上的密文存档。此操作不可撤销，且会写入审计日志；
+              客户端下次登录会重新上报。
+            </p>
+            <div className='mt-4 flex justify-end gap-2'>
+              <button type='button' onClick={() => setDeleteTarget(null)} className={studioSecondaryButtonClassName} disabled={deleting}>
+                取消
+              </button>
+              <button
+                type='button'
+                onClick={() => void confirmDeleteReport()}
+                disabled={deleting}
+                className={`${studioSecondaryButtonClassName} border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50`}
+              >
+                {deleting ? '删除中…' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
