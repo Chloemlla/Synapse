@@ -4,7 +4,7 @@ import { config } from "../config/config";
 import logger, { safeLog } from "../utils/logger";
 import { getTokenFromRequest } from "../utils/authCookie";
 import { UserStorage } from "../utils/userStorage";
-import { assertActiveAuthSession, touchAuthSession } from "../services/authSessionService";
+import { assertActiveAuthSession, hashAuthCredential, touchAuthSession } from "../services/authSessionService";
 import { getClientIP } from "../utils/ipUtils";
 
 // 管理员角色集合：admin（只读业务）与 superadmin（系统级写操作）均视为管理员
@@ -152,11 +152,20 @@ export const authMiddlewareV2 = async (req: Request, res: Response, next: NextFu
       return res.status(403).json({ error: "账户已被封停", code: "ACCOUNT_SUSPENDED", supportEmail: "support@chloemlla.com" });
     }
 
-    await assertActiveAuthSession(user.id, token);
-    await touchAuthSession(user.id, token, {
-      ipAddress: getClientIP(req),
-      userAgent: String(req.headers["user-agent"] || "unknown"),
-    });
+    // PERF-02: 凭证哈希算一次、会话文档查一次，assert + touch 共用，
+    // 避免同一请求里重复 HMAC 与重复 Mongo findOne。
+    const credentialHash = hashAuthCredential(token);
+    const session = await assertActiveAuthSession(user.id, token, credentialHash);
+    await touchAuthSession(
+      user.id,
+      token,
+      {
+        ipAddress: getClientIP(req),
+        userAgent: String(req.headers["user-agent"] || "unknown"),
+      },
+      credentialHash,
+      session,
+    );
 
     // 添加用户信息到请求对象
     req.user = user;

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path, { join } from "node:path";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import compression from "compression";
 import helmet from "helmet";
 import { config, startupConfig } from "../config/config";
 import {
@@ -56,6 +57,30 @@ declare global {
 
 const audioDir = path.join(__dirname, "../finish");
 const assemblyNonApiRouteExemptionSet = new Set<string>(NON_API_ROUTE_EXEMPTION_PATHS);
+
+/**
+ * PERF-01: 源站响应压缩。`compression` 依赖的 `compressible` 把 `text/event-stream`
+ * 判为可压缩，一旦压缩就会把分块缓冲成一次性响应，SSE（`/api/librechat/**` 的流式端点，
+ * 见 src/routes/libreChatRoutes.ts）会退化为"等全部生成完才出数据"。
+ *
+ * 同时必须跳过 206 / 带 Content-Range 的响应：`compression` 不检查分块语义，而
+ * `express.static`（含 /static/audio 的音频文件）会按 Range 请求回 206，对它压缩会让
+ * `Content-Range` 的偏移量与实体体（gzip 后）不再对应，浏览器音频 seek 会取到错位数据。
+ *
+ * 其余沿用 compression 的默认 filter（仅按 mime 判定可压缩性）；阈值(1kb)、HEAD、
+ * 204/304、已带 Content-Encoding、Cache-Control: no-transform 由中间件自身处理。
+ */
+const SSE_CONTENT_TYPE = "text/event-stream";
+const shouldCompressResponse = (req: Request, res: Response): boolean => {
+  if (res.statusCode === 206 || res.getHeader("Content-Range") !== undefined) {
+    return false;
+  }
+  const contentType = res.getHeader("Content-Type");
+  if (typeof contentType === "string" && contentType.toLowerCase().includes(SSE_CONTENT_TYPE)) {
+    return false;
+  }
+  return compression.filter(req, res);
+};
 
 function assertAssemblyNonApiRoutePath(routePath: string): void {
   if (!isExemptNonApiRoutePath(routePath)) {
@@ -246,6 +271,10 @@ export function registerCoreMiddleware(app: Express): void {
     next();
   });
 
+  // PERF-01: 压缩放在所有业务路由之前，使 SPA shell、express.static 产物、
+  // 以及所有 res.json() / 错误响应都走同一条压缩路径。helmet 在前不受影响。
+  app.use(compression({ filter: shouldCompressResponse }));
+
   assertAssemblyNonApiRoutePath("/s/*path");
   app.options("/s/*path", corsPreflightHandler);
   app.use("/s/*path", corsHeadersMiddleware);
@@ -355,6 +384,9 @@ export function registerStaticRoutes(app: Express): void {
         setHeaders: (res) => {
           res.set("Cross-Origin-Resource-Policy", "cross-origin");
           res.set("Access-Control-Allow-Origin", "*");
+          // PERF-06: TTS 产物文件名唯一（`tts_<ts>_<rand>`，见 src/tts/tts.storage.ts），
+          // 同一 URL 的内容不会再变，可以长期强缓存；ETag/Last-Modified 仍作兜底。
+          res.set("Cache-Control", "public, max-age=31536000, immutable");
         },
       }),
     );

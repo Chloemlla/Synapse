@@ -106,11 +106,18 @@ export function oauthTokenAuth(requiredScope?: string, opts: { optional?: boolea
 
     try {
       const context = await validateOAuthAccessToken(token, requiredScope);
-      await assertActiveAuthSession(context.user.id, token);
-      await touchAuthSession(context.user.id, token, {
-        ipAddress: getClientIP(req),
-        userAgent: String(req.headers["user-agent"] || "unknown"),
-      });
+      // PERF-02: assert 取到的会话文档直接交给 touch，避免同请求内重复 findOne。
+      const session = await assertActiveAuthSession(context.user.id, token);
+      await touchAuthSession(
+        context.user.id,
+        token,
+        {
+          ipAddress: getClientIP(req),
+          userAgent: String(req.headers["user-agent"] || "unknown"),
+        },
+        undefined,
+        session,
+      );
       if (!checkTokenRateLimit(context.token.tokenId, context.client.rateLimitPerMinute || 120)) {
         return res.status(429).json({ error: "OAuth token 请求过于频繁，请稍后再试" });
       }

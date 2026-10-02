@@ -39,6 +39,9 @@ router.get("/status", statusLimiter, statusApiKeyAuth, authMiddleware, (_req, re
  *         description: 服务正常
  */
 router.get("/", statusLimiter, (_req, res) => {
+  // PERF-03: 前端页脚每次页面加载都会问一次；内容（version/shortSha）是构建常量，
+  // 允许浏览器/边缘短缓存，避免每个访客每次刷新都回源。
+  res.set("Cache-Control", "public, max-age=30, stale-while-revalidate=300");
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),

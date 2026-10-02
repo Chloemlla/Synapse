@@ -27,6 +27,9 @@ export class IpInfoController {
 
       const ipInfo = await getIPInfo(ip);
       logger.info("IP信息查询成功", { ip, ipInfo });
+      // PERF-03: 页脚每次页面加载都会请求；同一客户端 IP 的归属信息短时间内稳定。
+      // 用 private 避免共享缓存串号（响应依赖调用方 IP，不做 public）。
+      res.set("Cache-Control", "private, max-age=120");
       res.json(ipInfo);
     } catch (error) {
       logger.error("IP信息查询失败", {

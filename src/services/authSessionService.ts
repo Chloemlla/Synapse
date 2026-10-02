@@ -335,11 +335,19 @@ export async function touchAuthSession(
   credential: string,
   metadata: AuthSessionMetadata = {},
   precomputedHash?: string,
+  /**
+   * 调用方若刚刚用同一 credential 跑过 assertActiveAuthSession，把那份文档传进来即可
+   * 省掉一次 Mongo findOne（已认证请求是最高频路径）。不传则保持原有的内部查询行为。
+   */
+  existingSession?: AuthSessionDoc | null,
 ): Promise<void> {
   const now = new Date();
   const normalized = getAuthSessionMetadataFromInput(metadata as AuthSessionCreateInput);
   const credentialHash = precomputedHash ?? hashAuthCredential(credential);
-  const existing = (await AuthSessionModel.findOne({ userId, credentialHash, revokedAt: null }).lean()) as AuthSessionDoc | null;
+  const existing =
+    existingSession !== undefined
+      ? existingSession
+      : ((await AuthSessionModel.findOne({ userId, credentialHash, revokedAt: null }).lean()) as AuthSessionDoc | null);
   if (!existing) throw new AuthSessionError("会话不存在或已撤销", "SESSION_REVOKED");
   const update: Record<string, unknown> = {
     lastActivityAt: now,

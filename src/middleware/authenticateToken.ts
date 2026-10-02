@@ -49,6 +49,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     // G2-08: 只计算一次凭证哈希，assert + touch 共享，避免每请求两次哈希。
     const credentialHash = hashAuthCredential(token);
     const session = await assertActiveAuthSession(userId, token, credentialHash);
+    // PERF-02: assert 已取到会话文档，直接透传给 touch 复用，省掉一次 Mongo findOne。
     await touchAuthSession(
       userId,
       token,
@@ -57,6 +58,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
         userAgent: String(req.headers["user-agent"] || session.userAgent),
       },
       credentialHash,
+      session,
     );
     authedReq.user = user;
     authedReq.auth = { kind: "session", user };

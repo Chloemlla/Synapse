@@ -21,17 +21,54 @@ interface BackendBuildInfo {
   shortSha: string;
 }
 
-const Footer: React.FC = () => {
-  const year = new Date().getFullYear();
-  const [uptime, setUptime] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  const [ipInfo, setIpInfo] = useState<IPInfo | null>(null);
-  const [ipLoading, setIpLoading] = useState(true);
-  // 后端版本/SHA 以「刷新后向后端询问一次」的结果为准；
-  // 初值用构建期注入的那份，查询失败时页脚不会出现空值。
-  const [backendBuild, setBackendBuild] = useState<BackendBuildInfo>({
-    version: buildInfo.backendVersion,
-    shortSha: buildInfo.shortSha
+// PERF-05: 页脚的网络信息与后端版本在同一个会话内不会变。原先两个 effect 每次挂载都直接
+// fetch，而页脚在 shell 切换（登录/登出、768px 断点跨侧栏）时会重新挂载，于是重复请求。
+// 这里加一层「sessionStorage + TTL」缓存，并用模块级 in-flight 表合并并发挂载的重复请求；
+// TTL 与服务端 Cache-Control 对齐（/api/ip 120s、/api/status 30s，客户端取 60s 更保守）。
+const IP_CACHE_KEY = 'synapse.footer.ip';
+const BUILD_CACHE_KEY = 'synapse.footer.backendBuild';
+const IP_CACHE_TTL_MS = 120_000;
+const BUILD_CACHE_TTL_MS = 60_000;
+
+const footerInFlight = new Map<string, Promise<unknown>>();
+
+function readFooterCache<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { expiresAt?: unknown; data?: unknown };
+    if (typeof parsed?.expiresAt !== 'number' || parsed.expiresAt <= Date.now()) return null;
+    return (parsed.data ?? null) as T | null;
+  } catch {
+    // sessionStorage 不可用（隐私模式 / 配额满）时退化为不缓存
+    return null;
+  }
+}
+
+function writeFooterCache<T>(key: string, data: T, ttlMs: number): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ expiresAt: Date.now() + ttlMs, data }));
+  } catch {
+    // 写入失败不影响功能，只是下次挂载会重新请求
+  }
+}
+
+function dedupedFooterRequest<T>(key: string, factory: () => Promise<T>): Promise<T> {
+  const existing = footerInFlight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const promise = factory().finally(() => {
+    footerInFlight.delete(key);
   });
+  footerInFlight.set(key, promise);
+  return promise;
+}
+
+/**
+ * PERF-04: 运行时长按秒变化，但计时器原先落在 Footer 本体上，导致整块页脚每秒重渲染。
+ * 把计时 + 格式化收进这个叶子组件，重渲染范围缩到一行文本。
+ */
+const UptimeClock: React.FC = () => {
+  const [uptime, setUptime] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
   useEffect(() => {
     const startDate = new Date('2025-06-15T09:30:00');
@@ -46,7 +83,14 @@ const Footer: React.FC = () => {
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
-        setUptime({ days, hours, minutes, seconds });
+        setUptime((current) => (
+          current.days === days
+          && current.hours === hours
+          && current.minutes === minutes
+          && current.seconds === seconds
+            ? current
+            : { days, hours, minutes, seconds }
+        ));
       }
     };
 
@@ -56,14 +100,43 @@ const Footer: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  return (
+    <span className="font-bold text-emerald-800">
+      {uptime.days} 天 {uptime.hours} 小时 {uptime.minutes} 分钟 {uptime.seconds} 秒
+    </span>
+  );
+};
+
+const Footer: React.FC = () => {
+  const year = new Date().getFullYear();
+  const [ipInfo, setIpInfo] = useState<IPInfo | null>(() => readFooterCache<IPInfo>(IP_CACHE_KEY));
+  const [ipLoading, setIpLoading] = useState(() => readFooterCache<IPInfo>(IP_CACHE_KEY) === null);
+  // 后端版本/SHA 以「刷新后向后端询问一次」的结果为准；
+  // 初值用构建期注入的那份，查询失败时页脚不会出现空值。
+  const [backendBuild, setBackendBuild] = useState<BackendBuildInfo>(
+    () => readFooterCache<BackendBuildInfo>(BUILD_CACHE_KEY) ?? {
+      version: buildInfo.backendVersion,
+      shortSha: buildInfo.shortSha
+    }
+  );
+
   useEffect(() => {
+    const cached = readFooterCache<IPInfo>(IP_CACHE_KEY);
+    if (cached) {
+      setIpInfo(cached);
+      setIpLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
     const fetchIPInfo = async () => {
       try {
         setIpLoading(true);
         const url = `${getApiBaseUrl()}/api/ip`;
-        const response = await fetch(url, {
+        const response = await dedupedFooterRequest('ip', () => fetch(url, {
           headers: { 'Accept': 'application/json' }
-        });
+        }));
 
         // 检查响应状态
         if (!response.ok) {
@@ -91,26 +164,41 @@ const Footer: React.FC = () => {
           throw new Error('IP信息数据格式无效');
         }
 
+        if (cancelled) return;
+        writeFooterCache(IP_CACHE_KEY, info, IP_CACHE_TTL_MS);
         setIpInfo(info);
       } catch (error) {
+        if (cancelled) return;
         console.error('获取IP信息失败:', error);
         setIpInfo(null);
       } finally {
-        setIpLoading(false);
+        if (!cancelled) setIpLoading(false);
       }
     };
 
     fetchIPInfo();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     // 每次页面刷新只问一次：/api/status 是后端启动时算好的常量，公开、无鉴权。
+    const cached = readFooterCache<BackendBuildInfo>(BUILD_CACHE_KEY);
+    if (cached) {
+      setBackendBuild(cached);
+      return;
+    }
+
+    let cancelled = false;
+
     const fetchBackendBuild = async () => {
       try {
         const url = `${getApiBaseUrl()}/api/status`;
-        const response = await fetch(url, {
+        const response = await dedupedFooterRequest('status', () => fetch(url, {
           headers: { 'Accept': 'application/json' }
-        });
+        }));
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -124,10 +212,13 @@ const Footer: React.FC = () => {
           throw new Error('后端版本信息数据格式无效');
         }
 
-        setBackendBuild({
+        if (cancelled) return;
+        const next = {
           version: version || buildInfo.backendVersion,
           shortSha: shortSha || buildInfo.shortSha
-        });
+        };
+        writeFooterCache(BUILD_CACHE_KEY, next, BUILD_CACHE_TTL_MS);
+        setBackendBuild(next);
       } catch (error) {
         // 保留构建期注入的后端版本作为兜底，不把页脚打成空白。
         console.warn('获取后端版本信息失败:', error);
@@ -135,6 +226,10 @@ const Footer: React.FC = () => {
     };
 
     fetchBackendBuild();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -154,9 +249,7 @@ const Footer: React.FC = () => {
         <div className="flex items-center justify-center rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700 text-xs">
           <div className="text-center">
             <FaRocket className="inline mr-1" /> 自 2025年6月15日 9:30 以来，本站已稳定运行{' '}
-            <span className="font-bold text-emerald-800">
-              {uptime.days} 天 {uptime.hours} 小时 {uptime.minutes} 分钟 {uptime.seconds} 秒
-            </span>
+            <UptimeClock />
           </div>
         </div>
         <div className="flex items-center justify-center rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 text-xs">
@@ -192,4 +285,5 @@ const Footer: React.FC = () => {
   );
 };
 
-export default Footer; 
+// PERF-04: Footer 无 props，父级（App shell）重渲染时无需跟着重渲染。
+export default React.memo(Footer);
