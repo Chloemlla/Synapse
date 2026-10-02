@@ -149,7 +149,7 @@ export function isAdminPathAllowedForPages(fullPath: string, grantedPageKeys: re
   const normalized = normalizeAdminScopePath(fullPath);
   return grantedPageKeys.some((key) => {
     const page = ADMIN_PAGE_BY_KEY.get(key);
-    return Boolean(page) && matchesAnyPrefix(normalized, page.apiPrefixes);
+    return page !== undefined && matchesAnyPrefix(normalized, page.apiPrefixes);
   });
 }
 
