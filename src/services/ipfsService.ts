@@ -599,19 +599,60 @@ export class IPFSService {
     });
 
     let response: any;
-    try {
-      response = await axios.post(apiUrl, formData, {
+    // 出网抖动兜底（2026-10-02 生产实测）：图床域名的 DNS 同时返回多个 A 记录 + 一个 AAAA，
+    // 而容器里只有 `lo` 的 IPv6 路由，一次尝试命中坏 IP 就整次上传失败，且错误直接冒成 500。
+    // 这里做两件事：
+    //   1. 强制 IPv4（family: 4）—— 宿主机无 IPv6 出网时不必先撞 IPv6 再猜；
+    //   2. 网络层失败重试一次（重新解析 DNS，缓存不好的那条 A 记录就跳过了）；
+    //      只重试「没拿到 HTTP 响应」的错，收到 4xx/5xx 属于业务返回，交给下面的 success 判定。
+    const uploadAttempt = async (): Promise<any> =>
+      axios.post(apiUrl, formData, {
         headers: { ...formData.getHeaders() },
         timeout: 60000,
         // G7-17: bounded response/request bodies instead of Infinity.
         maxContentLength: 2 * 1024 * 1024,
         maxBodyLength: 8 * 1024 * 1024,
         validateStatus: (s: number) => s >= 200 && s < 500, // 让上层根据 success 字段判断
+        httpsAgent: new https.Agent({ family: 4, keepAlive: false }),
+        httpAgent: new http.Agent({ family: 4, keepAlive: false }),
       });
+
+    const isNetworkError = (err: unknown): boolean => {
+      const code = (err as { code?: string } | undefined)?.code || "";
+      return [
+        "ETIMEDOUT",
+        "ECONNRESET",
+        "ECONNREFUSED",
+        "ENETUNREACH",
+        "EHOSTUNREACH",
+        "EAI_AGAIN",
+        "ENOTFOUND",
+        "EPIPE",
+      ].includes(code);
+    };
+
+    try {
+      try {
+        response = await uploadAttempt();
+      } catch (firstError) {
+        if (!isNetworkError(firstError)) throw firstError;
+        logger.warn("[ImageBed] 首次上传失败，重试一次", {
+          code: (firstError as { code?: string })?.code,
+          msg: firstError instanceof Error ? firstError.message : String(firstError),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        response = await uploadAttempt();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error("[ImageBed] 请求失败", { msg });
-      throw new Error(`ImageBed 上传失败: ${msg}`);
+      logger.error("[ImageBed] 请求失败", { msg, code: (err as { code?: string })?.code });
+      // 出网不可达与服务端拒绝分开措辞：前者要运维看出网/代理，后者要看图床自己的报错。
+      const detail = isNetworkError(err)
+        ? `图床服务不可达（出网失败 ${(err as { code?: string })?.code || ""}）：${msg}`
+        : msg;
+      const uploadError = new Error(`ImageBed 上传失败: ${detail}`);
+      (uploadError as Error & { statusCode?: number }).statusCode = isNetworkError(err) ? 503 : 502;
+      throw uploadError;
     }
 
     const body: any = response?.data || {};

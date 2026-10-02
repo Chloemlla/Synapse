@@ -145,8 +145,13 @@ export class IPFSController {
         timestamp: new Date().toISOString(),
       });
 
+      // 出网不可达（图床域名多 A 记录 + 本机无 IPv6 路由，见 services/ipfsService.ts 的重试注释）
+      // 应归为 503 而不是 500：500 会被当成代码 bug，而这是上游/网络问题，运维该看出网与代理。
+      const explicitStatus = (error as { statusCode?: number } | null | undefined)?.statusCode;
       const statusCode =
-        /人机验证|Turnstile|请先完成/.test(errorMessage)
+        typeof explicitStatus === "number"
+          ? explicitStatus
+          : /人机验证|Turnstile|请先完成/.test(errorMessage)
           ? 403
           : /文件|图片|格式|大小|SVG|配置未设置/.test(errorMessage)
             ? 400

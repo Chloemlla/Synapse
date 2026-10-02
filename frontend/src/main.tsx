@@ -14,6 +14,36 @@ import {
 } from "./utils/integrityDiagnostics";
 import "./utils/ipVerification";
 
+/**
+ * 部署换版自愈（2026-10-02 生产实测）：新镜像里只有新哈希的资源，而浏览器里还开着旧标签页时，
+ * 懒加载 chunk / 样式会请求到已不存在的旧哈希 → 404（`{"error":"Not Found"}`），
+ * 表现为白屏或「Refused to apply style … MIME type ('application/json')」——因为 404 的响应体是 JSON。
+ *
+ * vite 在动态 import 失败时会派发 `vite:preloadError`，这里只做一件事：整页重载一次，
+ * 让浏览器重新取 no-cache 的 index.html（引用的哈希必然存在）。
+ * 用 sessionStorage 做 10 分钟窗口：服务端真挂了的时候不能让用户卡在刷新死循环里。
+ */
+const PRELOAD_RELOAD_KEY = "synapse:preload-reload-at";
+const PRELOAD_RELOAD_WINDOW_MS = 10 * 60 * 1000;
+
+window.addEventListener("vite:preloadError", (event) => {
+  // 拦住 vite 默认的 unhandled rejection，自己接管恢复动作。
+  event.preventDefault();
+
+  let allowed = true;
+  try {
+    const last = Number(window.sessionStorage.getItem(PRELOAD_RELOAD_KEY) || 0);
+    allowed = !Number.isFinite(last) || Date.now() - last > PRELOAD_RELOAD_WINDOW_MS;
+    if (allowed) window.sessionStorage.setItem(PRELOAD_RELOAD_KEY, String(Date.now()));
+  } catch {
+    // 隐私模式下 sessionStorage 不可用：无法做窗口守卫，宁可一次性重载也不让用户停在旧页面。
+  }
+
+  if (allowed) {
+    window.location.reload();
+  }
+});
+
 // 统一危险关键字 - 扩展更多关键词
 const DANGEROUS_KEYWORDS = [
   "supercopy",
