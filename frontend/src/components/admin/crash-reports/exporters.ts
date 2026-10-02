@@ -1,13 +1,10 @@
 import type { CrashGroup, FullCrashReport } from '@/api/crashReports';
+import { buildCsv, downloadCsv } from '@/utils/csv';
 import { formatTime, sourceLabel, topFrame } from './format';
 
-const csvCell = (value: unknown): string => {
-  const text = value === null || value === undefined ? '' : String(value).replace(/\r?\n/g, ' ');
-  return `"${text.replace(/"/g, '""')}"`;
-};
-
-const csvRows = (header: string[], rows: unknown[][]): string =>
-  [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+// CSV 构造改用共用工具：崩溃堆栈 / 根因 / 进程名都是客户端上报的，裸拼字符串导出后
+// 在 Excel 里会被当公式求值（CSV injection）。行分隔与 BOM 也一并交给共用实现。
+const csvRows = (header: string[], rows: unknown[][]): string => buildCsv(header, rows);
 
 export const buildGroupsCsv = (groups: CrashGroup[]): string =>
   csvRows(
@@ -73,9 +70,8 @@ export const downloadTextFile = (
   URL.revokeObjectURL(url);
 };
 
-/** Excel only detects UTF-8 CSV when a BOM is present. */
-export const downloadCsvFile = (filename: string, csv: string): void =>
-  downloadTextFile(filename, '\ufeff' + csv, 'text/csv;charset=utf-8');
+/** Excel 只在有 BOM 时才按 UTF-8 识别 CSV（共用工具已含 BOM）。 */
+export const downloadCsvFile = (filename: string, csv: string): void => downloadCsv(filename, csv);
 
 export const downloadJsonFile = (filename: string, value: unknown): void =>
   downloadTextFile(filename, JSON.stringify(value, null, 2), 'application/json;charset=utf-8');

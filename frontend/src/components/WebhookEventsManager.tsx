@@ -28,6 +28,7 @@ import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 
 import { getBackendErrorMessage } from '../utils/backendError';
+import { buildCsv, csvFileStamp, downloadCsv } from '../utils/csv';
 import { studioModalOverlayClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
@@ -178,11 +179,6 @@ function parseJsonDraft(value: string, fieldLabel: string) {
   } catch {
     throw new Error(`${fieldLabel} 不是有效 JSON`);
   }
-}
-
-function csvEscape(value: unknown) {
-  const text = value == null ? '' : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function statusClass(status?: string) {
@@ -653,35 +649,34 @@ const WebhookEventsManager: React.FC = () => {
         setNotification({ type: 'warning', message: '当前列表没有可导出的事件' });
         return;
       }
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const blob =
-        format === 'json'
-          ? new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' })
-          : new Blob(
-              [
-                [
-                  ['provider', 'routeKey', 'eventId', 'type', 'status', 'subject', 'receivedAt'],
-                  ...items.map((item) => [
-                    item.provider || '',
-                    item.routeKey || '',
-                    item.eventId || '',
-                    item.type || '',
-                    item.status || '',
-                    item.subject || item.title || '',
-                    item.receivedAt || '',
-                  ]),
-                ]
-                  .map((row) => row.map(csvEscape).join(','))
-                  .join('\n'),
-              ],
-              { type: 'text/csv;charset=utf-8' },
-            );
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `webhook-events-${timestamp}.${format}`;
-      link.click();
-      URL.revokeObjectURL(url);
+      const timestamp = csvFileStamp();
+      if (format === 'json') {
+        const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `webhook-events-${timestamp}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      // 事件字段完全由外部投递方控制：走共用 csvCell 做公式注入中和（原来裸拼字符串，
+      // 管理员在 Excel 里打开就会求值），行分隔用 CRLF，落盘带 BOM 让中文不乱码。
+      const csv = buildCsv(
+        ['id', 'provider', 'routeKey', 'eventId', 'type', 'status', 'subject', 'receivedAt'],
+        items.map((item) => [
+          item._id,
+          item.provider || '',
+          item.routeKey || '',
+          item.eventId || '',
+          item.type || '',
+          item.status || '',
+          item.subject || item.title || '',
+          item.receivedAt || item.created_at || '',
+        ]),
+      );
+      downloadCsv(`webhook-events-${timestamp}.csv`, csv);
     },
     [items, setNotification],
   );
