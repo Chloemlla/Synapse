@@ -44,3 +44,37 @@ export async function getIpBanStats(req: Request, res: Response) {
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
+
+/**
+ * 封禁名单。与同页其他读接口同口径（adminLimiter + authenticateAdmin + requireAdminScope），
+ * 不额外开新写权限。
+ */
+export async function listBannedIps(req: Request, res: Response) {
+  try {
+    if (!requireAdmin(req, res)) return;
+
+    const query = (req.query ?? {}) as Record<string, unknown>;
+    const result = await TurnstileService.listIpBans({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword,
+      status: query.status,
+      sort: query.sort,
+      order: query.order,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        bans: result.bans,
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+      },
+      summary: result.summary,
+    });
+  } catch (error) {
+    console.error("获取IP封禁名单失败:", error);
+    res.status(500).json({ success: false, error: "服务器内部错误" });
+  }
+}

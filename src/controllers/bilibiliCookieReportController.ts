@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
-import { isAdminRole } from "../middleware/auth";
+import { isAdminRole, isSuperAdmin } from "../middleware/auth";
 import {
   listBilibiliCookieReports,
+  removeBilibiliCookieReport,
   reportBilibiliCookie,
   resolveReportDeviceId,
 } from "../services/bilibiliCookieReportService";
@@ -85,6 +86,39 @@ export async function listReports(req: Request, res: Response): Promise<void> {
         totalPages: Math.ceil(result.total / result.limit),
       },
     });
+  } catch (error) {
+    reportError(res, error);
+  }
+}
+
+/**
+ * Admin erasure surface.
+ *
+ * 为什么必须有：这份存档是隐私敏感的（B 站登录凭据密文 + 设备/账号元数据），但之前只有读取接口，
+ * 服务层的 `removeBilibiliCookieReport` 是**死代码**。用户提出删除请求、或发现设备 id 被冒用，
+ * 管理员无任何手段处理。这里只按 (clientId, deviceId, uid) 三元组精确删除，不提供通配批量删。
+ * 三元组缺失/形态非法时由服务层的 normalizer 抛错，不会变成“删了半张表”。
+ */
+export async function deleteBilibiliCookieReport(req: Request, res: Response): Promise<void> {
+  try {
+    if (!req.user || !isSuperAdmin(req)) {
+      res.status(403).json({ success: false, error: "需要超级管理员权限" });
+      return;
+    }
+
+    const result = await removeBilibiliCookieReport(req.params.clientId, req.params.deviceId, req.params.uid);
+    if (!result.removed) {
+      res.status(404).json({ success: false, error: "未找到匹配的上报记录" });
+      return;
+    }
+
+    // 只记标识与结果，不记任何凭据字段（存档从未以明文出库）。
+    logger.info("[Bilibili Cookie Report] 管理员删除上报记录", {
+      deviceId: req.params.deviceId,
+      uid: req.params.uid,
+      operator: req.user.id,
+    });
+    res.json({ success: true, data: { removed: true } });
   } catch (error) {
     reportError(res, error);
   }

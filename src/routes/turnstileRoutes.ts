@@ -10,6 +10,7 @@ import {
   cleanupExpiredFingerprints,
   getFingerprintStats,
   getIpBanStats,
+  listBannedIps,
 } from "../controllers/turnstile/statsHandlers";
 import { banIp, batchBanIps, batchUnbanIps, unbanIp } from "../controllers/turnstile/ipBanHandlers";
 import {
@@ -78,6 +79,9 @@ router.post(
 );
 router.get("/fingerprint-stats", adminLimiter, authenticateAdmin, requireAdminScope, getFingerprintStats);
 router.get("/ip-ban-stats", adminLimiter, authenticateAdmin, requireAdminScope, getIpBanStats);
+// 封禁名单：与 /ip-ban-stats 同口径（页面授权前缀 /api/turnstile 已登记给「验证码渠道」页面）。
+// 前端 `turnstileApi.getIPBanList` 一直存在但长期没有对应后端路由。
+router.get("/ip-ban-list", adminLimiter, authenticateAdmin, requireAdminScope, listBannedIps);
 
 // IP 封禁管理（管理员）
 router.post(

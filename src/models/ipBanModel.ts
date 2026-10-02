@@ -8,6 +8,8 @@ interface IpBanDoc {
   expiresAt: Date; // 封禁到期时间
   fingerprint?: string; // 关联的指纹（可选）
   userAgent?: string; // 用户代理（可选）
+  /** 封禁来源：manual = 管理员手工封，auto = 违规计数到阈值自动封。 */
+  source?: "manual" | "auto";
 }
 
 const IpBanSchema = new mongoose.Schema<IpBanDoc>(
@@ -19,6 +21,9 @@ const IpBanSchema = new mongoose.Schema<IpBanDoc>(
     expiresAt: { type: Date, required: true },
     fingerprint: { type: String, index: true },
     userAgent: { type: String },
+    // 存量文档该字段缺失；读取侧一律把缺省当 "auto"（见 services/turnstile/ipBan.ts
+    // 的 toIpBanEntry）。这里不设 required/default，避免历史数据被 schema 校验挡住。
+    source: { type: String, enum: ["manual", "auto"] },
   },
   { timestamps: true },
 );
@@ -29,6 +34,9 @@ IpBanSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 // 复合索引
 IpBanSchema.index({ ipAddress: 1, expiresAt: 1 });
 IpBanSchema.index({ fingerprint: 1, expiresAt: 1 });
+// 管理端名单默认按 bannedAt 倒序翻页，带上 expiresAt 让状态筛选也能吃到索引。
+IpBanSchema.index({ bannedAt: -1, expiresAt: 1 });
+IpBanSchema.index({ source: 1 });
 
 const IpBanModel =
   (mongoose.models.IpBan as mongoose.Model<IpBanDoc>) || mongoose.model<IpBanDoc>("IpBan", IpBanSchema);
