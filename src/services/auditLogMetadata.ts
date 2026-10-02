@@ -28,6 +28,7 @@ export const ALLOWED_AUDIT_MODULES = new Set<IAuditLog["module"]>([
   "resource",
   "recommendation",
   "policy",
+  "privacy",
   "debug",
   "ipban",
   "env",

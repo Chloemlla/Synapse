@@ -35,6 +35,7 @@ export interface IAuditLog {
     | "resource"
     | "recommendation"
     | "policy"
+    | "privacy"
     | "debug"
     | "ipban"
     | "env"

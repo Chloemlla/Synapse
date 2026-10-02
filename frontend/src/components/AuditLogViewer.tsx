@@ -41,6 +41,7 @@ const MODULE_LABELS: Record<string, string> = {
   oauth: 'OAuth',
   other: '其他',
   policy: '策略',
+  privacy: '隐私',
   recommendation: '推荐',
   resource: '资源',
   security: '安全',
