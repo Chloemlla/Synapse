@@ -7,6 +7,7 @@ import TicketListItem from "./ticket/TicketListItem";
 import TicketFilters, { EMPTY_TICKET_FILTER, type TicketFilterValue } from "./ticket/TicketFilters";
 import TicketStatsBar from "./ticket/TicketStatsBar";
 import TicketHeroBody, { type TicketPenaltyAppeal } from "./ticket/TicketHero";
+import { ticketPriorityBadge, ticketStatusBadge } from "./ticket/ticketBadges";
 import TicketComposer from "./ticket/TicketComposer";
 import { OverLengthMailNotice, type OverLengthDraft } from "./ticket/OverLengthMailNotice";
 import TicketProcessingToast from "./ticket/TicketProcessingToast";
@@ -38,7 +39,6 @@ import { cn } from '../utils/cn';
 import {
   studioAccentBlobBlueClassName,
   studioAccentBlobSkyClassName,
-  studioBadgeClassName,
   studioDisplayFont,
   studioEyebrowClassName,
   studioFieldClassName,
@@ -204,7 +204,9 @@ const TicketSystem: React.FC = () => {
     adminFilterRef.current = adminFilter;
   }, [adminFilter]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesBoxRef = useRef<HTMLDivElement>(null);
+  // 「工单 id : 消息数」：用来分辨「消息真的多了」与「只是同一条工单被重新 set」。
+  const lastMessageScrollKeyRef = useRef("");
   const prefersReducedMotion = useReducedMotion();
   const notifyMarkdownCopy = useCallback((success: boolean, wholeMessage = false) => {
     setNotification({
@@ -527,11 +529,24 @@ const TicketSystem: React.FC = () => {
       .catch(() => undefined);
   }, []);
 
+  // 只在「换了工单」或「消息数增加」时把会话滚到底。
+  //
+  // 原实现依赖 selectedTicket.messages 的数组引用：而改状态 / 认领 / 改分类 / 编辑备注这些
+  // 管理操作都会 setSelectedTicket(updated)，于是每点一下都无条件滑到会话最底部。
+  // 另外改成滚会话容器本身（scrollTo）而不是 scrollIntoView，后者会连带把整页也拖下去。
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [selectedTicket?.messages]);
+    const ticketId = selectedTicket?._id ?? "";
+    const count = selectedTicket?.messages?.length ?? 0;
+    const previous = lastMessageScrollKeyRef.current;
+    lastMessageScrollKeyRef.current = `${ticketId}:${count}`;
+    const [previousId = "", previousCount = "0"] = previous.split(":");
+    const switchedTicket = previousId !== ticketId;
+    if (!switchedTicket && count <= Number(previousCount)) return;
+    window.setTimeout(() => {
+      const box = messagesBoxRef.current;
+      if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+    }, switchedTicket ? 0 : 60);
+  }, [selectedTicket?._id, selectedTicket?.messages?.length]);
 
   // 统一的失败处理：403（审查违规 / 工单权限封禁）进入申诉引导，其它错误直接透出服务端文案。
   // 创建与回复共用，避免两处 heuristic 判定与通道文案漂移（封禁时不应再引导走工单通道）。
@@ -630,7 +645,7 @@ const TicketSystem: React.FC = () => {
             ? '回复已发送，用户会收到邮件通知'
             : '已发送，客服会尽快跟进',
       });
-      window.setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+      // 不再单独滚动：上面那个 effect 会因为消息数增加而把会话滚到底。
       refreshAdminStats();
       return true;
     } catch (error: unknown) {
@@ -737,29 +752,6 @@ const TicketSystem: React.FC = () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }, [tickets]);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "open":
-        return <span className={studioBadgeClassName('blue')}>待处理</span>;
-      case "in-progress":
-        return <span className={studioBadgeClassName('yellow')}>处理中</span>;
-      case "resolved":
-        return <span className={studioBadgeClassName('green')}>已解决</span>;
-      case "closed":
-        return <span className={studioBadgeClassName('slate')}>已关闭</span>;
-      default: return null;
-    }
-  };
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case "high": return <span className={studioBadgeClassName('rose')}>紧急</span>;
-      case "medium": return <span className={studioBadgeClassName('yellow')}>一般</span>;
-      case "low": return <span className={studioBadgeClassName('green')}>低</span>;
-      default: return null;
-    }
-  };
 
   return (
     <div
@@ -1194,7 +1186,7 @@ const TicketSystem: React.FC = () => {
                         <div className="space-y-2 min-w-0">
                           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                             <h3 className="font-semibold text-slate-900 text-sm sm:text-base truncate">{selectedTicket.title}</h3>
-                            {getPriorityBadge(selectedTicket.priority)}
+                            {ticketPriorityBadge(selectedTicket.priority)}
                           </div>
                           <div className="flex items-center gap-4 text-[10px] sm:text-[11px] text-slate-500 font-mono flex-wrap">
                             <span className="flex items-center gap-1"><FiUser className="text-slate-400" /> {selectedTicket.username}</span>
@@ -1254,7 +1246,7 @@ const TicketSystem: React.FC = () => {
                             </>
                           ) : (
                             <>
-                              {getStatusBadge(selectedTicket.status)}
+                              {ticketStatusBadge(selectedTicket.status)}
                               {selectedTicket.status !== 'closed' && (
                                 <button
                                   type="button"
@@ -1278,7 +1270,10 @@ const TicketSystem: React.FC = () => {
                       </div>
 
                       {/* Messages（同列表：不用 overscroll-contain，滚到底后把手势交回整页） */}
-                      <div className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto">
+                      <div
+                        ref={messagesBoxRef}
+                        className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto"
+                      >
                         {selectedTicket.messages.map((msg, idx) => {
                           const isAi = msg.senderRole === "ai" || msg.isAi;
                           const isMe = msg.senderId === user?.id;
@@ -1427,8 +1422,6 @@ const TicketSystem: React.FC = () => {
                             </motion.div>
                           )}
                         </AnimatePresence>
-
-                                                <div ref={messagesEndRef} />
                       </div>
 
                       {/* Reply form */}
