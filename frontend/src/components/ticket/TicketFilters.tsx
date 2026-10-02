@@ -127,7 +127,8 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           }
         >
           <FiSliders size={14} />
-          更多筛选
+          {/* 手机窄屏下让位给搜索框：只留图标与数量徽标，文字从 sm 起显示。 */}
+          <span className="hidden sm:inline">更多筛选</span>
           {advancedCount > 0 ? (
             <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white">
               {advancedCount}

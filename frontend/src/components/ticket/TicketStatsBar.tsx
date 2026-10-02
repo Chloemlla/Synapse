@@ -22,15 +22,25 @@ interface StatCard {
 }
 
 /**
+ * 响应式容器：<sm 为单行横滑（手机竖屏下 2 列网格要占 4 行，直接挤掉列表首屏），
+ * ≥sm 恢复 4 列、≥lg 7 列网格。
+ */
+const STATS_CONTAINER_CLASS =
+  'flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-4 sm:overflow-x-visible sm:pb-0 lg:grid-cols-7';
+
+/**
  * 管理端概览条：把「今天该处理什么」直接摆在列表上方（待回复 / 逾期），
  * 点击任一卡片即等于应用对应筛选。
  */
 const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuickFilter }) => {
   if (!stats && loading) {
     return (
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className={STATS_CONTAINER_CLASS}>
         {Array.from({ length: 7 }).map((_, index) => (
-          <div key={index} className="h-14 animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />
+          <div
+            key={index}
+            className="h-14 w-[8.5rem] shrink-0 animate-pulse rounded-2xl border border-slate-200 bg-slate-50 sm:w-auto sm:shrink"
+          />
         ))}
       </div>
     );
@@ -101,7 +111,7 @@ const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuick
   };
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+    <div className={STATS_CONTAINER_CLASS}>
       {cards.map((card) => (
         <button
           key={card.key}
@@ -109,8 +119,8 @@ const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuick
           onClick={() => onQuickFilter(card.patch)}
           title={card.hint || `筛选：${card.label}`}
           className={cn(
-            // 概览条常驻在列表上方，压缩 8~10px 高度就是列表多一行。
-            'min-w-0 rounded-2xl border px-3 py-2 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
+            // 概览条常驻在列表上方：手机上横滑一行（省下三行高度），平板起恢复网格。
+            'w-[8.5rem] shrink-0 snap-start rounded-2xl border px-3 py-2 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 sm:w-auto sm:shrink',
             card.tone,
           )}
         >

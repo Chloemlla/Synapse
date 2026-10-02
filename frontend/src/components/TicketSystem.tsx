@@ -745,9 +745,13 @@ const TicketSystem: React.FC = () => {
     <div
       className={cn(
         studioPageClassName,
-        // 桌面端占满工作台主窗：主窗高度 = 100svh - 外壳 header(3.5rem) - 主窗 py-6(3rem)。
+        // 桌面端至少占满工作台主窗：主窗高度 = 100svh - 外壳 header(3.5rem) - 主窗 py-6(3rem)。
         // 原来写死 640px，1080p 上会在下方留出约 300px 空白，而列表只能看到三四行。
-        "md:flex md:h-[calc(100svh-8rem)] md:min-h-[34rem] md:flex-col md:py-0",
+        //
+        // 注意用 min-h 而不是 h：定高 + 子元素最小高度（工作区 22rem）在矮窗口下会让内容溢出
+        // 页面的盒子，直接画到后面的页脚上（现象就是工单台与 footer 重合）。min-h 让页面
+        // 至少一屏高、内容多高就多高，页脚永远排在工单台下方。
+        "md:flex md:min-h-[calc(100svh-8rem)] md:flex-col md:py-0",
       )}
       style={{ fontFamily: studioPageFont }}
     >
@@ -764,11 +768,9 @@ const TicketSystem: React.FC = () => {
               className={cn(
                 "relative shrink-0 overflow-hidden transition-[padding] duration-200",
                 studioHeroCardClassName,
-                // 桌面端把顶部说明区压扁（sm:p-10 → p-6）；专注模式再收到 p-3 且只留一行。
-                // 1080p 上这两步合计把 90~150px 让给下方列表与会话。
-                // 注意：同变体下不能同时写 md:p-6 与 md:p-3（Tailwind 按 scale 排序，md:p-6 会赢），
-                // 所以这里用三元只留一个。
-                focusMode ? "md:p-3" : "md:p-6",
+                // 手机 p-4、平板 p-6（原样式是 p-6 → sm:p-10，平板/小笔记本上白白多出 32px）。
+                // 专注模式再收到 p-3 且只留一行标题。
+                focusMode ? "p-3" : "p-4 sm:p-6",
               )}
             >
               <div className={cn(studioAccentBlobBlueClassName, "-right-12 top-0")} aria-hidden />
@@ -785,7 +787,9 @@ const TicketSystem: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {isAdmin && (
+        {/* 手机端打开详情后，概览条也一起收起：它只服务于「挑工单」这一步，
+            留着会白占一屏高度。 */}
+        {isAdmin && (!isMobile || !showDetailOnMobile) && (
           <div className="shrink-0">
             <TicketStatsBar
               stats={stats}
@@ -799,15 +803,16 @@ const TicketSystem: React.FC = () => {
           桌面端：flex-1 吃满剩余高度（不再写死 640px），手机仍用 min-height 滚动。
           md:min-h-[22rem] 是矮窗口（≈640px 高）的底线：此时整页改为滚动，而不是把列表压到几行。
         */}
-        <div className="flex min-h-[min(480px,55dvh)] flex-col gap-4 md:min-h-[22rem] md:flex-1 md:flex-row md:gap-6">
+        <div className="flex min-h-[min(560px,72svh)] flex-col gap-3 md:min-h-[22rem] md:flex-1 md:flex-row md:gap-4 lg:gap-6">
           {/* 左侧列表 */}
           <AnimatePresence mode="wait">
             {(!isMobile || !showDetailOnMobile) && (
               <motion.div
                 key="list"
                 className={cn(
-                  // 宽屏把列表加宽：行内标题/预览少折行，同样的高度能看到更多工单。
-                  "w-full h-full flex flex-col overflow-hidden md:w-[21rem] lg:w-[23rem] xl:w-[25rem]",
+                  // 列表宽度随视口平滑变化：窄屏保住 17rem 可读下限，宽屏最多 26rem，
+                  // 中间按 24vw 过渡，而不是 21/23/25rem 三档跳变（拉窗口时不会突然抽一下）。
+                  "w-full h-full flex flex-col overflow-hidden md:w-[clamp(17rem,24vw,26rem)] md:shrink-0",
                   studioPanelClassName,
                   "p-0 sm:p-0",
                 )}
@@ -816,7 +821,7 @@ const TicketSystem: React.FC = () => {
                 exit={isMobile ? { opacity: 0, x: -20 } : undefined}
                 transition={{ duration: 0.3 }}
               >
-                <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 p-4 shrink-0">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 p-3 shrink-0 sm:p-4">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white shrink-0">
                       <FiFilter size={14} />
@@ -915,7 +920,7 @@ const TicketSystem: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto hover-scrollbar">
+                <div className="flex-1 overflow-y-auto overscroll-contain hover-scrollbar">
                   {loading ? (
                     <div className="flex flex-col items-center justify-center p-12 space-y-3">
                       <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
@@ -1172,12 +1177,12 @@ const TicketSystem: React.FC = () => {
                             <span className="flex items-center gap-1"><FiClock className="text-slate-400" /> {new Date(selectedTicket.createdAt).toLocaleString()}</span>
                           </div>
                         </div>
-                        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                        <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
                           {canWrite ? (
                             <>
                               <select
                                 aria-label="工单状态"
-                                className={cn(studioFieldClassName, "py-2 text-xs sm:w-auto")}
+                                className={cn(studioFieldClassName, "shrink-0 py-2 text-xs sm:w-auto")}
                                 value={selectedTicket.status}
                                 onChange={e => handleUpdateStatus(selectedTicket._id, e.target.value)}
                               >
@@ -1189,7 +1194,7 @@ const TicketSystem: React.FC = () => {
                               </select>
                               <select
                                 aria-label="优先级"
-                                className={cn(studioFieldClassName, "py-2 text-xs sm:w-auto")}
+                                className={cn(studioFieldClassName, "shrink-0 py-2 text-xs sm:w-auto")}
                                 value={selectedTicket.priority}
                                 onChange={e => void handleUpdateFields(selectedTicket._id, { priority: e.target.value })}
                               >
@@ -1199,7 +1204,7 @@ const TicketSystem: React.FC = () => {
                               </select>
                               <select
                                 aria-label="工单分类"
-                                className={cn(studioFieldClassName, "py-2 text-xs sm:w-auto")}
+                                className={cn(studioFieldClassName, "shrink-0 py-2 text-xs sm:w-auto")}
                                 value={selectedTicket.category || 'other'}
                                 onChange={e => void handleUpdateFields(selectedTicket._id, { category: e.target.value })}
                               >
@@ -1213,7 +1218,7 @@ const TicketSystem: React.FC = () => {
                                   assignee: selectedTicket.assigneeId === user?.id ? null : 'me',
                                 })}
                                 className={cn(
-                                  "rounded-full border px-3 py-2 text-[11px] font-semibold transition",
+                                  "shrink-0 rounded-full border px-3 py-2 text-[11px] font-semibold transition",
                                   selectedTicket.assigneeId === user?.id
                                     ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                     : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
@@ -1230,7 +1235,7 @@ const TicketSystem: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => void handleCloseTicket()}
-                                  className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600"
+                                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600"
                                 >
                                   关闭工单
                                 </button>
@@ -1240,7 +1245,7 @@ const TicketSystem: React.FC = () => {
                           <button
                             type="button"
                             onClick={handleCopyLink}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                            className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                             title="复制可直达该工单的链接"
                           >
                             <FiLink className="inline" size={11} /> 复制链接
@@ -1249,7 +1254,7 @@ const TicketSystem: React.FC = () => {
                       </div>
 
                       {/* Messages */}
-                      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 bg-white hover-scrollbar">
+                      <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar">
                         {selectedTicket.messages.map((msg, idx) => {
                           const isAi = msg.senderRole === "ai" || msg.isAi;
                           const isMe = msg.senderId === user?.id;
@@ -1265,7 +1270,8 @@ const TicketSystem: React.FC = () => {
                               animate={ROW_ANIMATE}
                               transition={{ duration: 0.3 }}
                             >
-                              <div className={`max-w-[85%] sm:max-w-[78%] relative ${isMe ? 'order-1' : 'order-2'}`}>
+                              {/* 气泡宽度按视口放宽：手机 92% 够用，2xl 收到 70% 避免一行读太长。 */}
+                              <div className={`max-w-[92%] sm:max-w-[85%] lg:max-w-[78%] 2xl:max-w-[70%] relative ${isMe ? 'order-1' : 'order-2'}`}>
                                 <div className={`flex items-center gap-2 mb-1 text-[10px] text-slate-400 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                   {!isMe && !isInternal && (
                                     <span className={cn(
@@ -1383,7 +1389,7 @@ const TicketSystem: React.FC = () => {
                               exit={{ opacity: 0 }}
                               className="flex justify-start mb-4"
                             >
-                              <div className="max-w-[85%] sm:max-w-[78%] relative order-2">
+                              <div className="max-w-[92%] sm:max-w-[85%] lg:max-w-[78%] 2xl:max-w-[70%] relative order-2">
                                 <div className="flex items-center gap-2 mb-1 text-[10px] text-slate-400 justify-start">
                                   <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
                                     <FiCpu size={11} /> 智能助手（正在输入…）
@@ -1438,7 +1444,8 @@ const TicketSystem: React.FC = () => {
                       </div>
                       <h3 className="text-lg sm:text-xl font-semibold text-slate-700 mb-2 text-center" style={{ fontFamily: studioDisplayFont }}>选择一个工单</h3>
                       <p className="text-xs sm:text-sm text-slate-400 text-center max-w-xs leading-relaxed">
-                        请从左侧列表选择已有工单查看详情，或点击上方按钮开启新的对话请求。
+                        <span className="md:hidden">请从工单列表选择已有工单查看详情，或点「发起新工单」开始新的对话请求。</span>
+                        <span className="hidden md:inline">请从左侧列表选择已有工单查看详情，或点击上方按钮开启新的对话请求。</span>
                       </p>
                     </motion.div>
                   )}

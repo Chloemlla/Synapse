@@ -82,7 +82,7 @@ const TicketHeroBody: React.FC<TicketHeroBodyProps> = ({
             Synapse Support
           </div>
           <h1
-            className="mt-4 text-[2rem] font-semibold leading-[1.05] text-slate-900 sm:text-5xl sm:leading-tight md:text-[2.5rem]"
+            className="mt-4 text-2xl font-semibold leading-tight text-slate-900 sm:text-[2rem] lg:text-[2.5rem]"
             style={{ fontFamily: studioDisplayFont }}
           >
             支持中心
@@ -96,7 +96,9 @@ const TicketHeroBody: React.FC<TicketHeroBodyProps> = ({
             提交技术支持、功能反馈或投诉建议，所有工单都会经过 AI 审计并由人工跟进。
           </p>
         </div>
-        <div className="hidden w-full md:flex md:w-auto md:max-w-sm md:flex-col md:items-end md:gap-2">
+        {/* 切换按钮从 md 起就要有（否则平板/小笔记本无法收起说明区）；
+            「功能说明」卡片会拉高说明区，留到 xl 才显示。 */}
+        <div className="hidden w-full shrink-0 md:flex md:w-auto md:max-w-sm md:flex-col md:items-end md:gap-2">
           <button
             type="button"
             onClick={onToggleFocusMode}
@@ -109,7 +111,7 @@ const TicketHeroBody: React.FC<TicketHeroBodyProps> = ({
           >
             <FiMinimize2 size={13} /> 专注模式
           </button>
-          <div className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:rounded-2xl">
+          <div className="hidden w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:rounded-2xl xl:block">
             <div className={cn(studioEyebrowClassName, 'flex items-center gap-2')}>
               <FiInfo className="text-slate-500" />
               功能说明
