@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { addRound, getAllRounds, getUserRecord, updateRound, updateUserRecord, deleteAllRounds } from "./lotteryStorage";
 import { TurnstileService } from "./turnstileService";
 import { readCaptchaChallenge } from "./turnstile/challenge";
+import { sharedStateStore } from "./sharedStateStore";
 
 // 抽奖相关类型定义
 export interface LotteryPrize {
@@ -179,7 +180,30 @@ class LotteryService {
   }
 
   // 参与抽奖
+  /**
+   * 参与抽奖（临界区包装）。
+   *
+   * 为什么要加锁：抽奖是「读轮次 → 判断是否已参与 → 扣减奖品库存 → 整体回写轮次」的
+   * 读-改-写序列。并发请求（双击、两个设备、两个用户同时抽）会各自读到同一份旧状态，
+   * 然后**整体覆盖** participants/winners/prizes —— 后写的那次会静默抹掉前一次的
+   * 中奖记录，库存也可能被重复扣减。锁按轮次维度加，只串行化同一轮次的参与动作。
+   *
+   * 锁层不可用时 `withLock` 会退到进程内存锁（单实例内仍然串行），不会拒绝业务请求。
+   */
   public async participateInLottery(
+    roundId: string,
+    userId: string,
+    username: string,
+    cfToken?: string,
+    userRole?: string,
+    captchaProvider?: unknown,
+  ): Promise<LotteryWinner | null> {
+    return sharedStateStore.withLock(`lottery:participate:${roundId}`, 15000, () =>
+      this.participateInLotteryInternal(roundId, userId, username, cfToken, userRole, captchaProvider),
+    );
+  }
+
+  private async participateInLotteryInternal(
     roundId: string,
     userId: string,
     username: string,
@@ -273,6 +297,19 @@ class LotteryService {
 
     // G7-08: 把本次抽奖的所有状态变更真正落库。此前这里只改内存对象，请求一结束
     // 全部丢弃，导致可无限抽奖、库存永不扣减、中奖记录不存在。
+    // 落库前再读一次：锁只覆盖本实例的并发，跨实例/锁降级时仍需挡住「同一用户重复参与」
+    // 与「奖品已被抢空」这两种可判定状态，避免把过期快照写回去。
+    const fresh = await this.getRoundDetails(roundId);
+    if (fresh) {
+      if (!fresh.isActive || fresh.participants.includes(userId)) {
+        throw new Error("您已经参与过此轮抽奖");
+      }
+      const freshPrize = fresh.prizes.find((item) => item.id === prize.id);
+      if (freshPrize && freshPrize.remaining <= 0) {
+        throw new Error("没有可用的奖品");
+      }
+    }
+
     await updateRound(roundId, {
       prizes: round.prizes,
       participants: round.participants,

@@ -30,6 +30,16 @@ const escapeRegex = escapeRegexLiteral;
 
 export type SharedStateTier = "redis" | "mongo" | "memory";
 
+/** 拿不到临界区锁时抛出（调用方决定是提示重试还是排队）。 */
+export class SharedStateLockedError extends Error {
+  public readonly key: string;
+  constructor(key: string) {
+    super("操作正在进行中，请稍后重试");
+    this.name = "SharedStateLockedError";
+    this.key = key;
+  }
+}
+
 export interface SharedStateStats {
   tier: SharedStateTier;
   shared: boolean;
@@ -225,6 +235,34 @@ class SharedStateStore {
       return true;
     }
     return false;
+  }
+
+  /**
+   * 在跨实例锁内执行一段临界区（读-改-写类操作的正确性保障）。
+   *
+   * 语义：
+   *   - 拿不到锁 → 抛 `SharedStateLockedError`，由调用方决定怎么回复（抽奖场景直接提示稍后重试
+   *     比默默并发更安全）；
+   *   - 锁层不可用（Redis/Mongo 都不可）→ `claim` 会退到进程内存锁，也就是「单实例内串行」。
+   *     对「奖品库存不得被并发覆盖」这类需求，宁可保留单实例保护也不拒绝业务请求。
+   *   - 临界区抛出时锁照常释放；释放失败也不会覆盖业务结果（锁有 TTL 兜底）。
+   */
+  public async withLock<T>(key: string, ttlMs: number, criticalSection: () => Promise<T>): Promise<T> {
+    const owner = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const acquired = await this.claim(key, ttlMs, owner);
+    if (!acquired) throw new SharedStateLockedError(key);
+    try {
+      return await criticalSection();
+    } finally {
+      try {
+        await this.release(key, owner);
+      } catch (error) {
+        logger.warn("[SharedState] 释放临界区锁失败（将由 TTL 兜底）", {
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   public async set<T>(key: string, value: T, ttlMs: number): Promise<boolean> {

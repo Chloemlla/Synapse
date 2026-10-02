@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { type LotteryPrize, lotteryService } from "../services/lotteryService";
-import { firstString, firstStringOr } from "../utils/httpParam";
+import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
 
 // 简单WAF校验函数
@@ -11,6 +11,29 @@ function wafCheck(str: string, maxLen = 128): boolean {
   if (/[<>{}"'`;\\]/.test(str)) return false;
   if (/\b(select|update|delete|insert|drop|union|script|alert|onerror|onload)\b/i.test(str)) return false;
   return true;
+}
+
+// 500 统一用通用文案：raw error.message 会把 Mongo/驱动内部细节（集合名、索引冲突、
+// provider 响应片段）漏给任意登录用户，而前端在错误分支上都会给出可读提示。
+const SERVER_ERROR_MESSAGE = "服务器错误，请稍后重试";
+
+/**
+ * 参与抽奖的业务拒因：这些都是**说给用户听**的话，必须原样透出（前端直接展示）。
+ * 其余看起来像内部异常的（数据库、驱动、IPFS 之类）一律回通用文案。
+ */
+const LOTTERY_USER_FACING_ERRORS = [
+  "人机验证",
+  "Turnstile",
+  "已经参与过",
+  "已结束",
+  "时间未到",
+  "没有可用的奖品",
+  "不存在",
+  "请稍后重试",
+] as const;
+
+function isUserFacingLotteryError(message: string): boolean {
+  return LOTTERY_USER_FACING_ERRORS.some((fragment) => message.includes(fragment));
 }
 
 export class LotteryController {
@@ -26,7 +49,7 @@ export class LotteryController {
       logger.error("获取区块链数据失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -89,7 +112,7 @@ export class LotteryController {
       logger.error("创建抽奖轮次失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -128,7 +151,7 @@ export class LotteryController {
       logger.error("获取抽奖轮次失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -145,7 +168,7 @@ export class LotteryController {
       logger.error("获取活跃抽奖轮次失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -193,9 +216,11 @@ export class LotteryController {
       });
     } catch (error) {
       logger.error("参与抽奖失败:", error);
-      // 处理 Turnstile 验证错误
+      // 参与抽奖的失败绝大多数是**业务拒因**（已参与过 / 奖品已领完 / 不在抽奖时间段 /
+      // 人机验证未通过），前端会把文案直接展示给用户 —— 这类必须原样返回；
+      // 只有看起来是内部异常时才退到通用文案。
       if (error instanceof Error) {
-        if (error.message.includes("人机验证") || error.message.includes("Turnstile")) {
+        if (isUserFacingLotteryError(error.message)) {
           res.status(400).json({
             success: false,
             error: error.message,
@@ -206,7 +231,7 @@ export class LotteryController {
 
       res.status(400).json({
         success: false,
-        error: error instanceof Error ? error.message : "参与抽奖失败",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -237,7 +262,7 @@ export class LotteryController {
       logger.error("获取轮次详情失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -263,7 +288,7 @@ export class LotteryController {
       logger.error("获取用户记录失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -271,7 +296,7 @@ export class LotteryController {
   // 获取排行榜
   public async getLeaderboard(req: Request, res: Response): Promise<void> {
     try {
-      const limit = parseInt(firstStringOr(req.query.limit, "10"), 10) || 10;
+      const limit = boundedInt(req.query.limit, { min: 1, max: 100, fallback: 10 });
       const leaderboard = await lotteryService.getLeaderboard(limit);
 
       res.json({
@@ -282,7 +307,7 @@ export class LotteryController {
       logger.error("获取排行榜失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -299,7 +324,7 @@ export class LotteryController {
       logger.error("获取统计信息失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -331,7 +356,7 @@ export class LotteryController {
       logger.error("重置轮次失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -372,7 +397,7 @@ export class LotteryController {
       logger.error("更新轮次状态失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: SERVER_ERROR_MESSAGE,
       });
     }
   }
@@ -389,7 +414,7 @@ export class LotteryController {
       res.json({ success: true, message: "所有轮次已删除" });
     } catch (error) {
       logger.error("删除所有轮次失败:", error);
-      res.status(500).json({ success: false, error: error instanceof Error ? error.message : "服务器错误" });
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
     }
   }
 }
