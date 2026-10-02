@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { isIP } from "node:net";
 import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import { connectMongo } from "../services/mongoService";
 import { getTraceModel as getTurnstileTraceModel } from "../services/turnstile/models";
 import { getClientIP } from "../utils/ipUtils";
