@@ -18,6 +18,12 @@ interface WebhookEventDoc {
   raw?: any;
   receivedAt: Date;
   updatedAt: Date;
+  /** WH-1：同一事件被重复投递的次数（Svix 重试会自增）。首次插入为 1。 */
+  deliveryCount?: number;
+  /** 首次到达时间（重投不覆盖）。 */
+  firstReceivedAt?: Date;
+  /** 最近一次投递时间。 */
+  lastReceivedAt?: Date;
 }
 
 const WebhookEventSchema = new Schema<WebhookEventDoc>(
@@ -37,10 +43,15 @@ const WebhookEventSchema = new Schema<WebhookEventDoc>(
     raw: { type: Schema.Types.Mixed },
     receivedAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
+    deliveryCount: { type: Number, default: 1 },
+    firstReceivedAt: { type: Date },
+    lastReceivedAt: { type: Date },
   },
   { collection: "webhook_events" },
 );
 
+// WH-1：幂等键。不设 unique：历史集合可能已有重复 (provider,routeKey,eventId)，
+// 建唯一索引会失败；写入走 upsert，并且只依赖 eventId 存在时才做去重。
 WebhookEventSchema.index({ provider: 1, routeKey: 1, eventId: 1 }, { unique: false });
 WebhookEventSchema.index({ routeKey: 1, receivedAt: -1 });
 WebhookEventSchema.index({ type: 1, status: 1, receivedAt: -1 });
@@ -66,6 +77,9 @@ const WEBHOOK_EVENT_FIELDS = new Set([
   "raw",
   "receivedAt",
   "updatedAt",
+  "deliveryCount",
+  "firstReceivedAt",
+  "lastReceivedAt",
 ]);
 
 function asString(value: unknown): string | undefined {
@@ -221,6 +235,44 @@ export const WebhookEventService = {
     const event = normalizeGenericWebhookEvent(body, source);
     return this.create({ ...event, ...sanitizeEventDocument(overrides, { partial: true }) });
   },
+  /**
+   * WH-1：幂等写入。`eventId` 存在时按 (provider, routeKey, eventId) upsert，重复投递
+   * 只累加 `deliveryCount` 并刷新 `lastReceivedAt`，不再造新记录；`eventId` 缺失时退化为普通插入。
+   * 返回 `duplicate` 供 HTTP 层区分「新事件」与「重投」。
+   */
+  async ingest(doc: any): Promise<{ item: any; duplicate: boolean }> {
+    const safe = sanitizeEventDocument(doc);
+    const eventId = asString(safe.eventId);
+    if (!eventId) {
+      const created = await this.create(doc);
+      return { item: created, duplicate: false };
+    }
+
+    const now = safe.receivedAt instanceof Date ? safe.receivedAt : new Date();
+    const provider = asString(safe.provider) || "resend";
+    const routeKey = normalizeRouteKey(safe.routeKey) ?? null;
+    // any：FilterQuery 的映射类型不接受 Record 索引签名，宽筛选对象只能走 any。
+    const filter: any = { provider, routeKey, eventId };
+
+    const updated = await WebhookEventModel.findOneAndUpdate(
+      filter,
+      {
+        // 首次插入写全量字段；重复投递只刷新时间戳与状态，保留首次到达时间。
+        $setOnInsert: { ...safe, provider, routeKey, eventId, receivedAt: now, firstReceivedAt: now },
+        $set: {
+          lastReceivedAt: now,
+          updatedAt: now,
+          ...(safe.status ? { status: safe.status } : {}),
+        },
+        $inc: { deliveryCount: 1 },
+      },
+      { upsert: true, returnDocument: "after" },
+    ).lean();
+
+    const deliveryCount = Number((updated as any)?.deliveryCount) || 1;
+    return { item: updated, duplicate: deliveryCount > 1 };
+  },
+
   async list({
     page = 1,
     pageSize = 20,
@@ -244,8 +296,9 @@ export const WebhookEventService = {
     receivedFrom?: string;
     receivedTo?: string;
   }) {
-    // Normalize and cap pagination to prevent abuse
-    const p = Number.isFinite(Number(page)) ? Math.max(1, Number(page)) : 1;
+    // Normalize and cap pagination to prevent abuse.
+    // WH-6：page 也要封顶——无上限的深分页会让 skip 随页码线性变贵。
+    const p = Number.isFinite(Number(page)) ? Math.min(1000, Math.max(1, Number(page))) : 1;
     const ps = Number.isFinite(Number(pageSize)) ? Math.min(100, Math.max(1, Number(pageSize))) : 20;
     const skip = (p - 1) * ps;
 
@@ -279,7 +332,86 @@ export const WebhookEventService = {
       WebhookEventModel.find(query).sort({ receivedAt: -1 }).skip(skip).limit(ps).lean(),
       WebhookEventModel.countDocuments(query),
     ]);
-    return { items, total, page: p, pageSize: ps };
+    return { items, total, page: p, pageSize: ps, hasMore: p * ps < total };
+  },
+
+  /**
+   * WH-4：端点级健康视图。按 routeKey 聚合 24h/7d 量、失败量、最近事件，
+   * 并标注该 routeKey 是否已配置密钥（DB 优先，不读 ENV 原文）。
+   */
+  async health(): Promise<{
+    since: string;
+    routes: Array<{
+      routeKey: string | null;
+      total7d: number;
+      total24h: number;
+      failed7d: number;
+      failureRate: number;
+      lastReceivedAt: string | null;
+      secretConfigured: boolean;
+    }>;
+    secretKeys: string[];
+  }> {
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const failureStatuses = ["failed", "error", "bounced", "complained", "delivery_delayed"];
+
+    const rows = await WebhookEventModel.aggregate([
+      { $match: { receivedAt: { $gte: since7d } } },
+      {
+        $group: {
+          _id: "$routeKey",
+          total7d: { $sum: 1 },
+          total24h: { $sum: { $cond: [{ $gte: ["$receivedAt", since24h] }, 1, 0] } },
+          failed7d: { $sum: { $cond: [{ $in: ["$status", failureStatuses] }, 1, 0] } },
+          lastReceivedAt: { $max: "$receivedAt" },
+        },
+      },
+      { $sort: { total7d: -1 } },
+    ] as any);
+
+    const secretDocs = await WebhookSecretModel.find({ provider: "resend" })
+      .select({ key: 1 })
+      .lean()
+      .exec();
+    const secretKeys = secretDocs.map((doc: any) => String(doc.key || "DEFAULT").toUpperCase());
+
+    return {
+      since: since7d.toISOString(),
+      routes: rows.map((row: any) => {
+        const routeKey = (row._id ?? null) as string | null;
+        const key = (routeKey ? String(routeKey).toUpperCase() : "DEFAULT") || "DEFAULT";
+        return {
+          routeKey,
+          total7d: row.total7d ?? 0,
+          total24h: row.total24h ?? 0,
+          failed7d: row.failed7d ?? 0,
+          failureRate: row.total7d > 0 ? Number(((row.failed7d ?? 0) / row.total7d).toFixed(4)) : 0,
+          lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt).toISOString() : null,
+          secretConfigured: secretKeys.includes(key),
+        };
+      }),
+      secretKeys,
+    };
+  },
+
+  /** WH-3：按保留期清理历史事件。默认 dryRun，避免误删。 */
+  async prune(
+    days: number,
+    options: { provider?: string; routeKey?: string; dryRun?: boolean } = {},
+  ): Promise<{ matched: number; deleted: number; dryRun: boolean; cutoff: string }> {
+    const retentionDays = Number.isFinite(Number(days)) ? Math.min(3650, Math.max(1, Math.floor(Number(days)))) : 90;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const filter: any = { receivedAt: { $lt: cutoff } };
+    if (options.provider) filter.provider = options.provider;
+    if (options.routeKey) filter.routeKey = options.routeKey;
+
+    const matched = await WebhookEventModel.countDocuments(filter);
+    if (options.dryRun !== false) {
+      return { matched, deleted: 0, dryRun: true, cutoff: cutoff.toISOString() };
+    }
+    const result = await WebhookEventModel.deleteMany(filter);
+    return { matched, deleted: result.deletedCount ?? 0, dryRun: false, cutoff: cutoff.toISOString() };
   },
   async groups() {
     const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -441,6 +573,25 @@ export const WebhookEventService = {
     }
     await WebhookEventModel.findByIdAndDelete(id);
     return { success: true };
+  },
+
+  /**
+   * WH-2：只读列出已配置的 Resend webhook 密钥（只回掩码，绝不回原文）。
+   * 与 adminController 的 set/delete 共用同一 collection。
+   */
+  async listResendWebhookSecrets(): Promise<
+    Array<{ key: string; secretPreview: string; updatedAt: string | null }>
+  > {
+    const docs = await WebhookSecretModel.find({ provider: "resend" }).sort({ key: 1 }).lean().exec();
+    return docs.map((doc: any) => {
+      const secret = typeof doc.secret === "string" ? doc.secret : "";
+      const secretPreview = secret.length > 8 ? `${secret.slice(0, 2)}***${secret.slice(-4)}` : "***";
+      return {
+        key: String(doc.key || "DEFAULT").toUpperCase(),
+        secretPreview,
+        updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+      };
+    });
   },
 };
 

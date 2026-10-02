@@ -340,6 +340,117 @@ export class WorkspaceService {
   }
 
   /**
+   * IN-1：被邀请人主动拒绍邀请。
+   *
+   * IN-2：与 `acceptInvitation` 使用同一套邮箱归属校验——invitation id 是能力凭证，
+   * 仅持有它不能替他人拒绍（否则任何人拿到 id 就能把别人的邀请废掉）。
+   */
+  async declineInvitation(invitationId: string, userId: string): Promise<Invitation> {
+    try {
+      const invitation = await InvitationModel.findOne({ id: invitationId }).lean();
+      if (!invitation) {
+        throw new WorkspaceError(`邀请不存在: ${invitationId}`, WorkspaceErrorCodes.INVITATION_NOT_FOUND);
+      }
+      if (invitation.status !== "pending") {
+        throw new WorkspaceError("邀请已处理", WorkspaceErrorCodes.INVITATION_EXPIRED);
+      }
+      if (invitation.inviteeEmail) {
+        const user = await userRepository.getUserById(userId);
+        const userEmail = user?.email?.trim().toLowerCase();
+        const inviteeEmail = invitation.inviteeEmail.trim().toLowerCase();
+        if (!userEmail || userEmail !== inviteeEmail) {
+          throw new WorkspaceError("该邀请不是发给当前用户的", WorkspaceErrorCodes.PERMISSION_DENIED);
+        }
+      }
+
+      const updated = await InvitationModel.findOneAndUpdate(
+        { id: invitationId, status: "pending" },
+        { $set: { status: "declined" } },
+        { returnDocument: "after" },
+      ).lean();
+      if (!updated) {
+        throw new WorkspaceError("邀请已处理", WorkspaceErrorCodes.INVITATION_EXPIRED);
+      }
+
+      logger.info(`[WorkspaceService] 用户 ${userId} 拒绍了邀请 ${invitationId}`);
+      return this.toInvitation(updated);
+    } catch (error) {
+      if (error instanceof WorkspaceError) throw error;
+      logger.error("[WorkspaceService] 拒绍邀请失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * IN-1：邀请人/工作空间管理员撤回尚未处理的邀请。
+   * 只有工作空间管理员（含邀请人自己）能撤回，且已处理的邀请不能被覆盖。
+   */
+  async revokeInvitation(invitationId: string, actorId: string): Promise<Invitation> {
+    try {
+      const invitation = await InvitationModel.findOne({ id: invitationId }).lean();
+      if (!invitation) {
+        throw new WorkspaceError(`邀请不存在: ${invitationId}`, WorkspaceErrorCodes.INVITATION_NOT_FOUND);
+      }
+      const workspace = await WorkspaceModel.findOne({ id: invitation.workspaceId }).lean();
+      if (!workspace) {
+        throw new WorkspaceError(
+          `工作空间不存在: ${invitation.workspaceId}`,
+          WorkspaceErrorCodes.WORKSPACE_NOT_FOUND,
+        );
+      }
+      const actor = workspace.members.find((m: WorkspaceMember) => m.userId === actorId);
+      if (!actor || actor.role !== "admin") {
+        throw new WorkspaceError("只有工作空间管理员可以撤回邀请", WorkspaceErrorCodes.PERMISSION_DENIED);
+      }
+
+      const updated = await InvitationModel.findOneAndUpdate(
+        { id: invitationId, status: "pending" },
+        { $set: { status: "revoked" } },
+        { returnDocument: "after" },
+      ).lean();
+      if (!updated) {
+        throw new WorkspaceError("邀请已处理，无法撤回", WorkspaceErrorCodes.INVITATION_EXPIRED);
+      }
+
+      logger.info(`[WorkspaceService] 管理员 ${actorId} 撤回了邀请 ${invitationId}`);
+      return this.toInvitation(updated);
+    } catch (error) {
+      if (error instanceof WorkspaceError) throw error;
+      logger.error("[WorkspaceService] 撤回邀请失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * IN-1：工作空间管理员查看本空间的邀请记录（待处理优先），并顺带惰性置为已过期。
+   */
+  async listWorkspaceInvitations(workspaceId: string, actorId: string): Promise<Invitation[]> {
+    try {
+      const workspace = await WorkspaceModel.findOne({ id: workspaceId }).lean();
+      if (!workspace) {
+        throw new WorkspaceError(`工作空间不存在: ${workspaceId}`, WorkspaceErrorCodes.WORKSPACE_NOT_FOUND);
+      }
+      const actor = workspace.members.find((m: WorkspaceMember) => m.userId === actorId);
+      if (!actor || actor.role !== "admin") {
+        throw new WorkspaceError("只有工作空间管理员可以查看邀请", WorkspaceErrorCodes.PERMISSION_DENIED);
+      }
+
+      const now = new Date();
+      await InvitationModel.updateMany(
+        { workspaceId, status: "pending", expiresAt: { $lt: now } },
+        { $set: { status: "expired" } },
+      );
+
+      const docs = await InvitationModel.find({ workspaceId }).sort({ createdAt: -1 }).limit(200).lean();
+      return docs.map((doc) => this.toInvitation(doc));
+    } catch (error) {
+      if (error instanceof WorkspaceError) throw error;
+      logger.error("[WorkspaceService] 获取工作空间邀请失败:", error);
+      throw error;
+    }
+  }
+
+  /**
    * 更新工作空间设置
    * Requirements: 4.4
    *

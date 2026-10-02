@@ -5,9 +5,20 @@ import logger from "../utils/logger";
  * Redis 服务
  * 用于缓存和存储临时数据，包括 IP 封禁信息
  */
+export interface RedisServiceStatus {
+  /** `REDIS_URL` 是否配置。配置了但连不上时为 true / available=false。 */
+  configured: boolean;
+  enabled: boolean;
+  /** `ready` 事件后的就绪态；命令层以它为准（`connect` 与 `ready` 之间有窗口期）。 */
+  ready: boolean;
+  available: boolean;
+}
+
 class RedisService {
   private client: RedisClientType | null = null;
   private isConnected: boolean = false;
+  // RD-3: `connect` 事件只说明 TCP 建连；`ready` 才是可以收命令。分开跟踪，避免窗口期内误判可用。
+  private isReady: boolean = false;
   private isEnabled: boolean = false;
 
   constructor() {
@@ -45,6 +56,7 @@ class RedisService {
       this.client.on("error", (err) => {
         logger.error("❌ Redis 错误:", err);
         this.isConnected = false;
+        this.isReady = false;
       });
 
       // 连接成功
@@ -54,10 +66,24 @@ class RedisService {
         this.isEnabled = true;
       });
 
+      // 就绪：可以收发命令
+      this.client.on("ready", () => {
+        this.isConnected = true;
+        this.isReady = true;
+        this.isEnabled = true;
+      });
+
       // 断开连接
       this.client.on("disconnect", () => {
         logger.warn("⚠️ Redis 断开连接");
         this.isConnected = false;
+        this.isReady = false;
+      });
+
+      // 连接彻底结束
+      this.client.on("end", () => {
+        this.isConnected = false;
+        this.isReady = false;
       });
 
       // 重新连接
@@ -77,7 +103,134 @@ class RedisService {
    * 检查 Redis 是否可用
    */
   public isAvailable(): boolean {
-    return this.isEnabled && this.isConnected && this.client !== null;
+    return this.isEnabled && this.isConnected && this.isReady && this.client !== null;
+  }
+
+  /**
+   * RD-1/RD-4: 连接与就绪状态，供管理端只读展示。
+   */
+  public getStatus(): RedisServiceStatus {
+    return {
+      configured: Boolean(process.env.REDIS_URL),
+      enabled: this.isEnabled,
+      ready: this.isReady,
+      available: this.isAvailable(),
+    };
+  }
+
+  // ==================== 通用原语（RD-1） ====================
+  // 说明：这里只提供「缓存/计数器」这类可重建数据的最小原语；一次性凭证、锁语义仍走
+  // services/sharedStateStore.ts（它自带 Redis→Mongo→内存的分层与原子 consume/claim）。
+  // 调用方必须自己保证 key 命名空间（推荐 `cache:<域>:<标识>`），不要复用 `ipban:` 前缀。
+
+  /** 读取字符串值；不可用时返回 null（调用方自行降级）。 */
+  public async getKey(key: string): Promise<string | null> {
+    if (!this.isAvailable()) return null;
+    try {
+      return (await this.client?.get(key)) ?? null;
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 读取失败:", error);
+      return null;
+    }
+  }
+
+  /** 写入字符串值；ttlMs 省略或 <=0 时不设过期。 */
+  public async setKey(key: string, value: string, ttlMs?: number): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      if (typeof ttlMs === "number" && ttlMs > 0) {
+        await this.client?.set(key, value, { PX: Math.floor(ttlMs) });
+      } else {
+        await this.client?.set(key, value);
+      }
+      return true;
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 写入失败:", error);
+      return false;
+    }
+  }
+
+  /** 删除指定 key，返回真正删除的数量。 */
+  public async deleteKeys(keys: string[]): Promise<number> {
+    if (!this.isAvailable() || keys.length === 0) return 0;
+    try {
+      const result = await this.client?.del(keys as any);
+      return typeof result === "number" ? result : 0;
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 删除失败:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * 按前缀删除（缓存失效）。用 scanIterator 分批，绝不使用 KEYS。
+   * 上限 MAX_PREFIX_DELETE 个 key，避免一次运维操作把 Redis 打满。
+   */
+  public async deleteByPrefix(prefix: string, limit = 5000): Promise<number> {
+    if (!this.isAvailable() || !prefix) return 0;
+    const client = this.client;
+    if (!client) return 0;
+    let deleted = 0;
+    try {
+      const keys: string[] = [];
+      for await (const keyOrKeys of client.scanIterator({ MATCH: `${prefix}*`, COUNT: 200 })) {
+        const batch = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+        for (const key of batch) {
+          keys.push(key);
+          if (keys.length >= limit) break;
+        }
+        if (keys.length >= limit) break;
+      }
+      for (const key of keys) {
+        deleted += (await client.del(key)) ?? 0;
+      }
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 按前缀删除失败:", error);
+    }
+    return deleted;
+  }
+
+  /** 计数器自增；首次自增（返回值等于 amount）时按 ttlMs 设置过期。 */
+  public async incrementBy(key: string, amount = 1, ttlMs?: number): Promise<number | null> {
+    if (!this.isAvailable()) return null;
+    try {
+      const client = this.client;
+      if (!client) return null;
+      const next = await client.incrBy(key, amount);
+      if (next === amount && typeof ttlMs === "number" && ttlMs > 0) {
+        await client.pExpire(key, Math.floor(ttlMs));
+      }
+      return next;
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 自增失败:", error);
+      return null;
+    }
+  }
+
+  /** 只读服务端统计；任一命令不可用时对应字段为 null，不抛错。 */
+  public async getServerStats(): Promise<{
+    dbsize: number | null;
+    usedMemoryBytes: number | null;
+  }> {
+    if (!this.isAvailable()) return { dbsize: null, usedMemoryBytes: null };
+    const client = this.client;
+    if (!client) return { dbsize: null, usedMemoryBytes: null };
+
+    let dbsize: number | null = null;
+    let usedMemoryBytes: number | null = null;
+    try {
+      dbsize = await client.dbSize();
+    } catch (error) {
+      logger.warn("⚠️ [Redis] dbSize 失败:", error);
+    }
+    try {
+      const info = await client.info("memory");
+      const match = /used_memory:(\d+)/.exec(typeof info === "string" ? info : "");
+      if (match) usedMemoryBytes = Number(match[1]);
+    } catch (error) {
+      logger.warn("⚠️ [Redis] info(memory) 失败:", error);
+    }
+    return { dbsize, usedMemoryBytes };
   }
 
   /**

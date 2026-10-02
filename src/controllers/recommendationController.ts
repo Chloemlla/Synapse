@@ -127,6 +127,59 @@ export class RecommendationController {
   }
 
   /**
+   * 记录显式反馈（喜欢 / 不喜欢 / 不感兴趣）
+   * POST /recommendations/feedback
+   * RC-2
+   */
+  static async recordFeedback(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.id || (req as any).userId;
+      if (!userId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+
+      const { styleId, feedback, comment } = req.body || {};
+      if (!styleId || typeof styleId !== "string") {
+        res.status(400).json({ error: "缺少必要参数: styleId" });
+        return;
+      }
+
+      const result = await recommendationService.recordFeedback(userId, styleId, feedback, comment);
+      res.json({ success: true, data: result, message: "反馈已记录" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "记录反馈失败";
+      // 参数类错误（无效风格 ID / 无效反馈类型）回 400，其余回 500，便于前端区分提示。
+      if (message.includes("无效")) {
+        res.status(400).json({ error: message });
+        return;
+      }
+      logger.error("[RecommendationController] 记录反馈失败:", error);
+      res.status(500).json({ error: "记录反馈失败" });
+    }
+  }
+
+  /**
+   * 读取当前用户的反馈列表
+   * GET /recommendations/feedback
+   * RC-2
+   */
+  static async listFeedback(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.id || (req as any).userId;
+      if (!userId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const items = await recommendationService.listFeedback(userId);
+      res.json({ success: true, data: items, count: items.length });
+    } catch (error) {
+      logger.error("[RecommendationController] 读取反馈失败:", error);
+      res.status(500).json({ error: "读取反馈失败" });
+    }
+  }
+
+  /**
    * 应用内容建议
    * POST /recommendations/apply
    * Requirements: 2.4

@@ -56,6 +56,11 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "shortlink", label: "短链管理", apiPrefixes: ["/api/admin/shortlinks", "/api/shorturl"] },
   { key: "broadcast", label: "广播推送", apiPrefixes: ["/api/admin/broadcast"] },
   { key: "webhookevents", label: "Webhook 事件", apiPrefixes: ["/api/webhooks"] },
+  {
+    key: "integrations",
+    label: "集成健康中心",
+    apiPrefixes: ["/api/admin/integrations"],
+  },
   { key: "data-collection", label: "数据采集", apiPrefixes: ["/api/data-collection/admin"] },
   { key: "github-billing-cache", label: "GitHub 计费缓存", apiPrefixes: ["/api/github-billing"] },
   { key: "fbiwanted", label: "FBI 通缉数据", apiPrefixes: ["/api/fbi-wanted"] },

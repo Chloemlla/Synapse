@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-30",
+  "updatedAt": "2026-10-02",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
     "User account deletion currently removes the user_datas document; linked fingerprint/IP telemetry cleanup is tracked as a long-term debt item.",
     "proxycheck-* datasets were added 2026-09-25 with the proxycheck.io IP-risk integration. The risk cache is TTL-bounded; the lookup-log and probe-report collections are read-only superadmin surfaces and still await a retention job (declared as an acknowledged gap). The lookup log additionally stores the decision handed to the caller.",
-    "policy_consents gained documentHash (which text revision was accepted) plus revokedAt/revokedIP/revokedReason (withdrawal audit trail) on 2026-09-30, and an owner-initiated hard delete via POST /api/policy/revoke {purge:true}. A superadmin CSV export (/api/admin/policy-consents/export) is the only bulk surface; it is audited and row-capped."
+    "policy_consents gained documentHash (which text revision was accepted) plus revokedAt/revokedIP/revokedReason (withdrawal audit trail) on 2026-09-30, and an owner-initiated hard delete via POST /api/policy/revoke {purge:true}. A superadmin CSV export (/api/admin/policy-consents/export) is the only bulk surface; it is audited and row-capped.",
+    "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations)."
   ],
   "datasets": [
     {
@@ -438,6 +439,81 @@
         "src/models/bilibiliCookieReportModel.ts",
         "src/services/bilibiliCookieReportService.ts",
         "src/routes/bilibiliCookieReportRoutes.ts"
+      ]
+    },
+    {
+      "id": "email-suppressions",
+      "collection": "email_suppressions",
+      "fields": ["email", "reason", "source", "detail", "expiresAt", "createdAt", "updatedAt"],
+      "purpose": "Suppression list that stops outbound mail to addresses that hard-bounced, complained, or unsubscribed. Written by the Resend webhook handler, the public unsubscribe link (HMAC token), and superadmins.",
+      "legalBasis": "consent_and_deliverability_compliance",
+      "retention": {
+        "type": "operational",
+        "description": "Unsubscribes and complaints are permanent; soft bounces carry a 30-day expiry. Rows are only removed by a superadmin, because forgetting a suppression silently resumes mailing an address that opted out."
+      },
+      "delete": {
+        "onUserDelete": "not_linked",
+        "current": "keyed by recipient address rather than a Synapse account, so an account deletion cannot cascade",
+        "manual": "DELETE /api/admin/integrations/email-suppressions (superadmin + audit log)"
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/admin/integrations/email-suppressions (superadmin only; returns the address, reason, source and timestamps)"
+      },
+      "evidence": [
+        "src/models/emailSuppressionModel.ts",
+        "src/services/emailSuppressionService.ts",
+        "src/routes/admin/integrations.ts"
+      ]
+    },
+    {
+      "id": "recommendation-feedback",
+      "collection": "recommendation_feedback",
+      "fields": ["userId", "styleId", "feedback", "comment", "createdAt", "updatedAt"],
+      "purpose": "Explicit like / dislike / not-interested signals per user and voice style, used to filter and rank TTS style recommendations.",
+      "legalBasis": "service_personalization_consent",
+      "retention": {
+        "type": "account_linked",
+        "description": "Kept while the account exists so the preference keeps applying; one row per (userId, styleId)."
+      },
+      "delete": {
+        "onUserDelete": "not_automated_today",
+        "current": "rows carry userId and would need to be removed by an account-deletion cascade (tracked as a gap, same class as recommendation_history)",
+        "manual": "no admin surface today; a user can overwrite their own latest feedback through POST /api/recommendations/feedback"
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/recommendations/feedback (the owning user only)"
+      },
+      "evidence": [
+        "src/models/recommendationFeedbackModel.ts",
+        "src/services/recommendationService.ts",
+        "src/controllers/recommendationController.ts"
+      ]
+    },
+    {
+      "id": "webhook-events",
+      "collection": "webhook_events",
+      "fields": ["provider", "routeKey", "eventId", "type", "to", "subject", "status", "data", "raw", "receivedAt", "deliveryCount", "firstReceivedAt", "lastReceivedAt"],
+      "purpose": "Inbound third-party webhook deliveries (Resend/Svix) for deliverability monitoring and incident forensics. `raw`/`data` are verbatim provider payloads and may contain recipient addresses.",
+      "legalBasis": "service_integrity_and_abuse_prevention",
+      "retention": {
+        "type": "operational",
+        "description": "No TTL; a superadmin prune keeps a configurable number of days (default 90) and runs as a dry-run first. Until an operator runs it, events are retained indefinitely."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "current": "keyed by provider event id, not by Synapse account",
+        "manual": "POST /api/admin/integrations/webhooks/prune (superadmin + audit log; dryRun by default)"
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/webhook-events (superadmin only; the list and detail endpoints are intentionally superadmin-gated because raw payloads carry third-party data)"
+      },
+      "evidence": [
+        "src/services/webhookEventService.ts",
+        "src/controllers/webhookController.ts",
+        "src/routes/admin/integrations.ts"
       ]
     }
   ]

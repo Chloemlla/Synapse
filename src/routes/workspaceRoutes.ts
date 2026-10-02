@@ -297,6 +297,15 @@ router.post("/:id/invite", inviteLimiter, authenticateToken, WorkspaceController
  *       404:
  *         description: 工作空间不存在
  */
+// IN-1: 工作空间管理员查看本空间的邀请记录，并可直接静默撤回未处理的邀请。
+router.get("/:id/invitations", workspaceLimiter, authenticateToken, WorkspaceController.listWorkspaceInvitations);
+router.post(
+  "/:id/invitations/:invitationId/revoke",
+  inviteLimiter,
+  authenticateToken,
+  WorkspaceController.revokeInvitation,
+);
+
 router.put("/:id/settings", workspaceLimiter, authenticateToken, WorkspaceController.updateSettings);
 
 export default router;

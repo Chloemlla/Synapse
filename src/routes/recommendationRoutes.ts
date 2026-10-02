@@ -141,6 +141,53 @@ router.post("/select", recommendationLimiter, authenticateToken, RecommendationC
 
 /**
  * @openapi
+ * /recommendations/feedback:
+ *   post:
+ *     summary: 记录推荐反馈
+ *     description: 记录用户对某个语音风格的显式反馈（喜欢 / 不喜欢 / 不感兴趣），负反馈会立即从推荐中排除
+ *     tags:
+ *       - Recommendations
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - styleId
+ *               - feedback
+ *             properties:
+ *               styleId:
+ *                 type: string
+ *               feedback:
+ *                 type: string
+ *                 enum: [like, dislike, not_interested]
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 反馈已记录
+ *       400:
+ *         description: 参数错误
+ *       401:
+ *         description: 未授权
+ *   get:
+ *     summary: 读取当前用户的反馈列表
+ *     tags:
+ *       - Recommendations
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 反馈列表
+ */
+router.post("/feedback", recommendationLimiter, authenticateToken, RecommendationController.recordFeedback);
+router.get("/feedback", recommendationLimiter, authenticateToken, RecommendationController.listFeedback);
+
+/**
+ * @openapi
  * /recommendations/analyze:
  *   post:
  *     summary: 分析文本内容

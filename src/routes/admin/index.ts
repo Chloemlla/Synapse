@@ -8,6 +8,7 @@ import adminScopeRouter from "./adminScope";
 import broadcastRouter from "./broadcast";
 import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
+import integrationsRouter from "./integrations";
 import ipRiskLogsRouter from "./ipRiskLogs";
 import mobileTokensRouter from "./mobileTokens";
 import policyConsentsRouter from "./policyConsents";
@@ -72,6 +73,8 @@ router.use(profileRouter);
 router.use(broadcastRouter);
 router.use(registrationInvitesRouter);
 router.use(crashReportsRouter);
+// 集成健康中心（Webhook / 邮件抑制 / 缓存 / 推荐 / 邀请的聚合视图）
+router.use(integrationsRouter);
 router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
 router.use(mobileTokensRouter);

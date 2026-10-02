@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { addSuppression, verifyUnsubscribeToken } from "../services/emailSuppressionService";
 import {
   consumeEmailQuota,
   type EmailData,
@@ -7,7 +8,15 @@ import {
   getEmailQuota,
   refundEmailQuota,
 } from "../services/emailService";
+import { firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
+
+/** EM-2：退订结果页。服务端渲染静态 HTML，不引入脚本。 */
+function renderUnsubscribePage(ok: boolean, message: string): string {
+  const title = ok ? "已退订" : "链接无效";
+  const color = ok ? "#0f9d58" : "#d93025";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head><body style="font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;background:#f6f7f9;color:#1f2937"><main style="max-width:420px;padding:32px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center"><h1 style="font-size:20px;color:${color};margin:0 0 12px">${title}</h1><p style="font-size:14px;line-height:1.6;color:#4b5563;margin:0">${message}</p></main></body></html>`;
+}
 
 function getAllowedSenderDomains(): string[] {
   return getAllSenderDomains();
@@ -34,6 +43,50 @@ function validateSenderDomainOrRespond(from: string, req: Request, res: Response
 }
 
 export class EmailController {
+  /**
+   * 发送邮件
+   * @param req.body { from: string, to: string[], subject: string, html: string, text?: string }
+   */
+  /**
+   * EM-2：退订（公开端点，走签名 token，不需要登录）。
+   *
+   * 同时兼容邮件客户端的一键退订（RFC 8058 `List-Unsubscribe-Post`）：POST 请求同样从
+   * query 取 token，返回 200 空体。GET 则回一个极简结果页，便于人直接点链接。
+   */
+  public static async unsubscribe(req: Request, res: Response) {
+    const token = firstString(req.query.token) || firstString((req.body || {}).token);
+    const email = verifyUnsubscribeToken(token);
+    const isGet = req.method === "GET";
+    res.setHeader("Cache-Control", "no-store");
+
+    if (!email) {
+      if (isGet) {
+        return res.status(400).type("html").send(renderUnsubscribePage(false, "退订链接无效或已过期，请从最新一封邮件里的链接重试。"));
+      }
+      return res.status(400).json({ success: false, error: "退订链接无效或已过期" });
+    }
+
+    const record = await addSuppression({
+      email,
+      reason: "unsubscribe",
+      source: "user-unsubscribe",
+      detail: "用户通过邮件链接退订",
+    });
+    if (!record) {
+      logger.error("[EmailController] 退订写入失败", { email });
+      if (isGet) {
+        return res.status(500).type("html").send(renderUnsubscribePage(false, "退订暂时无法完成，请稍后重试。"));
+      }
+      return res.status(500).json({ success: false, error: "退订暂时无法完成，请稍后重试" });
+    }
+
+    logger.info("[EmailController] 用户退订成功", { email });
+    if (isGet) {
+      return res.type("html").send(renderUnsubscribePage(true, "该地址已停止接收同类邮件。若误操作，可联系管理员恢复。"));
+    }
+    return res.json({ success: true });
+  }
+
   /**
    * 发送邮件
    * @param req.body { from: string, to: string[], subject: string, html: string, text?: string }

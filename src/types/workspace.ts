@@ -37,7 +37,8 @@ export interface Invitation {
   workspaceId: string;
   inviteeEmail: string;
   role: "editor" | "viewer";
-  status: "pending" | "accepted" | "declined" | "expired";
+  // IN-1：revoked = 邀请人/工作空间管理员主动撤回（区别于过期与拒绝）。
+  status: "pending" | "accepted" | "declined" | "expired" | "revoked";
   createdAt: Date;
   expiresAt: Date;
 }

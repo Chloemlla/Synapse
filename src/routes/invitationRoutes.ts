@@ -92,4 +92,35 @@ router.get("/pending", invitationLimiter, authenticateToken, WorkspaceController
  */
 router.post("/:id/accept", invitationLimiter, authenticateToken, WorkspaceController.acceptInvitation);
 
+/**
+ * @openapi
+ * /invitations/{id}/decline:
+ *   post:
+ *     summary: 拒绍邀请
+ *     description: 被邀请人主动拒绍工作空间邀请（仅限邀请邮箱本人）
+ *     tags:
+ *       - Invitations
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 邀请ID
+ *     responses:
+ *       200:
+ *         description: 已拒绍邀请
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 该邀请不是发给当前用户的
+ *       404:
+ *         description: 邀请不存在
+ *       410:
+ *         description: 邀请已处理或已过期
+ */
+router.post("/:id/decline", invitationLimiter, authenticateToken, WorkspaceController.declineInvitation);
+
 export default router;

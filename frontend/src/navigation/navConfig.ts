@@ -357,6 +357,12 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'admin',
           },
           {
+            title: '集成健康中心',
+            url: '/admin/integrations',
+            icon: FaExchangeAlt as IconType,
+            requiredRole: 'admin',
+          },
+          {
             title: 'LibreChat 管理',
             url: '/admin/librechat',
             icon: FaComments as IconType,

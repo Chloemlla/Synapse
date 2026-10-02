@@ -365,6 +365,108 @@ export class WorkspaceController {
   }
 
   /**
+   * 拒绍邀请
+   * POST /invitations/:id/decline
+   * IN-1
+   */
+  static async declineInvitation(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.id || (req as any).userId;
+      if (!userId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const id = firstString(req.params.id);
+      if (!id) {
+        res.status(400).json({ error: "缺少邀请ID" });
+        return;
+      }
+
+      const invitation = await workspaceService.declineInvitation(id, userId);
+      res.json({ success: true, data: invitation, message: "已拒绍邀请" });
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        let statusCode = 400;
+        if (error.code === WorkspaceErrorCodes.INVITATION_NOT_FOUND) statusCode = 404;
+        if (error.code === WorkspaceErrorCodes.INVITATION_EXPIRED) statusCode = 410;
+        if (error.code === WorkspaceErrorCodes.PERMISSION_DENIED) statusCode = 403;
+        res.status(statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      logger.error("[WorkspaceController] 拒绍邀请失败:", error);
+      res.status(500).json({ error: "拒绍邀请失败" });
+    }
+  }
+
+  /**
+   * 撤回邀请（工作空间管理员）
+   * POST /workspaces/:id/invitations/:invitationId/revoke
+   * IN-1
+   */
+  static async revokeInvitation(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.id || (req as any).userId;
+      if (!userId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const invitationId = firstString(req.params.invitationId) || firstString(req.params.id);
+      if (!invitationId) {
+        res.status(400).json({ error: "缺少邀请ID" });
+        return;
+      }
+
+      const invitation = await workspaceService.revokeInvitation(invitationId, userId);
+      res.json({ success: true, data: invitation, message: "已撤回邀请" });
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        let statusCode = 400;
+        if (error.code === WorkspaceErrorCodes.INVITATION_NOT_FOUND) statusCode = 404;
+        if (error.code === WorkspaceErrorCodes.INVITATION_EXPIRED) statusCode = 410;
+        if (error.code === WorkspaceErrorCodes.PERMISSION_DENIED) statusCode = 403;
+        if (error.code === WorkspaceErrorCodes.WORKSPACE_NOT_FOUND) statusCode = 404;
+        res.status(statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      logger.error("[WorkspaceController] 撤回邀请失败:", error);
+      res.status(500).json({ error: "撤回邀请失败" });
+    }
+  }
+
+  /**
+   * 列出工作空间邀请（工作空间管理员）
+   * GET /workspaces/:id/invitations
+   * IN-1
+   */
+  static async listWorkspaceInvitations(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.id || (req as any).userId;
+      if (!userId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const workspaceId = firstString(req.params.id);
+      if (!workspaceId) {
+        res.status(400).json({ error: "缺少工作空间ID" });
+        return;
+      }
+
+      const invitations = await workspaceService.listWorkspaceInvitations(workspaceId, userId);
+      res.json({ success: true, data: invitations, count: invitations.length });
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        let statusCode = 400;
+        if (error.code === WorkspaceErrorCodes.WORKSPACE_NOT_FOUND) statusCode = 404;
+        if (error.code === WorkspaceErrorCodes.PERMISSION_DENIED) statusCode = 403;
+        res.status(statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      logger.error("[WorkspaceController] 获取工作空间邀请失败:", error);
+      res.status(500).json({ error: "获取工作空间邀请失败" });
+    }
+  }
+
+  /**
    * 更新工作空间设置
    * PUT /workspaces/:id/settings
    * Requirements: 4.4

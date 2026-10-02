@@ -6,15 +6,21 @@
  */
 
 import RecommendationHistoryModel from "../models/recommendationHistoryModel";
+import RecommendationFeedbackModel, {
+  RECOMMENDATION_FEEDBACK_KINDS,
+  type RecommendationFeedbackKind,
+} from "../models/recommendationFeedbackModel";
 import UserPreferencesModel from "../models/userPreferencesModel";
 import type {
   ChunkingStrategy,
   ContentSuggestion,
   GenerationRecord,
   Recommendation,
+  RecommendationSettings,
   VoiceStyle,
 } from "../types/recommendation";
 import logger from "../utils/logger";
+import { cacheService } from "./cacheService";
 
 // 情感关键词映射表
 const EMOTIONAL_KEYWORDS: Record<string, string[]> = {
@@ -83,6 +89,17 @@ const HISTORY_THRESHOLD = 10;
 // 默认推荐数量限制
 const DEFAULT_RECOMMENDATION_LIMIT = 5;
 
+// RC-1：单个用户保留的生成记录上限。整段历史存在一条文档里，无界 $push 会撞 MongoDB
+// 16MB 文档上限，也让每次读写放大。保留最近 N 条足够刻画偏好。
+const MAX_GENERATIONS = 300;
+
+// RC-3：热门风格是热点聚合，缓存 5 分钟；写路径只做前缀失效，不做同步重算。
+const POPULAR_STYLES_CACHE_TTL_MS = 5 * 60 * 1000;
+const USER_RECOMMENDATION_CACHE_TTL_MS = 60 * 1000;
+
+// RC-6：风格 ID 白名单字符集，避免把任意字符串当风格 id 落库。
+const STYLE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/;
+
 // 长文本阈值（字符数）
 const LONG_TEXT_THRESHOLD = 500;
 
@@ -132,40 +149,52 @@ export class RecommendationService {
     userId: string,
     limit: number = DEFAULT_RECOMMENDATION_LIMIT,
   ): Promise<Recommendation[]> {
-    try {
-      // 获取用户历史记录
-      const history = await RecommendationHistoryModel.findOne({ userId }).lean();
+    const safeLimit = Number.isFinite(Number(limit))
+      ? Math.min(Math.max(1, Math.floor(Number(limit))), 20)
+      : DEFAULT_RECOMMENDATION_LIMIT;
+    // RC-5 附带收益：推荐是只读热路径，缓存 60 秒可显著降低重复聚合；任何写路径前缀失效。
+    const cacheKey = cacheService.buildKey("recommendation", "user", userId, safeLimit);
+    return cacheService.getOrSet(cacheKey, USER_RECOMMENDATION_CACHE_TTL_MS, () =>
+      this.computePersonalizedRecommendations(userId, safeLimit),
+    );
+  }
 
-      // 如果历史记录不足，返回热门推荐（Requirements 1.2）
-      if (!history || history.generations.length < HISTORY_THRESHOLD) {
+  private async computePersonalizedRecommendations(userId: string, limit: number): Promise<Recommendation[]> {
+    try {
+      const [history, preferences, feedbackDocs] = await Promise.all([
+        RecommendationHistoryModel.findOne({ userId }).lean(),
+        UserPreferencesModel.findOne({ userId }).lean(),
+        RecommendationFeedbackModel.find({ userId }).select({ styleId: 1, feedback: 1 }).lean(),
+      ]);
+
+      // RC-2：显式负反馈（不喜欢/不感兴趣）直接排除；「喜欢」当作强先验加权。
+      const excludedStyleIds = new Set<string>();
+      const likedStyleIds = new Set<string>();
+      for (const item of feedbackDocs) {
+        if (item.feedback === "like") likedStyleIds.add(item.styleId);
+        else excludedStyleIds.add(item.styleId);
+      }
+      const settings = preferences?.recommendationSettings;
+
+      // 历史记录不足时返回热门推荐（Requirements 1.2）
+      if (!history || (history.generations || []).length < HISTORY_THRESHOLD) {
         logger.info(`[RecommendationService] 用户 ${userId} 历史记录不足，返回热门推荐`);
-        const popularStyles = await this.getPopularStyles(limit);
-        return popularStyles.map((style) => ({
-          voiceStyle: style,
-          similarityScore: 0.5,
-          reason: "社区热门推荐",
-          sampleAudioUrl: `/samples/${style.id}.mp3`,
-        }));
+        const popularStyles = await this.getPopularStyles(limit + excludedStyleIds.size);
+        return this.buildPopularRecommendations(popularStyles, excludedStyleIds, likedStyleIds, settings, limit);
       }
 
-      // 获取用户偏好设置
-      const preferences = await UserPreferencesModel.findOne({ userId }).lean();
-      const disabledCategories = preferences?.recommendationSettings?.disabledCategories || [];
-
-      // 分析用户历史，生成个性化推荐
-      const recommendations = this.analyzeHistoryForRecommendations(history.generations, disabledCategories, limit);
-
-      return recommendations;
+      return this.analyzeHistoryForRecommendations(
+        history.generations,
+        settings,
+        excludedStyleIds,
+        likedStyleIds,
+        limit,
+      );
     } catch (error) {
       logger.error("[RecommendationService] 获取个性化推荐失败:", error);
       // 降级方案：返回热门推荐
       const popularStyles = await this.getPopularStyles(limit);
-      return popularStyles.map((style) => ({
-        voiceStyle: style,
-        similarityScore: 0.5,
-        reason: "社区热门推荐",
-        sampleAudioUrl: `/samples/${style.id}.mp3`,
-      }));
+      return this.buildPopularRecommendations(popularStyles, new Set(), new Set(), null, limit);
     }
   }
 
@@ -177,31 +206,35 @@ export class RecommendationService {
    * @returns 热门语音风格列表
    */
   async getPopularStyles(limit: number = DEFAULT_RECOMMENDATION_LIMIT): Promise<VoiceStyle[]> {
-    try {
-      // 从数据库聚合最常用的语音风格
-      const aggregation = await RecommendationHistoryModel.aggregate([
-        { $unwind: "$generations" },
-        {
-          $group: {
-            _id: "$generations.voiceStyle.id",
-            voiceStyle: { $first: "$generations.voiceStyle" },
-            count: { $sum: 1 },
+    const safeLimit = Number.isFinite(Number(limit))
+      ? Math.min(Math.max(1, Math.floor(Number(limit))), 50)
+      : DEFAULT_RECOMMENDATION_LIMIT;
+    const cacheKey = cacheService.buildKey("recommendation", "popular", safeLimit);
+    return cacheService.getOrSet(cacheKey, POPULAR_STYLES_CACHE_TTL_MS, async () => {
+      try {
+        // 从数据库聚合最常用的语音风格
+        const aggregation = await RecommendationHistoryModel.aggregate([
+          { $unwind: "$generations" },
+          {
+            $group: {
+              _id: "$generations.voiceStyle.id",
+              voiceStyle: { $first: "$generations.voiceStyle" },
+              count: { $sum: 1 },
+            },
           },
-        },
-        { $sort: { count: -1 } },
-        { $limit: limit },
-      ]);
+          { $sort: { count: -1 } },
+          { $limit: safeLimit },
+        ]);
 
-      if (aggregation.length > 0) {
-        return aggregation.map((item) => item.voiceStyle);
+        if (aggregation.length > 0) {
+          return aggregation.map((item) => item.voiceStyle as VoiceStyle);
+        }
+      } catch (error) {
+        logger.error("[RecommendationService] 获取热门风格失败:", error);
       }
-
-      // 如果没有数据，返回默认热门风格
-      return DEFAULT_POPULAR_STYLES.slice(0, limit);
-    } catch (error) {
-      logger.error("[RecommendationService] 获取热门风格失败:", error);
-      return DEFAULT_POPULAR_STYLES.slice(0, limit);
-    }
+      // 没有数据或聚合失败：返回默认热门风格（不进缓存失败分支，getOrSet 会缓存该结果）
+      return DEFAULT_POPULAR_STYLES.slice(0, safeLimit);
+    });
   }
 
   /**
@@ -219,6 +252,11 @@ export class RecommendationService {
     textContent: string = "",
     voiceStyle?: VoiceStyle,
   ): Promise<void> {
+    // RC-6：拒绝任意字符串当风格 id 落库。
+    const safeStyleId = this.normalizeStyleId(styleId);
+    if (!safeStyleId) {
+      throw new Error("无效的语音风格 ID");
+    }
     try {
       const now = new Date();
       const record: GenerationRecord = {
@@ -228,26 +266,115 @@ export class RecommendationService {
         textLength: textContent.length,
         contentType: this.detectContentType(textContent),
         language: this.detectLanguage(textContent),
-        voiceStyle: voiceStyle || this.findStyleById(styleId),
+        voiceStyle: voiceStyle || this.findStyleById(safeStyleId),
         duration: 0, // 实际生成后更新
       };
 
-      // 更新或创建用户历史记录
+      // 更新或创建用户历史记录。$slice 从尾部保留最近 MAX_GENERATIONS 条（RC-1）。
       await RecommendationHistoryModel.findOneAndUpdate(
         { userId },
         {
-          $push: { generations: record },
+          $push: { generations: { $each: [record], $slice: -MAX_GENERATIONS } },
           $inc: { totalCount: 1 },
           $set: { lastUpdated: now },
         },
         { upsert: true, returnDocument: "after" },
       );
 
-      logger.info(`[RecommendationService] 记录用户 ${userId} 的选择: ${styleId}`);
+      await this.invalidateUserCache(userId);
+      logger.info(`[RecommendationService] 记录用户 ${userId} 的选择: ${safeStyleId}`);
     } catch (error) {
       logger.error("[RecommendationService] 记录选择失败:", error);
       throw error;
     }
+  }
+
+  /** RC-2：记录显式反馈（喜欢/不喜欢/不感兴趣），同一风格重复提交覆盖为最新态度。 */
+  async recordFeedback(
+    userId: string,
+    styleId: string,
+    feedback: string,
+    comment?: string,
+  ): Promise<{ styleId: string; feedback: RecommendationFeedbackKind }> {
+    const safeStyleId = this.normalizeStyleId(styleId);
+    if (!safeStyleId) throw new Error("无效的语音风格 ID");
+    if (!RECOMMENDATION_FEEDBACK_KINDS.includes(feedback as RecommendationFeedbackKind)) {
+      throw new Error("无效的反馈类型");
+    }
+    const kind = feedback as RecommendationFeedbackKind;
+    await RecommendationFeedbackModel.findOneAndUpdate(
+      { userId, styleId: safeStyleId },
+      {
+        $set: { feedback: kind, comment: typeof comment === "string" ? comment.slice(0, 500) : "" },
+      },
+      { upsert: true, returnDocument: "after" },
+    ).exec();
+    await this.invalidateUserCache(userId);
+    return { styleId: safeStyleId, feedback: kind };
+  }
+
+  /** RC-2：读取用户自己的反馈，供「我的偏好」页面回显。 */
+  async listFeedback(userId: string): Promise<
+    Array<{ styleId: string; feedback: RecommendationFeedbackKind; comment: string; updatedAt: string | null }>
+  > {
+    const docs = await RecommendationFeedbackModel.find({ userId }).sort({ updatedAt: -1 }).limit(500).lean();
+    return docs.map((doc: any) => ({
+      styleId: doc.styleId,
+      feedback: doc.feedback as RecommendationFeedbackKind,
+      comment: doc.comment || "",
+      updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+    }));
+  }
+
+  /** RC-7：管理端只读分析（含个人标识的原始历史不外泄，只回聚合）。 */
+  async getAdminAnalytics(): Promise<{
+    totalUsers: number;
+    totalGenerations: number;
+    feedback: { like: number; dislike: number; notInterested: number; total: number };
+    topStyles: Array<{ styleId: string; total: number }>;
+    topLanguages: Array<{ language: string; total: number }>;
+  }> {
+    // as any：mongoose 的 aggregate pipeline 类型极窄，$group/$facet 组合会误报；
+    // 聚合结果的形状由下方取值处兜底，不在类型层做体操。
+    const [historyStats, feedbackByKind, topStyles, topLanguages] = await Promise.all([
+      RecommendationHistoryModel.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalUsers: { $sum: 1 },
+            totalGenerations: { $sum: { $ifNull: ["$totalCount", 0] } },
+          },
+        },
+      ] as any),
+      RecommendationFeedbackModel.aggregate([{ $group: { _id: "$feedback", total: { $sum: 1 } } }] as any),
+      RecommendationHistoryModel.aggregate([
+        { $unwind: "$generations" },
+        { $group: { _id: "$generations.voiceStyle.id", total: { $sum: 1 } } },
+        { $sort: { total: -1 } },
+        { $limit: 10 },
+      ] as any),
+      RecommendationHistoryModel.aggregate([
+        { $unwind: "$generations" },
+        { $group: { _id: "$generations.language", total: { $sum: 1 } } },
+        { $sort: { total: -1 } },
+        { $limit: 10 },
+      ] as any),
+    ]);
+
+    const kindCount = (kind: string) =>
+      feedbackByKind.find((row: any) => row._id === kind)?.total ?? 0;
+    return {
+      totalUsers: historyStats[0]?.totalUsers ?? 0,
+      totalGenerations: historyStats[0]?.totalGenerations ?? 0,
+      feedback: {
+        like: kindCount("like"),
+        dislike: kindCount("dislike"),
+        notInterested: kindCount("not_interested"),
+        total: feedbackByKind.reduce((sum: number, row: any) => sum + (row.total ?? 0), 0),
+      },
+      topStyles: topStyles.map((row: any) => ({ styleId: row._id ?? "unknown", total: row.total })),
+      topLanguages: topLanguages.map((row: any) => ({ language: row._id ?? "unknown", total: row.total })),
+    };
   }
 
   /**
@@ -351,55 +478,109 @@ export class RecommendationService {
    */
   private analyzeHistoryForRecommendations(
     generations: GenerationRecord[],
-    disabledCategories: string[],
+    settings: RecommendationSettings | null | undefined,
+    excludedStyleIds: Set<string>,
+    likedStyleIds: Set<string>,
     limit: number,
   ): Recommendation[] {
     // 统计语音风格使用频率
     const styleFrequency = new Map<string, { style: VoiceStyle; count: number }>();
 
     for (const gen of generations) {
-      const styleId = gen.voiceStyle.id;
-      const existing = styleFrequency.get(styleId);
+      const style = gen?.voiceStyle;
+      if (!style?.id) continue;
+      const existing = styleFrequency.get(style.id);
       if (existing) {
         existing.count++;
       } else {
-        styleFrequency.set(styleId, { style: gen.voiceStyle, count: 1 });
+        styleFrequency.set(style.id, { style, count: 1 });
       }
     }
 
-    // 按频率排序
-    const sortedStyles = Array.from(styleFrequency.values()).sort((a, b) => b.count - a.count);
+    // 排序：显式「喜欢」优先，其次按使用频次；同时排除负反馈与不符合偏好的风格。
+    const rankedStyles = Array.from(styleFrequency.values())
+      .filter((item) => !excludedStyleIds.has(item.style.id) && this.isStyleAllowed(item.style, settings))
+      .sort((a, b) => {
+        const likeDelta = Number(likedStyleIds.has(b.style.id)) - Number(likedStyleIds.has(a.style.id));
+        if (likeDelta !== 0) return likeDelta;
+        return b.count - a.count;
+      });
 
-    // 过滤禁用的类别
-    const filteredStyles = sortedStyles.filter((item) => !disabledCategories.includes(item.style.emotionalTone));
-
-    // 生成推荐
-    const recommendations: Recommendation[] = filteredStyles.slice(0, limit).map((item, index) => ({
+    const recommendations: Recommendation[] = rankedStyles.slice(0, limit).map((item, index) => ({
       voiceStyle: item.style,
       similarityScore: Math.max(0.5, 1 - index * 0.1),
-      reason: `基于您的使用历史（使用${item.count}次）`,
+      reason: likedStyleIds.has(item.style.id) ? "您标记过喜欢" : `基于您的使用历史（使用${item.count}次）`,
       sampleAudioUrl: `/samples/${item.style.id}.mp3`,
     }));
 
     // 如果推荐不足，补充热门风格
     if (recommendations.length < limit) {
-      const remaining = limit - recommendations.length;
       const existingIds = new Set(recommendations.map((r) => r.voiceStyle.id));
-      const additionalStyles = DEFAULT_POPULAR_STYLES.filter(
-        (s) => !existingIds.has(s.id) && !disabledCategories.includes(s.emotionalTone),
-      ).slice(0, remaining);
-
-      for (const style of additionalStyles) {
-        recommendations.push({
-          voiceStyle: style,
-          similarityScore: 0.4,
-          reason: "社区热门推荐",
-          sampleAudioUrl: `/samples/${style.id}.mp3`,
-        });
-      }
+      const excluded = new Set<string>([...excludedStyleIds, ...existingIds]);
+      recommendations.push(
+        ...this.buildPopularRecommendations(
+          DEFAULT_POPULAR_STYLES,
+          excluded,
+          likedStyleIds,
+          settings,
+          limit - recommendations.length,
+        ),
+      );
     }
 
     return recommendations;
+  }
+
+  /** 热门候选池 → 推荐列表：去重、排除负反馈、套用偏好白名单。 */
+  private buildPopularRecommendations(
+    styles: VoiceStyle[],
+    excludedStyleIds: Set<string>,
+    likedStyleIds: Set<string>,
+    settings: RecommendationSettings | null | undefined,
+    limit: number,
+  ): Recommendation[] {
+    const result: Recommendation[] = [];
+    const seen = new Set<string>();
+    const candidates = [...styles, ...DEFAULT_POPULAR_STYLES];
+    for (const style of candidates) {
+      if (result.length >= limit) break;
+      if (!style?.id || excludedStyleIds.has(style.id) || seen.has(style.id)) continue;
+      if (!this.isStyleAllowed(style, settings)) continue;
+      seen.add(style.id);
+      const liked = likedStyleIds.has(style.id);
+      result.push({
+        voiceStyle: style,
+        similarityScore: liked ? 0.9 : 0.5,
+        reason: liked ? "您标记过喜欢" : "社区热门推荐",
+        sampleAudioUrl: `/samples/${style.id}.mp3`,
+      });
+    }
+    return result;
+  }
+
+  /** RC-5：让 recommendationSettings 的四项真正生效（白名单优先于黑名单）。 */
+  private isStyleAllowed(style: VoiceStyle, settings: RecommendationSettings | null | undefined): boolean {
+    if (!settings) return true;
+    const disabled = settings.disabledCategories || [];
+    const enabled = settings.enabledCategories || [];
+    const languages = settings.preferredLanguages || [];
+    const voices = settings.preferredVoices || [];
+    if (disabled.includes(style.emotionalTone)) return false;
+    if (enabled.length > 0 && !enabled.includes(style.emotionalTone)) return false;
+    if (languages.length > 0 && !languages.includes(style.language)) return false;
+    if (voices.length > 0 && !voices.includes(style.voice)) return false;
+    return true;
+  }
+
+  private normalizeStyleId(styleId: unknown): string | null {
+    if (typeof styleId !== "string") return null;
+    const trimmed = styleId.trim();
+    if (!STYLE_ID_PATTERN.test(trimmed)) return null;
+    return trimmed;
+  }
+
+  private async invalidateUserCache(userId: string): Promise<void> {
+    await cacheService.delByPrefix(cacheService.buildKey("recommendation", "user", userId));
   }
 
   /**
@@ -430,6 +611,8 @@ export class RecommendationService {
    * 检测文本语言
    */
   private detectLanguage(text: string): string {
+    // RC-4：空文本时 text.length 为 0，比值会变成 NaN 并静默落到 en-US。
+    if (!text || text.length === 0) return "zh-CN";
     // 简单的语言检测：检查中文字符比例
     const chineseChars = text.match(/[\u4e00-\u9fa5]/g) || [];
     const chineseRatio = chineseChars.length / text.length;

@@ -3,9 +3,33 @@ import path from "node:path";
 import dayjs from "dayjs";
 import { Resend } from "resend";
 import type { EmailRuntimeConfig } from "../config/runtimeConfigDefaults";
+import { filterSuppressedEmails, normalizeEmail } from "./emailSuppressionService";
 import { logger } from "./logger";
 import { mongoose } from "./mongoService";
 import { RuntimeConfigService } from "./runtimeConfigService";
+
+/**
+ * EM-4: 发送前过滤抑制名单（退信 / 投诉 / 退订）。
+ * 返回 ok=false 表示所有收件人都被抑制——调用方应直接拒发，而不是发一封空收件人的请求。
+ */
+async function resolveDeliverableRecipients(
+  rawTo: unknown,
+): Promise<{ ok: true; recipients: string[]; skipped: string[] } | { ok: false; error: string }> {
+  const requested = Array.isArray(rawTo)
+    ? rawTo.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  if (requested.length === 0) return { ok: false, error: "收件人不能为空" };
+
+  const { suppressed } = await filterSuppressedEmails(requested);
+  if (suppressed.length === 0) return { ok: true, recipients: requested, skipped: [] };
+
+  const suppressedSet = new Set(suppressed);
+  const recipients = requested.filter((email) => !suppressedSet.has(normalizeEmail(email)));
+  if (recipients.length === 0) {
+    return { ok: false, error: "收件地址已在退订/退信抑制名单中，已阻止发送" };
+  }
+  return { ok: true, recipients, skipped: suppressed };
+}
 
 // MongoDB 邮件配额 Schema
 const EmailQuotaSchema = new mongoose.Schema(
@@ -588,6 +612,14 @@ export class EmailService {
       return { success: false, error: availabilityError };
     }
 
+    const deliverable = await resolveDeliverableRecipients(emailData.to);
+    if (!deliverable.ok) {
+      return { success: false, error: deliverable.error };
+    }
+    if (deliverable.skipped.length > 0) {
+      logger.warn("部分收件地址在抑制名单中，已跳过", { skipped: deliverable.skipped });
+    }
+
     try {
       const domainMap = buildDomainApiKeyMap();
       if (!domainMap[domain]) {
@@ -602,14 +634,14 @@ export class EmailService {
 
       logger.log("开始发送邮件", {
         from: emailData.from,
-        to: emailData.to,
+        to: deliverable.recipients,
         subject: emailData.subject,
         hasAttachments: !!normalizedAttachments?.length,
       });
 
       const { data, error } = await resend.emails.send({
         from: emailData.from,
-        to: emailData.to,
+        to: deliverable.recipients,
         subject: emailData.subject,
         html: emailData.html,
         text: emailData.text,
@@ -633,7 +665,7 @@ export class EmailService {
       logger.log("邮件发送成功", {
         messageId: data?.id,
         from: emailData.from,
-        to: emailData.to,
+        to: deliverable.recipients,
         subject: emailData.subject,
       });
 
@@ -666,6 +698,25 @@ export class EmailService {
     if (safeMessages.length === 0) return { success: false, error: "消息列表不能为空" };
     if (safeMessages.length > 100) return { success: false, error: "单次最多批量发送100封" };
 
+    // EM-4: 逐条过滤抑制名单；整条收件人全被抑制则丢弃该条，而不是发空收件人。
+    const deliverableMessages: typeof safeMessages = [];
+    let suppressedCount = 0;
+    for (const message of safeMessages) {
+      const deliverable = await resolveDeliverableRecipients(message.to);
+      if (!deliverable.ok) {
+        suppressedCount += 1;
+        continue;
+      }
+      suppressedCount += deliverable.skipped.length;
+      deliverableMessages.push({ ...message, to: deliverable.recipients });
+    }
+    if (suppressedCount > 0) {
+      logger.warn("批量发送中部分收件地址被抑制", { suppressedCount, remaining: deliverableMessages.length });
+    }
+    if (deliverableMessages.length === 0) {
+      return { success: false, error: "收件地址均已在退订/退信抑制名单中，已阻止发送" };
+    }
+
     const domainMap = buildDomainApiKeyMap();
     if (!domainMap[domain]) {
       return {
@@ -676,12 +727,12 @@ export class EmailService {
 
     try {
       const resend = getResendInstanceByDomain(domain);
-      const hasAttachments = safeMessages.some((message) => (message.attachments || []).length > 0);
+      const hasAttachments = deliverableMessages.some((message) => (message.attachments || []).length > 0);
       if (hasAttachments) {
         return { success: false, error: "批量发送暂不支持附件" };
       }
 
-      const batch = safeMessages.map((message) => ({
+      const batch = deliverableMessages.map((message) => ({
         from: batchEmailData.from,
         to: message.to,
         subject: message.subject,
@@ -700,7 +751,7 @@ export class EmailService {
       const ids = Array.isArray(data) ? data.map((item: any) => item?.id).filter(Boolean) : undefined;
       logger.log("批量邮件发送成功", {
         from: batchEmailData.from,
-        count: safeMessages.length,
+        count: deliverableMessages.length,
         ids,
       });
       return { success: true, data, ids };

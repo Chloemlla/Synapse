@@ -57,6 +57,7 @@ export const ADMIN_MODULE_LOADERS = {
   fbiwanted: () => import('@/components/FBIWantedManager'),
   webhookevents: () => import('@/components/WebhookEventsManager'),
   'data-collection': () => import('@/components/DataCollectionManager'),
+  integrations: () => import('@/components/admin/IntegrationsHealthPanel'),
   'github-billing-cache': () => import('@/components/GitHubBillingCacheManager'),
   'ip-ban': () => import('@/components/IPBanManager'),
   fingerprint: () => import('@/components/FingerprintManager'),

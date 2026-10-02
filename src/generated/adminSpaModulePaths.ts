@@ -30,6 +30,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/fingerprint",
   "/admin/github-billing-cache",
   "/admin/humancheck",
+  "/admin/integrations",
   "/admin/ip-ban",
   "/admin/ip-risk-logs",
   "/admin/librechat",

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import { RegistrationInviteModel, type RegistrationInviteDoc } from "../models/registrationInviteModel";
 import { RuntimeConfigService } from "./runtimeConfigService";
 
@@ -102,6 +103,154 @@ function toSummary(invite: RegistrationInviteDoc & { _id?: any }): RegistrationI
 export async function listRegistrationInvites(): Promise<RegistrationInviteSummary[]> {
   const invites = await RegistrationInviteModel.find({}).sort({ createdAt: -1 }).lean(false).exec();
   return invites.map((invite) => toSummary(invite as any));
+}
+
+export interface RegistrationInviteStats {
+  total: number;
+  active: number;
+  expired: number;
+  exhausted: number;
+  totalUses: number;
+  remainingUses: number;
+  topInviters: Array<{ username: string; created: number; uses: number }>;
+  topCodes: Array<{ code: string; usedCount: number; maxUses: number; active: boolean }>;
+  recentUses: Array<{ code: string; username: string; email: string; usedAt: string }>;
+  trend: Array<{ date: string; uses: number }>;
+}
+
+/**
+ * IN-3 / IN-5：邀请码使用概览。
+ * 「已过期」与「已用尽」分开统计：前者需要续期或新建，后者只是用量到了。
+ */
+export async function getRegistrationInviteStats(): Promise<RegistrationInviteStats> {
+  const now = new Date();
+  const since30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [facet] = await RegistrationInviteModel.aggregate([
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        "$active",
+                        { $or: [{ $eq: ["$expiresAt", null] }, { $gt: ["$expiresAt", now] }] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              expired: { $sum: { $cond: [{ $and: [{ $ne: ["$expiresAt", null] }, { $lte: ["$expiresAt", now] }] }, 1, 0] } },
+              exhausted: { $sum: { $cond: [{ $gte: ["$usedCount", "$maxUses"] }, 1, 0] } },
+              totalUses: { $sum: { $ifNull: ["$usedCount", 0] } },
+              totalCapacity: { $sum: { $ifNull: ["$maxUses", 0] } },
+            },
+          },
+        ],
+        topInviters: [
+          {
+            $group: {
+              _id: { $ifNull: ["$createdByUsername", "未知"] },
+              created: { $sum: 1 },
+              uses: { $sum: { $ifNull: ["$usedCount", 0] } },
+            },
+          },
+          { $sort: { uses: -1, created: -1 } },
+          { $limit: 10 },
+        ],
+        topCodes: [
+          { $sort: { usedCount: -1 } },
+          { $limit: 10 },
+          { $project: { _id: 0, code: 1, usedCount: 1, maxUses: 1, active: 1 } },
+        ],
+        recentUses: [
+          { $unwind: "$usedBy" },
+          { $sort: { "usedBy.usedAt": -1 } },
+          { $limit: 20 },
+          {
+            $project: {
+              _id: 0,
+              code: 1,
+              username: "$usedBy.username",
+              email: "$usedBy.email",
+              usedAt: "$usedBy.usedAt",
+            },
+          },
+        ],
+        trend: [
+          { $unwind: "$usedBy" },
+          { $match: { "usedBy.usedAt": { $gte: since30d } } },
+          { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$usedBy.usedAt" } }, uses: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ],
+      },
+    },
+  ] as any).exec();
+
+  const totals = facet?.totals?.[0] ?? {};
+  return {
+    total: totals.total ?? 0,
+    active: totals.active ?? 0,
+    expired: totals.expired ?? 0,
+    exhausted: totals.exhausted ?? 0,
+    totalUses: totals.totalUses ?? 0,
+    remainingUses: Math.max(0, (totals.totalCapacity ?? 0) - (totals.totalUses ?? 0)),
+    topInviters: (facet?.topInviters ?? []).map((row: any) => ({
+      username: row._id ?? "未知",
+      created: row.created ?? 0,
+      uses: row.uses ?? 0,
+    })),
+    topCodes: (facet?.topCodes ?? []).map((row: any) => ({
+      code: row.code,
+      usedCount: row.usedCount ?? 0,
+      maxUses: row.maxUses ?? 0,
+      active: Boolean(row.active),
+    })),
+    recentUses: (facet?.recentUses ?? []).map((row: any) => ({
+      code: row.code,
+      username: row.username || "",
+      email: row.email || "",
+      usedAt: row.usedAt ? new Date(row.usedAt).toISOString() : "",
+    })),
+    trend: (facet?.trend ?? []).map((row: any) => ({ date: row._id, uses: row.uses ?? 0 })),
+  };
+}
+
+/** IN-4：批量停用/启用，避免一次操作发 N 个请求。 */
+export async function bulkSetRegistrationInvitesActive(
+  ids: string[],
+  active: boolean,
+): Promise<{ matched: number; modified: number }> {
+  const safeIds = ids
+    .filter((id) => typeof id === "string" && id.trim() && mongoose.isValidObjectId(id))
+    .slice(0, 500);
+  if (safeIds.length === 0) throw new Error("未提供有效的邀请码 ID");
+  const result = await RegistrationInviteModel.updateMany(
+    { _id: { $in: safeIds } },
+    { $set: { active: Boolean(active) } },
+  ).exec();
+  return {
+    matched: result.matchedCount ?? 0,
+    modified: result.modifiedCount ?? 0,
+  };
+}
+
+/** IN-4：批量删除。 */
+export async function bulkDeleteRegistrationInvites(ids: string[]): Promise<{ deleted: number }> {
+  const safeIds = ids
+    .filter((id) => typeof id === "string" && id.trim() && mongoose.isValidObjectId(id))
+    .slice(0, 500);
+  if (safeIds.length === 0) throw new Error("未提供有效的邀请码 ID");
+  const result = await RegistrationInviteModel.deleteMany({ _id: { $in: safeIds } }).exec();
+  return { deleted: result.deletedCount ?? 0 };
 }
 
 export async function createRegistrationInvite(

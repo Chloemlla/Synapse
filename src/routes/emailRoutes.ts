@@ -55,6 +55,19 @@ const domainExemptionLimiter = createLimiter({
   routeName: "email.domain-exemption",
 });
 
+// EM-2: 退订端点必须是公开的（邮件里点进来的链接、以及 RFC 8058 一键退订 POST），
+// 所以它注册在下面的全局 adminAuthMiddleware 之前；鉴权靠 HMAC 签名的 token，不靠会话。
+const unsubscribeLimiter = createLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "请求过于频繁，请稍后再试",
+  routeName: "email.unsubscribe",
+});
+// codeql[js/missing-rate-limiting] per-endpoint limiter applies to both the GET link and the one-click POST
+router.get("/unsubscribe", unsubscribeLimiter, EmailController.unsubscribe);
+// codeql[js/missing-rate-limiting] per-endpoint limiter applies to both the GET link and the one-click POST
+router.post("/unsubscribe", unsubscribeLimiter, EmailController.unsubscribe);
+
 // G3-26: 不再前置全局 emailSendLimiter（否则各端点 40/min 的专用限额永远被 20/min 卡死）；
 // 发信端点各自挂 emailSendLimiter，读/校验端点挂各自 limiter。
 // codeql[js/missing-rate-limiting] per-endpoint limiters apply after auth by design (G3-26); a router-wide limiter was removed to avoid throttling per-endpoint 40/min caps
