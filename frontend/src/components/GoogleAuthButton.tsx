@@ -7,6 +7,7 @@ import type { User } from "../types/auth";
 import { queuePostRedirectNotification, useNotification } from "./Notification";
 import { cn } from "../utils/cn";
 import { getBackendErrorMessage } from "../utils/backendError";
+import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 import { authElevatedPanelClassName } from "./authStudioTheme";
 
 declare global {
@@ -142,6 +143,11 @@ const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
         const data = (await authResponse.json().catch(() => null)) as GoogleBindSessionResponse | null;
 
         if (!authResponse.ok) {
+          // raw fetch 不经过 api 拦截器：自己把失败响应交给申诉分类器。
+          // 封停账户后端返 403 + code: ACCOUNT_SUSPENDED，否则用户只看到一句错误提示、
+          // 拿不到申诉入口（线上报障就是这么来的）。
+          maybeEmitPenaltyAppealFromResponse(data, authResponse.status, "google-login");
+
           throw new Error(data?.error || "Google 登录失败");
         }
 

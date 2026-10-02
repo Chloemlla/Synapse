@@ -28,6 +28,7 @@ import {
   authWideFrameClassName,
   studioPageFont,
 } from "./authStudioTheme";
+import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 import { useNotification } from "./Notification";
 
 type Provider = "google" | "linuxdo";
@@ -141,6 +142,8 @@ const ProviderBindPage: React.FC = () => {
         const data = (await response.json().catch(() => null)) as SessionResponse | null;
 
         if (!response.ok || !data?.session) {
+          // raw fetch 不经过 api 拦截器：自己把失败响应交给申诉分类器。
+          maybeEmitPenaltyAppealFromResponse(data, response.status, "provider-bind-session");
           throw new Error(data?.error || "第三方登录绑定会话无效，请返回登录页重试。");
         }
 
@@ -237,6 +240,10 @@ const ProviderBindPage: React.FC = () => {
       const data = (await response.json().catch(() => null)) as ConfirmResponse | null;
 
       if (!response.ok || data?.status === "conflict") {
+        // 封停/冲突都可能是 raw fetch 的失败响应，先过一遍申诉分类器。
+        if (!response.ok) {
+          maybeEmitPenaltyAppealFromResponse(data, response.status, "provider-bind-confirm");
+        }
         throw new Error(data?.conflictReason || data?.error || "第三方登录绑定失败。");
       }
       if (!data?.token || !data?.user) {

@@ -2,6 +2,7 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { openDB } from 'idb';
 import getApiBaseUrl from '../../api';
 import { passkeyApi } from '../../api/passkey';
+import { maybeEmitPenaltyAppealFromResponse } from '../../utils/penaltyAppeal';
 import { studioDisplayFont, studioPageFont } from '../studioTheme';
 
 export type AuthProvider = 'local' | 'linuxdo' | 'google';
@@ -327,7 +328,11 @@ export const bindGoogleAccount = async (
   });
 
   const result = await res.json();
-  if (!res.ok) throw new Error(result.error || 'Google 绑定失败');
+  if (!res.ok) {
+    // raw fetch 不经过 api 拦截器：封停账户要在这里弹申诉入口。
+    maybeEmitPenaltyAppealFromResponse(result, res.status, 'google-bind');
+    throw new Error(result.error || 'Google 绑定失败');
+  }
   return result;
 };
 

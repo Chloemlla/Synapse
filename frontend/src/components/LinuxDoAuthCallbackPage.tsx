@@ -15,6 +15,7 @@ import {
   authSecondaryButtonClassName,
   authTitleClassName,
 } from "./authStudioTheme";
+import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 
 function buildSynapseAndroidDeepLink(params: URLSearchParams): string {
   const deepLink = new URL("synapse://linuxdo-callback");
@@ -158,6 +159,8 @@ export const LinuxDoAuthCallbackPage: React.FC = () => {
 
       const data = await response.json();
       if (!response.ok) {
+        // raw fetch 不经过 api 拦截器：封停账户要在这里弹申诉入口。
+        maybeEmitPenaltyAppealFromResponse(data, response.status, "linuxdo-exchange");
         throw new Error(data?.error || "Linux.do 登录失败");
       }
 

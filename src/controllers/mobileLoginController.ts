@@ -15,6 +15,10 @@ import {
 import { isIntegrityActive, issueIntegrityNonce } from "../services/mobileIntegrityService";
 import { getClientIP } from "../utils/ipUtils";
 import { getAuthSessionMetadata } from "../services/authSessionService";
+import {
+  buildAccountSuspendedBody,
+  isAccountSuspendedFailure,
+} from "../services/providerAuthErrors";
 import logger from "../utils/logger";
 import type { User } from "../utils/userStorage";
 
@@ -42,6 +46,11 @@ function errorStatus(message: string): number {
  */
 function respondError(res: Response, error: unknown, fallbackMessage: string) {
   const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  // 封停账户走 web 端同一契约（403 + ACCOUNT_SUSPENDED + supportEmail）：
+  // Android 客户端与前端申诉入口都靠 `code` 判定，不再只给一句文案。
+  if (isAccountSuspendedFailure(error)) {
+    return res.status(403).json(buildAccountSuspendedBody(message));
+  }
   if (error instanceof MobileTokenError) {
     const body: Record<string, unknown> = { success: false, error: message, errorCode: error.errorCode };
     if (error.retryAfterSeconds !== undefined) {

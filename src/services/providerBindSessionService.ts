@@ -10,6 +10,7 @@ import {
 import logger from "../utils/logger";
 import { type User, UserStorage } from "../utils/userStorage";
 import { issueTrackedLoginToken, type AuthSessionMetadata } from "./authSessionService";
+import { AccountSuspendedError } from "./providerAuthErrors";
 
 const BIND_SESSION_TTL_MS = 5 * 60 * 1000;
 // G2-19: 容量上限，防内存无限增长。
@@ -158,7 +159,8 @@ export async function completeProviderLoginForBoundIdentity(params: {
   sessionMetadata?: AuthSessionMetadata;
 }): Promise<ProviderLoginPayload> {
   if ((params.user as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停");
+    // 封停专用类型：控制器映射成 403 + ACCOUNT_SUSPENDED（与密码登录同一契约）。
+    throw new AccountSuspendedError();
   }
 
   await upsertIdentityForUser(params.user, params.profile);
@@ -200,7 +202,7 @@ export async function confirmProviderBindSession(params: {
     throw new Error("用户名/邮箱或密码错误");
   }
   if ((user as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停");
+    throw new AccountSuspendedError();
   }
 
   const bindResult = await bindProviderIdentityToUser({

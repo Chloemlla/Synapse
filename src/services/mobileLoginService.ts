@@ -15,6 +15,7 @@ import {
 } from "./authSessionService";
 import { type User, UserStorage } from "../utils/userStorage";
 import logger from "../utils/logger";
+import { AccountSuspendedError } from "./providerAuthErrors";
 import {
   downgradedTtlMs,
   logIntegrityVerdict,
@@ -168,7 +169,7 @@ async function loadActiveUser(userId: string): Promise<User> {
     throw new Error("用户不存在");
   }
   if ((user as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停");
+    throw new AccountSuspendedError();
   }
   return user;
 }
@@ -312,7 +313,7 @@ export async function issueClientLoginToken(params: {
   integrityNonce?: string;
 }) {
   if ((params.user as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停");
+    throw new AccountSuspendedError();
   }
 
   const verdict = await verifyClientIntegrity({

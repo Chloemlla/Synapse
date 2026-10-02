@@ -4,6 +4,7 @@ import { createMergePreviewSession, getPendingMergeSessionForUser, type AccountM
 import { AuditLogService } from "./auditLogService";
 import logger from "../utils/logger";
 import { type User, UserStorage } from "../utils/userStorage";
+import { AccountSuspendedError } from "./providerAuthErrors";
 
 export type LinkedAccountStatus = "bound" | "unbound" | "merge_required" | "conflict";
 
@@ -395,7 +396,7 @@ export async function bindProviderIdentityToUser(params: {
   const targetUser = params.targetUser;
 
   if ((targetUser as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停，不能绑定第三方账号");
+    throw new AccountSuspendedError("账户已被封停，不能绑定第三方账号");
   }
 
   await backfillLegacyLinuxDoIdentityForUser(targetUser);

@@ -144,6 +144,29 @@ export function onPenaltyAppealRequired(
   return () => window.removeEventListener(PENALTY_APPEAL_EVENT, wrapped);
 }
 
+/**
+ * 把一次 raw `fetch` 的失败响应交给申诉分类器并派发事件。
+ *
+ * 走 axios 的调用点由 `api.ts` 的响应拦截器统一处理（仅 403 时调
+ * `maybeEmitPenaltyAppealFromError`）；而第三方登录/绑定有几个前端调用点是 raw fetch，
+ * 拦截器看不见它们 —— 封停账户的 403 也就弹不出申诉入口。这些调用点在解析完
+ * 响应体、抛出错误之前调本函数。
+ *
+ * 对非 403 的普通业务错误是空操作（分类器会在拿不到封停/封禁特征时返回 null）。
+ */
+export function maybeEmitPenaltyAppealFromResponse(
+  payload: unknown,
+  status: number,
+  source = 'fetch',
+): PenaltyAppealPayload | null {
+  const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  const errorText =
+    asText(data?.error) || asText(data?.message) || asText(data?.errorMessage);
+  const result = classifyPenaltyAppeal(data, { status, errorText, source });
+  if (result) emitPenaltyAppealRequired(result);
+  return result;
+}
+
 export function maybeEmitPenaltyAppealFromError(
   error: unknown,
   source = 'api',

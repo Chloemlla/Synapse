@@ -7,6 +7,7 @@ import { type User, UserStorage } from "../utils/userStorage";
 import { findUserByProviderIdentity, upsertIdentityForUser } from "./accountIdentityService";
 import { completeProviderLoginForBoundIdentity, issueProviderBindSession } from "./providerBindSessionService";
 import { sendProviderGeneratedPasswordEmail } from "./providerCredentialEmailService";
+import { AccountSuspendedError } from "./providerAuthErrors";
 
 export interface GoogleAuthConfigSummary {
   enabled: boolean;
@@ -163,7 +164,9 @@ async function upsertGoogleUser(profile: GoogleProfile): Promise<{
   const linkedIdentityUser = await findUserByProviderIdentity("google", profile.id);
   if (linkedIdentityUser) {
     if ((linkedIdentityUser as any).accountStatus === "suspended") {
-      throw new Error("账户已被封停");
+      // 抛封停专用类型：控制器据此返回 403 + ACCOUNT_SUSPENDED（与密码登录同一契约），
+      // 而不是把它当通用 400 错误、前端也认不出该弹申诉入口。
+      throw new AccountSuspendedError();
     }
 
     const updatedLinkedUser = (await UserStorage.updateUser(linkedIdentityUser.id, {
@@ -261,7 +264,7 @@ export async function authenticateGoogleUser(params: {
   const profile = await verifyGoogleIdToken(params.idToken);
   const { user, isNewUser } = await upsertGoogleUser(profile);
   if ((user as any).accountStatus === "suspended") {
-    throw new Error("账户已被封停");
+    throw new AccountSuspendedError();
   }
 
   const finalizedUser = (await UserStorage.updateUser(user.id, {
