@@ -6,6 +6,7 @@ import { ticketApi, ITicket, ITicketSummary, TicketListMeta, TicketStats } from 
 import TicketListItem from "./ticket/TicketListItem";
 import TicketFilters, { EMPTY_TICKET_FILTER, type TicketFilterValue } from "./ticket/TicketFilters";
 import TicketStatsBar from "./ticket/TicketStatsBar";
+import TicketHeroBody, { type TicketPenaltyAppeal } from "./ticket/TicketHero";
 import TicketComposer from "./ticket/TicketComposer";
 import { OverLengthMailNotice, type OverLengthDraft } from "./ticket/OverLengthMailNotice";
 import TicketProcessingToast from "./ticket/TicketProcessingToast";
@@ -31,7 +32,7 @@ import {
 } from "react-icons/fi";
 import MarkdownRenderer, { type MarkdownReaderControls } from './MarkdownRenderer';
 import { AiErrorDetailsPanel } from './AiErrorDetailsPanel';
-import { PenaltyAppealActions, SUPPORT_EMAIL } from './PenaltyAppealActions';
+import { SUPPORT_EMAIL } from './PenaltyAppealActions';
 import { emitPenaltyAppealRequired, isTicketPermissionBanError } from '../utils/penaltyAppeal';
 import { cn } from '../utils/cn';
 import {
@@ -39,7 +40,6 @@ import {
   studioAccentBlobSkyClassName,
   studioBadgeClassName,
   studioDisplayFont,
-  studioEyebrowAccentPillClassName,
   studioEyebrowClassName,
   studioFieldClassName,
   studioGhostButtonClassName,
@@ -100,6 +100,27 @@ function compareTicketsByUpdatedDesc<T extends { updatedAt: string }>(a: T, b: T
   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
 }
 
+// 「专注模式」：桌面端收起顶部说明区，把整块纵向空间让给工单列表与会话。
+// 存 localStorage 是因为这是纯展示偏好，刷新/切页后应当保持一致；写入失败（隐私模式）只影响本次记忆。
+const FOCUS_MODE_STORAGE_KEY = "synapse.ticket.focusMode";
+
+function readFocusModePreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FOCUS_MODE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFocusModePreference(value: boolean): void {
+  try {
+    window.localStorage.setItem(FOCUS_MODE_STORAGE_KEY, value ? "1" : "0");
+  } catch {
+    // 忽略：偏好写不进去时只影响下次访问的默认展开状态。
+  }
+}
+
 
 const TicketSystem: React.FC = () => {
   const { user } = useAuth();
@@ -129,6 +150,15 @@ const TicketSystem: React.FC = () => {
   const [queryFilter, setQueryFilter] = useState<TicketFilterValue>({ ...EMPTY_TICKET_FILTER });
   const [isMobile, setIsMobile] = useState(false);
   const [showDetailOnMobile, setShowDetailOnMobile] = useState(false);
+  // 桌面端顶部说明区是否收起（详见 readFocusModePreference）。
+  const [focusMode, setFocusMode] = useState<boolean>(() => readFocusModePreference());
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((current) => {
+      const next = !current;
+      writeFocusModePreference(next);
+      return next;
+    });
+  }, []);
 
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -137,12 +167,7 @@ const TicketSystem: React.FC = () => {
   const [processingStep, setProcessingStep] = useState<TicketProcessStep | null>(null);
 
   const [streamingAiResponse, setStreamingAiResponse] = useState<{ ticketId: string, content: string } | null>(null);
-  const [penaltyAppeal, setPenaltyAppeal] = useState<{
-    kind: "ticket_moderation" | "ticket_permission_ban";
-    title: string;
-    reason: string;
-    details?: string;
-  } | null>(null);
+  const [penaltyAppeal, setPenaltyAppeal] = useState<TicketPenaltyAppeal | null>(null);
 
   // G12-21：提交/回复 in-flight 防护，双击只触发一次
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -717,101 +742,72 @@ const TicketSystem: React.FC = () => {
   };
 
   return (
-    <div className={studioPageClassName} style={{ fontFamily: studioPageFont }}>
-      <div className="mx-auto max-w-7xl min-w-0 space-y-5 sm:space-y-8">
+    <div
+      className={cn(
+        studioPageClassName,
+        // 桌面端占满工作台主窗：主窗高度 = 100svh - 外壳 header(3.5rem) - 主窗 py-6(3rem)。
+        // 原来写死 640px，1080p 上会在下方留出约 300px 空白，而列表只能看到三四行。
+        "md:flex md:h-[calc(100svh-8rem)] md:min-h-[34rem] md:flex-col md:py-0",
+      )}
+      style={{ fontFamily: studioPageFont }}
+    >
+      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-1 flex-col gap-4 md:min-h-0 md:gap-5">
         {/* Hero */}
         <AnimatePresence>
           {(!isMobile || !showDetailOnMobile) && (
             <motion.div
+              key="ticket-hero"
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.45 }}
-              className={cn("relative overflow-hidden", studioHeroCardClassName)}
+              className={cn(
+                "relative shrink-0 overflow-hidden transition-[padding] duration-200",
+                studioHeroCardClassName,
+                // 桌面端把顶部说明区压扁（sm:p-10 → p-6）；专注模式再收到 p-3 且只留一行。
+                // 1080p 上这两步合计把 90~150px 让给下方列表与会话。
+                // 注意：同变体下不能同时写 md:p-6 与 md:p-3（Tailwind 按 scale 排序，md:p-6 会赢），
+                // 所以这里用三元只留一个。
+                focusMode ? "md:p-3" : "md:p-6",
+              )}
             >
               <div className={cn(studioAccentBlobBlueClassName, "-right-12 top-0")} aria-hidden />
               <div className={cn(studioAccentBlobSkyClassName, "-left-10 bottom-0")} aria-hidden />
-              <div className="relative flex min-w-0 flex-col gap-5 md:flex-row md:items-end md:justify-between">
-                <div className="max-w-2xl min-w-0">
-                  <div className={studioEyebrowAccentPillClassName}>
-                    <FiMessageSquare />
-                    Synapse Support
-                  </div>
-                  <h1
-                    className="mt-4 text-[2rem] font-semibold leading-[1.05] text-slate-900 sm:text-5xl sm:leading-tight"
-                    style={{ fontFamily: studioDisplayFont }}
-                  >
-                    支持中心
-                    {unreadCount > 0 && (
-                      <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 align-middle text-xs font-semibold text-sky-700 sm:text-sm">
-                        {unreadCount} 条未读
-                      </span>
-                    )}
-                  </h1>
-                  <p className="mt-3 max-w-xl text-[13px] leading-6 text-slate-600 sm:text-base sm:leading-7">
-                    提交技术支持、功能反馈或投诉建议，所有工单都会经过 AI 审计并由人工跟进。
-                  </p>
-                  {penaltyAppeal && (
-                    <div className="mt-4 max-w-xl">
-                      <div className="mb-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-                        <div className="font-semibold">{penaltyAppeal.title}</div>
-                        <div className="mt-1 leading-6">{penaltyAppeal.reason}</div>
-                        {penaltyAppeal.details && (
-                          <div className="mt-2 whitespace-pre-line text-xs leading-5 text-rose-800/90">
-                            {penaltyAppeal.details}
-                          </div>
-                        )}
-                      </div>
-                      <PenaltyAppealActions
-                        kind={penaltyAppeal.kind}
-                        reason={penaltyAppeal.reason}
-                        details={penaltyAppeal.details}
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="hidden w-full md:block md:w-auto md:max-w-sm">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:rounded-2xl">
-                    <div className={cn(studioEyebrowClassName, "flex items-center gap-2")}>
-                      <FiInfo className="text-slate-500" />
-                      功能说明
-                    </div>
-                    <ul className="mt-3 space-y-2 text-[13px] leading-6 text-slate-600">
-                      <li className="flex items-start gap-2">
-                        <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                        <span>提交技术支持、功能反馈或投诉建议</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                        <span>实时查看客服回复并进行双向沟通</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                        <span>{isAdmin ? "管理全局工单，支持状态过滤与更新" : "管理个人工单历史，追踪处理进度"}</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
+
+              <TicketHeroBody
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                focusMode={focusMode}
+                onToggleFocusMode={toggleFocusMode}
+                penaltyAppeal={penaltyAppeal}
+              />
             </motion.div>
           )}
         </AnimatePresence>
 
         {isAdmin && (
-          <TicketStatsBar
-            stats={stats}
-            loading={loading}
-            onQuickFilter={(patch) => setAdminFilter(prev => ({ ...prev, ...patch }))}
-          />
+          <div className="shrink-0">
+            <TicketStatsBar
+              stats={stats}
+              loading={loading}
+              onQuickFilter={(patch) => setAdminFilter(prev => ({ ...prev, ...patch }))}
+            />
+          </div>
         )}
 
-        <div className="flex min-h-[min(480px,50dvh)] flex-col gap-4 md:h-[min(640px,calc(100svh-14rem))] md:min-h-0 md:flex-row md:gap-6">
+        {/* 桌面端：flex-1 + min-h-0 吃满剩余高度（不再写死 640px），手机仍用 min-height 滚动。 */}
+        <div className="flex min-h-[min(480px,55dvh)] flex-col gap-4 md:min-h-0 md:flex-1 md:flex-row md:gap-6">
           {/* 左侧列表 */}
           <AnimatePresence mode="wait">
             {(!isMobile || !showDetailOnMobile) && (
               <motion.div
                 key="list"
-                className={cn("md:w-96 w-full h-full flex flex-col overflow-hidden", studioPanelClassName, "p-0 sm:p-0")}
+                className={cn(
+                  // 宽屏把列表加宽：行内标题/预览少折行，同样的高度能看到更多工单。
+                  "w-full h-full flex flex-col overflow-hidden md:w-[21rem] lg:w-[23rem] xl:w-[25rem]",
+                  studioPanelClassName,
+                  "p-0 sm:p-0",
+                )}
                 initial={isMobile ? { opacity: 0, x: -20 } : { opacity: 0 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={isMobile ? { opacity: 0, x: -20 } : undefined}

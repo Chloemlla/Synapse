@@ -30,7 +30,7 @@ const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuick
     return (
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {Array.from({ length: 7 }).map((_, index) => (
-          <div key={index} className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />
+          <div key={index} className="h-14 animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />
         ))}
       </div>
     );
@@ -109,14 +109,15 @@ const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuick
           onClick={() => onQuickFilter(card.patch)}
           title={card.hint || `筛选：${card.label}`}
           className={cn(
-            'min-w-0 rounded-2xl border px-3 py-2.5 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
+            // 概览条常驻在列表上方，压缩 8~10px 高度就是列表多一行。
+            'min-w-0 rounded-2xl border px-3 py-2 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
             card.tone,
           )}
         >
           <span className={cn(studioEyebrowClassName, 'flex items-center gap-1 text-[10px] opacity-80')}>
             {icons[card.key]} {card.label}
           </span>
-          <span className="mt-1 block text-lg font-semibold leading-none">{card.value}</span>
+          <span className="mt-1 block text-base font-semibold leading-none">{card.value}</span>
           {card.hint ? <span className="mt-1 block truncate text-[10px] opacity-70">{card.hint}</span> : null}
         </button>
       ))}

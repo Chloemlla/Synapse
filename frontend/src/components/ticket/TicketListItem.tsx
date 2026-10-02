@@ -68,7 +68,8 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
         }
       }}
       className={cn(
-        'group cursor-pointer border-l-2 px-4 py-3 transition-all duration-200 sm:px-5 sm:py-4',
+        // 桌面端不再随 sm 增重行高：同样高度多显示 1~2 行工单（列表是可滚动区，行高直接决定信息密度）。
+        'group cursor-pointer border-l-2 px-4 py-3 transition-all duration-200 sm:px-5 sm:py-3.5',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400',
         selected ? 'border-slate-900 bg-slate-50' : 'border-transparent hover:bg-slate-50/60 active:bg-slate-100',
       )}
@@ -108,7 +109,7 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
           </div>
 
           {ticket.lastMessagePreview ? (
-            <p className="mb-1.5 line-clamp-2 text-[11px] leading-5 text-slate-500 sm:text-xs">
+            <p className="mb-1.5 line-clamp-2 text-[11px] leading-5 text-slate-500 sm:text-[11.5px]">
               {senderPrefix ? <span className="font-medium text-slate-400">{senderPrefix}：</span> : null}
               {ticket.lastMessagePreview}
             </p>
@@ -136,7 +137,7 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
           </div>
 
           {isAdmin && (
-            <div className={cn(studioEyebrowClassName, 'mt-2 flex items-center justify-between gap-1 text-[10px] text-slate-500')}>
+            <div className={cn(studioEyebrowClassName, 'mt-1.5 flex items-center justify-between gap-1 text-[10px] text-slate-500')}>
               <span className="inline-flex min-w-0 items-center gap-1">
                 <FiUser size={10} /> <span className="truncate">{ticket.username}</span>
               </span>
