@@ -30,6 +30,10 @@ import crypto from "node:crypto";
 import { getUserAuthById } from "../../services/userService";
 import { TOTPService } from "../../services/totpService";
 import { PasskeyService } from "../../services/passkeyService";
+import {
+  checkVerificationAttempts,
+  recordVerificationAttempt,
+} from "../../services/verificationAttemptGuard";
 import { registerProfileAvatarRoutes } from "./profile.avatar";
 import { registerProfileFingerprintRoutes } from "./profile.fingerprint";
 import { registerProfileIdentityRoutes } from "./profile.identity";
@@ -235,6 +239,25 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
         return res.status(400).json({ error: "当前账户未启用 TOTP" });
       }
 
+      // 建立安全会话是改密码 / 查看密钥 / 改双因素配置 / 解绑第三方的唯一闸门，
+      // 这里与登录二次验证**共用同一份额度**：过去此入口完全不计数，
+      // 等于把最强的爆破面留在权限最高的操作上（见 docs/audit-2026-10-02-security-feature-review.md SEC-03）。
+      const attemptStatus = await checkVerificationAttempts(dbUser.id);
+      if (!attemptStatus.allowed) {
+        const remainingMinutes = attemptStatus.lockedUntil
+          ? Math.max(1, Math.ceil((attemptStatus.lockedUntil - Date.now()) / 1000 / 60))
+          : 15;
+        logger.warn("[AdminRoutes] 安全会话验证尝试次数过多，已锁定", {
+          userId: dbUser.id,
+          lockedUntil: attemptStatus.lockedUntil,
+        });
+        return res.status(429).json({
+          error: `验证尝试次数过多，请${remainingMinutes}分钟后再试`,
+          code: "TWO_FACTOR_LOCKED",
+          lockedUntil: attemptStatus.lockedUntil,
+        });
+      }
+
       if (backupCode) {
         // 恢复码是 TOTP 的离线兑底：认证器丢了也必须能建立安全会话（否则双因素配置类操作被锁死）。
         // 校验/报废/通知与登录路径同一套：归一格式 → bcrypt 比对 → 原子报废用掉的那一枚。
@@ -244,9 +267,20 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
 
         const verifyResult = await TOTPService.verifyBackupCode(backupCode, dbUser.backupCodes);
         if (!verifyResult.matched) {
-          logger.warn("[AdminRoutes] 恢复码验证失败（建立安全会话）", { userId: dbUser.id, method });
-          return res.status(401).json({ error: "恢复码错误" });
+          await recordVerificationAttempt(dbUser.id, false);
+          const afterFailure = await checkVerificationAttempts(dbUser.id);
+          logger.warn("[AdminRoutes] 恢复码验证失败（建立安全会话）", {
+            userId: dbUser.id,
+            method,
+            remainingAttempts: afterFailure.remainingAttempts,
+          });
+          return res.status(401).json({
+            error: "恢复码错误",
+            remainingAttempts: afterFailure.remainingAttempts,
+            lockedUntil: afterFailure.allowed ? undefined : afterFailure.lockedUntil,
+          });
         }
+        await recordVerificationAttempt(dbUser.id, true);
 
         const remainingCodes = await TOTPService.normalizeBackupCodesForStorage(verifyResult.remainingHashes);
         await UserStorage.updateUser(dbUser.id, { backupCodes: remainingCodes });
@@ -286,8 +320,15 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
         }
 
         if (!isValid) {
-          return res.status(401).json({ error: "TOTP 验证失败" });
+          await recordVerificationAttempt(dbUser.id, false);
+          const afterFailure = await checkVerificationAttempts(dbUser.id);
+          return res.status(401).json({
+            error: "TOTP 验证失败",
+            remainingAttempts: afterFailure.remainingAttempts,
+            lockedUntil: afterFailure.allowed ? undefined : afterFailure.lockedUntil,
+          });
         }
+        await recordVerificationAttempt(dbUser.id, true);
       }
     }
 

@@ -35,6 +35,7 @@ import {
   studioSecondaryButtonClassName,
 } from './studioTheme';
 
+import AdminSecurityPosturePanel from './user-management/AdminSecurityPosturePanel';
 import {
   ACCOUNT_STATUS_FILTER_OPTIONS,
   BULK_ACTION_OPTIONS,
@@ -69,6 +70,18 @@ import {
   type UserListTicketFilter,
   type UserListTranslationFilter,
 } from './user-management/UserFormControls';
+
+const SECURITY_RISK_BADGE_CLASS: Record<'good' | 'watch' | 'risk', string> = {
+  good: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  watch: 'border-amber-200 bg-amber-50 text-amber-700',
+  risk: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
+const SECURITY_RISK_LABEL: Record<'good' | 'watch' | 'risk', string> = {
+  good: '良好',
+  watch: '待加固',
+  risk: '高风险',
+};
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (typeof error === 'object' && error !== null) {
@@ -113,6 +126,26 @@ interface User {
   linuxdoAvatarUrl?: string;
   requireFingerprint?: boolean;
   requireFingerprintAt?: number;
+  // 服务端在用户列表每行已经算好安全评分 / 建议（services/accountSecuritySummaryService.ts），
+  // 之前前端没有消费，这份逐行计算被白白丢弃；安全态势面板与列表徽标现在直接消费它。
+  securitySummary?: {
+    score: number;
+    riskLevel: 'good' | 'watch' | 'risk';
+    mfaEnabled: boolean;
+    totpEnabled: boolean;
+    passkeyEnabled: boolean;
+    linkedProviderCount: number;
+    fingerprintCount: number;
+    lastLoginIp: string | null;
+    accountStatus: 'active' | 'suspended';
+    recommendations: Array<{
+      id: string;
+      label: string;
+      detail: string;
+      severity: 'info' | 'warning' | 'critical';
+      action?: string;
+    }>;
+  };
   fingerprintRequestDismissedOnce?: boolean;
   fingerprintRequestDismissedAt?: number;
   fingerprints?: FingerprintRecord[];
@@ -515,6 +548,20 @@ const UserManagement: React.FC = () => {
     setCollapsedSections(createDefaultCollapsedSections());
     setShowForm(true);
   }, []);
+
+  /** 安全态势面板的快速筛选：与「筛选」按钮同一语义（待应用值 + 立即生效值一起改），并回到第 1 页。 */
+  const applyQuickFilter = useCallback(
+    (patch: {
+      security?: UserListSecurityFilter;
+      accountStatus?: UserListAccountStatusFilter;
+    }) => {
+      setSelectedUserIds([]);
+      setPendingFilters(prev => ({ ...prev, ...patch }));
+      setActiveFilters(prev => ({ ...prev, ...patch }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    },
+    [],
+  );
   const openFp = useCallback(async (u: User) => {
     setFpUser(u);
     setShowFpModal(true);
@@ -633,6 +680,17 @@ const UserManagement: React.FC = () => {
             </ul>
           </div>
         </InfoPanel>
+
+        {/* 安全态势：二次验证覆盖率 + 本页风险账号，可一键筛选 */}
+        <AdminSecurityPosturePanel
+          stats={stats}
+          users={users}
+          onQuickFilter={applyQuickFilter}
+          onOpenUser={(userId) => {
+            const target = users.find(item => item.id === userId);
+            if (target) openEdit(target);
+          }}
+        />
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
@@ -965,6 +1023,18 @@ const UserManagement: React.FC = () => {
                       <td className="px-2 sm:px-4 py-3 text-slate-600">{u.dailyUsage ?? 0}</td>
                       <td className="px-2 sm:px-4 py-3">
                         <div className="flex flex-col gap-1">
+                          {u.securitySummary && (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${SECURITY_RISK_BADGE_CLASS[u.securitySummary.riskLevel]}`}
+                              title={`安全评分 ${u.securitySummary.score} / 100${
+                                u.securitySummary.recommendations.length > 0
+                                  ? `：${u.securitySummary.recommendations.map((item) => item.label).join('、')}`
+                                  : ''
+                              }`}
+                            >
+                              {u.securitySummary.score} 分 · {SECURITY_RISK_LABEL[u.securitySummary.riskLevel]}
+                            </span>
+                          )}
                           {u.totpEnabled
                             ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">TOTP</span>
                             : null}
@@ -974,7 +1044,7 @@ const UserManagement: React.FC = () => {
                           {u.requireFingerprint
                             ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">需指纹</span>
                             : null}
-                          {!u.totpEnabled && !u.passkeyEnabled && !u.requireFingerprint && (
+                          {!u.totpEnabled && !u.passkeyEnabled && !u.requireFingerprint && !u.securitySummary && (
                             <span className="text-slate-400 text-xs">-</span>
                           )}
                         </div>

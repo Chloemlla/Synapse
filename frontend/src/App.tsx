@@ -733,7 +733,7 @@ const App: React.FC = () => {
         <Route path="/age-calculator" element={renderAnimatedRoute(<AgeCalculatorPage />)} />
         <Route path="/vt-ratios" element={renderAnimatedRoute(<VtRatioExplorer />)} />
         <Route path="/email-sender" element={renderAdminRoute(<SuperAdminGuard><EmailSender /></SuperAdminGuard>)} />
-        <Route path="/profile" element={renderProtectedRoute(<UserProfile />)} />
+        <Route path="/profile" element={renderProtectedRoute(<UserProfile onOpenSecuritySettings={openTOTPManager} />)} />
         <Route path="/outemail" element={renderAdminRoute(<OutEmail />)} />
         <Route path="/support" element={renderProtectedRoute(<TicketSystem />)} />
         <Route path="/modlist" element={renderAdminRoute(<ModListPage />)} />
@@ -768,7 +768,7 @@ const App: React.FC = () => {
         <Route path="*" element={renderAnimatedRoute(<NotFoundPage path={location.pathname} />)} />
       </>
     ),
-    [renderAdminRoute, renderAnimatedRoute, renderProtectedRoute, location.pathname],
+    [renderAdminRoute, renderAnimatedRoute, renderProtectedRoute, location.pathname, openTOTPManager],
   );
 
   // React 19 文档元数据：路由配置优化，避免每次重新创建

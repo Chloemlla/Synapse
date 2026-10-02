@@ -10,18 +10,20 @@ import {
   generateTOTPEnabledEmailHtml,
 } from "../templates/emailTemplates";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../services/authSessionService";
+import {
+  TWO_FACTOR_ATTEMPT_POLICY,
+  checkVerificationAttempts,
+  recordVerificationAttempt,
+} from "../services/verificationAttemptGuard";
 import { setAuthSessionCookie } from "../utils/authCookie";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 import { hasValidSecuritySession } from "../utils/securitySession";
 import { UserStorage } from "../utils/userStorage";
 
-// TOTP验证尝试次数限制
-const TOTP_ATTEMPT_LIMIT = 5;
-const TOTP_LOCKOUT_DURATION = 15 * 60 * 1000; // 15分钟
-
-// 存储TOTP验证尝试记录
-const totpAttempts = new Map<string, { count: number; lastAttempt: number; lockedUntil?: number }>();
+// TOTP验证尝试次数限制：参数与锁定时长收在 services/verificationAttemptGuard.ts，
+// 与建立安全会话的步骤验证（routes/admin/profile.ts）共用同一份额度。
+const TOTP_LOCKOUT_DURATION = TWO_FACTOR_ATTEMPT_POLICY.lockoutMs; // 15分钟
 
 export class TOTPController {
   private static validatePendingToken(rawPendingToken: unknown, userId: string): { valid: true } | { valid: false; status: number; error: string } {
@@ -44,60 +46,17 @@ export class TOTPController {
   }
 
   /**
-   * 检查TOTP验证尝试次数
+   * 检查TOTP验证尝试次数（锁定状态跨实例共享，见 services/verificationAttemptGuard.ts）。
    */
-  private static checkTOTPAttempts(userId: string): {
-    allowed: boolean;
-    remainingAttempts: number;
-    lockedUntil?: number;
-  } {
-    const attempts = totpAttempts.get(userId);
-
-    if (!attempts) {
-      return { allowed: true, remainingAttempts: TOTP_ATTEMPT_LIMIT };
-    }
-
-    // 检查是否在锁定期间
-    if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
-      return {
-        allowed: false,
-        remainingAttempts: 0,
-        lockedUntil: attempts.lockedUntil,
-      };
-    }
-
-    // 如果锁定时间已过，重置尝试次数
-    if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
-      totpAttempts.delete(userId);
-      return { allowed: true, remainingAttempts: TOTP_ATTEMPT_LIMIT };
-    }
-
-    const remainingAttempts = Math.max(0, TOTP_ATTEMPT_LIMIT - attempts.count);
-    return { allowed: remainingAttempts > 0, remainingAttempts };
+  private static checkTOTPAttempts(userId: string) {
+    return checkVerificationAttempts(userId);
   }
 
   /**
-   * 记录TOTP验证尝试
+   * 记录TOTP验证尝试（成功后清零，失败累加，达到上限写入锁定截止时间）。
    */
-  private static recordTOTPAttempt(userId: string, success: boolean): void {
-    const attempts = totpAttempts.get(userId) || { count: 0, lastAttempt: 0 };
-
-    if (success) {
-      // 验证成功，重置尝试次数
-      totpAttempts.delete(userId);
-    } else {
-      // 验证失败，增加尝试次数
-      attempts.count += 1;
-      attempts.lastAttempt = Date.now();
-
-      // 如果达到限制，设置锁定时间
-      if (attempts.count >= TOTP_ATTEMPT_LIMIT) {
-        attempts.lockedUntil = Date.now() + TOTP_LOCKOUT_DURATION;
-        logger.warn("TOTP验证尝试次数超限，账户被锁定:", { userId, lockoutDuration: TOTP_LOCKOUT_DURATION });
-      }
-
-      totpAttempts.set(userId, attempts);
-    }
+  private static recordTOTPAttempt(userId: string, success: boolean): Promise<void> {
+    return recordVerificationAttempt(userId, success);
   }
 
   /**
@@ -216,7 +175,7 @@ export class TOTPController {
       }
 
       // 检查TOTP验证尝试次数
-      const attemptCheck = TOTPController.checkTOTPAttempts(userId);
+      const attemptCheck = await TOTPController.checkTOTPAttempts(userId);
       if (!attemptCheck.allowed) {
         const remainingTime = Math.ceil((attemptCheck.lockedUntil! - Date.now()) / 1000 / 60);
         logger.warn("verifyAndEnable: 验证尝试次数过多", {
@@ -242,7 +201,7 @@ export class TOTPController {
       logger.info("verifyAndEnable: 验证TOTP令牌", { userId, username: currentUser.username, isValid });
 
       // 记录验证尝试
-      TOTPController.recordTOTPAttempt(userId, isValid);
+      await TOTPController.recordTOTPAttempt(userId, isValid);
 
       if (!isValid) {
         const remainingAttempts = attemptCheck.remainingAttempts - 1;
@@ -337,16 +296,15 @@ export class TOTPController {
         return res.status(400).json({ error: "用户未启用TOTP" });
       }
 
-      // 检查TOTP验证尝试次数（仅对TOTP令牌验证）
-      if (token) {
-        const attemptCheck = TOTPController.checkTOTPAttempts(userId);
-        if (!attemptCheck.allowed) {
-          const remainingTime = Math.ceil((attemptCheck.lockedUntil! - Date.now()) / 1000 / 60);
-          return res.status(429).json({
-            error: `验证尝试次数过多，请${remainingTime}分钟后再试`,
-            lockedUntil: attemptCheck.lockedUntil,
-          });
-        }
+      // 检查二次验证失败次数（TOTP 令牌与备用恢复码共用同一额度：两条都是「凭据之外的第二个因素」，
+      // 分开计数只会让攻击者在两条路径之间来回试探）
+      const attemptCheck = await TOTPController.checkTOTPAttempts(userId);
+      if (!attemptCheck.allowed) {
+        const remainingTime = Math.ceil((attemptCheck.lockedUntil! - Date.now()) / 1000 / 60);
+        return res.status(429).json({
+          error: `验证尝试次数过多，请${remainingTime}分钟后再试`,
+          lockedUntil: attemptCheck.lockedUntil,
+        });
       }
 
       let isValid = false;
@@ -363,7 +321,7 @@ export class TOTPController {
         }
 
         // 记录验证尝试
-        TOTPController.recordTOTPAttempt(userId, isValid);
+        await TOTPController.recordTOTPAttempt(userId, isValid);
       } else if (backupCode) {
         // 验证备用恢复码（G2-14：恢复码为哈希存储，verifyBackupCode 返回剩余哈希数组）
         if (!user.backupCodes || user.backupCodes.length === 0) {
@@ -438,27 +396,30 @@ export class TOTPController {
             availableCodes: user.backupCodes.length,
           });
         }
+
+        // 恢复码也是「第二个因素」，失败同样计入共用额度；否则攻击者可以在恢复码路径上无限试探
+        await TOTPController.recordTOTPAttempt(userId, isValid);
       }
 
       if (!isValid) {
-        if (token) {
-          const attemptCheck = TOTPController.checkTOTPAttempts(userId);
+        if (token || backupCode) {
+          const attemptCheck = await TOTPController.checkTOTPAttempts(userId);
           const remainingAttempts = attemptCheck.remainingAttempts - 1;
 
-          logger.warn("verifyToken: TOTP验证码错误", {
+          logger.warn("verifyToken: 二次验证失败", {
             userId,
             username: user.username,
+            usedBackupCode: !token && !!backupCode,
             remainingAttempts,
           });
 
           return res.status(400).json({
-            error: "验证码错误",
+            error: token ? "验证码错误" : "恢复码错误",
             remainingAttempts,
-            lockedUntil: remainingAttempts === 0 ? Date.now() + TOTP_LOCKOUT_DURATION : undefined,
+            lockedUntil: remainingAttempts <= 0 ? attemptCheck.lockedUntil ?? Date.now() + TOTP_LOCKOUT_DURATION : undefined,
           });
-        } else {
-          return res.status(400).json({ error: "恢复码错误" });
         }
+        return res.status(400).json({ error: "缺少二次验证凭据" });
       }
 
       logger.info("TOTP验证成功:", { userId, username: user.username, usedBackupCode: !!backupCode });

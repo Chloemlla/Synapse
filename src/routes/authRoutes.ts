@@ -284,6 +284,20 @@ router.post(
  *         description: 用户信息
  */
 router.get("/me", authReadLimiter, authenticateToken, AuthController.getCurrentUser);
+
+/**
+ * @openapi
+ * /auth/security-summary:
+ *   get:
+ *     summary: 获取当前账号的安全总览
+ *     description: 返回安全评分、自检清单与改进建议；只针对调用方自己的账号。
+ *     responses:
+ *       200:
+ *         description: 安全总览
+ *       401:
+ *         description: 未登录
+ */
+router.get("/security-summary", authReadLimiter, authenticateToken, AuthController.getSecuritySummary);
 router.get("/sessions", authReadLimiter, authenticateToken, AuthController.listSessions);
 router.post("/sessions/:deviceKey/revoke", authReadLimiter, authenticateToken, AuthController.revokeSessionDevice);
 router.post("/session", authReadLimiter, authenticateToken, AuthController.establishSession);

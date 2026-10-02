@@ -11,7 +11,7 @@ import {
   googleBindSession,
 } from "./auth/providerHandlers";
 import { register, sendVerifyEmail, verifyEmail, verifyEmailLink } from "./auth/registrationHandlers";
-import { establishSession, getCurrentUser, listSessions, revokeSessionDevice } from "./auth/sessionHandlers";
+import { establishSession, getCurrentUser, getSecuritySummary, listSessions, revokeSessionDevice } from "./auth/sessionHandlers";
 
 export { logoutHandler } from "./auth/sessionHandlers";
 
@@ -29,6 +29,7 @@ export const AuthController = {
   sendVerifyEmail,
   login,
   getCurrentUser,
+  getSecuritySummary,
   listSessions,
   revokeSessionDevice,
   establishSession,

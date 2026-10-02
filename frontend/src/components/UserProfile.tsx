@@ -9,6 +9,7 @@ import { FaUser, FaUserCircle, FaShieldAlt, FaEnvelope, FaCamera, FaSave, FaKey,
 import { cn } from '../utils/cn';
 import { useAuthStore } from '../stores/authStore';
 import { getBackendErrorMessage } from '../utils/backendError';
+import { reportFingerprintOnce } from '../utils/fingerprint';
 import { PenaltyAppealActions } from './PenaltyAppealActions';
 import {
   studioAccentBlobBlueClassName,
@@ -69,6 +70,7 @@ import {
 } from './user-profile/profileHelpers';
 import DeviceSessionsPanel from './user-profile/DeviceSessionsPanel';
 import PrivacyConsentPanel from './user-profile/PrivacyConsentPanel';
+import SecurityScorecardPanel, { type SecurityCheckActionTarget } from './user-profile/SecurityScorecardPanel';
 import { ProfileSidebarSummary } from './user-profile/ProfileSidebarSummary';
 import EstablishSecuritySession from './EstablishSecuritySession';
 import { useSecuritySession } from '../hooks/useSecuritySession';
@@ -85,7 +87,15 @@ declare global {
   }
 }
 
-const UserProfile: React.FC = () => {
+export interface UserProfileProps {
+  /**
+   * 打开全站共用的「账户安全设置」弹层（TOTP / Passkey / 恢复码都在里面）。
+   * 由 App 持有弹层状态，个人页只是入口之一，不在本页重复实现一份配置流程。
+   */
+  onOpenSecuritySettings?: () => void;
+}
+
+const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => {
   const { setNotification } = useNotification();
 
   // Core state
@@ -115,6 +125,8 @@ const UserProfile: React.FC = () => {
   // Authentication state
   const [totpStatus, setTotpStatus] = useState<TotpStatus | null>(null);
   const securitySessionCardRef = useRef<HTMLElement | null>(null);
+  const emailSectionRef = useRef<HTMLElement | null>(null);
+  const deviceSessionsSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Device and session state
   const [deviceSessions, setDeviceSessions] = useState<UserDeviceSession[]>([]);
@@ -402,6 +414,45 @@ const UserProfile: React.FC = () => {
   const focusSecuritySession = useCallback(() => {
     securitySessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
+
+  /**
+   * 安全中心清单里的「去处理」：能直接打开配置弹层的就直接打开，
+   * 其余（邮箱、设备）滚动到本页对应区块；滚动前不建立安全会话的假设，
+   * 目标区块自己会提示要先完成验证。
+   */
+  const handleSecurityAction = useCallback(
+    (action: SecurityCheckActionTarget) => {
+      switch (action) {
+        case 'enable_mfa':
+        case 'enable_passkey':
+        case 'regenerate_backup_codes':
+          if (onOpenSecuritySettings) {
+            onOpenSecuritySettings();
+            return;
+          }
+          focusSecuritySession();
+          return;
+        case 'verify_email':
+          emailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        case 'report_fingerprint':
+          void reportFingerprintOnce(true)
+            .then(() => {
+              setNotification({ message: '已提交本设备的指纹信息', type: 'success' });
+            })
+            .catch(() => {
+              setNotification({ message: '指纹上报失败，请稍后重试', type: 'error' });
+            });
+          return;
+        case 'review_devices':
+          deviceSessionsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        default:
+          focusSecuritySession();
+      }
+    },
+    [focusSecuritySession, onOpenSecuritySettings, setNotification],
+  );
 
   const passwordChangeReady = useMemo(() => (
     changePwdMode && newPwd.length >= 8 && newPwd === confirmNewPwd
@@ -1233,6 +1284,9 @@ const UserProfile: React.FC = () => {
             transition={{ duration: 0.5, delay: 0.05 }}
             className={studioMainSurfaceClassName}
           >
+            {/* 账号安全中心：安全评分 + 自检清单，放在最前，进页先看结论 */}
+            <SecurityScorecardPanel onAction={handleSecurityAction} />
+
             {/* Avatar section */}
             <div className="mb-6 flex flex-col items-center">
               <div className="relative mb-4 h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-full bg-slate-200 shadow-lg ring-4 ring-white">
@@ -1262,7 +1316,7 @@ const UserProfile: React.FC = () => {
             </div>
 
             {/* Email field */}
-            <section className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
+            <section ref={emailSectionRef} className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
               <label className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                 <FaEnvelope />
                 邮箱地址
@@ -1389,22 +1443,24 @@ const UserProfile: React.FC = () => {
               </div>
             </section>
 
-            <DeviceSessionsPanel
-              sessions={deviceSessions}
-              loading={deviceSessionsLoading}
-              error={deviceSessionsError}
-              securitySessionActive={isSecuritySessionActive}
-              actionLoading={revokingDeviceSessions}
-              onRefresh={() => {
-                void loadDeviceSessions();
-              }}
-              onRequestVerification={() => {
-                void handleVerify();
-              }}
-              onLogoutDevice={(deviceKey) => {
-                void handleLogoutDeviceSession(deviceKey);
-              }}
-            />
+            <div ref={deviceSessionsSectionRef}>
+              <DeviceSessionsPanel
+                sessions={deviceSessions}
+                loading={deviceSessionsLoading}
+                error={deviceSessionsError}
+                securitySessionActive={isSecuritySessionActive}
+                actionLoading={revokingDeviceSessions}
+                onRefresh={() => {
+                  void loadDeviceSessions();
+                }}
+                onRequestVerification={() => {
+                  void handleVerify();
+                }}
+                onLogoutDevice={(deviceKey) => {
+                  void handleLogoutDeviceSession(deviceKey);
+                }}
+              />
+            </div>
 
             <PrivacyConsentPanel />
 
