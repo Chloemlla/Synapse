@@ -14,10 +14,22 @@ export interface IPBan {
   ipAddress: string;
   reason: string;
   violationCount: number;
-  bannedAt: string;
-  expiresAt: string;
+  bannedAt: string | null;
+  expiresAt: string | null;
   fingerprint?: string;
   userAgent?: string;
+  /** manual = 管理员手工封；auto = 违规计数到阈值自动封。存量记录缺省当 auto。 */
+  source?: 'manual' | 'auto';
+  /** 服务端算好的「是否仍生效」，避免前端时钟偏差造成口径不一。 */
+  active?: boolean;
+}
+
+export interface IPBanListSummary {
+  total: number;
+  active: number;
+  expired: number;
+  manual: number;
+  automatic: number;
 }
 
 export interface IPBanListResponse {
@@ -25,6 +37,16 @@ export interface IPBanListResponse {
   total: number;
   page: number;
   pageSize: number;
+  summary?: IPBanListSummary;
+}
+
+export interface IPBanListQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  status?: 'all' | 'active' | 'expired';
+  sort?: 'bannedAt' | 'expiresAt' | 'violationCount' | 'ipAddress';
+  order?: 'asc' | 'desc';
 }
 
 // 指纹统计接口
@@ -279,14 +301,39 @@ class TurnstileAPI {
     return response.json();
   }
 
-  async getIPBanList(page: number = 1, pageSize: number = 20): Promise<IPBanListResponse> {
-    const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/turnstile/ip-ban-list?page=${page}&pageSize=${pageSize}`, {
+  /**
+   * 封禁名单（分页 + 关键词 + 状态 + 排序）。
+   * 后端返回 `{ success, data: { bans, total, page, pageSize }, summary }`：
+   * `data` 保持历史结构（兼容早期调用方），汇总单独挂在 `summary`。
+   */
+  async listIPBans(query: IPBanListQuery = {}): Promise<IPBanListResponse> {
+    const params = new URLSearchParams();
+    params.set('page', String(query.page ?? 1));
+    params.set('pageSize', String(query.pageSize ?? 20));
+    if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
+    if (query.status && query.status !== 'all') params.set('status', query.status);
+    if (query.sort) params.set('sort', query.sort);
+    if (query.order) params.set('order', query.order);
+
+    const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/turnstile/ip-ban-list?${params.toString()}`, {
       headers: this.getAuthHeaders(),
       credentials: 'include'
     });
     if (!response.ok) throw new Error('获取IP封禁列表失败');
     const result = await response.json();
-    return result.data || { bans: [], total: 0, page, pageSize }; // Handle backend response structure
+    const data = result?.data;
+    return {
+      bans: Array.isArray(data?.bans) ? data.bans : [],
+      total: typeof data?.total === 'number' ? data.total : 0,
+      page: typeof data?.page === 'number' ? data.page : (query.page ?? 1),
+      pageSize: typeof data?.pageSize === 'number' ? data.pageSize : (query.pageSize ?? 20),
+      summary: result?.summary,
+    };
+  }
+
+  /** 兼容入口：旧签名（page, pageSize）仍可用。 */
+  async getIPBanList(page: number = 1, pageSize: number = 20): Promise<IPBanListResponse> {
+    return this.listIPBans({ page, pageSize });
   }
 
   // 指纹管理
