@@ -102,14 +102,28 @@
 
 ---
 
-## 收尾去向（随修复批次回填）
+## 收尾去向（已回填）
+
+修复批次 commit：`1f187e8a`（代码 + 声明，11 文件）→ 锁文件由 §十七 流程重生成（PR #1012，squash `61bc1865`）→ `db080906`（补测试替身）。
 
 | 编号 | 去向 |
 |---|---|
-| PERF-01 | 待回填（提交 / CI run） |
-| PERF-02 | 待回填 |
-| PERF-03 | 待回填 |
-| PERF-04 | 待回填 |
-| PERF-05 | 待回填 |
-| PERF-06 | 待回填 |
-| PERF-07 ~ PERF-11 | 挂起（理由见各条） |
+| PERF-01 | 已修（`1f187e8a`）：`compression` 中间件 + `compression@^1.8.2` / `@types/compression@^1.8.1`；锁文件 `compression@1.8.2`、`compressible@2.0.18`。`type-check-backend` 绿；`Obfuscated artifact smoke`（生产构建启动）绿。 |
+| PERF-02 | 已修（`1f187e8a`）：`touchAuthSession` 新增可选 `existingSession`，三处调用点（`authenticateToken` / `authMiddlewareV2` / `oauthTokenAuth`）复用 `assertActiveAuthSession` 的返回值；`authMiddlewareV2` 复用凭证哈希。**连带修复**（`db080906`）：`rbacMiddleware.test.ts` 的 jest.mock 工厂缺 `hashAuthCredential`，`authMiddlewareV2` 读成 `undefined` 抛 TypeError 被外层 catch 成 500，6 个用例全红 → 按同仓 5 个套件既有写法补 `...jest.requireActual(...)`（见 §五-75/67 同族坑）。 |
+| PERF-03 | 已修（`1f187e8a`）：`/api/ip` `private, max-age=120`；`/api/status` `public, max-age=30, stale-while-revalidate=300`；`/api/openapi.json` `private, max-age=300`。 |
+| PERF-04 | 已修（`1f187e8a`）：`UptimeClock` 叶子组件 + `React.memo(Footer)`。 |
+| PERF-05 | 已修（`1f187e8a`）：`sessionStorage` + TTL 缓存 + 模块级 in-flight 去重。 |
+| PERF-06 | 已修（`1f187e8a`）：`/static/audio` → `public, max-age=31536000, immutable`。 |
+| PERF-07 ~ PERF-11 | 挂起（理由见各条），本批未动。 |
+
+### CI 判据（`db080906`，全绿）
+
+| workflow | run | 结论 |
+|---|---|---|
+| Node Verification | `36995962807` | success —— `Run build`、`Obfuscated artifact smoke`、`Run backend Jest tests with coverage`、`Run frontend Vitest tests with coverage` 均实际执行（非 skipped） |
+| Quality Guardrails | `36995962767` | success（含 `TypeScript size guard` 与 `Frontend bundle budget`） |
+| CodeQL | `36995962877` | success |
+| Docker | `36995962760` | success |
+| Code Quality (fuck-u-code) | `36995962739` | success |
+
+> 中间态留档：`1f187e8a` 的 push CI 里 `Quality Guardrails` / `Docker` / `Node Verification` 因 `pnpm-lock.yaml` 未同步而在 `Install dependencies` 就失败（`ERR_PNPM_OUTDATED_LOCKFILE`，属 §十七 预期），锁文件 PR 合并后同批 job 全部转绿；`61bc1865` 上只剩 `rbacMiddleware` 一个套件红（即上面 PERF-02 的连带修复）。
