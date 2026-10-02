@@ -5,6 +5,7 @@ import { FaLock, FaSync, FaInfoCircle, FaCheck, FaTimes } from 'react-icons/fa';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import CollapsibleSection from './CollapsibleSection';
 import { LUMEN_CONFIG_API, LUMEN_CONFIG_SYNC_API, getAuthHeaders, authFetch } from './api';
 import ConfigFieldRow from './ConfigFieldRow';
@@ -139,6 +140,7 @@ export default function ProjectLumenConfigSection({
 }: ProjectLumenConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -234,7 +236,13 @@ export default function ProjectLumenConfigSection({
     async (key: string) => {
       if (!canWrite) return;
       if (deletingKey) return;
-      if (!window.confirm(`确定删除 Project-Lumen 配置「${key}」？`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定删除 Project-Lumen 配置「${key}」？`,
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       setDeletingKey(key);
       try {
         const res = await authFetch(`${LUMEN_CONFIG_API}/${encodeURIComponent(key)}`, {

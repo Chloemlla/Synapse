@@ -3,6 +3,7 @@ import { FaChevronDown, FaSync, FaUpload } from 'react-icons/fa';
 import { useSearchParams } from 'react-router-dom';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getConfigurationSectionKey } from './env-manager/configurationNotice';
 import { studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
 import { useAuth } from '../hooks/useAuth';
@@ -187,6 +188,7 @@ function UpdatedAt(props: { value?: string }) {
 
 const RuntimeConfigSections: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -565,7 +567,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteIpqsSetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置 IPQS 配置？风险评分相关能力可能立即失效。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 IPQS 配置？风险评分相关能力可能立即失效。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setIpqsDeleting(true);
     try {
       const res = await fetch(IPQS_API, {
@@ -620,7 +628,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteLinuxDoSetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置 LinuxDo OAuth 配置？第三方登录可能立即失效。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 LinuxDo OAuth 配置？第三方登录可能立即失效。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setLinuxdoDeleting(true);
     try {
       const res = await fetch(LINUXDO_API, {
@@ -671,7 +685,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteGoogleAuthSetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置 Google Auth 配置？Google 登录可能立即失效。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 Google Auth 配置？Google 登录可能立即失效。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setGoogleAuthDeleting(true);
     try {
       const res = await fetch(GOOGLE_AUTH_API, {
@@ -768,7 +788,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteDeepLXSetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置 DeepLX 配置？翻译能力可能立即失效。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 DeepLX 配置？翻译能力可能立即失效。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeeplxDeleting(true);
     try {
       const res = await fetch(DEEPLX_API, {
@@ -847,7 +873,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteNexaiSetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置 NexAI 配置？相关集成可能立即失效。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 NexAI 配置？相关集成可能立即失效。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setNexaiDeleting(true);
     try {
       const res = await fetch(NEXAI_API, {
@@ -920,7 +952,13 @@ const RuntimeConfigSections: React.FC = () => {
 
   const deleteAdminSecuritySetting = useCallback(async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定重置管理员安全配置？将回退到环境变量默认值。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置管理员安全配置？将回退到环境变量默认值。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setAdminSecurityDeleting(true);
     try {
       const res = await fetch(ADMIN_SECURITY_API, {

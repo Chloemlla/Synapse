@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import OutemailSettingsSection from './OutemailSettingsSection';
 import { OUTEMAIL_API, getAuthHeaders, authFetch } from './api';
 import type { OutemailSettingItem } from './types';
@@ -14,6 +15,7 @@ interface SelfContainedOutemailSettingsSectionProps {
 export default function SelfContainedOutemailSettingsSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedOutemailSettingsSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -63,7 +65,13 @@ export default function SelfContainedOutemailSettingsSection({ prefersReducedMot
   const handleDelete = useCallback(async (delDomain: string) => {
     if (!canWrite) return;
     if (deletingDomain) return;
-    if (!window.confirm(`确定删除 OutEmail 域名配置「${delDomain}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 OutEmail 域名配置「${delDomain}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeletingDomain(delDomain);
     try {
       const res = await authFetch(OUTEMAIL_API, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ domain: delDomain }) });

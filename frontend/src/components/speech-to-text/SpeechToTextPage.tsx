@@ -18,6 +18,7 @@ import {
 } from '../../api/transcribe';
 import type { MediaJobRecord } from '../../api/mediaTool';
 import { SimpleLoadingSpinner } from '../LoadingSpinner';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import {
   InfoBadge,
   InfoPanel,
@@ -75,6 +76,7 @@ const STATUS_LABEL: Record<string, string> = {
  * 文件作用域由后端锁在用户自己的目录内,前端拿到的都是相对自己目录的路径。
  */
 export const SpeechToTextPage: React.FC = () => {
+  const confirm = useConfirm();
   const [config, setConfig] = useState<TranscribeConfig | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [outputs, setOutputs] = useState<TranscribeOutput[]>(['plain']);
@@ -194,7 +196,13 @@ export const SpeechToTextPage: React.FC = () => {
           return next;
         });
       } else {
-        if (!window.confirm('删除该任务?转写正文与产物文件(txt / 时间线 / srt / json)会一并删除,已上传的音频保留。此操作不可恢复。')) return;
+        const ok = await confirm({
+          title: '确认执行该操作？',
+          description: '删除该任务?转写正文与产物文件(txt / 时间线 / srt / json)会一并删除,已上传的音频保留。此操作不可恢复。',
+          tone: 'danger',
+          confirmLabel: '删除',
+        });
+        if (!ok) return;
         await transcribeApi.deleteJob(id);
         setJobs((prev) => prev.filter((j) => j.id !== id));
         if (expandedId === id) setExpandedId(null);

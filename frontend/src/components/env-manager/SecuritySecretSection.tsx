@@ -5,6 +5,7 @@ import { FaLock, FaSync } from 'react-icons/fa';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import CollapsibleSection from './CollapsibleSection';
 import { API_URL, getAuthHeaders, authFetch } from './api';
 import { decryptAES256 } from './utils';
@@ -146,6 +147,7 @@ export default function SecuritySecretSection({
 }: SecuritySecretSectionProps) {
   const prefersReducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -226,9 +228,12 @@ export default function SecuritySecretSection({
         // F-01: 轮换数据静态加密根密钥（已配置过）会静默损坏存量密文，先显式确认。
         const isRotation = DATA_AT_REST_ENCRYPTION_KEYS.has(key) && Boolean(current[key]);
         if (isRotation) {
-          const ok = window.confirm(
-            `${key} 已配置。它直接解密已落库的存量密文，轮换后旧数据将永久无法解密（需自行重加密）。\n\n确定要轮换吗？`,
-          );
+          const ok = await confirm({
+            title: `${key} 轮换确认`,
+            description: '该密钥直接解密已落库的存量密文，轮换后旧数据将永久无法解密（需自行重加密）。',
+            tone: 'danger',
+            confirmLabel: '轮换密钥',
+          });
           if (!ok) {
             setSavingKey(null);
             return;
@@ -264,7 +269,13 @@ export default function SecuritySecretSection({
     async (key: string) => {
       if (!canWrite) return;
       if (deletingKey) return;
-      if (!window.confirm(`确定删除环境变量「${key}」？对应密钥隔离/加密能力可能立即失效。`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定删除环境变量「${key}」？对应密钥隔离/加密能力可能立即失效。`,
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       setDeletingKey(key);
       try {
         // G11-15: 后端只注册 DELETE /envs（body 传 key）与 POST /envs/delete，路径式删除 404。

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { getApiBaseUrl } from '../api/api';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 
@@ -197,6 +198,7 @@ function statusClass(status?: string) {
 
 const WebhookEventsManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const prefersReducedMotion = useReducedMotion();
@@ -382,7 +384,13 @@ const WebhookEventsManager: React.FC = () => {
   }, [handleFetchSecret, notifySuccess, secretInput, secretKeyInput, setNotification]);
 
   const handleDeleteSecret = useCallback(async () => {
-    if (!confirm('确认删除该 Resend Webhook 密钥？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确认删除该 Resend Webhook 密钥？',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     const key = secretKeyInput.trim().toUpperCase() || 'DEFAULT';
     try {
       setActionLoading('secret-delete');
@@ -445,7 +453,13 @@ const WebhookEventsManager: React.FC = () => {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!confirm('确认删除该事件记录？')) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: '确认删除该事件记录？',
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       try {
         setActionLoading(`delete-${id}`);
         await parseApiResponse(
@@ -468,7 +482,13 @@ const WebhookEventsManager: React.FC = () => {
 
   const handleReplay = useCallback(
     async (id: string) => {
-      if (!confirm('确认重放该事件？可能会触发下游业务副作用。')) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: '确认重放该事件？可能会触发下游业务副作用。',
+        tone: 'danger',
+        confirmLabel: '确认',
+      });
+      if (!ok) return;
       try {
         setActionLoading(`replay-${id}`);
         await parseApiResponse(
@@ -543,7 +563,13 @@ const WebhookEventsManager: React.FC = () => {
       setNotification({ type: 'warning', message: '请选择事件' });
       return;
     }
-    if (!confirm(`确认删除选中的 ${selectedIds.length} 条事件？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确认删除选中的 ${selectedIds.length} 条事件？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       setActionLoading('bulk-delete');
       await parseApiResponse(

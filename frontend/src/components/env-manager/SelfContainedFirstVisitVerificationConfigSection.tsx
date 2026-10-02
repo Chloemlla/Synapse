@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { getBackendErrorMessage } from '../../utils/backendError';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import FirstVisitVerificationConfigSection from './FirstVisitVerificationConfigSection';
 import { FIRST_VISIT_VERIFICATION_API, getAuthHeaders, authFetch } from './api';
 import type { FirstVisitVerificationConfigSetting } from './types';
@@ -22,6 +23,7 @@ export default function SelfContainedFirstVisitVerificationConfigSection({
 }: SelfContainedFirstVisitVerificationConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -94,9 +96,12 @@ export default function SelfContainedFirstVisitVerificationConfigSection({
     if (!canWrite) return;
     if (deleting) return;
     if (
-      !window.confirm(
-        '确定重置首访验证设置？重置后会回退到部署环境变量 ENABLE_FIRST_VISIT_VERIFICATION（未设置则为开启）。',
-      )
+      !(await confirm({
+          title: '确认执行该操作？',
+          description: '确定重置首访验证设置？重置后会回退到部署环境变量 ENABLE_FIRST_VISIT_VERIFICATION（未设置则为开启）。',
+          tone: 'danger',
+          confirmLabel: '重置',
+        }))
     ) {
       return;
     }

@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import SynapseAndroidConfigSection from './SynapseAndroidConfigSection';
 import { SYNAPSE_ANDROID_API, GOOGLE_WEB_CLIENT_ID_PATTERN, getAuthHeaders, authFetch } from './api';
 
@@ -13,6 +14,7 @@ interface SelfContainedSynapseAndroidConfigSectionProps {
 export default function SelfContainedSynapseAndroidConfigSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedSynapseAndroidConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -76,7 +78,13 @@ export default function SelfContainedSynapseAndroidConfigSection({ prefersReduce
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定重置 Synapse Android 配置为默认值？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 Synapse Android 配置为默认值？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(SYNAPSE_ANDROID_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import NexaiSigningConfigSection from './NexaiSigningConfigSection';
 import { NEXAI_SIGNING_API, getAuthHeaders, authFetch } from './api';
 
@@ -13,6 +14,7 @@ interface SelfContainedNexaiSigningConfigSectionProps {
 export default function SelfContainedNexaiSigningConfigSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedNexaiSigningConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -75,7 +77,13 @@ export default function SelfContainedNexaiSigningConfigSection({ prefersReducedM
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定重置 NexAI 请求签名配置为默认值？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 NexAI 请求签名配置为默认值？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(NEXAI_SIGNING_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

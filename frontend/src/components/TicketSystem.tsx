@@ -23,6 +23,7 @@ import {
   TICKET_STATUS_ORDER,
 } from "./ticket/ticketConstants";
 import { useNotification } from "./Notification";
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useWebSocket, WsServerMessage } from "../hooks/useWebSocket";
 import {
   FiSend, FiPlus, FiMessageSquare, FiClock,
@@ -141,6 +142,7 @@ const TicketSystem: React.FC = () => {
   const isAdmin = isAdminRole(user?.role);
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [tickets, setTickets] = useState<ITicketSummary[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<ITicket | null>(null);
   const [loading, setLoading] = useState(true);
@@ -393,7 +395,13 @@ const TicketSystem: React.FC = () => {
 
   const handleAdminDelete = async (ticketId: string, idx: number) => {
     if (!canWrite) return;
-    if (!window.confirm("确定要删除这条消息吗？此操作不可撤销。")) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: "确定要删除这条消息吗？此操作不可撤销。",
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       const updated = await ticketApi.adminDeleteMessage(ticketId, idx);
       setSelectedTicket(updated);
@@ -719,7 +727,13 @@ const TicketSystem: React.FC = () => {
   // 属主自助关闭工单
   const handleCloseTicket = async () => {
     if (!selectedTicket) return;
-    if (!window.confirm('确定关闭这个工单吗？关闭后如需继续咨询请发起新工单。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定关闭这个工单吗？关闭后如需继续咨询请发起新工单。',
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     try {
       const updated = await ticketApi.closeTicket(selectedTicket._id);
       setSelectedTicket(updated);

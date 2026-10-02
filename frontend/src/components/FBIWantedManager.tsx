@@ -286,7 +286,13 @@ const FBIWantedManager: React.FC = () => {
     // 根据条件批量删除
     const handleBatchDelete = async (filter: object, confirmationMessage: string) => {
         if (!canWrite) return;
-        if (!confirm(confirmationMessage)) {
+        const ok = await confirm({
+          title: '确认执行该操作？',
+          description: confirmationMessage,
+          tone: 'danger',
+          confirmLabel: '确认',
+        });
+        if (ok) {
             return;
         }
 

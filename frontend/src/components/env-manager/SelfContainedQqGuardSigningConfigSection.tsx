@@ -3,6 +3,7 @@ import { m, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
 import SecretKeySection from './SecretKeySection';
 import { QQ_GUARD_SIGNING_API, getAuthHeaders, authFetch } from './api';
@@ -19,6 +20,7 @@ interface SelfContainedQqGuardSigningConfigSectionProps {
 export default function SelfContainedQqGuardSigningConfigSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedQqGuardSigningConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -104,7 +106,13 @@ export default function SelfContainedQqGuardSigningConfigSection({ prefersReduce
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定重置 QQ 群纪律机器人签名配置？重置后控制通道将回退到部署环境变量（若未设置则停用验签）。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 QQ 群纪律机器人签名配置？重置后控制通道将回退到部署环境变量（若未设置则停用验签）。',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(QQ_GUARD_SIGNING_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

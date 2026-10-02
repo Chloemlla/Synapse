@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { getBackendErrorMessage } from '../../utils/backendError';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import ProxycheckConfigSection, {
   DEFAULT_PROXYCHECK_INPUTS,
   PROXYCHECK_NUMERIC_FIELDS,
@@ -46,6 +47,7 @@ export default function SelfContainedProxycheckConfigSection({
 }: SelfContainedProxycheckConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -181,9 +183,12 @@ export default function SelfContainedProxycheckConfigSection({
     if (!canWrite) return;
     if (deleting) return;
     if (
-      !window.confirm(
-        '确定重置 proxycheck.io IP 风险检测配置？重置后会回退到部署环境变量（PROXYCHECK_API_KEY / PROXYCHECK_PUBLIC_API_KEY / PROXYCHECK_PAYLOAD_VERIFICATION_KEY / PROXYCHECK_HMAC_SECRET），未设置则回到默认值（未启用）。',
-      )
+      !(await confirm({
+          title: '确认执行该操作？',
+          description: '确定重置 proxycheck.io IP 风险检测配置？重置后会回退到部署环境变量（PROXYCHECK_API_KEY / PROXYCHECK_PUBLIC_API_KEY / PROXYCHECK_PAYLOAD_VERIFICATION_KEY / PROXYCHECK_HMAC_SECRET），未设置则回到默认值（未启用）。',
+          tone: 'danger',
+          confirmLabel: '重置',
+        }))
     ) {
       return;
     }

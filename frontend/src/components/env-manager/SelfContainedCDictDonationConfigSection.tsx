@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import CDictDonationConfigSection, { type CDictDonationChannelDraft, type CDictDonationClaimItem } from './CDictDonationConfigSection';
 import { CDICT_DONATION_API, CDICT_DONATION_CLAIMS_API, CDICT_DONATE_PUBLIC_API, getAuthHeaders, authFetch } from './api';
 
@@ -43,6 +44,7 @@ function parseSupporters(text: string): string[] {
 export default function SelfContainedCDictDonationConfigSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedCDictDonationConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -172,7 +174,13 @@ export default function SelfContainedCDictDonationConfigSection({ prefersReduced
 
   const handleReset = useCallback(async () => {
     if (!canWrite || deleting) return;
-    if (!window.confirm('确定重置 CDict 赞赏配置为默认值（内置支付宝 / 微信渠道与内置图片）？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 CDict 赞赏配置为默认值（内置支付宝 / 微信渠道与内置图片）？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(CDICT_DONATION_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

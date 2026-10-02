@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { m, useReducedMotion } from 'framer-motion';
 import { FaSlidersH, FaSync } from 'react-icons/fa';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import CollapsibleSection from './CollapsibleSection';
@@ -109,6 +110,7 @@ export default function MediaToolConfigSection({
 }: MediaToolConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -206,7 +208,13 @@ export default function MediaToolConfigSection({
   const handleDelete = useCallback(
     async (field: MediaToolEnvField) => {
       if (!canWrite || deletingKey) return;
-      if (!window.confirm(`确定删除环境变量「${field.key}」？该配置会回落到设置页或内置默认值。`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定删除环境变量「${field.key}」？该配置会回落到设置页或内置默认值。`,
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       setDeletingKey(field.key);
       try {
         const res = await authFetch(API_URL, {

@@ -13,6 +13,7 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType } fro
 import MarkdownRenderer from './MarkdownRenderer';
 import { exportToPdf as exportPdfUtil } from './MarkdownExportPage/pdfExport';
 import { studioEyebrowPillClassName } from './studioTheme';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 
 const DEFAULT_MARKDOWN = `# 示例文档
 
@@ -102,6 +103,7 @@ function topLevelText(element: Element): string {
 }
 
 const MarkdownExportPage: React.FC = () => {
+  const confirm = useConfirm();
   const [isExporting, setIsExporting] = useState(false);
   const [markdownContent, setMarkdownContent] = useState(DEFAULT_MARKDOWN);
   const [docxSourceMarkdown, setDocxSourceMarkdown] = useState('');
@@ -327,8 +329,14 @@ const MarkdownExportPage: React.FC = () => {
     }
   };
 
-  const clearContent = () => {
-    if (window.confirm('确定要清空当前 Markdown 内容吗？')) {
+  const clearContent = async () => {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要清空当前 Markdown 内容吗？',
+      tone: 'danger',
+      confirmLabel: '清空',
+    });
+    if (ok) {
       setMarkdownContent('');
     }
   };

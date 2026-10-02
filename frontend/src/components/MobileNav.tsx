@@ -17,6 +17,7 @@ import {
 } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { isAdminRole, isSuperAdmin as isSuperAdminRole } from '../utils/rbac';
 import {
   getMobileAdminNavGroups,
@@ -99,6 +100,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
   accountOnly = false,
 }) => {
   const { savedAccounts, switchAccount, removeAccountFromList, logoutAll } = useAuth();
+  const confirm = useConfirm();
   const location = useLocation();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -275,14 +277,26 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
     void switchAccount(userId);
   }, [closeMenu, switchAccount, user]);
 
-  const handleRemoveAccount = useCallback((userId: string) => {
-    if (window.confirm('确定要移除此账号的保存状态吗？')) {
+  const handleRemoveAccount = useCallback(async (userId: string) => {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要移除此账号的保存状态吗？',
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (ok) {
       removeAccountFromList(userId);
     }
   }, [removeAccountFromList]);
 
-  const handleLogoutAll = useCallback(() => {
-    if (window.confirm('确定要退出并清除所有已登录账号的保存状态吗？')) {
+  const handleLogoutAll = useCallback(async () => {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要退出并清除所有已登录账号的保存状态吗？',
+      tone: 'danger',
+      confirmLabel: '清理',
+    });
+    if (ok) {
       closeMenu();
       logoutAll();
     }

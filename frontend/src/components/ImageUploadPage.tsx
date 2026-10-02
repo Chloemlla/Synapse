@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getApiBaseUrl } from '../api/api';
 import DOMPurify from 'dompurify';
 import CryptoJS from 'crypto-js';
@@ -313,6 +314,7 @@ function fixIpfsDomain(url: string) {
 
 const ImageUploadPage: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   // 管理员身份直接跳过人机验证（与头像上传 / FBI 上传 / 抽奖 / CDK 同一豁免口径）。
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
@@ -1113,7 +1115,13 @@ const ImageUploadPage: React.FC = () => {
     e.target.value = '';
   };
   const handleClear = async () => {
-    if (window.confirm('确定要清空所有数据吗？此操作不可恢复！')) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要清空所有数据吗？此操作不可恢复！',
+      tone: 'danger',
+      confirmLabel: '清空',
+    });
+    if (ok) {
       await clearAllImages();
       await reloadImages();
       setNotification({ message: '数据已清空', type: 'success' });
@@ -1121,7 +1129,13 @@ const ImageUploadPage: React.FC = () => {
   };
 
   const handleDelete = async (index: number) => {
-    if (window.confirm('确定要删除这张图片的记录吗？')) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要删除这张图片的记录吗？',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (ok) {
       await deleteImageFromStorage(index);
       await reloadImages();
       setNotification({ message: '已删除', type: 'success' });

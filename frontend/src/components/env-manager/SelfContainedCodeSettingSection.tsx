@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import CodeSettingSection from './CodeSettingSection';
@@ -21,6 +22,7 @@ export default function SelfContainedCodeSettingSection({
 }: SelfContainedCodeSettingSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -69,7 +71,13 @@ export default function SelfContainedCodeSettingSection({
   const handleDelete = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm(`确定删除当前${inputLabel}配置？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除当前${inputLabel}配置？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(apiUrl, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });

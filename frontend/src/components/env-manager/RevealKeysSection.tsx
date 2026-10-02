@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import CollapsibleSection from './CollapsibleSection';
 import { REVEAL_KEY_API, END_SECURITY_SESSIONS_API, ROTATE_AES_KEY_API, authFetch } from './api';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useSecuritySession } from '../../hooks/useSecuritySession';
@@ -58,6 +59,7 @@ function KeyRow({ label, value, onCopy }: { label: string; value: string; onCopy
 export default function RevealKeysSection({ prefersReducedMotion: reducedMotionProp }: RevealKeysSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canView = isSuperAdmin(user?.role);
   const { verificationToken, isActive, clear } = useSecuritySession();
@@ -79,7 +81,13 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   };
 
   const endAllSessions = async () => {
-    if (!window.confirm('立即结束全站所有安全会话？所有人（含你自己）都需要重新验证身份。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '立即结束全站所有安全会话？所有人（含你自己）都需要重新验证身份。',
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const { ok, data } = await postWithToken(END_SECURITY_SESSIONS_API);
@@ -97,12 +105,13 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   };
 
   const rotateAesKey = async () => {
-    if (
-      !window.confirm(
-        '轮换主密钥 AES_KEY？\n\n- 所有已签发会话/令牌立即失效（全体重新登录）\n- 旧密钥转存为 AES_KEY_PREV，存量密文仍可解密\n- 建议随后执行密钥统一迁移，将存量数据重加密到新密钥\n\n确定继续？',
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: '轮换主密钥 AES_KEY？',
+      description: '所有已签发会话/令牌立即失效（全体重新登录）；旧密钥转存为 AES_KEY_PREV，存量密文仍可解密；建议随后执行密钥统一迁移。',
+      tone: 'danger',
+      confirmLabel: '轮换密钥',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const { ok, data } = await postWithToken(ROTATE_AES_KEY_API);

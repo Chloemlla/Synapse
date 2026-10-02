@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { m, useReducedMotion } from 'framer-motion';
 import { FaKey, FaSync } from 'react-icons/fa';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import CollapsibleSection from './CollapsibleSection';
@@ -99,6 +100,7 @@ export default function EcoEnchantsTokenSection({
 }: EcoEnchantsTokenSectionProps) {
   const prefersReducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -206,7 +208,13 @@ export default function EcoEnchantsTokenSection({
     async (key: string) => {
       if (!canWrite) return;
       if (deletingKey) return;
-      if (!window.confirm(`确定删除环境变量「${key}」？对应授权/令牌能力可能立即失效。`)) return;
+      const ok = await confirm({
+        title: '确认执行该操作？',
+        description: `确定删除环境变量「${key}」？对应授权/令牌能力可能立即失效。`,
+        tone: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
       setDeletingKey(key);
       try {
         // G11-15: 后端只注册 DELETE /envs（body 传 key）与 POST /envs/delete，路径式删除 404。

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import GithubBillingConfigSection from './GithubBillingConfigSection';
@@ -16,6 +17,7 @@ export default function SelfContainedGithubBillingConfigSection({ prefersReduced
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [isOpen, setIsOpen] = useState(false);
   const fetchedRef = useRef(false);
 
@@ -75,7 +77,13 @@ export default function SelfContainedGithubBillingConfigSection({ prefersReduced
   const handleDelete = useCallback(async () => {
     if (!canWrite) return;
     if (saving) return;
-    if (!window.confirm(`确定删除 GitHub Billing 配置「${selectedConfigKey}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 GitHub Billing 配置「${selectedConfigKey}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       const res = await authFetch(`${GITHUB_BILLING_MULTI_CONFIG_API}/${selectedConfigKey}`, { method: 'DELETE', headers: { ...getAuthHeaders() } });

@@ -7,6 +7,7 @@ import { isSuperAdmin } from '../utils/rbac';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
   InfoPanel,
   InfoSectionTitle,
@@ -159,6 +160,7 @@ function UpdatedAt(props: { value?: string }) {
 
 const MailSystemConfigManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [setting, setSetting] = useState<MailSystemSetting | null>(null);
@@ -256,7 +258,12 @@ const MailSystemConfigManager: React.FC = () => {
   const resetSetting = useCallback(async () => {
     if (resetting) return;
     if (!canWrite) return;
-    const confirmed = window.confirm('确定要重置邮件系统配置为环境变量默认值吗？');
+    const confirmed = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要重置邮件系统配置为环境变量默认值吗？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
     if (!confirmed) return;
 
     setResetting(true);

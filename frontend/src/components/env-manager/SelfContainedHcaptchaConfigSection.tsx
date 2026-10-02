@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import HcaptchaConfigSection from './HcaptchaConfigSection';
@@ -16,6 +17,7 @@ export default function SelfContainedHcaptchaConfigSection({ prefersReducedMotio
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [isOpen, setIsOpen] = useState(false);
   const fetchedRef = useRef(false);
 
@@ -66,7 +68,13 @@ export default function SelfContainedHcaptchaConfigSection({ prefersReducedMotio
   const handleDelete = useCallback(async (key: 'HCAPTCHA_SECRET_KEY' | 'HCAPTCHA_SITE_KEY') => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm(`确定删除 hCaptcha 配置「${key}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 hCaptcha 配置「${key}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(`${HCAPTCHA_CONFIG_API}/${key}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });

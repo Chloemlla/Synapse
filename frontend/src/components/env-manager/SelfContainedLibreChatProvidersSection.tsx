@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import LibreChatProvidersSection from './LibreChatProvidersSection';
@@ -16,6 +17,7 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [isOpen, setIsOpen] = useState(false);
   const fetchedRef = useRef(false);
 
@@ -89,7 +91,13 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
   const handleDelete = useCallback(async (id: string) => {
     if (!canWrite) return;
     if (deletingId) return;
-    if (!window.confirm(`确定删除 LibreChat 提供商「${id}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 LibreChat 提供商「${id}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       const res = await authFetch(`${LIBRECHAT_PROVIDERS_API}/${id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });

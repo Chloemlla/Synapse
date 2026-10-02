@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import CDictSigningConfigSection from './CDictSigningConfigSection';
 import { CDICT_SIGNING_API, authFetch, getAuthHeaders } from './api';
 import type { CDictSigningConfigSetting } from './types';
@@ -18,6 +19,7 @@ export default function SelfContainedCDictSigningConfigSection({
 }: SelfContainedCDictSigningConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -134,7 +136,13 @@ export default function SelfContainedCDictSigningConfigSection({
 
   const handleReset = useCallback(async () => {
     if (!canWrite || deleting) return;
-    if (!window.confirm('确定删除后台覆盖并恢复 CDict 请求配置的部署环境默认值？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定删除后台覆盖并恢复 CDict 请求配置的部署环境默认值？',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
 
     setDeleting(true);
     try {

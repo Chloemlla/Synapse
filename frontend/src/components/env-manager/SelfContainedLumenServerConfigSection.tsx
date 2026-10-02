@@ -3,6 +3,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import LumenServerConfigSection from './LumenServerConfigSection';
 import { LUMEN_SERVER_API, getAuthHeaders, authFetch } from './api';
 
@@ -40,6 +41,7 @@ export default function SelfContainedLumenServerConfigSection({
 }: SelfContainedLumenServerConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -153,7 +155,13 @@ export default function SelfContainedLumenServerConfigSection({
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定重置 Lumen 服务端配置为默认值？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置 Lumen 服务端配置为默认值？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(LUMEN_SERVER_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

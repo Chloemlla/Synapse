@@ -20,6 +20,7 @@ import {
 import { auditLogApi, type AuditLogEntry } from '../api/auditLog';
 import { oauthApi, type OAuthClient, type OAuthGrant, type OAuthScopeDefinition } from '../api/oauth';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import OAuthOidcEndpointPanel from './OAuthOidcEndpointPanel';
 import { cn } from '../utils/cn';
 import { studioInfoRowClassName, studioStrongBadgeClassName } from './studioTheme';
@@ -89,6 +90,7 @@ const getErrorMessage = (error: any) =>
 
 const OAuthClientManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [clients, setClients] = useState<OAuthClient[]>([]);
   const [grants, setGrants] = useState<OAuthGrant[]>([]);
   const [scopes, setScopes] = useState<OAuthScopeDefinition[]>([]);
@@ -311,8 +313,14 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const updateEnabled = async (client: OAuthClient, enabled: boolean) => {
-    if (!enabled && !window.confirm(`确定停用 ${client.name}？停用后该客户端将无法完成新的授权。`)) {
-      return;
+    if (!enabled) {
+      const ok = await confirm({
+        title: `停用 ${client.name}？`,
+        description: '停用后该客户端无法完成新的授权，已签发的 token 会在过期后自然失效。',
+        tone: 'danger',
+        confirmLabel: '停用',
+      });
+      if (!ok) return;
     }
     try {
       await oauthApi.updateClient(client.clientId, { enabled });
@@ -324,7 +332,13 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const rotateSecret = async (client: OAuthClient) => {
-    if (!window.confirm(`确定轮换 ${client.name} 的 client secret？既有 token 会被吊销。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定轮换 ${client.name} 的 client secret？既有 token 会被吊销。`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     try {
       const result = await oauthApi.rotateClientSecret(client.clientId);
       if (result.clientSecret) setRevealedSecret({ clientId: client.clientId, secret: result.clientSecret });
@@ -336,7 +350,13 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const deleteClient = async (client: OAuthClient) => {
-    if (!window.confirm(`确定停用 ${client.name}？相关授权和 token 会被吊销。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定停用 ${client.name}？相关授权和 token 会被吊销。`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     try {
       await oauthApi.deleteClient(client.clientId);
       setNotification({ message: '客户端已停用', type: 'success' });
@@ -347,7 +367,13 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const revokeGrant = async (grant: OAuthGrant) => {
-    if (!window.confirm(`确定撤销 ${grant.client?.name || grant.clientId} 的授权？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定撤销 ${grant.client?.name || grant.clientId} 的授权？`,
+      tone: 'danger',
+      confirmLabel: '确认',
+    });
+    if (!ok) return;
     try {
       await oauthApi.revokeGrant(grant.grantId);
       setNotification({ message: '授权已撤销', type: 'success' });

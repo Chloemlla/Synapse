@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import EmailSystemSettingsSection from './EmailSystemSettingsSection';
@@ -14,6 +15,7 @@ interface SelfContainedEmailSystemSettingsSectionProps {
 export default function SelfContainedEmailSystemSettingsSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedEmailSystemSettingsSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -58,7 +60,13 @@ export default function SelfContainedEmailSystemSettingsSection({ prefersReduced
   const handleDelete = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定重置邮件系统配置为默认值？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定重置邮件系统配置为默认值？',
+      tone: 'danger',
+      confirmLabel: '重置',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(EMAIL_SYSTEM_API, { method: 'DELETE', headers: { ...getAuthHeaders() } });

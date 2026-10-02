@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import getApiBaseUrl from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
@@ -219,6 +220,7 @@ const LogShare: React.FC = React.memo(() => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportType, setExportType] = useState<LogShareExportType>('plain');
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [autoQueryId, setAutoQueryId] = useState<string | null>(null);
   const [allLogs, setAllLogs] = useState<LogShareListItem[]>([]);
@@ -292,7 +294,13 @@ const LogShare: React.FC = React.memo(() => {
 
   // 删除单个
   const handleDeleteOne = async (id: string) => {
-    if (!confirm('确定删除该条分享日志？此操作不可恢复。')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定删除该条分享日志？此操作不可恢复。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       await axios.delete(getApiBaseUrl() + `/api/sharelog/${id}`);
       setNotification({ message: '删除成功', type: 'success' });
@@ -309,7 +317,13 @@ const LogShare: React.FC = React.memo(() => {
       setNotification({ message: '请先选择要删除的日志', type: 'warning' });
       return;
     }
-    if (!confirm(`确定删除选中的 ${selectedIds.length} 条分享日志？此操作不可恢复。`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除选中的 ${selectedIds.length} 条分享日志？此操作不可恢复。`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       await axios.post(getApiBaseUrl() + '/api/sharelog/delete-batch', { ids: selectedIds });
       setNotification({ message: '批量删除成功', type: 'success' });
@@ -326,7 +340,13 @@ const LogShare: React.FC = React.memo(() => {
       setNotification({ message: '暂无可删除日志', type: 'info' });
       return;
     }
-    if (!confirm('确定要删除所有日志吗？该操作不可恢复')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要删除所有日志吗？该操作不可恢复',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       await axios.delete(getApiBaseUrl() + '/api/sharelog/all');
       setNotification({ message: '已清空所有日志', type: 'success' });
@@ -382,7 +402,13 @@ const LogShare: React.FC = React.memo(() => {
   };
 
   const handleDeleteArchive = async (archiveName: string) => {
-    if (!confirm(`确定要删除归档 "${archiveName}" 吗？此操作不可恢复！`)) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定要删除归档 "${archiveName}" 吗？此操作不可恢复！`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (ok) {
       return;
     }
 
@@ -718,7 +744,13 @@ const LogShare: React.FC = React.memo(() => {
 
   // 清除所有历史记录
   const handleClear = async () => {
-    if (window.confirm('确定要清空所有历史记录吗？此操作不可恢复！')) {
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定要清空所有历史记录吗？此操作不可恢复！',
+      tone: 'danger',
+      confirmLabel: '清空',
+    });
+    if (ok) {
       try {
         await clearAllHistory();
         setUploadHistory([]);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import SecretKeySection from './SecretKeySection';
 import { authFetch, getAuthHeaders } from './api';
 import { signedFetch } from '../../utils/requestSigner';
@@ -28,6 +29,7 @@ export default function SelfContainedSecretKeySection({
 }: SelfContainedSecretKeySectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -87,7 +89,13 @@ export default function SelfContainedSecretKeySection({
   const handleDelete = useCallback(async () => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm('确定删除此配置？')) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: '确定删除此配置？',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const fetchFn = useSignedRequest ? signedFetch : authFetch;

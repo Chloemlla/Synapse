@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import TurnstileConfigSection from './TurnstileConfigSection';
 import { TURNSTILE_CONFIG_API, getAuthHeaders, authFetch } from './api';
 import type { TurnstileConfigSetting } from './types';
@@ -14,6 +15,7 @@ interface SelfContainedTurnstileConfigSectionProps {
 export default function SelfContainedTurnstileConfigSection({ prefersReducedMotion: reducedMotionProp }: SelfContainedTurnstileConfigSectionProps) {
   const prefersReducedMotion = useReducedMotion() ?? reducedMotionProp;
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [isOpen, setIsOpen] = useState(false);
@@ -68,7 +70,13 @@ export default function SelfContainedTurnstileConfigSection({ prefersReducedMoti
   const handleDelete = useCallback(async (key: 'TURNSTILE_SECRET_KEY' | 'TURNSTILE_SITE_KEY') => {
     if (!canWrite) return;
     if (deleting) return;
-    if (!window.confirm(`确定删除 Turnstile 配置「${key}」？`)) return;
+    const ok = await confirm({
+      title: '确认执行该操作？',
+      description: `确定删除 Turnstile 配置「${key}」？`,
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(`${TURNSTILE_CONFIG_API}/${key}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });
