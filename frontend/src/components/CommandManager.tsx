@@ -18,6 +18,7 @@ import {
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { api } from '../api/index';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -118,6 +119,7 @@ const ResourceAnalysisPanel = React.lazy(() => import('./CommandManager/Resource
 
 const CommandManager: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { verificationToken, isActive } = useSecuritySession();
   const [command, setCommand] = useState('');
@@ -360,12 +362,19 @@ const CommandManager: React.FC = () => {
   // 移除命令
   const removeCommand = async (commandId: string) => {
     try {
-      await api.post('/api/command/p', { commandId });
+      // 后端以 `status: 'error'`（HTTP 200）表达“没删到”的历史形态已经改成 404，
+      // 但这里同时校验响应体：否则一旦后端再改回 200+error，UI 又会“提示已移除但行还在队列里”。
+      const response = await api.post('/api/command/p', { commandId });
+      const status = response?.data?.status;
+      if (status === 'error') {
+        throw new Error(response?.data?.message || '移除命令失败');
+      }
       setCommandQueue(prev => prev.filter(cmd => cmd.commandId !== commandId));
       setNotification({ message: '命令已从队列移除', type: 'success' });
     } catch (error: any) {
+      // 失败时不再本地删行：本地状态必须反映服务端事实。
       setNotification({ 
-        message: error.response?.data?.error || '移除命令失败', 
+        message: error.response?.data?.error || error?.message || '移除命令失败', 
         type: 'error' 
       });
     }
@@ -424,7 +433,13 @@ const CommandManager: React.FC = () => {
       setNotification({ message: '当前没有可清空的历史记录', type: 'warning' });
       return;
     }
-    if (!window.confirm('确定清空全部命令执行历史？此操作不可撤销。')) return;
+    const ok = await confirm({
+      title: '清空命令执行历史？',
+      description: '全部已执行命令的记录与输出会被删除，不可恢复。',
+      tone: 'danger',
+      confirmLabel: '清空历史',
+    });
+    if (!ok) return;
     try {
       await api.post('/api/command/clear-history', { verificationToken });
       setCommandHistory([]);
@@ -440,7 +455,13 @@ const CommandManager: React.FC = () => {
 
   // 清空等待执行的命令队列（后端 POST /api/command/clear-queue，同样要求安全会话）
   const clearQueue = async () => {
-    if (!window.confirm('确定清空命令队列？排队中但未执行的命令会全部丢弃。')) return;
+    const ok = await confirm({
+      title: '清空命令队列？',
+      description: '排队中但尚未被轮询端取走的命令会全部丢弃。',
+      tone: 'danger',
+      confirmLabel: '清空队列',
+    });
+    if (!ok) return;
     setIsLoadingQueue(true);
     try {
       const response = await api.post('/api/command/clear-queue', { verificationToken });

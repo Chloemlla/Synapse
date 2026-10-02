@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import MarkdownRenderer from './MarkdownRenderer';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import {
@@ -33,6 +34,7 @@ const AnnouncementManager: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
 
   // 获取公告
   const fetchAnnouncement = async () => {
@@ -135,7 +137,13 @@ const AnnouncementManager: React.FC = () => {
   // 删除公告
   const deleteAnnouncement = async () => {
     if (deleting) return;
-    if (!window.confirm('确定要删除所有公告吗？')) return;
+    const ok = await confirm({
+      title: '删除所有公告？',
+      description: '当前公告会被清空，站点将不再展示任何公告。此操作不可撤销。',
+      tone: 'danger',
+      confirmLabel: '删除公告',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await fetch(API_URL, {

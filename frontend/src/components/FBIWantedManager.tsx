@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { FaSearch, FaPlus, FaEye, FaEdit, FaTrash, FaExclamationTriangle, FaFilter, FaUser, FaTimes, FaImage, FaUpload, FaShieldAlt, FaUserSecret, FaSpinner, FaSave } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import getApiBaseUrl from '../api';
 import { openDB } from 'idb';
 import ImageUploadSection from './ImageUploadSection';
@@ -65,6 +66,7 @@ interface Statistics {
 
 const FBIWantedManager: React.FC = () => {
     const { setNotification } = useNotification();
+    const confirm = useConfirm();
     const { user } = useAuth();
     const canWrite = isSuperAdmin(user?.role);
 
@@ -697,8 +699,14 @@ const FBIWantedManager: React.FC = () => {
                                                         <FaEdit />
                                                     </motion.button>
                                                     <motion.button
-                                                        onClick={() => {
-                                                            if (confirm('确定要删除这个通缉犯记录吗？')) {
+                                                        onClick={async () => {
+                                                            const ok = await confirm({
+                                                                title: '删除这条通缉犯记录？',
+                                                                description: '该条记录及其关联图片会被删除，不可恢复。',
+                                                                tone: 'danger',
+                                                                confirmLabel: '删除',
+                                                            });
+                                                            if (ok) {
                                                                 handleDeleteWanted(wanted._id);
                                                             }
                                                         }}

@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, Link } f
 import { TOTPStatus } from './types/auth';
 import { SimpleLoadingSpinner } from './components/LoadingSpinner';
 import { NotificationProvider } from './components/Notification';
+import { ConfirmDialogProvider } from './components/confirm/ConfirmDialogProvider';
 import { BroadcastModalProvider } from './components/BroadcastModal';
 import WsConnector from './components/WsConnector';
 import { ClientOriginProbe } from './components/ClientOriginProbe';
@@ -1468,6 +1469,7 @@ const App: React.FC = () => {
 
   return (
     <NotificationProvider>
+      <ConfirmDialogProvider>
       <PenaltyAppealHost />
       <BroadcastModalProvider>
         <WsConnector />
@@ -1708,6 +1710,7 @@ const App: React.FC = () => {
           </div>
         </LazyMotion>
       </BroadcastModalProvider>
+      </ConfirmDialogProvider>
     </NotificationProvider>
   );
 };

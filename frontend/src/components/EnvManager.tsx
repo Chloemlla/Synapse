@@ -3,6 +3,7 @@ import React, {
 } from 'react';
 import { LazyMotion, domAnimation, m, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin, isAdminRole } from '../utils/rbac';
 import { useSearchParams } from 'react-router-dom';
@@ -68,6 +69,7 @@ const EnvManager: React.FC = () => {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const prefersReducedMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -191,7 +193,13 @@ const EnvManager: React.FC = () => {
 
   const handleDeleteEnvVar = useCallback(async (key: string) => {
     if (!canWrite) return;
-    if (!window.confirm(`确定删除环境变量「${key}」？`)) return;
+    const ok = await confirm({
+      title: `删除环境变量「${key}」？`,
+      description: '删除后依赖该变量的功能会立即失效，且不会自动回退到 .env 里的旧值。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     try {
       const res = await authFetch(API_URL, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ key }) });
       const data = await res.json();

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
   FaUserPlus,
   FaEdit,
@@ -227,6 +228,7 @@ const UserManagement: React.FC = () => {
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSectionState>(createDefaultCollapsedSections);
   const navigate = useNavigate();
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const prefersReducedMotion = useReducedMotion();
   const hoverScale = React.useCallback((_scale?: number, enabled: boolean = true) => (
     enabled && !prefersReducedMotion ? { scale: 1.01 } : undefined
@@ -473,7 +475,13 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!window.confirm('确定要删除该用户吗？')) return;
+    const ok = await confirm({
+      title: '删除该用户？',
+      description: '用户的账号与数据会被删除，且不可恢复。如需临时封停，请改用「封停账号」。',
+      tone: 'danger',
+      confirmLabel: '删除用户',
+    });
+    if (!ok) return;
     setLoading(true);
     setError('');
     try {
@@ -486,7 +494,7 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [fetchUsers, setNotification]);
+  }, [confirm, fetchUsers, setNotification]);
 
   const handleBulkAction = useCallback(async () => {
     if (selectedUserIds.length === 0) {
@@ -514,7 +522,13 @@ const UserManagement: React.FC = () => {
       }
     }
 
-    if (!window.confirm(`${actionMeta.confirm}\n\n已选择 ${selectedUserIds.length} 个用户。`)) {
+    const ok = await confirm({
+      title: actionMeta.confirm,
+      description: `已选择 ${selectedUserIds.length} 个用户。`,
+      tone: bulkAction === 'suspend' || bulkAction === 'delete' ? 'danger' : 'default',
+      confirmLabel: '执行批量操作',
+    });
+    if (!ok) {
       return;
     }
 
@@ -540,7 +554,7 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [bulkAction, fetchUsers, selectedUserIds, setNotification, stats, user, users]);
+  }, [bulkAction, confirm, fetchUsers, selectedUserIds, setNotification, stats, user, users]);
 
   const openEdit = useCallback((u: User) => {
     setEditingUser(u);
@@ -1285,7 +1299,13 @@ const UserManagement: React.FC = () => {
                         className={studioDangerButtonClassName}
                         onClick={async () => {
                           if (!fpUser) return;
-                          if (!window.confirm('确定要清空该用户的全部指纹记录吗？此操作不可撤销')) return;
+                          const ok = await confirm({
+                            title: '清空该用户的全部指纹记录？',
+                            description: '该用户名下的指纹记录会被全部删除，且不可恢复。',
+                            tone: 'danger',
+                            confirmLabel: '清空记录',
+                          });
+                          if (!ok) return;
                           try {
                             const res = await api.delete(`/api/admin/users/${fpUser.id}/fingerprints`);
                             const next = res?.data?.fingerprints || [];
@@ -1360,7 +1380,13 @@ const UserManagement: React.FC = () => {
                               className={studioDangerButtonClassName}
                               onClick={async () => {
                                 if (!fpUser) return;
-                                if (!window.confirm('确定要删除该指纹记录吗？')) return;
+                                const ok = await confirm({
+                                  title: '删除这条指纹记录？',
+                                  description: '只删除所选的那一条记录，该用户的其他指纹不受影响。',
+                                  tone: 'danger',
+                                  confirmLabel: '删除',
+                                });
+                                if (!ok) return;
                                 try {
                                   const res = await api.delete(`/api/admin/users/${fpUser.id}/fingerprints/${encodeURIComponent(fp.id)}`, {
                                     params: { ts: fp.ts },

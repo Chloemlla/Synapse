@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { FaTrash, FaCopy, FaSearch, FaSync, FaDice, FaLink, FaPlus, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaList, FaToggleOn, FaToggleOff, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaDownload, FaFileAlt, FaUpload, FaUserSecret } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import getApiBaseUrl from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -62,6 +63,7 @@ const ShortLinkManager: React.FC = () => {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [codeValidation, setCodeValidation] = useState<{ isValid: boolean; message: string } | null>(null);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
 
   // 优化动画：根据系统"减少动态"偏好降级，并用辅助函数避免重复创建对象
   const prefersReducedMotion = useReducedMotion();
@@ -119,7 +121,13 @@ const ShortLinkManager: React.FC = () => {
   }, [search, page]);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确定要删除该短链吗？')) return;
+    const ok = await confirm({
+      title: '删除该短链？',
+      description: '删除后原有链接会立即失效（404），已发出的短链无法再访问。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setHighlightedId(id);
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/admin/shortlinks/${id}`, {
@@ -315,7 +323,13 @@ const ShortLinkManager: React.FC = () => {
     const selectedArray = Array.from(selectedLinks);
     const selectedLinkObjects = links.filter(link => selectedArray.includes(link._id));
     const linkCodes = selectedLinkObjects.map(link => link.code).join(', ');
-    if (window.confirm(`确定要删除以下${selectedLinks.size}个短链吗？\n${linkCodes}\n\n此操作不可撤销。`)) {
+    const ok = await confirm({
+      title: `删除选中的 ${selectedLinks.size} 个短链？`,
+      description: `${linkCodes}\n\n删除后这些链接会立即失效，且不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '批量删除',
+    });
+    if (ok) {
       setBatchDeleting(true);
       try {
         const response = await fetch(`${getApiBaseUrl()}/api/admin/shortlinks/batch-delete`, {
@@ -424,8 +438,13 @@ const ShortLinkManager: React.FC = () => {
       setNotification({ message: '没有短链数据可以删除', type: 'warning' });
       return;
     }
-    const confirmMessage = `确定要删除所有 ${links.length} 个短链吗？\n\n此操作不可撤销！`;
-    if (!window.confirm(confirmMessage)) return;
+    const ok = await confirm({
+      title: `删除全部 ${links.length} 个短链？`,
+      description: '当前列表范围内的全部短链都会失效，且不可撤销。',
+      tone: 'danger',
+      confirmLabel: '全部删除',
+    });
+    if (!ok) return;
     setDeletingAll(true);
     try {
       const response = await signedFetch(`${getApiBaseUrl()}/api/shorturl/admin/deleteall`, {

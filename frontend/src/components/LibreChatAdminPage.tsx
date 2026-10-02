@@ -4,6 +4,7 @@ import { listUsers, getUserHistory, deleteUser, batchDeleteUsers, deleteAllUsers
 import { AiErrorDetailsPanel } from './AiErrorDetailsPanel';
 import LibreChatGuestCleanup from './LibreChatGuestCleanup';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -59,6 +60,7 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
 
 const LibreChatAdminPage: React.FC = () => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   
@@ -142,7 +144,12 @@ const LibreChatAdminPage: React.FC = () => {
   };
 
   const onDeleteUser = async (u: AdminUserSummary) => {
-    const yes = confirm(`确定删除用户 ${conversationDisplayName(u)} 的全部聊天历史吗？该操作不可恢复。`);
+    const yes = await confirm({
+      title: `删除用户 ${conversationDisplayName(u)} 的全部聊天历史？`,
+      description: '该用户在所有会话里的消息都会被删除，不可恢复。',
+      tone: 'danger',
+      confirmLabel: '删除历史',
+    });
     if (!yes) return;
     try {
       setActionLoading(true);
@@ -188,7 +195,12 @@ const LibreChatAdminPage: React.FC = () => {
       setNotification({ type: 'warning', message: '请先选择要删除的用户' });
       return;
     }
-    const yes = confirm(`确定删除选中的 ${selectedUserIds.length} 个用户的全部聊天历史吗？该操作不可恢复。`);
+    const yes = await confirm({
+      title: `删除选中 ${selectedUserIds.length} 个用户的聊天历史？`,
+      description: '这些用户在所有会话里的消息都会被删除，不可恢复。',
+      tone: 'danger',
+      confirmLabel: '批量删除',
+    });
     if (!yes) return;
     try {
       setActionLoading(true);
@@ -211,9 +223,20 @@ const LibreChatAdminPage: React.FC = () => {
   };
 
   const handleDeleteAll = async () => {
-    const yes = confirm('确定删除所有用户的聊天历史吗？这是一个危险操作，不可恢复！');
+    // 两次确认合并成一个明确的两步对话框：比两个原生 confirm 更难误点（默认焦点在取消上）。
+    const yes = await confirm({
+      title: '删除所有用户的聊天历史？',
+      description: '这是全库范围的危险操作：不区分用户、不可恢复。请确认已做过备份。',
+      tone: 'danger',
+      confirmLabel: '我已确认，继续',
+    });
     if (!yes) return;
-    const confirmAgain = confirm('再次确认：这将删除所有用户的聊天历史（无需选择任何用户）。确定继续吗？');
+    const confirmAgain = await confirm({
+      title: '再次确认：清空全部聊天历史',
+      description: '第二次确认。继续后所有会话记录将被永久删除。',
+      tone: 'danger',
+      confirmLabel: '执行删除',
+    });
     if (!confirmAgain) return;
     try {
       setActionLoading(true);

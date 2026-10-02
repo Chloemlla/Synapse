@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { getApiBaseUrl } from '../api/api';
 import { FaChartBar, FaSync, FaSearch, FaRedo, FaTrash, FaEye, FaTimes, FaPlus, FaClipboard, FaCopy, FaListAlt, FaClock } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -179,6 +180,7 @@ const DataCollectionManager: React.FC = () => {
     const [newDetailsRaw, setNewDetailsRaw] = useState(''); // string or JSON text
     const base = getApiBaseUrl();
     const { setNotification } = useNotification();
+    const confirm = useConfirm();
     const { user } = useAuth();
     const canWrite = isSuperAdmin(user?.role);
     const prefersReducedMotion = useReducedMotion();
@@ -332,7 +334,13 @@ const DataCollectionManager: React.FC = () => {
     const deferredItems = useDeferredValue(items);
 
     const deleteOne = useCallback(async (id: string) => {
-        if (!confirm('确认删除该记录？')) return;
+        const ok = await confirm({
+            title: '删除该条采集记录？',
+            description: '该条行为数据会被永久删除，不可恢复。',
+            tone: 'danger',
+            confirmLabel: '删除',
+        });
+        if (!ok) return;
         try {
             const res = await fetch(`${base}/api/data-collection/admin/${id}`, {
                 method: 'DELETE',
@@ -351,7 +359,7 @@ const DataCollectionManager: React.FC = () => {
         } catch (e) {
             setNotification({ type: 'error', message: '删除失败' });
         }
-    }, [base, fetchList, setNotification]);
+    }, [base, confirm, fetchList, setNotification]);
 
     const deleteBatch = async () => {
         const ids = Array.from(selected);
@@ -359,7 +367,13 @@ const DataCollectionManager: React.FC = () => {
             setNotification({ type: 'warning', message: '请先选择要删除的记录' });
             return;
         }
-        if (!confirm(`确认批量删除 ${ids.length} 条记录？`)) return;
+        const ok = await confirm({
+            title: `删除选中的 ${ids.length} 条记录？`,
+            description: '选中的行为数据会被永久删除，不可恢复。',
+            tone: 'danger',
+            confirmLabel: '批量删除',
+        });
+        if (!ok) return;
         try {
             const res = await fetch(`${base}/api/data-collection/admin/delete-batch`, {
                 method: 'POST',
@@ -653,7 +667,13 @@ const DataCollectionManager: React.FC = () => {
                     {canWrite && (
                     <motion.button
                         onClick={async () => {
-                            if (!confirm('确认删除全部数据收集记录？该操作不可恢复。')) return;
+                            const ok = await confirm({
+                                title: '删除全部采集记录？',
+                                description: '数据采集表会被清空。此操作不可恢复，请先导出或确认不再需要这些数据。',
+                                tone: 'danger',
+                                confirmLabel: '全部删除',
+                            });
+                            if (!ok) return;
                             try {
                                 const res = await fetch(`${base}/api/data-collection/admin/all`, {
                                     method: 'DELETE',

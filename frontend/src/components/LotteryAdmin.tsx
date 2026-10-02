@@ -7,6 +7,7 @@ import { LotteryPrize, LotteryRound } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { AnimatePresence } from 'framer-motion';
 import { deleteAllRounds } from '../api/lottery';
@@ -65,6 +66,7 @@ function decryptAES256(encryptedData: string, iv: string, key: string): string {
 // 创建轮次表单组件
 const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -121,10 +123,14 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
       if (resp && (resp as any).warning) {
         setNotification({ message: `后端已自动修正部分数据：${(resp as any).warning}`, type: 'warning' });
       }
-      // 新增：弹窗询问是否保留表单
-      if (window.confirm('抽奖轮次创建成功，是否保留当前表单内容？\n选择"确定"保留，选择"取消"清空表单。')) {
-        // 保留表单内容
-      } else {
+      // 创建成功后询问是否保留表单（保留 / 清空是两个动作，不是「是/否」）。
+      const keepForm = await confirm({
+        title: '保留当前表单内容？',
+        description: '选择「保留」可以基于刚才的内容继续创建下一轮；选择「清空表单」则重置为初始值。',
+        confirmLabel: '保留',
+        cancelLabel: '清空表单',
+      });
+      if (!keepForm) {
         setFormData({
           name: '',
           description: '',
@@ -335,13 +341,20 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
 // 轮次管理组件
 const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void }> = ({ rounds, onRefresh }) => {
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [loading, setLoading] = useState<string | null>(null);
 
   // 防御性处理，确保 rounds 一定为数组
   const safeRounds = Array.isArray(rounds) ? rounds : [];
 
   const handleResetRound = async (roundId: string) => {
-    if (!confirm('确定要重置这个轮次吗？这将清空所有参与者和获奖者记录。')) {
+    const ok = await confirm({
+      title: '重置这个轮次？',
+      description: '该轮次的全部参与者与获奖记录会被清空，且不可恢复。',
+      tone: 'danger',
+      confirmLabel: '重置轮次',
+    });
+    if (!ok) {
       return;
     }
 
@@ -450,6 +463,7 @@ const LotteryAdmin: React.FC = () => {
   const { allRounds, fetchAllRounds } = useLottery();
   const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
 
   // 检查超级管理员权限
   if (!user || !isSuperAdmin(user.role)) {
@@ -483,7 +497,13 @@ const LotteryAdmin: React.FC = () => {
 
   // 新增：一键删除所有轮次
   const handleDeleteAllRounds = async () => {
-    if (!window.confirm('确定要删除所有抽奖轮次吗？此操作不可恢复！')) return;
+    const ok = await confirm({
+      title: '删除所有抽奖轮次？',
+      description: '全部轮次及其参与者、获奖记录都会被删除，且不可恢复。',
+      tone: 'danger',
+      confirmLabel: '全部删除',
+    });
+    if (!ok) return;
     try {
       await deleteAllRounds();
       setNotification({ message: '所有轮次已删除', type: 'success' });

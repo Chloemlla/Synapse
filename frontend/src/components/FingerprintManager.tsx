@@ -22,6 +22,7 @@ import { turnstileApi, type FingerprintStats } from '../api/turnstile';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -129,6 +130,7 @@ export default function FingerprintManager() {
   const [actionUserId, setActionUserId] = useState<string | null>(null);
   const [deletingFingerprintKey, setDeletingFingerprintKey] = useState<string | null>(null);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -223,7 +225,13 @@ export default function FingerprintManager() {
   }, [keyword]);
 
   const handleCleanup = useCallback(async () => {
-    if (!window.confirm('确定要清理所有过期的临时指纹数据吗？此操作不可撤销。')) return;
+    const ok = await confirm({
+      title: '清理过期临时指纹？',
+      description: '已过期的临时指纹记录会被删除，仍在有效期内的记录不受影响。',
+      tone: 'danger',
+      confirmLabel: '开始清理',
+    });
+    if (!ok) return;
     setCleaning(true);
     try {
       const result = await turnstileApi.cleanupExpiredFingerprints();
@@ -237,7 +245,7 @@ export default function FingerprintManager() {
     } finally {
       setCleaning(false);
     }
-  }, [fetchDashboard, setNotification]);
+  }, [confirm, fetchDashboard, setNotification]);
 
   const updateUserRequirement = useCallback((userId: string, requireFingerprint: boolean, requireFingerprintAt: number) => {
     const patchUser = (user: FingerprintUser): FingerprintUser => user.id === userId
@@ -279,7 +287,13 @@ export default function FingerprintManager() {
 
   const clearUserFingerprints = useCallback(async (userId: string) => {
     if (!canWrite) return;
-    if (!window.confirm('确定要清空该用户的全部指纹记录吗？此操作不可撤销。')) return;
+    const ok = await confirm({
+      title: '清空该用户的全部指纹记录？',
+      description: '该用户名下的指纹记录会被全部删除，且不可恢复；如需重新采集，可再发一次上报请求。',
+      tone: 'danger',
+      confirmLabel: '清空记录',
+    });
+    if (!ok) return;
     setActionUserId(userId);
     try {
       const response = await api.delete<FingerprintListResponse>(`/api/admin/users/${userId}/fingerprints`);
@@ -290,11 +304,17 @@ export default function FingerprintManager() {
     } finally {
       setActionUserId(null);
     }
-  }, [canWrite, setNotification, updateUserFingerprints]);
+  }, [canWrite, confirm, setNotification, updateUserFingerprints]);
 
   const deleteUserFingerprint = useCallback(async (userId: string, record: FingerprintRecord, key: string) => {
     if (!canWrite) return;
-    if (!window.confirm('确定要删除该指纹记录吗？')) return;
+    const ok = await confirm({
+      title: '删除这条指纹记录？',
+      description: '只删除所选的那一条记录，该用户的其他指纹不受影响。',
+      tone: 'danger',
+      confirmLabel: '删除',
+    });
+    if (!ok) return;
     setDeletingFingerprintKey(key);
     try {
       const response = await api.delete<FingerprintListResponse>(

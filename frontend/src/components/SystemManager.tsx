@@ -10,6 +10,7 @@ import { turnstileApi, type SchedulerStatus, type SyncDirectionResult, type Sync
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import {
@@ -88,6 +89,7 @@ export default function SystemManager() {
   const [cleaning, setCleaning] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
@@ -133,7 +135,12 @@ export default function SystemManager() {
 
   const handleStartScheduler = async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定启动调度器？将恢复所有定时任务。')) return;
+    const ok = await confirm({
+      title: '启动调度器？',
+      description: '将恢复所有定时任务（过期指纹 / 访问密钥 / IP 封禁清理等）。',
+      confirmLabel: '启动',
+    });
+    if (!ok) return;
     setStarting(true);
     try {
       const result = await turnstileApi.startScheduler();
@@ -156,55 +163,70 @@ export default function SystemManager() {
 
   const handleStopScheduler = async () => {
     if (!canWrite) return;
-    if (window.confirm('确定要停止调度器吗？这将暂停所有定时任务。')) {
-      setStopping(true);
-      try {
-        const result = await turnstileApi.stopScheduler();
-        setNotification({
-          message: result.message,
-          type: 'success'
-        });
-        await fetchSchedulerStatus();
-      } catch (error: unknown) {
-        console.error('停止调度器失败:', error);
-        const msg = getBackendErrorMessage(error, '停止调度器失败');
-        setNotification({
-          message: msg,
-          type: 'error'
-        });
-      } finally {
-        setStopping(false);
-      }
+    const ok = await confirm({
+      title: '停止调度器？',
+      description: '所有定时任务会被暂停。期间过期数据不会被自动清理，直到重新启动或手动清理。',
+      tone: 'danger',
+      confirmLabel: '停止',
+    });
+    if (!ok) return;
+    setStopping(true);
+    try {
+      const result = await turnstileApi.stopScheduler();
+      setNotification({
+        message: result.message,
+        type: 'success'
+      });
+      await fetchSchedulerStatus();
+    } catch (error: unknown) {
+      console.error('停止调度器失败:', error);
+      const msg = getBackendErrorMessage(error, '停止调度器失败');
+      setNotification({
+        message: msg,
+        type: 'error'
+      });
+    } finally {
+      setStopping(false);
     }
   };
 
   const handleManualCleanup = async () => {
     if (!canWrite) return;
-    if (window.confirm('确定要执行手动清理吗？此操作将清理所有过期数据。')) {
-      setCleaning(true);
-      try {
-        const result = await turnstileApi.manualCleanup();
-        setNotification({
-          message: `清理完成！处理了 ${result.cleanedCount} 条记录`,
-          type: 'success'
-        });
-        await fetchSchedulerStatus();
-      } catch (error: unknown) {
-        console.error('手动清理失败:', error);
-        const msg = getBackendErrorMessage(error, '手动清理失败');
-        setNotification({
-          message: msg,
-          type: 'error'
-        });
-      } finally {
-        setCleaning(false);
-      }
+    const ok = await confirm({
+      title: '立即执行手动清理？',
+      description: '会删除所有已过期的临时指纹、访问密钥与 IP 封禁记录。已生效的封禁不受影响。',
+      tone: 'danger',
+      confirmLabel: '执行清理',
+    });
+    if (!ok) return;
+    setCleaning(true);
+    try {
+      const result = await turnstileApi.manualCleanup();
+      setNotification({
+        message: `清理完成！处理了 ${result.cleanedCount} 条记录`,
+        type: 'success'
+      });
+      await fetchSchedulerStatus();
+    } catch (error: unknown) {
+      console.error('手动清理失败:', error);
+      const msg = getBackendErrorMessage(error, '手动清理失败');
+      setNotification({
+        message: msg,
+        type: 'error'
+      });
+    } finally {
+      setCleaning(false);
     }
   };
 
   const handleSyncIPBans = async () => {
     if (!canWrite) return;
-    if (!window.confirm('确定立即同步 IP 封禁数据（MongoDB 与 Redis）？')) return;
+    const ok = await confirm({
+      title: '立即同步 IP 封禁数据？',
+      description: '按双向策略合并 MongoDB 与 Redis 的封禁记录。同步期间两边的差额会被补齐。',
+      confirmLabel: '开始同步',
+    });
+    if (!ok) return;
     setSyncing(true);
     try {
       const result = await turnstileApi.syncIPBans();
