@@ -19,7 +19,7 @@ import {
   InfoPanel,
   InfoSectionTitle,
   studioSecondaryButtonClassName,
-} from './studioTheme';
+} from '../studioTheme';
 
 /**
  * 管理总览的系统级汇总卡片。

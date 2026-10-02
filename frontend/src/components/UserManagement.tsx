@@ -525,7 +525,8 @@ const UserManagement: React.FC = () => {
     const ok = await confirm({
       title: actionMeta.confirm,
       description: `已选择 ${selectedUserIds.length} 个用户。`,
-      tone: bulkAction === 'suspend' || bulkAction === 'delete' ? 'danger' : 'default',
+      // 只有「封停账户」与「重置 MFA」是不可逆/高影响的，给红色确认按钮。
+      tone: bulkAction === 'suspend' || bulkAction === 'resetMfa' ? 'danger' : 'default',
       confirmLabel: '执行批量操作',
     });
     if (!ok) {
