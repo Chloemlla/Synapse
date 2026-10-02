@@ -19,9 +19,12 @@ export default function AdminStoreDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // 统计不可用（无权访问 / 接口报错）时不编造 0：
+  // 假的 0 会让管理员以为「商店里什么都没有」，而这正是仪表盘最危险的失效方式。
+  // 卡片会显示「—」并在上方给出明确提示。
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('AdminStoreDashboard: 组件已加载');
     fetchStats();
   }, []);
 
@@ -36,13 +39,11 @@ export default function AdminStoreDashboard() {
         resources: resourceStats,
         cdks: cdkStats
       });
+      setStatsError(null);
     } catch (error) {
       console.error('获取统计信息失败:', error);
-      // 设置默认值，防止组件崩溃
-      setStats({
-        resources: { total: 0 },
-        cdks: { total: 0, used: 0, available: 0 }
-      });
+      setStats(null);
+      setStatsError('商店统计暂时取不到（可能是权限不足或服务不可用），下方入口仍可正常使用。');
     } finally {
       setLoading(false);
     }
@@ -102,6 +103,12 @@ export default function AdminStoreDashboard() {
       </motion.div>
 
       {/* 统计卡片 */}
+      {statsError ? (
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <FaInfoCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
+          <span>{statsError}</span>
+        </div>
+      ) : null}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -122,7 +129,7 @@ export default function AdminStoreDashboard() {
                   总资源数量
                 </dt>
                 <dd className="mt-1 text-3xl font-semibold text-slate-900">
-                  {stats?.resources.total ?? '-'}
+                  {stats ? stats.resources.total : '—'}
                 </dd>
               </div>
             </div>
@@ -144,7 +151,7 @@ export default function AdminStoreDashboard() {
                   总CDK数量
                 </dt>
                 <dd className="mt-1 text-3xl font-semibold text-slate-900">
-                  {stats?.cdks.total ?? '-'}
+                  {stats ? stats.cdks.total : '—'}
                 </dd>
               </div>
             </div>
@@ -166,7 +173,7 @@ export default function AdminStoreDashboard() {
                   已使用CDK
                 </dt>
                 <dd className="mt-1 text-3xl font-semibold text-red-600">
-                  {stats?.cdks.used ?? '-'}
+                  {stats ? stats.cdks.used : '—'}
                 </dd>
               </div>
             </div>
@@ -188,7 +195,7 @@ export default function AdminStoreDashboard() {
                   可用CDK
                 </dt>
                 <dd className="mt-1 text-3xl font-semibold text-green-600">
-                  {stats?.cdks.available ?? '-'}
+                  {stats ? stats.cdks.available : '—'}
                 </dd>
               </div>
             </div>
