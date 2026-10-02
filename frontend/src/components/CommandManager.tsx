@@ -438,6 +438,29 @@ const CommandManager: React.FC = () => {
     }
   };
 
+  // 清空等待执行的命令队列（后端 POST /api/command/clear-queue，同样要求安全会话）
+  const clearQueue = async () => {
+    if (!window.confirm('确定清空命令队列？排队中但未执行的命令会全部丢弃。')) return;
+    setIsLoadingQueue(true);
+    try {
+      const response = await api.post('/api/command/clear-queue', { verificationToken });
+      const cleared = Number(response.data?.cleared ?? response.data?.removed ?? 0);
+      setCommandQueue([]);
+      setQueueLoaded(false);
+      setNotification({
+        message: cleared > 0 ? `已清空队列（${cleared} 条）` : '队列已为空',
+        type: 'success'
+      });
+    } catch (error: any) {
+      setNotification({
+        message: error.response?.data?.error || '清空命令队列失败',
+        type: 'error'
+      });
+    } finally {
+      setIsLoadingQueue(false);
+    }
+  };
+
   // 格式化内存使用量
   const formatMemory = (bytes: number) => {
     const mb = bytes / 1024 / 1024;
@@ -1473,6 +1496,15 @@ const CommandManager: React.FC = () => {
             >
               <FaEye className="w-4 h-4" />
               查看下一个
+            </motion.button>
+            <motion.button
+              onClick={clearQueue}
+              disabled={isLoadingQueue}
+              className="px-3 py-2 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+              whileTap={{ scale: 0.95 }}
+            >
+              <FaTrash className="w-4 h-4" />
+              清空队列
             </motion.button>
           </div>
         </div>

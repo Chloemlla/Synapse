@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FaCopy, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
 import { api } from "../api/api";
 import { useNotification } from "./Notification";
+import ConfirmModal from "./ConfirmModal";
 import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
 import {
@@ -59,6 +60,17 @@ type InviteEditDraft = {
   expiresAt: string;
 };
 
+/** 后端 `/registration-invites/stats` 的聚合视图（跨全部邀请码，不随前端分页变化）。 */
+interface InviteStats {
+  total: number;
+  active: number;
+  expired: number;
+  exhausted: number;
+  totalUses: number;
+  remainingUses: number;
+  recentUses: Array<{ code: string; username: string; email: string; usedAt: string }>;
+}
+
 const buildInviteDraft = (invite: RegistrationInvite): InviteEditDraft => ({
   maxUses: String(invite.maxUses),
   expiresAt: toLocalDatetimeInput(invite.expiresAt),
@@ -69,6 +81,10 @@ const RegistrationInviteManager: React.FC = () => {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const [invites, setInvites] = useState<RegistrationInvite[]>([]);
+  const [stats, setStats] = useState<InviteStats | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -82,16 +98,67 @@ const RegistrationInviteManager: React.FC = () => {
   const loadInvites = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.get("/api/admin/registration-invites");
-      const nextInvites = response.data?.invites || [];
+      // 列表与聚合统计并行取：界面上的「总数/可用/已过期/已用尽」以服务端聚合为准，
+      // 不再靠前端把当前列表求和（两者口径不同：列表是全部邀请码，但见不到 expired/exhausted 细分）。
+      const [listResponse, statsResponse] = await Promise.allSettled([
+        api.get("/api/admin/registration-invites"),
+        api.get("/api/admin/registration-invites/stats"),
+      ]);
+      if (listResponse.status === "rejected") {
+        throw listResponse.reason;
+      }
+      const nextInvites = listResponse.value.data?.invites || [];
       setInvites(nextInvites);
       setEditDrafts(Object.fromEntries(nextInvites.map((invite: RegistrationInvite) => [invite.id, buildInviteDraft(invite)])));
+      setSelectedIds((current) => current.filter((id) => nextInvites.some((invite: RegistrationInvite) => invite.id === id)));
+      if (statsResponse.status === "fulfilled" && statsResponse.value.data?.success) {
+        setStats(statsResponse.value.data.stats as InviteStats);
+      }
     } catch (error: any) {
       setNotification({ type: "error", message: error?.response?.data?.error || "获取邀请码列表失败" });
     } finally {
       setLoading(false);
     }
   }, [setNotification]);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }, []);
+
+  const allSelected = invites.length > 0 && selectedIds.length === invites.length;
+
+  /** 批量启用/停用/删除：后端每个请求最多接受 500 个 id，这里按 200 分批串行，避免一次失败全军覆没。 */
+  const runBulk = useCallback(
+    async (action: "bulk-active" | "bulk-delete", active?: boolean) => {
+      if (selectedIds.length === 0) return;
+      setBulkRunning(true);
+      const chunks: string[][] = [];
+      for (let i = 0; i < selectedIds.length; i += 200) chunks.push(selectedIds.slice(i, i + 200));
+      let affected = 0;
+      try {
+        for (const ids of chunks) {
+          const response = await api.post(`/api/admin/registration-invites/${action}`, {
+            ids,
+            ...(action === "bulk-active" ? { active: active !== false } : {}),
+          });
+          affected += Number(
+            response.data?.modified ?? response.data?.deleted ?? 0,
+          );
+        }
+        const label = action === "bulk-delete" ? "删除" : active === false ? "停用" : "启用";
+        setNotification({ type: "success", message: `已${label} ${affected} 个邀请码` });
+        setSelectedIds([]);
+        await loadInvites();
+      } catch (error: any) {
+        setNotification({ type: "error", message: error?.response?.data?.error || `批量操作失败（已完成 ${affected} 个）` });
+        await loadInvites();
+      } finally {
+        setBulkRunning(false);
+        setConfirmBulkDelete(false);
+      }
+    },
+    [loadInvites, selectedIds, setNotification],
+  );
 
   useEffect(() => {
     void loadInvites();
@@ -225,22 +292,49 @@ const RegistrationInviteManager: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("slate")}`}>
           <div className="text-xs font-semibold text-slate-500">总数</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{invites.length}</div>
+          <div className="mt-2 text-2xl font-semibold text-slate-900">{stats?.total ?? invites.length}</div>
         </div>
         <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("emerald")}`}>
           <div className="text-xs font-semibold text-emerald-700">可用</div>
-          <div className="mt-2 text-2xl font-semibold text-emerald-800">{activeCount}</div>
+          <div className="mt-2 text-2xl font-semibold text-emerald-800">{stats?.active ?? activeCount}</div>
+        </div>
+        <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("amber")}`}>
+          <div className="text-xs font-semibold text-amber-700">已过期</div>
+          <div className="mt-2 text-2xl font-semibold text-amber-800">{stats?.expired ?? 0}</div>
         </div>
         <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("slate")}`}>
-          <div className="text-xs font-semibold text-slate-500">已使用</div>
+          <div className="text-xs font-semibold text-slate-500">已用尽</div>
+          <div className="mt-2 text-2xl font-semibold text-slate-900">{stats?.exhausted ?? 0}</div>
+        </div>
+        <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("slate")}`}>
+          <div className="text-xs font-semibold text-slate-500">已使用次数</div>
           <div className="mt-2 text-2xl font-semibold text-slate-900">
-            {invites.reduce((sum, invite) => sum + invite.usedCount, 0)}
+            {stats?.totalUses ?? invites.reduce((sum, invite) => sum + invite.usedCount, 0)}
           </div>
         </div>
+        <div className={`rounded-2xl border p-4 ${studioMetricToneClassName("slate")}`}>
+          <div className="text-xs font-semibold text-slate-500">剩余可用次数</div>
+          <div className="mt-2 text-2xl font-semibold text-slate-900">{stats?.remainingUses ?? "—"}</div>
+        </div>
       </div>
+
+      {stats && stats.recentUses.length > 0 ? (
+        <div className={`${studioTileClassName} p-4`}>
+          <div className="text-xs font-semibold text-slate-500">最近使用</div>
+          <ul className="mt-2 space-y-1 text-xs text-slate-600">
+            {stats.recentUses.slice(0, 5).map((item) => (
+              <li key={`${item.code}-${item.usedAt}-${item.username}`} className="flex flex-wrap gap-x-2">
+                <code className="font-mono text-slate-800">{item.code}</code>
+                <span>{item.username || item.email}</span>
+                <span className="text-slate-400">{formatDate(item.usedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {canWrite && (
         <form onSubmit={createInvite} className={studioPanelClassName}>
@@ -302,10 +396,75 @@ const RegistrationInviteManager: React.FC = () => {
         {!loading && invites.length === 0 && (
           <div className={`${studioPanelClassName} text-sm text-slate-600`}>暂无邀请码。</div>
         )}
+
+        {canWrite && invites.length > 0 ? (
+          <div className={`${studioPanelClassName} flex flex-wrap items-center gap-2 py-3`}>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() => setSelectedIds(allSelected ? [] : invites.map((invite) => invite.id))}
+                className="size-4 rounded border-slate-300"
+                aria-label="全选邀请码"
+              />
+              全选
+            </label>
+            <span className="text-xs text-slate-500">已选 {selectedIds.length} 个</span>
+            {selectedIds.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  disabled={bulkRunning}
+                  onClick={() => void runBulk("bulk-active", true)}
+                  className={studioSecondaryButtonClassName}
+                >
+                  批量启用
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkRunning}
+                  onClick={() => void runBulk("bulk-active", false)}
+                  className={studioSecondaryButtonClassName}
+                >
+                  批量停用
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkRunning}
+                  onClick={() => setConfirmBulkDelete(true)}
+                  className={studioDangerButtonClassName}
+                >
+                  <FaTrash />
+                  批量删除
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkRunning}
+                  onClick={() => setSelectedIds([])}
+                  className={studioSecondaryButtonClassName}
+                >
+                  取消选择
+                </button>
+              </>
+            ) : null}
+            {bulkRunning ? <span className="text-xs text-slate-500">批量操作进行中...</span> : null}
+          </div>
+        ) : null}
+
         {invites.map((invite) => (
           <div key={invite.id} className={studioPanelClassName}>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-start gap-3">
+                {canWrite ? (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(invite.id)}
+                    onChange={() => toggleSelected(invite.id)}
+                    className="mt-1.5 size-4 shrink-0 rounded border-slate-300"
+                    aria-label={`选择邀请码 ${invite.code}`}
+                  />
+                ) : null}
+                <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm font-semibold text-slate-900">
                     {invite.code}
@@ -334,6 +493,7 @@ const RegistrationInviteManager: React.FC = () => {
                   <span>剩余 {invite.remainingUses}</span>
                   <span>过期 {formatDate(invite.expiresAt)}</span>
                   <span>创建人 {invite.createdByUsername || "未知"}</span>
+                </div>
                 </div>
               </div>
 
@@ -416,6 +576,16 @@ const RegistrationInviteManager: React.FC = () => {
           </div>
         ))}
       </div>
+
+      <ConfirmModal
+        open={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        onConfirm={() => void runBulk("bulk-delete")}
+        title="批量删除邀请码"
+        message={`确认删除选中的 ${selectedIds.length} 个邀请码？已使用过的邀请码也会一并删除，其使用记录不再可查。`}
+        confirmText="确认删除"
+        type="danger"
+      />
     </div>
   );
 };

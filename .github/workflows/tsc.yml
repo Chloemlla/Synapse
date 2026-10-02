@@ -50,6 +50,17 @@ jobs:
       - name: Audit policy static checks
         run: pnpm run check:audit-policies
 
+      # 这道闸门必须跑在 `Run build` **之前**：`build:backend` 的第一条就是
+      # `node scripts/generate-admin-spa-paths.js`（就地重生成清单），跑在它后面就只能拿
+      # 「刚重生成的文件」与自己比，永远为绿——2026-10-02 就是这样漏掉了 /admin/debug-console
+      # 的生成物漂移（模块表有、入库清单没有，CI 仍报 success）。放在这里比的才是**入库的**
+      # 那份清单，漏重生成会真的失败；生成脚本只读源码、不需要构建产物。
+      - name: SPA path drift gate (backend list vs frontend routes)
+        # 清单由 frontend/src/components/admin/adminModules.tsx 与 frontend/src/App.tsx 共同生成
+        # （管理模块页 + 全部前端路由）；漏更新时线上表现是页面深链被 308 到 API，
+        # 只看现象很难反推到生成脚本。
+        run: pnpm run check:admin-spa-paths
+
       - name: Run build
         run: pnpm run build
 
@@ -60,12 +71,6 @@ jobs:
       - name: OpenAPI drift gate (documented paths vs generated spec)
         # swagger-jsdoc 丢弃解析失败的注释块时不报错，端点会静默从 spec 里消失。
         run: pnpm run check:openapi-drift
-
-      - name: SPA path drift gate (backend list vs frontend routes)
-        # 清单由 frontend/src/components/admin/adminModules.tsx 与 frontend/src/App.tsx 共同生成
-        # （管理模块页 + 全部前端路由）；漏更新时线上表现是页面深链被 308 到 API，
-        # 只看现象很难反推到生成脚本。
-        run: pnpm run check:admin-spa-paths
 
       - name: Obfuscated artifact smoke (production boot of dist-obfuscated)
         # 生产镜像跑的是 dist-obfuscated；混淆破坏与生产模式启动断言只在运行时暴露。
