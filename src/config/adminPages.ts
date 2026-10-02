@@ -88,6 +88,8 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "logshare", label: "日志分享", apiPrefixes: [] },
   { key: "env", label: "运行时配置", apiPrefixes: [] },
   { key: "system", label: "系统管理", apiPrefixes: [] },
+  // Passkey 现场诊断控制台：前端内存日志，不发任何管理端 API → 只能授权给超管。
+  { key: "debug-console", label: "调试控制台", apiPrefixes: [] },
   { key: "fingerprint", label: "指纹管理", apiPrefixes: [] },
   { key: "ip-ban", label: "IP 封禁", apiPrefixes: [] },
   { key: "mail-system", label: "邮件系统", apiPrefixes: [] },

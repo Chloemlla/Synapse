@@ -592,6 +592,14 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            // Passkey 现场诊断：读 `passkeyDebugLog` 内存单例（刷新即空）。页面无后端 API，
+            // 因此 adminPages 登记为 apiPrefixes: []（仅超管），与 requiredRole 一致。
+            title: '调试控制台',
+            url: '/admin/debug-console',
+            icon: FaTerminal as IconType,
+            requiredRole: 'superadmin',
+          },
+          {
             title: '篡改检测',
             url: '/tamper-detection-demo',
             icon: FaBug as IconType,
@@ -658,6 +666,7 @@ export const ADMIN_TAB_TO_PATH: Record<string, string> = {
   'github-billing-cache': '/admin/github-billing-cache',
   'ip-ban': '/admin/ip-ban',
   fingerprint: '/admin/fingerprint',
+  'debug-console': '/admin/debug-console',
   'ip-risk-logs': '/admin/ip-risk-logs',
   'mobile-token-lineage': '/admin/mobile-token-lineage',
   'policy-consents': '/admin/policy-consents',

@@ -77,6 +77,7 @@ export const ADMIN_MODULE_LOADERS = {
   'email-traceability': () => import('@/components/EmailTraceability'),
   'tts-history': () => import('@/components/TtsGenerationManager'),
   system: () => import('@/components/SystemManager'),
+  'debug-console': () => import('@/components/admin/DebugConsole'),
   'bilibili-sync': () => import('@/components/BilibiliSyncAdmin'),
   'bilibili-data': () => import('@/components/BilibiliDataAdmin'),
   'ip-risk-logs': () => import('@/components/admin/IpRiskLogPanel'),

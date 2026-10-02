@@ -3,6 +3,7 @@ import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import { passkeyApi, Authenticator } from '../api/passkey';
 import { getSecuritySessionToken } from './useSecuritySession';
 import { useAuth } from './useAuth';
+import { passkeyDebugLog } from '../utils/passkeyDebugLog';
 
 type RegisterAuthenticatorResult = {
     attRespId: any;
@@ -41,7 +42,10 @@ export const usePasskey = (): UsePasskeyReturn & {
     const [debugInfos, setDebugInfos] = useState<any[]>([]);
 
     // 添加调试信息的函数
+    // 同时写进模块级单例：本 hook 的 state 只覆盖当前组件的生命周期，而管理页
+    // （/admin/debug-console）要读的是同一批记录。两边语义不变，只多一次 append。
     const addDebugInfo = useCallback((info: any) => {
+        passkeyDebugLog.append(info);
         setDebugInfos(prev => [...prev, info]);
     }, []);
 
