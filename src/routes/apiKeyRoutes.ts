@@ -1,7 +1,7 @@
 import { type Request, type Response, Router } from "express";
 import { authMiddlewareV2 as authMiddleware, authenticateSuperAdmin, isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
-import { firstString } from "../utils/httpParam";
+import { boundedInt, firstString } from "../utils/httpParam";
 import { ApiKeyModel } from "../models/apiKeyModel";
 import {
   createApiKey,
@@ -183,7 +183,7 @@ router.get("/:keyId/billing/events", async (req: Request, res: Response) => {
 
     const events = await listApiKeyBillingEvents({
       keyId,
-      limit: Number(req.query.limit) || 20,
+      limit: boundedInt(req.query.limit, { min: 1, max: 200, fallback: 20 }),
     });
     return res.json({ success: true, events });
   } catch (err) {

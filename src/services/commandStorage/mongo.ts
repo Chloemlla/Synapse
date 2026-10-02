@@ -1,10 +1,5 @@
 import { mongoose } from "../mongoService";
-
-function sanitizeString(str: any): string {
-  if (typeof str !== "string") return "";
-  if (/[$.{}[\]]/.test(str)) return "";
-  return str;
-}
+import { normalizeCommandId, normalizeCommandText } from "./commandText";
 
 // 命令队列Schema
 const commandQueueSchema = new mongoose.Schema(
@@ -48,7 +43,7 @@ export async function getCommandQueue() {
 
 export async function addToQueue(command: string) {
   const commandId = `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const safeCommand = sanitizeString(command);
+  const safeCommand = normalizeCommandText(command);
   if (!safeCommand) throw new Error("命令内容非法");
 
   await CommandQueueModel.create({
@@ -61,7 +56,7 @@ export async function addToQueue(command: string) {
 }
 
 export async function removeFromQueue(commandId: string) {
-  const safeCommandId = sanitizeString(commandId);
+  const safeCommandId = normalizeCommandId(commandId);
   if (!safeCommandId) throw new Error("命令ID非法");
 
   const result = await CommandQueueModel.deleteOne({ commandId: safeCommandId });
@@ -95,7 +90,7 @@ export async function addToHistory(data: {
   errorMessage?: string;
 }) {
   const historyId = `hist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const safeCommand = sanitizeString(data.command);
+  const safeCommand = normalizeCommandText(data.command);
   if (!safeCommand) throw new Error("命令内容非法");
 
   await ExecutionHistoryModel.create({

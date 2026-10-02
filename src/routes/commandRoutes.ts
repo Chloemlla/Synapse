@@ -6,7 +6,11 @@ import { commandLimiter } from "../middleware/routeLimiters";
 import { commandService } from "../services/commandService";
 import { hasValidSecuritySession } from "../utils/securitySession";
 import { encryptCommandPayload } from "../utils/commandCrypto";
+import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
+
+/** `/history` 单次返回上限：历史正文含命令输出，不设界会让超管误触一次就把大段系统信息拉进浏览器。 */
+const COMMAND_HISTORY_MAX_LIMIT = 200;
 
 const router = Router();
 
@@ -146,8 +150,18 @@ router.post("/p", commandLimiter, authenticateToken, auditLog({ module: "system"
     return;
   }
 
-  const { command } = req.body;
-  const result = await commandService.removeCommand(command);
+  // 字段名兼容：`CommandManager` 前端一直发 `commandId`，而这里读的是 `command` —— 结果
+  // 后端收到 undefined、静默回 `{status:"error"}`，前端却已把该行从本地队列删掉。
+  // 两种名字都接受，缺参数时按 400 明确拒绝，不再用 200 掩盖失败。
+  const commandId = firstString(req.body?.commandId) ?? firstString(req.body?.command) ?? "";
+  if (!commandId.trim()) {
+    return res.status(400).json({ error: "缺少命令 ID" });
+  }
+
+  const result = await commandService.removeCommand(commandId.trim());
+  if (result.status === "error") {
+    return res.status(404).json(result);
+  }
   return res.json(result);
 });
 
@@ -281,7 +295,11 @@ router.get("/history", commandLimiter, authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "需要管理员权限" });
     }
 
-    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const limit = boundedInt(req.query.limit, {
+      min: 1,
+      max: COMMAND_HISTORY_MAX_LIMIT,
+      fallback: 50,
+    });
     const history = await commandService.getExecutionHistory(limit);
     const token = getBearerToken(req);
     if (!token) {

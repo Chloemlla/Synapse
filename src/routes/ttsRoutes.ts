@@ -14,6 +14,7 @@ import {
 } from "../middleware/routeLimiters";
 import { ClarityService } from "../services/clarityService";
 import { TurnstileService } from "../services/turnstileService";
+import { boundedInt } from "../utils/httpParam";
 
 const router = express.Router();
 // 登录闸门：会话 Cookie 由 optionalAuthenticateToken 解析，API Key / OAuth 由 apiKeyAuth
@@ -386,7 +387,7 @@ router.delete("/clarity/config", ttsConfigWriteLimiter, authenticateSuperAdmin, 
  */
 router.get("/clarity/history", ttsConfigReadLimiter, authenticateAdmin, requireAdminScope, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string, 10) || 20;
+    const limit = boundedInt(req.query.limit, { min: 1, max: 200, fallback: 20 });
     const result = await ClarityService.getConfigHistory(limit);
 
     if (result.success) {

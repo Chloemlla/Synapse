@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { SerialAtomicJsonWriter } from "../librechat/atomicJsonWriter";
+import { normalizeCommandId, normalizeCommandText } from "./commandText";
 
 const DATA_DIR = path.join(process.cwd(), "data", "commands");
 const QUEUE_FILE = path.join(DATA_DIR, "queue.json");
@@ -50,12 +51,15 @@ export async function getCommandQueue() {
 }
 
 export async function addToQueue(command: string) {
+  const safeCommand = normalizeCommandText(command);
+  if (!safeCommand) throw new Error("命令内容非法");
+
   const queue = readJsonFile(QUEUE_FILE, []);
   const commandId = `cmd_${crypto.randomUUID()}`;
 
   const newCommand = {
     commandId,
-    command,
+    command: safeCommand,
     addedAt: new Date().toISOString(),
     status: "pending",
   };
@@ -63,13 +67,16 @@ export async function addToQueue(command: string) {
   queue.push(newCommand);
   await writeJsonFile(QUEUE_FILE, queue);
 
-  return { commandId, command };
+  return { commandId, command: safeCommand };
 }
 
 export async function removeFromQueue(commandId: string) {
+  const safeCommandId = normalizeCommandId(commandId);
+  if (!safeCommandId) throw new Error("命令ID非法");
+
   const queue = readJsonFile(QUEUE_FILE, []);
   const initialLength = queue.length;
-  const filteredQueue = queue.filter((item: any) => item.commandId !== commandId);
+  const filteredQueue = queue.filter((item: any) => item.commandId !== safeCommandId);
 
   if (filteredQueue.length !== initialLength) {
     await writeJsonFile(QUEUE_FILE, filteredQueue);
@@ -98,11 +105,13 @@ export async function addToHistory(data: {
   errorMessage?: string;
 }) {
   const history = readJsonFile(HISTORY_FILE, []);
+  const safeCommand = normalizeCommandText(data.command);
+  if (!safeCommand) throw new Error("命令内容非法");
   const historyId = `hist_${crypto.randomUUID()}`;
 
   const newHistory = {
     historyId,
-    command: data.command,
+    command: safeCommand,
     executedAt: new Date().toISOString(),
     result: data.result,
     status: data.status,
@@ -119,7 +128,7 @@ export async function addToHistory(data: {
 
   await writeJsonFile(HISTORY_FILE, history);
 
-  return { historyId, command: data.command };
+  return { historyId, command: safeCommand };
 }
 
 export async function clearHistory() {

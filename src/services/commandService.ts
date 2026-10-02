@@ -9,6 +9,12 @@ class CommandService {
   // process by building an unbounded JS string.
   private static readonly MAX_OUTPUT_BYTES = 1024 * 1024;
 
+  /** 待执行队列上限：防止误操作/脚本把下一帧的轮询拉回一整屏命令。 */
+  private static readonly MAX_QUEUE_LENGTH = 200;
+
+  /** 上一次 `os.cpus()` 快照，用于算真实占用率（首次调用只能给出负载均值的近似）。 */
+  private cpuSample: { at: number; idle: number; total: number } | null = null;
+
   // 允许执行的命令白名单
   // G7-39: ping/nslookup/netstat/route/arp removed — they turn the server into a
   // network probe / DNS exfil channel.
@@ -345,6 +351,11 @@ class CommandService {
     }
 
     try {
+      const queue = await commandStorage.getCommandQueue();
+      if (queue.length >= CommandService.MAX_QUEUE_LENGTH) {
+        return { status: "error", message: `队列已满（上限 ${CommandService.MAX_QUEUE_LENGTH} 条），请先清空或移除部分命令` };
+      }
+
       // 添加到MongoDB队列
       const result = await commandStorage.addToQueue(command);
       console.log(`✅ [CommandService] 命令已添加到队列: ${command}, ID: ${result.commandId}`);
@@ -484,7 +495,13 @@ class CommandService {
   }
 
   /**
-   * 获取服务器状态
+   * 获取服务器状态。
+   *
+   * `cpu_usage_percent` 的旧实现是 `(process.cpuUsage().user + .system) / 1e6` —— 那是
+   * **进程累计 CPU 秒数**，随进程存活时间单调递增，与「当前 CPU 使用率」无关，前端却把它
+   * 当百分比渲染、还在 20/50/80/95 的阈值上做告警判定。改成两次 `os.cpus()` 快照的差值
+   * （系统级占用率）；首次调用没有前一帧，退到 1 分钟负载均值（Windows 上 loadavg 恒为 0，
+   * 那就只能给 0，不编数字）。
    */
   public getServerStatus(): {
     uptime: number;
@@ -497,18 +514,43 @@ class CommandService {
     const memUsage = process.memoryUsage();
     const uptime = process.uptime();
 
-    // 计算CPU使用率（简化版本）
-    const cpuUsage = process.cpuUsage();
-    const cpuUsagePercent = Math.round((cpuUsage.user + cpuUsage.system) / 1000000);
-
     return {
       uptime,
       memory_usage: memUsage,
-      cpu_usage_percent: cpuUsagePercent,
+      cpu_usage_percent: this.readCpuUsagePercent(),
       platform: os.platform(),
       arch: os.arch(),
       node_version: process.version,
     };
+  }
+
+  private readCpuUsagePercent(): number {
+    const cores = os.cpus();
+    let idle = 0;
+    let total = 0;
+    for (const core of cores) {
+      idle += core.times.idle;
+      total += core.times.user + core.times.nice + core.times.sys + core.times.idle + core.times.irq;
+    }
+
+    const now = Date.now();
+    const previous = this.cpuSample;
+    this.cpuSample = { at: now, idle, total };
+
+    if (previous) {
+      const elapsedMs = now - previous.at;
+      const idleDelta = idle - previous.idle;
+      const totalDelta = total - previous.total;
+      if (elapsedMs > 0 && totalDelta > 0 && idleDelta >= 0) {
+        const busyRatio = 1 - idleDelta / totalDelta;
+        return Math.max(0, Math.min(100, Math.round(busyRatio * 1000) / 10));
+      }
+    }
+
+    // 首次采样（或计数器回绕）：用 1 分钟负载均值折成百分比；Windows 无 loadavg 则给 0。
+    const load = os.loadavg()[0];
+    if (!Number.isFinite(load) || load <= 0 || cores.length === 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((load / cores.length) * 1000) / 10));
   }
 }
 
