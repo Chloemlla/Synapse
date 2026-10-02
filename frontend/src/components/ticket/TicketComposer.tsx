@@ -132,7 +132,7 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
   return (
     // 手机端页面是文档级滚动（详情面板不再定高裁切），所以把输入区钉在底部，
     // 长对话滑到中段也能直接继续回复；桌面端面板本身定高，sticky 不产生副作用。
-    <div className="sticky bottom-0 z-20 border-t border-slate-200/80 bg-slate-50/95 p-3 backdrop-blur-md sm:p-4">
+    <div className="sticky bottom-0 z-20 border-t border-slate-200/80 bg-slate-50/95 p-3 backdrop-blur-md sm:p-4 md:static">
       {restoredDraft && content.trim() ? (
         <div className={cn(studioEyebrowClassName, 'mb-2 flex items-center justify-between text-[10px] text-slate-400')}>
           <span>已恢复上次未发送的草稿</span>

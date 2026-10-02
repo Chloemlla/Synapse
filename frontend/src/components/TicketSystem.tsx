@@ -938,7 +938,9 @@ const TicketSystem: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex-1 hover-scrollbar md:overflow-y-auto md:overscroll-contain">
+                {/* 不加 overscroll-contain：它会把滚轮/触摸手势锁在面板里，
+                    面板滚到底后无法继续滚动整页（页脚、顶部说明区就够不着了）。 */}
+                <div className="flex-1 hover-scrollbar md:overflow-y-auto">
                   {loading ? (
                     <div className="flex flex-col items-center justify-center p-12 space-y-3">
                       <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
@@ -1275,8 +1277,8 @@ const TicketSystem: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Messages */}
-                      <div className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto md:overscroll-contain">
+                      {/* Messages（同列表：不用 overscroll-contain，滚到底后把手势交回整页） */}
+                      <div className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto">
                         {selectedTicket.messages.map((msg, idx) => {
                           const isAi = msg.senderRole === "ai" || msg.isAi;
                           const isMe = msg.senderId === user?.id;
