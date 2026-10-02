@@ -12,6 +12,11 @@ jest.mock("../utils/userStorage", () => ({
 }));
 
 jest.mock("../services/authSessionService", () => ({
+  // 必须带上没被 stub 的纯函数：authMiddlewareV2 现在会调 hashAuthCredential(token)，
+  // 替身里没有它就是 undefined → 调用抛 TypeError → 被外层 catch 成 500/401，
+  // 看起来像「合法 admin token 被拒」。与 authCookieSession / commandRoutes /
+  // libreChatRoutes / totpDisable 几个套件保持同一写法。
+  ...jest.requireActual("../services/authSessionService"),
   assertActiveAuthSession: jest.fn().mockResolvedValue({ userAgent: "test-agent" }),
   touchAuthSession: jest.fn().mockResolvedValue(undefined),
 }));
