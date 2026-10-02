@@ -795,8 +795,11 @@ const TicketSystem: React.FC = () => {
           </div>
         )}
 
-        {/* 桌面端：flex-1 + min-h-0 吃满剩余高度（不再写死 640px），手机仍用 min-height 滚动。 */}
-        <div className="flex min-h-[min(480px,55dvh)] flex-col gap-4 md:min-h-0 md:flex-1 md:flex-row md:gap-6">
+        {/*
+          桌面端：flex-1 吃满剩余高度（不再写死 640px），手机仍用 min-height 滚动。
+          md:min-h-[22rem] 是矮窗口（≈640px 高）的底线：此时整页改为滚动，而不是把列表压到几行。
+        */}
+        <div className="flex min-h-[min(480px,55dvh)] flex-col gap-4 md:min-h-[22rem] md:flex-1 md:flex-row md:gap-6">
           {/* 左侧列表 */}
           <AnimatePresence mode="wait">
             {(!isMobile || !showDetailOnMobile) && (
