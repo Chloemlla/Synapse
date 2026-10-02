@@ -33,7 +33,7 @@
 | 6 | 命令执行 | 强（superadmin + 安全会话 + 白名单 + argv 数组） | **前端发 `commandId`、后端读 `command` → 移除操作静默失败**（FUNC-01，已修）；`limit` 未收敛、`cpu_usage_percent` 语义错（已修） |
 | 7 | 调试控制台 | 前端 admin-only | 组件是死代码、日志无跨组件出口（FE-08，已修）；对话框缺语义（FE-03，已修） |
 | 8 | 数据收集管理 | 强（读 admin、写 superadmin） | 抽样；未见新增问题 |
-| 9 | 审计日志 | 强（admin + 页面授权） | 导出 CSV 已做公式注入中和（本轮的对照项）；导出计数响应头未暴露给 CORS（SEC-01，已修） |
+| 9 | 审计日志 | 强（admin + 页面授权） | 导出 CSV 已做公式注入中和（本轮的对照项）；导出计数响应头未暴露给 CORS（SEC-01，已修）；18 个筛选维度无预设（FEA-03，已修） |
 | 10 | 短链管理 | admin + 页面授权 | 搜索已转义正则；`console.log` 裸打身份（FE-07，已修） |
 | 11 | 指纹管理 | admin 读 / superadmin 写 | 抽样；未见新增问题 |
 | 12 | 系统管理 | 读 admin / 写 superadmin | 后台标签页仍轮询烧配额（FE-04，已修） |
@@ -260,6 +260,16 @@
     页面不发管理端 API，因此只能授权给超管，fail-closed）。
 - 去向：**已修**（提交 `dd6d4fc2`）。
 
+### FEA-03（可用性 / 低）审计日志无筛选预设
+
+- 位置：`frontend/src/components/AuditLogViewer.tsx`
+- 缺陷细节：筛选维度有 18 个（模块/动作/角色/结果/IP/状态码/耗时区间/关键字…），但每次进页面都从空白开始。
+  值班复盘几乎总是重复同样几组条件（"今天的失败"、"今天的写操作"、"慢请求 ≥1s"）。
+- 修法：新增 `frontend/src/utils/auditLogPresets.ts`（内置 4 条 + 自定义预设，localStorage 上限 12 条，
+  读回时按显式白名单逐字段收窄），页面加一排「快速筛选」chip：一键套用 / 存为预设 / 删除 / 清空筛选。
+  日期按本地 `YYYY-MM-DD` 生成，与页面 `type="date"` 输入同格式（用 ISO 串会让输入框显示为空）。
+- 去向：**已修**（提交 `106a636a`）。
+
 ---
 
 ## 2. 本轮改动（按提交）
@@ -276,6 +286,7 @@
 | `dd6d4fc2` | `passkeyDebugLog` 单例 + `/admin/debug-console` 页面 + `DebugInfoModal` a11y 与逐条复制/下载/筛选 | FE-08, FE-03 |
 | `21dab312` | 系统管理页可见性轮询 + 自动刷新开关 + 状态导出 | FE-04 |
 | `1513d0af` | B 站上报列表删除入口（组件化确认 + a11y） | FEA-02 |
+| `106a636a` | 审计日志筛选预设（内置 4 条 + 自定义，localStorage 上限 12） | FEA-03 |
 
 ---
 
@@ -287,7 +298,6 @@
 | FE-06 | 存量 19 处 `window.confirm` 统一替换为组件化确认 | 跨 8 个文件、纯风格一致性，收益低于回归风险；本轮只在新增/改动的危险操作上收敛 |
 | FE-07 | `src/routes/admin/shortlinks.ts` 剩余 12 处 `console.*`（创建/删除/校验等次级处理器） | 主路径已修；余下为纯日志卫生，单独一轮更清晰 |
 | SEC-02 | 仓库里 6 处功能等价的私有正则转义副本统一到 `utils/regexEscape` | 它们本来就正确工作，替换是纯重构；需要逐个核对字符类差异（`auditLogService` 用的就是更宽的字符集），不适合与安全修复混在同一提交 |
-| FEA-03 | 审计日志的「保存的筛选预设」 | 需要理解 `AuditLogViewer` 里 18 个筛选维度的状态形状与 URL 同步方式，本轮改动面已足够大，留作独立一轮 |
 | — | `AdminDashboard` 只有邮件溯源一块数据 | 需要新后端聚合接口（用户/Key/审计/封禁计数），涉及跨集合统计与缓存口径，需产品确认口径后单独做 |
 | — | `EnvManager` 的 Project Lumen 保管库同步 | 既有实现已覆盖（`SelfContainedProjectLumenConfigSection` + `LumenServerConfigSection`），本轮只做只读核对，未发现缺陷 |
 | — | `DataCollectionManager` / `FingerprintManager` / `LotteryAdmin` / `AdminStoreDashboard` / `FBIWantedManager` / `LibreChatAdminPage` / `TamperDetectionDemo` 的逐行审计 | 本轮为抽样（关键词/参数/鉴权形态 + 跨模块一致性检查），未做逐行通读；这些模块的鉴权链在 `routeModules/*.ts` 里已逐条声明并集中受 `routeGovernance` 校验 |
