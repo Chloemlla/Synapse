@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FaCog, FaPlay, FaStop, FaSync, FaInfoCircle, FaExclamationTriangle, 
-  FaChartBar, FaClock, FaDatabase, FaExchangeAlt,
+  FaChartBar, FaClock, FaDatabase, FaExchangeAlt, FaDownload,
   FaTrash, FaRunning, FaPauseCircle, FaShieldAlt, FaLock, FaBolt
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -20,6 +20,7 @@ import {
   studioDangerButtonClassName,
   studioSecondaryButtonClassName,
 } from './studioTheme';
+import { csvFileStamp } from '../utils/csv';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '暂无';
@@ -224,25 +225,73 @@ export default function SystemManager() {
     }
   };
 
+  // 自动轮询开关与后台标签页抑制：
+  // 旧写法每 30s 无条件打 2 个接口，管理员把后台页留一天就白烧几千次请求
+  // （而且每个请求都过 adminLimiter 配额，等于用后台页挤自己的额度）。
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [visibilityPaused, setVisibilityPaused] = useState(false);
+
+  // 轮询用 ref 拿最新的开关值，避免开关一改就重建 interval。
+  const autoRefreshRef = React.useRef(autoRefresh);
+  React.useEffect(() => {
+    autoRefreshRef.current = autoRefresh;
+  }, [autoRefresh]);
+
+  const refreshStatuses = React.useCallback(async () => {
+    try {
+      await Promise.all([fetchSchedulerStatus(), fetchSyncStatus()]);
+    } catch (error) {
+      console.error('自动刷新状态失败:', error);
+    }
+  }, []);
+
+  const exportStatus = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      scheduler: schedulerStatus,
+      sync: syncStatus,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `system-status-${csvFileStamp()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       await Promise.all([fetchSchedulerStatus(), fetchSyncStatus()]);
       setLoading(false);
     };
-    loadData();
+    void loadData();
 
-    // 设置自动轮询，每30秒刷新一次状态
-    const interval = setInterval(async () => {
-      try {
-        await Promise.all([fetchSchedulerStatus(), fetchSyncStatus()]);
-      } catch (error) {
-        console.error('自动刷新状态失败:', error);
+    const tick = () => {
+      if (!autoRefreshRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        setVisibilityPaused(true);
+        return;
       }
-    }, 30000); // 30秒
+      void refreshStatuses();
+    };
+    const interval = setInterval(tick, 30000);
 
-    return () => clearInterval(interval);
-  }, []);
+    // 回到前台立即补一次，避免看到的是切走前的旧值。
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setVisibilityPaused(false);
+        if (autoRefreshRef.current) void refreshStatuses();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshStatuses]);
 
   if (loading) {
     return (
@@ -497,6 +546,32 @@ export default function SystemManager() {
               <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               刷新状态
             </motion.button>
+
+            <motion.button
+              onClick={exportStatus}
+              className={studioSecondaryButtonClassName}
+              title='把当前调度器与同步状态导出为 JSON，便于排障时随工单附上'
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <FaDownload className="w-4 h-4" />
+              导出状态
+            </motion.button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <label className="inline-flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(event) => setAutoRefresh(event.target.checked)}
+              />
+              每 30 秒自动刷新
+            </label>
+            {!autoRefresh ? <InfoBadge tone="slate">自动刷新已关闭</InfoBadge> : null}
+            {autoRefresh && visibilityPaused ? (
+              <InfoBadge tone="amber">页面在后台，已暂停轮询</InfoBadge>
+            ) : null}
           </div>
 
           {syncStatus.errors && Array.isArray(syncStatus.errors) && syncStatus.errors.length > 0 && (
