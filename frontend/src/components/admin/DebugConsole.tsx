@@ -159,7 +159,7 @@ const DebugConsole: React.FC = () => {
         <DebugInfoModal
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
-          debugInfos={entries.map((entry) => ({ action: entry.action, timestamp: entry.timestamp, ...entry }))}
+          debugInfos={entries.map((entry) => ({ ...entry, action: entry.action, timestamp: entry.timestamp }))}
           userRole={user?.role}
         />
       ) : null}
