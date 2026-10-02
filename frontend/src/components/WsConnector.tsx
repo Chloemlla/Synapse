@@ -6,6 +6,11 @@ const MOBILE_VIEWPORT_WIDTH = 640;
 // G12-03：碰撞检测改为 200ms 去抖，而不是每帧（rAF）跑一次
 const CHECK_DEBOUNCE_MS = 200;
 
+// PERF-10：后台标签页里 WS 推送仍会改 DOM，触发 observer 去跑 elementsFromPoint +
+// getComputedStyle，而这些结果没人看得到。隐藏期间直接不排期，回到前台时补一次。
+const isDocumentHidden = (): boolean =>
+  typeof document !== "undefined" && document.visibilityState === "hidden";
+
 function isHiddenByStyle(element: Element) {
   const style = window.getComputedStyle(element);
   return style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0;
@@ -101,6 +106,8 @@ export default function WsConnector() {
   }, []);
 
   const scheduleCheck = useCallback(() => {
+    // PERF-10: 隐藏标签页不排期；visibilitychange 回前台时会补排一次。
+    if (isDocumentHidden()) return;
     if (checkTimerRef.current !== null) return;
     checkTimerRef.current = setTimeout(() => {
       checkTimerRef.current = null;
@@ -109,6 +116,10 @@ export default function WsConnector() {
   }, [checkIfCoveringPageControl]);
 
   useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!isDocumentHidden()) scheduleCheck();
+    };
+
     scheduleCheck();
 
     const viewport = window.visualViewport;
@@ -125,6 +136,7 @@ export default function WsConnector() {
 
     window.addEventListener('resize', scheduleCheck);
     window.addEventListener('scroll', scheduleCheck, true);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     viewport?.addEventListener('resize', scheduleCheck);
     viewport?.addEventListener('scroll', scheduleCheck);
 
@@ -137,6 +149,7 @@ export default function WsConnector() {
       resizeObserver.disconnect();
       window.removeEventListener('resize', scheduleCheck);
       window.removeEventListener('scroll', scheduleCheck, true);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       viewport?.removeEventListener('resize', scheduleCheck);
       viewport?.removeEventListener('scroll', scheduleCheck);
     };

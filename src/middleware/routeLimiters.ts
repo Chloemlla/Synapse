@@ -59,6 +59,8 @@ interface LimiterOptions {
   handler?: (req: Request, res: Response, next: NextFunction) => void;
   skipFailedRequests?: boolean;
   skipSuccessfulRequests?: boolean;
+  /** 强制进程内内存档（不走 Redis/Mongo 共享后端）。静态资源类默认已开启，见 PERF-12。 */
+  preferMemory?: boolean;
 }
 
 interface LimiterDefinition {
@@ -70,6 +72,7 @@ interface LimiterDefinition {
   keyGenerator?: (req: Request) => string;
   skip?: (req: Request) => boolean;
   handler?: (req: Request, res: Response, next: NextFunction) => void;
+  preferMemory?: boolean;
 }
 
 interface RateLimitMetricRecord {
@@ -212,8 +215,22 @@ export function getRateLimitMetricsSnapshot(limit = 10): RateLimitMetricsSnapsho
   return rateLimitMetricsRegistry.snapshot(limit);
 }
 
-function createStore(prefix: string, windowMs: number) {
-  return createSharedRateLimitStore(prefix, windowMs);
+/**
+ * PERF-12: 静态资源类限流器（category === "static"：`static` / `frontend` / `audio`）
+ * 强制走进程内内存档，不再每个资源请求都打一次 Redis（配了 REDIS_URL 时
+ * ResilientRateLimitStore 默认走 Redis，而一切 JS/CSS/字体/图片/音频都过这三道闸）。
+ *
+ * 理由：这三道闸的语义是“防刷”（5000/60s），不是“配额”；进程内存档已能拦单机洪水，
+ * 而多实例下每实例各算一份对静态资源毫无影响。需要跨实例一致性的调用方
+ * （API Key 配额等）显式走 requireSharedBackend，不受本规则影响。
+ */
+const STATIC_RESOURCE_CATEGORY: LimiterCategory = "static";
+
+function createStore(prefix: string, windowMs: number, options: { preferMemory?: boolean } = {}) {
+  // 只在确需内存档时传入该选项：显式传 `preferMemory: false` 会盖掉
+  // createSharedRateLimitStore 内部的“未配 Redis 就默认内存”兜底，
+  // 把那些限流器推回 Mongo（每请求一次 findOneAndUpdate）。
+  return createSharedRateLimitStore(prefix, windowMs, options.preferMemory ? { preferMemory: true } : {});
 }
 
 function getClientIp(req: Request): string {
@@ -257,6 +274,8 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
   const message = opts.message || "请求过于频繁，请稍后再试";
   const windowMs = opts.windowMs ?? profile.windowMs;
   const max = opts.max ?? profile.max;
+  // PERF-12: 静态资源类限流器默认进程内存档，避免每个资源请求一次 Redis 往返。
+  const preferMemory = opts.preferMemory ?? category === STATIC_RESOURCE_CATEGORY;
 
   return rateLimit({
     windowMs,
@@ -264,7 +283,7 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
     message: { error: message },
     standardHeaders: true,
     legacyHeaders: false,
-    store: createStore(name, windowMs),
+    store: createStore(name, windowMs, { preferMemory }),
     validate: { unsharedStore: false },
     keyGenerator: opts.keyGenerator || ((req: Request) => getClientIp(req)),
     skip: opts.skip ?? ((req: Request): boolean => isLocalRequest(req)),
@@ -643,6 +662,7 @@ function limiterFromDefinition(name: keyof typeof LIMITER_DEFINITIONS): RateLimi
     keyGenerator: definition.keyGenerator,
     skip: definition.skip,
     handler: definition.handler,
+    preferMemory: definition.preferMemory,
   });
 }
 

@@ -424,17 +424,28 @@ export function registerStaticRoutes(app: Express): void {
     const frontendStaticOptions = {
       setHeaders: (res: Response, filePath: string) => applyStaticCacheHeaders(res, filePath),
     };
-    app.use(staticFileLimiter, express.static(resolvedFrontendPath, { index: false, ...frontendStaticOptions }));
+    // PERF-13: `/static` 挂载必须排在根挂载之前。生产构建的 base 是 `/static/`，所有
+    // 哈希资源都走 `/static/assets/*`：先跑根挂载就是“限流 + 一次注定落空的 fs 探测”，
+    // 落空后才轮到 `/static` 挂载真正命中 —— 每个资源请求因此被限流两次（原先就是两次
+    // Redis 计数）且多一次 stat。先挂 `/static`：命中即响应，根挂载不再参与。
     app.use("/static", staticFileLimiter, express.static(resolvedFrontendPath, frontendStaticOptions));
+    app.use(staticFileLimiter, express.static(resolvedFrontendPath, { index: false, ...frontendStaticOptions }));
+    // PERF-07: 启动时把 nonce 注一次（写成占位符），每请求只做一次 split/join；
+    // 原先每请求都要对整份 shell 跑 3 条正则（script / style / stylesheet link）。
+    const CSP_NONCE_PLACEHOLDER = "{{SYNAPSE_CSP_NONCE}}";
+    const cspNonceTemplate =
+      cachedIndexHtml === null ? null : applyCspNonceToHtml(cachedIndexHtml, CSP_NONCE_PLACEHOLDER);
+    const renderShellWithNonce = (nonce: string): string =>
+      cspNonceTemplate === null ? "" : cspNonceTemplate.split(CSP_NONCE_PLACEHOLDER).join(nonce.replace(/"/g, ""));
     const sendIndexHtml = (_req: Request, res: Response) => {
       const nonce = ensureCspNonce(res);
-      if (cachedIndexHtml === null) {
+      if (cspNonceTemplate === null || cachedIndexHtml === null) {
         res.status(500).type("text/plain").send("Frontend shell unavailable");
         return;
       }
       res.set("Cache-Control", "no-cache, must-revalidate");
       res.set("Content-Type", "text/html; charset=utf-8");
-      res.status(200).send(applyCspNonceToHtml(cachedIndexHtml, nonce));
+      res.status(200).send(renderShellWithNonce(nonce));
     };
     app.get("/", rootLimiter, sendIndexHtml);
     // /api-docs is an SPA route (embedded Swagger UI); only /api itself and the

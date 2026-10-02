@@ -65,9 +65,15 @@ const MANUAL_CHUNKS: Record<string, string[]> = {
     "@base-ui/react",
     "class-variance-authority",
   ],
-  // react-icons 单独成块：BroadcastModal（入口静态可达）只用 fa 的 5 个图标，
-  // 不能因为它在 ui 组里就把 radix / base-ui 一起拉上首屏。
-  icons: ["react-icons"],
+  // 不要把 react-icons 收成一个手动分块。曾用 `icons: ["react-icons"]` 把它整体固定成
+  // 单块（当时是为了避免它与 ui 组（radix/base-ui）混在一起），但手动分组会把**全部**
+  // 被引用的图标聚进同一个 chunk：入口侧只需 FirstVisitVerification / PenaltyAppealActions /
+  // FingerprintRequestModal 的十几个图标，却连带把只在 admin 等懒加载页里用到的图标
+  // 一起拉上首屏。实测该块 41.4 KiB gzip，占首屏静态闭包 344.1 KiB 的 12%。
+  // 交回 rolldown 默认分块后，图标模块按「哪些 chunk 真正 import 它」落位：
+  // 入口只带自己那几个，其余留在懒加载 chunk 里（react-vendor 不会吞它 ——
+  // matchesPackage 带分隔符，`react` 不会前缀匹配 `react-icons`）。
+  icons: [],
   // Hugeicons is only needed by the shadcn sidebar primitives.
   hugeicons: ["@hugeicons/core-free-icons", "@hugeicons/react"],
   utils: ["axios", "clsx", "tailwind-merge", "dompurify"],

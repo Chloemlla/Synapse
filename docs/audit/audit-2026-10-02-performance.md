@@ -12,14 +12,19 @@
 | PERF-03 | 🟡 中 | `src/controllers/ipInfoController.ts`、`src/routes/status.ts`、`src/routes/openapiJsonRoutes.ts` | 公开稳定端点无缓存头 | 本批修复 |
 | PERF-04 | 🟡 中 | `frontend/src/components/Footer.tsx` | 1 Hz 全组件重渲染 | 本批修复 |
 | PERF-05 | 🟡 中 | `frontend/src/components/Footer.tsx` | 每次挂载 2 个 API 请求，无客户端缓存 | 本批修复 |
-| PERF-06 | 🔵 低 | `src/app/assembly.ts:354-359` | `/static/audio` 无 `Cache-Control` | 本批修复 |
-| PERF-07 | 🔵 低 | `src/app/assembly.ts:401-413` + `src/security/contentSecurityPolicy.ts:259-274` | SPA shell 每请求 3 次全文正则 | 挂起（收益 < 风险） |
-| PERF-08 | 🔵 低 | `src/app/assembly.ts:269-283` | 全局 10MB body 上限 + 全量 `buf.includes` 扫描 | 挂起（需逐路由核对上限） |
-| PERF-09 | 🔵 低 | `frontend/src/App.tsx:22` → `FingerprintRequestModal.tsx:3` | `react-icons` 桶导入进首屏闭包 | 挂起（视觉回归 CI 抓不到） |
-| PERF-10 | 🔵 低 | `frontend/src/components/WsConnector.tsx:110-131` | 全局 `MutationObserver` + scroll 监听常驻 | 挂起（已 200ms 去抖，收益有限） |
-| PERF-11 | 🔵 低 | `frontend/src/api/api.ts` | 无 GET 去重/短 TTL 缓存层 | 挂起（改动面大，需先有重复请求证据） |
+| PERF-06 | 🔵 低 | `src/app/assembly.ts:354-359` | `/static/audio` 无 `Cache-Control` | 第一批修复（`1f187e8a`） |
+| PERF-07 | 🔵 低 | `src/app/assembly.ts:401-413` + `src/security/contentSecurityPolicy.ts:259-274` | SPA shell 每请求 3 次全文正则 | 第二批修复 |
+| PERF-08 | 🔵 低 | `src/app/assembly.ts:269-283` | 全局 10MB body 上限 + 全量 `buf.includes` 扫描 | 挂起（需逐路由核对上限，行为收紧） |
+| PERF-09 | 🔵 低 | `frontend/vite.config.ts:70` | `react-icons` 手动分块把懒加载页图标也拖上首屏 | 第二批修复 |
+| PERF-10 | 🔵 低 | `frontend/src/components/WsConnector.tsx:110-131` | 后台标签页仍在跑碰撞检测 | 第二批修复 |
+| PERF-11 | 🔵 低 | `frontend/src/api/api.ts` | 无 GET 去重/短 TTL 缓存层 | 挂起（扫描未找到并发重复 GET 的证据） |
+| PERF-12 | 🔴 高 | `src/middleware/routeLimiters.ts:215-283` | 每个静态资源请求两次 Redis 计数 | 第二批修复 |
+| PERF-13 | 🟡 中 | `src/app/assembly.ts:426-428` | `/static/*` 先经过根挂载：多一次限流 + 一次落空 stat | 第二批修复 |
 
 ---
+
+> 第一批（`1f187e8a` / `db080906`）：PERF-01~06。第二批（本文件下方）：PERF-07 / 09 / 10 / 12 / 13。
+> 每一条的「严重度」按 CI 可核验的字节数 / 请求次数 / 数据库往返次数定级。
 
 ## 🔴 高优先级
 
@@ -80,31 +85,73 @@
 
 ---
 
-## 🔵 低优先级（本批挂起，理由随条目）
+## 🔴 高优先级（第二批）
 
-### PERF-06 `/static/audio` 无 `Cache-Control` —— 本批修复（低成本）
+### PERF-12 每个静态资源请求打两次 Redis 计数
+
+| 字段 | 内容 |
+|---|---|
+| **位置** | `src/middleware/routeLimiters.ts:215-283`（`createStore` / `createLimiter`）；受影响的实例：`staticFileLimiter`、`frontendLimiter`、`audioFileLimiter`（三者 `category: "static"`） |
+| **现状** | `createStore` → `createSharedRateLimitStore(prefix, windowMs)`；未显式传 `preferMemory` 时，`ResilientRateLimitStore` 的默认行为是「配了 REDIS_URL 就走 Redis」（`G5-08`，生产确实配了 Redis）。于是 **每个 JS/CSS/字体/图片/音频请求**、以及每个 SPA 路由请求，都要打一次 Redis `INCR` + `PEXPIRE`。再叠加 PERF-13（同一资源过两道闸）就是 2 次/资源。 |
+| **量级** | 按 `check-frontend-bundle.js` 口径，一次生产构建共 3.38 MB gzip / 上百个 chunk；按每页 20-40 个资源算，单次访问就是几十次 Redis 往返，而这些都是 `immutable` 且浏览器已缓存的字节。 |
+| **为什么可以改成进程内存** | 这三道闸的语义是**防刷**（`static` 档 5000/60s），不是**配额**：进程内 `BoundedMemoryRateLimitStore` 已能拦住单机洪水；多实例下每实例各算一份对静态资源毫无影响（没人“应得”跨实例合并的 5000/min）。真正需要跨实例一致的调用方（API Key 配额等）走 `requireSharedBackend`，不受本规则影响。 |
+| **实现** | `createLimiter` 里 `preferMemory = opts.preferMemory ?? category === "static"`，透传到 `createStore`。**关键细节**：只在需要内存档时传 `{ preferMemory: true }`；显式传 `preferMemory: false` 会盖掉 `createSharedRateLimitStore` 内部的“未配 Redis 就默认内存”兜底，把那些限流器推回 Mongo（每请求一次 `findOneAndUpdate`）——这正是 `G5-08` 修掉的旧问题，本批已避开。 |
+| **校验** | `Quality Guardrails` / `Node Verification` 的后端 Jest 全量（`src/tests` 无任何用例断言限流器 store 类型；`apiKeyRateLimit.test.ts` 走的是 `requireSharedBackend`，不受影响）。 |
+
+---
+
+## 🟡 中优先级（第二批）
+
+### PERF-13 `/static/*` 先过根挂载：多一次限流 + 一次注定落空的 stat
+
+| 字段 | 内容 |
+|---|---|
+| **位置** | `src/app/assembly.ts` `registerStaticRoutes()`，原顺序：先 `app.use(staticFileLimiter, express.static(root, {index:false}))`，再 `app.use("/static", staticFileLimiter, express.static(root))` |
+| **现状** | 生产构建的 `base` 是 `/static/`（`vite.config.ts` 的 `defaultBase`），所以**所有**哈希资源都在 `/static/assets/*` 下。而 `app.use(后端无路径)` 对 `/static/...` 同样命中：先跑一次限流器，再拿 `/static/assets/x.js` 到 `frontend/dist/` 下找（必不存在）→ 落空 → `next()` 后才轮到 `/static` 挂载真正命中。 **每个资源请求 = 2 次限流计数 + 1 次失败的 fs 探测。** |
+| **改法** | 把 `/static` 挂载提到根挂载之前。命中即响应，根挂载与它的限流器不再参与；两者都在 miss 时继续 `next()`，行为等价。 |
+| **顺带** | `dist/static/` 不存在，所以根挂载原本就从未真的服务过 `/static/*`；调换顺序不改变任何可达 URL。 |
+| **校验** | `src/tests` 无任何用例请求 `/static/*` 或断言静态目录挂载顺序（已 `rg` 核实）。 |
+
+---
+
+## 🔵 低优先级
+
+### PERF-06 `/static/audio` 无 `Cache-Control` —— 第一批修复（低成本）
 `src/app/assembly.ts:354-359` 只设了 CORS 头。TTS 产物文件名唯一（`src/tts/tts.storage.ts:185`：`tts_${Date.now()}_${random}`），内容对同一 URL 不变，可安全加 `Cache-Control: public, max-age=31536000, immutable`（`express.static` 的 ETag/Last-Modified 仍保留作为兜底）。
 
-### PERF-07 SPA shell 每请求 3 次全文正则 —— 挂起
-`sendIndexHtml`（`src/app/assembly.ts:401-413`）每个 SPA 导航请求都跑 `applyCspNonceToHtml`（`src/security/contentSecurityPolicy.ts:259-274`，3 条 `String.replace(正则)`）。收益受限于 shell 体积（几 KB），且改动涉及 CSP nonce 的合规路径（安全相关），**收益 < 风险**，不在本批动。
+### PERF-07 SPA shell 每请求 3 次全文正则 —— 已修（启动期模板 + 占位符）
+`sendIndexHtml` 原实现每请求跑 `applyCspNonceToHtml`（3 条 `String.replace(正则)`）。现改为启动时用占位符 `{{SYNAPSE_CSP_NONCE}}` 注一次，请求时只做 `split(占位符).join(nonce)`。
 
-### PERF-08 全局 10 MB body 上限 —— 挂起
-`src/app/assembly.ts:269-283` 的 `express.json({ limit: "10mb" })` 对**所有**路由生效，`verify` 回调对最大 10 MB 的 buffer 做 `buf.includes('"__proto__"')` 全量扫描。要收紧必须逐路由核对上限（存在大 body 业务，如 DataCollection / NexAI），属于**行为收紧**而非纯优化，需单独评估，挂起。
+- **安全性不变**：HTML 里的 nonce 与 CSP 头里的 nonce 仍取自同一个 `res.locals.cspNonce`（`ensureCspNonce`），头由 helmet 的 directive 回调生成；占位符不是用户输入，替换值仍先剥引号。
+- **复用既有函数语义**：`applyCspNonceToHtml` 本身是幂等的（不覆盖已有 `nonce=`），所以“先注占位符、再替占位符”与“直接注真 nonce”等价。
+- **不碰 `contentSecurityPolicy.ts`**：改动只在 `assembly.ts`，`src/tests/contentSecurityPolicy.test.ts` 覆盖的纯函数一行未动。
 
-### PERF-09 `react-icons` 桶导入进首屏闭包 —— 挂起
-`frontend/src/App.tsx:22` 静态导入 `FingerprintRequestModal`，后者 `FingerprintRequestModal.tsx:3` 从 `react-icons/fa` 一次性导入 5 个图标；`vite.config.ts` 的 `MANUAL_CHUNKS.icons` 把 `react-icons` 收进独立 chunk，该 chunk 因此在首屏静态闭包内。改成内联 SVG 可让 `react-icons` 离开首屏，但**该组件是安全/合规 UI（指纹请求弹窗），CI 无法验证视觉回归**，需人工确认后单独提交，挂起。
+### PERF-08 全局 10 MB body 上限 —— 挂起（保持）
+`src/app/assembly.ts:269-283` 的 `express.json({ limit: "10mb" })` 对**所有**路由生效，`verify` 回调对最大 10 MB 的 buffer 做 `buf.includes('"__proto__"')` 全量扫描（Buffer 字节搜索，已是快路径；真正成本是 `JSON.parse`）。收紧必须逐路由建大 body 白名单（big-body 业务散布在 dataCollection / nexAI / artifacts / imageData 等），属于**行为收紧**：白名单漏一个就是生产 413，而 CI 不会拿大 body 去打这些端点。**扫描取证的阻塞点**：仓库内大上传多数走 multer（multipart，自带限制）或 `express.text({limit:"5mb"})`，但仍有若干 JSON 大 body 业务无法静态穷举，因此保留挂起。
 
-### PERF-10 `WsConnector` 全局观察器常驻 —— 挂起
-`frontend/src/components/WsConnector.tsx:110-131`：`MutationObserver(document.body, {attributes, childList, subtree, attributeFilter:['class','hidden','aria-hidden']})` + `ResizeObserver` + `resize`/`scroll`（capture）常驻。已按 `CHECK_DEBOUNCE_MS = 200` 去抖（G12-03），单次检测也只是 5 点 `elementsFromPoint`。属**已优化过**的形态，进一步收益有限，挂起。
+### PERF-09 `react-icons` 被手动分组拖上首屏 —— 已修（改回默认分块）
+**真实病因不是“App.tsx 静态导入了桶”，而是手动分块 `MANUAL_CHUNKS.icons`**：它把所有被引用的 `react-icons` 模块聚成单个 chunk，而入口侧确实需要图标（`FirstVisitVerification` 静态可达，用它自己的 11 个 fa 图标；它又导入 `PenaltyAppealActions` 的 fi 图标），于是“入口需要 1 个图标”拉动了“全站所有图标”。
 
-### PERF-11 前端 API 层无 GET 去重/短 TTL 缓存 —— 挂起
-`frontend/src/api/api.ts` 只有错误重试与 IP 验证头注入，没有 in-flight 去重或 GET 缓存。本轮扫描未找到**并发重复 GET** 的直接证据（同名端点的多处调用落在互斥的懒加载路由里），无证据不引入全局缓存层（会改变缓存语义与回退行为），挂起并注明。
+- **实测数据**（`Quality Guardrails` run `36997009790` 的 `[perf-chunk]` + budget 输出）：`assets/icons.C7g8aLmQ.js` = **41.4 KiB gzip**，在首屏静态闭包（344.1 KiB / 14 JS + 1 CSS）内，占 **12%**。
+- **改法**：把 `icons` 组置空（保留文档注释），交回 rolldown 默认分块 —— 图标模块按“哪些 chunk 真的 import 它”落位，入口只带自己那几个，其余留在懒加载 chunk。`react-vendor` 不会吞它（`matchesPackage` 带路径分隔符，`react` 不会前缀匹配 `react-icons`）。
+- **零视觉改动**：不动任何组件，不换图标库（原先考虑的“换成内联 SVG / lucide”会改外观，且安全闸 UI 的视觉回归 CI 抓不到，已舍弃）。
+- **CI 即判据**：`Frontend bundle budget` 会打印新的首屏闭包与 `icons` 归属；`heavyChunkNames`（`documents/pdf/mermaid/katex/charts/fingerprint`）不含 `icons`，置空不会触发“应存在的隔离 chunk 缺失”。
+
+### PERF-10 `WsConnector` 后台标签页仍在碰撞检测 —— 已修（隐藏即不排期）
+`frontend/src/components/WsConnector.tsx`：`MutationObserver(body, subtree+attributes)` + `ResizeObserver` + `resize`/`scroll`(capture) 常驻，200ms 去抖后跑 5 点 `elementsFromPoint` + 多次 `getComputedStyle`。后台标签页里 WS 推送仍会改 DOM，于是这些取值照跑但没人看得到。
+
+- **改法**：`scheduleCheck` 在 `document.visibilityState === 'hidden'` 时直接返回；新增 `visibilitychange` 监听，回前台补排一次（避免恢复后状态陈旧）。
+- 不删除任何检测逻辑、不改判定阈值；`visibilitychange` 与其它监听在同一个 effect 的清理函数里一并解绑。
+
+### PERF-11 前端 API 层无 GET 去重/短 TTL 缓存 —— 挂起（保持）
+本轮把入口可静态到达的模块逐个看完（`ArticleCommandPalette` 只在 `Ctrl/⌘+K` 打开时才拉列表且关闭时 `return null`；`useTwoFactorStatus` 无调用方；`/api/outemail/quota` 的三处调用落在互斥的懒加载路由），**仍未找到并发重复 GET 的证据**。无证据不引入全局缓存层：in-flight 去重会把同一个 response 对象交给多个调用方（共享 `res.data` 引用），短 TTL 缓存会改变回退/刷新语义——两者都需要先有一个真实重复请求的现场。
 
 ---
 
 ## 收尾去向（已回填）
 
-修复批次 commit：`1f187e8a`（代码 + 声明，11 文件）→ 锁文件由 §十七 流程重生成（PR #1012，squash `61bc1865`）→ `db080906`（补测试替身）。
+第一批 commit：`1f187e8a`（代码 + 声明，11 文件）→ 锁文件由 §十七 流程重生成（PR #1012，squash `61bc1865`）→ `db080906`（补测试替身）→ `9fcb08c7`（回填文档）。
+第二批 commit：见下表（`PERF-07 / 09 / 10 / 12 / 13`）。
 
 | 编号 | 去向 |
 |---|---|
@@ -114,7 +161,13 @@
 | PERF-04 | 已修（`1f187e8a`）：`UptimeClock` 叶子组件 + `React.memo(Footer)`。 |
 | PERF-05 | 已修（`1f187e8a`）：`sessionStorage` + TTL 缓存 + 模块级 in-flight 去重。 |
 | PERF-06 | 已修（`1f187e8a`）：`/static/audio` → `public, max-age=31536000, immutable`。 |
-| PERF-07 ~ PERF-11 | 挂起（理由见各条），本批未动。 |
+| PERF-07 | 已修（第二批）：启动期 nonce 模板 + 占位符替换，不再每请求跑 3 条正则。 |
+| PERF-08 | **挂起**（保持）：收紧全局 10 MB body 上限需逐路由大 body 白名单，属行为收紧；白名单漏一项即生产 413，CI 不拿大 body 打这些端点。 |
+| PERF-09 | 已修（第二批）：`MANUAL_CHUNKS.icons` 置空，交回 rolldown 默认分块；不动组件外观。基线 `icons` = 41.4 KiB gzip / 首屏闭包 344.1 KiB（12%）。 |
+| PERF-10 | 已修（第二批）：`WsConnector` 隐藏标签页不排期 + `visibilitychange` 回前台补检。 |
+| PERF-11 | **挂起**（保持）：本轮逐个看过入口可达模块，仍未找到并发重复 GET 的证据；无现场不引入全局缓存层。 |
+| PERF-12 | 已修（第二批）：`category === "static"` 的限流器（`static` / `frontend` / `audio`）改用进程内内存档，不再每资源一次 Redis 往返。 |
+| PERF-13 | 已修（第二批）：`/static` 挂载提到根挂载之前，每个 `/static/*` 请求从「2 次限流 + 1 次落空 stat」降为「1 次限流」。 |
 
 ### CI 判据（`db080906`，全绿）
 
