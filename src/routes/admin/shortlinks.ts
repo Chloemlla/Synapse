@@ -5,6 +5,7 @@ import { auditLog } from "../../middleware/auditLog";
 import { isAdminRole, isSuperAdmin } from "../../middleware/auth";
 import { authenticateToken } from "../../middleware/authenticateToken";
 import { replayProtection } from "../../middleware/replayProtection";
+import { escapeRegexLiteral } from "../../utils/regexEscape";
 import { shortUrlMigrationService } from "../../services/shortUrlMigrationService";
 import logger from "../../utils/logger";
 import { createUrlSafeRandomId } from "../../utils/randomId";
@@ -45,8 +46,8 @@ router.get("/shortlinks", authenticateToken, async (req, res) => {
     // 安全的查询构建
     let query: any = {};
     if (search && search.length > 0) {
-      // 防止正则表达式注入：转义特殊字符
-      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // 防止正则表达式注入：转义特殊字符（统一实现见 utils/regexEscape）
+      const escapedSearch = escapeRegexLiteral(search);
       query = {
         $or: [{ code: { $regex: escapedSearch, $options: "i" } }, { target: { $regex: escapedSearch, $options: "i" } }],
       };
@@ -334,33 +335,32 @@ router.post("/shortlinks/migrate", authenticateToken, auditLog({ module: "shortu
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/shortlinks/migration-stats", authenticateToken, async (req, res) => {
   try {
-    console.log("🔐 [ShortUrlMigration] 开始处理迁移统计请求...");
-    console.log("   用户ID:", req.user?.id);
-    console.log("   用户名:", req.user?.username);
-    console.log("   用户角色:", req.user?.role);
+    // 身份字段只进结构化日志，不裸打用户名/角色（同文件其余路径的收敛口径）。
+    logger.debug("[ShortUrlMigration] 迁移统计请求", {
+      userId: req.user?.id,
+      role: req.user?.role,
+    });
 
     // 检查管理员权限
     if (!req.user || !isAdminRole(req.user.role)) {
-      console.log("❌ [ShortUrlMigration] 权限检查失败：非管理员用户");
       return res.status(403).json({ error: "需要管理员权限" });
     }
-
-    console.log("✅ [ShortUrlMigration] 权限检查通过");
 
     // 获取统计信息
     const stats = await shortUrlMigrationService.getMigrationStats();
 
-    console.log("📊 [ShortUrlMigration] 统计信息获取完成");
-    console.log("   总记录数:", stats.totalRecords);
-    console.log("   旧域名记录数:", stats.oldDomainRecords);
-    console.log("   新域名记录数:", stats.newDomainRecords);
+    logger.debug("[ShortUrlMigration] 迁移统计已获取", {
+      totalRecords: stats.totalRecords,
+      oldDomainRecords: stats.oldDomainRecords,
+      newDomainRecords: stats.newDomainRecords,
+    });
 
     res.json({
       success: true,
       data: stats,
     });
   } catch (error) {
-    console.error("❌ [ShortUrlMigration] 获取迁移统计失败:", error);
+    logger.error("[ShortUrlMigration] 获取迁移统计失败", { error });
     res.status(500).json({ error: "获取迁移统计失败" });
   }
 });

@@ -1,7 +1,12 @@
 import { createClient, type RedisClientType } from "redis";
 import { startupConfig } from "../config/config";
 import logger from "../utils/logger";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import { mongoose } from "./mongoService";
+
+// 前缀当字面量（统一实现见 utils/regexEscape）。放在类定义之前：类方法在模块求值期间
+// 就可能被定时器/回调触发，const 在 TDZ 里会抛错。
+const escapeRegex = escapeRegexLiteral;
 
 /**
  * 共享短期状态存储（跨实例、可重建、带 TTL）。
@@ -461,10 +466,6 @@ class SharedStateStore {
     }, MEMORY_SWEEP_INTERVAL_MS);
     this.sweepTimer.unref?.();
   }
-}
-
-function escapeRegex(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export const sharedStateStore = new SharedStateStore();

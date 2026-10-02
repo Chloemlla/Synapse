@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders } from "node:http";
 import mongoose, { Schema } from "mongoose";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 // WebhookEvent document interface
 interface WebhookEventDoc {
@@ -94,9 +95,8 @@ function normalizeRouteKey(value: unknown): string | undefined {
   return trimmed;
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// 关键词当字面量（统一实现见 utils/regexEscape）。
+const escapeRegex = escapeRegexLiteral;
 
 function toPlain<T = any>(doc: any): T {
   if (doc && typeof doc.toObject === "function") {

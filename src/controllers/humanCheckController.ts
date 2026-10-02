@@ -252,8 +252,7 @@ export class SmartHumanCheckController {
       const ip = ipRaw && isIP(ipRaw) ? ipRaw : undefined;
 
       // 对 UA 进行转义并限制长度，使用安全正则
-      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const ua = uaRaw ? escapeRegex(uaRaw.slice(0, 100)) : undefined;
+      const ua = uaRaw ? escapeRegexLiteral(uaRaw.slice(0, 100)) : undefined;
 
       await connectMongo();
       const M = SmartHumanCheckController.getTraceModel();

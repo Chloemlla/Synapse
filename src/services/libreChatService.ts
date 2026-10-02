@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import axios from "axios";
 import { load } from "cheerio";
+import { escapeRegexLiteralOrEmpty } from "../utils/regexEscape";
 import { mongoose } from "../services/mongoService";
 import logger from "../utils/logger";
 import { registerBackgroundTaskStopper } from "../utils/backgroundTaskRegistry";
@@ -59,10 +60,8 @@ function normalizeOwnerReference(input?: string): string {
 }
 
 // 安全构建正则：对模式进行转义
-function escapeRegex(input?: string): string {
-  if (!input || typeof input !== "string") return "";
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// 关键词当字面量（统一实现见 utils/regexEscape；undefined 返回空串）。
+const escapeRegex = escapeRegexLiteralOrEmpty;
 
 // 清洗助手文本中的 <think> 思考内容与可视化标记
 function sanitizeAssistantText(text: string): string {

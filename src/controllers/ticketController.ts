@@ -3,6 +3,7 @@ import { type ITicket, type ITicketMessage, TicketModel } from "../models/ticket
 import { EmailService, getDefaultEmailFrom } from "../services/emailService";
 import { libreChatService } from "../services/libreChatService";
 import { createInternalConversation } from "../services/librechat/conversations";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import type { ChatFailureDiagnostics } from "../services/librechat/types";
 import { ModerationService } from "../services/moderationService";
 import { mongoose } from "../services/mongoService";
@@ -48,11 +49,6 @@ function parseTicketListQuery(query: unknown): TicketListQuery {
     skip: (page - 1) * limit,
     summary: source.summary === "1" || source.summary === "true",
   };
-}
-
-/** 把用户输入当字面量：避免关键词里的正则元字符被当成语法。 */
-function escapeRegexLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { startupConfig } from "../config/config";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import {
   EmailSuppressionModel,
   type EmailSuppressionDoc,
@@ -224,7 +225,7 @@ export async function listSuppressions(params: {
   }
   const q = typeof params.q === "string" ? params.q.trim() : "";
   if (q) {
-    query.email = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+    query.email = { $regex: escapeRegexLiteral(q), $options: "i" };
   }
 
   const [items, total] = await Promise.all([

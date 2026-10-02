@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { isAdminRole } from "../middleware/auth";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import { DeviceTracking } from "../models/deviceTrackingModel";
 import { SecurityEvent } from "../models/securityEventModel";
 import {
@@ -379,8 +380,7 @@ export async function getDeviceList(req: Request, res: Response): Promise<void> 
     }
 
     if (typeof searchParam === "string" && searchParam) {
-      // Escape special characters for safe regex search
-      const escapedSearch = searchParam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedSearch = escapeRegexLiteral(searchParam);
       query.$or = [
         { deviceFingerprint: { $regex: escapedSearch, $options: "i" } },
         { userId: { $regex: escapedSearch, $options: "i" } },

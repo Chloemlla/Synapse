@@ -1,4 +1,5 @@
 import { mongoose } from "../services/mongoService";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import type {
   GenerationHistoryStore,
   TtsDuplicateHit,
@@ -90,9 +91,8 @@ function normalizeReviewStatus(value: unknown): TtsHistoryReviewStatus {
   return REVIEW_STATUSES.includes(value as TtsHistoryReviewStatus) ? (value as TtsHistoryReviewStatus) : "none";
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// 关键词当字面量（统一实现见 utils/regexEscape）。
+const escapeRegExp = escapeRegexLiteral;
 
 function trimOptionalText(value: unknown, maxLength: number): string | undefined {
   if (value === undefined) {

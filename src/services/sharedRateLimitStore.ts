@@ -2,6 +2,7 @@ import type { IncrementResponse, Options, Store } from "express-rate-limit";
 import { createClient, type RedisClientType } from "redis";
 import { startupConfig } from "../config/config";
 import logger from "../utils/logger";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import { mongoose } from "./mongoService";
 
 const DEFAULT_MEMORY_MAX_ENTRIES = 100_000;
@@ -206,7 +207,7 @@ export class MongoRateLimitStore implements Store {
 
   async resetAll(): Promise<void> {
     if (!this.isAvailable()) throw new SharedRateLimitUnavailableError("MongoDB 限流存储未连接");
-    const escapedPrefix = this.internalPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedPrefix = escapeRegexLiteral(this.internalPrefix);
     await this.model.deleteMany({ _id: { $regex: `^${escapedPrefix}:` } });
   }
 

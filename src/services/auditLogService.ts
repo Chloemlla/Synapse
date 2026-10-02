@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { NextFunction, Request, Response } from "express";
 import { AuditLogModel, type IAuditLog } from "../models/auditLogModel";
 import { isSensitiveAuditField } from "../utils/auditRedaction";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import logger from "../utils/logger";
 import { registerShutdownStep, installShutdownHandlers } from "./shutdown";
 import { registerBackgroundTaskStopper } from "../utils/backgroundTaskRegistry";
@@ -138,9 +139,9 @@ export interface AuditEntry {
 }
 
 /** 转义正则特殊字符 */
-function escapeRegex(str: string): string {
-  return str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, (ch) => `\\${ch}`);
-}
+// 关键词当字面量。本文件原先用更宽的字符集（额外转义 # 与空白），语义等价 ——
+// 统一到 utils/regexEscape 后，全仓只有一份转义实现。
+const escapeRegex = escapeRegexLiteral;
 
 const ALLOWED_RESULTS = new Set(["success", "failure"]);
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);

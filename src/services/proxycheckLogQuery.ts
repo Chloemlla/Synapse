@@ -5,6 +5,7 @@
  * 绝不 400、绝不抛错 —— 一个手滑的 URL 不该让整个面板白屏。
  * `ip` 只做前缀匹配（`^escaped`），因此这里不能复用 normalizeIp（它要求完整合法 IP）。
  */
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 export const DEFAULT_LIMIT = 50;
 export const MAX_LIMIT = 200;
@@ -62,9 +63,8 @@ function readIpPrefix(value: unknown): string {
   return trimmed;
 }
 
-export function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/** IP 前缀匹配用的字面量转义（统一实现见 utils/regexEscape）。保留本导出以兼容既有导入方。 */
+export const escapeRegex = escapeRegexLiteral;
 
 /**
  * 前缀正则锚定 `^` 以便索引可用（区分大小写：存储侧是规范化后的 IP 字面量，

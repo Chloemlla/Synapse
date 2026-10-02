@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import logger from "../utils/logger";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 // 短链映射Schema
 const ShortUrlSchema = new mongoose.Schema(
@@ -31,10 +32,6 @@ class ShortUrlMigrationService {
    * Escape a string for safe use in a regular expression.
    * Handles all regex meta-characters including backslash.
    */
-  private escapeRegex(str: string): string {
-    return str.replace(/[\\.*+?^${}()|[\]]/g, "\\$&");
-  }
-
   public static getInstance(): ShortUrlMigrationService {
     if (!ShortUrlMigrationService.instance) {
       ShortUrlMigrationService.instance = new ShortUrlMigrationService();
@@ -160,7 +157,7 @@ class ShortUrlMigrationService {
             total: [{ $count: "count" }],
             oldDomain: [{ $match: { target: { $regex: this.OLD_DOMAIN, $options: "i" } } }, { $count: "count" }],
             newDomain: [
-              { $match: { target: { $regex: this.escapeRegex(this.NEW_DOMAIN), $options: "i" } } },
+              { $match: { target: { $regex: escapeRegexLiteral(this.NEW_DOMAIN), $options: "i" } } },
               { $count: "count" },
             ],
           },
@@ -182,7 +179,7 @@ class ShortUrlMigrationService {
             $match: {
               target: {
                 $not: {
-                  $regex: `(${this.OLD_DOMAIN}|${this.escapeRegex(this.NEW_DOMAIN)})`,
+                  $regex: `(${this.OLD_DOMAIN}|${escapeRegexLiteral(this.NEW_DOMAIN)})`,
                   $options: "i",
                 },
               },

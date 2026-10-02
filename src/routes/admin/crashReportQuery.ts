@@ -1,4 +1,5 @@
 import { ApiError } from "../../services/lumen/errors.js";
+import { escapeRegexLiteral } from "../../utils/regexEscape";
 
 export type CrashSource = "sdk" | "app";
 export type CrashRisk = "high" | "medium" | "low";
@@ -39,7 +40,8 @@ export interface ParsedReportQuery {
 }
 
 /** Search terms reach Mongo as a regex, so every metacharacter must be inert. */
-export const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** 字面量转义（统一实现见 utils/regexEscape）。保留本导出以兼容既有导入方。 */
+export const escapeRegex = (value: string): string => escapeRegexLiteral(value);
 
 const readString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 

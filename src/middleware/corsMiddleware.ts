@@ -1,5 +1,6 @@
 import cors from "cors";
 import type { NextFunction, Request, Response } from "express";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 // 允许的域名（白名单，不使用通配符）
 const allowedOrigins = [
@@ -81,10 +82,8 @@ function matchesOriginPattern(origin: string, pattern: string): boolean {
 
   if (!hostPattern.startsWith("*.")) return false;
 
-  const escapedHost = hostPattern
-    .slice(2)
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`^${protocolPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*\\.${escapedHost}$`);
+  const escapedHost = escapeRegexLiteral(hostPattern.slice(2));
+  const regex = new RegExp(`^${escapeRegexLiteral(protocolPrefix)}[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*\\.${escapedHost}$`);
   return regex.test(origin);
 }
 

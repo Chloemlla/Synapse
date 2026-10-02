@@ -4,6 +4,7 @@
  * 把筛选/排序/分页/统计的 aggregation pipeline 构建逻辑从 userService 拆出，
  * 避免 userService 越过 800 行硬闸门。本文件不依赖 userService 内部实现。
  */
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 export interface AdminUserListQueryParams {
   keyword: string;
@@ -56,10 +57,6 @@ const ADMIN_USER_SORT_FIELD_MAP: Record<string, string> = {
   ticketViolationCount: "ticketViolationCount",
 };
 
-function escapeRegexInput(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export function buildAdminUserMatchStage(q: AdminUserListQueryParams): Record<string, unknown> {
   const and: Record<string, unknown>[] = [];
 
@@ -69,7 +66,7 @@ export function buildAdminUserMatchStage(q: AdminUserListQueryParams): Record<st
   else if (q.accountStatus === "active") and.push({ accountStatus: { $ne: "suspended" } });
 
   if (q.keyword) {
-    const kw = escapeRegexInput(q.keyword);
+    const kw = escapeRegexLiteral(q.keyword);
     and.push({
       $or: [
         { id: { $regex: kw, $options: "i" } },

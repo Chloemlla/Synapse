@@ -1,3 +1,5 @@
+import { escapeRegexLiteral } from "../../utils/regexEscape";
+
 export function sanitizeFileName(fileName: string): string {
   if (!fileName || typeof fileName !== "string") {
     return "unknown";
@@ -31,7 +33,7 @@ export function sanitizeRegexPattern(pattern: string): string {
   if (!pattern || typeof pattern !== "string") {
     return "";
   }
-  return pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 100);
+  return escapeRegexLiteral(pattern).slice(0, 100);
 }
 
 export function validateFileId(fileId: string): boolean {

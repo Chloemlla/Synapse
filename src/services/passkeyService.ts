@@ -7,6 +7,7 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import jwt from "jsonwebtoken";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 import { config } from "../config/config";
 import { env } from "../config/env";
 import { issueTrackedLoginToken, type AuthSessionMetadata } from "./authSessionService";
@@ -62,10 +63,8 @@ const matchesOriginPattern = (origin: string, pattern: string): boolean => {
 
   if (!hostPattern.startsWith("*.")) return false;
 
-  const escapedHost = hostPattern
-    .slice(2)
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const escapedProtocol = protocolPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedHost = escapeRegexLiteral(hostPattern.slice(2));
+  const escapedProtocol = escapeRegexLiteral(protocolPrefix);
   const regex = new RegExp(`^${escapedProtocol}[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*\\.${escapedHost}$`);
   return regex.test(origin);
 };
