@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiBolt, FiEye, FiEyeOff, FiLock, FiSend } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiLock, FiSend, FiZap } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { studioEyebrowClassName, studioPrimaryButtonClassName } from '../studioTheme';
 import { MAX_TICKET_REPLY_LEN, QUICK_REPLIES } from './ticketConstants';
@@ -208,7 +208,7 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
                   aria-expanded={showQuick}
                   className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                 >
-                  <FiBolt size={11} /> 快捷回复
+                  <FiZap size={11} /> 快捷回复
                 </button>
               )}
               {canWriteInternal && (

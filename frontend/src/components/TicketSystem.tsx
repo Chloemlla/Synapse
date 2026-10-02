@@ -552,7 +552,7 @@ const TicketSystem: React.FC = () => {
       setNotification({ type: 'success', message: "工单已提交" });
       setIsCreating(false);
       setShowDetailOnMobile(false);
-      setNewTicket({ title: "", description: "", priority: "medium" });
+      setNewTicket({ title: "", description: "", priority: "medium", category: "other" });
       setSelectedTicket(created);
       fetchTickets();
     } catch (error: unknown) {
