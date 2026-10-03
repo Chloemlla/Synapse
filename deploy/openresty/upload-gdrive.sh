@@ -26,7 +26,7 @@ for a in "$@"; do
   esac
 done
 python3 - "$CONFIG" "$MODE" "$VF" <<'PY'
-import glob, hashlib, json, os, sys, urllib.error, urllib.parse, urllib.request
+import glob, gzip, hashlib, json, os, sys, urllib.error, urllib.parse, urllib.request
 
 CONFIG, MODE, VERIFY = sys.argv[1], sys.argv[2], sys.argv[3]
 BACKUP_DIR = os.environ.get('BACKUP_DIR', '/root/backups')
@@ -47,16 +47,29 @@ def log(msg):
     print(msg, flush=True)
 
 
-def api(method, url, data=None, headers=None):
+def api(method, url, data=None, headers=None, raw=False):
     req = urllib.request.Request(url, data=data, method=method)
+    # 不主动要压缩：Drive 上传接口的响应实测会带 gzip（0x8b 开头），当 JSON 解析会炸
+    req.add_header('Accept-Encoding', 'identity')
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
+        with urllib.request.urlopen(req, timeout=1800) as r:
             body = r.read()
+            if raw:
+                return r.status, r.headers, body
+            if body[:2] == b'\x1f\x8b':
+                body = gzip.decompress(body)
             return r.status, r.headers, (json.loads(body) if body else {})
     except urllib.error.HTTPError as e:
         return e.code, e.headers, {'error': e.read()[:400].decode('utf-8', 'replace')}
+
+
+def list_by_name(name):
+    """按名字重列云端（上传后的权威校验，比信任 PUT 响应体可靠）"""
+    q = "name='%s' and '%s' in parents and trashed=false" % (name.replace("'", "\\'"), FID)
+    st, _, js = api('GET', 'https://www.googleapis.com/drive/v3/files?fields=files(id,name,size,md5Checksum)&q=' + urllib.parse.quote(q), headers=AUTH)
+    return js.get('files', []) if isinstance(js, dict) else []
 
 
 def md5_of(path, chunk=1 << 20):
@@ -136,7 +149,7 @@ if MODE == 'verify':
     if not f:
         log('云端没有 %s' % name)
         sys.exit(1)
-    st, _, body = api('GET', 'https://www.googleapis.com/drive/v3/files/%s?alt=media' % f['id'], headers=AUTH)
+    st, _, body = api('GET', 'https://www.googleapis.com/drive/v3/files/%s?alt=media' % f['id'], headers=AUTH, raw=True)
     if st != 200:
         log('ERROR: 下载失败: %s' % body)
         sys.exit(1)
@@ -205,22 +218,34 @@ for f in to_upload:
         payload = fh.read()
     req = urllib.request.Request(loc, data=payload, method='PUT')
     req.add_header('Content-Length', str(len(payload)))
+    req.add_header('Accept-Encoding', 'identity')
     try:
-        with urllib.request.urlopen(req, timeout=900) as r:
-            res = json.loads(r.read() or b'{}')
+        urllib.request.urlopen(req, timeout=1800).read()
     except urllib.error.HTTPError as e:
         log('  FAIL %s: 上传失败 %s %s' % (name, e.code, e.read()[:200]))
         fail += 1
         continue
+    # 以“重新列一次云端”为权威校验（PUT 响应体实测会带 gzip，不能当 JSON 用）
+    lsize = os.path.getsize(f)
     lmd5 = md5_of(f)
-    rsize = int(res.get('size') or -1)
-    if rsize == os.path.getsize(f) and res.get('md5Checksum') == lmd5:
-        log('  ok   %-46s %d 字节 md5 一致' % (name, rsize))
+    found = list_by_name(name)
+    good = None
+    for g in found:
+        if int(g.get('size') or -1) == lsize and g.get('md5Checksum') == lmd5:
+            good = g
+            break
+    if good:
+        # 同名旧件（上次传到一半/内容变了）清掉，避免云端同名两份
+        for g in found:
+            if g['id'] != good['id']:
+                api('DELETE', 'https://www.googleapis.com/drive/v3/files/%s' % g['id'], headers=AUTH)
+                log('  del   同名旧件 %s（已重传并校验通过）' % name)
+        log('  ok   %-46s %d 字节 md5 一致' % (name, lsize))
         ok += 1
-        REMOTE[name] = {'id': res.get('id'), 'name': name, 'size': str(rsize), 'md5Checksum': lmd5}
+        REMOTE[name] = good
     else:
-        log('  FAIL %s: 校验不过 云端 %s 字节 md5=%s / 本地 %s 字节 md5=%s'
-            % (name, rsize, res.get('md5Checksum'), os.path.getsize(f), lmd5))
+        log('  FAIL %s: 复核不过 云端 %s 字节 md5=%s / 本地 %s 字节 md5=%s'
+            % (name, (found[0].get('size') if found else '无'), (found[0].get('md5Checksum') if found else '-'), lsize, lmd5))
         fail += 1
 
 # ---- 6) 云端保留：每个前缀只留最新 KEEP 份（连带旁文件一起删）----
