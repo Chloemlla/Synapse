@@ -10,6 +10,8 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | `maintenance.conf` | 站点 server 块 include 的片段：`error_page 502 503 504 =503` + `@chloemlla_maintenance` 命名 location |
 | `sync-site-certs.sh` | 把 1Panel 续期后的最新证书铺到所有站点 `ssl/` 目录（含到期告警） |
 | `upload-gdrive.sh` | 把最新一批产物传到 Google Drive（Drive v3 REST + refresh_token，不依赖 rclone） |
+| `seal-backups.sh` | 把产物就地 age 加密（存量迁移 + 增量），解密回环校验通过才删明文 |
+| `restore.sh` | 服务器端自助恢复：list/check/extract/decrypt/openresty/panel/mongo/redis/volumes/cert |
 | `backup-openresty.sh` | 备份接入层：站点/全局配置、证书、维护页、WAF 自定义配置、容器定义 + 清单 |
 | `backup-panel-state.sh` | 备份 1Panel 自身状态：DB（sqlite 在线快照）、secret、全部应用定义 |
 | `backup-mongo.sh` | MongoDB 全库 `mongodump --archive --gzip`（可 `--drill` 做真实恢复演练） |
@@ -98,12 +100,12 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 
 | 步骤 | 脚本 | 产物（均在 `/root/backups/`，平铺） | 保留 |
 | --- | --- | --- | --- |
-| 接入层配置 | `backup-openresty.sh 5` | `openresty-<ts>.tar.gz` + `.sha256`（~12M） | 5 份 |
+| 接入层配置 | `backup-openresty.sh 5` | `openresty-<ts>.tar.gz.age` + `.age.sha256`（~12M） | 5 份 |
 | 站点证书 | `sync-site-certs.sh` | 直接改线上证书 + `cert-<站点>-*.pem` | 手动清 |
-| 1Panel 状态 | `backup-panel-state.sh 7` | `1panel-state-<ts>.tar.gz` + `.sha256`（~2.2M） | 7 份 |
-| MongoDB | `backup-mongo.sh 7` | `mongo-<ts>.archive.gz` + `.manifest.txt` + `.counts.txt`（~15M） | 7 份 |
-| Redis | `backup-redis.sh 7` | `redis-<ts>.tar.gz` + `.manifest.txt`（~39K） | 7 份 |
-| 容器卷 | `backup-volumes.sh 7` | `volumes-<ts>.tar.gz` + `.manifest.txt`（~70K） | 7 份 |
+| 1Panel 状态 | `backup-panel-state.sh 7` | `1panel-state-<ts>.tar.gz.age` + `.age.sha256`（~2.2M） | 7 份 |
+| MongoDB | `backup-mongo.sh 7` | `mongo-<ts>.archive.gz.age` + `.manifest.txt.age` + `.counts.txt.age`（~15M） | 7 份 |
+| Redis | `backup-redis.sh 7` | `redis-<ts>.tar.gz.age` + `.manifest.txt.age`（~39K） | 7 份 |
+| 容器卷 | `backup-volumes.sh 7` | `volumes-<ts>.tar.gz.age` + `.manifest.txt.age`（~70K） | 7 份 |
 | 云端副本 | `upload-gdrive.sh` | Google Drive 根下 `backups/`（每天约 30M，云端每前缀保留 3～7 份） | — |
 
 几个刻意的取舍：
@@ -199,6 +201,38 @@ cp /path/to/deploy/openresty/RESTORE.md /root/backups/RESTORE.md   # 会被打�
 /root/backups/daily.sh          # 手工跑一次，确认六步都 [ok]
 ```
 
+## 加密（age）与恢复
+
+备份里是站点私钥、WAF 密钥、1Panel 数据库、全量业务数据——明文只靠 600 权限挡着，磁盘被拷走就全露。所以**本地产物一律 age 加密**：
+
+- **公钥**（`AGE_RECIPIENT`，`age1…`）放 `gdrive.env`/服务器即可；**私钥**（`AGE_IDENTITY`）离线保存（例如 `F:\sshkeyge-key.txt`）。公钥能加密，只有私钥能解密——**私钥丢了历史备份全废**，离线存两处。
+- `seal-backups.sh`：加密 → **解密回环比对**（`age -d -i key | cmp - 原文`）→ 通过才删明文 → `.sha256` 改写成**密文**哈希。没有私钥/公钥就明确报错，绝不产出自己没法验证的密文。
+  ```bash
+  /root/backups/seal-backups.sh --check       # 看还有多少明文
+  /root/backups/seal-backups.sh --all         # 迁移存量（幂等，可重复跑）
+  /root/backups/seal-backups.sh <文件>...     # 备份脚本落盘后调它
+  ```
+- **`.sha256` 故意保持明文**：它只是哈希，留明文才能在**不解密**的前提下校验密文完整性（把它也加密，等于校验还得先有私钥）。
+- 5 个备份脚本 + `sync-site-certs.sh`（证书历史含私钥）都会在自校验之后调用 seal；`upload-gdrive.sh` 只传 `.age`，万一遇到明文且有公钥就即时加密，没公钥直接 `FAIL`——**绝不把明文推上云**。云端历史遗留的明文用 `--purge-plaintext` 清掉。
+- 加密能力本身也验过：同一份明文用正确私钥能解开、用另一把密钥解不开。
+
+`restore.sh` 是服务器端的自助恢复（按 `luyinji-rev/bili-download.js` 的设计语言：CLI › env › 配置文件 › 默认，`--ask`/`--simulate`/`--yes`，非交互环境明确报错）：
+
+```bash
+/root/backups/restore.sh list [--cloud]         # 有哪些备份
+/root/backups/restore.sh check <文件>            # 完整性（.age 会解密回环比一次）
+/root/backups/restore.sh extract <文件> <目录>   # 解到别处看内容（不碰线上）
+/root/backups/restore.sh decrypt <文件.age>      # 只解密
+/root/backups/restore.sh openresty --yes        # 接入层配置（改坏自动回滚）
+/root/backups/restore.sh panel --yes            # 1Panel 状态
+/root/backups/restore.sh mongo --into-temp      # 演练（默认）；--into-live 才灌线上
+/root/backups/restore.sh redis --yes
+/root/backups/restore.sh volumes --yes
+/root/backups/restore.sh cert <站点> --yes       # 证书回滚
+```
+
+所有命令都支持 `--simulate`（只打印计划）；破坏性操作要 `--yes`，动线上前先自动留一份"恢复前快照"。
+
 ## 云端副本（Google Drive）
 
 `upload-gdrive.sh` 把本地最新一批产物推到 Google Drive，不依赖 rclone，直接用 Drive v3 REST：
@@ -218,6 +252,8 @@ cp /path/to/deploy/openresty/RESTORE.md /root/backups/RESTORE.md   # 会被打�
 - **幂等**：断网重跑不会重复上传——云端同名且大小一致就 skip。
 - **传完就验**：拿 Drive 返回的 `size` + `md5Checksum` 与本地 md5 比对，不一致报 FAIL；
   需要更强证据就用 `--verify=<文件名>` 真下载回来比。
+- **云端只存密文**：上传的是 `.age`（`.sha256` 保持明文），本地若还是明文则即时加密；
+  `--purge-plaintext` 清掉历史明文对象（保留 `.sha256`）。
 - **云端保留**：每个前缀只留最新 N 份（openresty 3、其余 7），连带旁文件一起删；
   删除只在“上一前缀已有新件”时发生，不会把唯一一份删了。
 
