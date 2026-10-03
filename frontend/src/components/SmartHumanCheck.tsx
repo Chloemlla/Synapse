@@ -40,6 +40,9 @@ type SmartHumanCheckVariant = {
 // 行为评分阈值
 const SCORE_THRESHOLD = 0.62; // 合理偏宽松，降低误判率
 
+// 用户主动取消提交（不是验证失败），用于与错误文案区分
+const CANCEL_MESSAGE = '已取消验证';
+
 // 重试配置
 const RETRY_CONFIG = {
   maxRetries: 3,
@@ -213,9 +216,20 @@ function leadingZeroBits(bytes: Uint8Array): number {
   return count;
 }
 
-async function solvePow(powSalt?: string, difficulty?: number): Promise<{ nonce: string } | undefined> {
+/**
+ * 求解工作量证明。onProgress 上报 0~1 的进度、signal 用于中途取消——
+ * 这是提交阶段唯一可能跑很久的一步，没有进度与取消入口时页面看起来像卡死。
+ */
+async function solvePow(
+  powSalt?: string,
+  difficulty?: number,
+  onProgress?: (ratio: number) => void,
+  signal?: AbortSignal,
+): Promise<{ nonce: string } | undefined> {
   if (!powSalt || !difficulty || difficulty <= 0) return undefined;
   for (let i = 0; i < 250000; i += 1) {
+    if (signal?.aborted) throw new Error(CANCEL_MESSAGE);
+    if (onProgress && i % 2000 === 0) onProgress(i / 250000);
     const candidate = `${Date.now().toString(36)}-${i.toString(36)}`;
     const digest = await sha256Bytes(`${powSalt}:${candidate}`);
     if (leadingZeroBits(digest) >= difficulty) return { nonce: candidate };
@@ -688,6 +702,9 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
   const [sliderOk, setSliderOk] = useState(false);
   const [sliderKey, setSliderKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  // 工作量证明的进度（0~1）与取消句柄：提交阶段可能是整段流程里最慢的一步
+  const [powProgress, setPowProgress] = useState(0);
+  const powAbortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState<string | null>(challengeNonce || null);
   const [tokenKey, setTokenKey] = useState<string | null>(challengeKey || null);
@@ -1093,6 +1110,10 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
 
   const handleSliderComplete = useCallback(() => setSliderOk(true), []);
 
+  const cancelSubmit = useCallback(() => {
+    powAbortRef.current?.abort();
+  }, []);
+
   const handleCheckChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const next = e.target.checked;
     setChecked(next);
@@ -1124,6 +1145,9 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
+    setPowProgress(0);
+    const controller = new AbortController();
+    powAbortRef.current = controller;
 
     try {
       const now = Date.now();
@@ -1147,21 +1171,34 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
         st: statsSnapshot,
         cn: activeNonce,
       };
-      const pow = await solvePow(powSalt || challengePowSalt || undefined, powDifficulty || challengeDifficulty || 0);
+      const pow = await solvePow(
+        powSalt || challengePowSalt || undefined,
+        powDifficulty || challengeDifficulty || 0,
+        setPowProgress,
+        controller.signal,
+      );
       const token = await createV2Token({
         nonce: activeNonce,
         key: activeKey,
         payload,
         pow,
       });
+      if (controller.signal.aborted) throw new Error(CANCEL_MESSAGE);
       onSuccess(token);
       if (autoResetOnSuccess) {
         setTimeout(() => reset(), 500);
       }
     } catch (e: any) {
+      // 用户主动取消不算失败，不计入父组件的失败统计
+      if (controller.signal.aborted) {
+        setError(CANCEL_MESSAGE);
+        return;
+      }
       setError(e?.message || '验证失败，请重试');
       onFail?.('exception');
     } finally {
+      powAbortRef.current = null;
+      setPowProgress(0);
       setSubmitting(false);
     }
   }, [
@@ -1188,9 +1225,11 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
   const challengeOpen = checked && !sliderOk;
   const activeNonceReady = Boolean(nonce || challengeNonce) && Boolean(tokenKey || challengeKey);
   const statusText = (() => {
-    if (submitting) return '正在验证...';
+    if (submitting) {
+      return powProgress > 0 ? `正在完成安全校验 ${Math.round(powProgress * 100)}%` : '正在验证...';
+    }
     if (fetchingNonce) return '正在初始化...';
-    if (error) return '验证失败';
+    if (error) return error === CANCEL_MESSAGE ? '已取消' : '验证失败';
     if (sliderOk) return '验证通过';
     if (checked) return '完成挑战';
     if (!ready || !activeNonceReady) return '准备中...';
@@ -1303,16 +1342,27 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
                 <span className="text-xs text-[#555]">
                   {submitting ? '正在提交验证' : canSubmit ? '可以继续' : '请稍候'}
                 </span>
-                <motion.button
-                  type="button"
-                  disabled={!canSubmit || submitting}
-                  onClick={submit}
-                  className="min-h-9 rounded-sm border border-[#1f5fbf] bg-[#2f6fda] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#255fbd] disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d1d1d1] disabled:text-[#777]"
-                  whileHover={{ scale: canSubmit && !submitting ? 1.01 : 1 }}
-                  whileTap={{ scale: canSubmit && !submitting ? 0.99 : 1 }}
-                >
-                  {submitting ? '验证中' : '验证'}
-                </motion.button>
+                <div className="flex items-center gap-2">
+                  {submitting && (
+                    <button
+                      type="button"
+                      onClick={cancelSubmit}
+                      className="min-h-9 rounded-sm border border-[#c9c9c9] bg-[#f7f7f7] px-3 text-xs font-semibold text-[#333] hover:bg-[#efefef]"
+                    >
+                      取消
+                    </button>
+                  )}
+                  <motion.button
+                    type="button"
+                    disabled={!canSubmit || submitting}
+                    onClick={submit}
+                    className="min-h-9 rounded-sm border border-[#1f5fbf] bg-[#2f6fda] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#255fbd] disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d1d1d1] disabled:text-[#777]"
+                    whileHover={{ scale: canSubmit && !submitting ? 1.01 : 1 }}
+                    whileTap={{ scale: canSubmit && !submitting ? 0.99 : 1 }}
+                  >
+                    {submitting ? '验证中' : '验证'}
+                  </motion.button>
+                </div>
               </div>
             )}
 

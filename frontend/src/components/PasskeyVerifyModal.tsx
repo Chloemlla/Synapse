@@ -91,7 +91,7 @@ const PasskeyVerifyModal: React.FC<PasskeyVerifyModalProps> = ({ open, username,
                 </motion.div>
               </div>
               <div className={authEyebrowClassName}>Passkey Verification</div>
-              <h2 className="mt-2 text-2xl font-semibold text-slate-900">Passkey 二次校验</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">通行密钥二次校验</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 为了确保账户安全，请使用您的 Passkey 进行身份验证
               </p>

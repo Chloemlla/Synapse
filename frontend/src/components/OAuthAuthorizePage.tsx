@@ -482,7 +482,7 @@ const OAuthAuthorizePage: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center text-slate-500">
                     没有身份资料权限。
                   </div>
                 )}

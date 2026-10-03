@@ -473,7 +473,8 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
               </button>
             )}
 
-            {selectionFailure ? (
+            {/* 控件全部加载失败时也要能重选供应商，否则用户只能反复重试同一家 */}
+            {(selectionFailure || error) ? (
               <button
                 onClick={handleReselect}
                 disabled={selectionLoading}

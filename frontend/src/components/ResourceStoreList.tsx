@@ -94,6 +94,10 @@ export default function ResourceStoreList() {
   const [cdkLoading, setCdkLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // 列表加载失败必须与「本来就没有资源」分开：把接口失败渲染成空态会让用户以为商店是空的，
+  // 从而放弃重试。这两项只服务于列表本身，不复用 CDK 兑换面板的错误位。
+  const [resourcesError, setResourcesError] = useState("");
+  const [redeemedError, setRedeemedError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"store" | "owned">("store");
   const [redeemedLoading, setRedeemedLoading] = useState(false);
@@ -126,8 +130,9 @@ export default function ResourceStoreList() {
     try {
       const response = await resourcesApi.getResources(1, selectedCategory);
       setResources(response.resources);
+      setResourcesError("");
     } catch {
-      setError("获取资源列表失败");
+      setResourcesError("获取资源列表失败，请检查网络后重试。");
       setResources([]);
     } finally {
       setLoading(false);
@@ -149,8 +154,9 @@ export default function ResourceStoreList() {
       const response = await cdksApi.getUserRedeemedResources();
       setRedeemedResources(response.resources);
       setRedeemedCount(response.resources.length);
+      setRedeemedError("");
     } catch {
-      setError("获取已兑换资源失败");
+      setRedeemedError("获取已兑换资源失败，请稍后重试。");
       setRedeemedResources([]);
       setRedeemedCount(0);
     } finally {
@@ -557,7 +563,25 @@ export default function ResourceStoreList() {
                       </button>
                     ))}
                   </div>
-                  {resources.length > 0 ? (
+                  {resourcesError ? (
+                    <div
+                      role="alert"
+                      className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-6 py-10 text-center text-sm text-rose-700"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FaExclamationTriangle className="shrink-0" />
+                        {resourcesError}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void fetchResources()}
+                        className={studioGhostButtonClassName}
+                      >
+                        <FaSync />
+                        重试
+                      </button>
+                    </div>
+                  ) : resources.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {resources.map(renderStoreCard)}
                     </div>
@@ -572,6 +596,24 @@ export default function ResourceStoreList() {
               ) : redeemedLoading ? (
                 <div className="flex min-h-[380px] items-center justify-center">
                   <UnifiedLoadingSpinner size="lg" text="加载我的资源..." />
+                </div>
+              ) : redeemedError ? (
+                <div
+                  role="alert"
+                  className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-6 py-10 text-center text-sm text-rose-700"
+                >
+                  <span className="flex items-center gap-2">
+                    <FaExclamationTriangle className="shrink-0" />
+                    {redeemedError}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchRedeemedResources()}
+                    className={studioGhostButtonClassName}
+                  >
+                    <FaSync />
+                    重试
+                  </button>
                 </div>
               ) : redeemedResources.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -642,6 +684,7 @@ export default function ResourceStoreList() {
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
+                    role="alert"
                     className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
                   >
                     {error}
@@ -654,6 +697,8 @@ export default function ResourceStoreList() {
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
+                    role="status"
+                    aria-live="polite"
                     className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
                   >
                     {success}

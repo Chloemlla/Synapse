@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaArrowLeft, FaCheckCircle, FaRedo, FaShieldAlt } from 'react-icons/fa';
+import { FaArrowLeft, FaCheckCircle, FaExclamationTriangle, FaRedo, FaShieldAlt } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import ManagedCaptcha, {
   type ManagedCaptchaChallenge,
@@ -14,6 +14,8 @@ type VerificationState = 'idle' | 'verifying' | 'verified' | 'failed';
 
 const CloudflareChallengePage: React.FC = () => {
   const [verificationState, setVerificationState] = React.useState<VerificationState>('idle');
+  // 失败原因：后端原文优先，其次给可行动的中文文案（技术细节只进 console）
+  const [failureMessage, setFailureMessage] = React.useState('');
   const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
   // 人机验证供应商由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
   const [captchaStatus, setCaptchaStatus] = React.useState<ManagedCaptchaStatus>({
@@ -26,6 +28,7 @@ const CloudflareChallengePage: React.FC = () => {
 
   const resetChallenge = React.useCallback(() => {
     setVerificationState('idle');
+    setFailureMessage('');
     // 挑战令牌一次性：重试必须重新取一枚（控件重新挂载 + 重新取下发配置）
     captchaRef.current?.reset();
   }, []);
@@ -33,6 +36,11 @@ const CloudflareChallengePage: React.FC = () => {
   // 把挑战令牌交给后端统一校验（后端按 captchaProvider 分派到对应供应商）。
   const verifyToken = React.useCallback(async (challenge: ManagedCaptchaChallenge) => {
     setVerificationState('verifying');
+    setFailureMessage('');
+
+    // 请求自身带超时：后端或网络卡住时不能永久停在「正在确认验证结果…」
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
     try {
       const response = await fetch(`${getApiBaseUrl()}/api/turnstile/verify-token`, {
@@ -47,12 +55,30 @@ const CloudflareChallengePage: React.FC = () => {
           captchaProvider: challenge.provider,
         }),
         credentials: 'include',
+        signal: controller.signal,
       });
 
       const data = await response.json().catch(() => ({}));
-      setVerificationState(response.ok && data?.success ? 'verified' : 'failed');
-    } catch (_error) {
+      if (response.ok && data?.success) {
+        setVerificationState('verified');
+        return;
+      }
+
+      const backendReason = [data?.error, data?.reason].find(
+        (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0,
+      );
+      setFailureMessage(backendReason || '验证未通过，请重新完成人机验证。');
       setVerificationState('failed');
+    } catch (error) {
+      console.error('确认人机验证结果失败:', error);
+      setFailureMessage(
+        error instanceof DOMException && error.name === 'AbortError'
+          ? '确认验证结果超时，请检查网络后重试。'
+          : '无法确认验证结果，请检查网络后重试。',
+      );
+      setVerificationState('failed');
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }, []);
 
@@ -96,6 +122,12 @@ const CloudflareChallengePage: React.FC = () => {
                     <FaCheckCircle className="h-5 w-5" />
                     验证通过
                   </div>
+                ) : verificationState === 'failed' ? (
+                  // 页面已判定失败时不再渲染控件，避免控件自己还显示「人机验证通过」造成两态矛盾
+                  <div className="flex items-center gap-2 text-sm font-medium text-rose-700">
+                    <FaExclamationTriangle className="h-5 w-5" />
+                    本次验证未通过
+                  </div>
                 ) : (
                   <ManagedCaptcha
                     ref={captchaRef}
@@ -114,7 +146,7 @@ const CloudflareChallengePage: React.FC = () => {
               )}
               {verificationState === 'failed' && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-                  验证失败，请重新验证
+                  {failureMessage || '验证失败，请重新验证'}
                 </div>
               )}
             </div>

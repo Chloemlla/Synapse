@@ -146,6 +146,8 @@ const SmartHumanCheckTraces: React.FC = () => {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  // 拉取失败与「确实没有日志」必须区分：失败时给持久错误条 + 重试，而不是让表格显示「暂无数据」
+  const [listError, setListError] = useState('');
   const [items, setItems] = useState<TraceItem[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -223,8 +225,10 @@ const SmartHumanCheckTraces: React.FC = () => {
       setTotal(data.total || 0);
       setPage(data.page || p);
       setPageSize(data.pageSize || ps);
+      setListError('');
     } catch (e: any) {
-      setNotification({ type: 'error', message: e?.message || '加载失败' });
+      // 走行内错误条（而非一闪而过的 toast），避免失败被当成「没有日志」
+      setListError(e?.message || '人机校验日志加载失败，请稍后重试');
     } finally {
       setLoading(false);
       // 切页后清空选择，避免跨页误操作
@@ -232,7 +236,7 @@ const SmartHumanCheckTraces: React.FC = () => {
         setSelectedIds([]);
       }
     }
-  }, [page, pageSize, success, debouncedFilters, reason, traceId, ip, ua, setNotification]);
+  }, [page, pageSize, success, debouncedFilters, reason, traceId, ip, ua]);
 
   useEffect(() => {
     fetchList();
@@ -631,6 +635,22 @@ const SmartHumanCheckTraces: React.FC = () => {
             )}
           </div>
         </div>
+        {/* 拉取失败：行内错误条 + 重试，与「确实没有日志」的空态区分开 */}
+        {listError && (
+          <div
+            role="alert"
+            className="flex flex-col gap-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>{listError}</span>
+            <button
+              onClick={() => fetchList(page, pageSize)}
+              disabled={loading}
+              className={`${studioSecondaryButtonClassName} shrink-0`}
+            >
+              <FaSync className="w-4 h-4" /> 重试
+            </button>
+          </div>
+        )}
         {/* Mobile Cards */}
         <div className="block divide-y divide-slate-100 md:hidden">
           {visibleItems.map(it => (
@@ -642,7 +662,7 @@ const SmartHumanCheckTraces: React.FC = () => {
               onOpenDetail={openDetail}
             />
           ))}
-          {!loading && items.length === 0 && (
+          {!loading && !listError && items.length === 0 && (
             <div className="p-6 text-center text-slate-400">暂无数据</div>
           )}
         </div>
@@ -675,7 +695,7 @@ const SmartHumanCheckTraces: React.FC = () => {
                   onOpenDetail={openDetail}
                 />
               ))}
-              {!loading && items.length === 0 && (
+              {!loading && !listError && items.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-slate-400" colSpan={10}>暂无数据</td>
                 </tr>

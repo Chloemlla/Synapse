@@ -259,7 +259,10 @@ const PrivacyConsentPanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm">
+        <div
+          role="alert"
+          className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm"
+        >
           <span className="flex items-start gap-2 break-words">
             <FaExclamationCircle className="mt-0.5 shrink-0" />
             <span>{error}</span>
@@ -279,7 +282,11 @@ const PrivacyConsentPanel: React.FC = () => {
       )}
 
       {notice && !error && (
-        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-[12px] leading-5 text-emerald-700">
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-[12px] leading-5 text-emerald-700"
+        >
           <FaCheckCircle className="mt-0.5 shrink-0" />
           <span>{notice}</span>
         </div>

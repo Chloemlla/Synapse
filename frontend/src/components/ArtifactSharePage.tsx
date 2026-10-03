@@ -68,16 +68,22 @@ function normalizeArtifactLoadError(error: unknown): ArtifactLoadError {
   const response = isRecord(error.response) ? error.response : null;
   const data = response && isRecord(response.data) ? response.data : null;
 
+  // 只取后端给的文案：axios 的 `error.message` 是英文技术串（如
+  // `Request failed with status code 404`），面向外部访客的落地页不能直接回显它。
   return {
     status: typeof response?.status === 'number' ? response.status : undefined,
     error: typeof data?.error === 'string' ? data.error : undefined,
-    message:
-      typeof data?.message === 'string'
-        ? data.message
-        : typeof error.message === 'string'
-          ? error.message
-          : undefined,
+    message: typeof data?.message === 'string' ? data.message : undefined,
   };
+}
+
+/** 后端没给可读文案时，按状态码给中文人话，兜底不再外泄技术报错。 */
+function describeArtifactLoadError(loadError: ArtifactLoadError): string {
+  if (loadError.message) return loadError.message;
+  if (loadError.status === 404) return '该分享不存在或已过期。';
+  if (loadError.status === 403) return '没有访问此分享的权限。';
+  if (loadError.status && loadError.status >= 500) return '服务暂时不可用，请稍后重试。';
+  return '加载分享内容失败，请稍后重试。';
 }
 
 const CONTENT_TYPE_EXTENSION: Record<string, string> = {
@@ -139,7 +145,7 @@ const normalizeArtifact = (payload: ArtifactPayload): ArtifactData => {
 
   return {
     shortId: String(payload.shortId ?? payload.short_id ?? ''),
-    title: String(payload.title ?? 'Untitled artifact'),
+    title: String(payload.title ?? '未命名分享'),
     contentType,
     language: payload.language ? String(payload.language).toLowerCase() : undefined,
     content: String(payload.content ?? ''),
@@ -214,7 +220,7 @@ const ArtifactSharePage: React.FC = () => {
 
   const fetchArtifact = async (pwd?: string) => {
     if (!shortId) {
-      setError('Missing artifact id');
+      setError('分享链接不完整，缺少分享标识。');
       setLoading(false);
       return;
     }
@@ -235,7 +241,7 @@ const ArtifactSharePage: React.FC = () => {
       const payload = response.data.data;
 
       if (!payload) {
-        throw new Error(response.data.message || 'Artifact response was empty');
+        throw new Error(response.data.message || '分享内容为空。');
       }
 
       setArtifact(normalizeArtifact(payload));
@@ -252,11 +258,11 @@ const ArtifactSharePage: React.FC = () => {
 
       if (loadError.status === 403 && loadError.error === 'invalid_password') {
         setShowPasswordInput(true);
-        setError('Password is incorrect');
+        setError('访问密码不正确，请重试。');
         return;
       }
 
-      setError(loadError.message || 'Unable to load this artifact');
+      setError(describeArtifactLoadError(loadError));
     } finally {
       setLoading(false);
     }
@@ -340,7 +346,7 @@ const ArtifactSharePage: React.FC = () => {
               此内容由第三方提交，已在受限沙箱中展示：脚本无法访问本站 Cookie 或存储，且不允许弹窗与外部导航。
             </div>
             <iframe
-              title={`${artifact.title} preview`}
+              title={`${artifact.title} 预览`}
               srcDoc={artifact.content}
               ref={(el) => {
                 // G12-06：React 类型未收录 iframe 的 csp 属性，这里在挂载时用原生 API 设置，
@@ -414,9 +420,9 @@ const ArtifactSharePage: React.FC = () => {
 
   if (loading) {
     return (
-      <ArtifactStateShell>
+      <ArtifactStateShell statusRole>
         <RefreshCcw className="h-8 w-8 animate-spin text-slate-500" aria-hidden="true" />
-        <h1 className="mt-5 text-xl font-semibold text-slate-950">Loading artifact</h1>
+        <h1 className="mt-5 text-xl font-semibold text-slate-950">正在加载分享内容…</h1>
       </ArtifactStateShell>
     );
   }
@@ -425,19 +431,20 @@ const ArtifactSharePage: React.FC = () => {
     return (
       <ArtifactStateShell>
         <Lock className="h-9 w-9 text-slate-700" aria-hidden="true" />
-        <h1 className="mt-5 text-xl font-semibold text-slate-950">Password required</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">This artifact is protected.</p>
+        <h1 className="mt-5 text-xl font-semibold text-slate-950">需要访问密码</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">该分享受密码保护，请输入密码后查看。</p>
         <form onSubmit={handlePasswordSubmit} className="mt-6 w-full max-w-sm space-y-3">
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Enter password"
+            placeholder="请输入访问密码"
+            aria-label="访问密码"
             className={cn(studioFieldClassName, "border border-slate-300 bg-white focus:border-slate-500 focus:ring-slate-200")}
             autoFocus
           />
           {error && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
@@ -445,7 +452,7 @@ const ArtifactSharePage: React.FC = () => {
             type="submit"
             className={cn(studioPrimaryButtonClassName, "w-full bg-slate-950 px-4 py-3")}
           >
-            Unlock
+            解锁查看
           </button>
         </form>
       </ArtifactStateShell>
@@ -456,16 +463,16 @@ const ArtifactSharePage: React.FC = () => {
     return (
       <ArtifactStateShell>
         <AlertCircle className="h-9 w-9 text-red-500" aria-hidden="true" />
-        <h1 className="mt-5 text-xl font-semibold text-slate-950">Artifact unavailable</h1>
-        <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-          {error || 'This artifact does not exist or has expired.'}
+        <h1 className="mt-5 text-xl font-semibold text-slate-950">分享暂不可用</h1>
+        <p className="mt-2 max-w-md text-sm leading-6 text-slate-600" role="alert">
+          {error || '该分享不存在或已过期。'}
         </p>
         <button
           type="button"
           onClick={() => navigate('/')}
           className={cn(studioPrimaryButtonClassName, "mt-6 bg-slate-950 px-4 py-2.5")}
         >
-          Back to Synapse
+          返回 Synapse 首页
         </button>
       </ArtifactStateShell>
     );
@@ -506,7 +513,7 @@ const ArtifactSharePage: React.FC = () => {
                 )}
                 <MetadataPill>
                   <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                  {artifact.viewCount} views
+                  {artifact.viewCount} 次浏览
                 </MetadataPill>
                 <MetadataPill>
                   <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
@@ -530,13 +537,13 @@ const ArtifactSharePage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-3 gap-2 lg:w-40 lg:grid-cols-1">
-              <ActionButton active={copied} label={copied ? 'Copied' : 'Copy'} onClick={handleCopy}>
+              <ActionButton active={copied} label={copied ? '已复制' : '复制'} onClick={handleCopy}>
                 <Copy className="h-4 w-4" aria-hidden="true" />
               </ActionButton>
-              <ActionButton active={downloaded} label={downloaded ? 'Saved' : 'Download'} onClick={handleDownload}>
+              <ActionButton active={downloaded} label={downloaded ? '已保存' : '下载'} onClick={handleDownload}>
                 <Download className="h-4 w-4" aria-hidden="true" />
               </ActionButton>
-              <ActionButton active={shared} label={shared ? 'Link copied' : 'Share'} onClick={handleShare}>
+              <ActionButton active={shared} label={shared ? '链接已复制' : '分享'} onClick={handleShare}>
                 <Share2 className="h-4 w-4" aria-hidden="true" />
               </ActionButton>
             </div>
@@ -548,16 +555,21 @@ const ArtifactSharePage: React.FC = () => {
         </main>
 
         <footer className="py-5 text-center text-xs text-slate-500">
-          Powered by NexAI Artifacts
+          由 NexAI Artifacts 提供支持
         </footer>
       </div>
     </div>
   );
 };
 
-const ArtifactStateShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const ArtifactStateShell: React.FC<{ children: React.ReactNode; statusRole?: boolean }> = ({ children, statusRole }) => (
   <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-center">
-    <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm">
+    <div
+      className="flex w-full max-w-md flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm"
+      role={statusRole ? 'status' : undefined}
+      aria-live={statusRole ? 'polite' : undefined}
+      aria-busy={statusRole ? true : undefined}
+    >
       {children}
     </div>
   </div>
@@ -607,7 +619,7 @@ const renderHighlightedCode = (artifact: ArtifactData, language: string, content
   if (!highlightLanguage) {
     return (
       <pre style={containerStyle} className="bg-slate-900 text-slate-100">
-        <code aria-label={`${artifact.title} source`}>{content}</code>
+        <code aria-label={`${artifact.title} 源码`}>{content}</code>
       </pre>
     );
   }
@@ -619,7 +631,7 @@ const renderHighlightedCode = (artifact: ArtifactData, language: string, content
       showLineNumbers
       wrapLongLines
       customStyle={containerStyle}
-      codeTagProps={{ 'aria-label': `${artifact.title} source` }}
+      codeTagProps={{ 'aria-label': `${artifact.title} 源码` }}
     >
       {content}
     </CodeHighlighter>

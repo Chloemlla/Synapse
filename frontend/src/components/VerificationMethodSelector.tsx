@@ -270,7 +270,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                     </motion.div>
                                                     <div className="flex-1 min-w-0">
                                                         <h3 className="truncate text-lg font-semibold text-slate-900 transition-colors group-hover:text-slate-700">
-                                                            Passkey 验证
+                                                            通行密钥 (Passkey)
                                                         </h3>
                                                         <p className="mt-1 text-sm text-slate-600">
                                                             使用生物识别或设备PIN码快速验证
@@ -327,7 +327,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                     </motion.div>
                                                     <div className="flex-1 min-w-0">
                                                         <h3 className="truncate text-lg font-semibold text-slate-900 transition-colors group-hover:text-slate-700">
-                                                            动态口令 (TOTP)
+                                                            动态验证码 (TOTP)
                                                         </h3>
                                                         <p className="mt-1 text-sm text-slate-600">
                                                             使用验证器应用生成的6位数字码

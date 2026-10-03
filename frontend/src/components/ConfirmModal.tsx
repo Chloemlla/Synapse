@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaExclamationTriangle, FaCheck, FaTimes } from 'react-icons/fa';
 import { studioModalCardClassName, studioModalOverlayClassName, studioSecondaryButtonClassName } from './studioTheme';
@@ -24,6 +24,57 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
   cancelText = '取消',
   type = 'warning'
 }) => {
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  // 打开弹窗前焦点所在的元素：关闭后把焦点还回去，键盘用户不会掉回页面顶部。
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // 用 ref 持有最新的 onClose，键盘副作用只随 open 重跑，调用方每渲染换新函数时不会反复挪动焦点。
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    // 本组件没有 autoFocus，此刻焦点仍在触发元素上，先记下来再移入弹窗。
+    triggerRef.current = (document.activeElement as HTMLElement | null) ?? null;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      // 原生焦点陷阱：Tab / Shift+Tab 在弹窗内循环，不引入第三方依赖。
+      const focusables = cardRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    // 默认焦点落在「取消」：确认框多用于破坏性操作，误按回车不应该直接执行。
+    cancelButtonRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      triggerRef.current?.focus?.();
+      triggerRef.current = null;
+    };
+  }, [open]);
+
   const getIcon = () => {
     switch (type) {
       case 'danger':
@@ -58,6 +109,10 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
           onClick={onClose}
         >
           <motion.div
+            ref={cardRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
             className={`${studioModalCardClassName} max-w-md mx-4 relative max-h-[90vh] overflow-y-auto`}
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -68,7 +123,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
             <div className="flex items-center justify-center mb-4">
               {getIcon()}
             </div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-3 text-center">
+            <h2 id={titleId} className="text-lg font-semibold text-slate-800 mb-3 text-center">
               {title || '确认操作'}
             </h2>
             <div className="text-slate-700 mb-6 text-center leading-relaxed">
@@ -76,14 +131,17 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <motion.button
+                ref={cancelButtonRef}
+                type="button"
                 onClick={onClose}
                 className={studioSecondaryButtonClassName}
                 whileTap={{ scale: 0.95 }}
               >
-                <FaTimes className="w-4 h-4" />
+                <FaTimes className="w-4 h-4" aria-hidden="true" />
                 {cancelText}
               </motion.button>
               <motion.button
+                type="button"
                 onClick={() => {
                   onConfirm();
                   onClose();
@@ -91,7 +149,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold text-white transition ${getConfirmButtonClass()}`}
                 whileTap={{ scale: 0.95 }}
               >
-                <FaCheck className="w-4 h-4" />
+                <FaCheck className="w-4 h-4" aria-hidden="true" />
                 {confirmText}
               </motion.button>
             </div>

@@ -145,7 +145,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                   <FaQrcode />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-xl font-semibold text-slate-900">启用 TOTP</h2>
+                  <h2 className="text-xl font-semibold text-slate-900">启用动态验证码</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-500">
                     扫描二维码后输入认证器中的 6 位验证码。
                   </p>
@@ -156,7 +156,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                 onClick={handleClose}
                 disabled={loading}
                 className={studioModalCloseButtonClassName}
-                aria-label="关闭 TOTP 设置"
+                aria-label="关闭动态验证码设置"
                 title="关闭"
               >
                 <FaTimes className="h-4 w-4" />
@@ -170,7 +170,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
             ) : step === 'success' ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-8 text-center text-emerald-700">
                 <FaCheck className="mx-auto mb-3 h-8 w-8" />
-                <div className="text-base font-semibold">TOTP 已启用</div>
+                <div className="text-base font-semibold">动态验证码已启用</div>
               </div>
             ) : (
               <div className="space-y-4">

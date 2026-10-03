@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaEdit, FaCheck, FaTimes, FaCopy, FaExpand, FaCompress } from 'react-icons/fa';
 import {
@@ -122,6 +122,63 @@ const PromptModal: React.FC<PromptModalProps> = ({
     };
   }, [isMobile]);
 
+  // 对话框语义与键盘出路：Esc 关闭（原先只挂在输入框的 onKeyDown 上，焦点在别处就失效）、
+  // Tab 在弹窗内循环、关闭后把焦点还给触发元素。焦点进入弹窗由输入框上的 autoFocus 完成，
+  // 它同时保住了移动端键盘的唤起时机。
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // 用 ref 持有最新的 onClose，键盘副作用只随 open 重跑，调用方每渲染换新函数时不会反复挪动焦点。
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // 触发元素只能在弹窗关闭期间跟踪：打开后输入框的 autoFocus 会立刻把焦点抢走，那时已取不到。
+  useEffect(() => {
+    if (open) return undefined;
+    const handleFocusIn = (event: FocusEvent) => {
+      triggerRef.current = (event.target as HTMLElement | null) ?? null;
+    };
+    document.addEventListener('focusin', handleFocusIn);
+    return () => document.removeEventListener('focusin', handleFocusIn);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      // 原生焦点陷阱：Tab / Shift+Tab 在弹窗内循环，不引入第三方依赖。
+      const focusables = cardRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleDialogKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeyDown);
+      triggerRef.current?.focus?.();
+      triggerRef.current = null;
+    };
+  }, [open]);
+
   const handleConfirm = () => {
     if (value.trim()) {
       onConfirm(value); // 移除 trim() 以保留换行符
@@ -130,11 +187,10 @@ const PromptModal: React.FC<PromptModalProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Esc 统一由上面的文档级监听处理，这里只留 Enter 提交。
     if (e.key === 'Enter' && !multiline && !codeEditor) {
       e.preventDefault();
       handleConfirm();
-    } else if (e.key === 'Escape') {
-      onClose();
     }
   };
 
@@ -175,6 +231,10 @@ const PromptModal: React.FC<PromptModalProps> = ({
           }}
         >
           <motion.div
+            ref={cardRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
             className={`${studioSurfaceClassName} ${
               isMobile
                 ? `w-full h-full p-3 ${isExpanded ? '' : 'max-h-[95vh] overflow-y-auto'}`
@@ -206,7 +266,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
             <div className={`flex items-center justify-between ${isMobile ? 'mb-3' : 'mb-4'}`}>
               <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
                 <FaEdit className={`text-slate-500 ${isMobile ? 'w-5 h-5' : 'w-6 h-6'}`} />
-                <h2 className={`font-semibold text-slate-800 ${isMobile ? 'text-base' : 'text-lg'}`}>
+                <h2 id={titleId} className={`font-semibold text-slate-800 ${isMobile ? 'text-base' : 'text-lg'}`}>
                   {title || '输入内容'}
                 </h2>
               </div>
@@ -234,12 +294,14 @@ const PromptModal: React.FC<PromptModalProps> = ({
                   </>
                 )}
                 <button
+                  type="button"
                   onClick={onClose}
+                  aria-label="关闭"
                   className={`inline-flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors touch-manipulation ${
                     isMobile ? 'p-1.5 min-w-[36px] min-h-[36px]' : 'p-2'
                   }`}
                 >
-                  <FaTimes className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
+                  <FaTimes className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -333,16 +395,18 @@ const PromptModal: React.FC<PromptModalProps> = ({
             
             <div className={`flex justify-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <motion.button
+                type="button"
                 onClick={onClose}
                 className={`${studioSecondaryButtonClassName} touch-manipulation ${
                   isMobile ? 'min-h-[44px]' : ''
                 }`}
                 whileTap={{ scale: 0.95 }}
               >
-                <FaTimes className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                <FaTimes className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} aria-hidden="true" />
                 {cancelText}
               </motion.button>
               <motion.button
+                type="button"
                 onClick={handleConfirm}
                 disabled={!value.trim()}
                 className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 touch-manipulation ${
@@ -350,7 +414,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
                 }`}
                 whileTap={{ scale: 0.95 }}
               >
-                <FaCheck className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                <FaCheck className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} aria-hidden="true" />
                 {confirmText}
               </motion.button>
             </div>

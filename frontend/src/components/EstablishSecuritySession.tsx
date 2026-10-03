@@ -138,10 +138,10 @@ export default function EstablishSecuritySession({
     }
 
     if (!/^\d{6}$/.test(totpCode.trim())) {
-      setNotification({ message: '请输入 6 位 TOTP 验证码', type: 'warning' });
+      setNotification({ message: '请输入 6 位动态验证码', type: 'warning' });
       return;
     }
-    void runVerify('totp', () => verifyIdentity({ method: 'totp', verificationCode: totpCode.trim() }), 'TOTP 验证失败');
+    void runVerify('totp', () => verifyIdentity({ method: 'totp', verificationCode: totpCode.trim() }), '动态验证码验证失败');
   };
 
   const verifyPasskey = () => {
@@ -155,7 +155,7 @@ export default function EstablishSecuritySession({
         const passkeyResponse = await getPasskeyAuthResponse(user.username as string);
         return verifyIdentity({ method: 'passkey', passkeyResponse, clientOrigin: window.location.origin });
       },
-      'Passkey 验证失败',
+      '通行密钥验证失败',
     );
   };
 
@@ -181,7 +181,7 @@ export default function EstablishSecuritySession({
         <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
         <div className="text-xs text-slate-500">
           {requireTwoFactor
-            ? '配置双因素验证需用 TOTP 或 Passkey 建立 10 分钟安全会话，不能使用登录密码。'
+            ? '配置双因素验证需用动态验证码或通行密钥建立 10 分钟安全会话，不能使用登录密码。'
             : '验证一次后，账号修改和第三方绑定会复用该会话。'}
         </div>
       </div>
@@ -215,7 +215,7 @@ export default function EstablishSecuritySession({
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-medium text-slate-700">
-              {totpMode === 'backup' ? '备用恢复码' : 'TOTP 验证码'}
+              {totpMode === 'backup' ? '备用恢复码' : '动态验证码'}
             </div>
             <button
               type="button"
@@ -257,7 +257,7 @@ export default function EstablishSecuritySession({
               />
             )}
             <button type="button" disabled={submitting !== null} onClick={verifyTotp} className={studioPrimaryButtonClassName}>
-              {submitting === 'totp' ? '验证中…' : totpMode === 'backup' ? '使用恢复码验证' : '使用 TOTP 验证'}
+              {submitting === 'totp' ? '验证中…' : totpMode === 'backup' ? '使用恢复码验证' : '使用动态验证码验证'}
             </button>
           </div>
         </div>
@@ -266,10 +266,10 @@ export default function EstablishSecuritySession({
       {/* Passkey（注册后展示） */}
       {passkeyAvailable ? (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-          <div className="text-sm font-medium text-slate-700">Passkey 验证</div>
+          <div className="text-sm font-medium text-slate-700">通行密钥 (Passkey)</div>
           <div className="mb-2 text-xs text-slate-500">使用生物识别或安全密钥进行验证</div>
           <button type="button" disabled={submitting !== null} onClick={verifyPasskey} className={studioSecondaryButtonClassName}>
-            {submitting === 'passkey' ? '验证中…' : '使用 Passkey 验证'}
+            {submitting === 'passkey' ? '验证中…' : '使用通行密钥验证'}
           </button>
         </div>
       ) : null}

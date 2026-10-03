@@ -252,7 +252,7 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                             key={code}
                             className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 text-center"
                           >
-                            <div className="text-[11px] text-slate-400">{index + 1}</div>
+                            <div className="text-[11px] text-slate-500">{index + 1}</div>
                             <div className="mt-1 font-mono text-sm font-semibold text-slate-900">
                               {code}
                             </div>

@@ -85,6 +85,9 @@ const cardVariants = { hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 
 const CARD_TRANSITION = { duration: 0.45, type: 'spring', stiffness: 130 } as const;
 const ITEM_HOVER = { scale: 1.01, y: -1 } as const;
 const BUTTON_TAP = { scale: 0.99 } as const;
+// 后端 loginHandlers 用 JWT `expiresIn: "5m"` 加 updateUserToken(user.id, tempToken, 5*60*1000)
+// 下发二次验证临时令牌，两边时限必须一致：这里按同一时限判断「续接窗口」是否还在。
+const TWO_FACTOR_PENDING_TTL_MS = 5 * 60 * 1000;
 
 type LoginAttemptStatus = {
     message: string;
@@ -139,6 +142,8 @@ export const LoginPage: React.FC = () => {
     const [showVerificationSelector, setShowVerificationSelector] = useState(false);
     const [pendingVerificationData, setPendingVerificationData] = useState<any>(null);
     const [pendingToken, setPendingToken] = useState<string>('');
+    const [twoFactorDeadline, setTwoFactorDeadline] = useState<number | null>(null);
+    const [twoFactorClock, setTwoFactorClock] = useState(() => Date.now());
     const [rememberMe, setRememberMe] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showPasskeyHelp, setShowPasskeyHelp] = useState(false);
@@ -214,6 +219,14 @@ export const LoginPage: React.FC = () => {
 
     useEffect(() => { if (captcha?.token) setError(null); }, [captcha?.token]);
 
+    // 待验证期间每秒刷新剩余时间；归零后把续接入口切换成「重新登录」。
+    useEffect(() => {
+        if (twoFactorDeadline === null) return;
+        setTwoFactorClock(Date.now());
+        const timer = window.setInterval(() => setTwoFactorClock(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [twoFactorDeadline]);
+
     // 已认证的管理员停留在 /login?redirectTo=/admin 时直接进入管理后台，
     // 覆盖 2FA/Passkey 登录成功后刷新、或登录成功后被弹回登录页等场景。
     useEffect(() => {
@@ -266,6 +279,8 @@ export const LoginPage: React.FC = () => {
                 if (!verificationTypes || verificationTypes.length === 0) {
                     setNotification({ message: '未启用任何二次验证方式，请联系管理员', type: 'error' }); setLoading(false); return;
                 }
+                // 确认存在可用的验证方式后才计时，避免这条中止分支留下一个永不停止的计时器
+                setTwoFactorDeadline(Date.now() + TWO_FACTOR_PENDING_TTL_MS);
                 const hasPasskey = verificationTypes.includes('Passkey');
                 const hasTOTP = verificationTypes.includes('TOTP');
                 if (hasPasskey && hasTOTP) {
@@ -301,11 +316,11 @@ export const LoginPage: React.FC = () => {
         try {
             if (method === 'passkey') {
                 const success = await authenticateWithPasskey(pendingVerificationData.username);
-                if (success) { setPendingVerificationData(null); completeLogin(); }
-                else { setError('Passkey 验证失败'); setNotification({ message: 'Passkey 验证失败', type: 'error' }); }
+                if (success) { abandonTwoFactorVerification(); completeLogin(); }
+                else { setError('通行密钥验证失败'); setNotification({ message: '通行密钥验证失败', type: 'error' }); }
             } else if (method === 'totp') {
                 setPending2FA({ userId: pendingVerificationData.userId, username: pendingVerificationData.username, type: ['TOTP'] });
-                setShowTOTPVerification(true); setNotification({ message: '请进行 TOTP 验证', type: 'info' });
+                setShowTOTPVerification(true); setNotification({ message: '请进行动态验证码验证', type: 'info' });
             }
         } catch (e: any) {
             const msg = e.message || '验证失败';
@@ -314,7 +329,30 @@ export const LoginPage: React.FC = () => {
         } finally { setLoading(false); }
     };
 
-    const handleVerificationSelectorClose = () => { setShowVerificationSelector(false); setPendingVerificationData(null); setPending2FA(null); };
+    // 误关验证弹窗时只收起界面，保留待验证状态：用户可点「继续二次验证」重新进入，
+    // 不必重输密码、重勾四份条款、重过人机验证。
+    const handleVerificationSelectorClose = () => { setShowVerificationSelector(false); };
+
+    const resumeTwoFactorVerification = () => {
+        const pendingType = pending2FA?.type?.[0];
+        if (pendingType === 'Passkey') { setShowPasskeyVerification(true); return; }
+        if (pendingType === 'TOTP') { setShowTOTPVerification(true); return; }
+        if (pendingVerificationData) setShowVerificationSelector(true);
+    };
+
+    // 放弃本次未完成的二次验证：清空待验证状态，回到普通登录表单。
+    const abandonTwoFactorVerification = () => {
+        setPending2FA(null);
+        setPendingVerificationData(null);
+        setPendingToken('');
+        setTwoFactorDeadline(null);
+    };
+
+    const twoFactorRemainingMs = twoFactorDeadline === null ? 0 : Math.max(0, twoFactorDeadline - twoFactorClock);
+    const twoFactorExpired = twoFactorDeadline !== null && twoFactorRemainingMs <= 0;
+    const twoFactorRemainingText = `${String(Math.floor(twoFactorRemainingMs / 60000)).padStart(2, '0')}:${String(Math.floor((twoFactorRemainingMs % 60000) / 1000)).padStart(2, '0')}`;
+    const showTwoFactorPanel = Boolean(pending2FA || pendingVerificationData)
+        && !showVerificationSelector && !showPasskeyVerification && !showTOTPVerification;
 
     return (
         <LazyMotion features={domAnimation}>
@@ -530,6 +568,40 @@ export const LoginPage: React.FC = () => {
                                 </p>
                             )}
 
+                            {showTwoFactorPanel && (twoFactorExpired ? (
+                                <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authAlertClassName, 'mt-6')}>
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-start gap-3">
+                                            <FaShieldAlt className="mt-0.5 shrink-0" />
+                                            <div>
+                                                <p className="text-xs font-semibold">本次二次验证已过期</p>
+                                                <p className="mt-1 text-[11px] leading-5">验证令牌有效期为 5 分钟，已自动失效。请重新输入密码登录。</p>
+                                            </div>
+                                        </div>
+                                        <button type="button" onClick={abandonTwoFactorVerification} className={cn(authSecondaryButtonClassName, 'w-full shrink-0 sm:w-auto')}>
+                                            重新登录
+                                        </button>
+                                    </div>
+                                </m.div>
+                            ) : (
+                                <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authWarningPanelClassName, 'mt-6')}>
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-start gap-3">
+                                            <FaShieldAlt className="mt-0.5 shrink-0 text-amber-600" />
+                                            <div>
+                                                <p className="text-xs font-semibold text-amber-950">还有一次二次验证未完成</p>
+                                                <p className="mt-1 text-[11px] leading-5">
+                                                    请在 <span className="font-mono font-semibold">{twoFactorRemainingText}</span> 内完成验证；关闭验证窗口不会取消本次登录，无需重新输入密码。
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button type="button" onClick={resumeTwoFactorVerification} className={cn(authSecondaryButtonClassName, 'w-full shrink-0 sm:w-auto')}>
+                                            继续二次验证
+                                        </button>
+                                    </div>
+                                </m.div>
+                            ))}
+
                             <div className="mt-6 text-center">
                                 <p className="text-sm text-slate-600">还没有账户？<Link to="/register" className={authTextLinkClassName}>立即注册</Link></p>
                             </div>
@@ -543,8 +615,8 @@ export const LoginPage: React.FC = () => {
                     </div>
                 </div>
 
-                <PasskeyVerifyModal open={showPasskeyVerification || false} username={username} onSuccess={() => { setShowPasskeyVerification(false); setPending2FA(null); setPendingVerificationData(null); completeLogin(); }} onClose={() => { setShowPasskeyVerification(false); setPending2FA(null); setPendingVerificationData(null); }} />
-                {showTOTPVerification && (<TOTPVerification isOpen={showTOTPVerification} onClose={() => { setShowTOTPVerification(false); setPending2FA(null); setPendingVerificationData(null); }} onSuccess={async () => { setShowTOTPVerification(false); setPending2FA(null); setPendingVerificationData(null); await refreshUser(); completeLogin(); }} userId={pending2FA?.userId || ''} token={pendingToken || ''} />)}
+                <PasskeyVerifyModal open={showPasskeyVerification || false} username={username} onSuccess={() => { setShowPasskeyVerification(false); abandonTwoFactorVerification(); completeLogin(); }} onClose={() => setShowPasskeyVerification(false)} />
+                {showTOTPVerification && (<TOTPVerification isOpen={showTOTPVerification} onClose={() => setShowTOTPVerification(false)} onSuccess={async () => { setShowTOTPVerification(false); abandonTwoFactorVerification(); await refreshUser(); completeLogin(); }} userId={pending2FA?.userId || ''} token={pendingToken || ''} />)}
                 {showVerificationSelector && pendingVerificationData && (<VerificationMethodSelector isOpen={showVerificationSelector} onClose={handleVerificationSelectorClose} onSelectMethod={handleVerificationMethodSelect} username={pendingVerificationData.username} loading={loading} availableMethods={pendingVerificationData.twoFactorType?.map((type: string) => type === 'Passkey' ? 'passkey' : type === 'TOTP' ? 'totp' : null).filter(Boolean) as ('passkey' | 'totp')[] || []} />)}
             </div>
         </LazyMotion>

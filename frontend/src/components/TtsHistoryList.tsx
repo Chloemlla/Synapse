@@ -279,7 +279,10 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
         )}
 
         {historyError && (
-          <div className="mt-4 min-w-0 max-w-full break-words rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+          <div
+            role="alert"
+            className="mt-4 min-w-0 max-w-full break-words rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800"
+          >
             {historyError}
           </div>
         )}

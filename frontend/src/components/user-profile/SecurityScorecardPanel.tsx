@@ -240,7 +240,10 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
       </div>
 
       {error && (
-        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm">
+        <div
+          role="alert"
+          className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm"
+        >
           <span>{error}</span>
           <button
             type="button"

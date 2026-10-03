@@ -281,7 +281,7 @@ export const RegisterPage: React.FC = () => {
                                     <label htmlFor="confirmPassword" className={authLabelClassName}>确认密码</label>
                                     <div className="relative">
                                         <FaLock className={authFieldIconClassName} />
-                                        <input id="confirmPassword" name="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} required enterKeyHint="done" aria-label="确认密码" aria-required="true" aria-invalid={password !== confirmPassword}
+                                        <input id="confirmPassword" name="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} required enterKeyHint="done" aria-label="确认密码" aria-required="true" aria-invalid={confirmPassword.length > 0 && password !== confirmPassword}
                                             className={authPasswordFieldClassName}
                                             placeholder="请再次输入密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
                                         <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className={authFieldActionClassName} aria-label={showConfirmPassword ? '隐藏密码' : '显示密码'}>
@@ -315,7 +315,9 @@ export const RegisterPage: React.FC = () => {
                                     disabled={loading}
                                 />
 
-                                <m.button type="submit" disabled={loading || password !== confirmPassword || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
+                                {/* 不因「两次密码不一致」禁用提交：按钮点不动时页面没有任何原因说明，
+                                    交给 handleSubmit 在提交后给出「两次输入的密码不一致」提示。 */}
+                                <m.button type="submit" disabled={loading || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
                                     className={authPrimaryButtonClassName}
                                     whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                     {loading ? '注册中...' : '创建账户'}

@@ -26,6 +26,8 @@ import { signedFetch } from '../utils/requestSigner';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getBackendErrorMessage } from '../utils/backendError';
+import { useNotification } from './Notification';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { studioEyebrowClassName, studioSurfaceClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
@@ -264,8 +266,12 @@ const StatusPill: React.FC<{
 
 export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ className }) => {
   const { user } = useAuth();
+  const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const canWrite = isSuperAdmin(user?.role);
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  // 本地检测器状态读取失败：不能一直停在「正在加载」的转圈里
+  const [statusError, setStatusError] = useState('');
   const [checkResult, setCheckResult] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [serverSummary, setServerSummary] = useState<ServerTamperSummary | null>(null);
@@ -295,7 +301,9 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
       }
       setServerSummary(data.data);
     } catch (error) {
-      setServerError(getBackendErrorMessage(error, String(error)));
+      // 兜底给中文可行动文案，原始异常只进 console
+      console.error('获取后端防篡改状态失败:', error);
+      setServerError(getBackendErrorMessage(error, '获取后端防篡改状态失败，请稍后重试'));
     } finally {
       setServerLoading(false);
     }
@@ -313,14 +321,14 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
       }
       await loadServerSummary();
     } catch (error) {
-      alert(getBackendErrorMessage(error, String(error)));
+      setNotification({ type: 'error', message: getBackendErrorMessage(error, '解除封禁失败，请稍后重试') });
     }
   };
 
   const handleManualBlock = async () => {
     const ip = manualBlockIP.trim();
     if (!ip) {
-      alert('请输入要封禁的 IP');
+      setNotification({ type: 'warning', message: '请先填写要封禁的 IP 地址' });
       return;
     }
 
@@ -340,9 +348,10 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
         throw new Error(data.error || '封禁 IP 失败');
       }
       setManualBlockIP('');
+      setNotification({ type: 'success', message: `已封禁 ${ip}` });
       await loadServerSummary();
     } catch (error) {
-      alert(getBackendErrorMessage(error, String(error)));
+      setNotification({ type: 'error', message: getBackendErrorMessage(error, '封禁 IP 失败，请稍后重试') });
     }
   };
 
@@ -360,8 +369,11 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
         errorCount: errorStatus.errorCount,
         isExempt: exemptStatus.isExempt,
       });
+      setStatusError('');
     } catch (error) {
       console.error('获取状态失败:', error);
+      // 检测器初始化异常时不能一直转圈：落错误态并给重试入口
+      setStatusError('无法读取防篡改检测器状态，检测器可能未正确初始化。');
     }
   };
 
@@ -391,25 +403,44 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
         tamperType: 'dom',
         detectionMethod: 'manual-demo',
       });
-      alert(result.success ? '报告成功!' : `报告失败: ${result.message}`);
       if (result.success) {
+        setNotification({ type: 'success', message: '测试篡改已上报' });
         await loadServerSummary();
+      } else {
+        setNotification({ type: 'error', message: result.message || '上报失败，请稍后重试' });
       }
     } catch (error) {
-      alert(`报告失败: ${error}`);
+      console.error('上报篡改事件失败:', error);
+      setNotification({ type: 'error', message: '上报篡改事件失败，请稍后重试' });
     }
   };
 
-  const handleRecovery = (type: 'emergency' | 'soft' | 'baseline' = 'soft') => {
+  const handleRecovery = async (type: 'emergency' | 'soft' | 'baseline' = 'soft') => {
+    if (type === 'emergency') {
+      const ok = await confirm({
+        title: '确认执行紧急恢复？',
+        description:
+          '紧急恢复会把页面 DOM 还原为最初捕获的内容并重新初始化关键元素，页面当前的动态改动会被丢弃，检测器随后进入约 5 秒的恢复模式。仅在确认页面已被篡改时使用。',
+        tone: 'danger',
+        confirmLabel: '执行紧急恢复',
+      });
+      if (!ok) return;
+    }
+
     try {
       const result = integrityChecker.manualRecovery({
         recoveryType: type,
         showWarning: true,
       });
-      alert(result.success ? '恢复成功!' : `恢复失败: ${result.message}`);
+      if (result.success) {
+        setNotification({ type: 'success', message: '恢复操作已执行' });
+      } else {
+        setNotification({ type: 'error', message: result.message || '恢复失败，请稍后重试' });
+      }
       updateStatus();
     } catch (error) {
-      alert(`恢复失败: ${error}`);
+      console.error('恢复操作失败:', error);
+      setNotification({ type: 'error', message: '恢复操作失败，请稍后重试' });
     }
   };
 
@@ -420,16 +451,30 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
         elementId: 'demo-simulation',
         testContent: `Simulated ${type} tampering`,
       });
-      alert(result.success ? '模拟成功!' : `模拟失败: ${result.message}`);
       if (result.success) {
+        setNotification({ type: 'success', message: '模拟篡改已触发' });
         window.setTimeout(() => void loadServerSummary(), 800);
+      } else {
+        setNotification({ type: 'error', message: result.message || '模拟失败，请稍后重试' });
       }
     } catch (error) {
-      alert(`模拟失败: ${error}`);
+      console.error('模拟篡改失败:', error);
+      setNotification({ type: 'error', message: '模拟篡改失败，请稍后重试' });
     }
   };
 
-  const handleControl = (action: 'pause' | 'resume' | 'disable' | 'reinit') => {
+  const handleControl = async (action: 'pause' | 'resume' | 'disable' | 'reinit') => {
+    if (action === 'disable') {
+      const ok = await confirm({
+        title: '确认关闭前端防篡改检测？',
+        description:
+          '关闭后本页不再检测 DOM / 脚本篡改，浏览器端这一道防线将失效，直到重新初始化或刷新页面才恢复。',
+        tone: 'danger',
+        confirmLabel: '关闭检测',
+      });
+      if (!ok) return;
+    }
+
     try {
       switch (action) {
         case 'pause':
@@ -446,9 +491,13 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
           break;
       }
       updateStatus();
-      alert(`操作 ${action} 执行成功!`);
+      setNotification({
+        type: action === 'disable' ? 'warning' : 'success',
+        message: action === 'disable' ? '前端防篡改检测已关闭' : '操作已执行',
+      });
     } catch (error) {
-      alert(`操作失败: ${error}`);
+      console.error('检测器控制操作失败:', error);
+      setNotification({ type: 'error', message: '操作失败，请稍后重试' });
     }
   };
 
@@ -498,11 +547,26 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
       <div className={`relative min-h-[46vh] overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.28),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_55%,#f8fafc_100%)] ${className ?? ''}`}>
         <div className="relative mx-auto flex min-h-[46vh] max-w-3xl items-center justify-center px-4 py-10">
           <div className="w-full rounded-2xl border border-slate-200 bg-white/88 px-6 py-8 text-center shadow-sm backdrop-blur-xl">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            </div>
-            <div className="mt-5 text-sm font-semibold uppercase tracking-[0.26em] text-slate-400">Synapse Security</div>
-            <p className="mt-3 text-sm leading-7 text-slate-600">正在加载防篡改控制面板...</p>
+            {statusError ? (
+              <div role="alert">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="mt-5 text-sm font-semibold uppercase tracking-[0.26em] text-slate-400">Synapse Security</div>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{statusError}</p>
+                <ActionButton icon={RefreshCw} variant="secondary" className="mt-5" onClick={updateStatus}>
+                  重试
+                </ActionButton>
+              </div>
+            ) : (
+              <>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                  <RefreshCw className="h-5 w-5 animate-spin" />
+                </div>
+                <div className="mt-5 text-sm font-semibold uppercase tracking-[0.26em] text-slate-400">Synapse Security</div>
+                <p className="mt-3 text-sm leading-7 text-slate-600">正在加载防篡改控制面板...</p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -795,29 +859,29 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
             <SectionTitle title="检测器控制" description="暂停、恢复、禁用或重新初始化前端检测器。" icon={TerminalSquare} tone="slate" />
             {canWrite && (
             <div className="grid grid-cols-2 gap-2">
-              <ActionButton icon={Pause} tone="amber" onClick={() => handleControl('pause')}>
+              <ActionButton icon={Pause} tone="amber" onClick={() => void handleControl('pause')}>
                 暂停
               </ActionButton>
-              <ActionButton icon={Play} tone="emerald" onClick={() => handleControl('resume')}>
+              <ActionButton icon={Play} tone="emerald" onClick={() => void handleControl('resume')}>
                 恢复
               </ActionButton>
-              <ActionButton icon={XCircle} variant="danger" onClick={() => handleControl('disable')}>
+              <ActionButton icon={XCircle} variant="danger" onClick={() => void handleControl('disable')}>
                 禁用
               </ActionButton>
-              <ActionButton icon={RotateCcw} tone="sky" onClick={() => handleControl('reinit')}>
+              <ActionButton icon={RotateCcw} tone="sky" onClick={() => void handleControl('reinit')}>
                 重初始化
               </ActionButton>
             </div>
             )}
             {canWrite && (
             <div className="mt-4 grid grid-cols-1 gap-2">
-              <ActionButton icon={RotateCcw} tone="sky" onClick={() => handleRecovery('soft')}>
+              <ActionButton icon={RotateCcw} tone="sky" onClick={() => void handleRecovery('soft')}>
                 软恢复
               </ActionButton>
-              <ActionButton icon={AlertTriangle} variant="danger" onClick={() => handleRecovery('emergency')}>
+              <ActionButton icon={AlertTriangle} variant="danger" onClick={() => void handleRecovery('emergency')}>
                 紧急恢复
               </ActionButton>
-              <ActionButton icon={Database} tone="emerald" onClick={() => handleRecovery('baseline')}>
+              <ActionButton icon={Database} tone="emerald" onClick={() => void handleRecovery('baseline')}>
                 重捕获基准
               </ActionButton>
             </div>

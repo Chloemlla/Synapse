@@ -132,6 +132,8 @@ const NexAISecurityDashboard: React.FC = () => {
   const [devices, setDevices] = useState<DeviceTracking[]>([]);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  // 拉取失败与「真的是 0 台设备」必须分开：失败时给错误态 + 重试，不渲染一组全 0 的指标
+  const [loadError, setLoadError] = useState('');
   const [selectedTab, setSelectedTab] = useState<'overview' | 'devices' | 'events'>('overview');
   const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
   const [filterRiskLevel, setFilterRiskLevel] = useState<string>('all');
@@ -155,12 +157,15 @@ const NexAISecurityDashboard: React.FC = () => {
       setStats(statsRes.data);
       setDevices(devicesRes.data.devices || []);
       setEvents(eventsRes.data.events || []);
+      setLoadError('');
       setLoading(false);
     } catch (error: any) {
       console.error('Failed to fetch dashboard data:', error);
       if (error.response?.status !== 401) {
         setNotification({ type: 'error', message: '加载数据失败' });
       }
+      // 401 交给 api 拦截器处理跳转，这里同样记错误态，避免渲染成「全部为 0」
+      setLoadError('安全数据加载失败，请检查网络后重试。');
       setLoading(false);
     }
   };
@@ -255,6 +260,29 @@ const NexAISecurityDashboard: React.FC = () => {
       >
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" aria-hidden="true"></div>
         <p className="text-sm text-slate-600">正在加载安全数据…</p>
+      </div>
+    );
+  }
+
+  // 首次加载就失败：给可重试的错误态，而不是一组全 0 的指标（那等于给出了错误结论）
+  if (!stats && loadError) {
+    return (
+      <div
+        role="alert"
+        className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white/80 px-4 text-center backdrop-blur-xl"
+      >
+        <FaExclamationTriangle className="h-10 w-10 text-rose-500" aria-hidden="true" />
+        <p className="text-sm text-slate-700">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            void fetchDashboardData();
+          }}
+          className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        >
+          重新加载
+        </button>
       </div>
     );
   }

@@ -127,8 +127,8 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
   const requiresTwoFactorSession = totpEnabled || hasPasskey;
   const sessionReady = isActive && (!requiresTwoFactorSession || isTwoFactor);
   const methodLabel = [
-    totpEnabled ? "TOTP" : null,
-    hasPasskey ? "Passkey" : null,
+    totpEnabled ? "动态验证码" : null,
+    hasPasskey ? "通行密钥" : null,
   ]
     .filter(Boolean)
     .join(" / ");
@@ -147,7 +147,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
         : "启用后可用",
     },
     {
-      label: "Passkey",
+      label: "通行密钥",
       value: hasPasskey ? "已配置" : "未配置",
     },
   ];
@@ -289,7 +289,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                   title={sessionReady ? undefined : "请先建立安全会话"}
                   className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
                 >
-                  关闭 TOTP
+                  关闭动态验证码
                 </button>
               </>
             ) : (
@@ -301,7 +301,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                 className={`${studioPrimaryButtonClassName} sm:w-auto`}
               >
                 <FaLock />
-                启用 TOTP
+                启用动态验证码
               </button>
             )}
           </div>
@@ -315,7 +315,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold text-slate-900">
-                  Passkey
+                  通行密钥 (Passkey)
                 </h3>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -341,7 +341,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               className={`${studioGhostButtonClassName} disabled:cursor-not-allowed disabled:opacity-60 w-full sm:w-auto`}
             >
               <FaKey />
-              管理 Passkey
+              管理通行密钥
             </button>
           </div>
         </div>
@@ -377,10 +377,10 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               onClick={(event) => event.stopPropagation()}
             >
               <h3 className="text-xl font-semibold text-slate-900">
-                关闭 TOTP
+                关闭动态验证码
               </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                复用当前安全会话直接关闭动态验证码，无需再次验证。关闭后登录只校验密码或 Passkey。
+                复用当前安全会话直接关闭动态验证码，无需再次验证。关闭后登录只校验密码或通行密钥。
               </p>
               <div className="mt-5 space-y-3">
                 {error ? (

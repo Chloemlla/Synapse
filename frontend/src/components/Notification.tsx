@@ -123,11 +123,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const notificationIdRef = React.useRef<number>(0);
     const timersRef = React.useRef<Map<number, NodeJS.Timeout>>(new Map());
     const duration = 3000;
+    // 错误吐司默认多留一会儿：3 秒对「读一条失败原因再决定怎么办」太短，
+    // 而且失败信息一旦消失就只能重试才能再看一次。用户可以手动关闭，悬停也会暂停计时。
+    const errorDuration = 8000;
 
     // 创建新通知的函数
     const createNotificationItem = useCallback((data: NotificationData): NotificationItem => {
         const id = ++notificationIdRef.current;
-        const itemDuration = data.duration ?? duration;
+        const itemDuration = data.duration ?? (data.type === 'error' ? errorDuration : duration);
         return {
             ...data,
             id,
@@ -361,6 +364,8 @@ const NotificationCard = React.memo(({
         <motion.div
             ref={ref}
             layout
+            role={notification.type === 'error' ? 'alert' : 'status'}
+            aria-live={notification.type === 'error' ? 'assertive' : 'polite'}
             initial={{ opacity: 0, y: -32 }}
             animate={{
                 opacity,

@@ -152,6 +152,9 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [fishDefaultLoadingMore, setFishDefaultLoadingMore] = useState(false);
   const [fishModalOpen, setFishModalOpen] = useState(false);
   const [fishModalSource, setFishModalSource] = useState<"model" | "default-voices">("model");
+  // 音色弹窗的键盘可用性：记住打开它的按钮，关闭时把焦点还回去。
+  const fishModalTriggerRef = useRef<HTMLElement | null>(null);
+  const fishModalCloseRef = useRef<HTMLButtonElement | null>(null);
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [voiceLanguage, setVoiceLanguage] = useState("");
   // 生成被 TTS_POLICY_CONSENT_REQUIRED 拦下时展开勾选清单，确认后自动重试这次生成
@@ -186,6 +189,37 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     setCancelRequested(true);
     onCancel?.();
   }, [onCancel]);
+
+  // 管理端关掉人机验证时 ManagedCaptcha 不渲染任何控件；标题、必填星号与说明必须跟着一起收起来，
+  // 否则用户会看到一个带必填标记却无从操作的区块。加载中与出错（可在原地重试）时保留外壳。
+  const showCaptchaSection =
+    captchaStatus.required || captchaStatus.loading || Boolean(captchaStatus.error);
+
+  // 关闭音色弹窗：把焦点还给打开它的按钮，键盘用户不会掉回页面顶部。
+  const closeFishModal = useCallback(() => {
+    setFishModalOpen(false);
+    fishModalTriggerRef.current?.focus?.();
+    fishModalTriggerRef.current = null;
+  }, []);
+
+  // 音色弹窗此前是裸 div：键盘用户既不能按 Esc 关闭，也辨认不出这是个对话框。
+  useEffect(() => {
+    if (!fishModalOpen) return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeFishModal();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    const timer = window.setTimeout(() => fishModalCloseRef.current?.focus(), 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeFishModal, fishModalOpen]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -840,7 +874,11 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                         {group.items.length > 0 ? (
                           <button
                             type="button"
-                            onClick={() => { setFishModalSource(group.source); setFishModalOpen(true); }}
+                            onClick={(event) => {
+                              fishModalTriggerRef.current = event.currentTarget;
+                              setFishModalSource(group.source);
+                              setFishModalOpen(true);
+                            }}
                             className="text-xs text-primary hover:text-primary/80 transition-colors"
                           >
                             查看全部
@@ -1034,6 +1072,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           </div>
         </motion.div>
 
+        {showCaptchaSection ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1047,7 +1086,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             transition={{ duration: 0.3, delay: 1.1 }}
           >
             人机验证
-            <span className="text-red-500 ml-1">*</span>
+            {captchaStatus.required ? <span className="text-red-500 ml-1">*</span> : null}
           </motion.label>
 
           {/* 三家供应商共用同一套下发链路；是否要求验证由管理端配置决定。 */}
@@ -1060,21 +1099,25 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             onStatusChange={handleCaptchaStatus}
           />
 
-          <motion.div
-            className="flex min-w-0 items-start space-x-2 text-sm text-slate-600"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, delay: 1.3 }}
-          >
-            <FaLock className="w-4 h-4 text-slate-500" />
-            <span className="min-w-0 break-words">请完成人机验证以证明您是人类用户</span>
-          </motion.div>
+          {captchaStatus.required ? (
+            <motion.div
+              className="flex min-w-0 items-start space-x-2 text-sm text-slate-600"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, delay: 1.3 }}
+            >
+              <FaLock className="w-4 h-4 text-slate-500" />
+              <span className="min-w-0 break-words">请完成人机验证以证明您是人类用户</span>
+            </motion.div>
+          ) : null}
         </motion.div>
+        ) : null}
 
         <AnimatePresence>
           {displayError && (
             <motion.div
               className="max-w-full break-words rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700"
+              role="alert"
               initial={{ opacity: 0, scale: 0.95, y: -10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -10 }}
@@ -1177,11 +1220,25 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
       {/* Fish Audio 音色列表弹窗 */}
       {fishModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setFishModalOpen(false)}>
-          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl border border-border bg-background shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeFishModal}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fish-voice-modal-title"
+            className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl border border-border bg-background shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <h3 className="text-base font-semibold">{fishModalSource === "model" ? "模型库音色" : "默认音色"}</h3>
-              <button type="button" onClick={() => setFishModalOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none">&times;</button>
+              <h3 id="fish-voice-modal-title" className="text-base font-semibold">{fishModalSource === "model" ? "模型库音色" : "默认音色"}</h3>
+              <button
+                ref={fishModalCloseRef}
+                type="button"
+                onClick={closeFishModal}
+                aria-label="关闭音色列表"
+                className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
+              >
+                &times;
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {(() => {
@@ -1208,7 +1265,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                             name="fish-voice-modal"
                             value={item.id}
                             checked={voice === item.id}
-                            onChange={() => { setVoice(item.id); setFishModalOpen(false); }}
+                            onChange={() => { setVoice(item.id); closeFishModal(); }}
                             className="mt-1"
                           />
                           {item.coverImage ? <img src={item.coverImage} alt="" className="h-10 w-10 rounded-sm object-cover" /> : null}

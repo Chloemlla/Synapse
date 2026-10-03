@@ -16,7 +16,8 @@ interface ScamalyticsResponse {
     status: string;
     credits: number;
     exec: string;
-    scamalytics_score: number;
+    /** 读不到厂商分数字段时整键缺省，绝不用 0 顶替（0 分等价于「厂商说这个 IP 很干净」，见 shouldRequireVerification 的 B2-01 处理）。 */
+    scamalytics_score?: number;
     scamalytics_risk: string;
     scamalytics_isp: string;
     scamalytics_org: string;
@@ -118,21 +119,55 @@ function hashApiKey(apiKey: string): string {
   return crypto.createHmac("sha256", secret).update(`ipqs:${apiKey}`).digest("hex").slice(0, 32);
 }
 
+/** 厂商响应里可能承载风险分的候选字段：Scamalytics 现用 scamalytics_score，其余是改名/换壳时的兜底。 */
+const FRAUD_SCORE_FIELDS = ["scamalytics_score", "score", "risk_score", "fraud_score"] as const;
+
+/** 只接受有限数值（含数字字符串）；空串、布尔、null、NaN 一律视为「读不到」。 */
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/**
+ * 从 scamalytics 容器里捧出风险分。读不到任何已知候选字段时返回 null —— 不是 0。
+ * 「0 分」是「厂商说这个 IP 很干净」，「null」是「我们没读懂厂商」，两者的放行语义完全不同（B2-01）。
+ */
+function resolveFraudScore(container: unknown): number | null {
+  if (typeof container !== "object" || container === null) return null;
+  const record = container as Record<string, unknown>;
+  for (const field of FRAUD_SCORE_FIELDS) {
+    const parsed = toFiniteNumber(record[field]);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
 function normalizeRiskLookupResponse(response: ScamalyticsResponse | LegacyIpRiskResponse): ScamalyticsResponse {
   if ((response as ScamalyticsResponse).scamalytics) {
     return response as ScamalyticsResponse;
   }
 
   const legacy = response as LegacyIpRiskResponse;
-  const score = Number(legacy.fraud_score || 0);
-  const highRisk = score >= config.ipqs.challengeFraudScore || Boolean(legacy.proxy || legacy.vpn || legacy.tor);
+  // 旧形态（IPQS 风格）的分数字段读不到时不要编造 0：0 分在下游等价于「厂商说这个 IP 很干净」，
+  // 于是「响应形状变了 / 读不懂」会被静默变成放行（B2-01）。读不到就让该键缺省，
+  // 由 shouldRequireVerification 按「解析失败」收紧。标志位照旧可读，不跟着分数一起丢。
+  const score = toFiniteNumber(legacy.fraud_score);
+  const highRisk =
+    (score !== null && score >= config.ipqs.challengeFraudScore) ||
+    Boolean(legacy.proxy || legacy.vpn || legacy.tor);
 
   return {
     scamalytics: {
       status: "ok",
       credits: 0,
       exec: legacy.request_id || "",
-      scamalytics_score: score,
+      ...(score === null ? {} : { scamalytics_score: score }),
       scamalytics_risk: highRisk ? "high" : "low",
       scamalytics_isp: "",
       scamalytics_org: "",
@@ -150,34 +185,68 @@ function normalizeRiskLookupResponse(response: ScamalyticsResponse | LegacyIpRis
   };
 }
 
-function extractRiskFlags(response: ScamalyticsResponse): string[] {
+interface RiskFlagsExtraction {
+  flags: string[];
+  /** 代理标志块是否真的读到了：读不到时不能当作「这个 IP 没有任何代理特征」。 */
+  proxyReadable: boolean;
+}
+
+function extractRiskFlags(response: ScamalyticsResponse): RiskFlagsExtraction {
   const flags: string[] = [];
-  const proxy = response.scamalytics.scamalytics_proxy;
-  if (proxy.is_datacenter) flags.push("proxy", "datacenter");
-  if (proxy.is_vpn) flags.push("vpn");
-  if (proxy.is_icloud_relay) flags.push("icloud_relay");
+  // 厂商响应是外部数据：scamalytics 被换成非对象、或少了 scamalytics_proxy 键时，
+  // 旧写法直接取属性会抛 TypeError，被 lookupIpqs 的 catch 吞成 lookup_failed。这里显式判形态，
+  // 读不到就把 proxyReadable 置 false，交由上层按「解析失败」收紧处理（B2-01）。
+  const scamalytics = response.scamalytics as unknown;
+  const scamalyticsRecord =
+    typeof scamalytics === "object" && scamalytics !== null ? (scamalytics as Record<string, unknown>) : null;
+  const proxy = scamalyticsRecord?.scamalytics_proxy;
+  const proxyReadable = typeof proxy === "object" && proxy !== null;
+
+  if (proxyReadable) {
+    const proxyRecord = proxy as Record<string, unknown>;
+    if (proxyRecord.is_datacenter) flags.push("proxy", "datacenter");
+    if (proxyRecord.is_vpn) flags.push("vpn");
+    if (proxyRecord.is_icloud_relay) flags.push("icloud_relay");
+  }
 
   // We can also check external datasources if needed, but Scamalytics' own assessment is usually enough
-  if (response.scamalytics.scamalytics_risk === "high" || response.scamalytics.scamalytics_risk === "very high") {
+  if (scamalyticsRecord?.scamalytics_risk === "high" || scamalyticsRecord?.scamalytics_risk === "very high") {
     flags.push("high_risk");
   }
 
-  return flags;
+  return { flags, proxyReadable };
 }
 
 function shouldRequireVerification(response: ScamalyticsResponse): LookupDecision {
-  const fraudScore = Number(response.scamalytics.scamalytics_score || 0);
-  const riskFlags = extractRiskFlags(response);
-  const requiresVerification = fraudScore >= config.ipqs.challengeFraudScore || riskFlags.length > 0;
+  const fraudScore = resolveFraudScore(response.scamalytics);
+  const { flags: riskFlags, proxyReadable } = extractRiskFlags(response);
+
+  // B2-01：这里的「读不到」与「读到 0」必须分开。旧写法 Number(x || 0) 在厂商把
+  // scamalytics_score 改名或该字段缺失时静默得到 0 分，配合空的 riskFlags 判定 allow，
+  // 调用方随即 issueToken(..., "auto") 在没有任何人机挑战的情况下签发已验证令牌。
+  // 现在只有「确实读到数值、且低于阈值、且没有风险标志」才允许 allow；读不到分数字段
+  // 或读不到标志块一律收紧为 challenge（fail-closed），真实用户仍能过人机验证通过。
+  const parseFailed = fraudScore === null || !proxyReadable;
+  const requiresVerification =
+    fraudScore === null ||
+    !proxyReadable ||
+    fraudScore >= config.ipqs.challengeFraudScore ||
+    riskFlags.length > 0;
+
+  const unparsedParts: string[] = [];
+  if (fraudScore === null) unparsedParts.push(`score_unreadable(${FRAUD_SCORE_FIELDS.join("|")})`);
+  if (!proxyReadable) unparsedParts.push("proxy_block_unreadable");
 
   return {
     success: true,
     requiresVerification,
     decision: requiresVerification ? "challenge" : "allow",
-    reason: requiresVerification
-      ? `fraud_score=${fraudScore};flags=${riskFlags.join(",") || "none"}`
-      : "risk_check_passed",
-    fraudScore,
+    reason: parseFailed
+      ? `risk_response_unparsed:${unparsedParts.join("+")}`
+      : requiresVerification
+        ? `fraud_score=${fraudScore};flags=${riskFlags.join(",") || "none"}`
+        : "risk_check_passed",
+    fraudScore: fraudScore ?? undefined,
     riskFlags,
     requestId: response.scamalytics.exec,
   };
@@ -358,10 +427,12 @@ export class IpVerificationService {
       decision: decision.decision,
       reason: decision.reason,
       fraudScore: decision.fraudScore,
-      proxy: response?.scamalytics.scamalytics_proxy.is_datacenter || response?.scamalytics.scamalytics_proxy.is_vpn,
-      vpn: response?.scamalytics.scamalytics_proxy.is_vpn,
+      // 标志块可能读不到（见 extractRiskFlags）：这里不能再裸取属性，否则判定层刚定下的
+      // challenge 会被这句 TypeError 掀回 lookup_failed（B2-01 的 fallback 路径）。
+      proxy: response?.scamalytics.scamalytics_proxy?.is_datacenter || response?.scamalytics.scamalytics_proxy?.is_vpn,
+      vpn: response?.scamalytics.scamalytics_proxy?.is_vpn,
       tor: false, // Scamalytics includes TOR in proxy or risk if enabled
-      activeVpn: response?.scamalytics.scamalytics_proxy.is_vpn,
+      activeVpn: response?.scamalytics.scamalytics_proxy?.is_vpn,
       activeTor: false,
       recentAbuse:
         response?.scamalytics.scamalytics_risk === "high" || response?.scamalytics.scamalytics_risk === "very high",
