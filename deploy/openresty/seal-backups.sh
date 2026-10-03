@@ -15,6 +15,10 @@
 #   seal-backups.sh <文件>...             只处理指定文件（备份脚本落盘后调它）
 #   seal-backups.sh --check               只报告明文/密文现状，不改动
 #   seal-backups.sh --all --simulate      演习：只打印会做什么
+#   seal-backups.sh --verify-all          用（临时拷上来的）离线私钥逐份验证：密文 sha256 + 完整解密
+#
+# 私钥是可选的：只要公钥就能加密。**本机没有私钥时照常加密**，只跳过“解密回环校验”并告警——
+# 不能因为私钥离线就退回明文备份。要验证历史密文，拿离线私钥跑一次 --verify-all。
 #
 # 配置项（CLI 参数 > 环境变量 > 配置文件 > 默认值；缺关键项时交互终端会问，非交互终端报错并说明该传什么）：
 #   --recipient   AGE_RECIPIENT   age 公钥（age1...），默认取配置文件里的
@@ -28,6 +32,8 @@
 # 坑：
 #   * age 是“非对称”的：只有公钥能加密，私钥才能解密。公钥可以到处放，私钥丢了 = 历史备份全废，
 #     所以要离线存一份（例如 F:\sshkey\age-key.txt）。
+#   * 私钥不在本机时（推荐状态）：加密照旧，但备份脚本的“回环校验”降成结构校验；
+#     隔段时间用离线私钥临时挂上跑一次 `seal-backups.sh --verify-all` 找齐这个保证。
 #   * 加密后恢复必须先解密：restore.sh 会自动做（需 AGE_IDENTITY），或手动 age -d -i <key>。
 #   * 别把 .sha256 一起加密，否则校验密文就得先有私钥，等于白加。
 set -euo pipefail
@@ -48,6 +54,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --all) MODE=all ;;
     --check) MODE=check ;;
+    --verify-all|--verify) MODE=verify ;;
     --simulate|--dry-run) SIMULATE=1 ;;
     --ask) ASK=1 ;;
     --verbose) VERBOSE=1 ;;
@@ -106,14 +113,19 @@ command -v age >/dev/null 2>&1 || die '本机没有 age（apt install age / scoo
 
 [ -n "$AGE_RECIPIENT" ] || die "没给公钥：用 --recipient age1... 或环境变量 AGE_RECIPIENT，或在 $BACKUP_CFG 里写 AGE_RECIPIENT"
 case "$AGE_RECIPIENT" in age1*) ;; *) die "公钥格式不对（应以 age1 开头）: $AGE_RECIPIENT" ;; esac
-if [ -z "$AGE_IDENTITY" ]; then
-  # 没有私钥就没法做“解密回环校验”。明说，不让它偷偷产出无法验证的密文。
-  die "没给私钥：加密后要做一次解密回环校验才敢删明文。用 --identity <age-key.txt> 或 AGE_IDENTITY=...；\
-私钥离线保存的那份拷到临时位置用完就删也行（例：scp F:\\sshkey\\age-key.txt root@host:/root/.config/server-backup/）"
+
+# 私钥是**可选**的：加密只需要公钥。有私钥就做“解密回环校验”（最强保证），没有则跳过
+# （备份仍然加密、不会退回明文），但要告警 + 说明怎么补验。
+HAVE_ID=0
+if [ -n "$AGE_IDENTITY" ]; then
+  [ -r "$AGE_IDENTITY" ] || die "私钥读不到: $AGE_IDENTITY"
+  [ "$(age-keygen -y "$AGE_IDENTITY" 2>/dev/null)" = "$AGE_RECIPIENT" ] \
+    || die "私钥与公钥不匹配（私钥推出的公钥是 $(age-keygen -y "$AGE_IDENTITY" 2>/dev/null)）"
+  HAVE_ID=1
 fi
-[ -r "$AGE_IDENTITY" ] || die "私钥读不到: $AGE_IDENTITY"
-public_of_identity() { age-keygen -y "$AGE_IDENTITY" 2>/dev/null; }
-[ "$(public_of_identity)" = "$AGE_RECIPIENT" ] || die "私钥与公钥不匹配（私钥推出的公钥是 $(public_of_identity)，你给的是 $AGE_RECIPIENT）"
+if [ "$HAVE_ID" = 0 ]; then
+  warn "本机没有私钥（AGE_IDENTITY）：加密照旧，但跳过了“解密回环校验”；要验证历史密文，拿离线私钥跑一次 seal-backups.sh --verify-all"
+fi
 
 # 需要加密的文件类型；.sha256 故意不在里面
 is_sensitive() {
@@ -139,9 +151,16 @@ seal_one() { # 加密一个文件（幂等：已是 .age 就跳过）
   step "加密 $(basename "$f") → $(basename "$out")"
   run age -r "$AGE_RECIPIENT" -o "$tmp" "$f"
   if [ "$SIMULATE" = 0 ]; then
-    # 回环校验：解回来必须与原文逐字节相同，否则不删明文
-    if ! age -d -i "$AGE_IDENTITY" "$tmp" 2>/dev/null | cmp -s - "$f"; then
-      rm -f "$tmp"; die "解密回环校验失败，已保留明文: $f"
+    if [ "$HAVE_ID" = 1 ]; then
+      # 回环校验：解回来必须与原文逐字节相同，否则不删明文
+      if ! age -d -i "$AGE_IDENTITY" "$tmp" 2>/dev/null | cmp -s - "$f"; then
+        rm -f "$tmp"; die "解密回环校验失败，已保留明文: $f"
+      fi
+    else
+      # 没私钥：只做结构校验（age v1 头 + 非空）；密文完整性另有 .sha256 兜底
+      if [ ! -s "$tmp" ] || [ "$(head -c 21 "$tmp")" != 'age-encryption.org/v1' ]; then
+        rm -f "$tmp"; die "age 产物头不对（或为空），已保留明文: $f"
+      fi
     fi
     chmod 600 "$tmp"
     mv "$tmp" "$out"
@@ -153,6 +172,21 @@ seal_one() { # 加密一个文件（幂等：已是 .age 就跳过）
   fi
 }
 
+verify_all() { # 需要私钥：逐份“验密文 sha256 + 完整解密一遍”
+  [ "$HAVE_ID" = 1 ] || die "--verify-all 需要私钥：把离线那份拷上来，用 --identity <age-key.txt> 或 AGE_IDENTITY=... 跑一次"
+  local n=0 ok=0 bad=0 f
+  for f in "$ROOT"/*.age; do
+    [ -f "$f" ] || continue
+    n=$((n + 1))
+    if [ -f "$f.sha256" ] && ! ( cd "$ROOT" && sha256sum -c "$(basename "$f").sha256" >/dev/null 2>&1 ); then
+      bad=$((bad + 1)); printf '  密文 sha256 不过: %s\n' "$(basename "$f")"; continue
+    fi
+    if age -d -i "$AGE_IDENTITY" "$f" 2>/dev/null | wc -c > /dev/null; then ok=$((ok + 1)); else bad=$((bad + 1)); printf '  解密失败: %s\n' "$(basename "$f")"; fi
+  done
+  log "验证完成：$n 份（成功 $ok / 失败 $bad）"
+  [ "$bad" = 0 ] || exit 1
+}
+
 # ---------------------------------------------------------------------------
 # 三种模式
 # ---------------------------------------------------------------------------
@@ -160,6 +194,9 @@ case "$MODE" in
   batch)
     [ "${#POS[@]}" -gt 0 ] || die '用法: seal-backups.sh <文件>... | --all | --check'
     for f in "${POS[@]}"; do seal_one "$f"; done
+    ;;
+  verify)
+    verify_all
     ;;
   all)
     mapfile -t files < <(find "$ROOT" -maxdepth 1 -type f \
