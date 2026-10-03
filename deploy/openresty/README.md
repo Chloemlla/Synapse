@@ -11,7 +11,8 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | `sync-site-certs.sh` | 把 1Panel 续期后的最新证书铺到所有站点 `ssl/` 目录（含到期告警） |
 | `backup-openresty.sh` | 备份接入层：站点/全局配置、证书、维护页、WAF 自定义配置、容器定义 + 清单 |
 | `backup-panel-state.sh` | 备份 1Panel 自身状态：DB（sqlite 在线快照）、secret、全部应用定义 |
-| `daily.sh` | 每日任务编排：上面三件事依次跑，最后给汇总与退出码 |
+| `backup-mongo.sh` | MongoDB 全库 `mongodump --archive --gzip`（可 `--drill` 做真实恢复演练） |
+| `daily.sh` | 每日任务编排：上面四件事依次跑，最后给汇总与退出码 |
 
 ## 维护兜底页
 
@@ -93,6 +94,7 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | 接入层配置 | `backup-openresty.sh 5` | `/root/backups/openresty/openresty-<ts>.tar.gz`（~12M） | 5 份 |
 | 站点证书 | `sync-site-certs.sh` | 直接改线上证书 + `/root/backups/cert-history/` | — |
 | 1Panel 状态 | `backup-panel-state.sh 7` | `/root/backups/panel/1panel-state-<ts>.tar.gz`（~2.2M） | 7 份 |
+| MongoDB 业务数据 | `backup-mongo.sh 7` | `/root/backups/mongo/mongo-<ts>.archive.gz`（~15M）+ manifest/counts | 7 份 |
 
 几个刻意的取舍：
 
@@ -108,7 +110,46 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 > **禁止入 git、禁止放进 `/opt/1panel/www` 任何目录、离线外传前必须加密**。
 >
 > 另外这是**同盘**备份，只挡误操作与配置损坏，不挡磁盘/机器失效；要防灾难得另传异机或对象存储（先加密）。
-> 业务数据（Mongo/Redis 等）**不在**这个范围里，需要单独做。
+> Mongo 归档里是**全部业务数据**（用户、审计、令牌类集合），比配置包更敏感；Redis 与其他容器数据卷**尚未覆盖**。
+
+## MongoDB 业务数据
+
+`backup-mongo.sh` 在 `mongodb` 容器内跑 `mongodump`（该镜像自带 tools 100.15.0），全库导出到
+`mongo-<ts>.archive.gz`，旁边配 `manifest.txt`（镜像/mongod 版本、`container_nofile`、sha256、库清单）
+与 `counts.txt`（机器可读的每库 collections/objects，供演练对比）。当前 12～13 个库、315k 文档、归档 ~15M。
+
+几个要点：
+
+- **凭据不进命令也不进日志**：从容器 env 里 `sed` 出 `MONGO_INITDB_ROOT_USERNAME/PASSWORD` 到变量，
+  再用 `docker exec -e` 传进容器内客户端。信任级与容器自身 env 一致（有 docker 权限本来就能 `docker inspect` 拿到）。
+- **先写 `.tmp` 再改名**：不会出现“半个归档”被当成备份；`gzip -t` 不过就失败退出。
+- **副本集自动 `--oplog`**：拿一致性快照（本机是单机，所以没开）。
+- **演练（`--drill`）**：起一个临时 `mongo:8.2.5`（`--network none`，绝不碰线上），把归档灌进去，
+  再逐库对比集合数与文档数。只容忍“写入漂移”（转储后线上又写了几条，比如 `tts.audit_logs`）；
+  集合数不一致或文档数差很多就是 FAIL。`local`/`config`/`admin` 不参与对比。
+  日常任务**周日自动带 `--drill`**，手工随时可跑：`/root/backups/backup-mongo.sh 7 --drill`。
+
+### ⚠️ 真恢复前必须先看 nofile
+
+实测（2026-10-03，踩了三轮）：nofile 不够时，`mongorestore` 先报 315352 文档全部恢复成功，
+然后在**建索引**阶段报 `WiredTiger: Too many open files` → `WT_PANIC` → mongod abort/segfault（退出码 139），
+restore 端看到的是 `connection closed unexpectedly by the other side`，很容易误以为是归档坏了。
+
+```bash
+docker exec mongodb sh -c 'ulimit -n'     # 本机只有 1024（硬限 524288），建议 64000
+# 修法（任选）：1Panel 容器编辑加 ulimits，或 compose 里
+#   ulimits:
+#     nofile:
+#       soft: 64000
+#       hard: 64000
+# 注意改 ulimit 必须重建容器（数据在 bind mount 上不会丢，但会短暂中断 Mongo）
+```
+
+演练实例用的就是 `--ulimit nofile=64000:64000`，所以演练 PASS 不代表线上容器也够——这一条得单独确认。
+另外演练实例限了内存（`--memory 1500m` + `--wiredTigerCacheSizeGB 0.25`）：本机 3.9G 无 swap，
+默认 WiredTiger cache 会吃掉半台机，曾经直接把演练实例搞死（当时误判为内存问题，其实是 fd）。
+
+恢复命令（会 `--drop` 同名集合）：见服务器上 `/root/backups/RESTORE.md` 的「恢复：MongoDB」一节。
 
 ### 在服务器上安装 / 重建这套东西
 
@@ -118,6 +159,7 @@ install -m 700 \
   /path/to/deploy/openresty/daily.sh \
   /path/to/deploy/openresty/backup-openresty.sh \
   /path/to/deploy/openresty/backup-panel-state.sh \
+  /path/to/deploy/openresty/backup-mongo.sh \
   /path/to/deploy/openresty/sync-site-certs.sh \
   /root/backups/
 crontab -l 2>/dev/null | grep -v daily.sh > /tmp/ct.txt
