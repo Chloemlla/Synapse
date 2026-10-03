@@ -82,6 +82,25 @@ export interface PolicyProcedures {
   historyEndpoint: string;
 }
 
+export interface PolicyDataInventoryEntry {
+  id: string;
+  /** 数据项名称（如「账户设备指纹与最近登录」） */
+  label: string;
+  /** 展示分组（账户与身份 / 安全与风控 / 服务与业务 / 合规与审计 / 通信与集成 / 客户端本地） */
+  category: string;
+  /** 具体收集到的信息类别 */
+  what: string;
+  /** 为什么需要这些信息 */
+  why: string;
+  /** 面向用户的保存期限表述 */
+  retention: string;
+  /** 解释该数据项规则的条文章节 id（页面渲染为「详见」链接） */
+  policySection: string;
+  retentionType: string;
+  exportable: 'full' | 'partial' | 'none';
+  deleteOnUserDelete: string;
+}
+
 export interface PolicyDocument {
   version: string;
   /**
@@ -102,6 +121,10 @@ export interface PolicyDocument {
   warnings: PolicyWarning[];
   revisions: PolicyRevision[];
   contacts: PolicyContact[];
+  /** 逐项数据清单（由后端隐私数据地图生成，非手写） */
+  dataInventory: PolicyDataInventoryEntry[];
+  /** 数据地图最后更新日 */
+  dataInventoryUpdatedAt: string;
 }
 
 export interface PolicyDocumentResponse {

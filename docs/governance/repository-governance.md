@@ -10,7 +10,8 @@ These rails intentionally avoid a big-bang rewrite of the existing oversized mod
 | --- | --- | --- |
 | TypeScript size | `pnpm run check:ts-file-size` | New `.ts/.tsx` files must stay ≤ 800 lines. Existing oversized files are grandfathered only while they do not grow. |
 | Frontend bundle budget | `pnpm run check:frontend-bundle` | After a production frontend build, entry/chunk/total gzip budgets and isolated heavy-dependency chunks must hold. |
-| Privacy contract | `pnpm run check:privacy-contract` | `docs/privacy-data-map.json` is complete, evidence files exist, and retention/delete/export fields are present. |
+| Privacy contract | `pnpm run check:privacy-contract` | `docs/governance/privacy-data-map.json` is complete, evidence files exist, and retention/delete/export plus the user-facing `userFacing` block are present. |
+| Privacy data map drift | `pnpm run check:privacy-data-map` | `src/generated/privacyDataMap.ts` matches `docs/governance/privacy-data-map.json`. The privacy policy page renders that generated file, so a stale copy would describe data practices the backend no longer has. |
 | Unit/critical CI | `pnpm run test --config jest.ci.config.js --ci --runInBand` | Existing self-contained Jest suite. |
 | Mongo replica integration | `pnpm run test:integration:mongo` | Real replica-set transaction + TTL index semantics when `MONGO_REPLICA_URI` is set. |
 | Browser cookie smoke | `pnpm run test:browser` | Playwright verifies HttpOnly `synapse_token` cookie set/read/clear. |
@@ -68,7 +69,7 @@ See [`docs/test-matrix.md`](./test-matrix.md) for unit / integration / browser /
 
 See:
 
-- [`docs/privacy-data-map.json`](./privacy-data-map.json)
+- [`docs/governance/privacy-data-map.json`](./privacy-data-map.json) —— 隐私数据地图（机器可读契约）；其中的 `userFacing` 块被生成为 `src/generated/privacyDataMap.ts`，直接渲染到隐私政策页面。
 - [`docs/privacy-fingerprint-ip-contract.md`](./privacy-fingerprint-ip-contract.md)
 
 ## Local non-build checks
@@ -78,6 +79,7 @@ These can run without compiling the app:
 ```bash
 pnpm run check:ts-file-size
 pnpm run check:privacy-contract
+pnpm run check:privacy-data-map   # 政策页面渲染的生成物与数据地图是否同步
 pnpm run test --config jest.ci.config.js --ci --runInBand --testPathPatterns=authCookieSession
 ```
 

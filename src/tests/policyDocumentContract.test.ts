@@ -28,7 +28,7 @@ describe("policy document contract", () => {
 
   it("uses the checkbox wording verbatim in the document", () => {
     expect(POLICY_AGREEMENTS.map((agreement) => agreement.label)).toEqual([
-      "我已阅读并同意服务条款",
+      "我已阅读并同意服务条款与隐私政策",
       "我已阅读并同意使用政策",
       "我已阅读并同意服务专项条款",
       "我已阅读并同意支持地区",
@@ -65,6 +65,59 @@ describe("policy document contract", () => {
   it("serves the merged status endpoint the frontend actually calls", () => {
     expect(POLICY_DOCUMENT.procedures.checkConsentEndpoint).toBe("GET /api/policy/check");
     expect(POLICY_DOCUMENT.procedures.statusEndpoint).toBe("GET /api/policy/status");
+  });
+});
+
+// 数据清单：隐私政策里「我们到底存了什么」那张表。它不是手写的，而是由
+// docs/governance/privacy-data-map.json 生成（scripts/generate-privacy-data-map.js）。
+// 这里钉住三件事：字段齐全、章节链接不死链、正文条目与结构化清单一致。
+describe("privacy data inventory in the policy document", () => {
+  it("exposes a non-empty inventory carried on the served document", () => {
+    expect(Array.isArray(POLICY_DOCUMENT.dataInventory)).toBe(true);
+    expect(POLICY_DOCUMENT.dataInventory.length).toBeGreaterThan(0);
+    expect(POLICY_DOCUMENT.dataInventoryUpdatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("describes every entry with what/why/retention and a real category", () => {
+    const categories = new Set(POLICY_DOCUMENT.dataInventory.map((entry) => entry.category));
+    expect(categories.size).toBeGreaterThan(1);
+    for (const entry of POLICY_DOCUMENT.dataInventory) {
+      expect(entry.id.length).toBeGreaterThan(0);
+      expect(entry.label.length).toBeGreaterThan(0);
+      expect(entry.what.length).toBeGreaterThan(10);
+      expect(entry.why.length).toBeGreaterThan(10);
+      expect(entry.retention.length).toBeGreaterThan(5);
+      expect(["full", "partial", "none"]).toContain(entry.exportable);
+    }
+  });
+
+  it("points every entry at a real section so the page links never dead-end", () => {
+    const sectionIds = new Set(POLICY_SECTIONS.map((section) => section.id));
+    for (const entry of POLICY_DOCUMENT.dataInventory) {
+      expect(sectionIds.has(entry.policySection)).toBe(true);
+    }
+  });
+
+  it("keeps the prose chapter and the structured inventory describing the same set", () => {
+    const inventorySection = POLICY_SECTIONS.find((section) => section.id === "data-inventory");
+    expect(inventorySection).toBeDefined();
+    const prose = inventorySection!.items.join("\n");
+    for (const entry of POLICY_DOCUMENT.dataInventory) {
+      // 每个数据集的名称都必须出现在正文章节里：两边一页表格、一页文字，
+      // 只更新其中一个（例如前端加了表格但没重新生成）会在这里失败。
+      expect(prose).toContain(entry.label);
+      expect(prose).toContain(entry.retention);
+    }
+  });
+
+  it("keeps the audit-log retention in the policy in step with the model (60 days)", () => {
+    const auditLog = POLICY_DOCUMENT.dataInventory.find((entry) => entry.id === "audit-logs");
+    expect(auditLog).toBeDefined();
+    expect(auditLog!.retention).toContain("60 天");
+    const retentionSection = POLICY_SECTIONS.find((section) => section.id === "retention");
+    expect(retentionSection!.items.join("\n")).toContain("60 天");
+    // 90 天只允许作为「历史变更」出现，不能作为当前保留期
+    expect(retentionSection!.items.join("\n")).not.toMatch(/审计日志：保留 90 天/);
   });
 });
 

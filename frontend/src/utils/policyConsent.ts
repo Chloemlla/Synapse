@@ -24,14 +24,14 @@ export interface PolicyConsentItem {
 }
 
 const POLICY_AGREEMENT_LABELS: Record<PolicyAgreementKey, string> = {
-  terms: '我已阅读并同意服务条款',
+  terms: '我已阅读并同意服务条款与隐私政策',
   usage: '我已阅读并同意使用政策',
   'specific-terms': '我已阅读并同意服务专项条款',
   'supported-regions': '我已阅读并同意支持地区',
 };
 
 const POLICY_AGREEMENT_TITLES: Record<PolicyAgreementKey, string> = {
-  terms: '服务条款',
+  terms: '服务条款与隐私政策',
   usage: '使用政策',
   'specific-terms': '服务专项条款',
   'supported-regions': '支持地区',

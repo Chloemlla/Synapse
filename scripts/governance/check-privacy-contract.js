@@ -6,6 +6,17 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..", "..");
 const mapPath = path.join(root, "docs", "governance", "privacy-data-map.json");
 const requiredDatasetKeys = ["id", "collection", "fields", "purpose", "legalBasis", "retention", "delete", "export", "evidence"];
+// 面向用户的那一面：隐私政策页面直接渲染这些字段（见 scripts/generate-privacy-data-map.js），
+// 缺一个都会让页面上的说明出现窟窿，所以在这里也当硬要求。
+const requiredUserFacingKeys = ["label", "category", "what", "why", "retention", "policySection"];
+const knownCategories = new Set([
+  "账户与身份",
+  "安全与风控",
+  "服务与业务",
+  "合规与审计",
+  "通信与集成",
+  "客户端本地",
+]);
 const knownRetentionTypes = new Set([
   "account_lifetime",
   "ttl",
@@ -58,6 +69,23 @@ for (const dataset of map.datasets) {
   for (const evidence of dataset.evidence) {
     const absolute = path.join(root, evidence);
     if (!fs.existsSync(absolute)) fail(`${dataset.id}: missing evidence file ${evidence}`);
+  }
+
+  const userFacing = dataset.userFacing;
+  if (!userFacing || typeof userFacing !== "object") {
+    fail(`${dataset.id}: missing userFacing block (the privacy policy page renders it)`);
+  } else {
+    for (const key of requiredUserFacingKeys) {
+      if (typeof userFacing[key] !== "string" || !userFacing[key].trim()) {
+        fail(`${dataset.id}: userFacing.${key} must be a non-empty string`);
+      }
+    }
+    if (!knownCategories.has(userFacing.category)) {
+      fail(`${dataset.id}: userFacing.category ${userFacing.category} is not in the known category set`);
+    }
+    if (!/^[a-z][a-z0-9-]*$/.test(String(userFacing.policySection))) {
+      fail(`${dataset.id}: userFacing.policySection must look like a policy section id`);
+    }
   }
 }
 

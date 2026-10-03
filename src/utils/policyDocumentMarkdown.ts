@@ -90,6 +90,27 @@ export function renderPolicyDocumentMarkdown(
   }
   lines.push("");
 
+  // 数据清单表格：与正文「数据清单」章节同源（都来自隐私数据地图），
+  // 离线存档里给一张能横着看的表，比逐条文字更好对比保留期与删除方式。
+  if (Array.isArray(document.dataInventory) && document.dataInventory.length > 0) {
+    lines.push("## 数据清单（逐项）", "");
+    if (document.dataInventoryUpdatedAt) {
+      lines.push(`依据隐私数据地图更新于 ${escapeCell(document.dataInventoryUpdatedAt)}。`, "");
+    }
+    lines.push(
+      "| 类别 | 数据项 | 收集内容 | 用途 | 保存期限 | 导出 | 删除账户 |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
+    );
+    const exportText = (value: string): string =>
+      value === "full" ? "可导出" : value === "partial" ? "部分导出" : "不可自助导出";
+    for (const entry of document.dataInventory) {
+      lines.push(
+        `| ${escapeCell(entry.category)} | ${escapeCell(entry.label)} | ${escapeCell(entry.what)} | ${escapeCell(entry.why)} | ${escapeCell(entry.retention)} | ${exportText(entry.exportable)} | ${escapeCell(entry.deleteOnUserDelete)} |`,
+      );
+    }
+    lines.push("");
+  }
+
   lines.push("## 历次修订", "");
   for (const revision of document.revisions) {
     lines.push(`### v${revision.version}（${revision.date}）`, "");

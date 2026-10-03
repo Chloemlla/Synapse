@@ -85,6 +85,9 @@ Current analytics export entrypoint: `GET /api/analytics/export` (authenticated)
 ## CI / verification
 
 - `pnpm run check:privacy-contract` validates the JSON map shape and that cited evidence files exist.
+- Every dataset must carry a `userFacing` block (Chinese label / category / what / why / retention / policySection):
+  it is what the public privacy policy page renders, so a dataset added without it would be invisible to users.
+- `pnpm run check:privacy-data-map` fails when `src/generated/privacyDataMap.ts` is stale relative to this map.
 - Mongo replica integration asserts TTL index creation semantics used by retention contracts.
 - Browser cookie smoke verifies HttpOnly session cookie handling for identity-bearing requests.
 

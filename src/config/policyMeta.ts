@@ -9,7 +9,7 @@
  */
 
 /** 当前条文版本；版本变化会让此前记录的同意不再覆盖新条文。 */
-export const CURRENT_POLICY_VERSION = process.env.POLICY_VERSION?.trim() || "2.1";
+export const CURRENT_POLICY_VERSION = process.env.POLICY_VERSION?.trim() || "2.2";
 
 const DEFAULT_CONSENT_VALIDITY_DAYS = 30;
 const MIN_CONSENT_VALIDITY_DAYS = 1;
@@ -32,7 +32,8 @@ export function resolveConsentValidityDays(raw: unknown): number {
 
 export const CONSENT_VALIDITY_DAYS = resolveConsentValidityDays(process.env.POLICY_CONSENT_VALIDITY_DAYS);
 
-// 登录/注册必须逐项勾选的四份文件。键名同时是政策页锚点（policy-agreement-<key>）
+// 登录/注册必须逐项勾选的四份文件（服务条款与隐私政策 / 使用政策 / 服务专项条款 / 支持地区）。
+// 键名同时是政策页锚点（policy-agreement-<key>）
 // 与同意记录里 agreements 字段的取值，改键名等于让历史记录与新条文对不上。
 export const POLICY_AGREEMENT_KEYS = ["terms", "usage", "specific-terms", "supported-regions"] as const;
 export type PolicyAgreementKey = (typeof POLICY_AGREEMENT_KEYS)[number];

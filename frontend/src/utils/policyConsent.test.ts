@@ -20,7 +20,7 @@ describe('policyConsent', () => {
 
   it('renders the checkbox labels verbatim', () => {
     expect(POLICY_CONSENT_ITEMS.map(item => item.label)).toEqual([
-      '我已阅读并同意服务条款',
+      '我已阅读并同意服务条款与隐私政策',
       '我已阅读并同意使用政策',
       '我已阅读并同意服务专项条款',
       '我已阅读并同意支持地区',

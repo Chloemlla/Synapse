@@ -61,6 +61,12 @@ jobs:
         # 只看现象很难反推到生成脚本。
         run: pnpm run check:admin-spa-paths
 
+      # 同上必须跑在 build 之前：隐私政策页面直接渲染 src/generated/privacyDataMap.ts，
+      # 而该文件由 docs/governance/privacy-data-map.json 生成；比入库的那一份才能抓到
+      # 「改了数据地图却忘了重新生成」——否则页面会继续向用户描述旧的数据实践。
+      - name: Privacy data map drift gate (policy page vs data contract)
+        run: pnpm run check:privacy-data-map
+
       - name: Run build
         run: pnpm run build
 

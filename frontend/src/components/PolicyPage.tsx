@@ -31,6 +31,7 @@ import { AgreementCard, HighlightCard, WarningCard } from './policy/policyCards'
 import PolicySearchBar, { PolicyReadingControls, READING_SCALES, type ReadingScale } from './policy/PolicySearchBar';
 import PolicyConsentStatusPanel from './policy/PolicyConsentStatusPanel';
 import PolicySectionPanel from './policy/PolicySectionPanel';
+import PolicyDataInventoryPanel from './policy/PolicyDataInventoryPanel';
 import PolicyFooter from './policy/PolicyFooter';
 
 // 条文正文由后端单点维护（src/config/policyDocument.ts），本页只负责阅读体验：
@@ -232,6 +233,13 @@ const PolicyPage: React.FC = () => {
   }, []);
 
   const jumpTo = useCallback((id: string) => scrollToAnchor(`policy-${id}`), [scrollToAnchor]);
+
+  /** 章节 id → 标题，供数据清单表的「详见」链接显示目标章节名。 */
+  const sectionTitles = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const section of policy?.sections ?? []) map[section.id] = section.title;
+    return map;
+  }, [policy]);
 
   const scrollToTop = useCallback(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -518,16 +526,31 @@ const PolicyPage: React.FC = () => {
               {visibleSections.map((section, index) => {
                 const anchor = `policy-${section.id}`;
                 return (
-                  <PolicySectionPanel
-                    key={section.id}
-                    section={section}
-                    index={policy.sections.findIndex((item) => item.id === section.id)}
-                    totalSections={policy.sections.length}
-                    matchedItemIndexes={search.matchedItemIndexes[section.id] ?? []}
-                    searchQuery={search.query}
-                    copied={copiedId === anchor}
-                    onCopy={() => void copyAnchorLink(anchor)}
-                  />
+                  <React.Fragment key={section.id}>
+                    <PolicySectionPanel
+                      section={section}
+                      index={policy.sections.findIndex((item) => item.id === section.id)}
+                      totalSections={policy.sections.length}
+                      matchedItemIndexes={search.matchedItemIndexes[section.id] ?? []}
+                      searchQuery={search.query}
+                      copied={copiedId === anchor}
+                      onCopy={() => void copyAnchorLink(anchor)}
+                    />
+                    {/* 数据清单章节后面补一张结构化表格：正文里已有逐条文字（可检索/可打印），
+                        表格是为了「一眼对比各类信息的保留期与删除方式」。只在未检索或该章命中时渲染，
+                        避免检索结果里混入一大块不相关内容。 */}
+                    {section.id === 'data-inventory' &&
+                    !search.query.trim() &&
+                    (policy.dataInventory?.length ?? 0) > 0 ? (
+                      <PolicyDataInventoryPanel
+                        entries={policy.dataInventory ?? []}
+                        updatedAt={policy.dataInventoryUpdatedAt}
+                        searchQuery={search.query}
+                        sectionTitles={sectionTitles}
+                        onJumpToSection={jumpTo}
+                      />
+                    ) : null}
+                  </React.Fragment>
                 );
               })}
               <InfoPanel className="border-rose-100 print:border-0 print:shadow-none">
