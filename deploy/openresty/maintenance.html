@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f8fbff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%278%27%20fill%3D%27%234f46e5%27%2F%3E%3Cpath%20d%3D%27M8%2016h3l2-5.5L16%2021l2.5-5h5.5%27%20fill%3D%27none%27%20stroke%3D%27white%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E">
+<noscript><meta http-equiv="refresh" content="15"></noscript>
+<title>服务正在更新 · Synapse</title>
+<style>
+  /* 对齐 docs/design/app-ui-design-language.md：浅色玻璃态工作台 + 加载卡片蓝图。
+     唯一有意的偏离：eyebrow 用 slate-500 而不是 slate-400（小字对比度需过 WCAG AA）。 */
+  :root{
+    color-scheme:light dark;
+    --page-from:#f8fbff; --page-mid:#eef2ff; --page-to:#f8fafc;
+    --glow:rgba(59,130,246,.22);
+    --card:rgba(255,255,255,.88); --card-border:rgba(255,255,255,.7);
+    --panel:rgba(248,250,252,.8); --panel-border:#e2e8f0;
+    --slate-900:#0f172a; --slate-600:#475569; --slate-500:#64748b;
+    --indigo-600:#4f46e5; --indigo-700:#4338ca;
+    --warn-from:#fffbeb; --warn-to:#fef3c7; --warn-border:#fde68a; --warn-text:#92400e;
+    --track:#e2e8f0; --code-bg:rgba(248,250,252,.9);
+    --card-shadow:0 24px 80px rgba(15,23,42,.08);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --page-from:#0b1020; --page-mid:#0d1224; --page-to:#080c16;
+      --glow:rgba(79,70,229,.2);
+      --card:rgba(15,22,38,.88); --card-border:rgba(148,163,184,.16);
+      --panel:rgba(20,29,48,.75); --panel-border:#1e2a3f;
+      --slate-900:#e9eef8; --slate-600:#a7b3c8; --slate-500:#93a1b8;
+      --indigo-600:#8b8cf9; --indigo-700:#a5a6ff;
+      --warn-from:#2a220f; --warn-to:#332a12; --warn-border:#4a3c14; --warn-text:#fbbf24;
+      --track:#1e2a3f; --code-bg:rgba(11,16,32,.75);
+      --card-shadow:0 24px 80px rgba(0,0,0,.55);
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    padding:max(1.25rem,env(safe-area-inset-top)) max(1.25rem,env(safe-area-inset-right))
+            max(1.25rem,env(safe-area-inset-bottom)) max(1.25rem,env(safe-area-inset-left));
+    background:
+      radial-gradient(circle at top,var(--glow),transparent 34%),
+      linear-gradient(180deg,var(--page-from) 0%,var(--page-mid) 55%,var(--page-to) 100%);
+    color:var(--slate-900);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .card{
+    width:100%;max-width:34rem;padding:clamp(1.5rem,4.5vw,2.5rem);
+    background:var(--card);border:1px solid var(--card-border);border-radius:36px;
+    box-shadow:var(--card-shadow);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
+    text-align:center;
+  }
+  .brand{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;
+         font-size:.82rem;font-weight:700;letter-spacing:-.01em;color:var(--slate-600)}
+  .brand .logo{width:1.5rem;height:1.5rem;border-radius:.5rem;flex:none;display:grid;place-items:center;
+               background:linear-gradient(140deg,var(--indigo-600),#7c3aed)}
+  .brand .logo svg{width:1rem;height:1rem}
+  .badge{width:3.5rem;height:3.5rem;margin:0 auto;border-radius:26px;display:grid;place-items:center;
+         background:var(--panel);border:1px solid var(--panel-border);color:var(--slate-500)}
+  .spinner{width:1.5rem;height:1.5rem;border-radius:50%;border:2.5px solid var(--track);
+           border-top-color:var(--indigo-600);animation:spin .9s linear infinite}
+  .badge .mark{font-size:1.5rem;font-weight:700;line-height:1;color:var(--indigo-600)}
+  .badge .mark-warn{color:var(--warn-text)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .eyebrow{margin:1.25rem 0 0;font-size:11px;font-weight:600;letter-spacing:.26em;
+           text-transform:uppercase;color:var(--slate-500)}
+  h1{margin:.75rem 0 0;font-size:clamp(1.25rem,4.4vw,1.5rem);font-weight:600;line-height:1.35;
+     letter-spacing:-.015em;color:var(--slate-900)}
+  .lede{margin:.75rem 0 0;font-size:.875rem;line-height:1.75;color:var(--slate-600)}
+  .status{display:flex;align-items:center;gap:1rem;text-align:left;margin-top:1.5rem;
+          padding:1rem 1.1rem;border:1px solid var(--panel-border);border-radius:22px;background:var(--panel)}
+  .ring{--p:100;width:3.25rem;height:3.25rem;border-radius:50%;flex:none;position:relative;
+        display:grid;place-items:center;
+        background:conic-gradient(var(--indigo-600) calc(var(--p) * 1%),var(--track) 0)}
+  .ring::after{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--card)}
+  .ring span{position:relative;font-size:.9rem;font-weight:650;color:var(--slate-900);
+             font-variant-numeric:tabular-nums}
+  .status-text{min-width:0}
+  .status-text strong{display:block;font-size:.9rem;font-weight:650;color:var(--slate-900)}
+  .status-text span{display:block;font-size:.8rem;color:var(--slate-600);font-variant-numeric:tabular-nums}
+  .actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.5rem}
+  .btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;
+       min-height:44px;padding:.6rem 1.1rem;border:1px solid var(--panel-border);border-radius:12px;
+       background:var(--card);color:var(--slate-900);font:inherit;font-size:.9rem;font-weight:600;
+       text-decoration:none;cursor:pointer;text-align:center;
+       transition:background .16s ease,border-color .16s ease,transform .12s ease}
+  .btn:hover{border-color:var(--indigo-600);background:var(--panel)}
+  .btn:active{transform:translateY(1px)}
+  .btn[disabled]{opacity:.55;cursor:default;transform:none}
+  .btn-primary{background:var(--indigo-600);border-color:var(--indigo-600);color:#fff}
+  .btn-primary:hover{background:var(--indigo-700);border-color:var(--indigo-700)}
+  :focus-visible{outline:2px solid var(--indigo-600);outline-offset:2px;border-radius:12px}
+  .help{display:flex;gap:.7rem;text-align:left;margin-top:1.25rem;padding:.95rem 1.1rem;
+        border:1px solid var(--warn-border);border-radius:22px;
+        background:linear-gradient(180deg,var(--warn-from),var(--warn-to));color:var(--warn-text)}
+  .help svg{width:1.1rem;height:1.1rem;flex:none;margin-top:.2rem;stroke:currentColor}
+  .help p{margin:0;font-size:.85rem;line-height:1.7}
+  .help strong{font-weight:650}
+  .help a{color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+  details{margin-top:1.35rem;padding-top:1rem;border-top:1px solid var(--panel-border);text-align:left}
+  summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.4rem;
+          font-size:.82rem;font-weight:600;color:var(--slate-500)}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"›";font-size:1rem;line-height:1;transition:transform .15s ease}
+  details[open] summary::before{transform:rotate(90deg)}
+  summary:hover{color:var(--slate-900)}
+  pre{margin:.75rem 0 .6rem;padding:.8rem .9rem;border:1px solid var(--panel-border);border-radius:16px;
+      background:var(--code-bg);color:var(--slate-600);font-size:.75rem;line-height:1.65;
+      white-space:pre-wrap;word-break:break-word;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .foot{margin:1.1rem 0 0;font-size:.72rem;color:var(--slate-500)}
+  @media (max-width:30rem){
+    .actions{flex-direction:column}
+    .actions .btn{width:100%}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<main class="card" id="app-main-content" tabindex="-1">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12h2.5l1.8-5L11 17l2.2-5H20"/>
+      </svg>
+    </span>
+    Synapse
+  </div>
+
+  <div class="badge" aria-hidden="true"><span class="spinner" id="badgeIcon"></span></div>
+  <p class="eyebrow">Service Status</p>
+  <h1 id="statusTitle">服务正在更新</h1>
+  <p class="lede">我们正在发布新版本，访问会稍后自动恢复，通常需要 1 分钟左右。本页每几秒自动重试一次，无需一直刷新。</p>
+
+  <div class="status" role="status" aria-live="polite" aria-busy="false" id="statusBox">
+    <div class="ring" id="ring" aria-hidden="true"><span id="ringNum">3</span></div>
+    <div class="status-text">
+      <strong id="statusLine">正在自动重试…</strong>
+      <span id="statusMeta">已等待 0:00</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="retryBtn" type="button">立即重试</button>
+    <a class="btn" id="mailLink" href="mailto:support@chloemlla.com?subject=%5BSynapse%5D%20%E6%9C%8D%E5%8A%A1%E6%9B%B4%E6%96%B0%E6%9C%9F%E9%97%B4%E8%AF%B7%E6%B1%82%E5%A4%B1%E8%B4%A5">邮件联系支持</a>
+    <a class="btn" href="https://chloemlla.com/" rel="noopener">返回首页</a>
+  </div>
+
+  <div class="help">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/>
+    </svg>
+    <p><strong>维护期间工单页面暂时打不开。</strong>需要协助请直接发邮件到
+      <a href="mailto:support@chloemlla.com">support@chloemlla.com</a>，我们会在服务恢复后第一时间回复。</p>
+  </div>
+
+  <details id="diag">
+    <summary>诊断信息（发给支持时附上可加快排查）</summary>
+    <pre id="diagText">维护期间本页由接入层直接返回（HTTP 5xx + Retry-After）。如需协助，请把当前网址与报错时间一并发到 support@chloemlla.com。</pre>
+    <button class="btn" id="copyBtn" type="button">复制诊断信息</button>
+  </details>
+
+  <p class="foot">Synapse 维护页 · 上游不可用期间由接入层直接返回</p>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var PROBE = '/api/health';
+  // 首次 3 秒后检查，随后逐步退避到 60 秒：既不让人干等，也不在服务刚起来时猛砸请求。
+  var SCHEDULE = [3000, 5000, 5000, 8000, 10000, 15000, 20000, 30000, 45000, 60000];
+  var RELOAD_KEY = 'synapse-maintenance-reloads';
+  var RELOAD_WINDOW = 180000;
+  var MAX_RELOADS = 3;
+
+  var ring = document.getElementById('ring');
+  var ringNum = document.getElementById('ringNum');
+  var badgeIcon = document.getElementById('badgeIcon');
+  var titleEl = document.getElementById('statusTitle');
+  var statusLine = document.getElementById('statusLine');
+  var statusMeta = document.getElementById('statusMeta');
+  var statusBox = document.getElementById('statusBox');
+  var retryBtn = document.getElementById('retryBtn');
+  var mailLink = document.getElementById('mailLink');
+  var copyBtn = document.getElementById('copyBtn');
+  var diagText = document.getElementById('diagText');
+
+  var startedAt = Date.now();
+  var attempts = 0;
+  var interval = SCHEDULE[0];
+  var nextAt = startedAt + interval;
+  var busy = false;
+  var lastProbe = null;
+  var givenUp = false;
+
+  function recentReloads() {
+    try {
+      var now = Date.now();
+      return (JSON.parse(sessionStorage.getItem(RELOAD_KEY) || '[]') || [])
+        .filter(function (t) { return now - t < RELOAD_WINDOW; });
+    } catch (e) { return []; }
+  }
+
+  function noteReload() {
+    try {
+      var arr = recentReloads();
+      arr.push(Date.now());
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify(arr));
+    } catch (e) {}
+  }
+
+  function elapsed() {
+    return Date.now() - startedAt;
+  }
+
+  function fmt(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function clock(d) {
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+  }
+
+  function probeLabel() {
+    if (!lastProbe) return null;
+    return (lastProbe.status ? 'HTTP ' + lastProbe.status : '连接失败') + ' @ ' + clock(lastProbe.at);
+  }
+
+  function diagnostics() {
+    return [
+      '维护页版本：v3',
+      '访问地址：' + location.href,
+      '本地时间：' + new Date().toLocaleString('zh-CN'),
+      'UTC 时间：' + new Date().toISOString(),
+      '已等待：' + fmt(elapsed()),
+      '自动重试：' + attempts + ' 次',
+      '最近健康检查：' + (probeLabel() || '尚未执行'),
+      '页面状态：接入层探测上游失败时直接返回（HTTP 5xx + Retry-After）',
+      '客户端：' + navigator.userAgent
+    ].join('\n');
+  }
+
+  function showSpinner() {
+    badgeIcon.className = 'spinner';
+    badgeIcon.textContent = '';
+  }
+
+  function showMark(ch, kind) {
+    badgeIcon.className = 'mark ' + kind;
+    badgeIcon.textContent = ch;
+  }
+
+  function render() {
+    var now = Date.now();
+    var left = Math.max(0, nextAt - now);
+
+    if (busy) {
+      statusLine.textContent = '正在检查服务状态…';
+      ringNum.textContent = '…';
+      ring.style.setProperty('--p', 100);
+      showSpinner();
+    } else if (givenUp) {
+      statusLine.textContent = '服务仍未恢复';
+      ringNum.textContent = '!';
+      ring.style.setProperty('--p', 0);
+      showMark('!', 'mark-warn');
+    } else {
+      statusLine.textContent = '正在自动重试…';
+      ringNum.textContent = String(Math.max(1, Math.ceil(left / 1000)));
+      ring.style.setProperty('--p', Math.max(0, Math.min(100, (left / interval) * 100)));
+      showSpinner();
+    }
+    statusBox.setAttribute('aria-busy', busy ? 'true' : 'false');
+
+    var parts = ['已等待 ' + fmt(elapsed())];
+    if (attempts) parts.push('已重试 ' + attempts + ' 次');
+    if (!busy && !givenUp) parts.push('下次检查 ' + Math.max(1, Math.ceil(left / 1000)) + ' 秒后');
+    if (givenUp) parts.push('自动刷新已停止，可手动重试');
+    var label = probeLabel();
+    if (label) parts.push('最近检查 ' + label);
+    statusMeta.textContent = parts.join(' · ');
+
+    retryBtn.disabled = busy;
+    diagText.textContent = diagnostics();
+  }
+
+  function schedule(delay) {
+    interval = delay;
+    nextAt = Date.now() + delay;
+  }
+
+  function probe() {
+    if (busy) return Promise.resolve(false);
+    busy = true;
+    render();
+
+    var ctl = null;
+    var timer = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    if (ctl) timer = setTimeout(function () { ctl.abort(); }, 8000);
+
+    return fetch(PROBE, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: ctl ? ctl.signal : undefined,
+      headers: { 'Accept': 'application/json, text/plain, */*' }
+    }).then(function (res) {
+      lastProbe = { status: res.status, at: new Date() };
+      // 只要不是 5xx，就说明上游已经能应答（哪怕这个探测路径本身 404）——各站点应用不同，不能只认 200。
+      return res.status < 500;
+    }).catch(function () {
+      lastProbe = { status: 0, at: new Date() };
+      return false;
+    }).then(function (ok) {
+      if (timer) clearTimeout(timer);
+      busy = false;
+      return ok;
+    });
+  }
+
+  function recovered() {
+    givenUp = false;
+    statusLine.textContent = '服务已恢复，正在跳转…';
+    statusMeta.textContent = '维护已完成';
+    ringNum.textContent = '✓';
+    ring.style.setProperty('--p', 100);
+    showMark('✓', 'mark-ok');
+    statusBox.setAttribute('aria-busy', 'false');
+    retryBtn.disabled = true;
+    noteReload();
+    setTimeout(function () { location.reload(); }, 900);
+  }
+
+  function check() {
+    attempts++;
+    probe().then(function (ok) {
+      if (ok) { recovered(); return; }
+      schedule(SCHEDULE[Math.min(attempts, SCHEDULE.length - 1)]);
+      render();
+    });
+  }
+
+  // 健康检查通过却依然打不开（例如只有当前路由坏），连续几次就停止自动刷新，避免死循环。
+  if (recentReloads().length >= MAX_RELOADS) givenUp = true;
+
+  retryBtn.addEventListener('click', function () {
+    if (busy) return;
+    givenUp = false;
+    check();
+  });
+
+  mailLink.addEventListener('click', function (e) {
+    e.preventDefault();
+    var subject = '[Synapse] 服务更新期间请求失败';
+    var body = '访问地址：' + location.href + '\n时间：' + new Date().toLocaleString('zh-CN')
+      + '\n\n' + diagnostics();
+    window.location.href = 'mailto:support@chloemlla.com?subject='
+      + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  });
+
+  copyBtn.addEventListener('click', function () {
+    var text = diagnostics();
+    var reset = function () { copyBtn.textContent = '复制诊断信息'; };
+    var done = function () { copyBtn.textContent = '已复制'; setTimeout(reset, 1800); };
+    var selectText = function () {
+      var range = document.createRange();
+      range.selectNodeContents(diagText);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      copyBtn.textContent = '已选中，按 Ctrl+C';
+      setTimeout(reset, 2500);
+    };
+    var manual = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { selectText(); }
+      document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, manual);
+    } else {
+      manual();
+    }
+  });
+
+  // 标签页不可见时停掉轮询（避免后台白耗请求），回到前台立刻探测一次。
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    nextAt = Date.now();
+    tick();
+  });
+
+  function tick() {
+    if (document.hidden) return;
+    if (!givenUp && !busy && Date.now() >= nextAt) check();
+    render();
+  }
+
+  render();
+  setInterval(tick, 250);
+})();
+</script>
+</body>
+</html>
