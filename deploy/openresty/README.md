@@ -229,6 +229,11 @@ GDRIVE_REFRESH_TOKEN=1//...
 GDRIVE_FOLDER=backups
 ```
 
+换/轮换凭据用同一目录下的 `gdrive-selfservice-token.sh`（本地 Windows 或服务器都能跑，只要 bash+curl）：
+它打印（并尝试打开）带 `access_type=offline&prompt=consent` 的授权 URL → 你粘回地址栏里的 `code`
+→ 换出 `refresh_token` → 立刻用 `refresh_token` 再换一次 token 并查 Drive 账号/配额自检
+→ 写出 600 的 `gdrive.env`。失败会按 `invalid_grant` / `redirect_uri_mismatch` / `invalid_client` 给对应提示并可重试。
+
 > 这些值是从 1Panel 的 `backup_accounts.vars` 里取出来的（**1Panel 是明文存的**），
 > refresh_token 长期有效——有面板/数据库读权限就等于有这个盘的写入权。
 > 不要入 git；如果它曾经出现在聊天记录/日志里，去 Google 账号里删掉该 OAuth 客户端重新授权。
