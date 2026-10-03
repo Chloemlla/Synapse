@@ -23,6 +23,10 @@ export const mongoUserStorageProvider: UserStorageProvider = {
     return userService.getAdminUserListPage(query, includeFingerprints === true);
   },
 
+  async getAccountSecurityFacts(id: string) {
+    return userService.getAccountSecurityFacts(id);
+  },
+
   async getUserById(id: string) {
     return removeAvatarBase64(await userService.getUserById(id));
   },

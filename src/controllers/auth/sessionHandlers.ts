@@ -84,6 +84,25 @@ export async function getSecuritySummary(req: Request, res: Response) {
     // 双因素凭据等字段，统一回到存储层取一次完整记录。
     const dbUser = (await UserStorage.getUserById(user.id)) ?? user;
 
+    // 恢复码余量与「有没有密码材料」要单独取：PUBLIC_USER_SELECT（G2-22）不含这两项，
+    // 拿 dbUser 上的字段算会得到「没有密码」与「恢复码 0 个」，安全清单于是误报
+    // ——「已启用 TOTP 却一直提示恢复码已用尽」就是这么来的。
+    // 用一次性窄查询取事实（只回布尔/计数，密码材料与恢复码本体不出存储层）。
+    let securityFacts: Awaited<ReturnType<typeof UserStorage.getAccountSecurityFacts>> = null;
+    try {
+      securityFacts = await UserStorage.getAccountSecurityFacts(user.id);
+    } catch (error) {
+      logger.warn("安全总览：读取账号安全事实失败", error);
+    }
+
+    const backupCodesRemainingFromDoc = Array.isArray((dbUser as { backupCodes?: string[] }).backupCodes)
+      ? ((dbUser as { backupCodes?: string[] }).backupCodes?.length ?? 0)
+      : null;
+    // 三档回退：窄事实 → dbUser 上真有这个字段 → 未知（null，不能当成 0）
+    const backupCodesRemaining = securityFacts
+      ? securityFacts.backupCodesRemaining
+      : backupCodesRemainingFromDoc;
+
     const [linkedAccounts, devices] = await Promise.all([
       listLinkedAccounts(dbUser).catch((error: unknown) => {
         // 身份绑定查询失败不应让整个安全清单 500：清单本身仍能给出双因素 / 恢复码等结论。
@@ -104,6 +123,8 @@ export async function getSecuritySummary(req: Request, res: Response) {
     const overview = buildAccountSecurityOverview(dbUser, linkedAccounts, {
       activeDeviceCount,
       otherDeviceCount,
+      backupCodesRemaining,
+      hasPasswordMaterial: securityFacts?.hasPassword,
     });
 
     return res.json({ success: true, data: overview });

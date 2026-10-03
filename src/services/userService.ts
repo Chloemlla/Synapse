@@ -2,6 +2,7 @@ import validator from "validator";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
+import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import {
   canDecryptPassword,
   protectPassword,
@@ -512,6 +513,33 @@ export const getUserSecretsById = async (id: string): Promise<UserType | null> =
   }
   const doc = await UserModel.findOne({ id }).select(USER_SECRETS_SELECT).lean();
   return doc ? (removeAvatarBase64(doc) as unknown as UserType) : null;
+};
+
+/**
+ * 账号安全总览所需的**两项事实**，用一次窄查询算出来。
+ *
+ * 为什么不直接读 `getUserById`：它的公开投影（PUBLIC_USER_SELECT，G2-22）不含密码字段
+ * 与 backupCodes，于是安全清单会分别误报「没设密码」与「恢复码已用尽」。
+ * 这里也只把布尔/计数带出去，密码材料与恢复码本体不离开存储层。
+ */
+export interface AccountSecurityFacts {
+  hasPassword: boolean;
+  backupCodesRemaining: number;
+}
+
+export const getAccountSecurityFacts = async (id: string): Promise<AccountSecurityFacts | null> => {
+  if (typeof id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new Error("非法的用户ID");
+  }
+  const doc = await UserModel.findOne({ id })
+    .select([...PASSWORD_MATERIAL_FIELDS, "backupCodes"].join(" "))
+    .lean();
+  if (!doc) return null;
+  const record = doc as unknown as Record<string, unknown> & { backupCodes?: string[] };
+  return {
+    hasPassword: hasPasswordMaterial(record),
+    backupCodesRemaining: Array.isArray(record.backupCodes) ? record.backupCodes.length : 0,
+  };
 };
 
 export const getUserAuthByUsername = async (username: string): Promise<UserType | null> => {

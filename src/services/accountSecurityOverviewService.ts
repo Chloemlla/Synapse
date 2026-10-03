@@ -1,4 +1,5 @@
 import type { User } from "../utils/userStorageTypes";
+import { hasPasswordMaterial } from "../utils/passwordMaterial";
 import { type AccountSecuritySummary, buildAccountSecuritySummary } from "./accountSecuritySummaryService";
 import type { LinkedAccountView } from "./accountIdentityService";
 
@@ -28,8 +29,11 @@ export interface AccountSecurityOverview extends AccountSecuritySummary {
   /** 已配置的二次验证因素个数（TOTP / Passkey 各算一个）。 */
   mfaFactorCount: number;
   passkeyCount: number;
-  backupCodesRemaining: number;
-  /** 恢复码剩余数量偏低（TOTP 已启用且 ≤ 2 个）。 */
+  /** 恢复码余量；`null` 表示未能读到（未知），UI 应显示「—」而不是 0。 */
+  backupCodesRemaining: number | null;
+  /** 是否拿到了权威的恢复码余量。 */
+  backupCodesKnown: boolean;
+  /** 恢复码剩余数量偏低（TOTP 已启用且 <= 2 个）。 */
   backupCodesLow: boolean;
   activeDeviceCount: number;
   otherDeviceCount: number;
@@ -40,6 +44,18 @@ export interface AccountSecurityOverview extends AccountSecuritySummary {
 export interface AccountSecurityOverviewFacts {
   activeDeviceCount?: number;
   otherDeviceCount?: number;
+  /**
+   * 恢复码余量（权威值）。调用方能用窄查询拿到时传入；不传则尝试从 `user` 上读，
+   * 读不到就是 `null`（未知），而不是 0。
+   */
+  backupCodesRemaining?: number | null;
+  /**
+   * 是否配置了密码材料（权威值）。
+   *
+   * 不传时会从 `user` 上现算，而公开投影不含密码字段 —— 那样有密码的账号会被误报成
+   * 「没有设置密码」。所以调用方**应当**从窄查询传入（见 `UserStorage.getAccountSecurityFacts`）。
+   */
+  hasPasswordMaterial?: boolean;
 }
 
 const countPasskeys = (user: User): number => {
@@ -48,25 +64,32 @@ const countPasskeys = (user: User): number => {
   return user.passkeyEnabled ? 1 : 0;
 };
 
-const hasPasswordCredential = (user: User): boolean =>
-  Boolean(user.passwordHash || user.password || user.passwordCiphertext || user.passwordWrappedDek);
+const hasPasswordCredential = (user: User): boolean => hasPasswordMaterial(user);
 
-/** 恢复码在库里存的是哈希数组，长度即「还剩几个可用」。 */
-export const countBackupCodes = (user: User): number =>
-  Array.isArray(user.backupCodes) ? user.backupCodes.length : 0;
+/**
+ * 恢复码余量。
+ *
+ * 返回 `null` = **不知道**（字段没被取到），不是 0。
+ * 这个区分是修一个真实缺陷的必要条件：`getUserById` 走的是 `PUBLIC_USER_SELECT`（G2-22 起
+ * 不再带出 backupCodes），而安全总览此前直接用它算余量 —— `Array.isArray(undefined)` 为假，
+ * 于是**每个已启用 TOTP 的用户都会被判成「恢复码已用尽」**，红色告警永远在提醒重新生成。
+ * 把「未知」和「真的为 0」分开后，这类误报不会再隐式发生。
+ */
+export const countBackupCodes = (user: User): number | null =>
+  Array.isArray(user.backupCodes) ? user.backupCodes.length : null;
 
 function buildChecks(
   user: User,
   summary: AccountSecuritySummary,
   passkeyCount: number,
-  backupCodesRemaining: number,
+  backupCodesRemaining: number | null,
   facts: AccountSecurityOverviewFacts,
 ): AccountSecurityCheck[] {
   const checks: AccountSecurityCheck[] = [];
   const totpEnabled = summary.totpEnabled;
 
   checks.push(
-    hasPasswordCredential(user)
+    (facts.hasPasswordMaterial ?? hasPasswordCredential(user))
       ? {
           id: "password",
           label: "账号密码",
@@ -110,12 +133,21 @@ function buildChecks(
     checks.push({
       id: "backup_codes",
       label: "备用恢复码",
-      status: backupCodesRemaining > 0 ? "pass" : "warn",
+      status: backupCodesRemaining && backupCodesRemaining > 0 ? "pass" : "warn",
       detail:
-        backupCodesRemaining > 0
+        backupCodesRemaining && backupCodesRemaining > 0
           ? `当前还有 ${backupCodesRemaining} 个备用恢复码。`
           : "启用 TOTP 后会生成备用恢复码；未启用 TOTP 时恢复码不影响登录。",
       action: undefined,
+    });
+  } else if (backupCodesRemaining === null) {
+    // 拿不到余量时既不说「已用尽」（误报），也不说「安全」（漏报）——按「未知即不报警」处理。
+    checks.push({
+      id: "backup_codes",
+      label: "备用恢复码",
+      status: "warn",
+      detail: "暂时无法读取备用恢复码余量（数据未能完整加载）。可在「备用恢复码」区块查看或重新生成一组。",
+      action: "regenerate_backup_codes",
     });
   } else if (backupCodesRemaining === 0) {
     checks.push({
@@ -225,7 +257,10 @@ export function buildAccountSecurityOverview(
 ): AccountSecurityOverview {
   const summary = buildAccountSecuritySummary(user, linkedAccounts);
   const passkeyCount = countPasskeys(user);
-  const backupCodesRemaining = countBackupCodes(user);
+  // 调用方给的权威值优先：`getUserById` 的公开投影不含 backupCodes，
+  // 光从 user 上读会得到「未知」。
+  const backupCodesRemaining =
+    facts.backupCodesRemaining !== undefined ? facts.backupCodesRemaining : countBackupCodes(user);
   const mfaFactorCount = (summary.totpEnabled ? 1 : 0) + (passkeyCount > 0 ? 1 : 0);
 
   return {
@@ -233,7 +268,8 @@ export function buildAccountSecurityOverview(
     mfaFactorCount,
     passkeyCount,
     backupCodesRemaining,
-    backupCodesLow: summary.totpEnabled && backupCodesRemaining <= 2,
+    backupCodesKnown: backupCodesRemaining !== null,
+    backupCodesLow: summary.totpEnabled && backupCodesRemaining !== null && backupCodesRemaining <= 2,
     activeDeviceCount: facts.activeDeviceCount ?? 0,
     otherDeviceCount: facts.otherDeviceCount ?? 0,
     checks: buildChecks(user, summary, passkeyCount, backupCodesRemaining, facts),

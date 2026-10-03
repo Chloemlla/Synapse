@@ -290,8 +290,8 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
                 <div className="flex items-center gap-2">
                   <FaShieldAlt className="shrink-0 text-slate-400" aria-hidden />
                   <span>
-                    备用恢复码：{overview.backupCodesRemaining} 个
-                    {overview.backupCodesLow ? '（偏低）' : ''}
+                    备用恢复码：{overview.backupCodesKnown ? `${overview.backupCodesRemaining} 个` : '—'}
+                    {overview.backupCodesKnown && overview.backupCodesLow ? '（偏低）' : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

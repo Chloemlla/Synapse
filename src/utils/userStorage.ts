@@ -3,7 +3,7 @@ import { emitUserAuthorityChanged } from "./userAuthorityEvents";
 import { userBootstrapService } from "./userBootstrapService";
 import { userRepairService } from "./userRepairService";
 import { userRepository } from "./userRepository";
-import type { AdminUserListPageResult, AdminUserListQueryParams } from "../services/userService";
+import type { AccountSecurityFacts, AdminUserListPageResult, AdminUserListQueryParams } from "../services/userService";
 import type { User, ValidationError } from "./userStorageTypes";
 import { InputValidationError, userValidationService } from "./userValidationService";
 
@@ -97,6 +97,11 @@ export class UserStorage {
 
   public static async getUserSecretsById(id: string): Promise<User | null> {
     return userRepository.getUserSecretsById(id);
+  }
+
+  /** 账号安全总览的窄事实（有没有密码材料 / 恢复码余量），不透出秘密本体。 */
+  public static async getAccountSecurityFacts(id: string): Promise<AccountSecurityFacts | null> {
+    return userRepository.getAccountSecurityFacts(id);
   }
 
   public static async consumeTotpCounter(id: string, counter: number): Promise<boolean> {

@@ -40,7 +40,10 @@ export interface AccountSecurityOverview {
   passkeyEnabled: boolean;
   mfaFactorCount: number;
   passkeyCount: number;
-  backupCodesRemaining: number;
+  /** 恢复码余量；`null` = 未能读到（未知），UI 应显示「—」而不是 0。 */
+  backupCodesRemaining: number | null;
+  /** 是否拿到了权威的恢复码余量。 */
+  backupCodesKnown: boolean;
   backupCodesLow: boolean;
   linkedProviderCount: number;
   fingerprintCount: number;

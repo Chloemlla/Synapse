@@ -1,5 +1,6 @@
 import logger from "./logger";
 import {
+  type AccountSecurityFacts,
   getPrimaryAdminAuthUser,
   getUserAuthByEmail,
   getUserAuthByUsername,
@@ -163,6 +164,18 @@ export const userRepository = {
       return provider.getUserSecretsById(id);
     }
     return provider.getUserById(id);
+  },
+
+  /**
+   * 账号安全总览的窄事实。provider 不支持时返回 `null`，调用方按「未知」处理
+   * （而不是当成「没有密码 / 恢复码为 0」）。
+   */
+  async getAccountSecurityFacts(id: string): Promise<AccountSecurityFacts | null> {
+    const provider = getUserStorageProvider();
+    if (typeof provider.getAccountSecurityFacts === "function") {
+      return provider.getAccountSecurityFacts(id);
+    }
+    return null;
   },
 
   async consumeTotpCounter(id: string, counter: number): Promise<boolean> {
