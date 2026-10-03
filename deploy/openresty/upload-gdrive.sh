@@ -172,11 +172,15 @@ for f in wanted:
     name = os.path.basename(f)
     size = os.path.getsize(f)
     r = REMOTE.get(name)
-    if r and int(r.get('size') or -1) == size:
-        log('  skip  %-46s 云端已存在（大小一致）' % name)
+    # 幂等靠 size + md5（Drive 会返回 md5Checksum）；只比大小会在“上次传到一半”时误判
+    if r and int(r.get('size') or -1) == size and r.get('md5Checksum') == md5_of(f):
+        log('  skip  %-46s 云端已存在（size+md5 一致）' % name)
     else:
+        if r and int(r.get('size') or -1) == size:
+            log('  redo  %-46s 云端同名但 md5 不同，重传' % name)
+        else:
+            log('  send  %-46s %.1f MB' % (name, size / 1048576.0))
         to_upload.append(f)
-        log('  send  %-46s %.1f MB' % (name, size / 1048576.0))
 
 if MODE == 'dry' or not to_upload:
     if to_upload and MODE == 'dry':
