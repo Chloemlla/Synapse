@@ -14,7 +14,7 @@ DRY=0
 NEED_SAN="${NEED_SAN:-*.chloemlla.com}"
 WARN_DAYS="${WARN_DAYS:-21}"
 SITES=/opt/1panel/www/sites
-HIST=/root/backups/cert-history
+HIST="${BACKUP_DIR:-/root/backups}"
 CONTAINER=openresty
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -66,9 +66,9 @@ for d in "$SITES"/*/ssl; do
   if [ "$DRY" = 1 ]; then
     log "[dry-run] $site: $old_end -> $END"
   else
-    mkdir -p "$HIST/$site"; ts=$(date +%Y%m%d-%H%M%S)
-    [ -f "$d/fullchain.pem" ] && cp -p "$d/fullchain.pem" "$HIST/$site/fullchain-$ts.pem"
-    [ -f "$d/privkey.pem" ] && cp -p "$d/privkey.pem" "$HIST/$site/privkey-$ts.pem"
+    ts=$(date +%Y%m%d-%H%M%S)
+    [ -f "$d/fullchain.pem" ] && cp -p "$d/fullchain.pem" "$HIST/cert-$site-fullchain-$ts.pem"
+    [ -f "$d/privkey.pem" ] && cp -p "$d/privkey.pem" "$HIST/cert-$site-privkey-$ts.pem"
     install -m 644 "$SRC/fullchain.pem" "$d/fullchain.pem"
     install -m 600 "$SRC/privkey.pem" "$d/privkey.pem"
     log "$site: $old_end -> $END"

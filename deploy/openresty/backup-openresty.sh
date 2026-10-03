@@ -7,7 +7,7 @@ set -euo pipefail
 
 KEEP="${1:-5}"
 TS=$(date +%Y%m%d-%H%M%S)
-DEST=/root/backups/openresty
+DEST="${BACKUP_DIR:-/root/backups}"
 WORK=$(mktemp -d /tmp/openresty-backup.XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$DEST"

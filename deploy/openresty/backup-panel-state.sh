@@ -6,7 +6,7 @@ set -euo pipefail
 
 KEEP="${1:-7}"
 TS=$(date +%Y%m%d-%H%M%S)
-DEST=/root/backups/panel
+DEST="${BACKUP_DIR:-/root/backups}"
 WORK=$(mktemp -d /tmp/panel-backup.XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$DEST" "$WORK/opt/1panel/db" "$WORK/opt/1panel/secret" "$WORK/opt/1panel/apps"

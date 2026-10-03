@@ -20,7 +20,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 KEEP=7; DRILL=0
 for a in "$@"; do case "$a" in --drill) DRILL=1 ;; *[0-9]*) KEEP="$a" ;; esac; done
 CONTAINER="${MONGO_CONTAINER:-mongodb}"
-DEST="${BACKUP_DIR:-/root/backups}/mongo"
+DEST="${BACKUP_DIR:-/root/backups}"
 TS=$(date +%Y%m%d-%H%M%S)
 OUT="$DEST/mongo-$TS.archive.gz"
 MAN="$DEST/mongo-$TS.manifest.txt"

@@ -12,7 +12,13 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | `backup-openresty.sh` | 备份接入层：站点/全局配置、证书、维护页、WAF 自定义配置、容器定义 + 清单 |
 | `backup-panel-state.sh` | 备份 1Panel 自身状态：DB（sqlite 在线快照）、secret、全部应用定义 |
 | `backup-mongo.sh` | MongoDB 全库 `mongodump --archive --gzip`（可 `--drill` 做真实恢复演练） |
-| `daily.sh` | 每日任务编排：上面四件事依次跑，最后给汇总与退出码 |
+| `backup-redis.sh` | Redis 快照：`BGSAVE` 强制落盘 → 归档 dump.rdb + redis.conf → 临时实例真加载校验 |
+| `backup-volumes.sh` | 容器 bind mount 与具名卷（跳开已单独覆盖的 mongo/redis/www，含 SQLite 一致性处理） |
+| `daily.sh` | 每日任务编排：上面六件事依次跑，最后给汇总与退出码 |
+
+> **产物落点：服务器上 `/root/backups/` 一个文件夹，平铺无子目录**（文件名前缀区分类型：
+> `openresty-` / `1panel-state-` / `mongo-` / `redis-` / `volumes-` / `cert-<站点>-`）。
+> 脚本与 `RESTORE.md` 也在这个目录里。
 
 ## 维护兜底页
 
@@ -75,7 +81,7 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 
 1. 选源：先看 1Panel 管理的站点目录（`sites/tts.chloemlla.com/ssl`、`sites/cap.chloemlla.com/ssl`），
    要求 SAN 命中 `*.chloemlla.com` 且**证书与私钥公钥匹配**；否则退化成「全量站点里到期最远且满足上述条件」的一个。
-2. 铺开：只改与源不一致的站点；改之前把旧证书存到 `/root/backups/cert-history/<site>/`（可单站点回滚）。
+2. 铺开：只改与源不一致的站点；改之前把旧证书存成 `/root/backups/cert-<站点>-{fullchain,privkey}-<ts>.pem`（可单站点回滚）。
 3. `docker exec openresty nginx -t` 过了才 `reload`；任一站点的证书/私钥解析不了一律不 reload。
 4. 每个站点打一行到期天数；任一张 < 21 天则退出码 2（不算失败，但日志里会 `WARNING`）。
 
@@ -89,12 +95,14 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 
 `daily.sh` 三步互相独立（一步失败不影响后两步），末尾给 `SUMMARY` + 退出码：
 
-| 步骤 | 脚本 | 产出 | 保留 |
+| 步骤 | 脚本 | 产物（均在 `/root/backups/`，平铺） | 保留 |
 | --- | --- | --- | --- |
-| 接入层配置 | `backup-openresty.sh 5` | `/root/backups/openresty/openresty-<ts>.tar.gz`（~12M） | 5 份 |
-| 站点证书 | `sync-site-certs.sh` | 直接改线上证书 + `/root/backups/cert-history/` | — |
-| 1Panel 状态 | `backup-panel-state.sh 7` | `/root/backups/panel/1panel-state-<ts>.tar.gz`（~2.2M） | 7 份 |
-| MongoDB 业务数据 | `backup-mongo.sh 7` | `/root/backups/mongo/mongo-<ts>.archive.gz`（~15M）+ manifest/counts | 7 份 |
+| 接入层配置 | `backup-openresty.sh 5` | `openresty-<ts>.tar.gz` + `.sha256`（~12M） | 5 份 |
+| 站点证书 | `sync-site-certs.sh` | 直接改线上证书 + `cert-<站点>-*.pem` | 手动清 |
+| 1Panel 状态 | `backup-panel-state.sh 7` | `1panel-state-<ts>.tar.gz` + `.sha256`（~2.2M） | 7 份 |
+| MongoDB | `backup-mongo.sh 7` | `mongo-<ts>.archive.gz` + `.manifest.txt` + `.counts.txt`（~15M） | 7 份 |
+| Redis | `backup-redis.sh 7` | `redis-<ts>.tar.gz` + `.manifest.txt`（~39K） | 7 份 |
+| 容器卷 | `backup-volumes.sh 7` | `volumes-<ts>.tar.gz` + `.manifest.txt`（~70K） | 7 份 |
 
 几个刻意的取舍：
 
@@ -110,12 +118,13 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 > **禁止入 git、禁止放进 `/opt/1panel/www` 任何目录、离线外传前必须加密**。
 >
 > 另外这是**同盘**备份，只挡误操作与配置损坏，不挡磁盘/机器失效；要防灾难得另传异机或对象存储（先加密）。
-> Mongo 归档里是**全部业务数据**（用户、审计、令牌类集合），比配置包更敏感；Redis 与其他容器数据卷**尚未覆盖**。
+> Mongo 归档里是**全部业务数据**（用户、审计、令牌类集合），比配置包更敏感。
+> 没持久化的容器（状态在可写层）不在此列，见下文「Redis 与容器卷」。
 
 ## MongoDB 业务数据
 
 `backup-mongo.sh` 在 `mongodb` 容器内跑 `mongodump`（该镜像自带 tools 100.15.0），全库导出到
-`mongo-<ts>.archive.gz`，旁边配 `manifest.txt`（镜像/mongod 版本、`container_nofile`、sha256、库清单）
+`/root/backups/mongo-<ts>.archive.gz`，旁边配 `manifest.txt`（镜像/mongod 版本、`container_nofile`、sha256、库清单）
 与 `counts.txt`（机器可读的每库 collections/objects，供演练对比）。当前 12～13 个库、315k 文档、归档 ~15M。
 
 几个要点：
@@ -151,6 +160,22 @@ docker exec mongodb sh -c 'ulimit -n'     # 本机只有 1024（硬限 524288）
 
 恢复命令（会 `--drop` 同名集合）：见服务器上 `/root/backups/RESTORE.md` 的「恢复：MongoDB」一节。
 
+## Redis 与容器卷
+
+- **Redis**（`backup-redis.sh`）：不能直接拷盘上的 `dump.rdb`——save 策略是 `3600 1 / 300 100 / 60 10000`，
+  盘上那份可能已钝一小时。所以先 `BGSAVE` 等 `rdb_last_bgsave_status:ok`，再归档 `dump.rdb` + `redis.conf`。
+  口令从容器 `Cmd` 的 `--requirepass` 取，只传变量不进 `argv`。校验方式是搭一个临时 redis（`--network none`）
+  读这份 RDB，看它是否打出 `DB loaded from disk` 并报告 `keys_loaded/expired`。
+  Redis 里主要是带 TTL 的短期键（限流/会话，实测 20 个 key 上下），过期后恢复意义有限，留着是完整性兼兜底。
+- **容器卷**（`backup-volumes.sh`）：枚举**所有容器（含已停）**的 bind mount 与具名卷（含未挂载的孤儿卷），
+  跳开已被别的备份覆盖的路径（`mongodb/data`、`redis/data`、`/opt/1panel/www`、openresty 目录、`/etc/localtime` 等）。
+  检测到挂载里有 SQLite `*-wal` 时**默认先 `docker stop` 对应容器再拷**（否则拷到一半的库不可用），拷完立即 start，
+  `--no-quiesce` 可关掉。校验：解包后抽样逐字节 `cmp` + 对 SQLite 文件跑 `PRAGMA integrity_check`。
+  实测该目录只有 ~1.5M（`/etc/alist` 的 sqlite、deepseek-harness 数据、redis.conf、几个空卷），归档 ~70K。
+
+> 注意：`tts-node`、`librechat`、`cap`、`geogebra`、`gggggg` 等容器**没有挂载任何卷**，状态在容器可写层里，
+> 重建容器就会丢（它们的持久数据在 Mongo）。这不是备份漏了，而是这些部署本来就没持久化。
+
 ### 在服务器上安装 / 重建这套东西
 
 ```bash
@@ -160,12 +185,15 @@ install -m 700 \
   /path/to/deploy/openresty/backup-openresty.sh \
   /path/to/deploy/openresty/backup-panel-state.sh \
   /path/to/deploy/openresty/backup-mongo.sh \
+  /path/to/deploy/openresty/backup-redis.sh \
+  /path/to/deploy/openresty/backup-volumes.sh \
   /path/to/deploy/openresty/sync-site-certs.sh \
   /root/backups/
 crontab -l 2>/dev/null | grep -v daily.sh > /tmp/ct.txt
 printf '25 4 * * * /root/backups/daily.sh >> /var/log/1panel-ops-backup.log 2>&1\n' >> /tmp/ct.txt
 crontab /tmp/ct.txt && rm -f /tmp/ct.txt
-/root/backups/daily.sh          # 手工跑一次，确认三步都 [ok]
+cp /path/to/deploy/openresty/RESTORE.md /root/backups/RESTORE.md   # 会被打进每份包
+/root/backups/daily.sh          # 手工跑一次，确认六步都 [ok]
 ```
 
 ## 部署 / 回滚
