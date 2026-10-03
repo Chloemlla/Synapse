@@ -209,20 +209,24 @@ prefail = 0
 for f in wanted:
     lname = os.path.basename(f)
     size = os.path.getsize(f)
-    if not lname.endswith('.age'):
-        if not AGE_RECIP:
-            log('  FAIL %-46s 本地是明文且没配 AGE_RECIPIENT（先跑 seal-backups.sh）' % lname)
-            prefail += 1
-            continue
-        log('  send  %-46s %.1f MB（明文，将即时加密）' % (lname + '.age', size / 1048576.0))
-        to_upload.append((f, lname + '.age'))
-        continue
-    r = REMOTE.get(lname)
-    if r and int(r.get('size') or -1) == size and r.get('md5Checksum') == md5_of(f):
-        log('  skip  %-46s 云端已存在（size+md5 一致）' % lname)
+    if lname.endswith('.sha256'):
+        # 校验文件保持明文：它只是哈希，留明文才能在不解密的前提下验证密文完整性
+        upname, enc = lname, False
+    elif lname.endswith('.age'):
+        upname, enc = lname, False
+    elif AGE_RECIP:
+        upname, enc = lname + '.age', True      # 本地还是明文 → 即时加密再传，绝不推明文
     else:
-        log('  send  %-46s %.1f MB' % (lname, size / 1048576.0))
-        to_upload.append((f, lname))
+        log('  FAIL %-46s 本地是明文且没配 AGE_RECIPIENT（先跑 seal-backups.sh）' % lname)
+        prefail += 1
+        continue
+    if not enc:
+        r = REMOTE.get(upname)
+        if r and int(r.get('size') or -1) == size and r.get('md5Checksum') == md5_of(f):
+            log('  skip  %-46s 云端已存在（size+md5 一致）' % upname)
+            continue
+    log('  send  %-46s %.1f MB%s' % (upname, size / 1048576.0, '（明文，将即时加密）' if enc else ''))
+    to_upload.append((f, upname, enc))
 
 if MODE == 'dry' or not to_upload:
     if to_upload and MODE == 'dry':
@@ -234,9 +238,9 @@ if MODE == 'dry' or not to_upload:
 ok = 0
 fail = prefail
 TMPDIR_UP = tempfile.mkdtemp(prefix='gd-upload-')
-for f, upname in to_upload:
+for f, upname, enc in to_upload:
     upfile = f
-    if not os.path.basename(f).endswith('.age'):     # 明文 → 即时加密（绝不上传明文）
+    if enc:                                          # 只有数据文件才即时加密（.sha256 保持明文）
         upfile = os.path.join(TMPDIR_UP, upname)
         try:
             subprocess.run(['age', '-r', AGE_RECIP, '-o', upfile, f], check=True, capture_output=True)
@@ -321,6 +325,15 @@ if PURGE:
                 log('  del   %s（明文，已换成密文副本）' % x['name'])
             else:
                 log('  WARN 删除 %s 失败: %s' % (x['name'], js))
+    # 历史 bug 产物：.sha256 被当成明文加过锁（xxx.sha256.age），校验文件不该加密，直接清
+    bogus = [v for v in REMOTE.values() if v['name'].endswith('.sha256.age')]
+    for v in bogus:
+        st, _, js = api('DELETE', 'https://www.googleapis.com/drive/v3/files/%s' % v['id'], headers=AUTH)
+        if st in (200, 204):
+            deleted += 1
+            log('  del   %s（校验文件不该加密）' % v['name'])
+        else:
+            log('  WARN 删除 %s 失败: %s' % (v['name'], js))
 
 shutil.rmtree(TMPDIR_UP, ignore_errors=True)
 log('上传完成: ok=%d fail=%d 云端删除=%d' % (ok, fail, deleted))
