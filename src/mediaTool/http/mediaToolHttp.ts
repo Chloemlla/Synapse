@@ -16,6 +16,7 @@ import {
 } from "../biliCookies";
 import { MediaJobRunner } from "../jobs/mediaJobRunner";
 import { MEDIA_EXTS, ensureDir, isAudioFile, relInsideRoot, resolveRootDir, resolveYtDlpBin, runTool, sanitizeFileName, statOrNull } from "../runtime";
+import { validatePublicUrl } from "../../utils/ssrfGuard";
 import { maskedView, type MediaSettingsPatch, type MediaSettingsStore } from "../settingsStore";
 import { normalizeTranscribeOutputs } from "../types";
 import { readSegments } from "../vivoLasr";
@@ -26,6 +27,48 @@ import type { TranscriptStore } from "../jobs/transcriptStore";
 const TEXT_EXTS = new Set([".txt", ".srt", ".json", ".vtt"]);
 const JOB_KINDS = ["bili-download", "transcribe"] as const;
 const TERMINAL: MediaJobStatus[] = ["succeeded", "failed", "cancelled"];
+
+/**
+ * B 站链接允许的主机后缀。
+ *
+ * 为什么需要白名单：`kind=bili-download` 的 `urls` 只做了 trim，就原样交给 yt-dlp。
+ * yt-dlp 对不认识的站点会走 generic extractor **真的发起请求**并把响应落盘 ——
+ * 而 `/api/admin/media-tool` 只要求 admin（不是 super），于是这成了一个管理端 SSRF：
+ * `http://169.254.169.254/latest/meta-data/...`（云元数据即云凭证）、内网服务、
+ * 本机管理端都能被服务器代持访问。UI 文案本身写的就是「B 站链接/BV 号」，白名单与
+ * 功能契约一致；`isPublicHost` 再做一层 DNS 解析后的私网地址拦截。
+ */
+const BILI_HOST_SUFFIXES = ["bilibili.com", "b23.tv", "acg.tv", "bilibili.tv"];
+
+function isAllowedBiliHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/^www\./, "");
+  if (!host) return false;
+  return BILI_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+/** 裸 BV/av 号直接拼成官方 URL；其它输入必须是 http(s) 且落在 B 站域名下。 */
+function normalizeBiliInput(raw: string): { ok: true; url: string } | { ok: false; error: string } {
+  const value = raw.trim();
+  if (/^BV[0-9A-Za-z]{8,}$/.test(value)) {
+    return { ok: true, url: `https://www.bilibili.com/video/${value}` };
+  }
+  if (/^av\d{1,20}$/i.test(value)) {
+    return { ok: true, url: `https://www.bilibili.com/video/${value.toLowerCase()}` };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { ok: false, error: `无法识别的输入（既不是 BV/av 号，也不是合法链接）：${value}` };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, error: `仅支持 http/https 链接：${value}` };
+  }
+  if (!isAllowedBiliHost(parsed.hostname)) {
+    return { ok: false, error: `仅支持 B 站链接（bilibili.com / b23.tv / acg.tv）：${value}` };
+  }
+  return { ok: true, url: parsed.toString() };
+}
 
 export interface MediaToolRouterDeps {
   mode: string;
@@ -334,10 +377,30 @@ export function createMediaToolRouter(deps: MediaToolRouterDeps): express.Router
       };
 
       if (kind === "bili-download") {
-        const urls = (body.urls ?? []).map((u) => String(u).trim()).filter(Boolean);
-        if (urls.length === 0) {
+        const rawUrls = (body.urls ?? []).map((u) => String(u).trim()).filter(Boolean);
+        if (rawUrls.length === 0) {
           res.status(400).json({ ok: false, error: "请提供至少一个 B 站链接/BV 号" });
           return;
+        }
+        if (rawUrls.length > 50) {
+          res.status(400).json({ ok: false, error: "一次最多提交 50 个链接" });
+          return;
+        }
+        const urls: string[] = [];
+        for (const raw of rawUrls) {
+          const normalized = normalizeBiliInput(raw);
+          if (!normalized.ok) {
+            res.status(400).json({ ok: false, error: normalized.error });
+            return;
+          }
+          // 白名单只限域名，不断言解析结果：若某个被允许的域名被解析到私网地址
+          // （DNS 劫持 / 内网 DNS 欺骗），这里再拦一道。
+          const safe = await validatePublicUrl(normalized.url);
+          if (!safe.ok) {
+            res.status(400).json({ ok: false, error: `${normalized.url}：${safe.error}` });
+            return;
+          }
+          urls.push(normalized.url);
         }
         record.input = { type: "urls", values: urls };
         record.params = {
