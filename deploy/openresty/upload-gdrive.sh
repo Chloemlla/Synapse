@@ -102,7 +102,8 @@ if st != 200 or 'access_token' not in js:
 AUTH = {'Authorization': 'Bearer ' + js['access_token']}
 
 # ---- 2) 目标目录（Drive 根下 GDRIVE_FOLDER，默认 backups）----
-FOLDER = cfg.get('GDRIVE_FOLDER', 'backups')
+# 环境变量优先，方便演练：GDRIVE_FOLDER=backups-selftest ./upload-gdrive.sh
+FOLDER = os.environ.get('GDRIVE_FOLDER') or cfg.get('GDRIVE_FOLDER') or 'backups'
 q = "name='%s' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false" % FOLDER
 st, _, js = api('GET', 'https://www.googleapis.com/drive/v3/files?fields=files(id,name)&q=' + urllib.parse.quote(q), headers=AUTH)
 if js.get('files'):
