@@ -205,7 +205,13 @@ cp /path/to/deploy/openresty/RESTORE.md /root/backups/RESTORE.md   # 会被打�
 
 备份里是站点私钥、WAF 密钥、1Panel 数据库、全量业务数据——明文只靠 600 权限挡着，磁盘被拷走就全露。所以**本地产物一律 age 加密**：
 
-- **公钥**（`AGE_RECIPIENT`，`age1…`）放 `gdrive.env`/服务器即可；**私钥**（`AGE_IDENTITY`）离线保存（例如 `F:\sshkeyge-key.txt`）。公钥能加密，只有私钥能解密——**私钥丢了历史备份全废**，离线存两处。
+- **公钥**（`AGE_RECIPIENT`，`age1…`）放 `gdrive.env`/服务器即可；**私钥不在服务器上**，离线保存（本机 `F:\sshkeyge-key.txt`）。公钥能加密，只有私钥能解密——**私钥丢了本地与云端的备份全部作废**，务必离线存两份。
+- 因此：**服务器上没有 `AGE_IDENTITY` 是正常状态**。此时 seal 照常加密（公钥就够），只把"解密回环校验"降级成结构校验（age v1 头 + 非空），密文完整性由 `.age.sha256` 兜底。
+- 要**验证**历史密文：把离线私钥临时拷上来，跑一次
+  ```bash
+  /root/backups/seal-backups.sh --verify-all --identity /path/age-key.txt   # 逐份：密文 sha256 + 完整解密一遍
+  ```
+  用完把私钥从服务器删掉。要**恢复**才是必须私钥：`restore.sh <子命令> --identity /path/age-key.txt`（各子命令会自动解密；没私钥时 `check` 仍能验密文完整性，`extract`/`restore` 会明确报错）。
 - `seal-backups.sh`：加密 → **解密回环比对**（`age -d -i key | cmp - 原文`）→ 通过才删明文 → `.sha256` 改写成**密文**哈希。没有私钥/公钥就明确报错，绝不产出自己没法验证的密文。
   ```bash
   /root/backups/seal-backups.sh --check       # 看还有多少明文
