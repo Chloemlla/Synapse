@@ -137,3 +137,13 @@ curl -skI --resolve eye.chloemlla.com:443:127.0.0.1 https://eye.chloemlla.com/ |
 - 校验：`.age.sha256` 是**密文**哈希，**不解密**就能验（`sha256sum -c`）。
 - 自助恢复：`restore.sh {list,check,extract,decrypt,openresty,panel,mongo,redis,volumes,cert}`，全部支持 `--simulate`，破坏性操作要 `--yes`。
 - 存量迁移：`seal-backups.sh --check` / `--all`（幂等）。
+
+### 私钥已离线（服务器上故意没有）
+
+- 服务器没有 `age-key.txt` 是**正常状态**：加密只需要公钥（`gdrive.env` 的 `AGE_RECIPIENT`），
+  此时 seal 会把“解密回环校验”降成结构校验（age v1 头 + 非空），密文完整性由 `.age.sha256` 兜底。
+- **验证历史密文**（建议每月一次）：把离线那份拷上来跑
+  `seal-backups.sh --verify-all --identity /path/age-key.txt`（逐份：密文 sha256 + 完整解密一遍），跑完即删。
+- **恢复**：`restore.sh <子命令> --identity /path/age-key.txt`；没私钥时 `check` 仍能验密文完整性，
+  `extract`/各恢复子命令会明确报错而不是静默失败。
+- 私钥丢了 = 本地 + 云端的备份全部作废，离线存两份。
