@@ -1,5 +1,6 @@
 import { config, runtimeMutableConfig, startupConfig } from "../config/config";
 import {
+import { RuntimeConfigService } from "./runtimeConfigService";
   appendMissingEnvironmentIssue,
   createConfigurationIssue,
   type MissingConfigurationIssue,
@@ -105,7 +106,13 @@ export function appendCoreConfigurationIssues(issues: MissingConfigurationIssue[
     );
   }
 
-  if (config.publicShortUrl.enabled && !config.publicShortUrl.password) {
+  // R3-06：后台保存的服务密码现在是 bcrypt 哈希，`config.publicShortUrl.password` 会是空串 ——
+  // 只看明文会把「已配置」误报成「未配置」（同一处配置检查在口令改哈希后必须一起改）。
+  const adminSecurityConfig = RuntimeConfigService.getCachedConfig().adminSecurity;
+  const publicShortUrlPasswordConfigured = Boolean(
+    adminSecurityConfig.publicShortUrlPassword || adminSecurityConfig.publicShortUrlPasswordHash,
+  );
+  if (config.publicShortUrl.enabled && !publicShortUrlPasswordConfigured) {
     issues.push(
       createConfigurationIssue(
         "public-short-url-password",

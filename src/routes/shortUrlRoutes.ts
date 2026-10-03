@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { requireAdminScope } from "../middleware/adminScope";
-import crypto from "node:crypto";
 import { ShortUrlController } from "../controllers/shortUrlController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
@@ -10,6 +9,7 @@ import { createLimiter } from "../middleware/routeLimiters";
 import { replayProtection } from "../middleware/replayProtection";
 import { mongoose } from "../services/mongoService";
 import { ShortUrlService } from "../services/shortUrlService";
+import { RuntimeConfigService } from "../services/runtimeConfigService";
 import { config } from "../config/config";
 
 // 允许的 URL 协议白名单（防止 javascript:/data:/file: 等协议导致的开放重定向）
@@ -24,12 +24,9 @@ function isValidRedirectTarget(target: string): boolean {
   }
 }
 
-// 定时安全字符串比较（G3-21：口令比较不得用短路 ===）
-function timingSafeStringEqual(candidate: string, expected: string): boolean {
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+// 定时安全字符串比较已收敛到 utils/timingSafeCompare（本文件原有的这份用了短路
+// `a.length === b.length &&`，会提前返回并泄露长度差异；公共短链口令改走
+// RuntimeConfigService.verifyAdminSecurityPassword 后这里不再需要本地副本）。
 
 const router = Router();
 const redirectRouter = Router();
@@ -212,12 +209,17 @@ router.post("/public/create", publicCreateLimiter, optionalAdminAuth, async (req
     const adminUser = sessionAdmin(req);
 
     if (!adminUser) {
-      const publicShortUrlPassword = config.publicShortUrl.password;
-      if (!publicShortUrlPassword) {
+      // R3-06：后台保存的服务密码以 bcrypt 哈希存在运行时配置里；
+      // 「已启用但无口令」的 503 判据要把哈希也算作已配置。
+      const hasPublicShortUrlPassword = await RuntimeConfigService.hasAdminSecurityPassword("publicShortUrlPassword");
+      if (!hasPublicShortUrlPassword) {
         return res.status(503).json({ error: "公共短链创建服务未正确配置" });
       }
 
-      if (!password || !timingSafeStringEqual(String(password), publicShortUrlPassword)) {
+      if (
+        !password ||
+        !(await RuntimeConfigService.verifyAdminSecurityPassword("publicShortUrlPassword", String(password)))
+      ) {
         return res.status(403).json({ error: "密码错误" });
       }
     }

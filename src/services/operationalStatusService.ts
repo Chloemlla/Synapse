@@ -1,6 +1,7 @@
-import crypto from "node:crypto";
 import os from "node:os";
 import { config } from "../config/config";
+import { RuntimeConfigService } from "./runtimeConfigService";
+import { timingSafeStringEqual } from "../utils/timingSafeCompare";
 
 export interface ServerStatusSnapshot {
   boot_time: string;
@@ -18,33 +19,20 @@ export interface ServerStatusSnapshot {
   };
 }
 
-const MAX_SERVER_STATUS_PASSWORD_BYTES = 1024;
-
-function timingSafeStringEqual(candidate: string, expected: string): boolean {
-  const candidateLength = Buffer.byteLength(candidate, "utf8");
-  const expectedLength = Buffer.byteLength(expected, "utf8");
-
-  if (candidateLength > MAX_SERVER_STATUS_PASSWORD_BYTES) {
+// R3-06：比较实现收敛到 utils/timingSafeCompare（本文件原来是 3 份同实现之一）。
+// 校验改为 async 并委托给运行时配置：环境变量默认值仍在本进程明文比对，
+// 后台改过的口令以 bcrypt 哈希存在 Mongo 里（不再明文落库）。
+export async function isServerStatusPasswordValid(candidate: unknown): Promise<boolean> {
+  if (typeof candidate !== "string" || !candidate) {
     return false;
   }
 
-  const compareLength = Math.max(candidateLength, expectedLength);
-  const candidateBuffer = Buffer.alloc(compareLength);
-  const expectedBuffer = Buffer.alloc(compareLength);
-
-  Buffer.from(candidate, "utf8").copy(candidateBuffer);
-  Buffer.from(expected, "utf8").copy(expectedBuffer);
-
-  return crypto.timingSafeEqual(candidateBuffer, expectedBuffer) && candidateLength === expectedLength;
-}
-
-export function isServerStatusPasswordValid(candidate: unknown): boolean {
   const configuredPassword = config.serverStatusPassword?.trim();
-  if (typeof candidate !== "string" || !candidate || !configuredPassword) {
-    return false;
+  if (configuredPassword && timingSafeStringEqual(candidate, configuredPassword)) {
+    return true;
   }
 
-  return timingSafeStringEqual(candidate, configuredPassword);
+  return RuntimeConfigService.verifyAdminSecurityPassword("serverStatusPassword", candidate);
 }
 
 // G5-34: CPU 百分比需两次采样差值除以经过时间（与 profilingService 一致），不能用累计 CPU 秒当百分比。

@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import {
   buildRuntimeConfigDefaults,
   cloneRuntimeConfigDefaults,
@@ -38,6 +39,7 @@ import {
 } from "../utils/generationCodePolicy";
 import logger from "../utils/logger";
 import { normalizeScamalyticsUser, validateScamalyticsUser } from "../utils/scamalytics";
+import { timingSafeStringEqual } from "../utils/timingSafeCompare";
 import { mongoose } from "./mongoService";
 
 const FALLBACK_BASE_URL = "https://chloemlla.com";
@@ -429,9 +431,25 @@ function normalizeStoredAdminSecurityConfig(
 
   return {
     operationPassword: normalizeOptionalString(raw.operationPassword, defaults.operationPassword, 1024),
+    // bcrypt 摘要固定 60 字符；留 200 字节冗余。
+    operationPasswordHash: normalizeOptionalString(
+      raw.operationPasswordHash,
+      defaults.operationPasswordHash ?? "",
+      200,
+    ),
     serverStatusPassword: normalizeOptionalString(raw.serverStatusPassword, defaults.serverStatusPassword, 1024),
+    serverStatusPasswordHash: normalizeOptionalString(
+      raw.serverStatusPasswordHash,
+      defaults.serverStatusPasswordHash ?? "",
+      200,
+    ),
     publicShortUrlEnabled: normalizeBoolean(raw.publicShortUrlEnabled, defaults.publicShortUrlEnabled),
     publicShortUrlPassword: normalizeOptionalString(raw.publicShortUrlPassword, defaults.publicShortUrlPassword, 1024),
+    publicShortUrlPasswordHash: normalizeOptionalString(
+      raw.publicShortUrlPasswordHash,
+      defaults.publicShortUrlPasswordHash ?? "",
+      200,
+    ),
   };
 }
 
@@ -2498,17 +2516,86 @@ export class RuntimeConfigService {
     const config = doc ? normalizeStoredAdminSecurityConfig(doc.value) : runtimeConfigDefaults.adminSecurity;
     runtimeConfigCache.adminSecurity = config;
 
+    // 已哈希化时明文为空，这里给一个固定掩码而不是空串：空串会被 UI 当成「未配置」。
+    const display = (plain: string, hash?: string): string =>
+      plain ? maskSecret(plain) : hash ? "********" : "";
+
     return {
       setting: {
         config: {
-          operationPassword: maskSecret(config.operationPassword),
-          serverStatusPassword: maskSecret(config.serverStatusPassword),
+          operationPassword: display(config.operationPassword, config.operationPasswordHash),
+          serverStatusPassword: display(config.serverStatusPassword, config.serverStatusPasswordHash),
           publicShortUrlEnabled: config.publicShortUrlEnabled,
-          publicShortUrlPassword: maskSecret(config.publicShortUrlPassword),
+          publicShortUrlPassword: display(config.publicShortUrlPassword, config.publicShortUrlPasswordHash),
         },
         updatedAt: doc?.updatedAt?.toISOString(),
       },
     };
+  }
+
+  /**
+   * 该字段是否已配置（哈希或明文任一非空）。
+   *
+   * 存在的意义：口令改存 bcrypt 后，「已配置」不再等于「读到的明文非空」，
+   * 调用方（公共短链 503 判据、配置体检提示）需要准确的「配了没」而不是值本身。
+   */
+  static async hasAdminSecurityPassword(
+    field: "operationPassword" | "serverStatusPassword" | "publicShortUrlPassword",
+  ): Promise<boolean> {
+    const stored = await readRuntimeConfigDoc("ADMIN_SECURITY");
+    const config = stored
+      ? normalizeStoredAdminSecurityConfig(stored.value)
+      : runtimeConfigCache.adminSecurity;
+
+    if (field === "operationPassword") {
+      return Boolean(config.operationPassword || config.operationPasswordHash);
+    }
+    if (field === "serverStatusPassword") {
+      return Boolean(config.serverStatusPassword || config.serverStatusPasswordHash);
+    }
+    return Boolean(config.publicShortUrlPassword || config.publicShortUrlPasswordHash);
+  }
+
+  /**
+   * 校验后台保存的管理员口令（bcrypt）或环境变量默认明文。
+   *
+   * 顺序：先比哈希（本轮新写入的形态），再退到明文（环境变量默认值 / 旧版遗留行），
+   * 两者都不命中才判否 —— 这样升级过程不需要任何数据迁移。
+   */
+  static async verifyAdminSecurityPassword(
+    field: "operationPassword" | "serverStatusPassword" | "publicShortUrlPassword",
+    candidate: unknown,
+  ): Promise<boolean> {
+    if (typeof candidate !== "string" || !candidate) return false;
+
+    const stored = await readRuntimeConfigDoc("ADMIN_SECURITY");
+    const config = stored
+      ? normalizeStoredAdminSecurityConfig(stored.value)
+      : runtimeConfigCache.adminSecurity;
+
+    const hashField =
+      field === "operationPassword"
+        ? config.operationPasswordHash
+        : field === "serverStatusPassword"
+          ? config.serverStatusPasswordHash
+          : config.publicShortUrlPasswordHash;
+
+    if (hashField) {
+      try {
+        if (await bcrypt.compare(candidate, hashField)) return true;
+      } catch (error) {
+        logger.warn("[RuntimeConfig] 管理员口令哈希比对失败", { field, error });
+      }
+    }
+
+    const plainField =
+      field === "operationPassword"
+        ? config.operationPassword
+        : field === "serverStatusPassword"
+          ? config.serverStatusPassword
+          : config.publicShortUrlPassword;
+
+    return Boolean(plainField) && timingSafeStringEqual(candidate, plainField);
   }
 
   static async setAdminSecuritySetting(input: Partial<AdminSecurityRuntimeConfig>): Promise<{ updatedAt: string }> {
@@ -2517,29 +2604,53 @@ export class RuntimeConfigService {
       ? normalizeStoredAdminSecurityConfig(currentDoc.value)
       : runtimeConfigCache.adminSecurity;
 
-    const nextConfig: AdminSecurityRuntimeConfig = {
-      operationPassword:
-        typeof input.operationPassword === "string" && input.operationPassword.trim().length > 0
-          ? input.operationPassword.trim().slice(0, 1024)
-          : current.operationPassword,
-      serverStatusPassword:
-        typeof input.serverStatusPassword === "string" && input.serverStatusPassword.trim().length > 0
-          ? input.serverStatusPassword.trim().slice(0, 1024)
-          : current.serverStatusPassword,
-      publicShortUrlEnabled: normalizeBoolean(input.publicShortUrlEnabled, current.publicShortUrlEnabled),
-      publicShortUrlPassword:
-        typeof input.publicShortUrlPassword === "string" && input.publicShortUrlPassword.trim().length > 0
-          ? input.publicShortUrlPassword.trim().slice(0, 1024)
-          : current.publicShortUrlPassword,
+    // R3-06：后台写入的口令一律落 bcrypt 哈希；明文位清空。留空 = 保留已存值。
+    const resolveSecret = async (
+      incoming: unknown,
+      currentPlain: string,
+      currentHash: string | undefined,
+    ): Promise<{ plain: string; hash: string }> => {
+      if (typeof incoming === "string" && incoming.trim().length > 0) {
+        const value = incoming.trim().slice(0, 1024);
+        return { plain: "", hash: await bcrypt.hash(value, 10) };
+      }
+      return { plain: currentPlain, hash: currentHash ?? "" };
     };
 
-    if (!nextConfig.operationPassword) {
+    const operationSecret = await resolveSecret(
+      input.operationPassword,
+      current.operationPassword,
+      current.operationPasswordHash,
+    );
+    const serverStatusSecret = await resolveSecret(
+      input.serverStatusPassword,
+      current.serverStatusPassword,
+      current.serverStatusPasswordHash,
+    );
+    const publicShortUrlSecret = await resolveSecret(
+      input.publicShortUrlPassword,
+      current.publicShortUrlPassword,
+      current.publicShortUrlPasswordHash,
+    );
+
+    const nextConfig: AdminSecurityRuntimeConfig = {
+      operationPassword: operationSecret.plain,
+      operationPasswordHash: operationSecret.hash,
+      serverStatusPassword: serverStatusSecret.plain,
+      serverStatusPasswordHash: serverStatusSecret.hash,
+      publicShortUrlEnabled: normalizeBoolean(input.publicShortUrlEnabled, current.publicShortUrlEnabled),
+      publicShortUrlPassword: publicShortUrlSecret.plain,
+      publicShortUrlPasswordHash: publicShortUrlSecret.hash,
+    };
+
+    // 「已配置」的判据要同时看哈希与明文，否则把口令改存哈希后会被误判为空。
+    if (!nextConfig.operationPassword && !nextConfig.operationPasswordHash) {
       throw new Error("管理员操作密码不能为空");
     }
-    if (!nextConfig.serverStatusPassword) {
+    if (!nextConfig.serverStatusPassword && !nextConfig.serverStatusPasswordHash) {
       throw new Error("服务器状态密码不能为空");
     }
-    if (nextConfig.publicShortUrlEnabled && !nextConfig.publicShortUrlPassword) {
+    if (nextConfig.publicShortUrlEnabled && !nextConfig.publicShortUrlPassword && !nextConfig.publicShortUrlPasswordHash) {
       throw new Error("启用公共短链创建前需要配置服务密码");
     }
 

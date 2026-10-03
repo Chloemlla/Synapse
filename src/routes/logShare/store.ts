@@ -96,7 +96,8 @@ export async function checkAdminPassword(password: string) {
     logger.warn("[LogShare] 管理员密码校验失败", { reason: "missing-password" });
     return false;
   }
-  if (isAdminOperationPasswordValid(password)) {
+  // R3-06：该校验改为 async（后台口令以 bcrypt 哈希存库）。
+  if (await isAdminOperationPasswordValid(password)) {
     logger.info("[LogShare] 管理员操作密码校验通过");
     return true;
   }

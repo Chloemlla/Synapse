@@ -55,9 +55,10 @@ export class DiagnosticsController {
     res.json({ success: true });
   }
 
-  static getServerStatus(req: Request, res: Response): void {
+  static async getServerStatus(req: Request, res: Response): Promise<void> {
     // 已登录管理员由 optionalAdminAuth 确认会话后免填口令；其余调用方仍凭 SERVER_PASSWORD。
-    if (!sessionAdmin(req) && !isServerStatusPasswordValid(req.body?.password)) {
+    // R3-06：口令校验改为 async（后台保存的那份是 bcrypt 哈希，必须异步比对）。
+    if (!sessionAdmin(req) && !(await isServerStatusPasswordValid(req.body?.password))) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }

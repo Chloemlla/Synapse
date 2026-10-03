@@ -609,16 +609,25 @@ export const config = {
   frontendBaseUrl: startupConfig.frontendBaseUrl,
   auditLogMasking: startupConfig.security.auditLogMasking,
   get adminOperationPassword() {
+    /** 明文操作口令；仅在「口令来自环境变量/启动默认、未在后台改过」时非空。 */
     return runtimeMutableConfig.adminSecurity.operationPassword;
   },
   get serverStatusPassword() {
+    /** 明文服务器状态口令；同上，后台改过则为空（哈希在运行时配置里）。 */
     return runtimeMutableConfig.adminSecurity.serverStatusPassword;
   },
   get publicShortUrl() {
     const adminSecurity = runtimeMutableConfig.adminSecurity;
     return {
       enabled: adminSecurity.publicShortUrlEnabled,
+      /**
+       * 明文服务口令。R3-06 后，**在后台保存过的口令一律以 bcrypt 哈希入账**，
+       * 此时本字段为空串 —— 任何「配了没」的判断请用 `hasPassword`（或
+       * `RuntimeConfigService.hasAdminSecurityPassword`），不要用 `!password`，
+       * 否则会把「已配置」误报成「未配置」。
+       */
       password: adminSecurity.publicShortUrlPassword,
+      hasPassword: Boolean(adminSecurity.publicShortUrlPassword || adminSecurity.publicShortUrlPasswordHash),
     };
   },
   get ipqs() {

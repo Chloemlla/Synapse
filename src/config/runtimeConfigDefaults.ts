@@ -91,10 +91,22 @@ export interface EmailRuntimeConfig {
 }
 
 export interface AdminSecurityRuntimeConfig {
+  /**
+   * 运行时配置里的管理员口令。
+   *
+   * R3-06：后台写入的值一律以 **bcrypt 哈希**存在 `<x>Hash` 字段里，本字段只保留
+   * 「来自环境变量/启动默认」的明文（未在后台改过时）以及旧版遗留的明文行。
+   * 三个字段只被用于**比对**（不是一个需要还原发给别人的共享密钥），所以哈希化不影响能力，
+   * 却能让「Mongo 备份/只读凭据泄露」不再等于「拿到管理员口令」——这是本仓 AGENTS.md
+   * 「密码一律 bcrypt 哈希」的既有标准，之前只有这三个字段漏了。
+   */
   operationPassword: string;
+  operationPasswordHash?: string;
   serverStatusPassword: string;
+  serverStatusPasswordHash?: string;
   publicShortUrlEnabled: boolean;
   publicShortUrlPassword: string;
+  publicShortUrlPasswordHash?: string;
 }
 
 export interface SynapseAndroidRuntimeConfig {
@@ -445,9 +457,12 @@ export function buildRuntimeConfigDefaults(options: {
     },
     adminSecurity: {
       operationPassword: options.adminPassword,
+      operationPasswordHash: "",
       serverStatusPassword: options.serverStatusPassword,
+      serverStatusPasswordHash: "",
       publicShortUrlEnabled: options.publicShortUrlEnabled,
       publicShortUrlPassword: options.publicShortUrlPassword || "",
+      publicShortUrlPasswordHash: "",
     },
     synapseAndroid: {
       packageName: options.synapseAndroidPackageName?.trim() || "com.chloemlla.synapse.mobile",
