@@ -17,7 +17,9 @@ interface TtsHistoryDocument extends TtsHistoryRecord {
 
 const REVIEW_STATUSES: TtsHistoryReviewStatus[] = ["none", "needs_review", "in_review", "fixed", "dismissed"];
 
-// 历史记录保留期：90 天（与 translationLog/auditLog 一致）。
+// 历史记录保留期：90 天。
+// 注意：不再声称「与 translationLog/auditLog 一致」—— 审计日志已于 2026-10-03 收窄到 60 天
+// （用户可读的生成记录与合规审计日志保留期不同是有意为之，写死一致反而会误导后来者）。
 const HISTORY_TTL_SECONDS = 90 * 24 * 60 * 60;
 const REDACT_TEXT_MAX_LENGTH = 64;
 

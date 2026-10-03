@@ -6,6 +6,7 @@
   "main": "dist/app.js",
   "sideEffects": true,
   "scripts": {
+    "check:imports": "node scripts/check-nested-imports.mjs",
     "start": "node dist/app.js",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "node scripts/generate-admin-spa-paths.js && nodemon --watch src -e ts --exec ts-node src/app.ts",

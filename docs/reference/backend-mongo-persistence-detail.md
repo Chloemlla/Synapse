@@ -207,7 +207,7 @@ TTS 当前不是内存队列，核心状态保存在 MongoDB。
 - `tempfingerprints.expiresAt`
 - `ip_verification_tokens.expiresAt`
 - `policy_consents.expiresAt`
-- `audit_logs.createdAt`，90 天
+- `audit_logs.createdAt`，60 天（2026-10-03 起由 90 天收窄；存量库需执行 `ts-node src/scripts/applyAuditLogTtl.ts` 原地改 TTL）
 - `ip_infos.timestamp`，1 小时
 - `data_collections.timestamp`，仅当 `DATA_COLLECTION_TTL_DAYS` 配置后启用
 

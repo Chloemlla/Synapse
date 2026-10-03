@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { NextFunction, Request, Response } from "express";
-import { AuditLogModel, type IAuditLog } from "../models/auditLogModel";
+import { AuditLogModel, AUDIT_LOG_RETENTION_DAYS as AUDIT_LOG_RETENTION_DAYS_FROM_SCHEMA, type IAuditLog } from "../models/auditLogModel";
 import { isSensitiveAuditField } from "../utils/auditRedaction";
 import { escapeRegexLiteral } from "../utils/regexEscape";
 import logger from "../utils/logger";
@@ -147,7 +147,9 @@ const ALLOWED_RESULTS = new Set(["success", "failure"]);
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 const MAX_PAGE_SIZE = 100;
 const MAX_EXPORT_ROWS = 5000;
-const AUDIT_LOG_RETENTION_DAYS = 90;
+// 保留期与 TTL 索引同源（models/auditLogModel.ts）：接口只把它作为事实回报给前端，
+// 两边写不同数字会让「保留 N 天」的提示与实际过期行为不一致。
+const AUDIT_LOG_RETENTION_DAYS = AUDIT_LOG_RETENTION_DAYS_FROM_SCHEMA;
 
 const AUDIT_LOG_DEDUP_ROUTE_LOGS = process.env.AUDIT_LOG_DEDUP_ROUTE_LOGS !== "false";
 const AUDIT_LOG_CAPTURE_PAYLOADS = process.env.AUDIT_LOG_CAPTURE_PAYLOADS === "true";

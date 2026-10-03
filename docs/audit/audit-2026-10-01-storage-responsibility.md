@@ -35,7 +35,7 @@
 | 一次性 nonce（主链路） | Redis + Lua 原子消费，内存回退 | ✅ | `src/services/nonceStore.ts:39-50` |
 | 人机验证挑战 nonce | Redis（`shc:nonce` 前缀） | ✅ | `src/services/smartHumanCheckService.ts:568-569` |
 | 令牌类集合 | Mongo + TTL 索引 | ✅ | accessToken / ipVerificationToken / mobileClientToken / oauth / tempFingerprint / tamperEvent / proxycheckRiskCache / lumen 系列（脚本输出里 `TTL索引=有`） |
-| 审计日志 | Mongo + 90 天 TTL | ✅ | `src/models/auditLogModel.ts:100` |
+| 审计日志 | Mongo + 60 天 TTL（2026-10-03 由 90 天收窄） | ✅ | `src/models/auditLogModel.ts:100` |
 | 配置热值（Turnstile/Cap key、runtime config） | 进程内 TTL 缓存 + 写时失效 | ✅ | `src/services/turnstile/models.ts:14,129`、`src/services/runtimeConfigService.ts:80` |
 | LibreChat 会话历史 | Mongo + 文件/内存降级（原子写） | ✅ | `src/services/libreChatService.ts`（`librechat/atomicJsonWriter.ts`） |
 | 调度清理 | 进程内定时器（单实例）+ Mongo 侧 TTL | ⚠️ 见 S1 | `src/services/schedulerService.ts:110-116` |
