@@ -15,7 +15,7 @@ const sections: PolicySection[] = [
     title: '数据保存期限与删除',
     summary: '不同数据有不同的保存期限',
     icon: 'retention',
-    items: ['审计日志：默认保留 90 天', '政策同意记录：默认有效期 30 天'],
+    items: ['审计日志：默认保留 60 天', '政策同意记录：默认有效期 30 天'],
   },
 ];
 

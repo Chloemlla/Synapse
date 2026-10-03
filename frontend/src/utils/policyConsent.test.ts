@@ -64,7 +64,7 @@ describe('policyConsent', () => {
 describe('policyConsent helpers used by the panels', () => {
   it('exposes a human-readable title per agreement key', () => {
     expect(POLICY_CONSENT_ITEMS.map(item => item.title)).toEqual([
-      '服务条款',
+      '服务条款与隐私政策',
       '使用政策',
       '服务专项条款',
       '支持地区',
@@ -72,7 +72,7 @@ describe('policyConsent helpers used by the panels', () => {
   });
 
   it('describes unknown keys verbatim instead of throwing', () => {
-    expect(describeAgreementKey('terms')).toBe('服务条款');
+    expect(describeAgreementKey('terms')).toBe('服务条款与隐私政策');
     expect(describeAgreementKey('brand-new-agreement')).toBe('brand-new-agreement');
   });
 

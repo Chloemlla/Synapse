@@ -1,4 +1,4 @@
-// 登录/注册必须逐项勾选的四份文件。
+// 登录/注册必须逐项勾选的四份文件（服务条款与隐私政策 / 使用政策 / 服务专项条款 / 支持地区）。
 // 键名、复选框原文与锚点必须与后端 src/config/policyMeta.ts 的 POLICY_AGREEMENT_KEYS 以及
 // src/config/policyDocument.ts 的 POLICY_AGREEMENTS 逐项一致；两侧各有契约测试钉住同一份清单，
 // 改一侧而不改另一侧会在 CI 失败。
