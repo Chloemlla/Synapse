@@ -21,11 +21,18 @@ KEEP_LIST=/tmp/vol-keep.txt
 SKIP_NOTES=/tmp/vol-skip.txt
 WORK=$(mktemp -d /tmp/vol-verify.XXXXXX)
 STOPPED=''
+STOPMARK="$DEST/.quiesce-inprogress"
 mkdir -p "$DEST"; chmod 700 "$DEST"
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
-restart() { local c; for c in $STOPPED; do docker start "$c" >/dev/null 2>&1 && log "已重新启动 $c"; done; STOPPED=''; }
+restart() { local c; for c in $STOPPED; do docker start "$c" >/dev/null 2>&1 && log "已重新启动 $c"; done; STOPPED=''; rm -f "$STOPMARK"; }
 cleanup() { restart; rm -f "$OUT.tmp" "$OUT.err"; rm -rf "$WORK"; }
 trap cleanup EXIT
+# 上次若被强杀（容器停了但脚本没跑完），先把它们拉起来
+if [ -f "$STOPMARK" ]; then
+  log 'WARN: 上次中断留下暂停标记，先恢复容器'
+  for c in $(cat "$STOPMARK"); do docker start "${c#/}" >/dev/null 2>&1 && log "  已启动 ${c#/}"; done
+  rm -f "$STOPMARK"
+fi
 
 skipped() {
   case "$1" in
@@ -81,6 +88,7 @@ done < "$LIST"
 TOSTOP=$(printf '%s\n' $TOSTOP | grep -v '^(未挂载)$' | sort -u | tr '\n' ' ')
 if [ "$QUIESCE" = 1 ] && [ -n "$TOSTOP" ]; then
   log "检测到 WAL，先停容器保证一致: $TOSTOP"
+  printf '%s\n' $TOSTOP > "$STOPMARK"
   for c in $TOSTOP; do
     if docker stop "$c" >/dev/null 2>&1; then STOPPED="$STOPPED $c"; else log "WARN: 停 $c 失败，改为热拷"; fi
   done
