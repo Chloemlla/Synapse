@@ -10,6 +10,8 @@ import VerificationMethodSelector from '../components/VerificationMethodSelector
 // 拿到 undefined，React 报 "Element type is invalid"，10 个用例全部在渲染阶段就挂。
 // 保留重复 mock 只会让两边不一致，所以删掉，让全局生效。
 
+// F1-13 把同一因素的说法收敛为「通行密钥 (Passkey)」「动态验证码 (TOTP)」，
+// 断言跟着可见文案走。
 describe('VerificationMethodSelector', () => {
   const mockOnClose = vi.fn();
   const mockOnSelectMethod = vi.fn();
@@ -36,8 +38,8 @@ describe('VerificationMethodSelector', () => {
     expect(
       screen.getByText((_, element) => element?.textContent === '为 testuser 选择安全验证方式')
     ).toBeInTheDocument();
-    expect(screen.getByText('Passkey 验证')).toBeInTheDocument();
-    expect(screen.getByText('动态口令 (TOTP)')).toBeInTheDocument();
+    expect(screen.getByText('通行密钥 (Passkey)')).toBeInTheDocument();
+    expect(screen.getByText('动态验证码 (TOTP)')).toBeInTheDocument();
     expect(screen.getByText('安全提示')).toBeInTheDocument();
     expect(screen.getByText('取消')).toBeInTheDocument();
   });
@@ -69,7 +71,7 @@ describe('VerificationMethodSelector', () => {
       />
     );
 
-    const passkeyOption = screen.getByText('Passkey 验证').closest('.group');
+    const passkeyOption = screen.getByText('通行密钥 (Passkey)').closest('.group');
     userEvent.click(passkeyOption!);
 
     // user-event v14 的 click 返回 Promise，事件在下一个宏任务才派发；不 await 的话
@@ -90,7 +92,7 @@ describe('VerificationMethodSelector', () => {
       />
     );
 
-    const totpOption = screen.getByText('动态口令 (TOTP)').closest('.group');
+    const totpOption = screen.getByText('动态验证码 (TOTP)').closest('.group');
     userEvent.click(totpOption!);
 
     await waitFor(() => {
@@ -109,7 +111,7 @@ describe('VerificationMethodSelector', () => {
       />
     );
 
-    const passkeyOption = screen.getByText('Passkey 验证').closest('.group');
+    const passkeyOption = screen.getByText('通行密钥 (Passkey)').closest('.group');
     await userEvent.click(passkeyOption!);
 
     // 在加载状态下不应该调用选择方法。这里必须 await：不 await 的话事件还没派发，
@@ -219,7 +221,7 @@ describe('VerificationMethodSelector', () => {
 
     // 22607ecf 改版后描述文字不再用 line-clamp-2 截断（那是旧版的类），标题改用 truncate 防止
     // 长方法名撑破卡片。断言跟着契约走：两条验证方式的标题都必须带 truncate。
-    expect(screen.getByText('Passkey 验证').className).toContain('truncate');
-    expect(screen.getByText('动态口令 (TOTP)').className).toContain('truncate');
+    expect(screen.getByText('通行密钥 (Passkey)').className).toContain('truncate');
+    expect(screen.getByText('动态验证码 (TOTP)').className).toContain('truncate');
   });
 }); 

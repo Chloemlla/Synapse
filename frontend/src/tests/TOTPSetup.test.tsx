@@ -32,8 +32,8 @@ describe('TOTPSetup 组件', () => {
   it('弹窗打开时能正常渲染', async () => {
     render(<TOTPSetup isOpen={true} onClose={vi.fn()} onSuccess={vi.fn()} />);
     await waitFor(() => {
-      // 标题现在是「启用 TOTP」（旧断言钉的是已经被改掉的文案「二次验证」）。
-      expect(screen.getByText('启用 TOTP')).toBeInTheDocument();
+      // 标题现在是「启用动态验证码」（F1-13 把两种叫法收敛为一个词；旧断言钉的是更早的「二次验证」）。
+      expect(screen.getByText('启用动态验证码')).toBeInTheDocument();
     });
   });
 

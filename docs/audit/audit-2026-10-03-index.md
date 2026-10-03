@@ -232,6 +232,7 @@
 |---|---|---|
 | B1 报告 17 条 | 全部为中 / 低严重度 | 用户授权的范围是「阻断 + 高」；中 / 低留待后续 |
 | B2 报告 14 条 | 除 `B2-01` 外的 14 条，为中 / 低 | 同上 |
+| F1-13（中） | 同一因素多种叫法：`Passkey 验证` / `动态口令 (TOTP)` / `启用 TOTP` 等 | **部分顺带修复**：第二批把 `VerificationMethodSelector`、`TOTPSetup`、`TOTPManager` 的展示文案收敛为「通行密钥 (Passkey)」「动态验证码 (TOTP)」，两个前端用例的旧断言已随之更新（见 §7.4）。**但 `UserProfile`、`UserFormControls`、`AdminSecurityPosturePanel`、`EcoEnchantsAdminPage` 等处仍在用旧叫法，F1-13 未收敛完**，留待后续 |
 | 审计未登记 | `frontend/src/components/MarkdownExportPage.tsx` 的 4 处原生 `alert()`（导出 DOCX 失败 / 导出 PDF 失败 / 已复制 / 复制失败） | 该文件在本轮审计范围内（F5-16 已修其 label 缺失），但这 4 处 `alert()` **未被审计登记**。按「只修已登记缺陷」的边界未动，此处登记为同类未登记问题 |
 | 观察 | `frontend/src/components/ModListPage.tsx:18` 当前把 `ModListEditor` 替换为「ModList 已临时关闭」页 | 因此 F5-09/10/19 的文案改动当前对终端用户不可见；模块恢复后即生效 |
 | 观察 | `IpqsLookupLogModel` 全仓库只写不读 | `B2-01` 新增的 `risk_response_unparsed:*` 原因会写入该集合，但没有任何管理端界面读取它。**不是缺陷**（写入本身是审计留痕），登记以便后续做查询面时接上 |
@@ -262,6 +263,31 @@
 
 按仓库 `AGENTS.md` §7 与 `CLAUDE.md` 的硬性约束，**一切编译、类型检查与测试只由 GitHub Actions 执行**，
 本地不做构建 / 测试 / 装依赖。三个修复提交各自的 CI 结论见对应 workflow run。
+
+### 7.4 CI 回归与修复（2026-10-04）
+
+三批修复推送后 CI 出现回归，按「取父提交同名 job 的历史结论」归因，确认**均为本次引入**：
+
+| 提交 | Quality Guardrails | Node Verification | Docker |
+|---|---|---|---|
+| `e31ca36d`（第一批） | ✓ | ✓ | ✓ |
+| `5f07ca90`（第二批） | ✓ | **✗** | ✓ |
+| `245d26d6`（第三批） | **✗** | **✗** | **✗** |
+
+两个相互独立的根因：
+
+1. **前端类型检查失败**（第三批引入，同时打红 Quality Guardrails 的 Frontend bundle budget 与 Docker 的镜像构建，
+   因为二者都跑在同一条 `tsc` 上）。`admin/AdminHub.tsx` 的 `AdminModulePage` 在调用 `useAdminScope()`
+   时只解构了 `grantedPages` / `loading` 两个字段，但渲染拒绝页时用到了 `scopeAvailablePages`、
+   `scopeDegraded`、`refreshAdminScope` —— 这三个名字**从未声明**（TS2304 ×3 + 隐式 any ×1）。
+   根因是 F4-12 的修复代码直接引用了 hook 的其余字段，却没有把它加进解构。
+2. **前端用例失败**（第二批引入，仅 `Node verification` 打红）。`VerificationMethodSelector.test.tsx`
+   5 个 + `TOTPSetup.test.tsx` 1 个断言钉的是旧文案 `Passkey 验证` / `动态口令 (TOTP)` / `启用 TOTP`，
+   而 F1-13 的术语收敛把它们改成了新文案。修复方式是把断言更新到新的可见文案（不是放宽断言：
+   仍是精确串匹配，且 `closest('.group')` 的点击路径与 `truncate` 契约断言原样保留）。
+
+**教训**：我对 F4-12 的核验只看了行号与片段，没有确认被引用的标识符是否真的存在；
+「读到了改动」不等于「改动能编译」。此后对含新变量引用的改动，核验须包含标识符的存在性检查。
 
 ---
 

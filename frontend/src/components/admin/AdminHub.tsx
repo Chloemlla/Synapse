@@ -261,7 +261,13 @@ export const AdminModulePage: React.FC = () => {
   const navigate = useNavigate();
   const { isPinned, togglePin } = useAdminNavPrefs();
   // 深链守卫同样以服务端授权为准：导航里隐藏的页面，直接输 URL 也不应渲染。
-  const { grantedPages: grantedAdminPages, loading: scopeLoading } = useAdminScope();
+  const {
+    grantedPages: grantedAdminPages,
+    loading: scopeLoading,
+    degraded: scopeDegraded,
+    availablePages: scopeAvailablePages,
+    refresh: refreshAdminScope,
+  } = useAdminScope();
 
   const groups = useMemo(
     () =>
