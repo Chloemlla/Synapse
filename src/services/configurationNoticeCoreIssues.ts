@@ -1,10 +1,10 @@
 import { config, runtimeMutableConfig, startupConfig } from "../config/config";
 import {
-import { RuntimeConfigService } from "./runtimeConfigService";
   appendMissingEnvironmentIssue,
   createConfigurationIssue,
   type MissingConfigurationIssue,
 } from "./configurationNoticeIssueTypes";
+import { RuntimeConfigService } from "./runtimeConfigService";
 
 export function appendCoreConfigurationIssues(issues: MissingConfigurationIssue[]): void {
   if (!runtimeMutableConfig.tts.generationCode) {
