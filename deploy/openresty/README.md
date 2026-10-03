@@ -94,7 +94,7 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 25 4 * * * /root/backups/daily.sh >> /var/log/1panel-ops-backup.log 2>&1
 ```
 
-`daily.sh` 三步互相独立（一步失败不影响后两步），末尾给 `SUMMARY` + 退出码：
+`daily.sh` 各步互相独立（一步失败不影响后两步），末尾给 `SUMMARY` + 退出码：
 
 | 步骤 | 脚本 | 产物（均在 `/root/backups/`，平铺） | 保留 |
 | --- | --- | --- | --- |
@@ -104,6 +104,7 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | MongoDB | `backup-mongo.sh 7` | `mongo-<ts>.archive.gz` + `.manifest.txt` + `.counts.txt`（~15M） | 7 份 |
 | Redis | `backup-redis.sh 7` | `redis-<ts>.tar.gz` + `.manifest.txt`（~39K） | 7 份 |
 | 容器卷 | `backup-volumes.sh 7` | `volumes-<ts>.tar.gz` + `.manifest.txt`（~70K） | 7 份 |
+| 云端副本 | `upload-gdrive.sh` | Google Drive 根下 `backups/`（每天约 30M，云端每前缀保留 3～7 份） | — |
 
 几个刻意的取舍：
 

@@ -119,3 +119,12 @@ curl -s -o /dev/null -w '%{http_code}\n' --resolve chloemlla.com:443:127.0.0.1 h
 curl -skI --resolve eye.chloemlla.com:443:127.0.0.1 https://eye.chloemlla.com/ | grep -iE 'HTTP/|retry-after|x-maintenance-page'
 /root/backups/sync-site-certs.sh --dry-run
 ```
+
+## 云端副本（Google Drive）
+
+- 上传：`/root/backups/upload-gdrive.sh`（每日任务第 7 步）；凭据 `/root/.config/server-backup/gdrive.env`（600）
+- 云端位置：Drive 根下 `backups/`（账号 happyclovo@gmail.com）；每个前缀保留最新 N 份（openresty 3、其余 7）
+- 取回：Drive 网页直接下载；本地校验 `sha256sum -c openresty-<ts>.tar.gz.sha256`
+- 自检：`upload-gdrive.sh --list`（列云端）| `--verify=<文件名>`（下载回来比 md5）| `--dry-run`（看要传/要删什么）
+- 轮换凭据：`gdrive-selfservice-token.sh`（自助拿 refresh_token，会自动写好 gdrive.env）
+- 演练：`GDRIVE_FOLDER=backups-selftest upload-gdrive.sh` 传到临时目录，不碰真目录
