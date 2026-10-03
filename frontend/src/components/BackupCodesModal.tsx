@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   FaDownload,
@@ -45,30 +45,30 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
   // 查看/重生成恢复码属双因素配置类操作，需携带统一的安全会话（见 requireTwoFactorConfigSession）
   const { verificationToken } = useSecuritySession();
 
+  const fetchBackupCodes = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      setShowCodes(false);
+      const response = await api.get<BackupCodesResponse>('/api/totp/backup-codes', {
+        headers: verificationToken ? { 'x-verification-token': verificationToken } : undefined,
+      });
+      setBackupCodes(response.data.backupCodes);
+    } catch (error: any) {
+      const message = error.response?.data?.error || '获取备用恢复码失败';
+      console.error('获取备用恢复码失败:', error);
+      setError(message);
+      setNotification({ message, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [setNotification, verificationToken]);
+
   useEffect(() => {
     if (!isOpen) return;
 
-    const fetchBackupCodes = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        setShowCodes(false);
-        const response = await api.get<BackupCodesResponse>('/api/totp/backup-codes', {
-          headers: verificationToken ? { 'x-verification-token': verificationToken } : undefined,
-        });
-        setBackupCodes(response.data.backupCodes);
-      } catch (error: any) {
-        const message = error.response?.data?.error || '获取备用恢复码失败';
-        console.error('获取备用恢复码失败:', error);
-        setError(message);
-        setNotification({ message, type: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void fetchBackupCodes();
-  }, [api, isOpen, setNotification, verificationToken]);
+  }, [fetchBackupCodes, isOpen]);
 
   const regenerateBackupCodes = async () => {
     try {
@@ -214,7 +214,16 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                 </div>
               ) : error ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {error}
+                  <p>{error}</p>
+                  <button
+                    type="button"
+                    onClick={() => void fetchBackupCodes()}
+                    disabled={loading}
+                    className={`${studioGhostButtonClassName} mt-3 disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <FaRedo />
+                    重试
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">

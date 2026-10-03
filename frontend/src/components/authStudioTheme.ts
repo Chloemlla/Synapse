@@ -46,8 +46,10 @@ export const authFieldClassName = cn(studioFieldClassName, 'pl-10');
 export const authPasswordFieldClassName = cn(studioFieldClassName, 'pl-10 pr-10');
 export const authFieldIconClassName =
   'absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400';
+// 密码可见性切换等字段内操作按钮：p-2 把命中区撑到 32×32px（图标仍是 16px），
+// right-2 用来抵消内边距，保证图标视觉位置与原先 right-4 时一致。
 export const authFieldActionClassName =
-  'absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300';
+  'absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center p-2 text-slate-400 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300';
 
 export const authPrimaryButtonClassName = cn(studioPrimaryButtonClassName, 'w-full');
 export const authSecondaryButtonClassName = cn(

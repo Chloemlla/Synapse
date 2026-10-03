@@ -10,6 +10,7 @@ import {
   studioSurfaceClassName,
 } from '../../studioTheme';
 import { cx, formatDateTime, shortText } from './ui';
+import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition focus:border-indigo-300';
@@ -32,6 +33,7 @@ const ACTION_LABEL: Record<QqGuardCommandRow['action'], string> = {
 };
 
 export const CommandPanel: React.FC = () => {
+  const confirm = useConfirm();
   const [commands, setCommands] = useState<QqGuardCommandRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,18 @@ export const CommandPanel: React.FC = () => {
   };
 
   const dispatch = async (action: 'retry' | 'recall' | 'exempt', payload: Record<string, unknown>, label: string) => {
+    if (action === 'recall' || action === 'exempt') {
+      const ok = await confirm({
+        title: action === 'recall' ? '确认撤回该条消息？' : '确认豁免该用户？',
+        description:
+          action === 'recall'
+            ? `将撤回消息（messageId ${String(payload.messageId ?? '')}），撤回后不可恢复。`
+            : `将把用户 ${String(payload.userId ?? '')} 加入白名单，此后不再对其消息做纪律判定。`,
+        tone: 'danger',
+        confirmLabel: action === 'recall' ? '撤回消息' : '加入白名单',
+      });
+      if (!ok) return;
+    }
     setBusyAction(action);
     setError(null);
     try {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api/api';
@@ -23,6 +23,7 @@ import {
   FaEyeSlash,
   FaKey,
   FaQrcode,
+  FaRedo,
   FaShieldAlt,
   FaTimes,
 } from 'react-icons/fa';
@@ -44,28 +45,29 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
   // 后端要求 TOTP 配置走统一的「安全会话」（见 requireTwoFactorConfigSession）
   const { verificationToken } = useSecuritySession();
 
+  const generateSetup = useCallback(async () => {
+    try {
+      setStep('loading');
+      setError('');
+      setVerificationCode('');
+      setShowBackupCodes(false);
+
+      const response = await api.post('/api/totp/generate-setup', { verificationToken });
+      setSetupData(response.data);
+      setStep('setup');
+    } catch (error: any) {
+      console.error('TOTP setup generation failed:', error);
+      setSetupData(null);
+      setError(error.response?.data?.error || '生成 TOTP 设置失败');
+      setStep('setup');
+    }
+  }, [verificationToken]);
+
   useEffect(() => {
     if (!isOpen) return;
 
-    const generateSetup = async () => {
-      try {
-        setStep('loading');
-        setError('');
-        setVerificationCode('');
-        setShowBackupCodes(false);
-
-        const response = await api.post('/api/totp/generate-setup', { verificationToken });
-        setSetupData(response.data);
-        setStep('setup');
-      } catch (error: any) {
-        console.error('TOTP setup generation failed:', error);
-        setError(error.response?.data?.error || '生成 TOTP 设置失败');
-        setStep('setup');
-      }
-    };
-
     void generateSetup();
-  }, [isOpen]);
+  }, [isOpen, generateSetup]);
 
   const handleVerify = async () => {
     const cleanCode = cleanTOTPToken(verificationCode);
@@ -290,19 +292,31 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                     <FaBan />
                     取消
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleVerify()}
-                    disabled={loading || verificationCode.length !== 6 || !setupData}
-                    className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
-                  >
-                    {loading ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                    ) : (
-                      <FaCheck />
-                    )}
-                    验证并启用
-                  </button>
+                  {setupData ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleVerify()}
+                      disabled={loading || verificationCode.length !== 6}
+                      className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
+                    >
+                      {loading ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                      ) : (
+                        <FaCheck />
+                      )}
+                      验证并启用
+                    </button>
+                  ) : (
+                    // 生成失败时 setupData 仍为空，此时给一条重试出路，而不是留一个永久禁用的按钮
+                    <button
+                      type="button"
+                      onClick={() => void generateSetup()}
+                      className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
+                    >
+                      <FaRedo />
+                      重新生成
+                    </button>
+                  )}
                 </div>
               </div>
             )}

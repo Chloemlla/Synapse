@@ -586,8 +586,17 @@ const XiaohongshuDemo: React.FC = () => {
           {categories.map(category => (
             <div
               key={category.id}
-              className="relative flex flex-col items-center justify-center py-1 cursor-pointer transition-all duration-300"
+              role="button"
+              tabIndex={0}
+              aria-pressed={activeCategory === category.id}
+              className="relative flex flex-col items-center justify-center rounded-lg py-1 cursor-pointer transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2442] focus-visible:ring-offset-2"
               onClick={() => setActiveCategory(category.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setActiveCategory(category.id);
+                }
+              }}
             >
               <div className="flex items-center gap-1">
                 <category.icon className="w-4 h-4" />
@@ -618,7 +627,10 @@ const XiaohongshuDemo: React.FC = () => {
             {displayedCards.map((card, index) => (
               <div
                 key={card.id}
-                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 animate-[fadeIn_0.5s_ease-out]"
+                role="button"
+                tabIndex={0}
+                aria-label={`打开详情：${card.title}`}
+                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2442] focus-visible:ring-offset-2 animate-[fadeIn_0.5s_ease-out]"
                 style={{
                   backgroundColor: 'var(--bg-color)',
                   borderColor: 'var(--border-color)',
@@ -632,6 +644,12 @@ const XiaohongshuDemo: React.FC = () => {
                   e.currentTarget.style.boxShadow = 'var(--shadow)';
                 }}
                 onClick={() => openModal(card)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openModal(card);
+                  }
+                }}
               >
                 {/* 图片 */}
                 <div className="relative w-full aspect-[3/4] overflow-hidden">

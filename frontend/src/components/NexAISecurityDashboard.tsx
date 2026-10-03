@@ -94,6 +94,38 @@ interface DashboardStats {
   topRiskyDevices: DeviceTracking[];
 }
 
+const RISK_LEVEL_LABELS: Record<string, string> = {
+  SAFE: '安全',
+  LOW: '低风险',
+  MEDIUM: '中风险',
+  HIGH: '高风险',
+  CRITICAL: '极高风险',
+};
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  integrity_fail: '完整性验证失败',
+  root_detected: 'Root检测',
+  debugger_detected: '调试器检测',
+  emulator_detected: '模拟器检测',
+  tamper_detected: '篡改检测',
+  frida_detected: 'Frida框架检测',
+  xposed_detected: 'Xposed框架检测',
+  dom_modification: 'DOM 篡改',
+  network_tampering: '网络篡改',
+  proxy_tampering: '代理篡改',
+  script_injection: '脚本注入',
+  dom: 'DOM 篡改',
+  network: '网络篡改',
+  proxy: '代理篡改',
+  injection: '脚本注入',
+  manual_test: '手动测试',
+  unknown: '未知事件',
+};
+
+const getRiskLevelLabel = (level: string) => RISK_LEVEL_LABELS[level] || level;
+
+const getEventTypeLabel = (type: string) => EVENT_TYPE_LABELS[type] || type;
+
 const NexAISecurityDashboard: React.FC = () => {
   const { setNotification } = useNotification();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -147,8 +179,11 @@ const NexAISecurityDashboard: React.FC = () => {
   const getRiskLevelBadge = (level: string) => {
     const colorClass = getRiskLevelColor(level);
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${colorClass}`}>
-        {level}
+      <span
+        className={`px-2 py-1 rounded-full text-xs font-semibold ${colorClass}`}
+        title={level}
+      >
+        {getRiskLevelLabel(level)}
       </span>
     );
   };
@@ -182,9 +217,9 @@ const NexAISecurityDashboard: React.FC = () => {
     }]
   }), [stats]);
 
-  // 事件类型分布柱状图数据
+  // 事件类型分布柱状图数据（枚举值统一转中文展示）
   const eventTypeData = useMemo(() => ({
-    labels: stats ? Object.keys(stats.eventTypeDistribution) : [],
+    labels: stats ? Object.keys(stats.eventTypeDistribution).map(getEventTypeLabel) : [],
     datasets: [{
       label: '事件数量',
       data: stats ? Object.values(stats.eventTypeDistribution) : [],
@@ -194,10 +229,32 @@ const NexAISecurityDashboard: React.FC = () => {
     }]
   }), [stats]);
 
+  // 设备列表过滤：接口只取第一页（page=1&limit=20），因此这里只过滤「已加载」的设备，
+  // 空态文案也据此说明，避免让用户以为筛的是全量数据。
+  const normalizedDeviceSearch = searchQuery.trim().toLowerCase();
+  const hasActiveDeviceFilter = normalizedDeviceSearch.length > 0 || filterRiskLevel !== 'all';
+
+  const filteredDevices = useMemo(() => {
+    if (!hasActiveDeviceFilter) return devices;
+    return devices.filter((device) => {
+      if (filterRiskLevel !== 'all' && device.riskLevel !== filterRiskLevel) return false;
+      if (!normalizedDeviceSearch) return true;
+      return [device.deviceFingerprint, device.userId, device.ipAddress].some(
+        (value) => typeof value === 'string' && value.toLowerCase().includes(normalizedDeviceSearch)
+      );
+    });
+  }, [devices, filterRiskLevel, hasActiveDeviceFilter, normalizedDeviceSearch]);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        className="flex flex-col items-center justify-center gap-3 min-h-screen"
+      >
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" aria-hidden="true"></div>
+        <p className="text-sm text-slate-600">正在加载安全数据…</p>
       </div>
     );
   }
@@ -469,8 +526,8 @@ const NexAISecurityDashboard: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white/80 backdrop-blur-xl divide-y divide-slate-200">
-                      {devices && devices.length > 0 ? (
-                        devices.map((device) => (
+                      {filteredDevices.length > 0 ? (
+                        filteredDevices.map((device) => (
                           <tr key={device._id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-600">
                               {device.deviceFingerprint.substring(0, 12)}...
@@ -516,7 +573,7 @@ const NexAISecurityDashboard: React.FC = () => {
                       ) : (
                         <tr>
                           <td colSpan={6} className="px-3 sm:px-6 py-12 text-center text-sm text-slate-500 bg-slate-50/50">
-                            未找到符合条件的设备
+                            {hasActiveDeviceFilter ? '未在当前已加载的设备中找到匹配项' : '暂无设备数据'}
                           </td>
                         </tr>
                       )}
@@ -539,19 +596,6 @@ const NexAISecurityDashboard: React.FC = () => {
                       if (riskScore >= 50) return 'bg-orange-50 text-orange-700 border-orange-200';
                       if (riskScore >= 30) return 'bg-yellow-50 text-yellow-700 border-yellow-200';
                       return 'bg-slate-50/80 text-blue-700 border-blue-200';
-                    };
-
-                    const getEventTypeLabel = (type: string) => {
-                      const labels: Record<string, string> = {
-                        'integrity_fail': '完整性验证失败',
-                        'root_detected': 'Root检测',
-                        'debugger_detected': '调试器检测',
-                        'emulator_detected': '模拟器检测',
-                        'tamper_detected': '篡改检测',
-                        'frida_detected': 'Frida框架检测',
-                        'xposed_detected': 'Xposed框架检测'
-                      };
-                      return labels[type] || type;
                     };
 
                     const getTimeAgo = (dateString: string) => {

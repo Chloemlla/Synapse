@@ -130,6 +130,33 @@ const severityClasses: Record<NonNullable<ServerTamperEvent['severity']>, string
   critical: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
+// 后端下发的是内部枚举（low/medium/high/critical、dom/network/proxy/injection…），
+// 面向用户一律转中文，原始值保留在 title 里备查。
+const severityLabels: Record<NonNullable<ServerTamperEvent['severity']>, string> = {
+  low: '低危',
+  medium: '中危',
+  high: '高危',
+  critical: '严重',
+};
+
+const tamperTypeLabels: Record<string, string> = {
+  dom: 'DOM 篡改',
+  network: '网络篡改',
+  proxy: '代理篡改',
+  injection: '脚本注入',
+  dom_modification: 'DOM 篡改',
+  network_tampering: '网络篡改',
+  proxy_tampering: '代理篡改',
+  script_injection: '脚本注入',
+  manual_test: '手动测试',
+  unknown: '未知类型',
+};
+
+const resolveSeverityLabel = (severity?: string) =>
+  (severity && severityLabels[severity as NonNullable<ServerTamperEvent['severity']>]) || severity || '低危';
+
+const resolveTamperTypeLabel = (value: string) => tamperTypeLabels[value] || value;
+
 const formatDate = (value?: string) => {
   if (!value) return '未知';
   const date = new Date(value);
@@ -572,9 +599,14 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
                       <div key={event.id || `${event.timestamp}-${event.ip}-${event.elementId}`} className="flex flex-col gap-2 px-4 py-3 text-sm text-slate-700 sm:grid sm:grid-cols-[1.2fr_1fr_1fr_0.8fr]">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-slate-950">{resolveEventType(event)}</span>
-                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${severityClasses[event.severity || 'low']}`}>
-                              {event.severity || 'low'}
+                            <span className="font-semibold text-slate-950" title={resolveEventType(event)}>
+                              {resolveTamperTypeLabel(resolveEventType(event))}
+                            </span>
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${severityClasses[event.severity || 'low']}`}
+                              title={event.severity || 'low'}
+                            >
+                              {resolveSeverityLabel(event.severity)}
                             </span>
                           </div>
                           <div className="mt-1 truncate text-xs text-slate-500">{event.detectionMethod || event.elementId || event.url}</div>
@@ -675,8 +707,8 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(serverSummary?.byType ?? {}).length > 0 ? (
                       Object.entries(serverSummary!.byType).map(([type, count]) => (
-                        <span key={type} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClasses.sky.badge}`}>
-                          {type} · {count}
+                        <span key={type} title={type} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClasses.sky.badge}`}>
+                          {resolveTamperTypeLabel(type)} · {count}
                         </span>
                       ))
                     ) : (
@@ -689,8 +721,8 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(serverSummary?.bySeverity ?? {}).length > 0 ? (
                       Object.entries(serverSummary!.bySeverity).map(([severity, count]) => (
-                        <span key={severity} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${severityClasses[(severity as ServerTamperEvent['severity']) || 'low'] ?? severityClasses.low}`}>
-                          {severity} · {count}
+                        <span key={severity} title={severity} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${severityClasses[(severity as ServerTamperEvent['severity']) || 'low'] ?? severityClasses.low}`}>
+                          {resolveSeverityLabel(severity)} · {count}
                         </span>
                       ))
                     ) : (

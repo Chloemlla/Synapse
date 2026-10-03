@@ -31,6 +31,14 @@ interface CacheStats {
     lastCleanup?: string;
 }
 
+// 指标卡展示用的中文阶段文案：loadingStage 是内部枚举，不直接呈现给用户（F5-17）
+const LOADING_STAGE_TEXT: Record<'idle' | 'customers' | 'metrics' | 'complete', string> = {
+    idle: '等待加载',
+    customers: '正在读取客户列表',
+    metrics: '正在读取性能指标',
+    complete: '数据已就绪',
+};
+
 const GitHubBillingCacheManager: React.FC = () => {
     const [cachedCustomers, setCachedCustomers] = useState<CachedCustomer[]>([]);
     const [cacheStats, setCacheStats] = useState<CacheStats>({
@@ -102,7 +110,9 @@ const GitHubBillingCacheManager: React.FC = () => {
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                // 状态码只进控制台，用户提示用中文可读文案（F5-17）
+                console.error('[GitHub账单] 获取缓存指标失败:', response.status, response.statusText);
+                throw new Error('缓存指标暂时不可用，请刷新重试');
             }
 
             const data = await response.json();
@@ -120,7 +130,7 @@ const GitHubBillingCacheManager: React.FC = () => {
         } catch (error) {
             console.error('获取缓存性能指标失败:', error);
             setNotification({
-                message: '获取缓存性能指标失败：' + getBackendErrorMessage(error, '未知错误'),
+                message: '缓存指标暂时不可用，请刷新重试',
                 type: 'error'
             });
         } finally {
@@ -239,7 +249,7 @@ const GitHubBillingCacheManager: React.FC = () => {
 
             {/* 缓存统计 */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <InfoMetricCard label="缓存总数" value={cacheStats.totalCached} detail={`阶段 ${loadingStage}`} icon={FaDatabase} />
+                <InfoMetricCard label="缓存总数" value={cacheStats.totalCached} detail={LOADING_STAGE_TEXT[loadingStage]} icon={FaDatabase} />
                 <InfoMetricCard label="过期缓存" value={metricsLoading ? '...' : cacheStats.totalExpired} detail="可手动清理" icon={FaClock} />
                 <InfoMetricCard label="平均访问" value={metricsLoading ? '...' : cacheStats.avgAccessCount.toFixed(1)} detail="按客户缓存统计" icon={FaEye} />
                 <InfoMetricCard label="命中率" value={metricsLoading ? '...' : `${(cacheStats.hitRate * 100).toFixed(1)}%`} detail="缓存性能指标" icon={FaChartLine} />

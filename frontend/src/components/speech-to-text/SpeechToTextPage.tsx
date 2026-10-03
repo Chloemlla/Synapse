@@ -87,6 +87,8 @@ export const SpeechToTextPage: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 配置加载失败是唯一能在原地重试的错误，用它决定错误条是否给出重试入口。
+  const [configError, setConfigError] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const loadedOnce = useRef(false);
 
@@ -94,10 +96,12 @@ export const SpeechToTextPage: React.FC = () => {
     try {
       const cfg = await transcribeApi.config();
       setConfig(cfg);
+      setConfigError(false);
       setOutputs((prev) => (prev.length ? prev : cfg.limits.defaultOutputs.length ? cfg.limits.defaultOutputs : ['plain']));
       if (!cfg.enabled && cfg.notice) setError(cfg.notice);
     } catch (err) {
       console.error('加载语音转文本配置失败:', err);
+      setConfigError(true);
       setError('加载配置失败,请检查登录状态或稍后重试。');
     }
   }, []);
@@ -159,6 +163,7 @@ export const SpeechToTextPage: React.FC = () => {
       setNotice(`已上传 ${files.length} 个音频,点「开始转写」提交任务。`);
     } catch (err) {
       console.error('上传音频失败:', err);
+      setConfigError(false);
       setError(describeUploadError(err) || '上传失败:请确认文件为受支持音频且未超过大小上限。');
     } finally {
       setUploading(null);
@@ -179,6 +184,7 @@ export const SpeechToTextPage: React.FC = () => {
     } catch (err) {
       console.error('提交转写任务失败:', err);
       const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setConfigError(false);
       setError(message || '提交失败:请稍后重试。');
     } finally {
       setBusy(false);
@@ -210,6 +216,7 @@ export const SpeechToTextPage: React.FC = () => {
       await loadJobs();
     } catch (err) {
       console.error('任务操作失败:', err);
+      setConfigError(false);
       setError('操作失败,请稍后重试。');
     }
   };
@@ -242,7 +249,16 @@ export const SpeechToTextPage: React.FC = () => {
         {error ? (
           <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             <FaExclamationTriangle className="shrink-0" />
-            {error}
+            <span className="min-w-0 flex-1">{error}</span>
+            {configError ? (
+              <button
+                type="button"
+                onClick={() => void loadConfig()}
+                className="shrink-0 rounded-xl border border-rose-300 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:border-rose-400 hover:bg-rose-100"
+              >
+                重新加载配置
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -376,28 +392,37 @@ export const SpeechToTextPage: React.FC = () => {
                 const active = job.status === 'queued' || job.status === 'running';
                 const expanded = expandedId === job.id;
                 const list = transcripts[job.id] ?? [];
+                const panelId = `stt-job-panel-${job.id}`;
                 return (
                   <div key={job.id} className={cn(studioSurfaceClassName, 'overflow-hidden')}>
                     <div
-                      className={cn('flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3', expanded ? 'bg-slate-50/70' : 'hover:bg-slate-50/50')}
-                      onClick={() => setExpandedId(expanded ? null : job.id)}
+                      className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3', expanded ? 'bg-slate-50/70' : 'hover:bg-slate-50/50')}
                     >
-                      <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : job.status === 'succeeded' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : job.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-100 text-slate-600')}>
-                        {STATUS_LABEL[job.status] ?? job.status}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-slate-600">
-                        {job.input?.values?.length ?? 0} 个文件 · {job.result?.summary ?? STAGE_LABEL[job.stage] ?? job.stage}
-                      </span>
-                      {active ? (
-                        <span className="flex min-w-[160px] items-center gap-2">
-                          <span className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
-                            <span className="block h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${job.progress}%` }} />
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-500">{job.progress}%</span>
-                          <span className="text-[10px] text-slate-400">{STAGE_LABEL[job.stage] ?? job.stage}</span>
+                      {/* 展开/收起是可操作动作，用真实 button 承载，键盘与屏读用户才到得了。 */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(expanded ? null : job.id)}
+                        aria-expanded={expanded}
+                        aria-controls={expanded ? panelId : undefined}
+                        className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 self-stretch text-left"
+                      >
+                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : job.status === 'succeeded' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : job.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-100 text-slate-600')}>
+                          {STATUS_LABEL[job.status] ?? job.status}
                         </span>
-                      ) : null}
-                      <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <span className="min-w-0 flex-1 truncate text-xs text-slate-600">
+                          {job.input?.values?.length ?? 0} 个文件 · {job.result?.summary ?? STAGE_LABEL[job.stage] ?? job.stage}
+                        </span>
+                        {active ? (
+                          <span className="flex min-w-[160px] items-center gap-2">
+                            <span className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
+                              <span className="block h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${job.progress}%` }} />
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-500">{job.progress}%</span>
+                            <span className="text-[10px] text-slate-400">{STAGE_LABEL[job.stage] ?? job.stage}</span>
+                          </span>
+                        ) : null}
+                      </button>
+                      <span className="flex items-center gap-1.5">
                         {active ? (
                           <button type="button" onClick={() => void act('cancel', job.id)} className={cn(studioSecondaryButtonClassName, 'px-2.5 py-1 text-[11px]')}>
                             <FaTimes className="text-[10px]" />
@@ -419,7 +444,7 @@ export const SpeechToTextPage: React.FC = () => {
                     </div>
 
                     {expanded ? (
-                      <div className="space-y-3 border-t border-slate-100 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <div id={panelId} className="space-y-3 border-t border-slate-100 px-4 py-3">
                         {job.error ? (
                           <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{job.error}</div>
                         ) : null}
@@ -431,7 +456,10 @@ export const SpeechToTextPage: React.FC = () => {
                               <div className="truncate text-xs font-semibold text-slate-600">{item.label}</div>
                               <TranscriptView
                                 item={item}
-                                onDownload={(format) => void transcribeApi.download(job.id, item.index, format).catch(() => setError('下载失败,请稍后重试。'))}
+                                onDownload={(format) => void transcribeApi.download(job.id, item.index, format).catch(() => {
+                                  setConfigError(false);
+                                  setError('下载失败,请稍后重试。');
+                                })}
                               />
                             </div>
                           ))

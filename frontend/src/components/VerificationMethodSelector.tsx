@@ -248,12 +248,14 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                 >
                                     {/* Passkey 选项 */}
                                     {availableMethods.includes('passkey') && (
-                                        <motion.div
-                                            className="group cursor-pointer"
+                                        <motion.button
+                                            type="button"
+                                            className="group w-full cursor-pointer text-left disabled:cursor-not-allowed"
                                             variants={cardVariants}
                                             whileHover="hover"
                                             whileTap="tap"
-                                            onClick={() => !loading && onSelectMethod('passkey')}
+                                            onClick={() => onSelectMethod('passkey')}
+                                            disabled={loading}
                                         >
                                             <div className={cn(authInfoPanelClassName, 'relative transition hover:border-slate-300 hover:bg-white')}>
                                                 <div className="flex items-center space-x-4">
@@ -298,17 +300,19 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                     </motion.div>
                                                 )}
                                             </div>
-                                        </motion.div>
+                                        </motion.button>
                                     )}
 
                                     {/* TOTP 选项 */}
                                     {availableMethods.includes('totp') && (
-                                        <motion.div
-                                            className="group cursor-pointer"
+                                        <motion.button
+                                            type="button"
+                                            className="group w-full cursor-pointer text-left disabled:cursor-not-allowed"
                                             variants={cardVariants}
                                             whileHover="hover"
                                             whileTap="tap"
-                                            onClick={() => !loading && onSelectMethod('totp')}
+                                            onClick={() => onSelectMethod('totp')}
+                                            disabled={loading}
                                         >
                                             <div className={cn(authInfoPanelClassName, 'relative transition hover:border-slate-300 hover:bg-white')}>
                                                 <div className="flex items-center space-x-4">
@@ -353,7 +357,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                     </motion.div>
                                                 )}
                                             </div>
-                                        </motion.div>
+                                        </motion.button>
                                     )}
                                 </motion.div>
 

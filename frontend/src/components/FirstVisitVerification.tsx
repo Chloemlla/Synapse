@@ -204,7 +204,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (secureSelectionLoading) return '';
     if (secureSelectionError) return secureSelectionError;
     if (!secureEnabled || !secureSiteKey || !verificationMode) {
-      return 'Verification service is temporarily unavailable. Refresh and try again.';
+      return '验证服务暂不可用，请稍后重试。';
     }
     return '';
   }, [secureEnabled, secureSelectionError, secureSelectionLoading, secureSiteKey, verificationMode]);

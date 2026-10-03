@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaFingerprint, FaExclamationTriangle, FaCheck, FaTimes, FaSync } from 'react-icons/fa';
 import { useNotification } from './Notification';
@@ -24,6 +24,8 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [error, setError] = useState('');
+    // 父组件只在自身重渲染时才会重新计算 isOpen，本地收起保证退出入口立刻生效
+    const [collapsedLocally, setCollapsedLocally] = useState(false);
     const { setNotification } = useNotification();
 
     // 重置状态当弹窗打开时
@@ -32,6 +34,8 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
             setIsSubmitted(false);
             setError('');
             setIsSubmitting(false);
+        } else {
+            setCollapsedLocally(false);
         }
     }, [isOpen]);
 
@@ -109,27 +113,43 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
         }
     };
 
-    const handleClose = () => {
+    // 统一的退出入口（关闭按钮 / 遮罩点击 / Esc 都走这里）。
+    // 未关闭过的用户沿用原行为：不写冷却，父组件会再次请求（此时仍有「暂时跳过」这条出路）。
+    // 已关闭过一次的用户若不给写冷却的出路就会被永久困住（B01），因此仅对这类用户收起并写冷却；
+    // 后端「一生只能关闭一次」的计数语义不变——只有「暂时跳过」会消耗那唯一一次。
+    const handleClose = useCallback(() => {
         if (isSubmitting) return;
 
-        // 如果用户已经关闭过一次，不允许通过任何方式关闭
         if (hasDismissedOnce) {
-            setNotification({ 
-                type: 'error', 
-                message: '您已经关闭过一次指纹请求，必须立即上报才能继续使用' 
+            // 父组件要等下一次重渲染才会重算 isOpen，这里先本地收起，保证出路立刻生效
+            setCollapsedLocally(true);
+            setNotification({
+                type: 'info',
+                message: '已暂时收起指纹请求，稍后会再次提醒您完成上报'
             });
-            return;
         }
 
-        // 否则允许关闭，延迟执行让动画完成
+        // 延迟执行让动画完成
         setTimeout(() => {
-            onClose(false);
+            onClose(hasDismissedOnce);
         }, 100);
-    };
+    }, [hasDismissedOnce, isSubmitting, onClose, setNotification]);
+
+    // Esc 与关闭按钮、遮罩点击等价，避免键盘用户被困在弹窗里
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                handleClose();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isOpen, handleClose]);
 
     return (
         <AnimatePresence mode="wait">
-            {isOpen && (
+            {isOpen && !collapsedLocally && (
                 <motion.div
                     key="fingerprint-modal-backdrop"
                     className={studioModalOverlayClassName}
@@ -137,7 +157,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
-                    onClick={hasDismissedOnce ? undefined : handleClose}
+                    onClick={handleClose}
                 >
                     <motion.div
                         key="fingerprint-modal-content"
@@ -148,12 +168,14 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* 关闭按钮 - 如果用户已经关闭过一次则不显示 */}
-                        {!isSubmitting && !isSubmitted && !hasDismissedOnce && (
+                        {/* 关闭按钮 - 任何状态下都保留可见出路 */}
+                        {!isSubmitted && (
                             <button
                                 onClick={handleClose}
-                                className="inline-flex items-center justify-center absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
-                                title="关闭"
+                                disabled={isSubmitting}
+                                aria-label="收起指纹上报请求"
+                                title="收起"
+                                className="inline-flex items-center justify-center absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 <FaTimes className="w-5 h-5" />
                             </button>
@@ -188,7 +210,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                                 {isSubmitted
                                     ? '您的浏览器指纹已成功上报，感谢您的配合！'
                                     : hasDismissedOnce
-                                        ? '您已经关闭过一次指纹请求，这是最后的机会。您必须立即上报才能继续使用，无法再次关闭此窗口。'
+                                        ? '您已经关闭过一次指纹请求，这是最后的机会。请立即上报以继续使用；如需稍后处理，可以收起此窗口，我们会再次提醒。'
                                         : '管理员请求上报您的浏览器指纹，用于安全验证和用户识别。此过程不会收集任何个人信息。'
                                 }
                             </p>
@@ -260,7 +282,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
                             <div className="text-xs text-slate-500 space-y-1">
                                 <p>• 指纹信息包含：浏览器类型、屏幕分辨率、时区等设备特征</p>
                                 <p>• 此信息仅用于安全验证，不会识别您的个人身份</p>
-                                <p>• 您可以随时跳过，管理员可能会再次请求</p>
+                                <p>• 如需稍后处理，可以收起此窗口，管理员可能会再次请求</p>
                             </div>
                         </div>
                     </motion.div>

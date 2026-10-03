@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaPaperPlane, FaTimes, FaUser, FaRobot } from 'react-icons/fa';
 import { useLibreChat } from './LibreChatContext';
@@ -13,6 +13,33 @@ import {
 
 export function LibreChatRealtimeDialog() {
     const { state, actions } = useLibreChat();
+    const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+    const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+    // 上下文对象每次渲染都是新引用，这里用 ref 取最新的关闭函数，
+    // 让下面的副作用只依赖 rtOpen——否则每次输入都会重新抢焦点（F5-03）
+    const closeDialogRef = useRef(actions.closeRealtimeDialog);
+    closeDialogRef.current = actions.closeRealtimeDialog;
+
+    // 对话框语义：打开时移入焦点、Esc 关闭、关闭后把焦点还给触发元素（F5-03）
+    useEffect(() => {
+        if (!state.rtOpen) return undefined;
+        previouslyFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
+        const timer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                closeDialogRef.current();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.clearTimeout(timer);
+            document.removeEventListener('keydown', handleKeyDown);
+            previouslyFocusedRef.current?.focus?.();
+        };
+    }, [state.rtOpen]);
+
     const markdownControls = {
         showCopy: true,
         showSourceToggle: true,
@@ -31,25 +58,38 @@ export function LibreChatRealtimeDialog() {
     return (
         <AnimatePresence>
             {state.rtOpen && (
-                <div className={studioModalOverlayClassName}>
+                <div
+                    className={studioModalOverlayClassName}
+                    onClick={() => closeDialogRef.current()}
+                >
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="librechat-realtime-title"
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         className={`${studioModalCardClassName} relative max-w-2xl max-h-[90vh] overflow-y-auto`}
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center mb-4 pr-10">
-                            <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                        <div className={`flex items-center mb-4 ${state.rtSending ? 'pr-32' : 'pr-10'}`}>
+                            <h3 id="librechat-realtime-title" className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                                 <FaPaperPlane className="text-slate-500" />
                                 实时对话（支持上下文）
                             </h3>
                             <button
+                                ref={closeButtonRef}
                                 onClick={actions.closeRealtimeDialog}
-                                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-2xl border border-slate-200 hover:bg-slate-100 bg-white/90 transition-colors"
-                                aria-label="关闭"
-                                title="关闭"
+                                className={
+                                    state.rtSending
+                                        ? "absolute top-4 right-4 inline-flex h-8 items-center justify-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                                        : "absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-2xl border border-slate-200 hover:bg-slate-100 bg-white/90 transition-colors"
+                                }
+                                aria-label={state.rtSending ? '取消生成并关闭对话框' : '关闭'}
+                                title={state.rtSending ? '取消生成并关闭对话框' : '关闭'}
                             >
-                                <FaTimes className="w-4 h-4" />
+                                <FaTimes className={state.rtSending ? "w-3 h-3" : "w-4 h-4"} />
+                                {state.rtSending ? '取消生成' : null}
                             </button>
                         </div>
 
@@ -74,7 +114,7 @@ export function LibreChatRealtimeDialog() {
 
                             <div className="flex items-center justify-between">
                                 <div className="text-xs text-slate-400">{state.rtMessage.length}/{state.MAX_MESSAGE_LEN}</div>
-                                {state.rtError && <div className="text-rose-500 text-sm">{state.rtError}</div>}
+                                {state.rtError && <div className="text-rose-700 text-sm">{state.rtError}</div>}
                             </div>
 
                             <div className="flex items-center justify-end gap-2">

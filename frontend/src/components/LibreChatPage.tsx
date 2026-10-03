@@ -296,6 +296,8 @@ const LibreChatPage: React.FC = () => {
   const [rtHistory, setRtHistory] = useState<HistoryItem[]>([]);
   // 持有实时对话的本地流式 interval，便于关闭对话框或卸载时清理
   const rtIntervalRef = useRef<number | null>(null);
+  // F5-03：实时对话的在途请求，关闭对话框时用它中止（发送中即「取消生成」）
+  const rtAbortRef = useRef<AbortController | null>(null);
   // 组件挂载追踪，避免在卸载后设置状态
   const isMountedRef = useRef(true);
   // 初始化状态追踪，使用ref避免useCallback依赖项循环
@@ -949,19 +951,15 @@ const LibreChatPage: React.FC = () => {
     setRtError('');
     setRtMessage('');
     setRtStreamContent('');
-    setRtStreaming(false);
-    setRtSending(false);
+    setRtStreaming(false); setRtSending(false);
     setRtHistory([]);
     setRtOpen(true);
   };
   const closeRealtimeDialog = () => {
-    if (rtSending) return; // 发送中避免误关
-    // 关闭对话框时，确保停止任何仍在进行的本地流式 interval
-    if (rtIntervalRef.current) {
-      clearInterval(rtIntervalRef.current);
-      rtIntervalRef.current = null;
-    }
-    setRtStreaming(false);
+    rtAbortRef.current?.abort();
+    rtAbortRef.current = null;
+    if (rtIntervalRef.current) { clearInterval(rtIntervalRef.current); rtIntervalRef.current = null; }
+    setRtStreaming(false); setRtSending(false);
     setRtOpen(false);
   };
 
@@ -984,6 +982,7 @@ const LibreChatPage: React.FC = () => {
       setRtError(`超出部分已自动截断（最大 ${MAX_MESSAGE_LEN} 字符）`);
       setNotification({ type: 'warning', message: `消息过长，已自动截断（最大 ${MAX_MESSAGE_LEN} 字符）` });
     }
+    const controller = (rtAbortRef.current = new AbortController());
     try {
       setRtSending(true);
       setRtStreaming(true);
@@ -1000,7 +999,8 @@ const LibreChatPage: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
       });
       if (!res.ok) throw new Error(await readLibreChatError(res, '实时对话发送失败'));
       const data = await res.json();
@@ -1106,10 +1106,10 @@ const LibreChatPage: React.FC = () => {
       }, 30);
       rtIntervalRef.current = interval;
     } catch (e) {
+      if (controller.signal.aborted) return; // 用户主动取消，不报错（F5-03）
       const errorMessage = getErrorMessage(e, '发送失败，请稍后再试');
       setRtError(errorMessage);
-      setRtStreaming(false);
-      setRtSending(false);
+      setRtStreaming(false); setRtSending(false);
       setNotification({ type: 'error', message: errorMessage });
     }
   };

@@ -158,10 +158,12 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
   if (loading) {
     return (
       <div
-        className="mx-auto flex min-h-[360px] max-w-2xl items-center justify-center py-12"
+        className="mx-auto flex min-h-[360px] max-w-2xl flex-col items-center justify-center gap-3 py-12"
         style={{ fontFamily: studioPageFont }}
+        role="status"
       >
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" aria-hidden="true" />
+        <p className="text-sm text-slate-600">正在读取账户安全状态…</p>
       </div>
     );
   }
@@ -210,7 +212,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               key={item.label}
               className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-3"
             >
-              <div className="text-xs text-slate-400">{item.label}</div>
+              <div className="text-xs text-slate-600">{item.label}</div>
               <div className="mt-1 truncate text-sm font-semibold text-slate-800">
                 {item.value}
               </div>

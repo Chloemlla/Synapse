@@ -412,10 +412,18 @@ function InstanceDetailSection({
   const handleFileWrite = useCallback(async () => {
     if (!canWrite) return;
     if (!fileWritePath.trim() || !fileWriteContent.trim()) return;
+    const targetPath = fileWritePath.trim();
+    const ok = await confirm({
+      title: '确认覆盖远程文件？',
+      description: `将用当前内容覆盖实例「${instanceId}」上的文件「${targetPath}」，写入后不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '覆盖写入',
+    });
+    if (!ok) return;
     setFileOpsLoading(true);
     try {
       await api.post(`${API_BASE}/ops/instances/${instanceId}/files/write`, {
-        path: fileWritePath.trim(),
+        path: targetPath,
         content: fileWriteContent,
       });
       setNotification({ message: "文件写入成功", type: "success" });
@@ -426,7 +434,7 @@ function InstanceDetailSection({
     } finally {
       setFileOpsLoading(false);
     }
-  }, [canWrite, instanceId, fileWritePath, fileWriteContent, setNotification]);
+  }, [canWrite, instanceId, fileWritePath, fileWriteContent, setNotification, confirm]);
 
   const handleFileDelete = useCallback(async () => {
     if (!canWrite) return;

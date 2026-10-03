@@ -213,7 +213,11 @@ const SmartHumanCheckTraces: React.FC = () => {
       if (filters.ua) params.set('ua', filters.ua);
 
       const res = await fetch(`${getApiBaseUrl()}/api/human-check/traces?${params.toString()}`);
-      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
+      if (!res.ok) {
+        // 原始状态码只进 console，用户侧只看到可行动的中文文案
+        console.error('加载人机校验日志失败:', res.status, res.statusText);
+        throw new Error('加载人机校验日志失败，请稍后重试');
+      }
       const data = await res.json();
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -518,7 +522,15 @@ const SmartHumanCheckTraces: React.FC = () => {
         body: JSON.stringify({ ids })
       });
       const data = await res.json();
-      if (!res.ok || !data?.success) throw new Error(data?.error || `删除失败: ${res.status}`);
+      if (!res.ok || !data?.success) {
+        // 后端原因保留给用户，HTTP 状态码只进 console
+        console.error('删除人机校验日志失败:', res.status, data?.error);
+        throw new Error(
+          typeof data?.error === 'string' && data.error
+            ? data.error
+            : '删除人机校验日志失败，请稍后重试'
+        );
+      }
       const deleted = Number(data.deletedCount || 0);
       const notFound = (data.notFound || []) as string[];
       const msgParts: string[] = [];

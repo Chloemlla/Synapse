@@ -110,6 +110,19 @@ interface CachedCustomer {
   billableAmount: number;
 }
 
+// 已在页面上结构化呈现的字段；其余字段收进「原始数据」折叠区（F5-18）
+const BILLING_KNOWN_KEYS = [
+  'billableAmount',
+  'customerId',
+  'billable_amount',
+  'discount_details',
+  'usage_breakdown',
+  'billing_cycle',
+  'total_usage',
+  'included_usage',
+  'billable_usage',
+];
+
 const GitHubBillingDashboard: React.FC = () => {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
@@ -722,24 +735,24 @@ const GitHubBillingDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* 其他数据字段 */}
-            {Object.keys(billingData).filter(key => !['billableAmount', 'customerId', 'billable_amount', 'discount_details', 'usage_breakdown', 'billing_cycle', 'total_usage', 'included_usage', 'billable_usage'].includes(key)).length > 0 && (
-              <div className="mt-8">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-                  其他数据
-                </div>
-                <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 p-4 backdrop-blur-xl">
+            {/* 其他数据字段：默认收起的技术详情，避免把接口原始 JSON 直接铺给用户（F5-18） */}
+            {Object.keys(billingData).filter(key => !BILLING_KNOWN_KEYS.includes(key)).length > 0 && (
+              <details className="mt-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-xl">
+                <summary className="cursor-pointer px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-600">
+                  原始数据（技术详情）
+                </summary>
+                <div className="border-t border-slate-100 p-4">
                   <pre className="overflow-x-auto text-xs text-slate-700">
                     {JSON.stringify(
                       Object.fromEntries(
-                        Object.entries(billingData).filter(([key]) => !['billableAmount', 'customerId', 'billable_amount', 'discount_details', 'usage_breakdown', 'billing_cycle', 'total_usage', 'included_usage', 'billable_usage'].includes(key))
+                        Object.entries(billingData).filter(([key]) => !BILLING_KNOWN_KEYS.includes(key))
                       ),
                       null,
                       2
                     )}
                   </pre>
                 </div>
-              </div>
+              </details>
             )}
           </m.div>
         )}

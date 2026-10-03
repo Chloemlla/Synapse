@@ -14,6 +14,7 @@ import { qqGuardApi } from '../../api/qqGuard';
 import type { QqGuardPendingTask, QqGuardStats, QqGuardHealth } from '../../api/qqGuard';
 import { SimpleLoadingSpinner } from '../LoadingSpinner';
 import { InfoMetricCard, InfoSectionTitle, studioSurfaceClassName } from '../studioTheme';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { AuditLogPanel } from './qq-guard/AuditLogPanel';
 import { WhitelistPanel } from './qq-guard/WhitelistPanel';
 import { CommandPanel } from './qq-guard/CommandPanel';
@@ -77,6 +78,7 @@ const healthBar = (h: QqGuardHealth | null) => {
  * 动作经命令 outbox → bot 执行并回执，回执状态在「命令中心」可见。
  */
 export const QqGuardManager: React.FC = () => {
+  const confirm = useConfirm();
   const [tab, setTab] = useState<TabKey>('overview');
   const [stats, setStats] = useState<QqGuardStats | null>(null);
   const [pending, setPending] = useState<QqGuardPendingTask[]>([]);
@@ -126,6 +128,23 @@ export const QqGuardManager: React.FC = () => {
 
   const dispatchAction = async (action: 'retry' | 'recall' | 'exempt', task: QqGuardPendingTask) => {
     const label = action === 'retry' ? '立即复审' : action === 'recall' ? '手动撤回' : '豁免';
+    if (action === 'recall') {
+      const ok = await confirm({
+        title: '确认撤回该条消息？',
+        description: `将撤回群成员 ${task.userId} 在群 ${task.groupId} 的消息（messageId ${task.messageId}），撤回后不可恢复。`,
+        tone: 'danger',
+        confirmLabel: '撤回消息',
+      });
+      if (!ok) return;
+    } else if (action === 'exempt') {
+      const ok = await confirm({
+        title: '确认豁免该用户？',
+        description: `将把 ${task.userId} 加入白名单，此后不再对其消息做纪律判定，可在白名单页撤销。`,
+        tone: 'danger',
+        confirmLabel: '加入白名单',
+      });
+      if (!ok) return;
+    }
     setBusyTrace(task.traceId);
     setError(null);
     try {

@@ -130,6 +130,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                         {onClose && (
                             <button
                                 onClick={onClose}
+                                aria-label="关闭预览"
                                 className="text-white hover:text-slate-200 transition-colors"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,6 +146,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                         <div className="flex items-center space-x-4">
                             <button
                                 onClick={handlePlayPause}
+                                aria-label={isPlaying ? '暂停' : '播放'}
                                 className="rounded-full bg-slate-100 p-2 transition-colors hover:bg-slate-200"
                                 disabled={isLoading}
                             >
@@ -163,6 +165,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                             <div className="flex-1">
                                 <input
                                     type="range"
+                                    aria-label="播放进度"
                                     min={0}
                                     max={duration || 0}
                                     value={currentTime}

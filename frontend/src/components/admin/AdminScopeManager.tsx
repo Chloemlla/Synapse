@@ -53,7 +53,7 @@ interface PagePickerProps {
   options: AdminScopePageOption[];
   selected: readonly string[];
   onToggle: (key: string) => void;
-  onSetAll: (keys: string[]) => void;
+  onSetAll: (keys: string[], mode: 'add' | 'remove') => void;
   keyword: string;
   onKeywordChange: (value: string) => void;
   disabled?: boolean;
@@ -94,7 +94,7 @@ const PagePicker: React.FC<PagePickerProps> = ({
         <button
           type='button'
           disabled={disabled || filtered.length === 0}
-          onClick={() => onSetAll(filtered.map((option) => option.key))}
+          onClick={() => onSetAll(filtered.map((option) => option.key), 'add')}
           className={cn(studioSecondaryButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
         >
           勾选当前 {filtered.length} 项
@@ -102,7 +102,7 @@ const PagePicker: React.FC<PagePickerProps> = ({
         <button
           type='button'
           disabled={disabled || filtered.length === 0}
-          onClick={() => onSetAll([])}
+          onClick={() => onSetAll(filtered.map((option) => option.key), 'remove')}
           className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
         >
           清空当前 {filtered.length} 项
@@ -217,17 +217,15 @@ const AdminScopeManager: React.FC = () => {
     setDirty(true);
   }, []);
 
-  const setDefaultAll = useCallback((keys: string[]) => {
-    setDraftDefaults((prev) => {
-      if (keys.length === 0) {
-        // 「清空当前 N 项」只针对筛选结果
-        const filteredSet = new Set(options.map((option) => option.key));
-        return prev.filter((key) => !filteredSet.has(key));
-      }
-      return Array.from(new Set([...prev, ...keys]));
-    });
+  const setDefaultAll = useCallback((keys: string[], mode: 'add' | 'remove') => {
+    if (keys.length === 0) return;
+    setDraftDefaults((prev) =>
+      mode === 'add'
+        ? Array.from(new Set([...prev, ...keys]))
+        : prev.filter((key) => !keys.includes(key)),
+    );
     setDirty(true);
-  }, [options]);
+  }, []);
 
   const togglePerUser = useCallback((userId: string, key: string) => {
     setDraftPerUser((prev) => {
@@ -238,17 +236,18 @@ const AdminScopeManager: React.FC = () => {
     setDirty(true);
   }, []);
 
-  const setPerUserAll = useCallback((userId: string, keys: string[]) => {
+  const setPerUserAll = useCallback((userId: string, keys: string[], mode: 'add' | 'remove') => {
+    if (keys.length === 0) return;
     setDraftPerUser((prev) => {
       const current = prev[userId] ?? [];
-      if (keys.length === 0) {
-        const filteredSet = new Set(options.map((option) => option.key));
-        return { ...prev, [userId]: current.filter((key) => !filteredSet.has(key)) };
-      }
-      return { ...prev, [userId]: Array.from(new Set([...current, ...keys])) };
+      const next =
+        mode === 'add'
+          ? Array.from(new Set([...current, ...keys]))
+          : current.filter((key) => !keys.includes(key));
+      return { ...prev, [userId]: next };
     });
     setDirty(true);
-  }, [options]);
+  }, []);
 
   const removeUser = useCallback((userId: string) => {
     setDraftPerUser((prev) => {
@@ -495,7 +494,7 @@ const AdminScopeManager: React.FC = () => {
                     options={options}
                     selected={draftPerUser[activeUserId] ?? []}
                     onToggle={(key) => togglePerUser(activeUserId, key)}
-                    onSetAll={(keys) => setPerUserAll(activeUserId, keys)}
+                    onSetAll={(keys, mode) => setPerUserAll(activeUserId, keys, mode)}
                     keyword={perUserKeyword}
                     onKeywordChange={setPerUserKeyword}
                     disabled={saving || loading}

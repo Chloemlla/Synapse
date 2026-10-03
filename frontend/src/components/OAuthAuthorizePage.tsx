@@ -320,7 +320,7 @@ const OAuthAuthorizePage: React.FC = () => {
                       studioMetricToneClassName(item.tone),
                     )}
                   >
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-slate-600">
                       {item.label}
                     </div>
                     <div className="mt-2 break-words text-sm font-semibold text-slate-800">
@@ -472,14 +472,9 @@ const OAuthAuthorizePage: React.FC = () => {
                         key={scope.key}
                         className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 p-4"
                       >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <span className="font-semibold text-slate-800">
-                            {scope.label}
-                          </span>
-                          <code className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600">
-                            {scope.key}
-                          </code>
-                        </div>
+                        <span className="font-semibold text-slate-800">
+                          {scope.label}
+                        </span>
                         <p className="mt-2 text-xs leading-6 text-slate-500">
                           {scope.description}
                         </p>
@@ -509,34 +504,17 @@ const OAuthAuthorizePage: React.FC = () => {
                         key={scope.key}
                         className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 p-4"
                       >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-slate-800">
-                              {scope.label}
-                            </span>
-                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
-                              {formatScopeCategory(scope.category)}
-                            </span>
-                          </div>
-                          <code className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600">
-                            {scope.key}
-                          </code>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-slate-800">
+                            {scope.label}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                            {formatScopeCategory(scope.category)}
+                          </span>
                         </div>
                         <p className="mt-2 text-xs leading-6 text-slate-500">
                           {scope.description}
                         </p>
-                        {scope.endpoints.length > 0 ? (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {scope.endpoints.map((endpoint) => (
-                              <code
-                                key={endpoint}
-                                className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] text-slate-500"
-                              >
-                                {endpoint}
-                              </code>
-                            ))}
-                          </div>
-                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -621,23 +599,61 @@ const OAuthAuthorizePage: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <div className="flex flex-col gap-1 rounded-2xl border border-slate-100 px-3 py-3 text-sm">
-                  <span className="text-slate-500">授权码模式</span>
-                  <code className="break-all text-xs font-semibold text-slate-900">
-                    response_type=code
-                  </code>
+                  <span className="text-slate-500">授权方式</span>
+                  <span className="text-xs font-semibold text-slate-900">
+                    授权码模式
+                  </span>
                 </div>
                 <div className="flex flex-col gap-1 rounded-2xl border border-slate-100 px-3 py-3 text-sm">
                   <span className="text-slate-500">授权范围</span>
-                  <code className="break-all text-xs font-semibold text-slate-900">
-                    {preview.scopes.join(" ")}
-                  </code>
+                  <span className="text-xs font-semibold text-slate-900">
+                    {preview.scopes.length} 项权限
+                  </span>
                 </div>
-                <div className="flex flex-col gap-1 rounded-2xl border border-slate-100 px-3 py-3 text-sm">
-                  <span className="text-slate-500">管理员识别字段</span>
-                  <code className="break-all text-xs font-semibold text-slate-900">
-                    role / isAdmin / is_admin / synapseAdmin
-                  </code>
-                </div>
+                {/* 协议字段名、原始权限标识与接口路径属于实现细节：默认折叠，需要核对时可展开 */}
+                <details className="rounded-2xl border border-slate-100 px-3 py-3 text-sm">
+                  <summary className="cursor-pointer select-none font-medium text-slate-700">
+                    技术详情
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-500">协议字段</span>
+                      <code className="break-all text-xs font-semibold text-slate-900">
+                        response_type=code
+                      </code>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-500">权限标识</span>
+                      <code className="break-all text-xs font-semibold text-slate-900">
+                        {preview.scopes.join(" ")}
+                      </code>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-500">管理员识别字段</span>
+                      <code className="break-all text-xs font-semibold text-slate-900">
+                        role / isAdmin / is_admin / synapseAdmin
+                      </code>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-500">权限对应的接口路径</span>
+                      <ul className="space-y-1">
+                        {preview.scopeDetails.map((scope) => (
+                          <li
+                            key={scope.key}
+                            className="break-all text-xs leading-5 text-slate-600"
+                          >
+                            <code className="font-semibold text-slate-900">
+                              {scope.key}
+                            </code>
+                            {scope.endpoints.length > 0
+                              ? ` — ${scope.endpoints.join("、")}`
+                              : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </details>
               </div>
             </motion.section>
           </div>

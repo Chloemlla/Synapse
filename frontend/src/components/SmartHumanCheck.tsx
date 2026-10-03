@@ -580,6 +580,26 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
     return `${Math.max(0, Math.min(100, pct))}%`;
   })();
 
+  // 键盘等价操作（WCAG 2.5.7）：方向键推进滑块，Home/End 到两端，回车/空格直接拉到底。
+  // 拉到底后仍由上面「到达最右保持 350ms」的既有逻辑触发 onComplete，不另开路径。
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (disabled || done) return;
+    const step = 0.1;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      setPos((prev) => Math.min(1, prev + step));
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      setPos((prev) => Math.max(0, prev - step));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      setPos(0);
+    } else if (e.key === 'End' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setPos(1);
+    }
+  };
+
   return (
     <div className={`w-full select-none ${disabled ? 'opacity-50' : ''}`}>
       <div
@@ -593,8 +613,10 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
         />
         <div
           role="button"
-          aria-label="slider-handle"
-          className={`absolute rounded-full bg-white/90 shadow-md border border-slate-300 flex items-center justify-center cursor-pointer`}
+          tabIndex={disabled ? -1 : 0}
+          aria-label={done ? '验证已完成' : '拖动完成验证，也可用方向键或回车键完成'}
+          aria-disabled={disabled || undefined}
+          className={`absolute rounded-full bg-white/90 shadow-md border border-slate-300 flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1`}
           style={{
             width: `${knobSize}px`,
             height: `${knobSize}px`,
@@ -609,6 +631,7 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
             setDragging(true);
             try { e.preventDefault(); } catch { }
           }}
+          onKeyDown={handleKeyDown}
         >
           {done ? '✓' : '≡'}
         </div>
@@ -618,7 +641,7 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
           </div>
         ) : hintMode === 'inline' ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-sm text-slate-600">
-            按住滑块拖动完成验证
+            拖动滑块完成验证，也可用方向键或回车键
           </div>
         ) : null}
       </div>
@@ -1256,7 +1279,7 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
               <FaShieldAlt size={17} aria-hidden="true" />
             </div>
             <span className="mt-1 text-[10px] font-semibold leading-none text-[#555]">Synapse</span>
-            <span className="mt-1 whitespace-nowrap text-[8px] leading-none text-[#777]">隐私 · 条款</span>
+            <span className="mt-1 whitespace-nowrap text-[8px] leading-none text-[#5b6470]">隐私 · 条款</span>
           </div>
         </div>
 
@@ -1265,7 +1288,7 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
             {challengeOpen && (
               <div className="space-y-2">
                 {isMinimal && (
-                  <div className="text-center text-xs text-[#555]">按住滑块拖动完成验证</div>
+                  <div className="text-center text-xs text-[#555]">拖动滑块完成验证，也可用方向键或回车键</div>
                 )}
                 {isMinimal ? (
                   <CompactSlider key={sliderKey} onComplete={handleSliderComplete} disabled={!checked} />
@@ -1329,9 +1352,13 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
         )}
 
         {density !== 'compact' && (
-          <div className="flex items-center justify-between border-t border-[#e7e7e7] bg-[#f5f5f5] px-3 py-1.5 text-[10px] leading-none text-[#777]">
-            <span>{activeNonceReady ? 'Protected' : 'Loading'}</span>
-            <span>{powDifficulty || challengeDifficulty ? `PoW ${powDifficulty || challengeDifficulty}` : 'Managed challenge'}</span>
+          <div className="flex items-center justify-between border-t border-[#e7e7e7] bg-[#f5f5f5] px-3 py-1.5 text-[10px] leading-none text-[#5b6470]">
+            <span>{activeNonceReady ? '安全校验已就绪' : '安全校验加载中'}</span>
+            <span>
+              {powDifficulty || challengeDifficulty
+                ? `校验强度 ${powDifficulty || challengeDifficulty}`
+                : '智能安全校验'}
+            </span>
           </div>
         )}
       </div>

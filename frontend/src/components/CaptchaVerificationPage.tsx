@@ -385,38 +385,48 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
                     <h3 className={`font-semibold ${
                       verificationResult.success ? 'text-emerald-800' : 'text-rose-800'
                     }`}>
-                      {verificationResult.success ? '验证成功' : '验证失败'}
+                      {verificationResult.success ? '验证成功' : '验证未通过'}
                     </h3>
                     <p className={`text-sm mt-1 ${
                       verificationResult.success ? 'text-emerald-700' : 'text-rose-700'
                     }`}>
                       {verificationResult.message}
                     </p>
+                    {!verificationResult.success && (
+                      <p className="text-xs mt-1 text-rose-700">
+                        请点击下方「重新验证」再试一次。
+                      </p>
+                    )}
 
-                    {/* 详细信息 */}
+                    {/* 详细信息：技术字段（验证分数 / 主机名 / 错误代码）折叠展示，避免直接抛给用户 */}
                     {verificationResult.details && (
-                      <div className="mt-3 space-y-1">
-                        {verificationResult.score !== undefined && (
-                          <p className="text-xs text-slate-600">
-                            验证分数: {verificationResult.score}
-                          </p>
-                        )}
-                        {verificationResult.timestamp && (
-                          <p className="text-xs text-slate-600">
-                            验证时间: {new Date(verificationResult.timestamp).toLocaleString()}
-                          </p>
-                        )}
-                        {verificationResult.details.hostname && (
-                          <p className="text-xs text-slate-600">
-                            主机名: {verificationResult.details.hostname}
-                          </p>
-                        )}
-                        {verificationResult.details.error_codes && verificationResult.details.error_codes.length > 0 && (
-                          <p className="text-xs text-rose-600">
-                            错误代码: {verificationResult.details.error_codes.join(', ')}
-                          </p>
-                        )}
-                      </div>
+                      <details className="mt-3 rounded-xl border border-slate-200 bg-white/70 px-3 py-2">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-600">
+                          查看验证详情
+                        </summary>
+                        <div className="mt-2 space-y-1">
+                          {verificationResult.score !== undefined && (
+                            <p className="text-xs text-slate-600">
+                              验证分数: {verificationResult.score}
+                            </p>
+                          )}
+                          {verificationResult.timestamp && (
+                            <p className="text-xs text-slate-600">
+                              验证时间: {new Date(verificationResult.timestamp).toLocaleString()}
+                            </p>
+                          )}
+                          {verificationResult.details.hostname && (
+                            <p className="text-xs text-slate-600">
+                              主机名: {verificationResult.details.hostname}
+                            </p>
+                          )}
+                          {verificationResult.details.error_codes && verificationResult.details.error_codes.length > 0 && (
+                            <p className="text-xs text-rose-600">
+                              错误代码: {verificationResult.details.error_codes.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      </details>
                     )}
 
                     {widget.showProviderLabel && (

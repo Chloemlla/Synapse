@@ -65,6 +65,28 @@ function sanitizeImageUrl(value: unknown): string | undefined {
   }
 }
 
+/**
+ * 把上传异常映射成中文用户文案（F5-13）。
+ * 网络/超时等技术串不回显给用户，原始错误由调用方 console.error 记录。
+ */
+function toUploadErrorMessage(err: unknown, fallback = '上传失败，请稍后重试'): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+    return '网络连接中断，请检查网络后重试';
+  }
+  if (/timeout|timed out/i.test(raw)) {
+    return '上传超时，请稍后重试';
+  }
+  if (/abort/i.test(raw)) {
+    return '上传已取消';
+  }
+  if (/\b[45]\d{2}\b/.test(raw)) {
+    return '服务暂时不可用，请稍后重试';
+  }
+  // 后端返回的中文提示可直接展示，英文串一律换成通用文案
+  return /[一-龥]/.test(raw) ? raw : fallback;
+}
+
 // 1. 新增本地存储相关常量和工具函数
 const STORAGE_KEY = 'happy_images';
 
@@ -329,10 +351,14 @@ const ImageUploadPage: React.FC = () => {
   // 批量上传相关状态
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [batchUploading, setBatchUploading] = useState(false);
+  // 已完成（成功+失败）的文件数，用于「已完成 i/总数 m」进度（F5-04）
+  const [batchDone, setBatchDone] = useState(0);
   const [batchProgress, setBatchProgress] = useState<{ [key: string]: { status: 'pending' | 'uploading' | 'success' | 'error', progress?: number, error?: string, shortUrl?: string } }>({});
   const [showBatchList, setShowBatchList] = useState(false);
   const [batchUploadResults, setBatchUploadResults] = useState<{ [key: string]: { web2url: string, shortUrl?: string } }>({});
   const batchFileInputRef = useRef<HTMLInputElement>(null);
+  // 批量上传的中断句柄：供「取消上传」按钮中止在途请求（F5-04）
+  const batchAbortRef = useRef<AbortController | null>(null);
   // G12-12：预览 object URL 的清理引用
   const previewUrlRef = useRef<string | null>(null);
   // G12-01：挑战令牌一次性的 ref 版（供批量上传逐文件取新令牌）
@@ -396,7 +422,7 @@ const ImageUploadPage: React.FC = () => {
     if (!f) return;
     if (!ALLOWED_TYPES.includes(f.type)) {
       console.warn('[图片上传] 类型校验失败:', f.type);
-      setNotification({ message: '仅支持图片格式：JPEG, PNG, GIF, WebP, BMP, SVG', type: 'error' });
+      setNotification({ message: '仅支持图片格式：JPEG, PNG, GIF, WebP, BMP', type: 'error' });
       return;
     }
     if (f.size > MAX_IMAGE_SIZE) {
@@ -518,6 +544,13 @@ const ImageUploadPage: React.FC = () => {
     setNotification({ message: '已清空批量上传队列', type: 'success' });
   };
 
+  // F5-04：取消进行中的批量上传（中止在途请求，并结束可能正在等待的人机验证）
+  const cancelBatchUpload = () => {
+    if (!batchUploading) return;
+    batchAbortRef.current?.abort();
+    setNotification({ message: '正在取消上传…', type: 'info' });
+  };
+
   // 人机验证回调：三家共用同一套下发链路，页面只关心 { token, provider }
   const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => {
     captchaChallengeRef.current = challenge;
@@ -537,7 +570,7 @@ const ImageUploadPage: React.FC = () => {
   // G12-01：重置控件并等待新的「一次性」挑战令牌。
   // 后端对每个上传请求都调用供应商 siteverify（令牌单次有效），
   // 所以批量场景必须逐文件取新令牌；超时返回 null 由调用方标记失败。
-  const obtainFreshCaptcha = (): Promise<ManagedCaptchaChallenge | null> => {
+  const obtainFreshCaptcha = (signal?: AbortSignal): Promise<ManagedCaptchaChallenge | null> => {
     if (isAdmin || !captchaStatus.required) return Promise.resolve(null);
 
     captchaChallengeRef.current = null;
@@ -545,14 +578,18 @@ const ImageUploadPage: React.FC = () => {
     captchaRef.current?.reset();
 
     return new Promise((resolve) => {
-      const timeout = window.setTimeout(() => {
+      const finish = (challenge: ManagedCaptchaChallenge | null) => {
         captchaResolveRef.current = null;
-        resolve(null);
-      }, 30000);
-      captchaResolveRef.current = (challenge) => {
-        window.clearTimeout(timeout);
         resolve(challenge);
       };
+      const timeout = window.setTimeout(() => finish(null), 30000);
+      const settle = (challenge: ManagedCaptchaChallenge | null) => {
+        window.clearTimeout(timeout);
+        finish(challenge);
+      };
+      // 取消上传时立即结束等待，避免卡在 30s 超时（F5-04）
+      signal?.addEventListener('abort', () => settle(null), { once: true });
+      captchaResolveRef.current = (challenge) => settle(challenge);
     });
   };
 
@@ -663,8 +700,9 @@ const ImageUploadPage: React.FC = () => {
         setUploadedShortUrl(null);
         // 挑战令牌一次性：失败后重新验证
         captchaRef.current?.reset();
-        setError(result.error);
-        setNotification({ message: result.error, type: 'error' });
+        const friendly = toUploadErrorMessage(result.error);
+        setError(friendly);
+        setNotification({ message: friendly, type: 'error' });
         console.error('[图片上传] 上传失败，错误:', result.error);
       } else {
         setError('上传失败');
@@ -674,8 +712,9 @@ const ImageUploadPage: React.FC = () => {
     } catch (e: any) {
       setUploading(false);
       captchaRef.current?.reset();
-      setError(e?.message || '上传失败');
-      setNotification({ message: e?.message || '上传失败', type: 'error' });
+      const friendly = toUploadErrorMessage(e);
+      setError(friendly);
+      setNotification({ message: friendly, type: 'error' });
       console.error('[图片上传] 异常:', e);
     }
   };
@@ -691,6 +730,10 @@ const ImageUploadPage: React.FC = () => {
     }
 
     setBatchUploading(true);
+    setBatchDone(0);
+    // F5-04：整批共用一个 AbortController，「取消上传」可中止在途请求与等待
+    const controller = new AbortController();
+    batchAbortRef.current = controller;
     const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
 
     // G12-02：逐文件结果收集到局部数组，收尾统计/清理全部基于局部数据，避免读到过期闭包
@@ -703,6 +746,8 @@ const ImageUploadPage: React.FC = () => {
     for (let i = 0; i < batchFiles.length; i++) {
       const file = batchFiles[i];
       const fileName = file.name;
+
+      if (controller.signal.aborted) break;
 
       try {
         // 更新进度状态
@@ -718,7 +763,8 @@ const ImageUploadPage: React.FC = () => {
           if (i === 0 && captchaChallengeRef.current) {
             challenge = captchaChallengeRef.current;
           } else {
-            challenge = await obtainFreshCaptcha();
+            challenge = await obtainFreshCaptcha(controller.signal);
+            if (controller.signal.aborted) break;
             if (!challenge) {
               const errorMsg = '人机验证失败或超时，请重试';
               results.push({ name: fileName, ok: false });
@@ -743,6 +789,7 @@ const ImageUploadPage: React.FC = () => {
           method: 'POST',
           body: formData,
           credentials: 'include', // G12-01：与单文件路径对齐，带登录态
+          signal: controller.signal,
         });
 
         const result = await res.json();
@@ -823,17 +870,20 @@ const ImageUploadPage: React.FC = () => {
           console.log(`[批量上传] 文件 ${fileName} 上传成功`);
         } else {
           // 上传失败
-          const errorMsg = result?.error || '上传失败';
+          const errorMsg = toUploadErrorMessage(result?.error, '上传失败，请稍后重试');
           results.push({ name: fileName, ok: false });
           setBatchProgress(prev => ({
             ...prev,
             [fileName]: { status: 'error', error: errorMsg }
           }));
-          console.error(`[批量上传] 文件 ${fileName} 上传失败:`, errorMsg);
+          console.error(`[批量上传] 文件 ${fileName} 上传失败:`, result?.error);
         }
       } catch (error: any) {
-        // 异常处理
-        const errorMsg = error?.message || '上传异常';
+        if (controller.signal.aborted) {
+          console.log(`[批量上传] 已取消，文件 ${fileName} 未完成`);
+          break;
+        }
+        const errorMsg = toUploadErrorMessage(error, '上传异常，请稍后重试');
         results.push({ name: fileName, ok: false });
         setBatchProgress(prev => ({
           ...prev,
@@ -842,13 +892,41 @@ const ImageUploadPage: React.FC = () => {
         console.error(`[批量上传] 文件 ${fileName} 上传异常:`, error);
       }
 
-      // 添加延迟，避免请求过于频繁
+      setBatchDone(results.length);
+
+      // 添加延迟，避免请求过于频繁；取消时立即结束等待
       if (i < batchFiles.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise<void>((resolve) => {
+          const timer = window.setTimeout(() => resolve(), 500);
+          controller.signal.addEventListener('abort', () => {
+            window.clearTimeout(timer);
+            resolve();
+          }, { once: true });
+        });
       }
     }
 
     setBatchUploading(false);
+    batchAbortRef.current = null;
+
+    // F5-04：用户主动取消：保留队列（未完成项回到「等待上传」），不进入成功项收敛逻辑
+    if (controller.signal.aborted) {
+      setBatchProgress(prev => {
+        const next = { ...prev };
+        for (const name of Object.keys(next)) {
+          if (next[name].status === 'uploading') next[name] = { status: 'pending' };
+        }
+        return next;
+      });
+      setNotification({
+        message: `已取消上传：已完成 ${results.length}/${batchFiles.length} 个，其余保留在队列中`,
+        type: 'warning'
+      });
+      setCaptcha(null);
+      captchaChallengeRef.current = null;
+      captchaRef.current?.reset();
+      return;
+    }
 
     // G12-02：基于局部结果统计，而非渲染期闭包里的过期 state
     const successCount = results.filter(r => r.ok).length;
@@ -1162,7 +1240,7 @@ const ImageUploadPage: React.FC = () => {
           </div>
           <h1 className="mt-5 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">图片上传</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            支持 JPEG、PNG、GIF、WebP、BMP、SVG 格式，最大 5MB。上传后将返回可直接访问的图片链接，并自动生成 IPFS 记录。
+            支持 JPEG、PNG、GIF、WebP、BMP 格式，最大 5MB。上传后将返回可直接访问的图片链接，并自动生成 IPFS 记录。
           </p>
 
           <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
@@ -1221,7 +1299,7 @@ const ImageUploadPage: React.FC = () => {
               <div className="text-sm text-slate-700">
                 {uploading ? '上传中…' : file ? '已选择文件' : '点击选择图片或拖拽图片到此处'}
               </div>
-              <div className="mt-1 text-xs text-slate-400">支持 JPG、PNG、GIF 等格式，可拖拽多个文件进行批量上传</div>
+              <div className="mt-1 text-xs text-slate-600">支持 JPG、PNG、GIF 等格式，可拖拽多个文件进行批量上传</div>
             </div>
 
             {file && previewUrl && (
@@ -1349,13 +1427,18 @@ const ImageUploadPage: React.FC = () => {
                   })}
                 </div>
 
+                {batchUploading && (
+                  <div className="mt-3 text-center text-xs text-slate-600" role="status" aria-live="polite">
+                    已完成 {batchDone}/{batchFiles.length}
+                  </div>
+                )}
                 <motion.button
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
-                  onClick={handleBatchUpload}
-                  disabled={batchUploading || batchFiles.length === 0 || (captchaStatus.required && !captcha?.token)}
+                  onClick={batchUploading ? cancelBatchUpload : handleBatchUpload}
+                  disabled={!batchUploading && (batchFiles.length === 0 || (captchaStatus.required && !captcha?.token))}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {batchUploading ? '批量上传中…' : `开始批量上传 (${batchFiles.length} 个文件)`}
+                  {batchUploading ? `取消上传（已完成 ${batchDone}/${batchFiles.length}）` : `开始批量上传 (${batchFiles.length} 个文件)`}
                 </motion.button>
               </motion.div>
             )}

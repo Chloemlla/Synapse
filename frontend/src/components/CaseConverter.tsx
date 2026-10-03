@@ -829,13 +829,13 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
   }, []);
 
       // 复制到剪贴板 - 添加错误处理和降级方案
-  const copyToClipboard = useCallback(async (text: string) => {
+  const copyToClipboard = useCallback(async (text: string): Promise<boolean> => {
     if (!text.trim()) {
       setNotification({
         message: isEnglish ? 'No text to copy' : '没有可复制的文本',
         type: 'warning'
       });
-      return;
+      return false;
     }
 
     // 验证文本长度
@@ -844,7 +844,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         message: isEnglish ? 'Text is too long to copy' : '文本过长，无法复制',
         type: 'warning'
       });
-      return;
+      return false;
     }
 
     try {
@@ -855,7 +855,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
           message: t.tips.copied,
           type: 'success'
         });
-        return;
+        return true;
       }
 
       // 降级方案：使用 document.execCommand
@@ -878,6 +878,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
           message: t.tips.copied,
           type: 'success'
         });
+        return true;
       } else {
         throw new Error('execCommand failed');
       }
@@ -887,6 +888,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         message: isEnglish ? 'Failed to copy text to clipboard' : '复制到剪贴板失败',
         type: 'error'
       });
+      return false;
     }
   }, [t.tips.copied, isEnglish, setNotification]);
 
@@ -1221,9 +1223,9 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                   {t.copy}
                 </motion.button>
                 <motion.button
-                  onClick={() => {
-                    copyToClipboard(inputText);
-                    setInputText('');
+                  onClick={async () => {
+                    const ok = await copyToClipboard(inputText);
+                    if (ok) setInputText('');
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
                   whileTap={{ scale: 0.97 }}

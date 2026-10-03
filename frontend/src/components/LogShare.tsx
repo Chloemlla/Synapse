@@ -408,9 +408,7 @@ const LogShare: React.FC = React.memo(() => {
       tone: 'danger',
       confirmLabel: '删除',
     });
-    if (ok) {
-      return;
-    }
+    if (!ok) return;
 
     try {
       await axios.delete(getApiBaseUrl() + `/api/logs/archives/${archiveName}`);

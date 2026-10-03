@@ -103,8 +103,17 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        // 原始状态码与后端原文只进 console；用户侧只看到可行动的中文文案
+        const errorData = await response.json().catch(() => null);
+        console.error(
+          '获取验证方式失败:',
+          response.status,
+          response.statusText,
+          errorData
+        );
+        const backendMessage =
+          typeof errorData?.error === 'string' && errorData.error.trim() ? errorData.error.trim() : '';
+        throw new Error(backendMessage || '验证服务暂不可用，请稍后重试');
       }
 
       const data = await response.json();
@@ -144,7 +153,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
 
     } catch (err) {
       console.error('安全CAPTCHA选择失败:', err);
-      setError(err instanceof Error ? err.message : '未知错误');
+      setError(err instanceof Error && err.message ? err.message : '验证服务暂不可用，请稍后重试');
       setCaptchaConfig(null);
       setEncryptedSelection(null);
 

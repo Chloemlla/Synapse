@@ -25,6 +25,7 @@ import {
   studioFieldClassName,
   studioPillClassName,
   studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
   studioTextareaClassName,
 } from "./studioTheme";
 import {
@@ -92,18 +93,24 @@ function buildVoiceLanguageLabel(options: TtsProviderOption[], languageKey: stri
 
 interface TtsFormProps {
   loading: boolean;
+  /** 生成阶段文案（来自 useTts），长耗时任务期间展示。 */
+  stage?: string | null;
   error?: string | null;
   latestResult?: TtsResponse | null;
   onSubmit: (request: TtsRequest) => Promise<TtsResponse>;
   onSuccess?: (result: TtsResponse) => void;
+  /** 主动取消当前生成（来自 useTts 的 cancel）。 */
+  onCancel?: () => void;
 }
 
 export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   loading,
+  stage,
   error,
   latestResult,
   onSubmit,
   onSuccess,
+  onCancel,
 }) => {
   const [text, setText] = useState("");
   const [model, setModel] = useState(FALLBACK_TTS_PROVIDER_CONFIG.defaultModel);
@@ -151,6 +158,34 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [policyConsentRequired, setPolicyConsentRequired] = useState(false);
   const fishModelPageRef = useRef(1);
   const fishDefaultPageRef = useRef(1);
+
+  // 长耗时生成期间的可见性：阶段文案由 useTts 提供，这里补已用时与「可安全离开」提示，
+  // 并记住用户是否已请求取消，以便把「主动取消」和「真实失败」区分开。
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const cancelRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!loading) {
+      cancelRequestedRef.current = false;
+      setCancelRequested(false);
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [loading]);
+
+  const handleCancelGenerate = useCallback(() => {
+    cancelRequestedRef.current = true;
+    setCancelRequested(true);
+    onCancel?.();
+  }, [onCancel]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -437,6 +472,19 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
       onSuccess?.(result);
     } catch (submitError) {
+      // 用户主动取消：不是失败，不弹红色错误；后端任务仍可能跑完并进入生成历史。
+      if (cancelRequestedRef.current) {
+        // 挑战令牌一次性，任务已提交即被核销，下次生成前需重新验证。
+        if (captchaStatus.required) {
+          captchaRef.current?.reset();
+        }
+        setNotification({
+          message: "已取消本次生成，稍后可在生成历史中查看结果",
+          type: "warning",
+        });
+        return;
+      }
+
       const message =
         submitError instanceof Error ? submitError.message : "生成失败，请稍后重试";
       const needsConsent =
@@ -1100,7 +1148,31 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               "生成语音"
             )}
           </motion.button>
+          {loading && onCancel ? (
+            <motion.button
+              type="button"
+              onClick={handleCancelGenerate}
+              disabled={cancelRequested}
+              className={studioSecondaryButtonClassName}
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {cancelRequested ? "正在取消…" : "取消生成"}
+            </motion.button>
+          ) : null}
         </motion.div>
+
+        {loading ? (
+          <div className="space-y-1 text-xs leading-5 text-slate-500" role="status" aria-live="polite">
+            <p>
+              {cancelRequested ? "正在取消，请稍候…" : stage || "正在生成语音…"}
+              {elapsedSeconds > 0 ? ` · 已用时 ${elapsedSeconds} 秒` : ""}
+            </p>
+            {elapsedSeconds >= 10 && !cancelRequested ? (
+              <p>生成在后台继续进行，现在可以安全离开本页；完成后可在下方「生成历史」中查看结果。</p>
+            ) : null}
+          </div>
+        ) : null}
       </motion.form>
 
       {/* Fish Audio 音色列表弹窗 */}

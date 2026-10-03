@@ -86,7 +86,25 @@ api.interceptors.response.use(
   },
 );
 
-const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+/**
+ * 可被 AbortSignal 打断的等待：取消生成时立刻结束轮询等待，
+ * 不必等满当前轮询间隔（最长 10s）才让取消生效。
+ */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+
+    const finish = () => {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+  });
 
 const resolveAudioUrl = (rawAudioUrl: string): string => {
   if (rawAudioUrl.startsWith("http")) {
@@ -130,6 +148,8 @@ export const useTts = () => {
   const [history, setHistory] = useState<TtsHistoryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  // 生成阶段文案：长耗时任务期间让用户知道当前进行到哪一步。
+  const [stage, setStage] = useState<string | null>(null);
 
   // G9-12：提交防重（in-flight 锁）与可取消轮询（AbortController 联动卸载清理）
   const generateInFlightRef = useRef(false);
@@ -140,6 +160,12 @@ export const useTts = () => {
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
     };
+  }, []);
+
+  // 主动取消：中断在途的提交/轮询/取结果请求，轮询等待也会被立即打断。
+  // 后端任务不受影响，完成后仍会出现在生成历史里。
+  const cancel = useCallback(() => {
+    abortControllerRef.current?.abort();
   }, []);
 
   const reset = () => {
@@ -250,6 +276,7 @@ export const useTts = () => {
       setError(null);
       setAudioUrl(null);
       setResult(null);
+      setStage("正在提交任务…");
 
       const fingerprint = request.fingerprint || (await getFingerprint());
       // request 整体透传（含 provider），无需逐字段映射；后端对未启用的 provider 会回落主提供商。
@@ -273,8 +300,10 @@ export const useTts = () => {
         let pollInterval = basePollInterval;
         let completed = false;
 
+        setStage("已提交，正在合成语音…");
+
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-          await sleep(pollInterval);
+          await sleep(pollInterval, controller.signal);
 
           // 组件卸载后停止轮询
           if (controller.signal.aborted) {
@@ -305,6 +334,8 @@ export const useTts = () => {
         }
       }
 
+      setStage("正在取回生成结果…");
+
       const response = await api.get<TtsResponse>(`/api/tts/jobs/${submitData.taskId}/result`, {
         params: fingerprint ? { fingerprint } : undefined,
         signal: controller.signal,
@@ -318,6 +349,8 @@ export const useTts = () => {
       if (!responseData.signature) {
         throw new Error("服务器返回数据缺少完整性校验值");
       }
+
+      setStage("正在校验音频完整性…");
 
       try {
         const isValid = verifyContent(responseData.audioUrl, responseData.signature);
@@ -344,6 +377,12 @@ export const useTts = () => {
       void fetchHistory(20).catch(() => {});
       return normalizedResult;
     } catch (requestError) {
+      // abort 可能来自用户主动取消，也可能来自组件卸载：都不是失败，不写 error 状态。
+      if (controller.signal.aborted) {
+        setError(null);
+        throw new Error("语音生成已取消");
+      }
+
       if (axios.isAxiosError(requestError)) {
         const axiosError = requestError as AxiosError<TtsErrorPayload>;
         const payload = axiosError.response?.data;
@@ -367,12 +406,14 @@ export const useTts = () => {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
+      setStage(null);
       setLoading(false);
     }
   };
 
   return {
     loading,
+    stage,
     error,
     audioUrl,
     result,
@@ -380,6 +421,7 @@ export const useTts = () => {
     historyLoading,
     historyError,
     reset,
+    cancel,
     generateSpeech,
     fetchHistory,
     updateHistoryRecord,

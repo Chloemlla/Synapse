@@ -62,12 +62,14 @@ const buildDownloadUrl = (audioUrl: string) => {
 export const TtsPage: React.FC = () => {
   const {
     loading,
+    stage,
     error,
     audioUrl,
     result,
     history,
     historyLoading,
     historyError,
+    cancel,
     generateSpeech,
     fetchHistory,
     updateHistoryRecord,
@@ -312,10 +314,12 @@ export const TtsPage: React.FC = () => {
             <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-6">
               <TtsForm
                 loading={loading}
+                stage={stage}
                 error={error}
                 latestResult={result}
                 onSubmit={generateSpeech}
                 onSuccess={handleSuccess}
+                onCancel={cancel}
               />
             </div>
           </motion.div>
