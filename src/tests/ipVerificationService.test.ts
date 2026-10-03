@@ -34,8 +34,7 @@ jest.mock("../config/config", () => ({
 
 const findOneExec = jest.fn();
 const findQuotaExec = jest.fn();
-const deleteManyExec = jest.fn();
-const createToken = jest.fn();
+const tokenFindOneAndUpdate = jest.fn();
 const mockCreateLookupLog = jest.fn();
 const quotaLean = jest.fn();
 const verifyTokenDetailed = jest.fn();
@@ -89,13 +88,9 @@ jest.mock("../models/ipVerificationTokenModel", () => ({
       })),
       exec: findOneExec,
     })),
-    deleteMany: jest.fn(() => ({
-      exec: deleteManyExec,
-    })),
     // issueToken 由 deleteMany+create 改为 findOneAndUpdate(upsert) 原子替换，
     // 替身必须同步补上，否则生产代码在调用点抛 TypeError 被上层吞成 4xx/5xx。
-    findOneAndUpdate: jest.fn().mockResolvedValue({}),
-    create: createToken,
+    findOneAndUpdate: tokenFindOneAndUpdate,
   },
 }));
 
@@ -134,8 +129,7 @@ describe("IpVerificationService", () => {
     jest.clearAllMocks();
     findOneExec.mockResolvedValue(null);
     findQuotaExec.mockResolvedValue([]);
-    deleteManyExec.mockResolvedValue({ deletedCount: 0 });
-    createToken.mockResolvedValue({});
+    tokenFindOneAndUpdate.mockResolvedValue({});
     mockCreateLookupLog.mockResolvedValue({});
     quotaLean.mockResolvedValue({ usageCount: 1 });
     verifyTokenDetailed.mockResolvedValue({ success: true });
@@ -204,7 +198,7 @@ describe("IpVerificationService", () => {
     expect(result.verified).toBe(true);
     expect(result.issuedBy).toBe("auto");
     expect(result.token).toBeTruthy();
-    expect(createToken).toHaveBeenCalled();
+    expect(tokenFindOneAndUpdate).toHaveBeenCalled();
   });
 
   it("accepts a completed captcha flow and issues a verification token", async () => {
