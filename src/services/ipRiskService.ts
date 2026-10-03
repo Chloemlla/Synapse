@@ -374,7 +374,8 @@ function proxycheckVerificationKey(): string {
  */
 function describeError(error: unknown, apiKey: string): string {
   const message = error instanceof Error ? error.message : String(error);
-  const cause = error instanceof Error ? error.cause : undefined;
+  // tsconfig 的 lib 低于 es2022，Error 类型上没有 cause（Node 24 运行时是有的），故显式取值。
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
   const causeMessage =
     cause instanceof Error
       ? cause.message
