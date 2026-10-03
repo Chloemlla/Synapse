@@ -4,6 +4,15 @@
 CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5xx 验证」，所以把源文件放进仓库，
 避免只存在于服务器上、没人知道上一版长什么样。
 
+| 文件 | 作用 |
+| --- | --- |
+| `maintenance.html` | 维护兜底页本体（自包含单文件，无外部请求） |
+| `maintenance.conf` | 站点 server 块 include 的片段：`error_page 502 503 504 =503` + `@chloemlla_maintenance` 命名 location |
+| `sync-site-certs.sh` | 把 1Panel 续期后的最新证书铺到所有站点 `ssl/` 目录（含到期告警） |
+| `backup-openresty.sh` | 备份接入层：站点/全局配置、证书、维护页、WAF 自定义配置、容器定义 + 清单 |
+| `backup-panel-state.sh` | 备份 1Panel 自身状态：DB（sqlite 在线快照）、secret、全部应用定义 |
+| `daily.sh` | 每日任务编排：上面三件事依次跑，最后给汇总与退出码 |
+
 ## 维护兜底页
 
 | 文件 | 作用 |
@@ -52,6 +61,71 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
   深色主题下给白底玻璃卡会闪眼。
 - 用 JS 轮询替代 `meta refresh`（后者会盲刷、无倒计时、无法区分「上游已恢复」）。
 
+## 证书层
+
+现状（可在 1Panel 的 `agent.db` → `website_ssls` 里核实）：**1Panel 只维护一张证书**——
+`*.chloemlla.com` + `*.951100.xyz` + `chloemlla.com`，Let's Encrypt，DNS-01（CloudFlare 账号），`auto_renew=1`。
+
+坑在于：1Panel 续期时只会重写**它自己管理的网站**的 `ssl/` 文件（本机是 `chloemlla.com`/`janus`/`chat`/`down` 四个），
+手工建的站点目录会留着旧文件不动。2026-10-03 就是因为这个，8 个站点在跑一张 **7 天前就过期的 ZeroSSL 旧证书**：
+`code-api.951100.xyz`、`cpa`、`eye`、`gemini`、`ggb`、`goof`、`proxy-api`、`s`（另加 `us-raksmart-1p` 用的是上一版 LE 证书）。
+
+**这种情况不需要重新签发**：最新证书已在机器上，只是没铺开。`sync-site-certs.sh` 负责铺：
+
+1. 选源：先看 1Panel 管理的站点目录（`sites/tts.chloemlla.com/ssl`、`sites/cap.chloemlla.com/ssl`），
+   要求 SAN 命中 `*.chloemlla.com` 且**证书与私钥公钥匹配**；否则退化成「全量站点里到期最远且满足上述条件」的一个。
+2. 铺开：只改与源不一致的站点；改之前把旧证书存到 `/root/backups/cert-history/<site>/`（可单站点回滚）。
+3. `docker exec openresty nginx -t` 过了才 `reload`；任一站点的证书/私钥解析不了一律不 reload。
+4. 每个站点打一行到期天数；任一张 < 21 天则退出码 2（不算失败，但日志里会 `WARNING`）。
+
+加新站点不用改脚本：只要 `/opt/1panel/www/sites/<site>/ssl/` 存在，下次跑就会被同步。
+
+## 每日任务
+
+```bash
+25 4 * * * /root/backups/daily.sh >> /var/log/1panel-ops-backup.log 2>&1
+```
+
+`daily.sh` 三步互相独立（一步失败不影响后两步），末尾给 `SUMMARY` + 退出码：
+
+| 步骤 | 脚本 | 产出 | 保留 |
+| --- | --- | --- | --- |
+| 接入层配置 | `backup-openresty.sh 5` | `/root/backups/openresty/openresty-<ts>.tar.gz`（~12M） | 5 份 |
+| 站点证书 | `sync-site-certs.sh` | 直接改线上证书 + `/root/backups/cert-history/` | — |
+| 1Panel 状态 | `backup-panel-state.sh 7` | `/root/backups/panel/1panel-state-<ts>.tar.gz`（~2.2M） | 7 份 |
+
+几个刻意的取舍：
+
+- **DB 一定要走 sqlite 在线备份 API**（`backup-panel-state.sh` 里的 python 片段），不能 `cp`：
+  `agent.db` 带 8M WAL，`cp` 可能拷到写一半的页。备份完顺手 `pragma integrity_check`。
+- 备份里**不存日志与构建产物**（`log/`、`build/`），存了只会把体积撑大、把真正要恢复的东西埋掉。
+- 每份包自带 `MANIFEST.txt`（镜像 digest、`nginx -V`、备份时刻的 `nginx -t` 结果、端口、证书到期日、配置 md5）
+  与 `RESTORE.md`，恢复时不用猜当时是什么状态。
+- 主打「恢复得了」而不是「存下来了」：打完包立刻解出来与线上逐字节比对（`backup-openresty.sh`）或跑完整性检查。
+
+> ⚠️ 这些包是敏感文件：含各站点 `privkey.pem`、1Panel WAF 的 `.aes_key`/`.secret`/`token`、
+> 以及 1Panel 数据库（里面有加密的账号凭据）。已设 600 / 目录 700。
+> **禁止入 git、禁止放进 `/opt/1panel/www` 任何目录、离线外传前必须加密**。
+>
+> 另外这是**同盘**备份，只挡误操作与配置损坏，不挡磁盘/机器失效；要防灾难得另传异机或对象存储（先加密）。
+> 业务数据（Mongo/Redis 等）**不在**这个范围里，需要单独做。
+
+### 在服务器上安装 / 重建这套东西
+
+```bash
+mkdir -p /root/backups
+install -m 700 \
+  /path/to/deploy/openresty/daily.sh \
+  /path/to/deploy/openresty/backup-openresty.sh \
+  /path/to/deploy/openresty/backup-panel-state.sh \
+  /path/to/deploy/openresty/sync-site-certs.sh \
+  /root/backups/
+crontab -l 2>/dev/null | grep -v daily.sh > /tmp/ct.txt
+printf '25 4 * * * /root/backups/daily.sh >> /var/log/1panel-ops-backup.log 2>&1\n' >> /tmp/ct.txt
+crontab /tmp/ct.txt && rm -f /tmp/ct.txt
+/root/backups/daily.sh          # 手工跑一次，确认三步都 [ok]
+```
+
 ## 部署 / 回滚
 
 ```bash
@@ -88,3 +162,14 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Host: <host>' http:
 2026-10-03 实测：`code-api.951100.xyz`、`cpa`、`eye`、`goof`、`proxy-api` 当时上游未监听（裸 502，154 字节），
 换页后这 5 个站点全部返回 503 + 维护页（18845 字节，md5 `5533e47b…`）+ `Retry-After: 15`；
 其余 9 个站点保持各自原来的 200 正文，`http→https` 301 不变。
+
+证书同理，别只看文件，要拿严格 TLS 握手验（不加 `-k`，让 curl 自己校链与主机名）：
+
+```bash
+for h in <hosts>; do
+  curl -s -o /dev/null -w "$h %{http_code}\n" --resolve "$h:443:127.0.0.1" "https://$h/"
+done
+# 全部应能拿到 200/503（没有 TLS 报错）；NXDOMAIN 的子域用 --resolve 一样能验
+```
+
+2026-10-03 实测：14 个站点全部通过（不再有 `-k` 才能访问的站点），到期日统一为 `Dec 24 2026`。
