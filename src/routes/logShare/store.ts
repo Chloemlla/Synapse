@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { mongoose } from "../../services/mongoService";
 import { isAdminOperationPasswordValid } from "../../utils/adminOperationPassword";
+import { hasPasswordMaterial } from "../../utils/passwordMaterial";
 import logger from "../../utils/logger";
 import { type User, UserStorage } from "../../utils/userStorage";
 
@@ -78,17 +79,6 @@ export function encryptData(data: unknown, key: string): LogShareEncryptedPayloa
     salt: salt.toString("hex"),
     tag: tag.toString("hex"),
   };
-}
-
-function hasPasswordMaterial(user: User): boolean {
-  return Boolean(
-    user?.password ||
-      user?.passwordHash ||
-      user?.passwordCiphertext ||
-      user?.passwordIv ||
-      user?.passwordTag ||
-      user?.passwordWrappedDek,
-  );
 }
 
 export async function checkAdminPassword(password: string) {

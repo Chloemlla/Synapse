@@ -11,6 +11,7 @@ import type { AuthenticatedRequest } from "../../types/authRequest";
 import { clearAuthSessionCookie, getTokenFromRequest, setAuthSessionCookie } from "../../utils/authCookie";
 import logger from "../../utils/logger";
 import { UserStorage } from "../../utils/userStorage";
+import type { AccountSecurityFacts } from "../../services/userService";
 
 export async function getCurrentUser(req: Request, res: Response) {
   try {
@@ -88,7 +89,7 @@ export async function getSecuritySummary(req: Request, res: Response) {
     // 拿 dbUser 上的字段算会得到「没有密码」与「恢复码 0 个」，安全清单于是误报
     // ——「已启用 TOTP 却一直提示恢复码已用尽」就是这么来的。
     // 用一次性窄查询取事实（只回布尔/计数，密码材料与恢复码本体不出存储层）。
-    let securityFacts: Awaited<ReturnType<typeof UserStorage.getAccountSecurityFacts>> = null;
+    let securityFacts: AccountSecurityFacts | null = null;
     try {
       securityFacts = await UserStorage.getAccountSecurityFacts(user.id);
     } catch (error) {

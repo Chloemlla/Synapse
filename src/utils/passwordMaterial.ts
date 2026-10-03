@@ -16,11 +16,13 @@ export const PASSWORD_MATERIAL_FIELDS = [
   "passwordWrappedDek",
 ] as const;
 
-export type PasswordMaterialHolder = Partial<
-  Record<(typeof PASSWORD_MATERIAL_FIELDS)[number], unknown>
->;
-
-export function hasPasswordMaterial(user: PasswordMaterialHolder | null | undefined): boolean {
-  if (!user) return false;
-  return PASSWORD_MATERIAL_FIELDS.some((field) => Boolean(user[field]));
+/**
+ * 参数收成 `unknown` 而不是 `Partial<Record<字段, unknown>>`：后者看起来更严格，
+ * 实际把「Mongoose lean 文档（带索引签名）」这类真实入参挡在门外（TS2345）——
+ * 而它要回答的本来只是「这些字段里有没有任意一个非空」。
+ */
+export function hasPasswordMaterial(user: unknown): boolean {
+  if (!user || typeof user !== "object") return false;
+  const record = user as Record<string, unknown>;
+  return PASSWORD_MATERIAL_FIELDS.some((field) => Boolean(record[field]));
 }
