@@ -108,10 +108,17 @@ export function appendCoreConfigurationIssues(issues: MissingConfigurationIssue[
 
   // R3-06：后台保存的服务密码现在是 bcrypt 哈希，`config.publicShortUrl.password` 会是空串 ——
   // 只看明文会把「已配置」误报成「未配置」（同一处配置检查在口令改哈希后必须一起改）。
-  const adminSecurityConfig = RuntimeConfigService.getCachedConfig().adminSecurity;
-  const publicShortUrlPasswordConfigured = Boolean(
-    adminSecurityConfig.publicShortUrlPassword || adminSecurityConfig.publicShortUrlPasswordHash,
-  );
+  // 读不到运行时配置时退到旧判据（明文）而不是直接报「未配置」：这里只能读到启动默认值，
+  // 它本来就是明文，语义不变。
+  let publicShortUrlPasswordConfigured = Boolean(config.publicShortUrl.password);
+  try {
+    const adminSecurityConfig = RuntimeConfigService.getCachedConfig().adminSecurity;
+    publicShortUrlPasswordConfigured = Boolean(
+      adminSecurityConfig.publicShortUrlPassword || adminSecurityConfig.publicShortUrlPasswordHash,
+    );
+  } catch {
+    // 保持上一条的降级值
+  }
   if (config.publicShortUrl.enabled && !publicShortUrlPasswordConfigured) {
     issues.push(
       createConfigurationIssue(
