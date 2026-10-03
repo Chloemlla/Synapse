@@ -20,6 +20,37 @@ export const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   "HCAPTCHA_SECRET_KEY",
   "CAP_SECRET_KEY",
   "RESEND_API_KEY",
+
+  // R3-01（2026-10-03）：进程加载器 / 解释器 / shell 类环境变量。
+  // 它们本身不是「密钥」，但会在**下一次启动**被 config/env.ts 的 applyAdminEnvOverlay
+  // 重放回 process.env —— 等于把「改配置」变成「下次启动时执行代码」：
+  // NODE_OPTIONS=--require /tmp/x.js、LD_PRELOAD=/abs/x.so、PYTHONSTARTUP、BASH_ENV 都是
+  // 现成的注入面；PATH / NODE_EXTRA_CA_CERTS 则能分别改写子进程与 TLS 信任链。
+  // 写侧已经拦了 NODE_ENV，却放行严格更强的 NODE_OPTIONS，属口径不一致；
+  // 而这些键对本应用从来不是合法运行时配置，拦掉不损失任何能力。
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NODE_EXTRA_CA_CERTS",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "PERL5LIB",
+  "PERL5OPT",
+  "RUBYLIB",
+  "RUBYOPT",
+  "JAVA_TOOL_OPTIONS",
+  "_JAVA_OPTIONS",
+  "PATH",
+  "SHELL",
+  "BASH_ENV",
+  "ENV",
+  "IFS",
+  "HOME",
+  "TMPDIR",
 ]);
 
 // F-01（2026-09-27）：数据静态加密根密钥——它们直接解密已落库的密文。

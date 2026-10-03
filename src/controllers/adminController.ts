@@ -1493,7 +1493,19 @@ export const adminController = {
             "请先在服务端配置 PROJECT_LUMEN_GITHUB_OWNER / PROJECT_LUMEN_GITHUB_REPO / PROJECT_LUMEN_GITHUB_TOKEN（token 需具备该仓库 Actions secrets 写入权限）",
         });
       }
-      const keysToSync: string[] | undefined = Array.isArray(req.body?.keys) ? req.body.keys : undefined;
+      const rawKeys = Array.isArray(req.body?.keys) ? req.body.keys : undefined;
+      // 每个 key 都要走一趟 GitHub API（GET public-key + PUT secret）：无上限的数组
+      // 会把一次请求变成上千次外部调用（拉长请求、刷爆 token 配额）。封顶并丢弃非字符串项。
+      const MAX_SYNC_KEYS = 200;
+      if (rawKeys && rawKeys.length > MAX_SYNC_KEYS) {
+        return res.status(400).json({ error: `一次最多同步 ${MAX_SYNC_KEYS} 个 key` });
+      }
+      const keysToSync: string[] | undefined = rawKeys
+        ?.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+        .map((item: string) => item.trim());
+      if (keysToSync && keysToSync.length === 0) {
+        return res.status(400).json({ error: "keys 里没有有效的 key" });
+      }
       let docs: Array<{ key: string; value: string }>;
       if (keysToSync) {
         docs = await ProjectLumenConfigModel.find({ key: { $in: keysToSync } })

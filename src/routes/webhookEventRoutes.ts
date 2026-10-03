@@ -5,8 +5,14 @@ import { auditLog } from "../middleware/auditLog";
 import { createLimiter } from "../middleware/routeLimiters";
 import { WebhookEventService } from "../services/webhookEventService";
 import { firstString, firstStringOr } from "../utils/httpParam";
+import logger from "../utils/logger";
 
 const router = Router();
+// R3-04：500 一律回通用文案。这些接口的错误里常带第三方 webhook payload 片段
+// （Svix / Resend 的原文与字段名），原文回给前端等于把上游数据泄进浏览器控制台与
+// 前端错误上报；服务端仍然记完整错误。
+const WEBHOOK_INTERNAL_ERROR = "服务器内部错误，请稍后重试";
+
 const webhookEventReadLimiter = createLimiter({
   name: "webhookEventRead",
   profile: "relaxed",
@@ -50,7 +56,8 @@ router.get("/", webhookEventReadLimiter, authenticateSuperAdmin, async (req: Req
     });
     res.json({ success: true, ...result });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] GET / 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -60,7 +67,8 @@ router.get("/stats", webhookEventReadLimiter, authenticateAdmin, requireAdminSco
     const stats = await WebhookEventService.stats();
     res.json({ success: true, stats });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] GET /stats 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -70,7 +78,8 @@ router.get("/groups", webhookEventReadLimiter, authenticateAdmin, requireAdminSc
     const rows = await WebhookEventService.groups();
     res.json({ success: true, groups: rows });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] GET /groups 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -89,7 +98,8 @@ router.post(
     });
     res.json({ success: true, item: created });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] POST /test 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -107,7 +117,8 @@ router.post(
     const result = await WebhookEventService.bulkUpdateStatus(ids, status);
     res.json({ success: true, ...result });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] POST /bulk-status 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -127,7 +138,8 @@ router.post(
     const result = await WebhookEventService.bulkRemove(ids);
     res.json({ success: true, ...result });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] POST /bulk-delete 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -140,7 +152,8 @@ router.get("/:id", webhookEventReadLimiter, authenticateSuperAdmin, async (req: 
     if (!item) return res.status(404).json({ success: false, error: "Not Found" });
     res.json({ success: true, item });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] GET /:id 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -164,7 +177,8 @@ router.patch(
     if (!updated) return res.status(404).json({ success: false, error: "Not Found" });
     res.json({ success: true, item: updated });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] PATCH /:id/status 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -189,7 +203,8 @@ router.post(
     if (!item) return res.status(404).json({ success: false, error: "Not Found" });
     res.json({ success: true, item });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] POST /:id/replay 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -204,7 +219,8 @@ router.post(
     const created = await WebhookEventService.create(req.body);
     res.json({ success: true, item: created });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] POST / 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -226,7 +242,8 @@ router.put(
     if (!updated) return res.status(404).json({ success: false, error: "Not Found" });
     res.json({ success: true, item: updated });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] PUT /:id 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
@@ -247,7 +264,8 @@ router.delete(
     await WebhookEventService.remove(id);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
+    logger.error("[WebhookEvents] DELETE /:id 失败", e);
+    res.status(500).json({ success: false, error: WEBHOOK_INTERNAL_ERROR });
   }
 });
 
