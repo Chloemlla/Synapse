@@ -368,6 +368,35 @@ function proxycheckVerificationKey(): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * undici 把所有网络失败都抛成 TypeError("fetch failed")，真正原因（拒重定向 / DNS / TLS / 超时）
+ * 只在 error.cause 里，线上只留 "fetch failed" 就无从归因。拼起来再过一遍脱敏。
+ */
+function describeError(error: unknown, apiKey: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? error.cause : undefined;
+  const causeMessage =
+    cause instanceof Error
+      ? cause.message
+      : typeof (cause as { message?: unknown } | null | undefined)?.message === "string"
+        ? String((cause as { message: unknown }).message)
+        : "";
+  return redactSecret(causeMessage ? `${message} (cause: ${causeMessage})` : message, apiKey);
+}
+
+/** 配置类失败的前缀：换 key / 验签密钥就能恢复，与网络抖动分开才有可告警的独立信号。 */
+const PROXYCHECK_CONFIG_ERROR_PREFIXES = [
+  "proxycheck_signature_",
+  "proxycheck_hmac_key_malformed",
+  "proxycheck_status_auth",
+  "proxycheck_status_denied",
+];
+
+function isProxycheckConfigError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return PROXYCHECK_CONFIG_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix));
+}
+
 /** 真正发起上游的那一次调用。走到这里说明缓存与 in-flight 都没拦住。 */
 async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskResult> {
   const startedAt = Date.now();
@@ -416,6 +445,10 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
     return result;
   }
 
+  // proxycheck 按「请求」计费，本地也只有按「尝试」记账才与上游一致：验签失败、超时、5xx
+  // 一样在消耗额度。放在发起请求之前，故障风暴时配额闸门才真能触发，不再整日空烧额度。
+  await incrementQuota(dayKey, apiKey, dailyQuotaPerKey);
+
   const queriedAt = new Date();
   let parsed: ParsedRisk;
   try {
@@ -428,7 +461,7 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
     if (!raw) throw new Error("proxycheck_response_missing_ip_result");
     parsed = parseV3Result(ip, raw, queriedAt);
   } catch (error) {
-    const message = redactSecret(error instanceof Error ? error.message : String(error), apiKey);
+    const message = describeError(error, apiKey);
     const result = settleFailure(ip, "lookup_failed");
     await logLookup({
       ip,
@@ -441,11 +474,20 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
       error: message,
       decision: buildIpRiskDecision(result, caller),
     });
-    logger.warn("[IpRisk] proxycheck lookup failed", { ip, error: message, failOpen: pc.failOpen });
+    if (isProxycheckConfigError(error)) {
+      // 配置错误与网络抖动一样走 fail_open，症状都是「每次都放行 + 满屏 warn」，没有独立信号
+      // 可供告警聚合。status 保持 "failed" 不动，避免波及面板的筛选项契约。
+      logger.error("[IpRisk] proxycheck 配置错误：上游凭据/验签密钥无效，风控已降级放行", {
+        ip,
+        error: message,
+        failOpen: pc.failOpen,
+      });
+    } else {
+      logger.warn("[IpRisk] proxycheck lookup failed", { ip, error: message, failOpen: pc.failOpen });
+    }
     return result;
   }
 
-  await incrementQuota(dayKey, apiKey, dailyQuotaPerKey);
   await persistRiskCache(parsed, cacheTtlHours);
   const result = toRiskResult(parsed, false, "proxycheck");
   await logLookup({
@@ -481,13 +523,15 @@ function trackInFlight(ip: string, promise: Promise<IpRiskResult>): void {
 /**
  * in-flight 合并命中的日志。合并不改结论，但决策要等被合并的那个 promise 落定才有值，
  * 所以这条日志由 getIpRisk 挂到 joined 上后写，这里的 decision 允许缺省。
+ * ok 由被合并的那次查询是否真的拿到结论决定：底层是 unavailable 时这一行不能算成功，
+ * 否则面板的 ok 过滤器会把失败算成成功。
  */
-function logDedupedLookup(ip: string, decision?: IpRiskDecision): Promise<void> {
+function logDedupedLookup(ip: string, ok: boolean, decision?: IpRiskDecision): Promise<void> {
   return logLookup({
     ip,
     apiKeyHash: "deduped",
     status: "deduped",
-    ok: true,
+    ok,
     risk: null,
     deduped: true,
     durationMs: 0,
@@ -508,7 +552,17 @@ export async function getIpRisk(ip: string, caller: IpRiskCaller): Promise<IpRis
 
   if (ensureMongoIfEnabled()) {
     const cacheReadStartedAt = Date.now();
-    const cached = await readCachedRisk(normalized);
+    let cached: IpRiskResult | null = null;
+    try {
+      cached = await readCachedRisk(normalized);
+    } catch (error) {
+      // 缓存只是去重优化，读失败按「未命中」继续往下走：这里放任异常冒出去，会把本该
+      // fail_open 降级的闸门路径变成 500（违背本文件「绝不抛错」的约定）。
+      logger.warn("[IpRisk] proxycheck 风险缓存读取失败，按未命中处理", {
+        ip: normalized,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     if (cached) {
       // 命中缓存也是一次真实交付：先记下「已走缓存」这一行，再返回结论（不 await，见 helper）。
       recordCachedLookup(cached, caller, Date.now() - cacheReadStartedAt);
@@ -521,15 +575,17 @@ export async function getIpRisk(ip: string, caller: IpRiskCaller): Promise<IpRis
     // 落库仍然非阻塞：调用方只 await joined，不等这次写日志。
     // 必须挂 catch：joined 被拒时调用方那边的 await 是一条独立链路，这里不接住就是 unhandled rejection。
     void joined
-      .then((result) => logDedupedLookup(normalized, buildIpRiskDecision(result, caller)))
+      .then((result) =>
+        logDedupedLookup(normalized, result.source !== "unavailable", buildIpRiskDecision(result, caller)),
+      )
       .catch((error: unknown) => {
         // 被拒 = 这次合并根本没产出结论（调用方拿到的是异常而非决策），所以只补回原本就有的那行
-        // 日志、不写 decision，不伪造一个没交付出去的决策。
+        // 日志、不写 decision，不伪造一个没交付出去的决策。结论无从判定，ok 记 false。
         logger.warn("[IpRisk] In-flight proxycheck lookup rejected, dedup log written without decision", {
           ip: normalized,
           error: error instanceof Error ? error.message : String(error),
         });
-        return logDedupedLookup(normalized);
+        return logDedupedLookup(normalized, false);
       });
     logger.debug("[IpRisk] Joined in-flight proxycheck lookup", { ip: normalized });
     return joined;
@@ -581,6 +637,9 @@ async function resolveBatchFromUpstream(
     }
 
     const startedAt = Date.now();
+    // 与单地址同口径：配额按上游 HTTP 请求计（一次批量算一次，不是按 IP 数），且在发起请求
+    // 之前就记，失败的批量同样在消耗上游额度。
+    await incrementQuota(dayKey, apiKey, dailyQuotaPerKey);
     const payload = await requestBatchLookup(chunk, {
       apiKey,
       verificationKey: proxycheckVerificationKey(),
@@ -588,8 +647,6 @@ async function resolveBatchFromUpstream(
       days,
     });
     const queriedAt = new Date();
-    // 配额按上游 HTTP 请求计（一次批量算一次），不是按 IP 数计。
-    await incrementQuota(dayKey, apiKey, dailyQuotaPerKey);
 
     for (const ip of chunk) {
       const raw = extractIpResult(payload, ip);

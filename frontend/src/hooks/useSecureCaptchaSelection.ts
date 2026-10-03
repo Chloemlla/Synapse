@@ -103,7 +103,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       });
 
       if (!response.ok) {
-        // 原始状态码与后端原文只进 console；用户侧只看到可行动的中文文案
+        // 原始状态码与后端原文只进 console；用户侧只看到中性可行动的中文文案
         const errorData = await response.json().catch(() => null);
         console.error(
           '获取验证方式失败:',
@@ -111,15 +111,15 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
           response.statusText,
           errorData
         );
-        const backendMessage =
-          typeof errorData?.error === 'string' && errorData.error.trim() ? errorData.error.trim() : '';
-        throw new Error(backendMessage || '验证服务暂不可用，请稍后重试');
+        throw new Error('验证服务暂不可用，请稍后重试');
       }
 
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.error || '获取CAPTCHA配置失败');
+        // 同上一分支：后端原文只进 console，不直铺界面。
+        console.error('获取CAPTCHA配置失败:', data.error);
+        throw new Error('验证服务暂不可用，请稍后重试');
       }
 
       setCaptchaConfig({

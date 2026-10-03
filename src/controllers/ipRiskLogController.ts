@@ -65,9 +65,19 @@ interface OverviewCounts {
   /** 决策日志总行数（含 status=cache 的命中缓存行与 status=deduped 的 in-flight 合并行）。 */
   lookupLogs: number;
   lookupLogs24h: number;
-  /** 真的打到上游的行数（排除命中缓存）：它才与配额、外呼失败对应，不能混在总行数里读。 */
+  /**
+   * 真的打到上游的行数，口径 = 总行数 − 命中缓存行数（status=cache 零外呼、零配额）。
+   * 失败的调用仍算「打到上游」（它确实打出去了），故障分类另用 failed24h 表达，不要在这里做减法。
+   * 计数改成「总数 − status=cache 计数」而非 status:{$ne:"cache"}：后者用不上索引，会退化成整表扫描。
+   */
   upstreamCalls: number;
   upstreamCalls24h: number;
+  /** 近 24 小时 status=failed 的行数：上游全挂时这一项就是告警信号（原先概览看不出来）。 */
+  failed24h: number;
+  /** 近 24 小时 status=ok 的行数。 */
+  upstreamOk24h: number;
+  /** 最近一条 status=failed 行的错误与发生时间；没有失败行时回 null。 */
+  lastError: { message: string; at: string | null } | null;
   riskCache: number;
   riskCacheActive: number;
   probeReports: number;
@@ -158,8 +168,11 @@ async function readCounts(): Promise<OverviewCounts> {
   const [
     lookupLogs,
     lookupLogs24h,
-    upstreamCalls,
-    upstreamCalls24h,
+    cachedCalls,
+    cachedCalls24h,
+    failed24h,
+    upstreamOk24h,
+    lastErrorDoc,
     riskCache,
     riskCacheActive,
     probeReports,
@@ -167,22 +180,37 @@ async function readCounts(): Promise<OverviewCounts> {
   ] = await Promise.all([
     ProxycheckLookupLogModel.countDocuments({}).exec(),
     ProxycheckLookupLogModel.countDocuments({ createdAt: { $gte: since } }).exec(),
-    ProxycheckLookupLogModel.countDocuments({ status: { $ne: CACHE_LOOKUP_STATUS } }).exec(),
+    ProxycheckLookupLogModel.countDocuments({ status: CACHE_LOOKUP_STATUS }).exec(),
     ProxycheckLookupLogModel.countDocuments({
       createdAt: { $gte: since },
-      status: { $ne: CACHE_LOOKUP_STATUS },
+      status: CACHE_LOOKUP_STATUS,
     }).exec(),
+    ProxycheckLookupLogModel.countDocuments({ createdAt: { $gte: since }, status: "failed" }).exec(),
+    ProxycheckLookupLogModel.countDocuments({ createdAt: { $gte: since }, status: "ok" }).exec(),
+    ProxycheckLookupLogModel.findOne({ status: "failed" })
+      .sort({ createdAt: -1 })
+      .select({ error: 1, createdAt: 1 })
+      .lean()
+      .exec(),
     ProxycheckRiskCacheModel.countDocuments({}).exec(),
     ProxycheckRiskCacheModel.countDocuments({ expiresAt: { $gt: now } }).exec(),
     ProxycheckProbeReportModel.countDocuments({}).exec(),
     ProxycheckProbeReportModel.countDocuments({ createdAt: { $gte: since } }).exec(),
   ]);
 
+  const lastFailed = lastErrorDoc as unknown as LooseDoc | null;
+
   return {
     lookupLogs,
     lookupLogs24h,
-    upstreamCalls,
-    upstreamCalls24h,
+    // 「真的打到上游」= 总数 − 命中缓存数，两个计数都能走索引。
+    upstreamCalls: lookupLogs - cachedCalls,
+    upstreamCalls24h: lookupLogs24h - cachedCalls24h,
+    failed24h,
+    upstreamOk24h,
+    lastError: lastFailed
+      ? { message: readRawString(lastFailed.error), at: toIso(lastFailed.createdAt) }
+      : null,
     riskCache,
     riskCacheActive,
     probeReports,

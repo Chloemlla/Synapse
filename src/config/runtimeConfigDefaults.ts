@@ -491,7 +491,9 @@ export function buildRuntimeConfigDefaults(options: {
     },
     proxycheck: {
       enabled: false,
-      apiKey: "api",
+      // 空串 = 未配置。曾经写成字面量 "api"，会让 hasApiKey 误报为「已设置」，
+      // 并绕过「!apiKey → not_configured」的判据，带着 key=api 真打上游换来 failed。
+      apiKey: "",
       publicApiKey: "",
       payloadVerificationKey: "",
       hmacSecret: "",

@@ -1,5 +1,6 @@
 import express from "express";
 import IpVerificationService from "../services/ipVerificationService";
+import { config } from "../config/config";
 import { createLimiter } from "../middleware/routeLimiters";
 import { getClientIP } from "../utils/ipUtils";
 
@@ -29,7 +30,10 @@ router.post("/session", sessionLimiter, async (req, res) => {
     if (result.banned) {
       // 形状与 ipBanCheck 的封禁响应对齐：前端 ipVerification.ts 按 error==="IP已被封禁"
       // 读出 banData，首访闸门据此直接渲染阻断页（与首访验闸同一套设计语言）。
+      // GB-03: 补 errorCode:"IP_BANNED"，与 security/ipBlockPage.ts、services/turnstile/verify.ts
+      // 的同名稳定码一致；前端已兼容该码，靠文案匹配识别处罚态是最后选择。
       return res.status(403).json({
+        errorCode: "IP_BANNED",
         error: "IP已被封禁",
         reason: result.banReason || "IP 风险过高，已自动拦截",
         expiresAt: result.banExpiresAt,
@@ -47,7 +51,9 @@ router.post("/session", sessionLimiter, async (req, res) => {
       verified: false,
       requiresVerification: true,
       error: error instanceof Error ? error.message : "Failed to initialize verification session",
-      tokenTtlMinutes: 40,
+      // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
+      // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
+      tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
     });
   }
 });
@@ -77,7 +83,9 @@ router.post("/complete", sessionLimiter, async (req, res) => {
       verified: false,
       requiresVerification: true,
       error: error instanceof Error ? error.message : "Failed to complete verification",
-      tokenTtlMinutes: 40,
+      // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
+      // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
+      tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
     });
   }
 });

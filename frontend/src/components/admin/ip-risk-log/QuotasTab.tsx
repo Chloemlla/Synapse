@@ -49,6 +49,7 @@ const QuotasTab: React.FC<Props> = ({ refreshNonce, configuredDailyQuota }) => {
         setRows(res.quotas ?? []);
         setLimit(typeof res.limit === 'number' ? res.limit : null);
         setError(null);
+        notice.reset();
       } catch (err) {
         if (requestId !== requestRef.current) return;
         const message = getBackendErrorMessage(err, '加载每日配额失败');

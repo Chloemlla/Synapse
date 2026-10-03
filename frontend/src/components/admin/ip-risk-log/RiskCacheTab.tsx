@@ -4,19 +4,20 @@ import { ipRiskLogsApi, type RiskCacheEntry, type RiskCacheState } from '@/api/i
 import { InfoPanel, InfoSectionTitle, studioFieldClassName } from '@/components/studioTheme';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
-  ACTION_CONFIG,
   DETECTION_FLAGS,
   DETECTION_LABELS,
   DEFAULT_PAGE_SIZE,
   PAGE_SIZE_OPTIONS,
   RISK_CACHE_STATE_OPTIONS,
+  actionStyle,
   boolLabel,
+  decisionLevelStyle,
   detectionBadge,
   formatCoordinate,
   formatCount,
   formatTime,
   formatTtlRemaining,
-  riskLevelStyle,
+  isNoVerdictDecision,
 } from './format';
 import {
   Badge,
@@ -75,6 +76,7 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
         setRows(res.entries ?? []);
         setTotal(res.total ?? 0);
         setError(null);
+        notice.reset();
       } catch (err) {
         if (requestId !== requestRef.current) return;
         const message = getBackendErrorMessage(err, '加载风险缓存失败');
@@ -122,6 +124,13 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
         caller 固定按<span className="font-semibold">首访闸门</span>口径，所以 <code>action</code> 就是「现在放不放行」（不是「仅上报」）。
         想看在某个时间点真实给出的决策（包括当时是不是走缓存），请看「判定决策日志」页。
       </SectionNote>
+
+      {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
+      {error ? (
+        <InfoPanel compact>
+          <div className="text-sm text-rose-600">{error}</div>
+        </InfoPanel>
+      ) : null}
 
       <InfoPanel compact>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -226,7 +235,8 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
               const key = rowKey(row, index);
               const isOpen = expanded.has(key);
               const decision = row.derivedDecision;
-              const action = decision ? ACTION_CONFIG[decision.action] : null;
+              const noVerdict = isNoVerdictDecision(decision);
+              const action = decision ? actionStyle(decision.action) : null;
               return (
                 <React.Fragment key={key}>
                   <tr className="border-b border-slate-100 align-top hover:bg-slate-50/60">
@@ -235,9 +245,17 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
                       <div className="mt-1 text-[11px] text-slate-400">source: {row.source}</div>
                     </Td>
                     <Td>
-                      <div className="text-slate-700">{row.risk}</div>
+                      <div className="text-slate-700">
+                        {noVerdict ? (
+                          <span className="text-slate-400" title="上游不可用，没拿到风险分">
+                            —（未取得）
+                          </span>
+                        ) : (
+                          row.risk
+                        )}
+                      </div>
                       <div className="mt-1">
-                        <Badge style={riskLevelStyle(decision?.level)} title="由文档里存的 risk 分数换算的等级" />
+                        <Badge style={decisionLevelStyle(decision)} title="由文档里存的 risk 分数换算的等级" />
                       </div>
                       <div className="mt-1 text-[11px] text-slate-400">confidence {row.confidence}</div>
                     </Td>

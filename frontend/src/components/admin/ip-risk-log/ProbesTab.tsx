@@ -146,6 +146,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
         setRows(res.reports ?? []);
         setTotal(res.total ?? 0);
         setError(null);
+        notice.reset();
       } catch (err) {
         if (requestId !== requestRef.current) return;
         const message = getBackendErrorMessage(err, '加载客户端探测上报失败');
@@ -201,6 +202,13 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
         <code>webrtc_leak_reported</code> 与 <code>webdriver_reported</code>
         只是「客户端自称」的记号，服务端不采信它们做拦截判断。
       </SectionNote>
+
+      {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
+      {error ? (
+        <InfoPanel compact>
+          <div className="text-sm text-rose-600">{error}</div>
+        </InfoPanel>
+      ) : null}
 
       <InfoPanel compact>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

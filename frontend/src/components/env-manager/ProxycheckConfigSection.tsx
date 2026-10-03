@@ -2,6 +2,7 @@ import { m } from 'framer-motion';
 import { FaSync, FaInfoCircle, FaLock } from 'react-icons/fa';
 import CollapsibleSection from './CollapsibleSection';
 import InfoBox from './InfoBox';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import {
   studioFieldClassName,
   studioPrimaryButtonClassName,
@@ -15,8 +16,17 @@ const REFRESH_BUTTON_CLASS =
 const SECTION_KEY = 'proxycheck';
 
 export type ProxycheckSecretKey = 'apiKey' | 'publicApiKey' | 'payloadVerificationKey' | 'hmacSecret';
+/** 可由「清除」开关显式置空的密钥；后端约定 payload 传 null 即显式清除。 */
+export type ProxycheckClearableSecretKey = 'payloadVerificationKey' | 'hmacSecret';
 export type ProxycheckNumericKey = 'cacheTtlHours' | 'timeoutMs' | 'dailyQuotaPerKey' | 'challengeRiskScore' | 'blockRiskScore';
 type ProxycheckSwitchKey = 'failOpen' | 'usePublicKeyForClient';
+
+/** 判断某密钥字段是否支持「显式清除」（用于收窄类型，避免调用方强转）。 */
+export function isClearableProxycheckSecretKey(
+  key: ProxycheckSecretKey,
+): key is ProxycheckClearableSecretKey {
+  return key === 'payloadVerificationKey' || key === 'hmacSecret';
+}
 
 /** 表单态：数值字段保留字符串，避免输入中途被钳制后无法继续输入。 */
 export interface ProxycheckInputs {
@@ -174,7 +184,7 @@ const SECRET_FIELDS: Array<{
     key: 'payloadVerificationKey',
     label: 'API Payload Verification Key（响应验签）',
     description:
-      'proxycheck.io 官方 Dashboard 生成的响应验签密钥（64 字符）。上游在 HTTPS 响应头 http_x_signature 里回签响应体，本服务按 HMAC-SHA256(原始响应体, 该密钥) 逐字节比对；不通过就当上游失败，绝不采信未验签的结论。换 API Key 后该密钥会重新生成，需要同步更新。',
+      '获取路径：proxycheck.io 官方 Dashboard → API Payload Verification Key。官方生成的响应验签密钥（64 字符）。上游在 HTTPS 响应头 http_x_signature 里回签响应体，本服务按 HMAC-SHA256(原始响应体, 该密钥) 逐字节比对；不通过就当上游失败，绝不采信未验签的结论。换 API Key 后该密钥会重新生成，需要同步更新。',
     placeholder: '请输入 64 字符的 API Payload Verification Key（不回显明文，留空保存表示保留原值）',
   },
   {
@@ -216,6 +226,11 @@ export interface ProxycheckConfigSectionProps {
   inputs: ProxycheckInputs;
   current: ProxycheckSectionState | null;
   updatedAt?: string;
+  /** 存在未保存改动（表单值与最近一次加载到的服务器值不同）。 */
+  dirty: boolean;
+  /** 已勾选「清除」的密钥集合。 */
+  clearKeys: Set<ProxycheckClearableSecretKey>;
+  onToggleClearKey: (key: ProxycheckClearableSecretKey) => void;
   onInputChange: <K extends keyof ProxycheckInputs>(key: K, value: ProxycheckInputs[K]) => void;
   onRefresh: () => void;
   onSave: () => void;
@@ -233,21 +248,52 @@ export default function ProxycheckConfigSection({
   inputs,
   current,
   updatedAt,
+  dirty,
+  clearKeys,
+  onToggleClearKey,
   onInputChange,
   onRefresh,
   onSave,
   onReset,
 }: ProxycheckConfigSectionProps) {
+  const confirm = useConfirm();
   const isDisabled = saving || deleting || disabled;
   const secrets = proxycheckSecretsFromConfig(current);
   // 已加载时以「已保存」的总开关为准，避免切了开关还没保存就误以为已生效。
   const savedEnabled = current ? current.enabled : inputs.enabled;
+  // 配置尚未成功加载：inputs 仍是默认值，此时保存会把线上真实配置静默重置。
+  const configLoaded = current !== null;
+  const showNotLoadedNotice = !configLoaded && !loading;
+  // 两把方向相反的密钥被填成同一串（线上事故形态）：脱敏串相同即告警。
+  const secretsLookIdentical =
+    !!current &&
+    current.hasPayloadVerificationKey &&
+    current.hasHmacSecret &&
+    !!current.payloadVerificationKey &&
+    current.payloadVerificationKey === current.hmacSecret;
+  // 开关开着但没配公开 key：该开关是空承诺。
+  const publicKeyMissing = !!current && inputs.usePublicKeyForClient && !current.hasPublicApiKey;
 
   const secretCurrentValue = (key: ProxycheckSecretKey): string => {
     if (loading) return '加载中...';
+    // 加载失败与「确实没配」必须区分：否则运维会以为密钥丢失而重新粘贴。
+    if (!current) return '—（未加载）';
     const entry = secrets.find((item) => item.key === key);
-    if (!entry?.has) return '未设置';
-    return entry.masked || '已设置';
+    if (!entry?.has) return '未配置';
+    return entry.masked || '已配置';
+  };
+
+  const handleRefreshClick = async () => {
+    if (dirty) {
+      const ok = await confirm({
+        title: '放弃未保存的改动？',
+        description: '当前表单有尚未保存的改动，刷新会用服务器上的配置覆盖它们。',
+        tone: 'danger',
+        confirmLabel: '放弃并刷新',
+      });
+      if (!ok) return;
+    }
+    onRefresh();
   };
 
   return (
@@ -263,7 +309,7 @@ export default function ProxycheckConfigSection({
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onRefresh();
+            void handleRefreshClick();
           }}
           disabled={loading}
           className={REFRESH_BUTTON_CLASS}
@@ -273,6 +319,22 @@ export default function ProxycheckConfigSection({
         </m.button>
       }
     >
+      {secretsLookIdentical && (
+        <div role="alert" className="rounded-2xl border border-rose-300 bg-rose-50/90 p-3 text-sm text-rose-700">
+          <strong>两把密钥的已脱敏值相同，疑似把「浏览器上报主密钥」填成了「上游验签密钥」</strong>
+          <p className="mt-1 text-xs leading-5">
+            这两把密钥方向相反：上游验签密钥必须来自 proxycheck.io 官方 Dashboard，自建主密钥由本服务自行生成。
+            当前两处脱敏串完全一致，请核对后重新填写——上游验签密钥填错会让每一次查询都在验签阶段失败，
+            并按 failOpen 策略静默放行。
+          </p>
+        </div>
+      )}
+
+      {showNotLoadedNotice && (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50/80 p-3 text-sm text-rose-700">
+          配置未加载，禁止保存：请先点右上角「刷新」成功读取服务器配置，否则保存会把界面上的默认值覆盖回线上。
+        </div>
+      )}
       <InfoBox icon={<FaInfoCircle />}>
         {savedEnabled ? (
           <p>
@@ -296,7 +358,7 @@ export default function ProxycheckConfigSection({
           官方 Dashboard 的字段（64 字符），验证的是<strong>上游响应</strong>确实来自 proxycheck 且中途未被篡改，
           本服务逐字节比对响应头 http_x_signature，不一致就按上游失败处理。
           「自建 HMAC 验签主密钥」方向相反，是本服务自己签发并校验<strong>浏览器上报</strong>的出口/IPv6/WebSocket
-          泄露探测结果，proxycheck.io 不参与。四把密钥都只留在服务端，绝不返回给浏览器。
+          泄露探测结果，proxycheck.io 不参与。服务端 key 与两把 HMAC 密钥绝不下发到浏览器。
         </p>
         <p className="mt-1">
           未配置自建主密钥时，探测会话端点返回 501、上报端点直接拒绝（403），不会静默跳过验签。
@@ -326,36 +388,59 @@ export default function ProxycheckConfigSection({
       </div>
 
       <div className="space-y-4">
-        {SECRET_FIELDS.map((field) => (
-          <div key={field.key} className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold text-slate-700">{field.label}</h4>
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
-                {field.key}
-              </code>
+        {SECRET_FIELDS.map((field) => {
+          // 收窄成局部 const：属性访问的收窄不会带进 onChange 回调，局部 const 才会。
+          const clearKey: ProxycheckClearableSecretKey | null = isClearableProxycheckSecretKey(field.key)
+            ? field.key
+            : null;
+          const clearChecked = clearKey !== null && clearKeys.has(clearKey);
+          return (
+            <div key={field.key} className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-slate-700">{field.label}</h4>
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
+                  {field.key}
+                </code>
+              </div>
+              <p className="mt-1 mb-3 text-xs text-slate-500">{field.description}</p>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-slate-700" htmlFor={`proxycheck-${field.key}`}>
+                  新值
+                </label>
+                <input
+                  id={`proxycheck-${field.key}`}
+                  type="password"
+                  value={inputs[field.key]}
+                  onChange={(event) => onInputChange(field.key, event.target.value)}
+                  placeholder={field.placeholder}
+                  className={studioFieldClassName}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={isDisabled || clearChecked}
+                />
+              </div>
+              {clearKey !== null && (
+                <label className="mt-2 flex items-start gap-2 text-xs text-rose-700">
+                  <input
+                    type="checkbox"
+                    checked={clearKeys.has(clearKey)}
+                    onChange={() => onToggleClearKey(clearKey)}
+                    disabled={isDisabled}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-rose-600 focus:ring-2 focus:ring-rose-200 disabled:cursor-not-allowed"
+                  />
+                  <span>
+                    清除该密钥：保存后把该键置空（后端按「显式清除」处理）。用于密钥误填、需要彻底移除的场景；
+                    留空保存仍然是「保留原值」。
+                  </span>
+                </label>
+              )}
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
+                当前配置（脱敏）：{secretCurrentValue(field.key)}
+                {clearChecked && <span className="ml-1 font-semibold text-rose-700">→ 保存后清除</span>}
+              </div>
             </div>
-            <p className="mt-1 mb-3 text-xs text-slate-500">{field.description}</p>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor={`proxycheck-${field.key}`}>
-                新值
-              </label>
-              <input
-                id={`proxycheck-${field.key}`}
-                type="password"
-                value={inputs[field.key]}
-                onChange={(event) => onInputChange(field.key, event.target.value)}
-                placeholder={field.placeholder}
-                className={studioFieldClassName}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={isDisabled}
-              />
-            </div>
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
-              当前配置（脱敏）：{secretCurrentValue(field.key)}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -382,6 +467,12 @@ export default function ProxycheckConfigSection({
           </div>
         ))}
       </div>
+
+      {publicKeyMissing && (
+        <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50/80 p-3 text-sm text-amber-900">
+          未配置公开 API Key，本开关不会生效：请填写上方的「浏览器公开 API Key」，或关闭「向浏览器下发公开 API Key」。
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {TOGGLE_FIELDS.map((field) => (
@@ -416,7 +507,7 @@ export default function ProxycheckConfigSection({
         <m.button
           type="button"
           onClick={onSave}
-          disabled={isDisabled}
+          disabled={isDisabled || !configLoaded}
           className={studioPrimaryButtonClassName}
           whileTap={{ scale: 0.97 }}
         >

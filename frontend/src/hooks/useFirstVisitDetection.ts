@@ -20,6 +20,17 @@ interface UseFirstVisitDetectionReturn {
   markAsVerified: () => void;
 }
 
+/**
+ * 把握手/网络类失败映射成可行动的中文文案交给闸门展示。
+ * 抛出的稳定 code（如 SESSION_INIT_FAILED）与原始异常只进 console，不直铺界面。
+ * 指纹失败的原文里带 fingerprint，沿用原文（既有用例按该关键字断言）。
+ */
+function toUserFacingBootstrapError(err: unknown): string {
+  const message = err instanceof Error ? err.message : '';
+  if (message.toLowerCase().includes('fingerprint')) return message;
+  return '访问校验暂时无法完成，请检查网络连接后重试。';
+}
+
 export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionReturn => {
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
@@ -100,7 +111,8 @@ export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionRe
       }
     } catch (err) {
       console.error('IP verification bootstrap failed:', err);
-      setError(err instanceof Error ? err.message : 'Verification bootstrap failed.');
+      // 界面只拿映射后的中文文案；稳定 code / 原始异常留在 console。
+      setError(toUserFacingBootstrapError(err));
 
       // G9-14：fail-closed——初始化失败时视为"未验证"，要求走验证流程，不放行。
       // 此前 catch 里 setIsFirstVisit(false) 会让失败直接放行（对安全门禁方向反了）。

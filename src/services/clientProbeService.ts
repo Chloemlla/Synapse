@@ -3,11 +3,14 @@ import type { IncomingMessage } from "node:http";
 import { isIP } from "node:net";
 import type { Request } from "express";
 import { extractRealIP } from "../utils/ipUtils";
+import { normalizeIp } from "./proxycheckParsing";
 
 /** 探测会话 TTL：10 分钟（与契约 §0 的握手流程一致）。 */
 export const PROBE_SESSION_TTL_MS = 10 * 60 * 1000;
 /** 会话表上限，超出时按插入顺序淘汰最旧的一条，防止内存放大。 */
 export const PROBE_SESSION_MAX = 5000;
+/** 重放表上限：只靠 60s 清扫 + TTL 回收挡不住突发洪峰，同样要封顶。 */
+const USED_NONCES_MAX = 10000;
 /** 惰性清理之外的定时清理间隔。 */
 const PROBE_SWEEP_INTERVAL_MS = 60_000;
 /** 派生密钥的域分隔前缀，两侧（签发/验签）必须一致。 */
@@ -139,12 +142,16 @@ function hexEqual(a: string, b: string): boolean {
 /**
  * 验签 + 重放校验。会话一次性：验签成功且 nonce 未用过时立即删除会话并登记 nonce。
  * 失败仅返回 reason，不抛错；失败不会消耗会话（否则攻击者可借此打断合法上报）。
+ *
+ * requesterIp 必须与会话签发时的出口一致：否则拿着一次合法会话的 probeKey，换一个 IP
+ * 上报就能把结论记到别人头上（会话里的 primaryIp 就形同虚设）。
  */
 export function verifyProbeSignature(
   probeId: string,
   nonce: string,
   payload: unknown,
   signature: unknown,
+  requesterIp: unknown,
 ): ProbeVerifyResult {
   const now = Date.now();
   const session = getLiveSession(probeId, now);
@@ -160,6 +167,12 @@ export function verifyProbeSignature(
   // nonce 必须与会话绑定的那个一致，否则连"这是哪次会话"都没证明。
   if (session.nonceHex !== nonce) return { ok: false, reason: "signature_mismatch" };
 
+  // 两侧都过 normalizeIp：换 IP 上报等于没通过会话绑定，按验签失败处理（不新增失败码，
+  // 前端对此码的处置与签名不符相同）。
+  if (normalizeIp(requesterIp) !== normalizeIp(session.primaryIp)) {
+    return { ok: false, reason: "signature_mismatch" };
+  }
+
   const expected = signPayload(session.probeKeyHex, payload);
   if (typeof signature !== "string" || !hexEqual(expected, signature)) {
     return { ok: false, reason: "signature_mismatch" };
@@ -167,6 +180,12 @@ export function verifyProbeSignature(
 
   probeSessions.delete(probeId);
   usedNonces.set(nonce, now + PROBE_SESSION_TTL_MS);
+  // Map 保插入序：超上限即淘汰最老的一条，防止重放表被无界撑大。
+  while (usedNonces.size > USED_NONCES_MAX) {
+    const oldest = usedNonces.keys().next();
+    if (oldest.done) break;
+    usedNonces.delete(oldest.value);
+  }
   return { ok: true };
 }
 
@@ -227,8 +246,9 @@ export function collectObservedAddresses(req: Request | IncomingMessage): Observ
 
   const primary = extractRealIP(req as Request) ?? null;
 
-  // 候选顺序：主出口 → socket → 代理头。首个 IPv4 与首个 IPv6 各取一个作为"观测到的出口"。
-  const candidates: (string | null)[] = [primary, socket, cfConnectingIp, xRealIp, xForwardedFor];
+  // 候选只取服务端自己解析出的两处（主出口 → socket）：代理头是客户端可伪造的，
+  // 放进候选就等于让伪造值直接决定"观测到的出口"，从而压制前端的出口比对。
+  const candidates: (string | null)[] = [primary, socket];
   let ipv4: string | null = null;
   let ipv6: string | null = null;
   for (const candidate of candidates) {

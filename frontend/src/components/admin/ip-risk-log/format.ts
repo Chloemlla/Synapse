@@ -1,5 +1,6 @@
 import type {
   IpRiskCaller,
+  IpRiskDecision,
   IpRiskDecisionAction,
   IpRiskDecisionSource,
   IpRiskLevel,
@@ -16,7 +17,8 @@ const toMillis = (value: string | number | Date | null | undefined): number | nu
 export const formatTime = (value: string | number | Date | null | undefined): string => {
   const millis = toMillis(value);
   if (millis === null) return '-';
-  return new Date(millis).toLocaleString('zh-CN', { hour12: false });
+  // 钉死东八区：dayKey 与日志都按 Asia/Shanghai 切天，浏览器时区不同会显示成「昨天」。
+  return new Date(millis).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 };
 
 const RELATIVE_UNITS: ReadonlyArray<[number, string]> = [
@@ -43,7 +45,8 @@ export const formatRelativeTime = (value: string | number | Date | null | undefi
 /** 上游单次调用的耗时。0 / 非法值按「未计时」处理（配额与未配置分支不发起上游请求）。 */
 export const formatDurationMs = (millis?: number | null): string => {
   if (millis === null || millis === undefined || !Number.isFinite(millis)) return '-';
-  if (millis <= 0) return '0ms';
+  // 0 = 没有发起上游调用（缓存 / 配额用尽 / 未配置 / in-flight 合并），不是「一次极快的外呼」。
+  if (millis <= 0) return '-';
   if (millis < 1000) return `${Math.round(millis)}ms`;
   return `${(millis / 1000).toFixed(2)}s`;
 };
@@ -135,6 +138,28 @@ export const RISK_LEVEL_CONFIG: Record<IpRiskLevel, BadgeStyle> = {
 export const riskLevelStyle = (level?: IpRiskLevel | null): BadgeStyle =>
   (level && RISK_LEVEL_CONFIG[level]) || { label: level || '未知', ...SLATE };
 
+/**
+ * 这次决策「没拿到结论」：上游不可用，或据此按配置降级放行 / 拒绝。
+ * 这类行的 risk 是缺省 0，不能当「判定为低风险」展示。
+ */
+export const isNoVerdictDecision = (
+  decision: Pick<IpRiskDecision, 'source' | 'action'> | null | undefined,
+): boolean =>
+  Boolean(
+    decision &&
+      (decision.source === 'unavailable' ||
+        decision.action === 'fail_open' ||
+        decision.action === 'fail_closed'),
+  );
+
+/** level 徽标：没拿到结论时给灰色「未取得结论」，不要给绿色「低风险」。 */
+export const decisionLevelStyle = (
+  decision: Pick<IpRiskDecision, 'source' | 'action' | 'level'> | null | undefined,
+): BadgeStyle => {
+  if (isNoVerdictDecision(decision)) return { label: '未取得结论', ...SLATE };
+  return riskLevelStyle(decision?.level);
+};
+
 /** 总开关徽标：未启用时后端任何分支都不外呼。 */
 export const switchBadge = (enabled: boolean): BadgeStyle =>
   enabled ? { label: '已启用', ...EMERALD } : { label: '未启用（不外呼）', ...ROSE };
@@ -219,6 +244,22 @@ export const ACTION_ORDER: ReadonlyArray<IpRiskDecisionAction> = [
   'fail_open',
   'fail_closed',
 ];
+
+/**
+ * action 徽标的唯一取用点：后端新增取值 / 数据被改写时给中性兜底，
+ * 不让 `ACTION_CONFIG[...]` 的 undefined 在渲染期抛 TypeError（那会白屏整个前端）。
+ */
+export const actionStyle = (
+  action: IpRiskDecisionAction | string | null | undefined,
+): BadgeStyle & { description: string } => {
+  const known = action ? ACTION_CONFIG[action as IpRiskDecisionAction] : undefined;
+  if (known) return known;
+  return {
+    label: action || '未知',
+    description: '本面板不认识的 action 取值：后端可能新增了动作，或这条数据不是本面板写入的。',
+    ...SLATE,
+  };
+};
 
 export const CALLER_LABELS: Record<IpRiskCaller, string> = {
   api: 'API 调用',

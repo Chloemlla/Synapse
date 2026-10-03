@@ -3,6 +3,7 @@ import { canonicalizeBackendApiUrlObject } from './apiPath';
 import { isFirstVisitVerificationEnabled } from './firstVisitVerificationConfig';
 import { getApiBaseUrl } from '../api/api';
 import { fetchWithTimeout } from './fetchWithTimeout';
+import { maybeEmitPenaltyAppealFromResponse } from './penaltyAppeal';
 
 export type IpCaptchaType = 'turnstile' | 'hcaptcha' | 'trycap';
 
@@ -114,10 +115,14 @@ export function storeIpVerificationToken(session: IpVerificationSession): void {
 }
 
 function normalizeSessionPayload(payload: Partial<IpVerificationSession>, fingerprint: string): IpVerificationSession {
+  const verified = Boolean(payload.verified);
   return {
     success: Boolean(payload.success),
-    verified: Boolean(payload.verified),
-    requiresVerification: Boolean(payload.requiresVerification),
+    verified,
+    // fail-closed：「既未验证、也未要求验证」的握手结论不可信，一律要求验证。
+    // 否则会被当成已通过直接放行，而这个会话根本没有令牌：此后每个 /api 请求 403，
+    // 每次 403 又触发一次同样的静默握手，闸门永远不弹，用户只看到请求失败。
+    requiresVerification: Boolean(payload.requiresVerification) || !verified,
     fingerprint: typeof payload.fingerprint === 'string' && payload.fingerprint ? payload.fingerprint : fingerprint,
     ipAddress: typeof payload.ipAddress === 'string' ? payload.ipAddress : 'unknown',
     token: typeof payload.token === 'string' ? payload.token : undefined,
@@ -171,6 +176,19 @@ function isIpBanPayload(payload: unknown): boolean {
   if (!payload || typeof payload !== 'object') return false;
   const record = payload as Record<string, unknown>;
   return record.errorCode === 'IP_BANNED' || record.banned === true || record.error === 'IP已被封禁';
+}
+
+/**
+ * 把封禁载荷转成带 banData 的错误（形状与 useFirstVisitDetection 的读取端对齐），
+ * 闸门据此渲染阻断页；initialize 与 complete 两条路径共用，避免各自的解析逻辑漂移。
+ */
+function createIpBanError(payload: unknown): Error {
+  const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  const reason = typeof record.reason === 'string' ? record.reason : undefined;
+  const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : undefined;
+  const banError = new Error(`IP已被封禁${reason ? `: ${reason}` : ''}`);
+  (banError as { banData?: { reason?: string; expiresAt?: string } }).banData = { reason, expiresAt };
+  return banError;
 }
 
 async function maybeHandleBlockedResponse(response: Response, url: URL): Promise<void> {
@@ -237,23 +255,15 @@ export async function initializeIpVerificationSession(existingFingerprint?: stri
   });
 
   if (!response.ok) {
-    // G9-14：后端以 403 + error=IP已被封禁 表达封禁，转成带 banData 的错误，供
-    // useFirstVisitDetection 读取真实 isIpBanned。
+    // G9-14：后端以 403 + error=IP已被封禁（或 errorCode=IP_BANNED）表达封禁，转成带 banData 的错误，
+    // 供 useFirstVisitDetection 读取真实 isIpBanned 并渲染阻断页。
     const errPayload = await response.json().catch(() => ({}));
-    if (
-      response.status === 403 &&
-      (errPayload?.error === 'IP已被封禁' ||
-        errPayload?.errorCode === 'IP_BANNED' ||
-        errPayload?.banned === true)
-    ) {
-      const banError = new Error(`IP已被封禁: ${errPayload.reason || ''}`);
-      (banError as { banData?: { reason?: string; expiresAt?: string } }).banData = {
-        reason: errPayload.reason,
-        expiresAt: errPayload.expiresAt,
-      };
-      throw banError;
+    if (response.status === 403 && isIpBanPayload(errPayload)) {
+      throw createIpBanError(errPayload);
     }
-    throw new Error(errPayload?.error || `IP verification session failed: HTTP ${response.status}`);
+    // 原始状态码与后端原文只进 console；向上抛稳定 code，面向用户的文案由调用方映射。
+    console.error('IP verification session init failed:', response.status, errPayload);
+    throw new Error('SESSION_INIT_FAILED');
   }
 
   const payload = await response.json().catch(() => ({}));
@@ -301,6 +311,18 @@ export async function completeIpVerification(
   });
 
   const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    // 封禁可能恰在解验证码这一刻生效：complete 命中 EXEMPT_PATH_PREFIXES，transport 的 403
+    // 检查根本不看它，此前这条路会把封禁整个吞掉（只显示「未被接受」）。
+    // 与 initialize 同形处理：抛带 banData 的错误，让闸门切到阻断页（页面自带申诉入口）。
+    if (response.status === 403 && isIpBanPayload(payload)) {
+      throw createIpBanError(payload);
+    }
+    // 其余处罚类失败（如账户封停）交统一分类器派发申诉；普通失败保持原有返回形状。
+    maybeEmitPenaltyAppealFromResponse(payload, response.status, 'ip-verification-complete');
+  }
+
   const normalized = normalizeSessionPayload(payload, fingerprint);
 
   if (normalized.token && normalized.verified) {

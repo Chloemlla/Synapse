@@ -19,12 +19,16 @@ export interface IpRiskDecision {
   caller: IpRiskCaller;
   action: IpRiskDecisionAction;
   shouldChallenge: boolean;
+  /** 风险分达到 blockRiskScore 且 caller 是首访闸门：闸门应直接把该 IP 写进封禁表。 */
+  shouldBlock: boolean;
   reason: string;
   risk: number;
   level: IpRiskLevel;
   flags: string[];
   source: IpRiskDecisionSource;
   threshold: number;
+  /** 当时生效的 blockRiskScore（与 threshold 一样是快照，不是当前配置）。 */
+  blockThreshold: number;
   failOpen: boolean;
   closedOnFailure: boolean;
 }
@@ -54,6 +58,12 @@ export interface ProxycheckOverviewCounts {
   /** 真的打到上游的行数（排除 status=cache）：与配额、外呼失败对应。 */
   upstreamCalls: number;
   upstreamCalls24h: number;
+  /** 最近 24 小时真的打到上游且成功的次数（status=ok）。旧后端响应没有该字段。 */
+  upstreamOk24h?: number;
+  /** 最近 24 小时真的打到上游但失败的次数（status=failed）。>0 即「上游在失败」。 */
+  failed24h?: number;
+  /** 最近一次上游失败（status=failed 的最新一行）的 error 与时间；从无失败时为 null。 */
+  lastError?: { message: string; at: string | null } | null;
   riskCache: number;
   riskCacheActive: number;
   probeReports: number;

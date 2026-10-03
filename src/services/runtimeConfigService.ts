@@ -41,6 +41,7 @@ import logger from "../utils/logger";
 import { normalizeScamalyticsUser, validateScamalyticsUser } from "../utils/scamalytics";
 import { timingSafeStringEqual } from "../utils/timingSafeCompare";
 import { mongoose } from "./mongoService";
+import { PROXYCHECK_HMAC_KEY_LENGTH } from "./proxycheckSignature";
 
 const FALLBACK_BASE_URL = "https://chloemlla.com";
 const FALLBACK_FRONTEND_URL = "https://chloemlla.com";
@@ -1580,13 +1581,17 @@ export class RuntimeConfigService {
     const obj = asObject(input);
 
     // 四把 key 均遵循「留空 = 保留已存值」，与 Env Manager 其它密钥段的约定一致。
+    // 例外：显式传 null（JSON 的清除开关）表示「清空该密钥」——否则误填的 key 只能靠
+    // DELETE 整段 PROXYCHECK 才能清掉（那是线上事故的唯一补救通路，代价过大）。
     const updateSecret = (
       key: "apiKey" | "publicApiKey" | "payloadVerificationKey" | "hmacSecret",
       currentValue: string,
     ): string => {
       if (!hasOwnKey(obj, key)) return currentValue;
-      if (typeof obj[key] !== "string") throw new Error(`${key} 必须是字符串`);
-      const value = obj[key].trim();
+      const raw = obj[key];
+      if (raw === null) return "";
+      if (typeof raw !== "string") throw new Error(`${key} 必须是字符串`);
+      const value = raw.trim();
       if (!value) return currentValue;
       return value.slice(0, 1024);
     };
@@ -1617,6 +1622,24 @@ export class RuntimeConfigService {
         ? normalizeBoolean(obj.usePublicKeyForClient, current.usePublicKeyForClient)
         : current.usePublicKeyForClient,
     };
+
+    // 跨字段校验：payloadVerificationKey 是 proxycheck 官方 Dashboard 生成的 64 字符密钥。
+    // 线上事故的形态正是把它填成了本服务的 hmacSecret —— 长度与来源都不对，每一次验签都失败。
+    // 注意 usePublicKeyForClient=true 而 publicApiKey 为空时不在这里阻断（保持既有降级语义），
+    // 该矛盾由前端提示，不升级为保存失败。
+    if (nextConfig.payloadVerificationKey) {
+      if (nextConfig.payloadVerificationKey.length !== PROXYCHECK_HMAC_KEY_LENGTH) {
+        throw new Error(
+          `payloadVerificationKey 必须是 proxycheck 官方 Dashboard 生成的 ${PROXYCHECK_HMAC_KEY_LENGTH} 字符密钥` +
+            `（当前长度 ${nextConfig.payloadVerificationKey.length}）`,
+        );
+      }
+      if (nextConfig.payloadVerificationKey === nextConfig.hmacSecret) {
+        throw new Error(
+          "payloadVerificationKey 必须是 proxycheck 官方 Dashboard 生成的 64 字符密钥（不是本服务的 hmacSecret）",
+        );
+      }
+    }
 
     const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
       "PROXYCHECK",

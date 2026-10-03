@@ -16,11 +16,12 @@ export async function fetchWithTimeout(
 
   // Merge a caller-provided signal with our timeout abort so both can win.
   const callerSignal = init.signal;
+  const onCallerAbort = () => controller.abort();
   if (callerSignal) {
     if (callerSignal.aborted) {
       controller.abort();
     } else {
-      callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
     }
   }
 
@@ -28,6 +29,9 @@ export async function fetchWithTimeout(
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
     window.clearTimeout(timeoutId);
+    // {once:true} 只在 abort 真发生时自动摘除；未触发时监听器会一直挂在调用方的
+    // 长生命周期 signal 上累积，必须在这里显式移除（重复移除是空操作）。
+    callerSignal?.removeEventListener('abort', onCallerAbort);
   }
 }
 

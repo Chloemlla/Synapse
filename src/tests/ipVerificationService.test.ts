@@ -92,6 +92,9 @@ jest.mock("../models/ipVerificationTokenModel", () => ({
     deleteMany: jest.fn(() => ({
       exec: deleteManyExec,
     })),
+    // issueToken 由 deleteMany+create 改为 findOneAndUpdate(upsert) 原子替换，
+    // 替身必须同步补上，否则生产代码在调用点抛 TypeError 被上层吞成 4xx/5xx。
+    findOneAndUpdate: jest.fn().mockResolvedValue({}),
     create: createToken,
   },
 }));

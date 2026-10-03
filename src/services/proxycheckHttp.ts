@@ -78,11 +78,14 @@ export function extractIpResult(payload: ProxycheckPayload, ip: string): Record<
   if (isRecord(direct)) return direct;
 
   // 上游有时回显压缩后的 IPv6 形式，键名与请求不完全一致，退化为扫描 IP 形态的键。
+  // 批量响应里同时存在多个 IP 形态的键，此时无从判断哪个才是本 IP：宁可判这次查询失败，
+  // 也绝不把邻居 IP 的结论安到本 IP 头上（它会被写进 24h 缓存，污染闸门判据）。
+  const candidates: Record<string, unknown>[] = [];
   for (const [key, value] of Object.entries(payload)) {
     if (key === "status" || key === "message" || key === "node") continue;
-    if (isIP(key) && isRecord(value)) return value;
+    if (isIP(key) && isRecord(value)) candidates.push(value);
   }
-  return null;
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 /**

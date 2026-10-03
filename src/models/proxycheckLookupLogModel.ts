@@ -93,6 +93,11 @@ const ProxycheckLookupLogSchema = new mongoose.Schema<ProxycheckLookupLogDoc>(
 // 本集合刻意不加 expireAfterSeconds（写放大只多了这一个索引）。
 ProxycheckLookupLogSchema.index({ createdAt: -1 });
 
+// 概览页的「按 status + 时间窗计数」（近 24h 的 ok/failed/cache 行数）以及「最近一条 status=failed」
+// 都走这条复合索引：{createdAt:-1} 单独用不上 status 等值条件，而 status 无索引时 count 会退化成
+// 整表扫描（本集合刻意不加 TTL，行数随查询持续增长）。
+ProxycheckLookupLogSchema.index({ status: 1, createdAt: -1 });
+
 export const ProxycheckLookupLogModel =
   (mongoose.models.ProxycheckLookupLog as mongoose.Model<ProxycheckLookupLogDoc>) ||
   mongoose.model<ProxycheckLookupLogDoc>("ProxycheckLookupLog", ProxycheckLookupLogSchema);

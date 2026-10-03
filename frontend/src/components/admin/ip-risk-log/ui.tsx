@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { FaChevronDown, FaChevronRight, FaInfoCircle, FaSync } from 'react-icons/fa';
 import type { IpRiskDecision } from '@/api/ipRiskLogs';
 import { useNotification } from '@/components/Notification';
@@ -14,11 +14,13 @@ import {
   SOURCE_HINTS,
   SOURCE_LABELS,
   type BadgeStyle,
+  actionStyle,
   boolLabel,
+  decisionLevelStyle,
   describeReason,
   formatRelativeTime,
   formatTime,
-  riskLevelStyle,
+  isNoVerdictDecision,
   shortText,
   stringifyJson,
 } from './format';
@@ -202,11 +204,17 @@ export const RefreshButton: React.FC<{ onClick: () => void; loading?: boolean; l
   </button>
 );
 
-/** 同一段错误文案只弹一次，避免自动刷新把后端故障刷成通知风暴。 */
-export const useErrorNotice = (): ((message: string) => void) => {
+/** 错误提示器：按函数调用 `notice(message)`；`notice.reset()` 复位「同一文案只弹一次」的记忆。 */
+export type ErrorNotice = ((message: string) => void) & { reset: () => void };
+
+/**
+ * 同一段错误文案只弹一次，避免自动刷新把后端故障刷成通知风暴。
+ * 拉取成功后调用 `reset()` 复位，这样「失败 → 恢复 → 再失败」时同一文案还能再提示一次。
+ */
+export const useErrorNotice = (): ErrorNotice => {
   const { setNotification } = useNotification();
   const lastMessageRef = useRef<string | null>(null);
-  return useCallback(
+  const notice = useCallback(
     (message: string) => {
       if (lastMessageRef.current === message) return;
       lastMessageRef.current = message;
@@ -214,6 +222,10 @@ export const useErrorNotice = (): ((message: string) => void) => {
     },
     [setNotification],
   );
+  const reset = useCallback(() => {
+    lastMessageRef.current = null;
+  }, []);
+  return useMemo(() => Object.assign(notice, { reset }), [notice, reset]);
 };
 
 export const Pager: React.FC<{
@@ -319,9 +331,11 @@ export const DecisionBlock: React.FC<{
     );
   }
 
-  const action = ACTION_CONFIG[decision.action];
+  const action = actionStyle(decision.action);
+  const flags = decision.flags ?? [];
+  const isNoVerdict = isNoVerdictDecision(decision);
   const challengeByScore = decision.risk >= decision.threshold;
-  const challengeByFlag = decision.flags.filter((flag) => CHALLENGE_FLAGS.includes(flag));
+  const challengeByFlag = flags.filter((flag) => CHALLENGE_FLAGS.includes(flag));
 
   return (
     <div className="space-y-2">
@@ -358,8 +372,11 @@ export const DecisionBlock: React.FC<{
           hint="闸门判据是否要求人机验证。caller=api 时它只是信息性的：接口本身不拦截。"
         />
         <FieldRow label="reason" value={describeReason(decision.reason)} mono />
-        <FieldRow label="risk" value={decision.risk} />
-        <FieldRow label="level" value={<Badge style={riskLevelStyle(decision.level)} />} />
+        <FieldRow
+          label="risk"
+          value={isNoVerdict ? <span className="text-slate-500">—（未取得）</span> : decision.risk}
+        />
+        <FieldRow label="level" value={<Badge style={decisionLevelStyle(decision)} />} />
         <FieldRow
           label="source"
           value={SOURCE_LABELS[decision.source] ?? decision.source}
@@ -374,16 +391,26 @@ export const DecisionBlock: React.FC<{
         />
         <FieldRow
           label="flags"
-          value={decision.flags.length > 0 ? decision.flags.join(', ') : '（无）'}
+          value={flags.length > 0 ? flags.join(', ') : '（无）'}
           mono
         />
       </FieldGrid>
 
       <div className="text-xs leading-5 text-slate-500">
-        判据回顾：risk {decision.risk} {challengeByScore ? '≥' : '<'} 阈值 {decision.threshold}
-        {challengeByScore ? '（仅凭分数就要求挑战）' : '（分数不足以单独触发挑战）'}；
-        命中挑战标志 {challengeByFlag.length > 0 ? challengeByFlag.join(', ') : '无'}
-        {challengeByFlag.length > 0 ? '（任一命中即要求挑战）' : '（hosting 单独命中不挑战）'}。
+        {isNoVerdict ? (
+          <>
+            本次没有拿到上游结论（source 为「{SOURCE_LABELS[decision.source] ?? decision.source}」），
+            risk {decision.risk} 是缺省值，不代表「低风险」；是否放行由 failOpen（当时 {boolLabel(decision.failOpen)}）决定，
+            所以 action 是「{action.label}」。别按分数理解这一行。
+          </>
+        ) : (
+          <>
+            判据回顾：risk {decision.risk} {challengeByScore ? '≥' : '<'} 阈值 {decision.threshold}
+            {challengeByScore ? '（仅凭分数就要求挑战）' : '（分数不足以单独触发挑战）'}；
+            命中挑战标志 {challengeByFlag.length > 0 ? challengeByFlag.join(', ') : '无'}
+            {challengeByFlag.length > 0 ? '（任一命中即要求挑战）' : '（hosting 单独命中不挑战）'}。
+          </>
+        )}
       </div>
     </div>
   );

@@ -308,22 +308,31 @@ export class IpVerificationService {
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + IpVerificationService.getVerifyTtlMs());
 
-    await IpVerificationTokenModel.deleteMany({
-      fingerprint,
-      ipAddress,
-    }).exec();
-
-    await IpVerificationTokenModel.create({
-      token,
-      fingerprint,
-      ipAddress,
-      issuedBy,
-      challengePassed: issuedBy !== "auto",
-      fraudScore,
-      riskFlags,
-      expiresAt,
-      lastValidatedAt: new Date(),
-    });
+    // GB-06: 原子替换同一 (fingerprint, ipAddress) 的旧令牌。
+    // 旧写法是先 deleteMany({fingerprint, ipAddress}) 再 create：同一客户端两次并发
+    // /session 时，后到的 insert 会把前一个已经随 200 响应返回给客户端的令牌删掉，
+    // 客户端拿这张已被删除的令牌过闸门就 403（现象是刷新一次就好）。
+    // findOneAndUpdate + upsert 把「删旧 + 写新」合并成单次原子写，消除这个互踩窗口。
+    // 注意：IpVerificationTokenModel 只对 (fingerprint, ipAddress, expiresAt) 建了普通复合索引，
+    // 没有 (fingerprint, ipAddress) 唯一索引；Mongo 的 upsert 只有在唯一索引冲突时才转为更新，
+    // 因此极端并发下两次 upsert 仍可能各插一条。本批不新增索引（线上大集合建索引需另评估）。
+    await IpVerificationTokenModel.findOneAndUpdate(
+      { fingerprint, ipAddress },
+      {
+        $set: {
+          token,
+          fingerprint,
+          ipAddress,
+          issuedBy,
+          challengePassed: issuedBy !== "auto",
+          fraudScore,
+          riskFlags,
+          expiresAt,
+          lastValidatedAt: new Date(),
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
 
     logger.info("[IpVerification] Issued session token", {
       fingerprint: `${fingerprint.slice(0, 8)}...`,

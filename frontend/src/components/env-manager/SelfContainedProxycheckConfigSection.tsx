@@ -9,6 +9,8 @@ import ProxycheckConfigSection, {
   DEFAULT_PROXYCHECK_INPUTS,
   PROXYCHECK_NUMERIC_FIELDS,
   clampProxycheckNumber,
+  isClearableProxycheckSecretKey,
+  type ProxycheckClearableSecretKey,
   type ProxycheckInputs,
   type ProxycheckNumericKey,
   type ProxycheckSecretKey,
@@ -39,7 +41,8 @@ function pickString(cfg: Record<string, unknown>, key: string): string {
 }
 
 /**
- * proxycheck.io IP 风险检测（PROXYCHECK）。四把密钥均为「留空 = 保留原值」，
+ * proxycheck.io IP 风险检测（PROXYCHECK）。四把密钥默认「留空 = 保留原值」，
+ * 两把可清除的密钥另有「清除」开关（payload 传 null = 显式清除）；
  * 后端只回掩码 + hasXxx 布尔，明文永不回显。
  */
 export default function SelfContainedProxycheckConfigSection({
@@ -59,6 +62,11 @@ export default function SelfContainedProxycheckConfigSection({
   const [inputs, setInputs] = useState<ProxycheckInputs>(DEFAULT_PROXYCHECK_INPUTS);
   const [current, setCurrent] = useState<ProxycheckSectionState | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | undefined>();
+  /** 最近一次成功加载到的服务器值，用于判断「有未保存改动」；从未成功加载时为 null。 */
+  const [serverInputs, setServerInputs] = useState<ProxycheckInputs | null>(null);
+  const [clearKeys, setClearKeys] = useState<Set<ProxycheckClearableSecretKey>>(
+    () => new Set<ProxycheckClearableSecretKey>(),
+  );
 
   const handleInputChange = useCallback(
     <K extends keyof ProxycheckInputs>(key: K, value: ProxycheckInputs[K]) => {
@@ -71,6 +79,21 @@ export default function SelfContainedProxycheckConfigSection({
     [],
   );
 
+  const handleToggleClearKey = useCallback(
+    (key: ProxycheckClearableSecretKey) => {
+      const willClear = !clearKeys.has(key);
+      setClearKeys((prev) => {
+        const next = new Set(prev);
+        if (willClear) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+      // 勾选清除时同步清掉该字段的新值输入，避免「既填新值又要清」的歧义。
+      if (willClear) setInputs((prev) => (prev[key] ? { ...prev, [key]: '' } : prev));
+    },
+    [clearKeys],
+  );
+
   const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
@@ -81,7 +104,7 @@ export default function SelfContainedProxycheckConfigSection({
         return;
       }
       const cfg: Record<string, unknown> = data?.setting?.config || {};
-      setInputs({
+      const loadedInputs: ProxycheckInputs = {
         enabled: pickBoolean(cfg, 'enabled'),
         // 密钥输入框始终清空：留空保存即保留原值。
         apiKey: '',
@@ -95,7 +118,11 @@ export default function SelfContainedProxycheckConfigSection({
         blockRiskScore: pickNumericInput(cfg, 'blockRiskScore'),
         failOpen: pickBoolean(cfg, 'failOpen'),
         usePublicKeyForClient: pickBoolean(cfg, 'usePublicKeyForClient'),
-      });
+      };
+      setInputs(loadedInputs);
+      setServerInputs(loadedInputs);
+      // 读到线上值就说明「清除」意图已结算或被放弃，复位开关。
+      setClearKeys(new Set<ProxycheckClearableSecretKey>());
       setCurrent({
         enabled: pickBoolean(cfg, 'enabled'),
         apiKey: pickString(cfg, 'apiKey'),
@@ -128,6 +155,24 @@ export default function SelfContainedProxycheckConfigSection({
   const handleSave = useCallback(async () => {
     if (!canWrite) return;
     if (saving) return;
+    // 配置未成功加载时 inputs 仍是默认值，保存会把线上真实开关与阈值静默重置。
+    if (!current) {
+      setNotification({ message: '配置未加载，禁止保存：请先点「刷新」成功读取服务器配置。', type: 'error' });
+      return;
+    }
+    // 上游验签密钥必须是 64 字符（官方约定）；长度不符直接拦下，避免存进一把永远验不过的密钥。
+    const payloadKeyValue = inputs.payloadVerificationKey.trim();
+    if (
+      !clearKeys.has('payloadVerificationKey') &&
+      payloadKeyValue !== '' &&
+      payloadKeyValue.length !== 64
+    ) {
+      setNotification({
+        message: `API Payload Verification Key 须来自 proxycheck 官方 Dashboard，共 64 字符；当前为 ${payloadKeyValue.length} 字符，已中止保存。`,
+        type: 'error',
+      });
+      return;
+    }
     // 前端先按合法区间钳制，避免后端 400；空值/非法值回落该字段默认值。
     const numbers: Record<ProxycheckNumericKey, number> = {
       cacheTtlHours: 0,
@@ -151,6 +196,11 @@ export default function SelfContainedProxycheckConfigSection({
       ...numbers,
     };
     for (const key of SECRET_KEYS) {
+      // 显式清除：后端约定 null 表示置空（空串仍是「保留原值」）。
+      if (isClearableProxycheckSecretKey(key) && clearKeys.has(key)) {
+        payload[key] = null;
+        continue;
+      }
       const value = inputs[key].trim();
       if (value) payload[key] = value;
     }
@@ -177,7 +227,7 @@ export default function SelfContainedProxycheckConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [canWrite, saving, inputs, fetchConfig, setNotification]);
+  }, [canWrite, saving, current, clearKeys, inputs, fetchConfig, setNotification]);
 
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
@@ -209,6 +259,14 @@ export default function SelfContainedProxycheckConfigSection({
     }
   }, [canWrite, deleting, fetchConfig, setNotification]);
 
+  // 有未保存改动：刷新会用服务器值覆盖表单，需要先二次确认。
+  const dirty =
+    serverInputs !== null &&
+    (clearKeys.size > 0 ||
+      (Object.keys(serverInputs) as (keyof ProxycheckInputs)[]).some(
+        (key) => serverInputs[key] !== inputs[key],
+      ));
+
   return (
     <ProxycheckConfigSection
       isOpen={isOpen}
@@ -221,6 +279,9 @@ export default function SelfContainedProxycheckConfigSection({
       inputs={inputs}
       current={current}
       updatedAt={updatedAt}
+      dirty={dirty}
+      clearKeys={clearKeys}
+      onToggleClearKey={handleToggleClearKey}
       onInputChange={handleInputChange}
       onRefresh={fetchConfig}
       onSave={handleSave}

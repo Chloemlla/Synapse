@@ -201,6 +201,10 @@ function computeProbeVerdict(
   const wsExit = report.wsExitIp;
   const ipv6Exit = report.ipv6Exit;
   const clientTimezone = report.timezone;
+  // 比较前先归一：同一条出口可能一侧以 ::ffff:1.2.3.4 的形态出现，直接比原始串会判成不一致（假告警）。
+  const httpExitNormalized = normalizeExitForCompare(httpExit ?? "");
+  const wsExitNormalized = normalizeExitForCompare(wsExit ?? "");
+  const ipv6ExitNormalized = normalizeExitForCompare(ipv6Exit ?? "");
 
   // WebRTC 暴露的可比对公网地址（srflx 为主，公网 host 候选同样算）：私网/NAT/链路本地地址不算出口。
   // 对比基准用服务端解析出的请求出口 IP（权威），而不是客户端自报的 httpExitIp。
@@ -217,8 +221,8 @@ function computeProbeVerdict(
   };
 
   const mismatch: ProxycheckProbeMismatch = {
-    ipv4vsWs: comparability.ipv4vsWs && httpExit !== wsExit,
-    ipvEvsV6: comparability.ipvEvsV6 && httpExit !== ipv6Exit,
+    ipv4vsWs: comparability.ipv4vsWs && httpExitNormalized !== wsExitNormalized,
+    ipvEvsV6: comparability.ipvEvsV6 && httpExitNormalized !== ipv6ExitNormalized,
     timezoneVsGeo:
       comparability.timezoneVsGeo &&
       geoTimezone !== null &&
@@ -292,14 +296,15 @@ export class IpRiskController {
       return;
     }
 
-    const verified = verifyProbeSignature(probeId, nonce, payload, body.signature);
+    // 验签要绑定上报来源：会话当初签给哪个出口，就只认哪个出口上报。
+    const ip = resolveRequestIp(req);
+    const verified = verifyProbeSignature(probeId, nonce, payload, body.signature, ip);
     if (!verified.ok) {
       const status = verified.reason === "nonce_replayed" ? 409 : 403;
       res.status(status).json({ success: false, reason: verified.reason });
       return;
     }
 
-    const ip = resolveRequestIp(req);
     const report = sanitizeProbePayload(payload as Record<string, unknown>);
     const geoTimezone = await readCachedGeoTimezone(ip);
     const { flags, mismatch, comparability } = computeProbeVerdict(report, geoTimezone, ip);

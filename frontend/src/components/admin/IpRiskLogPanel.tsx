@@ -13,7 +13,7 @@ import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell } f
 import { useNotification } from '@/components/Notification';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
-import { AUTO_REFRESH_OPTIONS, formatCount, formatRelativeTime, switchBadge } from './ip-risk-log/format';
+import { AUTO_REFRESH_OPTIONS, formatCount, formatRelativeTime, shortText, switchBadge } from './ip-risk-log/format';
 import { Badge, Collapsible, DecisionLegend, FilterSelect } from './ip-risk-log/ui';
 import LookupsTab from './ip-risk-log/LookupsTab';
 import OverviewTab from './ip-risk-log/OverviewTab';
@@ -91,6 +91,9 @@ const IpRiskLogPanel: React.FC = () => {
   const counts = overview?.counts;
   const config = overview?.setting.config;
   const quota = overview?.quota;
+  // 上游健康度：旧的 overview 响应没有这三个字段，按 0 / 无处理。
+  const failed24h = counts?.failed24h ?? 0;
+  const lastError = counts?.lastError ?? null;
 
   return (
     <InfoQueryShell maxWidthClassName="max-w-7xl">
@@ -137,17 +140,34 @@ const IpRiskLogPanel: React.FC = () => {
         }
       />
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <InfoMetricCard
           label="风险判定决策日志"
           value={counts ? formatCount(counts.lookupLogs) : '—'}
           detail={
             counts
-              ? `24 小时内 ${formatCount(counts.lookupLogs24h)} 条（打到上游 ${formatCount(counts.upstreamCalls24h)} 次）`
+              ? `24 小时内 ${formatCount(counts.lookupLogs24h)} 条（打到上游 ${formatCount(counts.upstreamCalls24h)} 次：成功 ${formatCount(counts.upstreamOk24h)} / 失败 ${formatCount(counts.failed24h)}）`
               : '等待概览'
           }
           icon={FaListUl}
           tone="sky"
+        />
+        <InfoMetricCard
+          label="上游失败（24h）"
+          value={counts ? formatCount(failed24h) : '—'}
+          detail={
+            !counts
+              ? '等待概览'
+              : failed24h > 0
+                ? lastError?.message
+                  ? `上游正在失败 · 最近一次：${shortText(lastError.message, 60)}（${formatRelativeTime(lastError.at)}）`
+                  : '上游正在失败 · 最近 24 小时有上游调用失败'
+                : lastError?.message
+                  ? `最近 24 小时无失败；更早一次：${shortText(lastError.message, 40)}`
+                  : '最近 24 小时没有上游调用失败'
+          }
+          icon={FaExclamationTriangle}
+          tone={failed24h > 0 ? 'rose' : 'slate'}
         />
         <InfoMetricCard
           label="风险缓存生效中"

@@ -1425,6 +1425,13 @@ const App: React.FC = () => {
     }
     return (
       <NotificationProvider>
+        {/* 闸门期间 API 仍会派发处罚申诉事件：宿主与匿名出口探测必须和主 shell 一样挂在这里，
+            否则被封用户在验证页上点不到申诉入口。两者只依赖 Notification（本分支已提供）
+            与外部 Router，无需 ConfirmDialogProvider。 */}
+        <Suspense fallback={null}>
+          <PenaltyAppealHost />
+        </Suspense>
+        <ClientOriginProbe />
         <LazyMotion features={domAnimation}>
           <AppLoadingScreen
             title="正在进行访问校验"
@@ -1439,6 +1446,11 @@ const App: React.FC = () => {
   if (shouldBlockForFirstVisitCheck) {
     return (
       <NotificationProvider>
+        {/* 同访问校验分支：闸门期间也要能弹处罚申诉，并继续做匿名出口探测。 */}
+        <Suspense fallback={null}>
+          <PenaltyAppealHost />
+        </Suspense>
+        <ClientOriginProbe />
         <LazyMotion features={domAnimation}>
           <FirstVisitVerification
             fingerprint={fingerprint ?? ''}

@@ -72,6 +72,18 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
   const config = setting?.config;
   const quotaLimit = quota?.limit ?? config?.dailyQuotaPerKey ?? 0;
   const quotaRatio = quotaLimit > 0 ? Math.min(1, (quota?.count ?? 0) / quotaLimit) : 0;
+  // 上游健康度：旧的 overview 响应没有这三个字段，按 0 / 无处理。
+  const failed24h = counts?.failed24h ?? 0;
+  const upstreamOk24h = counts?.upstreamOk24h;
+  const lastError = counts?.lastError ?? null;
+  const upstreamFailureDetail =
+    failed24h > 0
+      ? lastError?.message
+        ? `最近一次：${shortText(lastError.message, 80)}（${formatRelativeTime(lastError.at)}）`
+        : '最近 24 小时有上游调用失败（响应未带最近错误详情）'
+      : lastError?.message
+        ? `最近 24 小时无失败；更早一次：${shortText(lastError.message, 60)}`
+        : '最近 24 小时没有上游调用失败';
 
   const collectionDocs: Record<string, { value: string; hint: string }> = {
     proxycheck_lookup_logs: {
@@ -111,13 +123,20 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
         总决策行数（包含命中缓存的判定）与真的打到上游的次数（只有后者跟配额有关）。
       </SectionNote>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <InfoMetricCard
           label="风险判定决策日志"
           value={formatCount(counts?.lookupLogs)}
-          detail={`24 小时内 ${formatCount(counts?.lookupLogs24h)} 条（其中打到上游 ${formatCount(counts?.upstreamCalls24h)} 次）`}
+          detail={`24 小时内 ${formatCount(counts?.lookupLogs24h)} 条（打到上游 ${formatCount(counts?.upstreamCalls24h)} 次：成功 ${formatCount(upstreamOk24h)} / 失败 ${formatCount(failed24h)}）`}
           icon={FaListUl}
           tone="sky"
+        />
+        <InfoMetricCard
+          label="上游失败（24h）"
+          value={formatCount(failed24h)}
+          detail={upstreamFailureDetail}
+          icon={FaExclamationTriangle}
+          tone={failed24h > 0 ? 'rose' : 'slate'}
         />
         <InfoMetricCard
           label="风险缓存"

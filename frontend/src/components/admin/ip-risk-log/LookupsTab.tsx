@@ -9,14 +9,15 @@ import {
 import { InfoPanel, InfoSectionTitle, studioFieldClassName } from '@/components/studioTheme';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
-  ACTION_CONFIG,
   CALLER_LABELS,
   DEFAULT_PAGE_SIZE,
   LOOKUP_STATUS_OPTIONS,
   PAGE_SIZE_OPTIONS,
+  actionStyle,
   boolLabel,
   formatCount,
   formatDurationMs,
+  isNoVerdictDecision,
   lookupStatusStyle,
 } from './format';
 import {
@@ -92,6 +93,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
         setRows(res.logs ?? []);
         setTotal(res.total ?? 0);
         setError(null);
+        notice.reset();
       } catch (err) {
         if (requestId !== requestRef.current) return;
         const message = getBackendErrorMessage(err, '加载判定决策日志失败');
@@ -152,6 +154,13 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
         <br />
         唯一不会出现在这里的是本面板上线之前写入的旧行：它们没有 <code>decision</code> 字段，会显式标注为「旧数据」。
       </SectionNote>
+
+      {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
+      {error ? (
+        <InfoPanel compact>
+          <div className="text-sm text-rose-600">{error}</div>
+        </InfoPanel>
+      ) : null}
 
       <InfoPanel compact>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -288,7 +297,8 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
               const key = rowKey(row, index);
               const isOpen = expanded.has(key);
               const statusStyle = lookupStatusStyle(row.status);
-              const action = row.decision ? ACTION_CONFIG[row.decision.action] : null;
+              const noVerdict = isNoVerdictDecision(row.decision);
+              const action = row.decision ? actionStyle(row.decision.action) : null;
               return (
                 <React.Fragment key={key}>
                   <tr className="border-b border-slate-100 align-top hover:bg-slate-50/60">
@@ -302,7 +312,17 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
                       <Badge style={statusStyle} />
                     </Td>
                     <Td className={row.ok ? 'text-emerald-700' : 'text-rose-600'}>{boolLabel(row.ok)}</Td>
-                    <Td className="text-slate-700">{row.risk === null || row.risk === undefined ? '-' : row.risk}</Td>
+                    <Td className="text-slate-700">
+                      {row.risk === null || row.risk === undefined ? (
+                        '-'
+                      ) : noVerdict ? (
+                        <span className="text-slate-400" title="上游不可用，没拿到风险分">
+                          —（未取得）
+                        </span>
+                      ) : (
+                        row.risk
+                      )}
+                    </Td>
                     <Td className="text-slate-600">{boolLabel(row.deduped)}</Td>
                     <Td className="whitespace-nowrap text-slate-600">{formatDurationMs(row.durationMs)}</Td>
                     <Td className="max-w-[220px] text-rose-600" >

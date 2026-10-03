@@ -59,9 +59,9 @@ const Spinner: React.FC<{ className?: string; reducedMotion: boolean }> = ({
 );
 
 const REVIEW_STEPS = [
-  { id: 'scan', label: 'Network scan', Icon: FaGlobe },
-  { id: 'challenge', label: 'Human check', Icon: FaShieldAlt },
-  { id: 'token', label: 'Session token', Icon: FaLock },
+  { id: 'scan', label: 'Checking connection', Icon: FaGlobe },
+  { id: 'challenge', label: 'Confirming it is you', Icon: FaShieldAlt },
+  { id: 'token', label: 'Almost done', Icon: FaLock },
 ] as const;
 
 const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
@@ -333,7 +333,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     try {
       const result = await completeIpVerification(fingerprint, currentToken, verificationMode);
       if (!result.success || !result.verified || !result.token) {
-        throw new Error(result.reason || 'Verification was not accepted. Please try again.');
+        // 后端原文不直铺界面，只给中性可重试文案。
+        throw new Error('Verification was not accepted. Please try again.');
       }
 
       setNotification({
@@ -345,8 +346,21 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         onVerificationComplete();
       }, 180);
     } catch (verifyError) {
-      const message =
-        verifyError instanceof Error ? verifyError.message : 'Verification failed. Please try again later.';
+      // complete 在解验证码这一刻被封时抛出带 banData 的错误：切到阻断页（页面自带申诉入口），
+      // 不再当作普通失败只显示一句「未被接受」。
+      const banData = (verifyError as { banData?: { reason?: string; expiresAt?: string } })?.banData;
+      if (banData) {
+        setBanState({
+          isBanned: true,
+          reason: banData.reason || 'IP 已被封禁',
+          expiresAt: banData.expiresAt ? new Date(banData.expiresAt) : undefined,
+        });
+        return;
+      }
+
+      // 原始异常只进 console；界面用中性文案。
+      console.error('IP verification complete failed:', verifyError);
+      const message = 'Verification was not accepted. Please try again.';
       setError(message);
       resetChallenge(verificationMode);
       setNotification({
@@ -461,8 +475,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           </div>
 
           <p className="mt-5 text-sm leading-6 text-[#526071]">
-            The backend risk policy asked for a one-time human verification before your session token can be
-            renewed. Finish the challenge below and you are straight back to the site.
+            One quick security check is needed before you can continue. Finish the challenge below and
+            you are straight back to the site.
           </p>
 
           <div className="mt-6 rounded-2xl border border-[#eceff4] bg-[#fbfcfe] px-5 py-5">
@@ -655,8 +669,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
             <MetaRow Icon={FaClock} label="Token policy">
               <p className="text-xs leading-5 text-[#526071]">
-                The session is accepted for 40 minutes after verification. Every API request carries the
-                fingerprint and the verification token, so the check does not come back on reload.
+                Once the check passes, you can keep browsing as usual. The check stays valid for the rest
+                of your session, so it does not come back on reload.
               </p>
             </MetaRow>
           </div>
@@ -665,9 +679,9 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             <p className="text-sm font-semibold text-[#253140]">Why this page appears</p>
             <ul className="mt-3.5 space-y-3 text-xs leading-5 text-[#637082]">
               {[
-                'Backend fraud scoring marked the current network as risky enough to step up verification.',
-                'The challenge is one-time and bound to the current IP plus browser fingerprint.',
-                'A passed challenge lasts 40 minutes; refreshing inside that window keeps your session.',
+                'Your network needs a quick one-time verification before you can continue.',
+                'It only takes a few seconds and helps keep the site safe.',
+                'After the check you can continue browsing as usual.',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
                   <FaCheck className="mt-0.5 h-3 w-3 shrink-0 text-[#c9a48f]" aria-hidden="true" />
