@@ -128,3 +128,12 @@ curl -skI --resolve eye.chloemlla.com:443:127.0.0.1 https://eye.chloemlla.com/ |
 - 自检：`upload-gdrive.sh --list`（列云端）| `--verify=<文件名>`（下载回来比 md5）| `--dry-run`（看要传/要删什么）
 - 轮换凭据：`gdrive-selfservice-token.sh`（自助拿 refresh_token，会自动写好 gdrive.env）
 - 演练：`GDRIVE_FOLDER=backups-selftest upload-gdrive.sh` 传到临时目录，不碰真目录
+
+## 加密（age）与自助恢复
+
+- **产物全是密文**（`*.age`）：公钥在 `gdrive.env` 的 `AGE_RECIPIENT`，私钥离线（本机 `F:\sshkey\age-key.txt`）。
+- 解密：`restore.sh decrypt <文件.age> [输出]`，或 `age -d -i <私钥> -o out file.age`；restore.sh 各子命令自动解密。
+  服务器没私钥时：把离线那份拷上来用一次，用完删掉。
+- 校验：`.age.sha256` 是**密文**哈希，**不解密**就能验（`sha256sum -c`）。
+- 自助恢复：`restore.sh {list,check,extract,decrypt,openresty,panel,mongo,redis,volumes,cert}`，全部支持 `--simulate`，破坏性操作要 `--yes`。
+- 存量迁移：`seal-backups.sh --check` / `--all`（幂等）。
