@@ -5,7 +5,7 @@ import { mongoose } from "../../services/mongoService";
 import { isAdminOperationPasswordValid } from "../../utils/adminOperationPassword";
 import { hasPasswordMaterial } from "../../utils/passwordMaterial";
 import logger from "../../utils/logger";
-import { type User, UserStorage } from "../../utils/userStorage";
+import { UserStorage } from "../../utils/userStorage";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const SHARELOGS_DIR = path.join(DATA_DIR, "sharelogs");
