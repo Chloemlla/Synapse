@@ -281,26 +281,34 @@ const ModListEditor: React.FC = () => {
     resetDraft();
   };
 
-  const loadData = async (mode: ViewMode = viewMode) => {
+  // F5-10：加载失败与「确实没有数据」必须区分，否则失败会被显示成「没有匹配的模组」
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadData = async (mode: ViewMode = viewMode, options?: { preserveJsonDraft?: boolean }) => {
     setLoading(true);
+    setLoadError(null);
     try {
       if (mode === "json") {
         const list = await fetchModListJson();
         setMods(list);
-        setJsonDraft(JSON.stringify(list, null, 2));
+        // F5-09：切视图/刷新时保留 JSON 工作区里未保存的草稿，只有首次载入才填充
+        if (!options?.preserveJsonDraft || !jsonDraft.trim()) {
+          setJsonDraft(JSON.stringify(list, null, 2));
+        }
       } else {
         const list = await fetchModList();
         setMods(list);
       }
     } catch (error: any) {
       notify("error", error?.response?.data?.error || "加载模组列表失败");
+      setLoadError(error?.response?.data?.error || "加载模组列表失败，请重试");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadData(viewMode);
+    void loadData(viewMode, { preserveJsonDraft: true });
   }, [viewMode]);
 
   const filteredMods = useMemo(() => {
@@ -317,7 +325,8 @@ const ModListEditor: React.FC = () => {
   const selectedCount = selectedIds.length;
 
   const handleRefresh = async () => {
-    await loadData(viewMode);
+    // F5-09：刷新同样不覆盖 JSON 工作区草稿
+    await loadData(viewMode, { preserveJsonDraft: true });
     notify("success", "模组列表已刷新");
   };
 
@@ -514,7 +523,7 @@ const ModListEditor: React.FC = () => {
                   <h2 className="mt-2 text-3xl font-semibold text-[#023047]">模组列表</h2>
                 </div>
                 <p className="max-w-3xl text-sm leading-7 text-[#023047]/72">
-                  当前账号没有管理权限，因此页面只提供列表浏览。后端 `GET /api/modlist` 对普通用户返回明文数组，写操作需要修改码且由管理员执行。
+                  当前账号没有管理权限，因此这里只能浏览模组列表。新增、编辑、删除等写操作需要有修改码的管理员执行。
                 </p>
               </div>
             </div>
@@ -557,6 +566,17 @@ const ModListEditor: React.FC = () => {
                 </div>
                 {loading ? (
                   <div className="px-5 py-10 text-center text-sm text-[#023047]/60">加载中…</div>
+                ) : loadError ? (
+                  <div className="px-5 py-10 text-center text-sm text-[#023047]/70">
+                    <div>{loadError}</div>
+                    <button
+                      type="button"
+                      onClick={() => void loadData(viewMode, { preserveJsonDraft: true })}
+                      className="mt-3 rounded-2xl border border-[#219EBC]/40 px-4 py-2 text-xs font-semibold text-[#023047] transition hover:bg-[#EAF6FB]"
+                    >
+                      重试
+                    </button>
+                  </div>
                 ) : filteredMods.length === 0 ? (
                   <div className="px-5 py-10 text-center text-sm text-[#023047]/60">没有匹配的模组</div>
                 ) : (
@@ -592,8 +612,8 @@ const ModListEditor: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight text-[#023047] sm:text-4xl">模组列表管理</h1>
                 <p className="mt-3 text-sm leading-7 text-[#023047]/72 sm:text-base">
-                  这个页面完全按后端接口重做：`GET /api/modlist` 负责管理员加密读，`GET /api/modlist/json` 负责纯 JSON，
-                  写操作覆盖新增、编辑、删除、批量新增和批量删除，全部显式要求修改码。
+                  在这里维护模组列表：支持新增、编辑、删除、批量新增和批量删除，所有写操作都需要填写修改码。
+                  列表视图适合逐条核对，JSON 工作区适合整理后一次性批量新增。
                 </p>
               </div>
             </div>
@@ -666,7 +686,7 @@ const ModListEditor: React.FC = () => {
                 <div className="flex flex-col gap-3 border-b border-[#8ECAE6]/25 bg-[#F5FBFE] px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold text-[#023047]">列表管理</h2>
-                    <p className="mt-1 text-sm text-[#023047]/62">直接对应后端单条与批量写接口。</p>
+                    <p className="mt-1 text-sm text-[#023047]/62">适合逐条核对与维护，改动会立即生效。</p>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {canWrite && (
@@ -719,6 +739,17 @@ const ModListEditor: React.FC = () => {
 
                 {loading ? (
                   <div className="px-6 py-12 text-center text-sm text-[#023047]/60">加载中…</div>
+                ) : loadError ? (
+                  <div className="px-6 py-12 text-center text-sm text-[#023047]/70">
+                    <div>{loadError}</div>
+                    <button
+                      type="button"
+                      onClick={() => void loadData(viewMode, { preserveJsonDraft: true })}
+                      className="mt-3 rounded-2xl border border-[#219EBC]/40 px-4 py-2 text-xs font-semibold text-[#023047] transition hover:bg-[#EAF6FB]"
+                    >
+                      重试
+                    </button>
+                  </div>
                 ) : filteredMods.length === 0 ? (
                   <div className="px-6 py-12 text-center text-sm text-[#023047]/60">没有匹配的模组</div>
                 ) : (
@@ -772,7 +803,7 @@ const ModListEditor: React.FC = () => {
                   <div>
                     <h2 className="text-xl font-semibold text-[#023047]">JSON 工作区</h2>
                     <p className="mt-1 text-sm text-[#023047]/62">
-                      对应后端 `GET /api/modlist/json` 与 `POST /api/modlist/batch-add`。这里只做批量新增，不做全量覆盖。
+                      内容来自服务器上保存的模组清单。这里只做批量新增，不会覆盖或删除已有条目。
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -839,10 +870,10 @@ const ModListEditor: React.FC = () => {
             <section className="rounded-2xl border border-[#8ECAE6]/30 bg-white/92 p-6 shadow-sm">
               <h2 className="text-xl font-semibold text-[#023047]">行为说明</h2>
               <div className="mt-5 space-y-3 text-sm leading-7 text-[#023047]/72">
-                <p>管理员读取时，后端会把 `mods` 包成 AES-256-CBC 密文；这里按 token 派生密钥解密。</p>
+                <p>读取列表时载荷是加密的，只有持有修改码的管理员才能看到内容。</p>
                 <p>JSON 工作区只用于整理和批量新增，不会执行“全量替换”。</p>
-                <p>批量删除使用后端现成的 `ids + code` 契约，不再要求逐条删。</p>
-                <p>这个页面没有引入任何远程字体，也没有使用 data URL 字体资源。</p>
+                <p>批量删除支持一次勾选多条，不必逐条删。</p>
+                <p>这个页面不加载任何外部字体资源。</p>
               </div>
             </section>
           </aside>
@@ -938,7 +969,7 @@ const ModListEditor: React.FC = () => {
       <Modal open={showBatchAddModal} title="批量新增模组" onClose={closeAllModals}>
         <div className="space-y-4">
           <div className="rounded-2xl bg-[#EAF6FB] px-4 py-3 text-sm text-[#023047]/72">
-            这里会把当前 JSON 解析为数组并提交到 `POST /api/modlist/batch-add`。
+            这里会把当前 JSON 解析为数组，并把其中的模组一次性批量添加到列表。
           </div>
           <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />
         </div>
@@ -960,7 +991,7 @@ const ModListEditor: React.FC = () => {
       <Modal open={showExampleModal} title="批量新增 JSON 示例" onClose={closeAllModals}>
         <div className="space-y-4">
           <pre className="overflow-x-auto rounded-3xl bg-[#F5FBFE] p-4 text-sm text-[#023047]">{batchAddExample}</pre>
-          <div className="text-sm text-[#023047]/72">`id` 不需要传，后端会生成。重复名称会被跳过。</div>
+          <div className="text-sm text-[#023047]/72">“id” 不需要填写，系统会自动生成；重复的名称会被跳过。</div>
         </div>
       </Modal>
     </div>

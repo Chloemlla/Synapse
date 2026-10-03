@@ -278,6 +278,8 @@ const LibreChatPage: React.FC = () => {
 
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // F5-25：加载失败不能把已有历史清空（那会被渲染成「暂无历史记录」）
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
   const [historyView, setHistoryView] = useState<'rendered' | 'source'>('rendered');
@@ -673,6 +675,7 @@ const LibreChatPage: React.FC = () => {
         const data: unknown = await res.json();
         const mapped = parseHistoryResponse(data, toPage);
         setHistory(mapped);
+        setHistoryError(null);
         setPage(toPage);
         if (mapped.history.length > 0) {
           setNotification({ type: 'success', message: `已加载 ${mapped.history.length} 条历史记录` });
@@ -681,11 +684,11 @@ const LibreChatPage: React.FC = () => {
         }
       } else {
         const errorMessage = await readLibreChatError(res, '加载历史记录失败');
-        setHistory(null);
+        setHistoryError(errorMessage);
         setNotification({ type: 'error', message: errorMessage });
       }
     } catch {
-      setHistory(null);
+      setHistoryError('加载历史记录失败，请稍后再试');
       setNotification({ type: 'error', message: '加载历史记录失败，请稍后再试' });
     } finally {
       setLoadingHistory(false);
@@ -1011,6 +1014,11 @@ const LibreChatPage: React.FC = () => {
       if (!txt) {
         setRtStreaming(false);
         setRtSending(false);
+        // F5-26：空回复不能静默失败——撤回刚加入的本地用户消息并恢复输入，便于重发
+        setRtHistory((prev) => (prev[prev.length - 1] === userEntry ? prev.slice(0, -1) : prev));
+        setRtMessage(toSend);
+        setRtError('模型没有返回任何内容，请稍后重试，或换一种问法再发一次。');
+        setNotification({ type: 'warning', message: '模型没有返回内容，输入已还原' });
         return;
       }
 
@@ -1677,8 +1685,29 @@ const LibreChatPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="py-12 text-center text-slate-500">
-                    <FaHistory className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-                    {loadingHistory ? '加载中...' : '暂无历史记录'}
+                    {historyError ? (
+                      <>
+                        <FaHistory className="mx-auto mb-4 h-12 w-12 text-rose-300" />
+                        <div className="text-rose-700">{historyError}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          这次请求失败了，页面上的历史没有被清空。
+                        </div>
+                        <motion.button
+                          type="button"
+                          onClick={() => { void fetchHistory(page); }}
+                          className={`${libreGhostButtonClass} mx-auto mt-4`}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <FaRedo className="mr-1" />
+                          重试
+                        </motion.button>
+                      </>
+                    ) : (
+                      <>
+                        <FaHistory className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                        {loadingHistory ? '加载中...' : '暂无历史记录'}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

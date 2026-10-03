@@ -251,7 +251,13 @@ const WordCountPageSimple: React.FC = () => {
                     </div>
 
                     <div className="mt-8">
+                        {/* F5-14：占位符会随输入消失，必须给输入框一个常驻可访问名 */}
+                        <label htmlFor="wordcount-input" className="mb-2 block text-sm font-semibold text-slate-700">
+                            需要统计的文字
+                        </label>
                         <motion.textarea
+                            id="wordcount-input"
+                            aria-label="需要统计的文字"
                             value={text}
                             onChange={(e) => setText(e.target.value)}
                             className="h-48 w-full resize-y rounded-2xl border border-slate-200 bg-white/80 p-4 text-sm leading-7 text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 md:h-64"

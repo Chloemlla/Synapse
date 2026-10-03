@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { markdownArticleApi, type MarkdownArticleSummary } from '../api/markdownArticles';
@@ -9,6 +9,8 @@ const ArticleCommandPalette: React.FC = () => {
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<MarkdownArticleSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // F5-07：加载失败必须有独立错误态，否则会被渲染成「没有匹配的文章」
+  const [loadError, setLoadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -27,18 +29,26 @@ const ArticleCommandPalette: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    inputRef.current?.focus();
-    if (articles.length > 0 || isLoading) return;
-
+  const loadArticles = useCallback(() => {
     setIsLoading(true);
+    setLoadError(null);
     markdownArticleApi
       .listPublished()
       .then((result) => setArticles(result.articles || []))
-      .catch(() => setArticles([]))
+      .catch((error) => {
+        console.error('[文章搜索] 加载已发布文章失败:', error);
+        setLoadError('文章列表加载失败，请重试');
+      })
       .finally(() => setIsLoading(false));
-  }, [articles.length, isLoading, isOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    inputRef.current?.focus();
+    // 失败后不再自动重试（此前 isLoading 参与依赖，失败会无限重发请求）
+    if (articles.length > 0 || isLoading || loadError) return;
+    loadArticles();
+  }, [articles.length, isLoading, isOpen, loadError, loadArticles]);
 
   const filteredArticles = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -78,7 +88,19 @@ const ArticleCommandPalette: React.FC = () => {
         </div>
         <div className="max-h-[420px] overflow-y-auto p-2">
           {isLoading && <div className="px-4 py-8 text-center text-sm text-slate-500">正在加载文章...</div>}
-          {!isLoading && filteredArticles.length === 0 && (
+          {!isLoading && loadError && (
+            <div className="px-4 py-8 text-center text-sm text-slate-600">
+              <div>{loadError}</div>
+              <button
+                type="button"
+                onClick={loadArticles}
+                className="mt-3 rounded-2xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                重试
+              </button>
+            </div>
+          )}
+          {!isLoading && !loadError && filteredArticles.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-slate-500">没有匹配的文章。</div>
           )}
           {filteredArticles.map((article) => (

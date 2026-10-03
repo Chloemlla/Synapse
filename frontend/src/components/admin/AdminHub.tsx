@@ -18,7 +18,7 @@ import { findAdminModuleNeighbors, indexAdminNavByUrl, resolveActiveAdminItem } 
 import { useAdminNavPrefs } from '@/hooks/useAdminNavPrefs';
 import { useAdminScope } from '@/hooks/useAdminScope';
 import { useAuth } from '@/hooks/useAuth';
-import { canAccessAdminModule, isAdminRole, isSuperAdmin } from '@/utils/rbac';
+import { adminPageKeyForModule, canAccessAdminModule, isAdminRole, isSuperAdmin } from '@/utils/rbac';
 import { cn } from '@/lib/utils';
 
 import {
@@ -48,7 +48,7 @@ export const AdminHub: React.FC = () => {
   const { setNotification } = useNotification();
   const { pinned, recent, isPinned, togglePin, clearRecent } = useAdminNavPrefs();
   // 普通管理员能看到哪些卡片，以服务端授权为准（拿不到时自动回退到默认集合）。
-  const { grantedPages: grantedAdminPages, degraded: scopeDegraded, loading: scopeLoading } = useAdminScope();
+  const { grantedPages: grantedAdminPages, degraded: scopeDegraded, loading: scopeLoading, availablePages: scopeAvailablePages, refresh: refreshAdminScope } = useAdminScope();
 
   const groups = useMemo(
     () =>
@@ -327,10 +327,12 @@ export const AdminModulePage: React.FC = () => {
 
   // 超管专属模块（navConfig 里 requiredRole=superadmin）与「未授权的普通管理员模块」
   // 都不渲染 UI，也不让深链绕过：授权集合来自 GET /api/admin/admin-scope/me。
-  const isSuperAdminOnly =
-    getSuperAdminOnlyPaths().has(`/admin/${module}`) ||
-    !canAccessAdminModule(user?.role, module, grantedAdminPages);
-  if (isSuperAdminOnly && !isSuperAdmin(user?.role)) {
+  // 两种拒绝原因要分开渲染 —— 「永远只对超管开放」与「你缺这一个页面授权」是两回事，
+  // 后者要让管理员能直接说出缺的是哪个页面 key。
+  const superAdminOnlyPath = getSuperAdminOnlyPaths().has(`/admin/${module}`);
+  const missingPageGrant =
+    !superAdminOnlyPath && !canAccessAdminModule(user?.role, module, grantedAdminPages);
+  if ((superAdminOnlyPath || missingPageGrant) && !isSuperAdmin(user?.role)) {
     // 授权还在拉取时先等一下，避免把「未裁定的可见页面」闪成拒绝页。
     if (scopeLoading) {
       return (
@@ -341,7 +343,46 @@ export const AdminModulePage: React.FC = () => {
         </InfoQueryShell>
       );
     }
-    return <SuperAdminGuard />;
+    if (superAdminOnlyPath) {
+      return <SuperAdminGuard />;
+    }
+    const requiredPageKey = adminPageKeyForModule(module);
+    const requiredPageLabel = scopeAvailablePages.find((page) => page.key === requiredPageKey)?.label;
+    return (
+      <InfoQueryShell className='logshare-admin-surface'>
+        <InfoPanel>
+          <div className='py-16 text-center'>
+            <div className='mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-500'>
+              <FaShieldAlt className='size-5' aria-hidden='true' />
+            </div>
+            <h2 className='text-xl font-semibold text-slate-900'>该页面尚未授权给你的账号</h2>
+            <p className='mt-2 text-sm text-slate-500'>
+              模块 <code className='font-mono'>{module}</code> 需要页面授权
+              <code className='mx-1 font-mono text-slate-700'>{requiredPageKey}</code>
+              {requiredPageLabel ? `（${requiredPageLabel}）` : ''}
+              。请让超级管理员在「页面授权」里勾选该页面后重试。
+            </p>
+            {scopeDegraded ? (
+              <p className='mt-2 text-sm text-amber-700'>
+                注意：页面授权服务当前不可用，这里是按默认可见页面判定的，也可能你其实已被授权。
+              </p>
+            ) : null}
+            <div className='mt-6 flex flex-wrap items-center justify-center gap-2'>
+              <Link to='/admin' className={cn(studioPrimaryButtonClassName, 'py-2.5')}>
+                返回管理总览
+              </Link>
+              <button
+                type='button'
+                onClick={() => void refreshAdminScope()}
+                className={cn(studioSecondaryButtonClassName, 'py-2.5')}
+              >
+                重新校验授权
+              </button>
+            </div>
+          </div>
+        </InfoPanel>
+      </InfoQueryShell>
+    );
   }
 
   const title = activeItem?.title ?? module;

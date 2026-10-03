@@ -430,7 +430,13 @@ const MarkdownExportPage: React.FC = () => {
                 </div>
               </div>
               <div className="p-4">
+                {/* F5-16：眉标 Editor 与控件无关联，长文编辑时无从确认这是哪个输入区 */}
+                <label htmlFor="md-export-editor" className="mb-2 block text-sm font-semibold text-slate-700">
+                  Markdown 原文
+                </label>
                 <textarea
+                  id="md-export-editor"
+                  aria-label="Markdown 原文"
                   value={markdownContent}
                   onChange={(event) => setMarkdownContent(event.target.value)}
                   className="h-64 w-full resize-none rounded-2xl border border-slate-200 bg-white/80 p-4 font-mono text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 sm:h-96"

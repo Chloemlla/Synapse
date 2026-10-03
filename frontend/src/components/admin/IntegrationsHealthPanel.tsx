@@ -4,6 +4,7 @@ import {
   FaBoxOpen,
   FaDatabase,
   FaEnvelopeOpenText,
+  FaExclamationTriangle,
   FaGlobe,
   FaLayerGroup,
   FaLightbulb,
@@ -75,6 +76,8 @@ const IntegrationsHealthPanel: React.FC = () => {
 
   const [overview, setOverview] = useState<IntegrationsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  // 「Webhook 端点健康」列表的拉取错误态（与空态区分，失败时保留已有数据）
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const requestRef = useRef(0);
@@ -132,9 +135,11 @@ const IntegrationsHealthPanel: React.FC = () => {
 
   const loadWebhooks = useCallback(async () => {
     try {
+      setLoadError(null);
       setWebhooks(await integrationsApi.webhooks());
     } catch (error) {
       notifyError(error, '加载 Webhook 健康信息失败');
+      setLoadError(getBackendErrorMessage(error, '获取 Webhook 健康信息失败，请稍后重试'));
     }
   }, [notifyError]);
 
@@ -595,7 +600,19 @@ const IntegrationsHealthPanel: React.FC = () => {
                 icon={FaPlug}
                 tone="violet"
               />
-              {webhooks && webhooks.routes.length > 0 ? (
+              {loadError ? (
+                <div className="flex flex-col items-center gap-3 py-8 text-center">
+                  <FaExclamationTriangle className="text-2xl text-rose-500" />
+                  <p className="text-sm text-slate-500">{loadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void loadWebhooks()}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    重试
+                  </button>
+                </div>
+              ) : webhooks && webhooks.routes.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[560px] text-sm">
                     <thead>

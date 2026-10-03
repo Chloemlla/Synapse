@@ -992,15 +992,24 @@ const ImageUploadPage: React.FC = () => {
         });
       }
 
-      // 更新批量文件列表，只保留成功的文件
-      setBatchFiles(successfulFiles);
+      // F5-29：失败项保留在队列里并带回错误原因，用户可以就地重传，而不是回本地重挑
+      const failedFiles = batchFiles.filter(file =>
+        results.some(r => r.name === file.name && !r.ok)
+      );
+      setBatchFiles(failedFiles);
 
-      // 更新进度状态，只保留成功的文件
-      const successfulProgress: { [key: string]: { status: 'pending' | 'uploading' | 'success' | 'error', progress?: number, error?: string } } = {};
-      successfulFiles.forEach(file => {
-        successfulProgress[file.name] = { status: 'success', progress: 100 };
+      // 进度表按本次结果重建：成功项标成功，失败项保留原因（从函数式更新里读最新值）
+      setBatchProgress(prev => {
+        const next: typeof prev = {};
+        for (const r of results) {
+          if (r.ok) {
+            next[r.name] = { status: 'success', progress: 100 };
+          } else {
+            next[r.name] = { status: 'error', error: prev[r.name]?.error || '上传失败，请重试' };
+          }
+        }
+        return next;
       });
-      setBatchProgress(successfulProgress);
 
       // 如果所有文件都上传成功，隐藏批量上传列表
       if (successCount === batchFiles.length) {
@@ -1221,6 +1230,8 @@ const ImageUploadPage: React.FC = () => {
   };
 
   const safeUploadedUrl = sanitizeImageUrl(uploadedShortUrl || uploadedUrl);
+  // F5-29：队列里仍带失败标记的文件数（用于提示可重传）
+  const failedBatchCount = batchFiles.filter(f => batchProgress[f.name]?.status === 'error').length;
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
@@ -1290,17 +1301,19 @@ const ImageUploadPage: React.FC = () => {
               onChange={handleFileChange}
               disabled={uploading}
             />
-            <div
-              className="flex flex-col items-center justify-center text-center select-none"
-              onClick={() => !uploading && !file && fileInputRef.current?.click()}
-              style={{ cursor: (uploading || file) ? 'not-allowed' : 'pointer' }}
+            {/* F5-30：主入口必须是真实按钮，否则键盘用户无法触发选择文件 */}
+            <button
+              type="button"
+              className="flex w-full flex-col items-center justify-center text-center select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || Boolean(file)}
             >
               <FaFolder className="mb-3 text-2xl text-slate-400" />
               <div className="text-sm text-slate-700">
                 {uploading ? '上传中…' : file ? '已选择文件' : '点击选择图片或拖拽图片到此处'}
               </div>
               <div className="mt-1 text-xs text-slate-600">支持 JPG、PNG、GIF 等格式，可拖拽多个文件进行批量上传</div>
-            </div>
+            </button>
 
             {file && previewUrl && (
               <motion.div
@@ -1430,6 +1443,11 @@ const ImageUploadPage: React.FC = () => {
                 {batchUploading && (
                   <div className="mt-3 text-center text-xs text-slate-600" role="status" aria-live="polite">
                     已完成 {batchDone}/{batchFiles.length}
+                  </div>
+                )}
+                {!batchUploading && failedBatchCount > 0 && (
+                  <div className="mt-3 text-center text-xs text-rose-700" role="status">
+                    上次有 {failedBatchCount} 个文件上传失败，已保留在队列中（含失败原因），点下方按钮可只重传它们。
                   </div>
                 )}
                 <motion.button

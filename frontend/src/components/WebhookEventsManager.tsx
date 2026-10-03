@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
+  AlertTriangle,
   CheckSquare,
   Clipboard,
   Copy,
@@ -218,6 +219,8 @@ const WebhookEventsManager: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  // F4-04：区分「列表加载失败」与「确实没有事件」，失败时给出重试入口
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel>('usage');
 
@@ -280,6 +283,7 @@ const WebhookEventsManager: React.FC = () => {
     ) => {
       try {
         setLoading(true);
+        setLoadError(null);
         const routeKey = filters?.routeKey ?? routeKeyFilter;
         const provider = filters?.provider ?? providerFilter;
         const type = filters?.type ?? typeFilter;
@@ -304,6 +308,7 @@ const WebhookEventsManager: React.FC = () => {
         setPageSize(data.pageSize || nextPageSize);
       } catch (error) {
         setNotification({ type: 'error', message: getBackendErrorMessage(error, '获取列表失败') });
+        setLoadError(getBackendErrorMessage(error, '获取列表失败，请稍后重试'));
       } finally {
         setLoading(false);
       }
@@ -902,6 +907,12 @@ const WebhookEventsManager: React.FC = () => {
         </div>
       </motion.div>
 
+      {!canWrite ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          当前账号是只读管理员：测试投递、批量改状态、事件清理等写操作需要超级管理员权限，相关入口已隐藏或禁用。
+        </div>
+      ) : null}
+
       <div className="bg-white/80 backdrop-blur-sm border border-[#8ECAE6]/30 rounded-2xl p-3 shadow-sm">
         <div className="flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
           <div className="grid grid-cols-3 gap-2">
@@ -1058,6 +1069,18 @@ const WebhookEventsManager: React.FC = () => {
         </div>
 
         <div className="block lg:hidden divide-y divide-[#8ECAE6]/20">
+          {!loading && loadError && (
+            <div className="p-6 text-center">
+              <AlertTriangle className="w-8 h-8 mx-auto text-red-500" aria-hidden />
+              <div className="mt-2 text-sm text-[#023047]/80">{loadError}</div>
+              <button
+                onClick={() => fetchList(page, pageSize)}
+                className="mt-3 px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" /> 重试
+              </button>
+            </div>
+          )}
           {items.map((item) => (
             <EventCard
               key={item._id}
@@ -1073,7 +1096,7 @@ const WebhookEventsManager: React.FC = () => {
               canWrite={canWrite}
             />
           ))}
-          {!loading && items.length === 0 && <div className="p-6 text-center text-[#023047]/40">暂无数据</div>}
+          {!loading && !loadError && items.length === 0 && <div className="p-6 text-center text-[#023047]/40">暂无数据</div>}
         </div>
 
         <div className="hidden lg:block overflow-x-auto">
@@ -1091,6 +1114,22 @@ const WebhookEventsManager: React.FC = () => {
               </tr>
             </thead>
             <tbody>
+              {!loading && loadError && (
+                <tr>
+                  <td className="p-6 text-center" colSpan={8}>
+                    <div className="flex flex-col items-center gap-2">
+                      <AlertTriangle className="w-6 h-6 text-red-500" aria-hidden />
+                      <div className="text-sm text-[#023047]/80">{loadError}</div>
+                      <button
+                        onClick={() => fetchList(page, pageSize)}
+                        className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" /> 重试
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {items.map((item) => (
                 <tr key={item._id} className="border-t border-[#8ECAE6]/20 hover:bg-[#8ECAE6]/10">
                   <td className="p-3">
@@ -1138,7 +1177,7 @@ const WebhookEventsManager: React.FC = () => {
                   </td>
                 </tr>
               ))}
-              {!loading && items.length === 0 && (
+              {!loading && !loadError && items.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-[#023047]/40" colSpan={8}>暂无数据</td>
                 </tr>

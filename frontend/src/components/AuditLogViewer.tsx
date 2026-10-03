@@ -96,6 +96,7 @@ const AuditLogViewer: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState<AuditLogStats | null>(null);
   const [meta, setMeta] = useState<AuditLogMeta | null>(null);
@@ -115,6 +116,7 @@ const AuditLogViewer: React.FC = () => {
 
   const fetchLogs = useCallback(async (query: AuditLogQuery, nextPage: number, nextPageSize: number) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const response = await auditLogApi.query({ ...query, page: nextPage, pageSize: nextPageSize });
       setLogs(response.logs);
@@ -126,6 +128,7 @@ const AuditLogViewer: React.FC = () => {
         message: getBackendErrorMessage(error, '获取审计日志失败'),
         type: 'error',
       });
+      setLoadError(getBackendErrorMessage(error, '获取审计日志失败'));
     } finally {
       setLoading(false);
     }
@@ -636,6 +639,19 @@ const AuditLogViewer: React.FC = () => {
       <div className={cn(studioSurfaceClassName)}>
         {loading && logs.length === 0 ? (
           <div className="p-8 text-center text-slate-400">加载中...</div>
+        ) : loadError ? (
+          <div className="p-8 text-center">
+            <FaTimes className="mx-auto text-2xl text-red-500" />
+            <div className="mt-2 text-sm text-red-600">{loadError}</div>
+            <button
+              type="button"
+              onClick={() => { void fetchLogs(appliedFilters, page, pageSize); }}
+              className="mx-auto mt-3 inline-flex items-center gap-1 rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-200"
+            >
+              <FaSync className={loading ? 'animate-spin' : ''} />
+              <span>重试</span>
+            </button>
+          </div>
         ) : logs.length === 0 ? (
           <div className="p-8 text-center text-slate-400">暂无审计日志</div>
         ) : (

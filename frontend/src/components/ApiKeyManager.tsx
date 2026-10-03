@@ -201,6 +201,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   const [billingRates, setBillingRates] = useState<BillingRate[]>([]);
   const [canManageAll, setCanManageAll] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'revoked' | 'expired'>('all');
@@ -273,6 +274,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
 
   const fetchKeys = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       try {
         const data = await apiJson<never>('/api/apikeys/all');
@@ -285,6 +287,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
       }
     } catch (err) {
       setNotification({ message: err instanceof Error ? err.message : '获取 API Key 列表失败', type: 'error' });
+      setLoadError('获取 API Key 列表失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -1081,6 +1084,20 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
 
       {loading && keys.length === 0 ? (
         <div className="text-center py-10 text-slate-400">加载中...</div>
+      ) : loadError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-10 text-center">
+          <FaBan className="mx-auto text-2xl text-red-500" />
+          <div className="mt-2 text-sm text-red-700">{loadError}</div>
+          <motion.button
+            onClick={fetchKeys}
+            disabled={loading}
+            className="mx-auto mt-3 flex items-center gap-1 rounded-2xl bg-slate-100 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-200 disabled:opacity-60"
+            whileTap={{ scale: 0.95 }}
+          >
+            <FaSyncAlt className={loading ? 'animate-spin' : ''} />
+            <span>重试</span>
+          </motion.button>
+        </div>
       ) : filteredKeys.length === 0 ? (
         <div className="text-center py-10 text-slate-400">暂无匹配的 API Key</div>
       ) : (

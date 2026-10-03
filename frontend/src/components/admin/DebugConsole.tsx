@@ -58,7 +58,14 @@ const DebugConsole: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setModalOpen(true)}
-                disabled={entries.length === 0}
+                disabled={entries.length === 0 || !canUseModal}
+                title={
+                  !canUseModal
+                    ? '需要管理员权限'
+                    : entries.length === 0
+                      ? '还没有调试记录'
+                      : undefined
+                }
                 className={`${studioSecondaryButtonClassName} disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 <FaExternalLinkAlt className="h-3.5 w-3.5" />

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FaChevronDown, FaSync, FaUpload } from 'react-icons/fa';
+import { FaChevronDown, FaExclamationTriangle, FaSync, FaUpload } from 'react-icons/fa';
 import { useSearchParams } from 'react-router-dom';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
@@ -196,6 +196,9 @@ const RuntimeConfigSections: React.FC = () => {
   const [ipqsLoading, setIpqsLoading] = useState(false);
   const [ipqsSaving, setIpqsSaving] = useState(false);
   const [ipqsDeleting, setIpqsDeleting] = useState(false);
+  // 拉取失败时表单里是 useState 初值而非线上真值，此时必须禁止保存，
+  // 否则一次点击就会把默认值写回线上、覆盖真实配置。
+  const [ipqsLoadError, setIpqsLoadError] = useState<string | null>(null);
   const [ipqsApiKeysInput, setIpqsApiKeysInput] = useState('');
   const [ipqsForm, setIpqsForm] = useState({
     enabled: false,
@@ -323,10 +326,13 @@ const RuntimeConfigSections: React.FC = () => {
       const data = await res.json();
       const setting = data?.setting as IpqsSettingResponse | undefined;
       if (!setting) {
+        // 「尚未配置」是正常状态，与加载失败区分开，此时允许用当前表单初始化。
         setIpqsSetting(null);
+        setIpqsLoadError(null);
         return;
       }
       setIpqsSetting(setting);
+      setIpqsLoadError(null);
       setIpqsForm({
         enabled: setting.config.enabled,
         scamalyticsUser: setting.config.scamalyticsUser || '',
@@ -341,8 +347,10 @@ const RuntimeConfigSections: React.FC = () => {
       });
       setIpqsApiKeysInput('');
     } catch (error) {
+      const message = getBackendErrorMessage(error, '获取 IPQS 配置失败');
+      setIpqsLoadError(message);
       setNotification({
-        message: getBackendErrorMessage(error, '获取 IPQS 配置失败'),
+        message,
         type: 'error',
       });
     } finally {
@@ -537,6 +545,10 @@ const RuntimeConfigSections: React.FC = () => {
 
   const saveIpqsSetting = useCallback(async () => {
     if (!canWrite) return;
+    if (ipqsLoadError) {
+      setNotification({ message: 'IPQS 配置尚未成功加载，已阻止保存以避免覆盖线上配置', type: 'error' });
+      return;
+    }
     setIpqsSaving(true);
     try {
       const payload: Record<string, unknown> = { ...ipqsForm };
@@ -563,7 +575,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setIpqsSaving(false);
     }
-  }, [canWrite, fetchIpqsSetting, handleRequestError, ipqsApiKeysInput, ipqsForm, setNotification]);
+  }, [canWrite, fetchIpqsSetting, handleRequestError, ipqsApiKeysInput, ipqsForm, ipqsLoadError, setNotification]);
 
   const deleteIpqsSetting = useCallback(async () => {
     if (!canWrite) return;
@@ -1077,6 +1089,24 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('ipqs')}
         onRefresh={() => refreshSection('ipqs', fetchIpqsSetting)}
       >
+        {ipqsLoadError ? (
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>
+                {ipqsLoadError}。当前表单显示的是默认值而非线上真实配置，已停用保存以免覆盖线上配置。
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshSection('ipqs', fetchIpqsSetting)}
+              className={studioSecondaryButtonClassName}
+            >
+              <FaSync className="h-4 w-4" />
+              重试
+            </button>
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
             <FieldLabel label="API Keys" hint="留空表示保持现有" />
@@ -1196,7 +1226,8 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveIpqsSetting}
-              disabled={ipqsSaving || !canWrite}
+              disabled={ipqsSaving || !canWrite || Boolean(ipqsLoadError)}
+              title={ipqsLoadError ? 'IPQS 配置加载失败，已阻止保存以免覆盖线上配置' : undefined}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {ipqsSaving ? '保存中...' : '保存'}

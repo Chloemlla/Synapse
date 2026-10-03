@@ -432,6 +432,7 @@ export default function ResourceStoreManager() {
   const confirm = useConfirm();
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
@@ -457,6 +458,7 @@ export default function ResourceStoreManager() {
   const fetchResources = async (page = currentPage) => {
     try {
       setLoading(true);
+      setLoadError(null);
       const response = await resourcesApi.getResources(page);
       setResources(response.resources);
       setTotalItems(response.total);
@@ -465,8 +467,7 @@ export default function ResourceStoreManager() {
       setTotalPages(Math.ceil(response.total / response.pageSize));
     } catch (error) {
       console.error('获取资源列表失败:', error);
-      setResources([]);
-      setTotalItems(0);
+      setLoadError('获取资源列表失败，请稍后重试');
       setTotalPages(1);
     } finally {
       setLoading(false);
@@ -676,7 +677,25 @@ export default function ResourceStoreManager() {
               </tr>
             </thead>
             <tbody>
-              {filteredResources.length === 0 ? (
+              {loadError ? (
+                <tr key="error-state-row">
+                  <td colSpan={5} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <FaExclamationTriangle className="text-3xl text-red-500" />
+                      <div className="text-sm text-red-600">{loadError}</div>
+                      <motion.button
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="mt-1 px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2 justify-center"
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                        重试
+                      </motion.button>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredResources.length === 0 ? (
                 <tr key="empty-state-row">
                   <td colSpan={5} className="text-center py-12 text-slate-400">
                     <div className="flex flex-col items-center gap-2">
@@ -774,7 +793,23 @@ export default function ResourceStoreManager() {
 
         {/* 移动端卡片列表视图 */}
         <div className="md:hidden space-y-3">
-          {filteredResources.length === 0 ? (
+          {loadError ? (
+            <div key="error-state-mobile" className="bg-white/80 backdrop-blur-xl rounded-2xl shadow p-6 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <FaExclamationTriangle className="text-3xl text-red-500" />
+                <div className="text-sm text-red-600">{loadError}</div>
+                <motion.button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="mt-1 px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2 justify-center"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  重试
+                </motion.button>
+              </div>
+            </div>
+          ) : filteredResources.length === 0 ? (
             <div key="empty-state-mobile" className="bg-white/80 backdrop-blur-xl rounded-2xl shadow p-6 text-center">
               <div className="flex flex-col items-center gap-2">
                 <FaList className="text-3xl text-slate-300" />

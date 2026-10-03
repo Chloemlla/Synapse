@@ -214,7 +214,7 @@ const OutEmail: React.FC = () => {
             return { path: url, filename } as { path: string; filename: string };
           });
         const fileList = await Promise.all(selectedFiles.map(async (f) => ({ filename: f.name, content: await fileToBase64(f) })));
-        const attachments = [...remoteList, ...fileList].slice(0, 10);
+        const attachments = [...remoteList, ...fileList].slice(0, MAX_ATTACHMENTS);
 
         const res = await fetch(getApiBaseUrl() + '/api/outemail/send', {
           method: 'POST',
@@ -278,6 +278,11 @@ const OutEmail: React.FC = () => {
     'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300';
   const LABEL_CLASS =
     'block text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500';
+
+  /** 附件数量上限：选择时即校验，避免发送前静默截断（F5-28） */
+  const MAX_ATTACHMENTS = 10;
+  const countRemoteAttachments = (raw: string) =>
+    raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length;
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-10 sm:py-12 space-y-6">
@@ -600,7 +605,7 @@ const OutEmail: React.FC = () => {
               placeholder={'https://example.com/file1.pdf\nhttps://example.com/image.png'}
             />
             <p className="mt-2 text-xs text-slate-500">
-              {batchMode ? '批量模式不支持附件' : '我们会自动从 URL 推断文件名。'}
+              {batchMode ? '批量模式不支持附件' : `我们会自动从 URL 推断文件名。本地与远程附件合计最多 ${MAX_ATTACHMENTS} 个。`}
             </p>
           </div>
 
@@ -611,7 +616,22 @@ const OutEmail: React.FC = () => {
               multiple
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
-                if (files.length) setSelectedFiles(prev => [...prev, ...files]);
+                if (!files.length) return;
+                // F5-28：超出上限时当场告知，不再等到发送前静默截断
+                const room = Math.max(0, MAX_ATTACHMENTS - countRemoteAttachments(remoteAttachmentUrls) - selectedFiles.length);
+                if (room <= 0) {
+                  setNotification({ message: `附件总数最多 ${MAX_ATTACHMENTS} 个，请先移除一些再添加`, type: 'error' });
+                } else if (files.length > room) {
+                  setSelectedFiles(prev => [...prev, ...files.slice(0, room)]);
+                  setNotification({
+                    message: `附件总数最多 ${MAX_ATTACHMENTS} 个，本次只加入 ${room} 个，其余 ${files.length - room} 个未加入`,
+                    type: 'warning',
+                  });
+                } else {
+                  setSelectedFiles(prev => [...prev, ...files]);
+                }
+                // 允许再次选中同一个文件（否则达到上限后再选会被浏览器静默忽略）
+                e.target.value = '';
               }}
               disabled={batchMode}
               className={`mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 ${batchMode ? 'cursor-not-allowed opacity-50' : ''}`}
@@ -632,7 +652,7 @@ const OutEmail: React.FC = () => {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-2 text-[11px] text-slate-400">最多 10 个附件，单次邮件总大小 ≤ 40MB。</div>
+                <div className="mt-2 text-[11px] text-slate-400">最多 {MAX_ATTACHMENTS} 个附件，单次邮件总大小 ≤ 40MB。</div>
               </div>
             )}
           </div>

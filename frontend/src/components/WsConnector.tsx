@@ -81,7 +81,7 @@ function getSamplePoints(rect: DOMRect) {
  * 在页面右下角显示连接状态圆点。
  */
 export default function WsConnector() {
-  const { connected } = useWsNotifications();
+  const { connected, reconnectLimitReached, connect } = useWsNotifications();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shouldFadeOut, setShouldFadeOut] = useState(false);
@@ -163,16 +163,28 @@ export default function WsConnector() {
       }`}
       aria-hidden={shouldFadeOut}
     >
-      <div
-        className={`w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-colors ${
-          connected
-            ? 'bg-emerald-500'
-            : 'bg-slate-400'
-        }`}
-        title={connected ? 'WebSocket 已连接' : 'WebSocket 未连接'}
-        aria-label={connected ? 'WebSocket 已连接' : 'WebSocket 未连接'}
-      >
-        <div className={`w-3 h-3 rounded-full ${connected ? 'bg-white/90 animate-pulse' : 'bg-slate-200'}`} />
+      <div className="flex items-center gap-2">
+        {/* F5-33：断线不能只靠灰点表达，且重连耗尽后必须给出手动重连入口 */}
+        {!connected && (
+          <button
+            type="button"
+            onClick={() => connect()}
+            className="pointer-events-auto rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-lg transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+          >
+            {reconnectLimitReached ? '实时通知已断开，点击重新连接' : '正在重连实时通知，可点击立即重试'}
+          </button>
+        )}
+        <div
+          className={`w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+            connected
+              ? 'bg-emerald-500'
+              : 'bg-slate-400'
+          }`}
+          title={connected ? '实时通知已连接' : '实时通知未连接'}
+          aria-label={connected ? '实时通知已连接' : '实时通知未连接'}
+        >
+          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-white/90 animate-pulse' : 'bg-slate-200'}`} />
+        </div>
       </div>
     </div>
   );

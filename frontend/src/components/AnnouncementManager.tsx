@@ -11,6 +11,7 @@ import {
   FaBullhorn,
   FaCode,
   FaEdit,
+  FaExclamationTriangle,
   FaEye,
   FaEyeSlash,
   FaLock,
@@ -30,6 +31,8 @@ const AnnouncementManager: React.FC = () => {
   const [content, setContent] = useState('');
   const [format, setFormat] = useState<'markdown' | 'html'>('markdown');
   const [loading, setLoading] = useState(true);
+  // F4-04：区分「加载失败」与「确实没有公告」，失败时给出重试入口
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -39,6 +42,7 @@ const AnnouncementManager: React.FC = () => {
   // 获取公告
   const fetchAnnouncement = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch(API_URL, { credentials: 'include' });
       const data = await res.json();
@@ -63,8 +67,8 @@ const AnnouncementManager: React.FC = () => {
           default:
             setNotification({ message: data.error || '获取公告失败', type: 'error' });
         }
-        setContent('');
-        setFormat('markdown');
+        // F4-04：失败时保留已加载的公告内容与格式，不再清空成「暂无公告」的假空态
+        setLoadError(data.error || '获取公告失败，请稍后重试');
         setLoading(false);
         return;
       }
@@ -76,6 +80,7 @@ const AnnouncementManager: React.FC = () => {
       }
     } catch (e) {
       setNotification({ message: '获取公告失败：' + (e instanceof Error ? e.message : (e && e.toString ? e.toString() : '未知错误')), type: 'error' });
+      setLoadError('获取公告失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -282,6 +287,19 @@ const AnnouncementManager: React.FC = () => {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
             加载中...
+          </div>
+        ) : loadError ? (
+          <div className="text-center py-8">
+            <FaExclamationTriangle className="w-10 h-10 mx-auto mb-3 text-red-500" aria-hidden />
+            <p className="text-slate-600">{loadError}</p>
+            <motion.button
+              onClick={fetchAnnouncement}
+              disabled={loading}
+              className="mt-4 px-6 py-3 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition disabled:opacity-50 text-sm font-medium"
+              whileTap={{ scale: 0.95 }}
+            >
+              重试
+            </motion.button>
           </div>
         ) : (
           <AnimatePresence mode="wait">

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FaCopy, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
+import { FaCopy, FaExclamationTriangle, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
 import { api } from "../api/api";
 import { useNotification } from "./Notification";
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -88,6 +88,8 @@ const RegistrationInviteManager: React.FC = () => {
   const [bulkRunning, setBulkRunning] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [loading, setLoading] = useState(false);
+  // F4-04：区分「加载失败」与「确实没有邀请码」，失败时给出重试入口
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<Record<string, InviteEditDraft>>({});
@@ -99,6 +101,7 @@ const RegistrationInviteManager: React.FC = () => {
 
   const loadInvites = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // 列表与聚合统计并行取：界面上的「总数/可用/已过期/已用尽」以服务端聚合为准，
       // 不再靠前端把当前列表求和（两者口径不同：列表是全部邀请码，但见不到 expired/exhausted 细分）。
@@ -118,6 +121,7 @@ const RegistrationInviteManager: React.FC = () => {
       }
     } catch (error: any) {
       setNotification({ type: "error", message: error?.response?.data?.error || "获取邀请码列表失败" });
+      setLoadError(error?.response?.data?.error || "获取邀请码列表失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -401,7 +405,21 @@ const RegistrationInviteManager: React.FC = () => {
 
       <div className="space-y-3">
         {loading && <div className={`${studioPanelClassName} text-sm text-slate-600`}>正在加载...</div>}
-        {!loading && invites.length === 0 && (
+        {!loading && loadError && (
+          <div className={`${studioPanelClassName} flex flex-col items-center gap-2 py-6 text-center`}>
+            <FaExclamationTriangle className="text-xl text-red-500" aria-hidden />
+            <div className="text-sm text-slate-600">{loadError}</div>
+            <button
+              type="button"
+              onClick={() => void loadInvites()}
+              className={studioSecondaryButtonClassName}
+            >
+              <FaSyncAlt />
+              重试
+            </button>
+          </div>
+        )}
+        {!loading && !loadError && invites.length === 0 && (
           <div className={`${studioPanelClassName} text-sm text-slate-600`}>暂无邀请码。</div>
         )}
 

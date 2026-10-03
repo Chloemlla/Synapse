@@ -218,13 +218,13 @@ const TicketSystem: React.FC = () => {
   }, [setNotification]);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (processingStep) {
-      const isEnding = ["ai_complete", "audit_failed", "error"].includes(processingStep);
-      timer = setTimeout(() => {
-        setProcessingStep(null);
-      }, isEnding ? 3000 : 20000);
-    }
+    if (!processingStep) return;
+    // F5-31：失败态常驻到用户主动关闭——原先 3 秒就消失，用户既看不到原因也无从补救
+    if (processingStep === "audit_failed" || processingStep === "error") return;
+    const isEnding = processingStep === "ai_complete";
+    const timer = setTimeout(() => {
+      setProcessingStep(null);
+    }, isEnding ? 3000 : 20000);
     return () => {
       if (timer) clearTimeout(timer);
     };
@@ -534,7 +534,19 @@ const TicketSystem: React.FC = () => {
         setShowDetailOnMobile(true);
         setIsCreating(false);
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        // F5-32：深链打不开时必须说明原因，不能静默落到默认列表
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        setNotification({
+          type: 'error',
+          message:
+            status === 403
+              ? '该工单不存在，或你没有查看权限'
+              : status === 404
+                ? '该工单不存在或已被删除'
+                : '打开工单失败，请稍后重试',
+        });
+      });
   }, []);
 
   // 只在「换了工单」或「消息数增加」时把会话滚到底。

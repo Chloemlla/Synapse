@@ -823,6 +823,12 @@ const BroadcastManager: React.FC = () => {
       </div>
       <p className="text-sm text-slate-500">管理 WebSocket 广播推送、在线用户、定向消息和历史记录。</p>
 
+      {!canWrite ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
+          当前账号是只读管理员：发送广播、定向消息等写操作需要超级管理员权限，相关入口已隐藏或禁用。
+        </div>
+      ) : null}
+
       {/* 子 Tab */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {SUB_TABS.map(t => (

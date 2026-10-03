@@ -75,7 +75,10 @@ const LotteryRoundCard: React.FC<{
   round: LotteryRound;
   /** 三家供应商共用同一套下发链路：提交时把令牌 + 供应商一起交给后端。 */
   onParticipate: (roundId: string, challenge?: ManagedCaptchaChallenge | null) => void;
+  /** 是否正在参与抽奖（仅用于禁用按钮与按钮内进度，不再替换整份列表） */
   loading: boolean;
+  /** 是否是「当前这一轮」正在参与（F5-37：只有被点击的轮次显示抽奖中） */
+  isParticipatingRound?: boolean;
   isAdmin?: boolean;
   captcha?: ManagedCaptchaChallenge | null;
   captchaStatus?: ManagedCaptchaStatus;
@@ -88,6 +91,7 @@ const LotteryRoundCard: React.FC<{
   round,
   onParticipate,
   loading,
+  isParticipatingRound = false,
   isAdmin = false,
   captcha = null,
   captchaStatus,
@@ -157,7 +161,7 @@ const LotteryRoundCard: React.FC<{
               }`}
               whileTap={{ scale: 0.95 }}
             >
-              {loading ? '抽奖中...' : hasParticipated ? '已参与' : '立即参与'}
+              {isParticipatingRound ? '抽奖中...' : hasParticipated ? '已参与' : '立即参与'}
             </motion.button>
 
             {/* 人机验证组件（非管理员用户）：三家供应商由 /admin/captcha-providers 统一调控 */}
@@ -385,7 +389,12 @@ const LotteryPage: React.FC = () => {
     leaderboard,
     statistics,
     loading,
+    participating,
+    participatingRoundId,
     error,
+    fetchActiveRounds,
+    fetchLeaderboard,
+    fetchStatistics,
     participateInLottery,
     clearError
   } = useLottery();
@@ -432,17 +441,26 @@ const LotteryPage: React.FC = () => {
     }
   };
 
+  // F5-11：错误面板的「重试」必须真的重新拉数据，而不是只把错误清掉
+  const handleRetry = useCallback(() => {
+    clearError();
+    void Promise.all([fetchActiveRounds(), fetchLeaderboard(), fetchStatistics()]);
+  }, [clearError, fetchActiveRounds, fetchLeaderboard, fetchStatistics]);
+
   if (error) {
-    setNotification({ message: error, type: 'error' });
     return (
       <InfoQueryShell>
         <InfoPanel className="border-rose-200 bg-rose-50/80">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-rose-700">
-            <strong>错误:</strong> {error}
+              抽奖数据暂时加载不出来，请检查网络后重试。
             </div>
-            <InfoPrimaryButton onClick={clearError} tone="rose">重试</InfoPrimaryButton>
+            <InfoPrimaryButton onClick={handleRetry} tone="rose">重试</InfoPrimaryButton>
           </div>
+          <details className="mt-3 text-xs text-rose-700/80">
+            <summary className="cursor-pointer">技术详情</summary>
+            <div className="mt-1 break-all font-mono">{error}</div>
+          </details>
         </InfoPanel>
       </InfoQueryShell>
     );
@@ -522,7 +540,8 @@ const LotteryPage: React.FC = () => {
                   key={round.id}
                   round={round}
                   onParticipate={handleParticipate}
-                  loading={loading}
+                  loading={participating}
+                  isParticipatingRound={participatingRoundId === round.id}
                   isAdmin={isAdmin}
                   captcha={captcha}
                   captchaStatus={captchaStatus}

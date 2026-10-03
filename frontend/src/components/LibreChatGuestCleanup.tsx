@@ -59,17 +59,21 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
   const [rows, setRows] = useState<AdminUserSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  // F5-27：清理工具把「加载失败」显示成「无需清理」会让超管误判没有孤儿数据
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await listUsers({ kw: GUEST_KW, page: 1, limit: MAX_ROWS, includeDeleted: false });
       setRows(res.users || []);
       setTotal(res.total || 0);
       setSelectedIds([]);
     } catch (err) {
+      setLoadError(errText(err, '加载 guest 历史列表失败'));
       setNotification({ type: 'error', message: errText(err, '加载 guest 历史列表失败') });
     } finally {
       setLoading(false);
@@ -196,6 +200,20 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
         <p className="text-sm text-slate-500">需超级管理员权限才能清理 guest 遗留历史。</p>
       ) : loading ? (
         <UnifiedLoadingSpinner size="sm" text="正在加载 guest 历史..." className="py-6" />
+      ) : loadError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-sm text-rose-700">
+          <div>{loadError}</div>
+          <div className="mt-1 text-xs text-rose-700/80">
+            在成功加载之前，这里不能确认是否存在遗留历史。
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="mt-3 rounded-2xl border border-rose-300 bg-white/80 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-white"
+          >
+            重试
+          </button>
+        </div>
       ) : total === 0 ? (
         <p className="flex items-center gap-2 text-sm text-slate-500">
           <FaUsers className="text-slate-300" />

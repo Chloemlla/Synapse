@@ -83,12 +83,18 @@ const TicketProcessingToast: React.FC<TicketProcessingToastProps> = ({ step, onD
                 <><FiTerminal className="shrink-0 text-slate-500" /> 正在同步至云端存储...</>
               )}
               {step === 'audit_failed' && (
-                <><FiX className="shrink-0 text-rose-500" /> 内容未通过 AI 审查...</>
+                <><FiX className="shrink-0 text-rose-500" /> 内容未通过 AI 审查</>
               )}
               {step === 'error' && (
-                <><FiAlertCircle className="shrink-0 text-rose-500" /> 处理过程中发生错误...</>
+                <><FiAlertCircle className="shrink-0 text-rose-500" /> 处理过程中发生错误</>
               )}
             </div>
+            {isFailureStep(step) && (
+              // F5-31：失败态不再自动消失，这里直接说明下一步该做什么
+              <div className="mt-1 text-xs leading-5 text-rose-700/90">
+                本次没有提交成功。可在下方会话里查看审查说明，修改内容后重新提交；仍不通过可联系管理员申诉。
+              </div>
+            )}
           </div>
           <button
             type="button"

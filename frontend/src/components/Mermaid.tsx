@@ -228,15 +228,21 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
   }
 
   return (
-    <div
-      className={`${studioSurfaceClassName} group my-4 cursor-zoom-in p-4`}
-      onClick={handleZoom}
-    >
-      <div
-        className="mermaid-svg flex max-h-[600px] justify-center overflow-auto"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
-      <div className="pointer-events-none absolute right-2 top-2 rounded border border-slate-100 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100">
+    <div className={`${studioSurfaceClassName} group my-4 p-4`}>
+      {/* F5-08：放大入口必须是键盘可达的真实按钮（securityLevel=strict 下图表内无交互元素） */}
+      <button
+        type="button"
+        onClick={handleZoom}
+        aria-label="放大图表"
+        title="放大图表"
+        className="block w-full cursor-zoom-in rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+      >
+        <div
+          className="mermaid-svg flex max-h-[600px] justify-center overflow-auto"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </button>
+      <div className="pointer-events-none absolute right-2 top-2 rounded border border-slate-100 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         点击放大
       </div>
     </div>

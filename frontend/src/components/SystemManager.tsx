@@ -82,6 +82,9 @@ const renderCapabilityTags = (capability: SystemCapability) => (
 export default function SystemManager() {
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  // 拉取失败时保留错误原因，避免整块面板凭空消失、与「功能不存在」混淆。
+  const [schedulerError, setSchedulerError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -97,9 +100,11 @@ export default function SystemManager() {
     try {
       const data = await turnstileApi.getSchedulerStatus();
       setSchedulerStatus(data);
+      setSchedulerError(null);
       return true;
     } catch (error) {
       console.error('获取调度器状态失败:', error);
+      setSchedulerError(getBackendErrorMessage(error, '获取调度器状态失败'));
       setNotification({
         message: '获取调度器状态失败',
         type: 'error'
@@ -112,9 +117,11 @@ export default function SystemManager() {
     try {
       const data = await turnstileApi.getSyncStatus();
       setSyncStatus(data);
+      setSyncError(null);
       return true;
     } catch (error) {
       console.error('获取同步状态失败:', error);
+      setSyncError(getBackendErrorMessage(error, '获取同步状态失败'));
       setNotification({
         message: '获取同步状态失败',
         type: 'error'
@@ -340,6 +347,17 @@ export default function SystemManager() {
         />
       </InfoPanel>
 
+      {!canWrite ? (
+        <InfoPanel className="border-amber-200 bg-amber-50/70">
+          <div className="flex items-start gap-2 text-sm text-amber-800">
+            <FaInfoCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>
+              当前账号为只读管理员：启动 / 停止调度器、手动清理与手动同步 IP 封禁需要超级管理员权限，相关按钮已禁用。
+            </span>
+          </div>
+        </InfoPanel>
+      ) : null}
+
       {/* 能力范围 */}
       {schedulerStatus && schedulerStatus.capabilities.length > 0 && (
         <InfoPanel>
@@ -384,7 +402,7 @@ export default function SystemManager() {
       )}
 
       {/* 调度器状态 */}
-      {schedulerStatus && (
+      {schedulerStatus ? (
         <InfoPanel>
           <InfoSectionTitle eyebrow="Scheduler" title="调度器状态" icon={FaRunning} />
           
@@ -439,6 +457,7 @@ export default function SystemManager() {
             <motion.button
               onClick={handleStartScheduler}
               disabled={!canWrite || starting || schedulerStatus.isRunning}
+              title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
               whileHover={{ scale: !canWrite || starting || schedulerStatus.isRunning ? 1 : 1.02 }}
               whileTap={{ scale: !canWrite || starting || schedulerStatus.isRunning ? 1 : 0.98 }}
@@ -454,6 +473,7 @@ export default function SystemManager() {
             <motion.button
               onClick={handleStopScheduler}
               disabled={!canWrite || stopping || !schedulerStatus.isRunning}
+              title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioDangerButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
               whileHover={{ scale: !canWrite || stopping || !schedulerStatus.isRunning ? 1 : 1.02 }}
               whileTap={{ scale: !canWrite || stopping || !schedulerStatus.isRunning ? 1 : 0.98 }}
@@ -469,6 +489,7 @@ export default function SystemManager() {
             <motion.button
               onClick={handleManualCleanup}
               disabled={!canWrite || cleaning}
+              title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
               whileHover={{ scale: !canWrite || cleaning ? 1 : 1.02 }}
               whileTap={{ scale: !canWrite || cleaning ? 1 : 0.98 }}
@@ -482,10 +503,24 @@ export default function SystemManager() {
             </motion.button>
           </div>
         </InfoPanel>
-      )}
+      ) : schedulerError ? (
+        <InfoPanel>
+          <InfoSectionTitle eyebrow="Scheduler" title="调度器状态" icon={FaRunning} />
+          <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{schedulerError}</span>
+            </div>
+            <button onClick={() => void fetchSchedulerStatus()} className={studioSecondaryButtonClassName}>
+              <FaSync className="w-4 h-4" />
+              重试
+            </button>
+          </div>
+        </InfoPanel>
+      ) : null}
 
       {/* 同步状态 */}
-      {syncStatus && (
+      {syncStatus ? (
         <InfoPanel>
           <InfoSectionTitle eyebrow="Sync Runtime" title="数据同步状态" icon={FaExchangeAlt} />
           
@@ -546,6 +581,7 @@ export default function SystemManager() {
             <motion.button
               onClick={handleSyncIPBans}
               disabled={!canWrite || syncing || !syncStatus.redisAvailable}
+              title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
               whileHover={{ scale: !canWrite || syncing || !syncStatus.redisAvailable ? 1 : 1.02 }}
               whileTap={{ scale: !canWrite || syncing || !syncStatus.redisAvailable ? 1 : 0.98 }}
@@ -614,7 +650,21 @@ export default function SystemManager() {
             </motion.div>
           )}
         </InfoPanel>
-      )}
+      ) : syncError ? (
+        <InfoPanel>
+          <InfoSectionTitle eyebrow="Sync Runtime" title="数据同步状态" icon={FaExchangeAlt} />
+          <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{syncError}</span>
+            </div>
+            <button onClick={() => void fetchSyncStatus()} className={studioSecondaryButtonClassName}>
+              <FaSync className="w-4 h-4" />
+              重试
+            </button>
+          </div>
+        </InfoPanel>
+      ) : null}
 
       {/* 系统信息 */}
       <InfoPanel>

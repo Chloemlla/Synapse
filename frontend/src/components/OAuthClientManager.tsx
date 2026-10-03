@@ -5,6 +5,7 @@ import {
   FaCheck,
   FaCopy,
   FaEdit,
+  FaExclamationTriangle,
   FaHistory,
   FaKey,
   FaLayerGroup,
@@ -96,6 +97,8 @@ const OAuthClientManager: React.FC = () => {
   const [scopes, setScopes] = useState<OAuthScopeDefinition[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // 「客户端列表」拉取错误态（与空态区分，失败时不清空已有数据）
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string } | null>(null);
@@ -156,6 +159,7 @@ const OAuthClientManager: React.FC = () => {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      setLoadError(null);
       const [scopeData, clientData, grantData] = await Promise.all([
         oauthApi.getScopes(),
         oauthApi.listClients(),
@@ -167,9 +171,12 @@ const OAuthClientManager: React.FC = () => {
       void auditLogApi
         .query({ module: 'oauth', page: 1, pageSize: 6 })
         .then((response) => setAuditLogs(response.logs || []))
-        .catch(() => setAuditLogs([]));
+        .catch(() => {
+          /* 审计记录拉取失败时保留已有数据，不清空 */
+        });
     } catch (error) {
       setNotification({ message: getErrorMessage(error), type: 'error' });
+      setLoadError('获取 OAuth 客户端数据失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -618,6 +625,18 @@ const OAuthClientManager: React.FC = () => {
         </div>
         {loading && clients.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-400">加载中...</div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <FaExclamationTriangle className="text-2xl text-rose-500" />
+            <p className="text-sm text-slate-500">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void loadAll()}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <FaSyncAlt /> 重试
+            </button>
+          </div>
         ) : filteredClients.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-400">暂无 OAuth 客户端</div>
         ) : (

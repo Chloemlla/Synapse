@@ -136,6 +136,23 @@ const LegacyApiChoicePage: React.FC = () => {
           记住本次选择，后续同类地址自动处理
         </label>
 
+        {/* F5-24：两个主操作被禁用时必须说明原因并给出出口 */}
+        {!canChoose && (
+          <div className="mt-7 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-800">
+            <div className="font-semibold">这个地址缺少必要参数，暂时无法继续。</div>
+            <div className="mt-1 leading-6">
+              请从原来的入口重新打开这个地址（例如邮件、通知或后台里的原始链接）。手动输入、或者转发过程中参数被截断，都会出现这种情况。
+            </div>
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="mt-3 rounded-2xl border border-amber-300 bg-white/80 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-white"
+            >
+              返回上一页
+            </button>
+          </div>
+        )}
+
         <div className="mt-7 grid gap-3 sm:grid-cols-2">
           <button
             type="button"

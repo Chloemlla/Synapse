@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api } from "@/api";
-import { FaSearch, FaRedo, FaEnvelope, FaDatabase, FaGlobe, FaTimes, FaEye, FaCopy, FaCheck, FaCode, FaFileAlt } from "react-icons/fa";
+import { FaSearch, FaRedo, FaEnvelope, FaDatabase, FaGlobe, FaTimes, FaEye, FaCopy, FaCheck, FaCode, FaFileAlt, FaExclamationTriangle } from "react-icons/fa";
 import { cn } from '../utils/cn';
 import { studioModalOverlayClassName, studioSurfaceClassName } from './studioTheme';
 
@@ -60,6 +60,7 @@ const EmailTraceability: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTo, setSearchTo] = useState("");
   const [searchSubject, setSearchSubject] = useState("");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
@@ -75,6 +76,7 @@ const EmailTraceability: React.FC = () => {
   const fetchRecords = useCallback(async (p: number) => {
     setLoading(true);
     try {
+      setLoadError(null);
       const params = new URLSearchParams();
       params.set("page", String(p));
       params.set("pageSize", String(PAGE_SIZE));
@@ -90,6 +92,7 @@ const EmailTraceability: React.FC = () => {
       }
     } catch (e) {
       console.error("获取邮件记录失败", e);
+      setLoadError("获取邮件发送记录失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -275,6 +278,18 @@ const EmailTraceability: React.FC = () => {
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="size-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-500" />
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <FaExclamationTriangle className="text-2xl text-rose-500" />
+            <p className="text-sm text-slate-500">{loadError}</p>
+            <button
+              onClick={() => fetchRecords(page)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              <FaRedo className="size-3.5" />
+              重试
+            </button>
           </div>
         ) : records.length === 0 ? (
           <div className="py-16 text-center text-sm text-slate-400">暂无邮件发送记录</div>

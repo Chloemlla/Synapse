@@ -4,7 +4,8 @@ import DOMPurify from 'dompurify';
 import MarkdownRenderer from './MarkdownRenderer';
 import { FaBullhorn } from 'react-icons/fa';
 import { cn } from '../utils/cn';
-import { studioModalOverlayClassName } from './studioTheme';
+import { studioModalOverlayClassName, studioSecondaryButtonClassName } from './studioTheme';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 
 interface AnnouncementModalProps {
   open: boolean;
@@ -26,6 +27,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({
   contentClassName,
 }) => {
   const [closing, setClosing] = useState(false);
+  const confirm = useConfirm();
 
   if (!open) return null;
 
@@ -37,11 +39,28 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({
     }, 250);
   };
 
+  // F5-17：「永久不再提示」不可撤销，先二次确认再落动作
+  const handleCloseForever = async () => {
+    const confirmed = await confirm({
+      title: '永久不再提示这条公告？',
+      description: '确认后这条公告将不再出现，之后也无法在页面上恢复查看。',
+      confirmLabel: '永久不再提示',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    handleClose(onCloseForever);
+  };
+
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className={cn(studioModalOverlayClassName, "bg-black bg-opacity-40")}
+          className={cn(
+            studioModalOverlayClassName,
+            // z-[9999]：全局确认弹窗是 z-[10000]，不降下来会被本弹窗盖住而点不到
+            // （同 FBIWantedManager 的既有做法）
+            "z-[9999] bg-black bg-opacity-40",
+          )}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -81,8 +100,8 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({
                 onClick={e => { e.stopPropagation(); handleClose(onClose); }}
               >关闭</button>
               <button
-                className="flex-1 px-4 py-2 bg-slate-300 text-slate-700 rounded-2xl font-semibold shadow hover:bg-slate-400 transition"
-                onClick={e => { e.stopPropagation(); handleClose(onCloseForever); }}
+                className={cn(studioSecondaryButtonClassName, 'flex-1')}
+                onClick={e => { e.stopPropagation(); void handleCloseForever(); }}
               >永久不再提示</button>
             </div>
             <button

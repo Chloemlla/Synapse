@@ -178,8 +178,18 @@ const MarkdownArticleManager: React.FC = () => {
     }));
   };
 
-  const resetEditor = () => {
+  const resetEditor = async () => {
     if (!canWrite) return;
+    // F5-06：编辑已保存文章时本地不存草稿（见上方 effect），丢弃前必须先确认
+    if (hasEditorContent) {
+      const ok = await confirm({
+        title: '放弃当前编辑内容？',
+        description: '新建文章会清空当前的标题、摘要与正文。这份内容没有本地草稿副本，清空后无法找回。',
+        tone: 'danger',
+        confirmLabel: '清空并新建',
+      });
+      if (!ok) return;
+    }
     setCurrent({ ...emptyArticle, content: starterMarkdown });
     setIsPreview(true);
     localStorage.removeItem(localDraftKey);
@@ -311,7 +321,7 @@ const MarkdownArticleManager: React.FC = () => {
         description="编辑 Markdown 原文，实时预览完整语法效果，并发布生成对外查看链接。"
         icon={FaRegFileAlt}
         action={
-          <button type="button" className={studioSecondaryButtonClassName} onClick={resetEditor} disabled={!canWrite}>
+          <button type="button" className={studioSecondaryButtonClassName} onClick={() => { void resetEditor(); }} disabled={!canWrite}>
             <Plus className="h-4 w-4" />
             新建文章
           </button>

@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '../api/api';
 import { buildIpVerificationHeaders } from '../utils/ipVerification';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
+import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { studioEyebrowPillClassName } from './studioTheme';
 
 // 动画配置
@@ -127,11 +128,14 @@ const GitHubBillingDashboard: React.FC = () => {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
   const { setNotification } = useNotification();
+  const confirm = useConfirm();
   const [billingData, setBillingData] = useState<BillingUsageData | null>(null);
   const [cachedCustomers, setCachedCustomers] = useState<CachedCustomer[]>([]);
   const [loading, setLoading] = useState(false);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  // F5-34：记录真实抓取时刻，避免用渲染时刻冒充「获取时间」
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [, setLoadingStage] = useState<'idle' | 'initial' | 'cached' | 'complete'>('idle');
 
   // 首访验证头统一由 utils/ipVerification 生成（X-Fingerprint + X-IP-Verification-Token）。
@@ -271,6 +275,7 @@ const GitHubBillingDashboard: React.FC = () => {
         // 智能处理多种数据格式
         const processedData = processResponseData(data.data);
         setBillingData(processedData);
+        setFetchedAt(new Date().toISOString());
         const message = forceRefresh ? '账单数据强制刷新成功' : '账单数据获取成功';
         setNotification({ message, type: 'success' });
 
@@ -294,8 +299,17 @@ const GitHubBillingDashboard: React.FC = () => {
     }
   }, [setNotification]);
 
-  // 清除缓存
+  // 清除缓存（不可撤销：清除后需要重新向 GitHub 抓取，故统一先确认）
   const clearCache = useCallback(async (customerId?: string) => {
+    const ok = await confirm({
+      title: '确认清除缓存？',
+      description: customerId
+        ? `将清除客户「${customerId}」的账单缓存，之后需要重新抓取才能再次查看。`
+        : '将清除全部已过期的账单缓存，之后的查看会重新向 GitHub 抓取数据。',
+      tone: 'danger',
+      confirmLabel: '清除',
+    });
+    if (!ok) return;
     setClearingCache(true);
     try {
       const url = customerId
@@ -336,7 +350,7 @@ const GitHubBillingDashboard: React.FC = () => {
     } finally {
       setClearingCache(false);
     }
-  }, [setNotification, billingData]);
+  }, [setNotification, billingData, confirm]);
 
   // 渐进式数据加载
   useEffect(() => {
@@ -478,7 +492,7 @@ const GitHubBillingDashboard: React.FC = () => {
                   <FaCalendarAlt className="text-[10px]" /> 获取时间
                 </div>
                 <div className="mt-2 text-sm text-slate-700">
-                  {new Date().toLocaleString()}
+                  {fetchedAt ? new Date(fetchedAt).toLocaleString() : '尚未获取'}
                 </div>
               </div>
             </div>

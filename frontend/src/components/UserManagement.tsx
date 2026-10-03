@@ -684,6 +684,11 @@ const UserManagement: React.FC = () => {
               </motion.button>
             ) : undefined}
           />
+          {!canWrite ? (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
+              当前账号是只读管理员：添加 / 编辑 / 删除用户与批量运营动作需要超级管理员权限，相关入口已隐藏。
+            </div>
+          ) : null}
           <div className="space-y-2 text-sm leading-6 text-slate-600">
             <p className="font-semibold text-slate-700">功能说明：</p>
             <ul className="list-disc list-inside space-y-1">

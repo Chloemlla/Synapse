@@ -680,6 +680,8 @@ export default function CDKStoreManager() {
   const canExport = isSuperAdmin(user?.role);
   const [cdks, setCdks] = useState<CDK[]>([]);
   const [loading, setLoading] = useState(true);
+  // 拉取失败时保留原因：与「确实没有 CDK」的空态分开，并给出重试入口。
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -727,6 +729,7 @@ export default function CDKStoreManager() {
   const fetchCDKs = async (page = currentPage) => {
     try {
       setLoading(true);
+      setLoadError(null);
       const response = await cdksApi.getCDKs(page);
       setCdks(response.cdks);
       setTotalItems(response.total);
@@ -735,14 +738,12 @@ export default function CDKStoreManager() {
       setTotalPages(Math.ceil(response.total / response.pageSize));
     } catch (error) {
       console.error('获取CDK列表失败:', error);
+      // 失败时保留已有数据，只把错误态暴露出来；空列表与加载失败不再共用一个 UI。
+      setLoadError(getBackendErrorMessage(error, '获取CDK列表失败，请重试'));
       setNotification({
         message: '获取CDK列表失败，请重试',
         type: 'error'
       });
-      // 设置默认值，防止组件崩溃
-      setCdks([]);
-      setTotalItems(0);
-      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -1436,6 +1437,22 @@ export default function CDKStoreManager() {
           )}
         </div>
 
+        {loadError ? (
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{loadError}</span>
+            </div>
+            <button
+              onClick={() => void fetchCDKs()}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200 transition hover:bg-rose-100"
+            >
+              <FaSync className="w-4 h-4" />
+              重试
+            </button>
+          </div>
+        ) : null}
+
         {/* 桌面端表格视图 */}
         <div className="hidden md:block">
           <div className="overflow-x-auto">
@@ -1483,17 +1500,31 @@ export default function CDKStoreManager() {
               <div style={{ transform: useVirtualScrolling ? `translateY(${offsetY}px)` : 'none' }}>
                 <table className="min-w-full text-sm text-slate-700">
                   <tbody>
-                    {totalItems === 0 ? (
+                    {loadError && cdks.length === 0 ? null : totalItems === 0 ? (
                       <tr>
                         <td colSpan={isSelectMode ? 8 : 7} className="text-center py-12 text-slate-400">
                           <div className="flex flex-col items-center gap-2">
                             <FaList className="text-3xl text-slate-300" />
-                            <div className="text-lg font-medium text-slate-500">
-                              {search ? '没有找到匹配的CDK' : '暂无CDK'}
-                            </div>
+                            <div className="text-lg font-medium text-slate-500">暂无CDK</div>
+                            <div className="text-sm text-slate-400">快去生成第一个CDK吧！</div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : filteredCDKs.length === 0 ? (
+                      <tr>
+                        <td colSpan={isSelectMode ? 8 : 7} className="text-center py-12 text-slate-400">
+                          <div className="flex flex-col items-center gap-2">
+                            <FaSearch className="text-3xl text-slate-300" />
+                            <div className="text-lg font-medium text-slate-500">没有找到匹配的CDK</div>
                             <div className="text-sm text-slate-400">
-                              {search ? '尝试调整搜索条件' : '快去生成第一个CDK吧！'}
+                              搜索词「{search}」在当前列表中没有命中
                             </div>
+                            <button
+                              onClick={() => setSearch('')}
+                              className="mt-1 rounded-2xl bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                            >
+                              清除搜索
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1614,16 +1645,26 @@ export default function CDKStoreManager() {
           >
             <div style={{ height: useVirtualScrolling ? `${totalItems * itemHeight}px` : 'auto', position: 'relative' }}>
               <div style={{ transform: useVirtualScrolling ? `translateY(${offsetY}px)` : 'none' }} className="space-y-3">
-                {totalItems === 0 ? (
+                {loadError && cdks.length === 0 ? null : totalItems === 0 ? (
                   <div className="bg-white/80 rounded-2xl shadow p-6 text-center backdrop-blur-xl">
                     <div className="flex flex-col items-center gap-2">
                       <FaList className="text-3xl text-slate-300" />
-                      <div className="text-lg font-medium text-slate-500">
-                        {search ? '没有找到匹配的CDK' : '暂无CDK'}
-                      </div>
-                      <div className="text-sm text-slate-400">
-                        {search ? '尝试调整搜索条件' : '快去生成第一个CDK吧！'}
-                      </div>
+                      <div className="text-lg font-medium text-slate-500">暂无CDK</div>
+                      <div className="text-sm text-slate-400">快去生成第一个CDK吧！</div>
+                    </div>
+                  </div>
+                ) : filteredCDKs.length === 0 ? (
+                  <div className="bg-white/80 rounded-2xl shadow p-6 text-center backdrop-blur-xl">
+                    <div className="flex flex-col items-center gap-2">
+                      <FaSearch className="text-3xl text-slate-300" />
+                      <div className="text-lg font-medium text-slate-500">没有找到匹配的CDK</div>
+                      <div className="text-sm text-slate-400">搜索词「{search}」在当前列表中没有命中</div>
+                      <button
+                        onClick={() => setSearch('')}
+                        className="mt-1 rounded-2xl bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                      >
+                        清除搜索
+                      </button>
                     </div>
                   </div>
                 ) : (useVirtualScrolling ? visibleItems : filteredCDKs).map((cdk) => (

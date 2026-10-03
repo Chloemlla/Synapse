@@ -165,6 +165,7 @@ const DataCollectionManager: React.FC = () => {
     const [start, setStart] = useState('');
     const [end, setEnd] = useState('');
     const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [items, setItems] = useState<Item[]>([]);
     const [total, setTotal] = useState(0);
     const [stats, setStats] = useState<any>(null);
@@ -250,6 +251,7 @@ const DataCollectionManager: React.FC = () => {
         const aborter = new AbortController();
         listAbortRef.current = aborter;
         try {
+            setLoadError(null);
             const params = new URLSearchParams();
             params.set('page', String(page));
             params.set('limit', String(limit));
@@ -272,7 +274,10 @@ const DataCollectionManager: React.FC = () => {
             setItems(data.items || []);
             setTotal(data.total || 0);
         } catch (e: any) {
-            if (e?.name !== 'AbortError') console.error('[DataCollectionManager] list error', e);
+            if (e?.name !== 'AbortError') {
+                console.error('[DataCollectionManager] list error', e);
+                setLoadError(e?.message || '获取数据收集记录失败，请稍后重试');
+            }
         } finally {
             setLoading(false);
         }
@@ -765,11 +770,23 @@ const DataCollectionManager: React.FC = () => {
 
                 {/* Mobile Cards */}
                 <div className="block md:hidden divide-y divide-slate-100">
-                    {deferredItems.map(item => (
-                        <DataCard key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
-                    ))}
-                    {deferredItems.length === 0 && (
-                        <div className="p-6 text-center text-slate-400">{loading ? '加载中…' : '暂无数据'}</div>
+                    {loadError ? (
+                        <div className="p-6 text-center">
+                            <FaTimes className="mx-auto mb-1 h-6 w-6 text-red-500" />
+                            <div className="text-sm text-red-600">{loadError}</div>
+                            <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                                <FaSync className="w-4 h-4" /> 重试
+                            </motion.button>
+                        </div>
+                    ) : (
+                        <>
+                            {deferredItems.map(item => (
+                                <DataCard key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
+                            ))}
+                            {deferredItems.length === 0 && (
+                                <div className="p-6 text-center text-slate-400">{loading ? '加载中…' : '暂无数据'}</div>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -787,11 +804,25 @@ const DataCollectionManager: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {deferredItems.map(item => (
-                                <DataRow key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
-                            ))}
-                            {deferredItems.length === 0 && (
-                                <tr><td className="p-6 text-center text-slate-400" colSpan={6}>{loading ? '加载中…' : '暂无数据'}</td></tr>
+                            {loadError ? (
+                                <tr>
+                                    <td className="p-6 text-center" colSpan={6}>
+                                        <FaTimes className="mx-auto mb-1 h-6 w-6 text-red-500" />
+                                        <div className="text-sm text-red-600">{loadError}</div>
+                                        <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                                            <FaSync className="w-4 h-4" /> 重试
+                                        </motion.button>
+                                    </td>
+                                </tr>
+                            ) : (
+                                <>
+                                    {deferredItems.map(item => (
+                                        <DataRow key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
+                                    ))}
+                                    {deferredItems.length === 0 && (
+                                        <tr><td className="p-6 text-center text-slate-400" colSpan={6}>{loading ? '加载中…' : '暂无数据'}</td></tr>
+                                    )}
+                                </>
                             )}
                         </tbody>
                     </table>

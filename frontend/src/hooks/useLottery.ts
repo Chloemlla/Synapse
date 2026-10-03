@@ -18,6 +18,9 @@ export function useLottery() {
   const [leaderboard, setLeaderboard] = useState<UserLotteryRecord[]>([]);
   const [statistics, setStatistics] = useState<LotteryStatistics | null>(null);
   const [loading, setLoading] = useState(false);
+  // F5-37：参与抽奖不应把整份轮次列表换成整页 spinner，单独用一个状态表示「正在参与」
+  const [participating, setParticipating] = useState(false);
+  const [participatingRoundId, setParticipatingRoundId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 获取活跃轮次
@@ -105,12 +108,13 @@ export function useLottery() {
       throw new Error('请先登录');
     }
 
-    setLoading(true);
+    setParticipating(true);
+    setParticipatingRoundId(roundId);
     setError(null);
-    
+
     try {
       const winner = await lotteryApi.participateInLottery(roundId, cfToken, captchaProvider);
-      
+
       // 更新相关数据
       await Promise.all([
         fetchActiveRounds(),
@@ -118,14 +122,15 @@ export function useLottery() {
         fetchLeaderboard(),
         fetchStatistics()
       ]);
-      
+
       return winner;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '参与抽奖失败';
       setError(errorMessage);
       throw err;
     } finally {
-      setLoading(false);
+      setParticipating(false);
+      setParticipatingRoundId(null);
     }
   }, [user, fetchActiveRounds, fetchUserRecord, fetchLeaderboard, fetchStatistics]);
 
@@ -174,6 +179,8 @@ export function useLottery() {
     leaderboard,
     statistics,
     loading,
+    participating,
+    participatingRoundId,
     error,
     
     // 方法

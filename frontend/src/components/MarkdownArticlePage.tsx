@@ -131,17 +131,27 @@ const MarkdownArticlePage: React.FC = () => {
     };
   }, [article, headings, slug]);
 
+  // F5-39：复制结果必须有可见反馈，否则用户不知道是否成功、会反复点击
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
   const copyArticleLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
+      setCopyState('copied');
     } catch {
-      const input = document.createElement('input');
-      input.value = window.location.href;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
+      try {
+        const input = document.createElement('input');
+        input.value = window.location.href;
+        document.body.appendChild(input);
+        input.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(input);
+        setCopyState(ok ? 'copied' : 'failed');
+      } catch {
+        setCopyState('failed');
+      }
     }
+    window.setTimeout(() => setCopyState('idle'), 2000);
   };
 
   const copySelectedText = async () => {
@@ -297,10 +307,11 @@ const MarkdownArticlePage: React.FC = () => {
             <button
               type="button"
               onClick={() => void copyArticleLink()}
+              aria-live="polite"
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
             >
               <Copy className="h-4 w-4" />
-              复制链接
+              {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动复制地址栏链接' : '复制链接'}
             </button>
           </div>
         </div>

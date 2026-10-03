@@ -80,6 +80,8 @@ const EnvManager: React.FC = () => {
   // Env vars state
   const [envs, setEnvs] = useState<EnvItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // 记录本页数据的实际加载时刻（后端未返回采样时间，不能拿渲染时间冒充「最后更新」）。
+  const [envsLoadedAt, setEnvsLoadedAt] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<EnvItem>>({});
   const [showSourceModal, setShowSourceModal] = useState(false);
@@ -147,6 +149,7 @@ const EnvManager: React.FC = () => {
           const rawKey = item.key.includes(':') ? item.key.split(':').pop() : item.key;
           return rawKey === 'USER_STORAGE_MODE' ? { ...item, value: 'mongo' } : item;
         }));
+        setEnvsLoadedAt(new Date().toLocaleString());
       } else {
         setNotification({ message: data.error || '获取失败', type: 'error' });
       }
@@ -352,6 +355,17 @@ const EnvManager: React.FC = () => {
           }
         />
 
+        {!canWrite ? (
+          <InfoPanel className="border-amber-200 bg-amber-50/70">
+            <div className="flex items-start gap-2 text-sm text-amber-800">
+              <FaLock className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                当前账号为只读管理员：环境变量的编辑 / 删除需要超级管理员权限，列表中的写入控件已禁用。
+              </span>
+            </div>
+          </InfoPanel>
+        ) : null}
+
         {/* Configuration Workflow */}
         {configurationWorkflow && configurationProgressItems.length > 0 && (
           <m.section className="rounded-2xl border border-amber-200 bg-amber-50/80 shadow-sm backdrop-blur-xl" initial={ENTER_INITIAL} animate={ENTER_ANIMATE} transition={trans06}>
@@ -429,8 +443,8 @@ const EnvManager: React.FC = () => {
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-sm sm:text-base font-semibold text-slate-900 tracking-wide break-words">{item.key.split(':').pop() || item.key}</div>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    <button onClick={() => handleStartEdit(item)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-slate-900 transition rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed" title="编辑"><FaEdit className="w-3.5 h-3.5" /></button>
-                                    <button onClick={() => handleDeleteEnvVar(item.key)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-rose-600 transition rounded hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed" title="删除"><FaTrash className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => handleStartEdit(item)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-slate-900 transition rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed" title={canWrite ? '编辑' : '需要超级管理员权限'}><FaEdit className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => handleDeleteEnvVar(item.key)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-rose-600 transition rounded hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed" title={canWrite ? '删除' : '需要超级管理员权限'}><FaTrash className="w-3.5 h-3.5" /></button>
                                   </div>
                                 </div>
                                 {editingKey === item.key ? (
@@ -476,8 +490,8 @@ const EnvManager: React.FC = () => {
                               </td>
                               <td className="px-4 py-3 align-top">
                                 <div className="flex items-center justify-center gap-1">
-                                  <button onClick={() => handleStartEdit(item)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-slate-900 transition rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed" title="编辑"><FaEdit className="w-3.5 h-3.5" /></button>
-                                  <button onClick={() => handleDeleteEnvVar(item.key)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-rose-600 transition rounded hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed" title="删除"><FaTrash className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => handleStartEdit(item)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-slate-900 transition rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed" title={canWrite ? '编辑' : '需要超级管理员权限'}><FaEdit className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => handleDeleteEnvVar(item.key)} disabled={!canWrite} className="p-1.5 text-slate-400 hover:text-rose-600 transition rounded hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed" title={canWrite ? '删除' : '需要超级管理员权限'}><FaTrash className="w-3.5 h-3.5" /></button>
                                 </div>
                               </td>
                             </tr>
@@ -502,7 +516,7 @@ const EnvManager: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5">
                         <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
-                        <span className="text-xs sm:text-sm text-slate-600">最后更新: {new Date().toLocaleString()}</span>
+                        <span className="text-xs sm:text-sm text-slate-600">本次加载于: {envsLoadedAt ?? '未知'}</span>
                       </div>
                     </div>
                   </m.div>

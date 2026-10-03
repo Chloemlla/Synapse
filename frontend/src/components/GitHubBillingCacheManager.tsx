@@ -51,6 +51,8 @@ const GitHubBillingCacheManager: React.FC = () => {
     });
     const [loading, setLoading] = useState(false);
     const [metricsLoading, setMetricsLoading] = useState(false);
+    // F5-36：指标加载失败时必须显式报错，不能用默认值 0 冒充真实数据
+    const [metricsError, setMetricsError] = useState<string | null>(null);
     const [clearingCache, setClearingCache] = useState<string | null>(null);
     const [clearingExpired, setClearingExpired] = useState(false);
     const [loadingStage, setLoadingStage] = useState<'idle' | 'customers' | 'metrics' | 'complete'>('idle');
@@ -102,6 +104,7 @@ const GitHubBillingCacheManager: React.FC = () => {
     const fetchCacheMetrics = useCallback(async () => {
         setMetricsLoading(true);
         setLoadingStage('metrics');
+        setMetricsError(null);
         try {
             const headers = await getVerificationHeaders();
             const response = await fetch(`${getApiBaseUrl()}/api/github-billing/cache/metrics`, {
@@ -116,19 +119,21 @@ const GitHubBillingCacheManager: React.FC = () => {
             }
 
             const data = await response.json();
-            if (data.success && data.data) {
-                setCacheStats(prevStats => ({
-                    ...prevStats,
-                    totalExpired: data.data.expiredEntries || 0,
-                    hitRate: data.data.hitRate || 0,
-                    avgAccessCount: data.data.avgAccessCount || 0,
-                    cacheSize: data.data.cacheSize || 0,
-                    topAccessedEntries: data.data.topAccessedEntries || []
-                }));
-                setLoadingStage('complete');
+            if (!data.success || !data.data) {
+                throw new Error('缓存指标暂时不可用，请刷新重试');
             }
+            setCacheStats(prevStats => ({
+                ...prevStats,
+                totalExpired: data.data.expiredEntries || 0,
+                hitRate: data.data.hitRate || 0,
+                avgAccessCount: data.data.avgAccessCount || 0,
+                cacheSize: data.data.cacheSize || 0,
+                topAccessedEntries: data.data.topAccessedEntries || []
+            }));
+            setLoadingStage('complete');
         } catch (error) {
             console.error('获取缓存性能指标失败:', error);
+            setMetricsError('缓存指标暂时不可用');
             setNotification({
                 message: '缓存指标暂时不可用，请刷新重试',
                 type: 'error'
@@ -250,10 +255,23 @@ const GitHubBillingCacheManager: React.FC = () => {
             {/* 缓存统计 */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <InfoMetricCard label="缓存总数" value={cacheStats.totalCached} detail={LOADING_STAGE_TEXT[loadingStage]} icon={FaDatabase} />
-                <InfoMetricCard label="过期缓存" value={metricsLoading ? '...' : cacheStats.totalExpired} detail="可手动清理" icon={FaClock} />
-                <InfoMetricCard label="平均访问" value={metricsLoading ? '...' : cacheStats.avgAccessCount.toFixed(1)} detail="按客户缓存统计" icon={FaEye} />
-                <InfoMetricCard label="命中率" value={metricsLoading ? '...' : `${(cacheStats.hitRate * 100).toFixed(1)}%`} detail="缓存性能指标" icon={FaChartLine} />
+                <InfoMetricCard label="过期缓存" value={metricsLoading ? '...' : (metricsError ? '—' : cacheStats.totalExpired)} detail="可手动清理" icon={FaClock} />
+                <InfoMetricCard label="平均访问" value={metricsLoading ? '...' : (metricsError ? '—' : cacheStats.avgAccessCount.toFixed(1))} detail="按客户缓存统计" icon={FaEye} />
+                <InfoMetricCard label="命中率" value={metricsLoading ? '...' : (metricsError ? '—' : `${(cacheStats.hitRate * 100).toFixed(1)}%`)} detail="缓存性能指标" icon={FaChartLine} />
             </div>
+
+            {metricsError && !metricsLoading && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-800">
+                    <div>{metricsError}，下方指标以「—」占位，避免把 0 误当成真实数据。</div>
+                    <button
+                        type="button"
+                        onClick={() => void fetchCacheMetrics()}
+                        className="mt-3 rounded-2xl border border-amber-300 bg-white/80 px-4 py-2 text-xs font-semibold text-amber-800 transition hover:bg-white"
+                    >
+                        重试
+                    </button>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <InfoPanel>
@@ -266,7 +284,7 @@ const GitHubBillingCacheManager: React.FC = () => {
                         ) : (
                             <>
                                 <p className="text-3xl font-semibold text-slate-950">
-                                    {(cacheStats.cacheSize / 1024 / 1024).toFixed(2)} MB
+                                    {metricsError ? '—' : `${(cacheStats.cacheSize / 1024 / 1024).toFixed(2)} MB`}
                                 </p>
                                 <p className="mt-2 text-sm text-slate-500">估算值</p>
                             </>
@@ -297,7 +315,7 @@ const GitHubBillingCacheManager: React.FC = () => {
                                     </div>
                                 ))}
                                 {cacheStats.topAccessedEntries.length === 0 && !metricsLoading && (
-                                    <p className="text-sm text-slate-500">暂无数据</p>
+                                    <p className="text-sm text-slate-500">{metricsError ? '指标不可用' : '暂无数据'}</p>
                                 )}
                             </div>
                         )}

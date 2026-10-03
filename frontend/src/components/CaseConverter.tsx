@@ -545,6 +545,8 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
     }
 
     let result = '';
+    // F5-20：失败提示不能当成转换结果写进输出框，单独用一条错误通道承接
+    let conversionError = '';
 
     try {
       switch (type) {
@@ -673,18 +675,25 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         break;
 
       // 编码转换
+      // F5-20：失败提示要与「转换结果」区分开，并且是可读的说明而不是英文异常串
       case 'toBase64':
         try {
           result = btoa(unescape(encodeURIComponent(inputText)));
         } catch (e) {
-          result = 'Error: Invalid characters for Base64 encoding';
+          console.error('[大小写转换] Base64 编码失败:', e);
+          conversionError = isEnglish
+            ? 'Conversion failed: the text contains characters that cannot be Base64-encoded.'
+            : '转换失败：文本中有无法进行 Base64 编码的字符，请检查内容后重试。';
         }
         break;
       case 'fromBase64':
         try {
           result = decodeURIComponent(escape(atob(inputText)));
         } catch (e) {
-          result = 'Error: Invalid Base64 string';
+          console.error('[大小写转换] Base64 解码失败:', e);
+          conversionError = isEnglish
+            ? 'Conversion failed: this is not a valid Base64 text.'
+            : '转换失败：这不是合法的 Base64 文本，请检查后重试。';
         }
         break;
       case 'toUrlEncode':
@@ -694,7 +703,10 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         try {
           result = decodeURIComponent(inputText);
         } catch (e) {
-          result = 'Error: Invalid URL encoded string';
+          console.error('[大小写转换] URL 解码失败:', e);
+          conversionError = isEnglish
+            ? 'Conversion failed: this is not a valid URL-encoded text.'
+            : '转换失败：这不是合法的 URL 编码文本，请检查后重试。';
         }
         break;
 
@@ -736,6 +748,12 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
       default:
         result = sanitizedInput;
     }
+    if (conversionError) {
+      setNotification({ message: conversionError, type: 'error' });
+      setOutputText('');
+      return;
+    }
+
     setOutputText(result);
   } catch (error) {
     console.error('Conversion error:', error);

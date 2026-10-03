@@ -56,6 +56,11 @@ const TranslationAuditViewer: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<TranslationTraceUser | null>(null);
   const [userLoading, setUserLoading] = useState(false);
   const [penaltyLoading, setPenaltyLoading] = useState(false);
+  // 「限制翻译」需要输入时长：用受控弹窗代替 window.prompt（原生 prompt 无标签、
+  // 在嵌入式 WebView 里可能被静默屏蔽，且事后无任何记录可查）。
+  const [limitDialogOpen, setLimitDialogOpen] = useState(false);
+  const [limitHoursInput, setLimitHoursInput] = useState('24');
+  const [limitHoursError, setLimitHoursError] = useState<string | null>(null);
 
   const selectedLog = useMemo(
     () => logs.find((item) => item._id === selectedLogId) || null,
@@ -121,21 +126,9 @@ const TranslationAuditViewer: React.FC = () => {
     }
   }, [setNotification]);
 
-  const applyPenalty = useCallback(async (action: TranslationPenaltyAction) => {
+  const applyPenalty = useCallback(async (action: TranslationPenaltyAction, until?: string) => {
     if (!canWrite) return;
     if (!selectedUser) return;
-
-    let until: string | undefined;
-    if (action === 'LIMIT_TRANSLATION') {
-      const hoursText = window.prompt('限制翻译权限多少小时？', '24');
-      if (!hoursText) return;
-      const hours = Number(hoursText);
-      if (!Number.isFinite(hours) || hours <= 0) {
-        setNotification({ message: '请输入有效小时数', type: 'error' });
-        return;
-      }
-      until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
-    }
 
     const confirmMessages: Partial<Record<TranslationPenaltyAction, string>> = {
       LIMIT_TRANSLATION: `确定限制用户「${selectedUser.id}」的翻译权限？`,
@@ -176,6 +169,23 @@ const TranslationAuditViewer: React.FC = () => {
       setPenaltyLoading(false);
     }
   }, [canWrite, selectedLog, selectedUser, setNotification]);
+
+  const openLimitDialog = useCallback(() => {
+    if (!canWrite || !selectedUser) return;
+    setLimitHoursInput('24');
+    setLimitHoursError(null);
+    setLimitDialogOpen(true);
+  }, [canWrite, selectedUser]);
+
+  const submitLimitDialog = useCallback(async () => {
+    const hours = Number(limitHoursInput);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setLimitHoursError('请输入大于 0 的小时数');
+      return;
+    }
+    setLimitDialogOpen(false);
+    await applyPenalty('LIMIT_TRANSLATION', new Date(Date.now() + hours * 60 * 60 * 1000).toISOString());
+  }, [applyPenalty, limitHoursInput]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -420,7 +430,7 @@ const TranslationAuditViewer: React.FC = () => {
                         <PenaltyButton
                           icon={<FaBan />}
                           label="等级 1：限制翻译"
-                          onClick={() => void applyPenalty('LIMIT_TRANSLATION')}
+                          onClick={openLimitDialog}
                           disabled={!selectedUser || penaltyLoading}
                         />
                         <PenaltyButton
@@ -457,6 +467,66 @@ const TranslationAuditViewer: React.FC = () => {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {limitDialogOpen && selectedUser ? (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setLimitDialogOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setLimitDialogOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="limit-translation-title"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="limit-translation-title" className="text-lg font-semibold text-slate-900">限制翻译权限</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              目标用户：<span className="font-medium text-slate-800">{selectedUser.username}</span>
+              <span className="ml-1 font-mono text-xs text-slate-400">{selectedUser.id}</span>
+            </p>
+            <label htmlFor="limit-translation-hours" className="mt-4 block text-sm font-medium text-slate-700">
+              限制时长（小时）
+            </label>
+            <input
+              id="limit-translation-hours"
+              autoFocus
+              type="number"
+              min={1}
+              value={limitHoursInput}
+              onChange={(event) => {
+                setLimitHoursInput(event.target.value);
+                setLimitHoursError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void submitLimitDialog();
+                }
+              }}
+              className={`${studioFieldClassName} mt-2`}
+            />
+            {limitHoursError ? <p className="mt-2 text-sm text-rose-600">{limitHoursError}</p> : null}
+            {Number(limitHoursInput) > 0 && Number.isFinite(Number(limitHoursInput)) ? (
+              <p className="mt-2 text-xs text-slate-500">
+                到期时间约为 {new Date(Date.now() + Number(limitHoursInput) * 60 * 60 * 1000).toLocaleString('zh-CN')}
+                ，期间该用户无法使用翻译功能。
+              </p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setLimitDialogOpen(false)} className={studioSecondaryButtonClassName}>
+                取消
+              </button>
+              <button onClick={() => void submitLimitDialog()} className={studioPrimaryButtonClassName}>
+                确认限制
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

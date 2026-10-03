@@ -478,9 +478,12 @@ const EmailSender: React.FC = () => {
         await fetchQuota(defaultDomain);
       }
     } catch (error: any) {
+      // F5-38：不把 axios 的英文原文/HTTP 状态码抛给用户；原始错误只进控制台
+      console.error('[邮件发送] 失败:', error);
       setNotification({
         message:
-          error?.response?.data?.error || error?.message || "邮件发送失败",
+          error?.response?.data?.error ||
+          "邮件发送失败，请检查网络后重试；若持续失败请联系管理员",
         type: "error",
       });
     } finally {
@@ -1343,18 +1346,27 @@ const EmailSender: React.FC = () => {
                 </div>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-[1fr_1.2fr_auto]">
-                  <input
-                    value={settingDomain}
-                    onChange={(e) => setSettingDomain(e.target.value)}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-                    placeholder="域名，可留空作为默认项"
-                  />
-                  <input
-                    value={settingCode}
-                    onChange={(e) => setSettingCode(e.target.value)}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-                    placeholder="请输入新的公开外发验证码"
-                  />
+                  {/* F5-15：治理页两个输入原先只靠占位符，填入后用途不可见 */}
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                    外发域名
+                    <input
+                      value={settingDomain}
+                      onChange={(e) => setSettingDomain(e.target.value)}
+                      aria-label="外发域名，可留空作为默认项"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                      placeholder="域名，可留空作为默认项"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                    新的公开外发验证码
+                    <input
+                      value={settingCode}
+                      onChange={(e) => setSettingCode(e.target.value)}
+                      aria-label="新的公开外发验证码"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                      placeholder="请输入新的公开外发验证码"
+                    />
+                  </label>
                   <button
                     type="button"
                     disabled={settingsSaving}

@@ -151,6 +151,8 @@ export default function CaptchaProviderAdmin() {
   const [quotaHistory, setQuotaHistory] = useState<QuotaHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // 首次加载失败时不能与 loading 共用同一个转圈分支，否则页面永久停在加载中。
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingCap, setSavingCap] = useState(false);
   const [testing, setTesting] = useState<ProviderId | null>(null);
@@ -206,9 +208,12 @@ export default function CaptchaProviderAdmin() {
         const [overviewResult, capResult] = await Promise.all([api.fetchProviderOverview(), api.fetchCapConfig()]);
 
         if (!overviewResult.ok || !overviewResult.data) {
-          notify(overviewResult.error || '获取供应商配置失败', 'error');
+          const message = overviewResult.error || '获取供应商配置失败';
+          setLoadError(message);
+          notify(message, 'error');
           return false;
         }
+        setLoadError(null);
         applyOverview(overviewResult.data);
         if (capResult.ok && capResult.data) {
           setCapConfig(capResult.data);
@@ -460,10 +465,32 @@ export default function CaptchaProviderAdmin() {
   );
   const runPreview = useCallback((query: api.SelectionQuery) => api.fetchSelectionPreview(query), []);
 
-  if (loading || !overview || !drafts || !policy || !widgets) {
+  if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <SimpleLoadingSpinner size={0.75} />
+      </div>
+    );
+  }
+
+  if (!overview || !drafts || !policy || !widgets) {
+    return (
+      <div className={`${studioPanelClassName} p-6`}>
+        <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2 text-sm text-rose-700">
+            <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>{loadError || '获取人机验证配置失败，请稍后重试'}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadAll()}
+            disabled={loading || refreshing}
+            className={studioSecondaryButtonClassName}
+          >
+            <FaSync className="mr-2 inline h-3.5 w-3.5" />
+            重试
+          </button>
+        </div>
       </div>
     );
   }

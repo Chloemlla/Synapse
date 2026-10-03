@@ -50,13 +50,18 @@ const PolicyToc: React.FC<{
                 active
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-                dimmed && !active && 'text-slate-300 hover:text-slate-500',
+                // F5-23：未命中态原先用 slate-300（≈1.7:1）低视力读不清，改为达 4.5:1 的中灰
+                dimmed && !active && 'text-slate-500 hover:text-slate-700',
               )}
             >
-              <span className={cn('font-mono text-[11px]', active ? 'text-white/70' : 'text-slate-400')}>
+              <span className={cn('font-mono text-[11px]', active ? 'text-white/70' : 'text-slate-500')}>
                 {formatSectionNumber(index)}
               </span>
-              <span className="flex-1 leading-5">{section.title}</span>
+              <span className="flex-1 leading-5">
+                {section.title}
+                {/* F5-23：命中/未命中不能只靠颜色传达 */}
+                {dimmed && !active && <span className="sr-only">（与当前搜索不匹配）</span>}
+              </span>
             </button>
           );
         })}

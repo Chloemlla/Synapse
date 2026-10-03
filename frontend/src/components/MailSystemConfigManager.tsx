@@ -294,6 +294,11 @@ const MailSystemConfigManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {!canWrite ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
+          当前账号是只读管理员：邮件系统配置的修改 / 重置需要超级管理员权限，相关控件已禁用。
+        </div>
+      ) : null}
       <InfoPanel>
         <InfoSectionTitle
           eyebrow="Synapse Runtime"
