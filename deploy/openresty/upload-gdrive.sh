@@ -6,9 +6,13 @@
 #
 # 用法:
 #   upload-gdrive.sh              传最新一批（云端已存在且大小一致就跳过）+ 按保留数清理云端旧件
-#   upload-gdrive.sh --dry-run    只报告要传/要删什么
+#   upload-gdrive.sh --dry-run|--simulate   只报告要传/要删什么（两者等价）
 #   upload-gdrive.sh --list       只列云端现状
-#   upload-gdrive.sh --verify=<云端文件名>   下载回本地比对 md5（验证云端副本完好）
+#   upload-gdrive.sh --verify=<云端文件名>   下载回本地比对 md5（.age 会先解密再比）
+#   upload-gdrive.sh --purge-plaintext       把云端剩下的“明文”对象删掉（只删敏感类型，保留 .sha256）
+#
+# 加密：本地产物应当是 seal-backups.sh 加的 .age；万一遇到明文，有 AGE_RECIPIENT 就即时加密再传，
+#       没有就直接 FAIL——绝不把明文推上云。
 #
 # 说明：不依赖 rclone，直接用 Drive v3 REST + refresh_token；上传走 resumable 会话，
 # 传完拿 Drive 返回的 size + md5Checksum 与本地比对，校验不过就报 FAIL。
@@ -17,18 +21,19 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 CONFIG="${GDRIVE_CONFIG:-/root/.config/server-backup/gdrive.env}"
 [ -r "$CONFIG" ] || { echo "ERROR: 读不到 $CONFIG（先用 1Panel 账号信息生成它）"; exit 1; }
-MODE=daily; VF=''
+MODE=daily; VF=''; PURGE=0
 for a in "$@"; do
   case "$a" in
-    --dry-run) MODE=dry ;;
+    --dry-run|--simulate) MODE=dry ;;
     --list) MODE=list ;;
+    --purge-plaintext) PURGE=1 ;;
     --verify=*) MODE=verify; VF="${a#--verify=}" ;;
   esac
 done
-python3 - "$CONFIG" "$MODE" "$VF" <<'PY'
-import glob, gzip, hashlib, json, os, sys, urllib.error, urllib.parse, urllib.request
+python3 - "$CONFIG" "$MODE" "$VF" "$PURGE" <<'PY'
+import glob, gzip, hashlib, json, os, re, shutil, subprocess, sys, tempfile, urllib.error, urllib.parse, urllib.request
 
-CONFIG, MODE, VERIFY = sys.argv[1], sys.argv[2], sys.argv[3]
+CONFIG, MODE, VERIFY, PURGE = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == '1'
 BACKUP_DIR = os.environ.get('BACKUP_DIR', '/root/backups')
 PREFIXES = ['openresty-', '1panel-state-', 'mongo-', 'redis-', 'volumes-']
 # 云端每个前缀保留最新几份（和本地保留数对齐）
@@ -80,7 +85,22 @@ def md5_of(path, chunk=1 << 20):
     return h.hexdigest()
 
 
+def logical(name):
+    """去掉 .age 后的“逻辑名”：本地和云端现在存的是密文，判类型/分组要走逻辑名"""
+    return name[:-4] if name.endswith('.age') else name
+
+
+def is_artifact(name):
+    return logical(name).endswith(ART_EXT)
+
+
+def is_sensitive_name(name):
+    ln = logical(name)
+    return bool(re.search(r'\.(tar\.gz|archive\.gz|manifest\.txt|counts\.txt)$', ln)) or ln.startswith('cert-')
+
+
 def base_of(name):
+    name = logical(name)
     for ext in ART_EXT:
         if name.endswith(ext):
             return name[: -len(ext)]
@@ -168,33 +188,41 @@ if MODE == 'verify':
 # ---- 4) 选「最新一批」：每个前缀最新的一件 + 它的旁文件（.sha256/.manifest/.counts）----
 wanted = []
 for p in PREFIXES:
-    cands = [f for f in glob.glob(os.path.join(BACKUP_DIR, p + '*')) if f.endswith(ART_EXT)]
+    cands = [f for f in glob.glob(os.path.join(BACKUP_DIR, p + '*')) if is_artifact(os.path.basename(f))]
     if not cands:
         log('WARN: 本地没有 %s* 产物' % p)
         continue
     art = sorted(cands)[-1]
     base = base_of(os.path.basename(art))
-    group = glob.glob(os.path.join(BACKUP_DIR, os.path.basename(art) + '*')) + \
-        glob.glob(os.path.join(BACKUP_DIR, base + '.*'))
+    # 同一批的旁文件（.sha256 / .manifest.txt / .counts.txt），按“逻辑名”归组，带不带 .age 都算
+    group = [f for f in glob.glob(os.path.join(BACKUP_DIR, p + '*'))
+             if logical(os.path.basename(f)) == logical(os.path.basename(art))
+             or logical(os.path.basename(f)).startswith(base + '.')]
     for f in sorted(set(group)):
         if f not in wanted:
             wanted.append(f)
 
 log('待上传清单（%d 个文件）:' % len(wanted))
-to_upload = []
+AGE_RECIP = os.environ.get('AGE_RECIPIENT') or cfg.get('AGE_RECIPIENT') or ''
+to_upload = []      # [(本地路径, 上传名)]
+prefail = 0
 for f in wanted:
-    name = os.path.basename(f)
+    lname = os.path.basename(f)
     size = os.path.getsize(f)
-    r = REMOTE.get(name)
-    # 幂等靠 size + md5（Drive 会返回 md5Checksum）；只比大小会在“上次传到一半”时误判
+    if not lname.endswith('.age'):
+        if not AGE_RECIP:
+            log('  FAIL %-46s 本地是明文且没配 AGE_RECIPIENT（先跑 seal-backups.sh）' % lname)
+            prefail += 1
+            continue
+        log('  send  %-46s %.1f MB（明文，将即时加密）' % (lname + '.age', size / 1048576.0))
+        to_upload.append((f, lname + '.age'))
+        continue
+    r = REMOTE.get(lname)
     if r and int(r.get('size') or -1) == size and r.get('md5Checksum') == md5_of(f):
-        log('  skip  %-46s 云端已存在（size+md5 一致）' % name)
+        log('  skip  %-46s 云端已存在（size+md5 一致）' % lname)
     else:
-        if r and int(r.get('size') or -1) == size:
-            log('  redo  %-46s 云端同名但 md5 不同，重传' % name)
-        else:
-            log('  send  %-46s %.1f MB' % (name, size / 1048576.0))
-        to_upload.append(f)
+        log('  send  %-46s %.1f MB' % (lname, size / 1048576.0))
+        to_upload.append((f, lname))
 
 if MODE == 'dry' or not to_upload:
     if to_upload and MODE == 'dry':
@@ -204,9 +232,19 @@ if MODE == 'dry' or not to_upload:
 
 # ---- 5) 上传：resumable 会话 + 整文件一个 PUT，传完用 size/md5 复核 ----
 ok = 0
-fail = 0
-for f in to_upload:
-    name = os.path.basename(f)
+fail = prefail
+TMPDIR_UP = tempfile.mkdtemp(prefix='gd-upload-')
+for f, upname in to_upload:
+    upfile = f
+    if not os.path.basename(f).endswith('.age'):     # 明文 → 即时加密（绝不上传明文）
+        upfile = os.path.join(TMPDIR_UP, upname)
+        try:
+            subprocess.run(['age', '-r', AGE_RECIP, '-o', upfile, f], check=True, capture_output=True)
+        except Exception as e:
+            log('  FAIL %s: 即时加密失败 %s' % (upname, e))
+            fail += 1
+            continue
+    name = upname
     meta = json.dumps({'name': name, 'parents': [FID]}).encode()
     st, hd, js = api('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
                      meta, {**AUTH, 'Content-Type': 'application/json'})
@@ -215,7 +253,7 @@ for f in to_upload:
         log('  FAIL %s: 会话创建失败 %s %s' % (name, st, js))
         fail += 1
         continue
-    with open(f, 'rb') as fh:
+    with open(upfile, 'rb') as fh:
         payload = fh.read()
     req = urllib.request.Request(loc, data=payload, method='PUT')
     req.add_header('Content-Length', str(len(payload)))
@@ -226,9 +264,9 @@ for f in to_upload:
         log('  FAIL %s: 上传失败 %s %s' % (name, e.code, e.read()[:200]))
         fail += 1
         continue
-    # 以“重新列一次云端”为权威校验（PUT 响应体实测会带 gzip，不能当 JSON 用）
-    lsize = os.path.getsize(f)
-    lmd5 = md5_of(f)
+    # 以“重新列一次云端”为权威校验（PUT 响应体实测会带 gzip，不能当 JSON 用）；比的是密文
+    lsize = os.path.getsize(upfile)
+    lmd5 = md5_of(upfile)
     found = list_by_name(name)
     good = None
     for g in found:
@@ -253,11 +291,12 @@ for f in to_upload:
 REMOTE = {f['name']: f for f in remote_files()}
 deleted = 0
 for p, k in KEEP.items():
-    arts = sorted([f for f in REMOTE.values() if f['name'].startswith(p) and f['name'].endswith(ART_EXT)],
+    arts = sorted([f for f in REMOTE.values() if f['name'].startswith(p) and is_artifact(f['name'])],
                   key=lambda f: f['name'], reverse=True)
     for old in arts[k:]:
         base = base_of(old['name'])
-        victims = [f for f in REMOTE.values() if f['name'] == old['name'] or f['name'].startswith(base + '.')]
+        victims = [f for f in REMOTE.values()
+                   if logical(f['name']) == logical(old['name']) or logical(f['name']).startswith(base + '.')]
         for v in victims:
             st, _, js = api('DELETE', 'https://www.googleapis.com/drive/v3/files/%s' % v['id'], headers=AUTH)
             if st in (200, 204):
@@ -266,6 +305,24 @@ for p, k in KEEP.items():
             else:
                 log('  WARN 删除 %s 失败: %s' % (v['name'], js))
 
+# ---- 6.5) 清掉云端残留的明文对象（--purge-plaintext；.sha256 保留）----
+if PURGE:
+    REMOTE = {f['name']: f for f in remote_files()}
+    plain = [v for v in REMOTE.values()
+             if is_sensitive_name(v['name']) and not v['name'].endswith('.age')]
+    if not plain:
+        log('云端没有明文对象')
+    for v in plain:
+        victims = [v] + [x for x in REMOTE.values() if x['name'] == v['name'] + '.sha256']
+        for x in victims:
+            st, _, js = api('DELETE', 'https://www.googleapis.com/drive/v3/files/%s' % x['id'], headers=AUTH)
+            if st in (200, 204):
+                deleted += 1
+                log('  del   %s（明文，已换成密文副本）' % x['name'])
+            else:
+                log('  WARN 删除 %s 失败: %s' % (x['name'], js))
+
+shutil.rmtree(TMPDIR_UP, ignore_errors=True)
 log('上传完成: ok=%d fail=%d 云端删除=%d' % (ok, fail, deleted))
 REMOTE = {f['name']: f for f in remote_files()}
 remote_summary()

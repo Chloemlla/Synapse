@@ -160,7 +160,13 @@ done < <(find "$WORK" -type f -name '*.db' 2>/dev/null)
 chmod 600 "$OUT" "$MAN"
 sed -n '1,10p' "$MAN"
 
-ls -1t "$DEST"/volumes-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do
-  rm -f "$old" "${old%.tar.gz}.manifest.txt"; log "pruned $(basename "$old")"
+# 加密（age）：明文只在“校验通过”后存在；加密后删明文，校验文件指向密文
+"$DEST/seal-backups.sh" "$OUT" "$MAN" || { log 'ERROR: 加密失败，明文已保留（先跑 seal-backups.sh --check）'; exit 1; }
+
+# 保留最近 KEEP 份（按密文计数）
+ls -1t "$DEST"/volumes-* 2>/dev/null | grep -E '\.tar\.gz(\.age)?$' | tail -n +$((KEEP + 1)) | while read -r old; do
+  stem="${old%%.tar.gz*}"
+  rm -f "$stem".tar.gz* "$stem".manifest.txt*
+  log "pruned $(basename "$old")"
 done
-log "完成 保留 $(ls -1 "$DEST"/volumes-*.tar.gz 2>/dev/null | wc -l)/$KEEP 份"
+log "完成 保留 $(find "$DEST" -maxdepth 1 -name 'volumes-*.tar.gz*' ! -name '*.sha256' | wc -l)/$KEEP 份（密文 $OUT.age）"

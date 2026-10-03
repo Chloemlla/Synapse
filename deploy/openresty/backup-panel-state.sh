@@ -73,5 +73,10 @@ done
 python3 -c 'import sqlite3,sys; print("  db integrity_check:", sqlite3.connect(sys.argv[1]).execute("pragma integrity_check").fetchone()[0])' "$V/opt/1panel/db/agent.db"
 echo "  verified: $(tar tzf "$OUT" | wc -l) entries, $(du -h "$OUT" | cut -f1), sha256 $(cut -d' ' -f1 "$OUT.sha256" | cut -c1-16)…"
 
-ls -1t "$DEST"/1panel-state-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do rm -f "$old" "$old.sha256"; echo "  pruned $(basename "$old")"; done
-echo "  kept $(ls -1 "$DEST"/1panel-state-*.tar.gz | wc -l)/$KEEP 份"
+# 4.5) 加密（age）：明文只在“校验通过”后存在；加密后删明文，校验文件指向密文
+"$DEST/seal-backups.sh" "$OUT" || { echo 'ERROR: 加密失败，明文已保留（先跑 seal-backups.sh --check）' >&2; exit 1; }
+SEALED="$OUT.age"
+
+# 5) 保留最近 KEEP 份（按密文计数）
+ls -1t "$DEST"/1panel-state-* 2>/dev/null | grep -vE '\.sha256$' | tail -n +$((KEEP + 1)) | while read -r old; do rm -f "$old" "$old.sha256"; echo "  pruned $(basename "$old")"; done
+echo "  kept $(find "$DEST" -maxdepth 1 -name '1panel-state-*' ! -name '*.sha256' | wc -l)/$KEEP 份（密文 $SEALED）"

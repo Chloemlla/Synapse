@@ -149,8 +149,13 @@ PYEOF
   rm -f /var/tmp/drill-dst.txt
 fi
 
-# ---- 6) 保留最近 KEEP 份 ----
-ls -1t "$DEST"/mongo-*.archive.gz 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do
-  rm -f "$old" "${old%.archive.gz}.manifest.txt" "${old%.archive.gz}.counts.txt"; log "pruned $(basename "$old")"
+# ---- 6) 加密（age）：归档 + 清单 + 计数就地加密，明文删掉 ----
+"$DEST/seal-backups.sh" "$OUT" "$MAN" "$CHK" || { log 'ERROR: 加密失败，明文已保留（先跑 seal-backups.sh --check）'; exit 1; }
+
+# ---- 7) 保留最近 KEEP 份（按密文计数）----
+ls -1t "$DEST"/mongo-* 2>/dev/null | grep -E '\.archive\.gz(\.age)?$' | tail -n +$((KEEP + 1)) | while read -r old; do
+  stem="${old%%.archive.gz*}"
+  rm -f "$stem".archive.gz* "$stem".manifest.txt* "$stem".counts.txt*
+  log "pruned $(basename "$old")"
 done
-log "完成 sha256=${SHA:0:16}…  保留 $(ls -1 "$DEST"/mongo-*.archive.gz 2>/dev/null | wc -l)/$KEEP 份  $(du -sh "$DEST" | cut -f1)"
+log "完成 sha256=${SHA:0:16}…  保留 $(find "$DEST" -maxdepth 1 -name 'mongo-*.archive.gz*' ! -name '*.sha256' | wc -l)/$KEEP 份  $(du -sh "$DEST" | cut -f1)"

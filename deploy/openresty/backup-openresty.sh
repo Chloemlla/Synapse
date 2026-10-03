@@ -83,14 +83,19 @@ for f in opt/1panel/www/maintenance/maintenance.html \
 done
 [ "$bad" = 0 ] || { echo '备份内容与线上不一致，已保留文件待查' >&2; exit 1; }
 
-# ---------- 4) 保留最近 KEEP 份 ----------
-ls -1t "$DEST"/openresty-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do
+# ---------- 4) 加密（age）----------
+# 明文只在“校验通过”后存在：加密 → 解密回环校验 → 删明文；校验文件改写成针对密文的 .age.sha256
+"$DEST/seal-backups.sh" "$OUT" || { echo 'ERROR: 加密失败，明文已保留（先跑 seal-backups.sh --check）' >&2; exit 1; }
+SEALED="$OUT.age"
+
+# ---------- 5) 保留最近 KEEP 份（按密文计数；.sha256 旁文件不算一份）----------
+ls -1t "$DEST"/openresty-* 2>/dev/null | grep -vE '\.sha256$' | tail -n +$((KEEP + 1)) | while read -r old; do
   rm -f "$old" "$old.sha256"
   echo "  pruned $(basename "$old")"
 done
 
 echo
-echo "archive : $OUT"
-echo "size    : $(du -h "$OUT" | cut -f1)  files: $(tar tzf "$OUT" | wc -l)"
-echo "sha256  : $(cut -d' ' -f1 "$OUT.sha256")"
-echo "kept    : $(ls -1 "$DEST"/openresty-*.tar.gz | wc -l)/$KEEP 份"
+echo "archive : $SEALED"
+echo "size    : $(du -h "$SEALED" | cut -f1)  files: $(tar tzf "$SEALED" | wc -l)"
+echo "sha256  : $(cut -d' ' -f1 "$SEALED.sha256")"
+echo "kept    : $(find "$DEST" -maxdepth 1 -name 'openresty-*' ! -name '*.sha256' | wc -l)/$KEEP 份"

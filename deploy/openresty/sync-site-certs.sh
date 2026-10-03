@@ -69,6 +69,13 @@ for d in "$SITES"/*/ssl; do
     ts=$(date +%Y%m%d-%H%M%S)
     [ -f "$d/fullchain.pem" ] && cp -p "$d/fullchain.pem" "$HIST/cert-$site-fullchain-$ts.pem"
     [ -f "$d/privkey.pem" ] && cp -p "$d/privkey.pem" "$HIST/cert-$site-privkey-$ts.pem"
+    # 证书历史里带着私钥，就地 age 加密（恢复时 restore.sh cert 会自动解密）
+    if [ -x "$HIST/seal-backups.sh" ]; then
+      "$HIST/seal-backups.sh" "$HIST/cert-$site-fullchain-$ts.pem" "$HIST/cert-$site-privkey-$ts.pem" >/dev/null 2>&1 \
+        || echo "  提示: $site 证书历史未加密（缺失公钥/私钥），明文保存在 $HIST" >&2
+    else
+      echo "  提示: 找不到 $HIST/seal-backups.sh，证书历史未加密" >&2
+    fi
     install -m 644 "$SRC/fullchain.pem" "$d/fullchain.pem"
     install -m 600 "$SRC/privkey.pem" "$d/privkey.pem"
     log "$site: $old_end -> $END"
