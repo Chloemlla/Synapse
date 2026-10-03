@@ -9,6 +9,7 @@ CI 不覆盖它，改动只能靠「改完在服务器上 `nginx -t` + 真实 5x
 | `maintenance.html` | 维护兜底页本体（自包含单文件，无外部请求） |
 | `maintenance.conf` | 站点 server 块 include 的片段：`error_page 502 503 504 =503` + `@chloemlla_maintenance` 命名 location |
 | `sync-site-certs.sh` | 把 1Panel 续期后的最新证书铺到所有站点 `ssl/` 目录（含到期告警） |
+| `upload-gdrive.sh` | 把最新一批产物传到 Google Drive（Drive v3 REST + refresh_token，不依赖 rclone） |
 | `backup-openresty.sh` | 备份接入层：站点/全局配置、证书、维护页、WAF 自定义配置、容器定义 + 清单 |
 | `backup-panel-state.sh` | 备份 1Panel 自身状态：DB（sqlite 在线快照）、secret、全部应用定义 |
 | `backup-mongo.sh` | MongoDB 全库 `mongodump --archive --gzip`（可 `--drill` 做真实恢复演练） |
@@ -188,6 +189,7 @@ install -m 700 \
   /path/to/deploy/openresty/backup-redis.sh \
   /path/to/deploy/openresty/backup-volumes.sh \
   /path/to/deploy/openresty/sync-site-certs.sh \
+  /path/to/deploy/openresty/upload-gdrive.sh \
   /root/backups/
 crontab -l 2>/dev/null | grep -v daily.sh > /tmp/ct.txt
 printf '25 4 * * * /root/backups/daily.sh >> /var/log/1panel-ops-backup.log 2>&1\n' >> /tmp/ct.txt
@@ -195,6 +197,43 @@ crontab /tmp/ct.txt && rm -f /tmp/ct.txt
 cp /path/to/deploy/openresty/RESTORE.md /root/backups/RESTORE.md   # 会被打进每份包
 /root/backups/daily.sh          # 手工跑一次，确认六步都 [ok]
 ```
+
+## 云端副本（Google Drive）
+
+`upload-gdrive.sh` 把本地最新一批产物推到 Google Drive，不依赖 rclone，直接用 Drive v3 REST：
+`refresh_token` 换 `access_token` → 确保 Drive 根下存在 `backups/` 目录 → 逐个文件走 resumable 会话上传。
+
+```bash
+/root/backups/upload-gdrive.sh            # 传最新一批 + 按保留数清理云端旧件
+/root/backups/upload-gdrive.sh --dry-run  # 只看要传/要删什么
+/root/backups/upload-gdrive.sh --list     # 列云端现状
+/root/backups/upload-gdrive.sh --verify=mongo-<ts>.archive.gz   # 下载回本地比对 md5
+```
+
+设计取舍：
+
+- **只传「最新一批」而不是整个目录**：本地 `/root/backups` 有 180M+ 且带 5～7 份保留，
+  全传等于把保留策略也搬上云。每个前缀只取最新一件（连它的 `.sha256`/`.manifest.txt`/`.counts.txt`）→ 每天约 30M。
+- **幂等**：断网重跑不会重复上传——云端同名且大小一致就 skip。
+- **传完就验**：拿 Drive 返回的 `size` + `md5Checksum` 与本地 md5 比对，不一致报 FAIL；
+  需要更强证据就用 `--verify=<文件名>` 真下载回来比。
+- **云端保留**：每个前缀只留最新 N 份（openresty 3、其余 7），连带旁文件一起删；
+  删除只在“上一前缀已有新件”时发生，不会把唯一一份删了。
+
+凭据放在 `/root/.config/server-backup/gdrive.env`（600，**不在备份目录里**，不会被传上去）：
+
+```
+GDRIVE_CLIENT_ID=...apps.googleusercontent.com
+GDRIVE_CLIENT_SECRET=...
+GDRIVE_REFRESH_TOKEN=1//...
+GDRIVE_FOLDER=backups
+```
+
+> 这些值是从 1Panel 的 `backup_accounts.vars` 里取出来的（**1Panel 是明文存的**），
+> refresh_token 长期有效——有面板/数据库读权限就等于有这个盘的写入权。
+> 不要入 git；如果它曾经出现在聊天记录/日志里，去 Google 账号里删掉该 OAuth 客户端重新授权。
+> 另外 Drive 是服务端加密，不是端到端加密，而备份里有私钥与全量业务数据；真在意就上传前再加一层
+> （`gpg --symmetric` / `age`）——目前没加，因为主要目的是“机器挂了还能拿回来”。
 
 ## 部署 / 回滚
 
@@ -221,7 +260,7 @@ cp /opt/1panel/www/maintenance/maintenance.conf /opt/1panel/www/sites/<新站点
 ```bash
 # 1) 找一个上游真的挂着的站点：必须返回维护页（大小/正文与仓库文件一致）+ 这些头
 curl -sk -o /tmp/m.html -D - --resolve <host>:443:127.0.0.1 https://<host>/ | grep -i 'retry-after\|x-maintenance-page\|x-robots-tag'
-# expect: HTTP/2 503 / retry-after: 15 / x-maintenance-page: v3 / x-robots-tag: noindex, nofollow / charset=utf-8
+# expect: HTTP/2 503 / retry-after: 15 / x-maintenance-page: v4 / x-robots-tag: noindex, nofollow / charset=utf-8
 md5sum /tmp/m.html    # 等于仓库里的 deploy/openresty/maintenance.html
 
 # 2) 没挂的站点不能回归：仍是上游自己的 200，且 http 仍 301 跳 https
