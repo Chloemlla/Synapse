@@ -17,20 +17,21 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../components/ManagedCaptcha', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
-  return {
-    default: (props: { onStatusChange?: (status: unknown) => void }) => {
-      h.statusCallback = props.onStatusChange;
-      React.useEffect(() => {
-        h.mounts += 1;
-        // 与真实组件一致：挂载后立刻回报一次「还没有服务端结论」的状态
-        props.onStatusChange?.({ required: false, loading: true, error: null, provider: null, solved: false });
-        return () => {
-          h.unmounts += 1;
-        };
-      }, []);
-      return React.createElement('div', { 'data-testid': 'captcha-stub' });
-    },
+
+  const CaptchaStub = ({ onStatusChange }: { onStatusChange?: (status: unknown) => void }) => {
+    React.useEffect(() => {
+      h.statusCallback = onStatusChange ?? null;
+      h.mounts += 1;
+      // 与真实组件一致：挂载后立刻回报一次「还没有服务端结论」的状态
+      onStatusChange?.({ required: false, loading: true, error: null, provider: null, solved: false });
+      return () => {
+        h.unmounts += 1;
+      };
+    }, [onStatusChange]);
+    return React.createElement('div', { 'data-testid': 'captcha-stub' });
   };
+
+  return { default: CaptchaStub };
 });
 
 import CloudflareChallengePage from '../components/CloudflareChallengePage';
