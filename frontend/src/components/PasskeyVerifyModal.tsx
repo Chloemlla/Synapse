@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import { usePasskey } from '../hooks/usePasskey';
@@ -55,6 +55,16 @@ const PasskeyVerifyModal: React.FC<PasskeyVerifyModalProps> = ({ open, username,
     onClose();
   };
 
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -72,6 +82,9 @@ const PasskeyVerifyModal: React.FC<PasskeyVerifyModalProps> = ({ open, username,
             exit={{ scale: 0.8, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="passkey-verify-title"
           >
             {/* 标题区域 */}
             <motion.div
@@ -90,8 +103,8 @@ const PasskeyVerifyModal: React.FC<PasskeyVerifyModalProps> = ({ open, username,
                   <FaShieldAlt className="h-8 w-8 text-slate-600" />
                 </motion.div>
               </div>
-              <div className={authEyebrowClassName}>Passkey Verification</div>
-              <h2 className="mt-2 text-2xl font-semibold text-slate-900">通行密钥二次校验</h2>
+              <div className={authEyebrowClassName}>通行密钥验证</div>
+              <h2 id="passkey-verify-title" className="mt-2 text-2xl font-semibold text-slate-900">通行密钥二次校验</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 为了确保账户安全，请使用您的 Passkey 进行身份验证
               </p>

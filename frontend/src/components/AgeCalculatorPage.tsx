@@ -92,22 +92,23 @@ const AgeCalculatorPage: React.FC = () => {
     return Array.from({ length: maxDays }, (_, i) => i + 1);
   }, [birthYear, birthMonth]);
 
-  const updateDayIfNeeded = useCallback(() => {
-    const maxDays = getDaysInMonth(birthYear, birthMonth);
+  // F5-43：必须用「本次变更后的新值」重新计算上限，否则读到旧闭包会把 2 月的 31 日留在选项外
+  const updateDayIfNeeded = useCallback((year: number, month: number) => {
+    const maxDays = getDaysInMonth(year, month);
     if (birthDay > maxDays) {
       setBirthDay(maxDays);
     }
-  }, [birthYear, birthMonth, birthDay]);
+  }, [birthDay]);
 
   const handleYearChange = useCallback((year: number) => {
     setBirthYear(year);
-    updateDayIfNeeded();
-  }, [updateDayIfNeeded]);
+    updateDayIfNeeded(year, birthMonth);
+  }, [birthMonth, updateDayIfNeeded]);
 
   const handleMonthChange = useCallback((month: number) => {
     setBirthMonth(month);
-    updateDayIfNeeded();
-  }, [updateDayIfNeeded]);
+    updateDayIfNeeded(birthYear, month);
+  }, [birthYear, updateDayIfNeeded]);
 
   const handleEndDateChange = useCallback((dateString: string) => {
     if (dateString) {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { m } from 'framer-motion';
 import { studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
 
@@ -42,14 +42,16 @@ const ConfigFieldRow: React.FC<ConfigFieldRowProps> = ({
   readOnly = false,
 }) => {
   const disabled = busy || readOnly;
+  const inputId = useId();
 
   if (inlineCurrent) {
     return (
       <div className="space-y-3">
         {extraField}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-slate-700">{inputLabel}</label>
+          <label htmlFor={inputId} className="text-sm font-medium text-slate-700">{inputLabel}</label>
           <input
+            id={inputId}
             type={isPassword ? 'password' : 'text'}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -93,8 +95,9 @@ const ConfigFieldRow: React.FC<ConfigFieldRowProps> = ({
       {extraField}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-slate-700 mb-1">{inputLabel}</label>
+          <label htmlFor={inputId} className="block text-sm font-medium text-slate-700 mb-1">{inputLabel}</label>
           <input
+            id={inputId}
             type={isPassword ? 'password' : 'text'}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -107,7 +110,7 @@ const ConfigFieldRow: React.FC<ConfigFieldRowProps> = ({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">{currentLabel}</label>
+          <span className="block text-sm font-medium text-slate-700 mb-1">{currentLabel}</span>
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-600 min-h-[48px] flex items-center sm:px-4 sm:py-3">
             {loading ? '加载中...' : currentValue || '未设置'}
           </div>

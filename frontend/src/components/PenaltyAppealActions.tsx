@@ -127,6 +127,16 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpen, mailOnly]);
 
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submitting) setOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, submitting]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user) {
@@ -258,11 +268,15 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="penalty-appeal-ticket-title"
             >
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
                   <div className={studioEyebrowClassName}>Support Appeal</div>
                   <h3
+                    id="penalty-appeal-ticket-title"
                     className="mt-1 text-xl font-semibold text-slate-900"
                     style={{ fontFamily: studioDisplayFont }}
                   >

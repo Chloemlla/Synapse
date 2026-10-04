@@ -2,6 +2,7 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import { QqGuardModerationService } from "../../services/qqGuardModerationService";
 import type { QqGuardCommandAction } from "../../models/qqGuardModel";
+import { authenticateSuperAdmin } from "../../middleware/auth";
 
 /**
  * QQ 群纪律面板（仅管理员）。挂在 /api/admin 下，路径为 /qq-guard/*。
@@ -105,8 +106,8 @@ router.get("/qq-guard/whitelist", async (req: Request, res: Response, next: Next
   }
 });
 
-/** 加入白名单（userId 必填；groupId 缺省按全群 "*"）。 */
-router.post("/qq-guard/whitelist", async (req: Request, res: Response, next: NextFunction) => {
+/** 加入白名单（userId 必填；groupId 缺省按全群 "*"）。仅超管可写。 */
+router.post("/qq-guard/whitelist", authenticateSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const userId = str(body.userId, 64);
@@ -127,8 +128,8 @@ router.post("/qq-guard/whitelist", async (req: Request, res: Response, next: Nex
   }
 });
 
-/** 移出白名单（按 userId，跨群删除）。 */
-router.delete("/qq-guard/whitelist/:userId", async (req: Request, res: Response, next: NextFunction) => {
+/** 移出白名单（按 userId，跨群删除）。仅超管可写。 */
+router.delete("/qq-guard/whitelist/:userId", authenticateSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = String(req.params.userId || "").trim().slice(0, 64);
     if (!userId) {
@@ -146,7 +147,8 @@ router.delete("/qq-guard/whitelist/:userId", async (req: Request, res: Response,
 router.get("/qq-guard/commands", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const status = str(req.query.status, 16);
-    const all = await QqGuardModerationService.recentCommands(num(req.query.limit, 50));
+    // 上限对齐服务层审计/时间线的既有钳制档（listAudits 200、timelineByTrace 500）。
+    const all = await QqGuardModerationService.recentCommands(Math.min(num(req.query.limit, 50), 200));
     const commands = status
       ? all.filter((c) => String(c.status) === status)
       : all;
@@ -162,7 +164,7 @@ router.get("/qq-guard/commands", async (req: Request, res: Response, next: NextF
  *  - recall  手动撤回：payload { traceId, userId, groupId, messageId, reason?, sentAt? }
  *  - exempt  豁免用户：payload { userId, traceId?, groupId?, reason? }
  */
-router.post("/qq-guard/commands", async (req: Request, res: Response, next: NextFunction) => {
+router.post("/qq-guard/commands", authenticateSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const action = String(body.action || "").trim();

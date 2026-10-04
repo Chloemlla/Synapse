@@ -350,8 +350,9 @@ const EmailSender: React.FC = () => {
       const response = await api.post("/api/email/validate", { emails });
       return response.data;
     } catch (error) {
+      // F5-41：网络/服务失败不能冒充「格式非法」，用独立标记让调用方区分
       console.error("邮箱验证失败", error);
-      return { valid: [], invalid: emails };
+      return { valid: [], invalid: [], serviceError: true };
     }
   };
 
@@ -401,6 +402,11 @@ const EmailSender: React.FC = () => {
       ? [form.from]
       : [form.from, ...validRecipients];
     const validation = await validateEmails(emailsToValidate);
+    if (validation?.serviceError) {
+      // F5-41：校验服务不可用时给可重试的独立提示，不再误导为「邮箱格式无效」
+      setValidationErrors(["邮箱校验服务暂不可用，请稍后重试"]);
+      return false;
+    }
     if (Array.isArray(validation?.invalid) && validation.invalid.length > 0) {
       setValidationErrors([
         `以下邮箱格式无效：${validation.invalid.join("、")}`,

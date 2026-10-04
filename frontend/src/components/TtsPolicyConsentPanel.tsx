@@ -89,7 +89,7 @@ const TtsPolicyConsentPanel: React.FC<TtsPolicyConsentPanelProps> = ({ onAccepte
       <button
         type="button"
         onClick={handleAccept}
-        disabled={busy || !complete}
+        disabled={busy}
         className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
       >
         {busy ? (

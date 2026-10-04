@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { passkeyApi } from '../../api/passkey';
@@ -402,22 +402,26 @@ export const UserTextField: React.FC<UserTextFieldProps> = ({
   type = 'text',
   placeholder,
   hint,
-}) => (
-  <div>
-    <label className="block text-sm font-semibold text-slate-600 mb-1">
-      {label}
-      {hint && <span className="ml-1 text-xs font-normal text-slate-400">{hint}</span>}
-    </label>
-    <input
-      type={type}
-      name={String(name)}
-      value={String(value ?? '')}
-      onChange={onChange}
-      placeholder={placeholder}
-      className={studioFieldClassName}
-    />
-  </div>
-);
+}) => {
+  const inputId = useId();
+  return (
+    <div>
+      <label htmlFor={inputId} className="block text-sm font-semibold text-slate-600 mb-1">
+        {label}
+        {hint && <span className="ml-1 text-xs font-normal text-slate-400">{hint}</span>}
+      </label>
+      <input
+        id={inputId}
+        type={type}
+        name={String(name)}
+        value={String(value ?? '')}
+        onChange={onChange}
+        placeholder={placeholder}
+        className={studioFieldClassName}
+      />
+    </div>
+  );
+};
 
 export const UserSelectField: React.FC<UserSelectFieldProps> = ({
   label,
@@ -425,21 +429,25 @@ export const UserSelectField: React.FC<UserSelectFieldProps> = ({
   value,
   onChange,
   options,
-}) => (
-  <div>
-    <label className="block text-sm font-semibold text-slate-600 mb-1">{label}</label>
-    <select
-      name={String(name)}
-      value={value}
-      onChange={onChange}
-      className={`${studioFieldClassName} appearance-none`}
-    >
-      {options.map(option => (
-        <option key={option.value} value={option.value}>{option.label}</option>
-      ))}
-    </select>
-  </div>
-);
+}) => {
+  const selectId = useId();
+  return (
+    <div>
+      <label htmlFor={selectId} className="block text-sm font-semibold text-slate-600 mb-1">{label}</label>
+      <select
+        id={selectId}
+        name={String(name)}
+        value={value}
+        onChange={onChange}
+        className={`${studioFieldClassName} appearance-none`}
+      >
+        {options.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+};
 
 export const UserCheckboxField: React.FC<UserCheckboxFieldProps> = ({
   label,
@@ -447,24 +455,28 @@ export const UserCheckboxField: React.FC<UserCheckboxFieldProps> = ({
   checked,
   onChange,
   hint,
-}) => (
-  <div>
-    <label className="block text-sm font-semibold text-slate-600 mb-1">
-      {label}
-      {hint && <span className="ml-1 text-xs font-normal text-slate-400">{hint}</span>}
-    </label>
-    <label className="flex items-center gap-2 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        name={String(name)}
-        checked={checked}
-        onChange={onChange}
-        className="w-4 h-4 rounded"
-      />
-      <span className="text-sm text-slate-600">{checked ? '是' : '否'}</span>
-    </label>
-  </div>
-);
+}) => {
+  const checkboxId = useId();
+  return (
+    <div>
+      <label htmlFor={checkboxId} className="block text-sm font-semibold text-slate-600 mb-1">
+        {label}
+        {hint && <span className="ml-1 text-xs font-normal text-slate-400">{hint}</span>}
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          id={checkboxId}
+          type="checkbox"
+          name={String(name)}
+          checked={checked}
+          onChange={onChange}
+          className="w-4 h-4 rounded"
+        />
+        <span className="text-sm text-slate-600">{checked ? '是' : '否'}</span>
+      </label>
+    </div>
+  );
+};
 
 const IdentitySection: React.FC<{
   mode: 'create' | 'edit';

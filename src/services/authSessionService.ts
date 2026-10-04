@@ -373,7 +373,11 @@ function toIso(value: Date | null | undefined): string | null {
 }
 
 export async function listAuthDevices(userId: string, currentCredential?: string): Promise<AuthDeviceView[]> {
-  const docs = (await AuthSessionModel.find({ userId, revokedAt: null }).sort({ lastActivityAt: -1 }).lean()) as AuthSessionDoc[];
+  // 有界：只取最近活跃的会话用于设备分组，排序下推 Mongo，避免长期不清理的账号把全量读进内存。
+  const docs = (await AuthSessionModel.find({ userId, revokedAt: null })
+    .sort({ lastActivityAt: -1 })
+    .limit(500)
+    .lean()) as AuthSessionDoc[];
   const currentHash = currentCredential ? hashAuthCredential(currentCredential) : null;
   const groups = new Map<string, AuthDeviceView>();
   for (const doc of docs) {

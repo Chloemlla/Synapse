@@ -50,6 +50,22 @@ const MIN_REQUEST_TIMEOUT_MS = 1000;
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 8000;
 
+/**
+ * undici/fetch 的网络失败只把真实原因放在 error.cause，只记录 error.message 会恒为
+ * "fetch failed"。tsconfig 的 lib 低于 es2022，Error 类型上没有 cause，故显式取值。
+ */
+function describeFetchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const causeMessage =
+    cause instanceof Error
+      ? cause.message
+      : typeof (cause as { message?: unknown } | null | undefined)?.message === "string"
+        ? String((cause as { message: unknown }).message)
+        : "";
+  return causeMessage ? `${message} (cause: ${causeMessage})` : message;
+}
+
 export type IntegrityMode = "off" | "observe" | "enforce";
 
 export type DeviceIntegrityLevel = "STRONG" | "DEVICE" | "BASIC" | "NONE";
@@ -242,7 +258,7 @@ async function getAccessToken(): Promise<string | null> {
     return accessTokenCache.token;
   } catch (error) {
     logger.warn("[MobileIntegrity] 换取 Google access token 异常", {
-      error: error instanceof Error ? error.message : String(error),
+      error: describeFetchError(error),
     });
     return null;
   } finally {
@@ -313,7 +329,7 @@ async function decodeIntegrityToken(integrityToken: string): Promise<DecodedInte
     return payload.tokenPayloadExternal ?? null;
   } catch (error) {
     logger.warn("[MobileIntegrity] decodeIntegrityToken 异常", {
-      error: error instanceof Error ? error.message : String(error),
+      error: describeFetchError(error),
     });
     return null;
   } finally {

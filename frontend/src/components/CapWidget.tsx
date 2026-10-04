@@ -23,6 +23,12 @@ const CAP_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cap.js/widget@0.1.5
  */
 const DEFAULT_MAX_CAP_WORKERS = 8;
 
+/**
+ * CDN 挂起保护：脚本既不会派发 load 也不会派发 error 时，控件容器会一直空白。
+ * 超过这个时间仍未就绪就按加载失败处理（走 onError 通路），让上层能换下一家/提示重试。
+ */
+const CAP_WIDGET_SCRIPT_TIMEOUT_MS = 15000;
+
 function defaultCapWorkerCount(): number {
   if (typeof navigator === 'undefined') return DEFAULT_MAX_CAP_WORKERS;
   const cores = Number(navigator.hardwareConcurrency) || DEFAULT_MAX_CAP_WORKERS;
@@ -98,10 +104,35 @@ const CapWidget = ({
           return;
         }
 
+        // 同一 Promise 只允许落定一次：load/error/超时三者谁先到谁算数，其余一律忽略。
+        let settled = false;
+        let ownScript: HTMLScriptElement | null = null;
+        const timeoutId = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          // 自己注入的脚本若仍挂起，移除它并复位全局状态，否则重试时 load 事件永远不会再来
+          // （元素还在、事件已错过），只能一路超时。
+          if (ownScript) {
+            ownScript.remove();
+            if (window.capWidgetScriptState === 'loading') window.capWidgetScriptState = undefined;
+          }
+          reject(new Error('Cap widget script load timed out'));
+        }, CAP_WIDGET_SCRIPT_TIMEOUT_MS);
+        const settle = (finish: () => void) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          finish();
+        };
+
         const existing = document.getElementById(CAP_WIDGET_SCRIPT_ID) as HTMLScriptElement | null;
         if (existing) {
-          existing.addEventListener('load', () => resolve(), { once: true });
-          existing.addEventListener('error', () => reject(new Error('Cap widget script failed to load')), { once: true });
+          existing.addEventListener('load', () => settle(() => resolve()), { once: true });
+          existing.addEventListener(
+            'error',
+            () => settle(() => reject(new Error('Cap widget script failed to load'))),
+            { once: true },
+          );
           return;
         }
 
@@ -110,11 +141,12 @@ const CapWidget = ({
         script.id = CAP_WIDGET_SCRIPT_ID;
         script.src = CAP_WIDGET_SCRIPT_SRC;
         script.async = true;
+        ownScript = script;
         script.addEventListener(
           'load',
           () => {
             window.capWidgetScriptState = 'ready';
-            resolve();
+            settle(() => resolve());
           },
           { once: true },
         );
@@ -122,7 +154,7 @@ const CapWidget = ({
           'error',
           () => {
             window.capWidgetScriptState = 'failed';
-            reject(new Error('Cap widget script failed to load'));
+            settle(() => reject(new Error('Cap widget script failed to load')));
           },
           { once: true },
         );

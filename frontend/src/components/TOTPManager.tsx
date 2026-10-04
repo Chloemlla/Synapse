@@ -120,6 +120,24 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
     }
   };
 
+  // Esc 关闭：两处遮罩层都支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!showDisable && !showPasskeySetup) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (showDisable) {
+        if (!disabling) setShowDisable(false);
+        return;
+      }
+      if (showPasskeySetup) {
+        setShowPasskeySetup(false);
+        void fetchStatus("refresh");
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showDisable, showPasskeySetup, disabling, fetchStatus]);
+
   const totpEnabled = Boolean(status?.enabled);
   const hasPasskey = passkeyEnabled;
   // 已配置任一二次验证因素时，后端要求用 TOTP / Passkey 建立的会话来改动双因素配置；
@@ -375,8 +393,11 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className={`${studioModalCardClassName} max-w-md max-h-[90vh] overflow-y-auto overscroll-contain`}
               onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="totp-disable-title"
             >
-              <h3 className="text-xl font-semibold text-slate-900">
+              <h3 id="totp-disable-title" className="text-xl font-semibold text-slate-900">
                 关闭动态验证码
               </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -435,7 +456,11 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className={`${studioModalCardClassName} max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain`}
               onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="totp-manager-passkey-title"
             >
+              <h2 id="totp-manager-passkey-title" className="sr-only">管理通行密钥</h2>
               <div className="pr-1">
                 <PasskeySetup
                   onClose={() => {

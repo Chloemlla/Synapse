@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { mongoose } from "../services/mongoService";
 import { escapeRegexLiteral } from "../utils/regexEscape";
 import type {
@@ -160,7 +161,8 @@ function mapDuplicate(record: Partial<TtsHistoryRecord> | null | undefined): Tts
 
 export class MongoGenerationHistoryStore implements GenerationHistoryStore {
   private buildAnonymousScopeKey(ip: string, fingerprint: string): string {
-    return `${ip}::${fingerprint}`;
+    // 与 tts.quota.ts 的匿名配额作用域键同一口径：单向摘要，避免 ip+fingerprint 明文落库。
+    return crypto.createHash("sha256").update(`${ip}::${fingerprint}`).digest("hex").slice(0, 24);
   }
 
   public async findDuplicateForUser(params: {

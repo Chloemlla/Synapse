@@ -17,6 +17,15 @@ export function renderCredentialIdModal({ open, credentialId, onClose }: { open:
       setTimeout(() => setCopied(false), 1200);
     } catch {}
   };
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  React.useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (
@@ -35,6 +44,9 @@ export function renderCredentialIdModal({ open, credentialId, onClose }: { open:
             exit={{ scale: 0.92, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 28 }}
             onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="credential-id-title"
           >
             <motion.div
               initial={{ y: 20, opacity: 0 }}
@@ -42,7 +54,7 @@ export function renderCredentialIdModal({ open, credentialId, onClose }: { open:
               exit={{ y: 20, opacity: 0 }}
               transition={{ duration: 0.28 }}
             >
-              <div className="font-bold text-lg mb-2">验证器 CredentialID</div>
+              <div id="credential-id-title" className="font-bold text-lg mb-2">验证器 CredentialID</div>
               <div className="break-all text-sm bg-slate-100 p-2 rounded select-all mb-4">{credentialId}</div>
               <div className="flex justify-center gap-3">
                 <motion.button

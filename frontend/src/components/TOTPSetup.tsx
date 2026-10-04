@@ -113,10 +113,25 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
     onClose();
   };
 
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, loading, onClose]);
+
   const copySecret = async () => {
     if (!setupData?.secret) return;
-    await navigator.clipboard.writeText(setupData.secret);
-    setNotification({ message: '密钥已复制到剪贴板', type: 'success' });
+    try {
+      await navigator.clipboard.writeText(setupData.secret);
+      setNotification({ message: '密钥已复制到剪贴板', type: 'success' });
+    } catch {
+      // 剪贴板被拒时 Promise 会 reject，旧实现无条件报成功会让用户粘贴到空内容
+      setNotification({ message: '复制失败，请手动选择密钥后复制', type: 'error' });
+    }
   };
 
   return (
@@ -137,6 +152,9 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
             className={`${studioModalCardClassName} my-8 max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain`}
             style={{ fontFamily: studioPageFont }}
             onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="totp-setup-title"
           >
             <div className="max-h-[82vh] overflow-y-auto overscroll-contain pr-1">
             <div className="mb-5 flex items-start justify-between gap-4">
@@ -145,7 +163,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                   <FaQrcode />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-xl font-semibold text-slate-900">启用动态验证码</h2>
+                  <h2 id="totp-setup-title" className="text-xl font-semibold text-slate-900">启用动态验证码</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-500">
                     扫描二维码后输入认证器中的 6 位验证码。
                   </p>

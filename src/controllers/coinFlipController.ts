@@ -21,7 +21,7 @@ export class CoinFlipController {
       logger.error("抛硬币失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: "服务器错误",
       });
     }
   }
@@ -44,7 +44,7 @@ export class CoinFlipController {
       logger.error("查询抛硬币结果失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: "服务器错误",
       });
     }
   }
@@ -60,7 +60,7 @@ export class CoinFlipController {
       logger.error("查询抛硬币列表失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: "服务器错误",
       });
     }
   }
@@ -74,7 +74,7 @@ export class CoinFlipController {
       logger.error("查询抛硬币统计失败:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器错误",
+        error: "服务器错误",
       });
     }
   }

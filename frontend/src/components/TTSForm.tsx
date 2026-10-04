@@ -673,6 +673,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <motion.label
+              htmlFor="tts-input-text"
               className={cn(studioEyebrowClassName, "flex items-center gap-2")}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -697,6 +698,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             </div>
           </div>
           <motion.textarea
+            id="tts-input-text"
             value={text}
             onChange={(event) => {
               const nextText = event.target.value;
@@ -939,6 +941,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               transition={{ duration: 0.4, delay: 0.7 }}
             >
               <motion.label
+                htmlFor="tts-output-format"
                 className={cn(studioEyebrowClassName, "mb-3 block")}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -947,6 +950,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                 输出格式
               </motion.label>
               <motion.select
+                id="tts-output-format"
                 value={outputFormat}
                 onChange={(event) => setOutputFormat(event.target.value)}
                 disabled={providerConfigLoading || outputFormats.length === 1}
@@ -979,6 +983,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                 transition={{ duration: 0.4, delay: 0.8 }}
               >
                 <motion.label
+                  htmlFor="tts-speed"
                   className={cn(studioEyebrowClassName, "mb-3 block")}
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -987,6 +992,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                   语速
                 </motion.label>
                 <motion.input
+                  id="tts-speed"
                   type="range"
                   min="0.25"
                   max="4.0"
@@ -1042,6 +1048,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                 transition={{ duration: 0.4, delay: 0.9 }}
               >
                 <motion.label
+                  htmlFor="tts-generation-code"
                   className={cn(studioEyebrowClassName, "mb-3 block")}
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1051,6 +1058,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                   <span className="text-red-500 ml-1">*</span>
                 </motion.label>
                 <motion.input
+                  id="tts-generation-code"
                   type="password"
                   value={generationCode}
                   onChange={(event) => setGenerationCode(event.target.value)}

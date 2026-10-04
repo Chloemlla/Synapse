@@ -650,7 +650,7 @@ export const postTamperRouteModules: RouteModule[] = [
     name: "media-tool-admin-routes",
     path: "/api/admin/media-tool",
     router: mediaToolRoutes,
-    middlewares: [authenticateToken, adminLimiter],
+    middlewares: [authenticateToken],
     requiresAuth: true,
     rateLimited: true,
     isPublic: false,
@@ -660,9 +660,9 @@ export const postTamperRouteModules: RouteModule[] = [
       note: "Media-tool settings/jobs/file administration: all endpoints admin-level; settings writes and job deletion are gated to superadmin at route level.",
     },
     rateLimitPolicy: {
-      mode: "mount",
+      mode: "mixed",
       limiters: ["adminLimiter"],
-      note: "Media-tool administration is protected by the admin mount limiter.",
+      note: "adminLimiter is inherited from the earlier /api/admin mount (Express prefix mounts run for every subpath), so it is intentionally absent from this module's own middlewares array to avoid double-counting the same instance (G11-06).",
     },
   },
   {

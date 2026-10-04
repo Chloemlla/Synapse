@@ -154,23 +154,36 @@ export const LinuxDoAuthCallbackPage: React.FC = () => {
     };
 
     const exchangeTicket = async (ticketValue: string) => {
-      const response = await fetch(`${getApiBaseUrl()}/api/auth/linuxdo/exchange`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({ ticket: ticketValue }),
-      });
+      // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑。
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(`${getApiBaseUrl()}/api/auth/linuxdo/exchange`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ ticket: ticketValue }),
+          signal: controller.signal,
+        });
 
-      const data = await response.json();
-      if (!response.ok) {
-        // raw fetch 不经过 api 拦截器：封停账户要在这里弹申诉入口。
-        maybeEmitPenaltyAppealFromResponse(data, response.status, "linuxdo-exchange");
-        throw new Error(data?.error || "Linux.do 登录失败");
+        const data = await response.json();
+        if (!response.ok) {
+          // raw fetch 不经过 api 拦截器：封停账户要在这里弹申诉入口。
+          maybeEmitPenaltyAppealFromResponse(data, response.status, "linuxdo-exchange");
+          throw new Error(data?.error || "Linux.do 登录失败");
+        }
+
+        await completeLogin(data.token, data.user, Boolean(data.isNewUser));
+      } catch (error) {
+        if ((error as { name?: string })?.name === "AbortError") {
+          throw new Error("请求超时，请稍后重试");
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
       }
-
-      await completeLogin(data.token, data.user, Boolean(data.isNewUser));
     };
 
     if (!ticket) {

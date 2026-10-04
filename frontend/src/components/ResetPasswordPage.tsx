@@ -89,6 +89,10 @@ export const ResetPasswordPage: React.FC = () => {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
+        // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑，
+        // 后端挂起时最多等 15 秒后进入可重试的错误态。
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
         try {
             const [clientIP, fingerprint] = await Promise.all([getClientIP(), getFingerprint()]);
             const deviceName = navigator.userAgent || 'unknown';
@@ -111,7 +115,8 @@ export const ResetPasswordPage: React.FC = () => {
                         }
                         : {}),
                 }),
-                credentials: 'include'
+                credentials: 'include',
+                signal: controller.signal,
             });
             const data = await response.json();
             if (response.ok && data.success) {
@@ -121,8 +126,10 @@ export const ResetPasswordPage: React.FC = () => {
                 setError(data.error || '密码重置失败'); setNotification({ message: data.error || '密码重置失败', type: 'error' });
             }
         } catch (err: any) {
-            setError('网络错误，请稍后重试'); setNotification({ message: '网络错误，请稍后重试', type: 'error' });
-        } finally { setLoading(false); }
+            const timedOut = err?.name === 'AbortError';
+            const message = timedOut ? '请求超时，请稍后重试' : '网络错误，请稍后重试';
+            setError(message); setNotification({ message, type: 'error' });
+        } finally { window.clearTimeout(timeoutId); setLoading(false); }
     };
 
     return (
@@ -177,7 +184,7 @@ export const ResetPasswordPage: React.FC = () => {
                                         <label htmlFor="code" className="mb-2 block text-sm font-medium text-slate-700">验证码</label>
                                         <div className="relative">
                                             <FaKey className={authFieldIconClassName} />
-                                            <input id="code" name="code" type="text" required inputMode="numeric" pattern="[0-9]{8}" maxLength={8} aria-label="Verification code" aria-required="true" aria-invalid={!!error}
+                                            <input id="code" name="code" type="text" required inputMode="numeric" pattern="[0-9]{8}" maxLength={8} aria-required="true" aria-invalid={!!error}
                                                 className={authFieldClassName}
                                                 placeholder="12345678" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} autoComplete="one-time-code" />
                                         </div>

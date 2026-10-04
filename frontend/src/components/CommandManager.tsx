@@ -971,7 +971,7 @@ const CommandManager: React.FC = () => {
                   系统信息摘要
                 </h4>
                 <div className="text-sm opacity-90">
-                  最后更新: {lastUpdateTime ? new Date(lastUpdateTime).toLocaleTimeString('zh-CN') : 'N/A'}
+                  最近一次同步: {lastUpdateTime ? new Date(lastUpdateTime).toLocaleTimeString('zh-CN') : '暂无'}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1275,7 +1275,7 @@ const CommandManager: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-xs text-slate-500">
-                      {lastUpdateTime && `最后更新: ${lastUpdateTime.toLocaleTimeString('zh-CN')}`}
+                      {lastUpdateTime && `最近一次同步: ${lastUpdateTime.toLocaleTimeString('zh-CN')}`}
                     </div>
                   </div>
                   {autoRefresh && (

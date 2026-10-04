@@ -29,6 +29,10 @@ export const EmailVerifyPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑。
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
         const verifyEmail = async () => {
             const token = searchParams.get('token');
 
@@ -56,6 +60,7 @@ export const EmailVerifyPage: React.FC = () => {
                         token,
                         fingerprint
                     }),
+                    signal: controller.signal,
                 });
 
                 const data = await response.json();
@@ -72,14 +77,18 @@ export const EmailVerifyPage: React.FC = () => {
                     setNotification({ message: data.error || '验证失败', type: 'error' });
                 }
             } catch (err: any) {
-                setError('网络错误，请稍后重试');
-                setNotification({ message: '网络错误，请稍后重试', type: 'error' });
+                const timedOut = err?.name === 'AbortError';
+                const message = timedOut ? '请求超时，请稍后重试' : '网络错误，请稍后重试';
+                setError(message);
+                setNotification({ message, type: 'error' });
             } finally {
+                window.clearTimeout(timeoutId);
                 setLoading(false);
             }
         };
 
         verifyEmail();
+        return () => { window.clearTimeout(timeoutId); };
     }, [searchParams, navigate, setNotification]);
 
     return (

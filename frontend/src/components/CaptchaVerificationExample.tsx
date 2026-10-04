@@ -25,6 +25,7 @@ const CaptchaVerificationExample: React.FC = () => {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
+  const [successNotice, setSuccessNotice] = useState<string>('');
 
   // 处理验证成功
   const handleVerificationSuccess = (result: VerificationResult) => {
@@ -36,7 +37,8 @@ const CaptchaVerificationExample: React.FC = () => {
     // 例如：跳转到下一页、解锁功能、提交表单等
     setTimeout(() => {
       setShowVerification(false);
-      alert('验证成功！可以继续操作了。');
+      // 用页面内联提示替代 alert()：不打断流程，也与站内其它提示风格一致。
+      setSuccessNotice('验证成功！可以继续操作了。');
     }, 2000);
   };
 
@@ -52,6 +54,7 @@ const CaptchaVerificationExample: React.FC = () => {
     setShowVerification(true);
     setVerificationResult(null);
     setError('');
+    setSuccessNotice('');
   };
 
   // 返回主页面
@@ -95,6 +98,13 @@ const CaptchaVerificationExample: React.FC = () => {
           >
             开始验证
           </button>
+
+          {/* 验证成功的内联提示 */}
+          {successNotice && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl" role="status" aria-live="polite">
+              <p className="text-sm font-medium text-emerald-700">{successNotice}</p>
+            </div>
+          )}
 
           {/* 显示上次验证结果 */}
           {verificationResult && (

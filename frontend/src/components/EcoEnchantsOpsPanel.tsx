@@ -440,8 +440,8 @@ function InstanceDetailSection({
     if (!canWrite) return;
     if (!fileDeletePath.trim()) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定删除远程文件「${fileDeletePath}」？`,
+      title: `删除远程文件「${fileDeletePath}」？`,
+      description: '该文件将从服务器实例上移除，删除后无法恢复。',
       tone: 'danger',
       confirmLabel: '删除',
     });
@@ -475,10 +475,10 @@ function InstanceDetailSection({
     async (backupId: string) => {
       if (!canWrite) return;
       const ok = await confirm({
-        title: '确认执行该操作？',
-        description: `确定恢复备份「${backupId.slice(0, 16)}...」？此操作不可撤销。`,
+        title: `恢复备份「${backupId.slice(0, 16)}…」？`,
+        description: '将用该备份覆盖当前实例数据与配置，此操作不可撤销，且会中断正在运行的服务。',
         tone: 'danger',
-        confirmLabel: '确认',
+        confirmLabel: '恢复备份',
       });
       if (!ok) return;
       setRestoringId(backupId);

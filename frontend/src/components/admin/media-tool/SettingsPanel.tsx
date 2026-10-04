@@ -4,6 +4,7 @@ import { mediaToolApi } from '../../../api/mediaTool';
 import type { BiliCookiesStatus, MediaTarget, MediaToolSettings, TranscribeOutput } from '../../../api/mediaTool';
 import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
+import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 import { btnIndigo, ErrLine, Field, OkLine, Toggle, inputCls, cx } from './ui';
 
 const SECRET_MASK = '********';
@@ -45,6 +46,7 @@ const secretField = (s: string): boolean => s === SECRET_MASK;
  * 不修改直接保存时后端会保留原值;输入新值即为覆盖。
  */
 export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,13 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
   };
 
   const clearCookies = async () => {
+    const ok = await confirm({
+      title: '清除已入库的 B 站 cookies？',
+      description: '清除后 B 站下载将按游客请求走，很容易撞 412 风控；需要重新上传 cookies 才能恢复。',
+      tone: 'danger',
+      confirmLabel: '清除',
+    });
+    if (!ok) return;
     setCookieBusy(true);
     setError(null);
     setOk(null);

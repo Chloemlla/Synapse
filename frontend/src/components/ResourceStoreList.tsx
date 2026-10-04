@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -275,19 +275,61 @@ export default function ResourceStoreList() {
     fetchRedeemedResourcesCount();
   };
 
+  const duplicateCancelRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!showDuplicateDialog) return undefined;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const timer = window.setTimeout(() => duplicateCancelRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setShowDuplicateDialog(false);
+        setPendingCDKCode("");
+        setDuplicateResourceInfo(null);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [showDuplicateDialog]);
+
+  const handleDuplicateDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const focusables = event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const statusCards = [
     {
-      label: "Catalog",
+      label: "可兑换",
+      rawLabel: "Catalog",
       value: `${resources.length} 个在架资源`,
       tone: "sky" as const,
     },
     {
-      label: "Owned",
+      label: "已拥有",
+      rawLabel: "Owned",
       value: `${redeemedCount} 个已解锁`,
       tone: "emerald" as const,
     },
     {
-      label: "Security",
+      label: "验证状态",
+      rawLabel: "Security",
       value: isAdmin
         ? "管理员免验证"
         : !captchaStatus.required
@@ -328,8 +370,8 @@ export default function ResourceStoreList() {
         </div>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">
-              Price
+            <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400" title="Price">
+              价格
             </div>
             <div className="mt-1 text-xl font-semibold text-slate-900">
               ￥{resource.price}
@@ -366,9 +408,9 @@ export default function ResourceStoreList() {
         <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
           {resource.category}
         </span>
-        <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+        <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white" title="Owned">
           <FaCheckCircle />
-          Owned
+          已拥有
         </span>
       </div>
       <div className="space-y-4 p-4 sm:p-5">
@@ -476,6 +518,7 @@ export default function ResourceStoreList() {
                 {statusCards.map((item) => (
                   <div
                     key={item.label}
+                    title={item.rawLabel}
                     className={cn(
                       "min-w-0 rounded-2xl border px-3 py-2.5 sm:rounded-2xl sm:px-4 sm:py-3",
                       studioMetricToneClassName(item.tone),
@@ -648,7 +691,11 @@ export default function ResourceStoreList() {
                 </div>
               </div>
               <div className="space-y-3">
+                <label htmlFor="cdk-redeem-input" className="sr-only">
+                  CDK 兑换码
+                </label>
                 <input
+                  id="cdk-redeem-input"
                   type="text"
                   value={cdkCode}
                   onChange={(event) => setCdkCode(event.target.value)}
@@ -747,12 +794,21 @@ export default function ResourceStoreList() {
                 </div>
                 <div className="flex items-center justify-between rounded-2xl border border-slate-100 px-3 py-3 text-sm">
                   <span className="text-slate-500">验证策略</span>
-                  <span className="font-semibold text-slate-900">
+                  <span
+                    className="font-semibold text-slate-900"
+                    title={
+                      isAdmin
+                        ? "Admin bypass"
+                        : !captchaStatus.required
+                          ? "Disabled"
+                          : `${providerLabel} enabled`
+                    }
+                  >
                     {isAdmin
-                      ? "Admin bypass"
+                      ? "管理员豁免"
                       : !captchaStatus.required
-                        ? "Disabled"
-                        : `${providerLabel} enabled`}
+                        ? "未启用"
+                        : `${providerLabel} 已启用`}
                   </span>
                 </div>
               </div>
@@ -775,6 +831,10 @@ export default function ResourceStoreList() {
             }}
           >
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="duplicate-resource-dialog-title"
+              onKeyDown={handleDuplicateDialogKeyDown}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -786,7 +846,7 @@ export default function ResourceStoreList() {
                   <FaExclamationTriangle />
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold text-slate-900">
+                  <h3 id="duplicate-resource-dialog-title" className="text-xl font-semibold text-slate-900">
                     重复资源提醒
                   </h3>
                   <p className="mt-2 text-sm leading-7 text-slate-500">
@@ -798,6 +858,7 @@ export default function ResourceStoreList() {
               <div className="mt-6 flex flex-col gap-2 sm:flex-row">
                 <button
                   type="button"
+                  ref={duplicateCancelRef}
                   onClick={() => {
                     setShowDuplicateDialog(false);
                     setPendingCDKCode("");

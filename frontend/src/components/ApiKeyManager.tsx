@@ -156,7 +156,12 @@ const apiJson = async <T,>(path: string, opts?: RequestInit): Promise<ApiResult<
   const res = await fetch(`${getApiBaseUrl()}${path}`, { ...opts, headers, credentials: 'include' });
   const data = (await res.json().catch(() => ({}))) as ApiResult<T>;
   if (!res.ok) {
-    throw new Error(data.error || data.message || `请求失败 (${res.status})`);
+    if (!data.error && !data.message) {
+      console.error(`[ApiKeyManager] ${path} 请求失败，HTTP ${res.status}`);
+    }
+    throw new Error(
+      data.error || data.message || (res.status >= 500 ? '服务端暂时不可用，请稍后重试' : '请求失败，请稍后重试'),
+    );
   }
   return data;
 };
@@ -367,16 +372,16 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
     }
   };
 
-  const handleRevoke = async (keyId: string) => {
+  const handleRevoke = async (key: ApiKeyItem) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定吊销 ${keyId}？吊销后该 Key 将立即失效，需手动重新启用。`,
+      title: `吊销 API Key「${key.name}」？`,
+      description: `该 Key（${key.keyId.slice(0, 8)}…）将立即失效，所有使用它的调用都会被拒绝，需要手动重新启用。`,
       tone: 'danger',
       confirmLabel: '吊销',
     });
     if (!ok) return;
     try {
-      await apiJson<never>(`/api/apikeys/${keyId}/revoke`, { method: 'POST' });
+      await apiJson<never>(`/api/apikeys/${key.keyId}/revoke`, { method: 'POST' });
       setNotification({ message: '已吊销', type: 'success' });
       fetchKeys();
     } catch (err) {
@@ -394,18 +399,18 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
     }
   };
 
-  const handleDelete = async (keyId: string) => {
+  const handleDelete = async (key: ApiKeyItem) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定永久删除 ${keyId}？此操作不可恢复。`,
+      title: `永久删除 API Key「${key.name}」？`,
+      description: `将删除 Key ${key.keyId.slice(0, 8)}… 及其计费记录关联，此操作不可恢复。`,
       tone: 'danger',
       confirmLabel: '删除',
     });
     if (!ok) return;
     try {
-      await apiJson<never>(`/api/apikeys/${keyId}`, { method: 'DELETE' });
+      await apiJson<never>(`/api/apikeys/${key.keyId}`, { method: 'DELETE' });
       setNotification({ message: '已删除', type: 'success' });
-      if (eventsKey?.keyId === keyId) setEventsKey(null);
+      if (eventsKey?.keyId === key.keyId) setEventsKey(null);
       fetchKeys();
     } catch (err) {
       setNotification({ message: err instanceof Error ? err.message : '删除失败', type: 'error' });
@@ -1226,7 +1231,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         <FaReceipt />
                       </motion.button>
                       {canWrite && (key.enabled ? (
-                        <motion.button onClick={() => handleRevoke(key.keyId)} title="吊销" className="rounded p-2 text-yellow-600 transition hover:bg-yellow-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button onClick={() => handleRevoke(key)} title="吊销" className="rounded p-2 text-yellow-600 transition hover:bg-yellow-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaBan />
                         </motion.button>
                       ) : (
@@ -1235,7 +1240,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         </motion.button>
                       ))}
                       {canWrite && (
-                        <motion.button onClick={() => handleDelete(key.keyId)} title="永久删除" className="rounded p-2 text-red-500 transition hover:bg-red-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button onClick={() => handleDelete(key)} title="永久删除" className="rounded p-2 text-red-500 transition hover:bg-red-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaTrash />
                         </motion.button>
                       )}

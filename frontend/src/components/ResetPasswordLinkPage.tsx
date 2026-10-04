@@ -162,7 +162,7 @@ export const ResetPasswordLinkPage: React.FC = () => {
                                     <FaKey />
                                 </div>
                                 <div>
-                                    <div className={authEyebrowClassName}>Secure Reset Link</div>
+                                    <div className={authEyebrowClassName}>安全重置链接</div>
                                     <h2 className={authTitleClassName}>设置新密码</h2>
                                     <p className={authDescriptionClassName}>通过安全链接重置您的账户密码。</p>
                                 </div>

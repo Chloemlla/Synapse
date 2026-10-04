@@ -82,6 +82,8 @@ export const RegisterPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [policyConsent, setPolicyConsent] = useState<PolicyConsentSelection>(createPolicyConsentSelection);
     const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
+    // 只标记「字段自身的错误」：条款/人机验证等非字段错误不得污染 aria-invalid
+    const [invalidFields, setInvalidFields] = useState<{ username: boolean; email: boolean; password: boolean }>({ username: false, email: false, password: false });
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({ score: 0, feedback: '' });
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
     const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
@@ -151,9 +153,10 @@ export const RegisterPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setError(null);
-        const usernameError = validateInput(username, 'username'); if (usernameError) { setError(usernameError); return; }
-        const emailError = validateInput(email, 'email'); if (emailError) { setError(emailError); return; }
-        const passwordError = validateInput(password, 'password'); if (passwordError) { setError(passwordError); return; }
+        setInvalidFields({ username: false, email: false, password: false });
+        const usernameError = validateInput(username, 'username'); if (usernameError) { setInvalidFields({ username: true, email: false, password: false }); setError(usernameError); return; }
+        const emailError = validateInput(email, 'email'); if (emailError) { setInvalidFields({ username: false, email: true, password: false }); setError(emailError); return; }
+        const passwordError = validateInput(password, 'password'); if (passwordError) { setInvalidFields({ username: false, email: false, password: true }); setError(passwordError); return; }
         if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
         const consentPayload = buildPolicyConsentPayload(policyConsent);
         if (!consentPayload) {
@@ -209,7 +212,7 @@ export const RegisterPage: React.FC = () => {
                             Synapse Access
                         </div>
                         <h1 className={authBrandTitleClassName}>Synapse</h1>
-                        <p className={authBrandSubtitleClassName}>Create your account</p>
+                        <p className={authBrandSubtitleClassName}>创建账号</p>
                     </m.div>
 
                     <m.div className={authCardClassName} variants={effectiveCardVariants} initial="hidden" animate="visible" transition={effectiveCardTransition}>
@@ -219,7 +222,7 @@ export const RegisterPage: React.FC = () => {
                                     <FaUserPlus />
                                 </div>
                                 <div>
-                                    <div className={authEyebrowClassName}>New Account</div>
+                                    <div className={authEyebrowClassName}>新账号</div>
                                     <h2 className={authTitleClassName}>创建账户</h2>
                                 </div>
                             </div>
@@ -241,7 +244,7 @@ export const RegisterPage: React.FC = () => {
                                     <label htmlFor="username" className={authLabelClassName}>用户名</label>
                                     <div className="relative">
                                         <FaUser className={authFieldIconClassName} />
-                                        <input id="username" name="username" type="text" required inputMode="text" enterKeyHint="next" aria-label="用户名" aria-required="true" aria-invalid={!!error} aria-describedby="username-hint"
+                                        <input id="username" name="username" type="text" required inputMode="text" enterKeyHint="next" aria-label="用户名" aria-required="true" aria-invalid={invalidFields.username} aria-describedby="username-hint"
                                             className={authFieldClassName}
                                             placeholder="3-20个字符" value={username} onChange={(e) => setUsername(e.target.value)} maxLength={20} pattern="^[a-zA-Z0-9_]{3,20}$" autoComplete="username" />
                                         <span id="username-hint" className="sr-only">用户名长度3到20个字符，只允许字母、数字和下划线</span>
@@ -252,17 +255,18 @@ export const RegisterPage: React.FC = () => {
                                     <label htmlFor="email" className={authLabelClassName}>邮箱</label>
                                     <div className="relative">
                                         <FaEnvelope className={authFieldIconClassName} />
-                                        <input id="email" name="email" type="email" required inputMode="email" enterKeyHint="next" aria-label="邮箱地址" aria-required="true" aria-invalid={!!error}
+                                        <input id="email" name="email" type="email" required inputMode="email" enterKeyHint="next" aria-label="邮箱地址" aria-required="true" aria-invalid={invalidFields.email} aria-describedby="email-hint"
                                             className={authFieldClassName}
                                             placeholder="请输入邮箱地址" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
                                     </div>
+                                    <p id="email-hint" className="mt-2 text-xs leading-5 text-slate-500">只支持主流邮箱：{allowedDomains.join('、')}</p>
                                 </div>
 
                                 <div>
                                     <label htmlFor="password" className={authLabelClassName}>密码</label>
                                     <div className="relative">
                                         <FaLock className={authFieldIconClassName} />
-                                        <input id="password" name="password" type={showPassword ? 'text' : 'password'} required enterKeyHint="next" aria-label="密码" aria-required="true" aria-invalid={!!error} aria-describedby="password-strength"
+                                        <input id="password" name="password" type={showPassword ? 'text' : 'password'} required enterKeyHint="next" aria-label="密码" aria-required="true" aria-invalid={invalidFields.password} aria-describedby="password-strength"
                                             className={authPasswordFieldClassName}
                                             placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete="new-password" />
                                         <button type="button" onClick={() => setShowPassword(!showPassword)} className={authFieldActionClassName} aria-label={showPassword ? '隐藏密码' : '显示密码'}>

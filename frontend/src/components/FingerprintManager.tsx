@@ -4,6 +4,7 @@ import {
   FaCheckCircle,
   FaClipboard,
   FaClock,
+  FaExclamationTriangle,
   FaEye,
   FaFingerprint,
   FaInfoCircle,
@@ -126,6 +127,9 @@ export default function FingerprintManager() {
   const [selectedLoading, setSelectedLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // 拉取失败与「确实没有指纹数据」必须区分：失败时给持久错误条 + 重试，
+  // 否则空表 + 全 0 统计会被当成「本来就没有数据」。
+  const [loadError, setLoadError] = useState('');
   const [cleaning, setCleaning] = useState(false);
   const [actionUserId, setActionUserId] = useState<string | null>(null);
   const [deletingFingerprintKey, setDeletingFingerprintKey] = useState<string | null>(null);
@@ -174,11 +178,14 @@ export default function FingerprintManager() {
 
       setTempStats(statsResponse);
       applyUserPayload(usersResponse.data);
+      setLoadError('');
       if (showTip) {
         setNotification({ type: 'success', message: '指纹管理数据已刷新' });
       }
     } catch (error) {
-      setNotification({ type: 'error', message: getErrorMessage(error, '获取指纹管理数据失败') });
+      const message = getErrorMessage(error, '获取指纹管理数据失败');
+      setLoadError(message);
+      setNotification({ type: 'error', message });
     } finally {
       setLoading(false);
     }
@@ -446,6 +453,22 @@ export default function FingerprintManager() {
             }
           />
 
+          {loadError && (
+            <div
+              className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between"
+              role="alert"
+            >
+              <span className="flex items-start gap-2">
+                <FaExclamationTriangle className="mt-0.5 shrink-0 text-xs" />
+                指纹数据加载失败：{loadError}
+              </span>
+              <button type="button" onClick={() => void fetchDashboard()} disabled={loading} className={studioSecondaryButtonClassName}>
+                <FaSync className={`text-xs ${loading ? 'animate-spin' : ''}`} />
+                重试
+              </button>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead>
@@ -520,7 +543,7 @@ export default function FingerprintManager() {
                     </tr>
                   );
                 })}
-                {users.length === 0 && (
+                {!loadError && users.length === 0 && (
                   <tr>
                     <td className="px-3 py-10 text-center text-slate-400" colSpan={5}>
                       暂无用户指纹数据

@@ -78,6 +78,7 @@ export const TtsPage: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [historyAudioElement, setHistoryAudioElement] = useState<HTMLAudioElement | null>(null);
   // G12-19：结果卡片里那个可见 <audio> 的 ref，替代容易过期且不随 audioUrl 更新的 new Audio()
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -102,6 +103,7 @@ export const TtsPage: React.FC = () => {
       audioElement.pause();
       setIsPlaying(false);
     }
+    setPlaybackError(null);
     setAudioElement(audioRef.current);
   }, [audioUrl, result]);
 
@@ -131,7 +133,11 @@ export const TtsPage: React.FC = () => {
     if (isPlaying) {
       audio.pause();
     } else {
-      void audio.play().catch(() => setIsPlaying(false));
+      setPlaybackError(null);
+      void audio.play().catch(() => {
+        setIsPlaying(false);
+        setPlaybackError("播放失败：音频可能尚未就绪或已被清理，请重试，或点击「下载音频」保存后本地播放。");
+      });
     }
   }, [audioUrl, historyAudioElement, isPlaying]);
 
@@ -201,6 +207,17 @@ export const TtsPage: React.FC = () => {
     },
     [deleteHistoryRecord],
   );
+
+  // 空态「去生成」：把用户带回上方生成表单并聚焦文本输入框；找不到时退回滚动到页首。
+  const handleGoGenerate = useCallback(() => {
+    const target = document.getElementById("tts-input-text");
+    if (target instanceof HTMLTextAreaElement) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.focus({ preventScroll: true });
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const usageSummary = useMemo(() => {
     if (!result?.usage) return null;
@@ -389,10 +406,16 @@ export const TtsPage: React.FC = () => {
                       onPlay={() => setIsPlaying(true)}
                       onPause={() => setIsPlaying(false)}
                       onEnded={() => setIsPlaying(false)}
+                      onError={() => setPlaybackError("音频加载失败，请点击「下载音频」保存后本地播放，或稍后重试。")}
                     >
                       <source src={audioUrl} type={result.audioMimeType || getAudioMimeType(result.outputFormat)} />
                       您的浏览器不支持音频播放
                     </audio>
+                    {playbackError ? (
+                      <p role="alert" className="mt-2 break-words text-xs leading-5 text-rose-600">
+                        {playbackError}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:gap-3">
@@ -431,6 +454,7 @@ export const TtsPage: React.FC = () => {
           audioElement={audioElement}
           historyAudioElement={historyAudioElement}
           onRefresh={() => void fetchHistory(20).catch(() => {})}
+          onGoGenerate={handleGoGenerate}
           onTogglePlayback={toggleHistoryPlayback}
           onDownload={handleHistoryDownload}
           onUpdateRecord={handleUpdateHistoryRecord}

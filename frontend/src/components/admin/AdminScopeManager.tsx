@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FaCheck,
   FaExclamationTriangle,
@@ -259,6 +260,15 @@ const AdminScopeManager: React.FC = () => {
     setDirty(true);
   }, []);
 
+  // F4-22：perUser 的键是账号里的原始 userId，界面只拿到 ID（后端未返回用户名），
+  // 这里补一键复制，方便管理员拿去核对是哪位普通管理员。
+  const copyUserId = useCallback((userId: string) => {
+    navigator.clipboard.writeText(userId).then(
+      () => setNotification({ type: 'success', message: '已复制用户 ID' }),
+      () => setNotification({ type: 'warning', message: '复制失败，请手动复制' }),
+    );
+  }, [setNotification]);
+
   const addOrSelectUser = useCallback(() => {
     const id = newUserId.trim();
     if (!id) {
@@ -320,6 +330,15 @@ const AdminScopeManager: React.FC = () => {
           <p className='flex items-center gap-2 text-sm font-semibold text-rose-700'>
             <FaExclamationTriangle aria-hidden /> 该页面仅超级管理员可用。
           </p>
+          <p className='mt-2 text-sm text-rose-700/80'>
+            此页面用于配置普通管理员的页面授权，需要超级管理员权限。
+          </p>
+          <Link
+            to='/admin'
+            className={cn(studioSecondaryButtonClassName, 'mt-4 inline-flex w-fit items-center gap-2')}
+          >
+            返回管理总览
+          </Link>
         </InfoPanel>
       </InfoQueryShell>
     );
@@ -467,7 +486,7 @@ const AdminScopeManager: React.FC = () => {
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
                     )}
                   >
-                    <code className='font-mono'>{userId}</code>
+                    <code className='font-mono' title={`用户 ID：${userId}`}>{userId}</code>
                     <span className='text-[10px] text-slate-400'>+{count}</span>
                   </button>
                 );
@@ -477,8 +496,17 @@ const AdminScopeManager: React.FC = () => {
             {activeUserId ? (
               <div className='mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4'>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
-                  <div className='text-sm font-semibold text-slate-800'>
-                    正在编辑：<code className='font-mono text-xs'>{activeUserId}</code>
+                  <div className='flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800'>
+                    <span>正在编辑：<code className='font-mono text-xs' title={`用户 ID：${activeUserId}`}>{activeUserId}</code></span>
+                    <button
+                      type='button'
+                      onClick={() => copyUserId(activeUserId)}
+                      title='复制用户 ID'
+                      aria-label='复制用户 ID'
+                      className={cn(studioGhostButtonClassName, 'px-2 py-1 text-xs')}
+                    >
+                      复制 ID
+                    </button>
                   </div>
                   <button
                     type='button'

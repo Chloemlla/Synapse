@@ -50,7 +50,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
               {isVerified ? <FaCheckCircle className="h-6 w-6" /> : <FaExclamationTriangle className="h-6 w-6" />}
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Verification Result</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">验证结果</p>
               <h2 className="mt-2 text-xl font-semibold text-slate-950 sm:text-2xl">{isVerified ? '验证成功' : '验证失败'}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 {isVerified ? '该产品已返回安踏官方数据。' : '该产品验证失败，请谨慎购买并联系官方渠道。'}
@@ -81,7 +81,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
           {productFields.map((field) => {
             const Icon = field.icon;
             return (
-              <div key={field.label} className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
+              <dl key={field.label} className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
                     <Icon className="h-4 w-4" />
@@ -91,7 +91,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
                     <dd className="mt-1 break-all text-base font-semibold text-slate-900">{field.value}</dd>
                   </div>
                 </div>
-              </div>
+              </dl>
             );
           })}
         </div>

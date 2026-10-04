@@ -32,6 +32,32 @@ const EVENT_OPTIONS = [
   'bot_recovered',
 ];
 
+/** 事件枚举的中文展示名；原始值保留在 option 的 title 里供排障搜索。 */
+const EVENT_LABELS: Record<string, string> = {
+  message: '收到消息',
+  moderate: 'AI 裁决',
+  violation: '判定违规',
+  recalled: '已撤回',
+  recall_failed: '撤回失败',
+  dm_sent: '已私信通知',
+  dm_suppressed: '私信已抑制',
+  dm_failed: '私信发送失败',
+  pass: '放行',
+  review_pending: '待复核',
+  review_clean: '复核通过',
+  review_violated: '复核违规',
+  exempted: '豁免',
+  command: '面板命令',
+  bot_offline: 'Bot 离线',
+  bot_recovered: 'Bot 恢复',
+};
+
+const VERDICT_LABELS: Record<string, string> = {
+  violated: '违规',
+  clean: '正常',
+  undetermined: '未判定',
+};
+
 interface FilterState {
   fTrace: string;
   fUser: string;
@@ -148,8 +174,8 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
         >
           <option value="">全部事件</option>
           {EVENT_OPTIONS.map((ev) => (
-            <option key={ev} value={ev}>
-              {ev}
+            <option key={ev} value={ev} title={ev}>
+              {EVENT_LABELS[ev] ?? ev}
             </option>
           ))}
         </select>
@@ -159,9 +185,9 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300"
         >
           <option value="">全部判定</option>
-          <option value="violated">violated</option>
-          <option value="clean">clean</option>
-          <option value="undetermined">undetermined</option>
+          <option value="violated" title="violated">{VERDICT_LABELS.violated}</option>
+          <option value="clean" title="clean">{VERDICT_LABELS.clean}</option>
+          <option value="undetermined" title="undetermined">{VERDICT_LABELS.undetermined}</option>
         </select>
         <button type="submit" className={cx(studioPrimaryButtonClassName, 'col-span-2 sm:col-span-1')}>
           <FaSearch className="text-xs" />

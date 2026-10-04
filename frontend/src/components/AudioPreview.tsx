@@ -14,6 +14,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
     const [duration, setDuration] = useState(0);
     const [playbackRate, setPlaybackRate] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     useEffect(() => {
         if (audioRef.current) {
@@ -30,6 +31,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
             setCurrentTime(0);
             setDuration(0);
             setIsPlaying(false);
+            setErrorMessage(null);
             
             audioRef.current.load();
 
@@ -53,8 +55,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                 setIsLoading(false);
                 setIsPlaying(false);
                 setDuration(0);
-                // 可选：弹出错误提示
-                // alert('音频加载失败，请重试或下载收听');
+                setErrorMessage('音频加载失败，请重试，或下载后收听。');
             };
 
             audioRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -80,10 +81,19 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
             if (isPlaying) {
                 audioRef.current.pause();
             } else {
-                audioRef.current.play();
+                void audioRef.current.play().catch(() => {
+                    setIsPlaying(false);
+                    setErrorMessage('播放失败，请重试，或下载后收听。');
+                });
             }
             setIsPlaying(!isPlaying);
         }
+    };
+
+    const handleRetry = () => {
+        setErrorMessage(null);
+        setIsLoading(true);
+        audioRef.current?.load();
     };
 
     // 拖动进度条时暂停，松开后恢复
@@ -197,6 +207,21 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                                 ))}
                             </div>
                         </div>
+                        {errorMessage && (
+                            <div
+                                role="alert"
+                                className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                            >
+                                <span className="min-w-0 break-words">{errorMessage}</span>
+                                <button
+                                    type="button"
+                                    onClick={handleRetry}
+                                    className={studioPillClassName(false)}
+                                >
+                                    重试
+                                </button>
+                            </div>
+                        )}
                     </div>
                     {isLoading && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -211,7 +236,11 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                     onEnded={() => setIsPlaying(false)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    onError={() => setIsLoading(false)}
+                    onError={() => {
+                        setIsLoading(false);
+                        setIsPlaying(false);
+                        setErrorMessage((current) => current ?? '音频加载失败，请重试，或下载后收听。');
+                    }}
                 />
             </motion.div>
         </AnimatePresence>

@@ -1537,6 +1537,7 @@ export class EcoEnchantsService {
   static async listCustomerLicenses(customerId: string, requestId: string) {
     const licenses = await EcoEnchantsLicenseModel.find({ customerId, productId: ECO_ENCHANTS_PRODUCT_ID })
       .sort({ createdAt: -1 })
+      .limit(200)
       .lean<IEcoEnchantsLicense[]>();
     return {
       requestId,
@@ -1553,6 +1554,7 @@ export class EcoEnchantsService {
     if (!license) throw serviceError(404, "license_not_found", "License was not found.");
     const activations = await EcoEnchantsActivationModel.find({ licenseId })
       .sort({ lastSeenAt: -1 })
+      .limit(200)
       .lean<IEcoEnchantsActivation[]>();
     return {
       requestId,
@@ -1631,6 +1633,7 @@ export class EcoEnchantsService {
       isActive: true,
     })
       .sort({ releasedAt: -1 })
+      .limit(200)
       .lean();
 
     return {

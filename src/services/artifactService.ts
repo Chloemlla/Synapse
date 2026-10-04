@@ -14,6 +14,8 @@ type ArtifactVisibility = "public" | "private" | "password";
 
 const SUPPORTED_CONTENT_TYPES = new Set(["html", "code", "markdown", "mermaid", "text", "json", "svg", "latex", "csv", "xml"]);
 const DEFAULT_MAX_ARTIFACT_CONTENT_BYTES = 5 * 1024 * 1024;
+// 列表分页上限（对齐仓库通用 100 档：coinFlipService/auditLogService/crashReportQuery）。
+const MAX_LIST_LIMIT = 100;
 
 function getMaxArtifactContentBytes(): number {
   const parsed = Number(process.env.NEXAI_ARTIFACT_MAX_CONTENT_BYTES);
@@ -379,7 +381,7 @@ export class ArtifactService {
   }> {
     try {
       const page = options.page || 1;
-      const limit = options.limit || 20;
+      const limit = Math.min(Math.max(options.limit || 20, 1), MAX_LIST_LIMIT);
       const sort = options.sort || "createdAt";
       const order = options.order || "desc";
 
@@ -423,20 +425,20 @@ export class ArtifactService {
     },
   ): Promise<void> {
     try {
-      const artifact = await ArtifactModel.findOne({ shortId });
+      // 原子自增，避免 findOne → save 的读-改-写竞态丢计数
+      const updated = await ArtifactModel.findOneAndUpdate(
+        { shortId },
+        { $inc: { viewCount: 1 }, $set: { lastViewedAt: new Date() } },
+        { new: true },
+      );
 
-      if (!artifact) {
+      if (!updated) {
         return;
       }
 
-      // 增加访问计数
-      artifact.viewCount += 1;
-      artifact.lastViewedAt = new Date();
-      await artifact.save();
-
       // 记录访问日志
       await ArtifactViewModel.create({
-        artifactId: artifact._id.toString(),
+        artifactId: updated._id.toString(),
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         referer: metadata.referer,

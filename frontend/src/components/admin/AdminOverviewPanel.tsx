@@ -90,7 +90,21 @@ const AdminOverviewPanel: React.FC = () => {
     void load();
   }, [load]);
 
-  if (state === 'forbidden') return null;
+  if (state === 'forbidden') {
+    return (
+      <InfoPanel>
+        <InfoSectionTitle
+          eyebrow="Overview"
+          title="系统概览"
+          description="跨模块的只读汇总，需要「系统概览」页面授权才能查看。"
+          icon={FaChartLine}
+        />
+        <p className="text-sm text-slate-500">
+          当前账号没有「系统概览」的页面授权，因此看不到这些汇总数据。如需查看，请联系超级管理员在管理面板的页面授权中为你开启该页面。
+        </p>
+      </InfoPanel>
+    );
+  }
 
   if (state === 'idle' || (state === 'loading' && !snapshot)) {
     return (

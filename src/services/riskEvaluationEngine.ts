@@ -322,8 +322,9 @@ export class RiskEvaluationEngine {
     try {
       const ipInfo = await getIPInfo(ip);
 
-      // Check for high-risk regions
-      const highRiskRegions = ["Unknown", "Anonymous"];
+      // ip.ts 的 getIPInfo 对「查不到/非法/内网」返回的是中文哨兵（未知 / 非法IP / 内网），
+      // 没有地理信息可用时按高风险计；此前的 "Unknown"/"Anonymous" 与这些取值永不相等，是死分支。
+      const highRiskRegions = ["未知", "非法IP", "内网"];
       if (highRiskRegions.includes(ipInfo.country)) {
         return 0.8;
       }

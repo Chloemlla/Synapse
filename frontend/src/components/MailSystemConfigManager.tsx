@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { FaRedo, FaSave, FaSync, FaTrash } from 'react-icons/fa';
 import { getApiBaseUrl } from '../api/api';
@@ -121,10 +121,10 @@ function StatusPill(props: { label: string; status?: ServiceStatus }) {
   );
 }
 
-function FieldLabel(props: { label: string; hint?: string }) {
+function FieldLabel(props: { label: string; htmlFor: string; hint?: string }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
-      <label className="text-sm font-semibold text-slate-700">{props.label}</label>
+      <label htmlFor={props.htmlFor} className="text-sm font-semibold text-slate-700">{props.label}</label>
       {props.hint ? <span className="text-xs text-slate-400">{props.hint}</span> : null}
     </div>
   );
@@ -174,6 +174,7 @@ const MailSystemConfigManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const fieldIdBase = useId();
 
   const loadSetting = useCallback(async () => {
     setLoading(true);
@@ -259,8 +260,8 @@ const MailSystemConfigManager: React.FC = () => {
     if (resetting) return;
     if (!canWrite) return;
     const confirmed = await confirm({
-      title: '确认执行该操作？',
-      description: '确定要重置邮件系统配置为环境变量默认值吗？',
+      title: '重置邮件系统配置？',
+      description: '将清除当前保存的邮件系统配置并回退到环境变量默认值，已保存的域名、配额与 API Key 会一并丢失。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -369,8 +370,9 @@ const MailSystemConfigManager: React.FC = () => {
                 onChange={(checked) => setForm((prev) => ({ ...prev, enabled: checked }))}
               />
               <div>
-                <FieldLabel label="Resend 发信域名" />
+                <FieldLabel label="Resend 发信域名" htmlFor={`${fieldIdBase}-resend-domain`} />
                 <input
+                  id={`${fieldIdBase}-resend-domain`}
                   value={form.resendDomain}
                   onChange={(event) => setForm((prev) => ({ ...prev, resendDomain: event.target.value }))}
                   placeholder="example.com"
@@ -379,8 +381,9 @@ const MailSystemConfigManager: React.FC = () => {
                 />
               </div>
               <div>
-                <FieldLabel label="Resend API Key" hint={setting?.config.resendApiKey || '未配置'} />
+                <FieldLabel label="Resend API Key" htmlFor={`${fieldIdBase}-resend-api-key`} hint={setting?.config.resendApiKey || '未配置'} />
                 <input
+                  id={`${fieldIdBase}-resend-api-key`}
                   type="password"
                   value={resendApiKey}
                   onChange={(event) => setResendApiKey(event.target.value)}
@@ -390,8 +393,9 @@ const MailSystemConfigManager: React.FC = () => {
                 />
               </div>
               <div>
-                <FieldLabel label="每日配额" />
+                <FieldLabel label="每日配额" htmlFor={`${fieldIdBase}-quota-total`} />
                 <input
+                  id={`${fieldIdBase}-quota-total`}
                   type="number"
                   min={1}
                   value={form.quotaTotal}
@@ -419,8 +423,9 @@ const MailSystemConfigManager: React.FC = () => {
                 onChange={(checked) => setForm((prev) => ({ ...prev, outemailEnabled: checked }))}
               />
               <div>
-                <FieldLabel label="对外发信域名" />
+                <FieldLabel label="对外发信域名" htmlFor={`${fieldIdBase}-outemail-domain`} />
                 <input
+                  id={`${fieldIdBase}-outemail-domain`}
                   value={form.outemailDomain}
                   onChange={(event) => setForm((prev) => ({ ...prev, outemailDomain: event.target.value }))}
                   placeholder="example.com"
@@ -429,8 +434,9 @@ const MailSystemConfigManager: React.FC = () => {
                 />
               </div>
               <div>
-                <FieldLabel label="对外 Resend API Key" hint={setting?.config.outemailApiKey || '未配置'} />
+                <FieldLabel label="对外 Resend API Key" htmlFor={`${fieldIdBase}-outemail-api-key`} hint={setting?.config.outemailApiKey || '未配置'} />
                 <input
+                  id={`${fieldIdBase}-outemail-api-key`}
                   type="password"
                   value={outemailApiKey}
                   onChange={(event) => setOutemailApiKey(event.target.value)}
@@ -440,8 +446,9 @@ const MailSystemConfigManager: React.FC = () => {
                 />
               </div>
               <div>
-                <FieldLabel label="默认校验码" hint={setting?.config.outemailCode || '未配置'} />
+                <FieldLabel label="默认校验码" htmlFor={`${fieldIdBase}-outemail-code`} hint={setting?.config.outemailCode || '未配置'} />
                 <input
+                  id={`${fieldIdBase}-outemail-code`}
                   type="password"
                   value={outemailCode}
                   onChange={(event) => setOutemailCode(event.target.value)}
@@ -451,8 +458,9 @@ const MailSystemConfigManager: React.FC = () => {
                 />
               </div>
               <div>
-                <FieldLabel label="对外每日配额" />
+                <FieldLabel label="对外每日配额" htmlFor={`${fieldIdBase}-outemail-quota-total`} />
                 <input
+                  id={`${fieldIdBase}-outemail-quota-total`}
                   type="number"
                   min={1}
                   value={form.outemailQuotaTotal}

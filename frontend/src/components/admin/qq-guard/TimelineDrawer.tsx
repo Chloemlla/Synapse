@@ -42,13 +42,27 @@ export const TimelineDrawer: React.FC<{ traceId: string; onClose: () => void }> 
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
 
+  // Escape 关闭抽屉（F4-19）。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
     <div className={studioModalOverlayClassName}>
       <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
-      <div className={`${studioSurfaceClassName} flex max-h-[86vh] w-full max-w-3xl flex-col`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qq-guard-timeline-title"
+        className={`${studioSurfaceClassName} flex max-h-[86vh] w-full max-w-3xl flex-col`}
+      >
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-900">操作时间线</div>
+            <div id="qq-guard-timeline-title" className="text-sm font-semibold text-slate-900">操作时间线</div>
             <div className="truncate font-mono text-xs text-slate-500">{traceId}</div>
           </div>
           <button

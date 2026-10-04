@@ -162,6 +162,21 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
     }
   };
 
+  // Esc 关闭：先关内层「重新生成」确认，再关主弹窗（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || regenerating) return;
+      if (showRegenerateConfirm) {
+        setShowRegenerateConfirm(false);
+        return;
+      }
+      onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, regenerating, showRegenerateConfirm]);
+
   return (
     <ModalPortal>
     <AnimatePresence>
@@ -182,6 +197,9 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
             className={`${studioModalCardClassName} max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain`}
             style={{ fontFamily: studioPageFont }}
             onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="backup-codes-title"
           >
             <div className="max-h-[82vh] overflow-y-auto overscroll-contain pr-1">
               <div className="mb-5 flex items-start justify-between gap-4">
@@ -190,7 +208,7 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                     <FaShieldAlt />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="text-xl font-semibold text-slate-900">备用恢复码</h2>
+                    <h2 id="backup-codes-title" className="text-xl font-semibold text-slate-900">备用恢复码</h2>
                     <p className="mt-1 text-sm leading-6 text-slate-500">
                       在无法使用认证器时，用恢复码完成登录。
                     </p>
@@ -319,12 +337,15 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                     exit={{ opacity: 0, scale: 0.96, y: 18 }}
                     className={`${studioModalCardClassName} max-w-md max-h-[90vh] overflow-y-auto overscroll-contain`}
                     onClick={(event) => event.stopPropagation()}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="backup-codes-regenerate-title"
                   >
                     <div className="mb-3 flex items-center gap-3">
                       <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
                         <FaExclamationTriangle />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900">重新生成恢复码</h3>
+                      <h3 id="backup-codes-regenerate-title" className="text-lg font-semibold text-slate-900">重新生成恢复码</h3>
                     </div>
                     <p className="text-sm leading-6 text-slate-500">
                       这会替换所有现有恢复码，旧恢复码将无法再使用。

@@ -41,8 +41,19 @@ const TtsQuotaReservationModel =
   mongoose.models.TtsQuotaReservation ||
   mongoose.model<TtsQuotaReservationDocument>("TtsQuotaReservation", TtsQuotaReservationSchema);
 
+// 配额按 Asia/Shanghai 的 YYYY-MM-DD 日切，与风控侧 currentDayKey 同一口径；
+// `toISOString()` 恒为 UTC，会让额度在北京时间 08:00 归零、并让同一天跨 08:00 的请求落进两个桶。
+const SHANGHAI_DAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function getUsageDay(date = new Date()): string {
-  return date.toISOString().split("T")[0];
+  const parts = SHANGHAI_DAY_FORMATTER.formatToParts(date);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
 }
 
 export function buildUsageSummaryFromSnapshot(user: User | null, snapshot: TtsUsageSnapshot | null): TtsUsageSummary {

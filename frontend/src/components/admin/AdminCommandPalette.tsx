@@ -12,6 +12,7 @@ import {
   FaShieldAlt,
   FaStar,
   FaSyncAlt,
+  FaTimes,
 } from 'react-icons/fa';
 import { useNotification } from '../Notification';
 
@@ -100,6 +101,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const moduleIndex = useMemo(() => indexAdminNavByUrl(groups), [groups]);
@@ -365,6 +367,31 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
 
   if (!open) return null;
 
+  // F4-26：Tab / Shift+Tab 在弹窗内循环，不让焦点逃到被 aria-modal 遮住的背景控件。
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const container = dialogRef.current;
+    if (!container) return;
+    const focusables = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        'input, button, [href], select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.hasAttribute('disabled'));
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (event.shiftKey) {
+      if (!active || active === first || !container.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   let rowIndex = -1;
 
   return (
@@ -376,9 +403,11 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
       }}
     >
       <div
+        ref={dialogRef}
         role='dialog'
         aria-modal='true'
         aria-label='管理员命令面板'
+        onKeyDown={handleDialogKeyDown}
         className='w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_30px_80px_-30px_rgba(15,23,42,0.55)]'
       >
         <div className='flex items-center gap-2 border-b border-slate-100 px-4 py-3'>
@@ -401,6 +430,15 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
           <kbd className='hidden shrink-0 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:block'>
             Esc
           </kbd>
+          <button
+            type='button'
+            onClick={onClose}
+            aria-label='关闭命令面板'
+            title='关闭命令面板'
+            className='flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400'
+          >
+            <FaTimes className='size-3.5' aria-hidden='true' />
+          </button>
         </div>
 
         <div

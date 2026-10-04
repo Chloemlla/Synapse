@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { FaChevronDown, FaExclamationTriangle, FaSync, FaUpload } from 'react-icons/fa';
 import { useSearchParams } from 'react-router-dom';
 import getApiBaseUrl from '../api';
@@ -167,12 +167,16 @@ function SectionCard(props: {
   );
 }
 
-function FieldLabel(props: { label: string; hint?: string }) {
-  const { label, hint } = props;
+function FieldLabel(props: { label: string; htmlFor?: string; hint?: string }) {
+  const { label, hint, htmlFor } = props;
 
   return (
     <div className="mb-1 flex items-center justify-between gap-3">
-      <label className="text-sm font-medium text-slate-700">{label}</label>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">{label}</label>
+      ) : (
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+      )}
       {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
     </div>
   );
@@ -191,6 +195,8 @@ const RuntimeConfigSections: React.FC = () => {
   const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
+  const fieldIdBase = useId();
+  const fieldId = (key: string) => `${fieldIdBase}-${key}`;
 
   const [ipqsSetting, setIpqsSetting] = useState<IpqsSettingResponse | null>(null);
   const [ipqsLoading, setIpqsLoading] = useState(false);
@@ -580,8 +586,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteIpqsSetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置 IPQS 配置？风险评分相关能力可能立即失效。',
+      title: '重置 IPQS 配置？',
+      description: '将回退到环境变量默认值，IPQS 风险评分相关能力可能立即失效。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -641,8 +647,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteLinuxDoSetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置 LinuxDo OAuth 配置？第三方登录可能立即失效。',
+      title: '重置 LinuxDo OAuth 配置？',
+      description: '将回退到环境变量默认值，LinuxDo 第三方登录可能立即失效。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -698,8 +704,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteGoogleAuthSetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置 Google Auth 配置？Google 登录可能立即失效。',
+      title: '重置 Google Auth 配置？',
+      description: '将回退到环境变量默认值，Google 登录可能立即失效。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -801,8 +807,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteDeepLXSetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置 DeepLX 配置？翻译能力可能立即失效。',
+      title: '重置 DeepLX 配置？',
+      description: '将回退到环境变量默认值，DeepLX 翻译能力可能立即失效。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -886,8 +892,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteNexaiSetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置 NexAI 配置？相关集成可能立即失效。',
+      title: '重置 NexAI 配置？',
+      description: '将回退到环境变量默认值，NexAI 相关集成可能立即失效。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -965,8 +971,8 @@ const RuntimeConfigSections: React.FC = () => {
   const deleteAdminSecuritySetting = useCallback(async () => {
     if (!canWrite) return;
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确定重置管理员安全配置？将回退到环境变量默认值。',
+      title: '重置管理员安全配置？',
+      description: '将回退到环境变量默认值，已保存的管理员安全设置会一并丢失。',
       tone: 'danger',
       confirmLabel: '重置',
     });
@@ -1014,8 +1020,9 @@ const RuntimeConfigSections: React.FC = () => {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel label="管理员操作密码" hint={adminSecuritySetting?.config.operationPassword || '未配置'} />
+            <FieldLabel label="管理员操作密码" htmlFor={fieldId('admin-operation-password')} hint={adminSecuritySetting?.config.operationPassword || '未配置'} />
             <input
+              id={fieldId('admin-operation-password')}
               type="password"
               value={adminOperationPasswordInput}
               onChange={(e) => setAdminOperationPasswordInput(e.target.value)}
@@ -1025,8 +1032,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="服务器状态密码" hint={adminSecuritySetting?.config.serverStatusPassword || '未配置'} />
+            <FieldLabel label="服务器状态密码" htmlFor={fieldId('server-status-password')} hint={adminSecuritySetting?.config.serverStatusPassword || '未配置'} />
             <input
+              id={fieldId('server-status-password')}
               type="password"
               value={serverStatusPasswordInput}
               onChange={(e) => setServerStatusPasswordInput(e.target.value)}
@@ -1036,8 +1044,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="公共短链服务密码" hint={adminSecuritySetting?.config.publicShortUrlPassword || '未配置'} />
+            <FieldLabel label="公共短链服务密码" htmlFor={fieldId('public-short-url-password')} hint={adminSecuritySetting?.config.publicShortUrlPassword || '未配置'} />
             <input
+              id={fieldId('public-short-url-password')}
               type="password"
               value={publicShortUrlPasswordInput}
               onChange={(e) => setPublicShortUrlPasswordInput(e.target.value)}
@@ -1109,8 +1118,9 @@ const RuntimeConfigSections: React.FC = () => {
         ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
-            <FieldLabel label="API Keys" hint="留空表示保持现有" />
+            <FieldLabel label="API Keys" htmlFor={fieldId('ipqs-api-keys')} hint="留空表示保持现有" />
             <textarea
+              id={fieldId('ipqs-api-keys')}
               value={ipqsApiKeysInput}
               onChange={(e) => setIpqsApiKeysInput(e.target.value)}
               rows={4}
@@ -1124,8 +1134,9 @@ const RuntimeConfigSections: React.FC = () => {
             </div>
           </div>
           <div>
-            <FieldLabel label="Scamalytics User" />
+            <FieldLabel label="Scamalytics User" htmlFor={fieldId('ipqs-scamalytics-user')} />
             <input
+              id={fieldId('ipqs-scamalytics-user')}
               type="text"
               value={ipqsForm.scamalyticsUser}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, scamalyticsUser: e.target.value }))}
@@ -1135,8 +1146,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Strictness" />
+            <FieldLabel label="Strictness" htmlFor={fieldId('ipqs-strictness')} />
             <input
+              id={fieldId('ipqs-strictness')}
               type="number"
               min={0}
               max={3}
@@ -1147,8 +1159,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Token TTL (minutes)" />
+            <FieldLabel label="Token TTL (minutes)" htmlFor={fieldId('ipqs-token-ttl')} />
             <input
+              id={fieldId('ipqs-token-ttl')}
               type="number"
               min={1}
               value={ipqsForm.tokenTtlMinutes}
@@ -1158,8 +1171,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Timeout (ms)" />
+            <FieldLabel label="Timeout (ms)" htmlFor={fieldId('ipqs-timeout')} />
             <input
+              id={fieldId('ipqs-timeout')}
               type="number"
               min={1000}
               value={ipqsForm.timeoutMs}
@@ -1169,8 +1183,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Monthly Quota Per Key" />
+            <FieldLabel label="Monthly Quota Per Key" htmlFor={fieldId('ipqs-monthly-quota')} />
             <input
+              id={fieldId('ipqs-monthly-quota')}
               type="number"
               min={1}
               value={ipqsForm.monthlyQuotaPerKey}
@@ -1180,8 +1195,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Challenge Fraud Score" />
+            <FieldLabel label="Challenge Fraud Score" htmlFor={fieldId('ipqs-challenge-fraud-score')} />
             <input
+              id={fieldId('ipqs-challenge-fraud-score')}
               type="number"
               min={0}
               max={100}
@@ -1247,8 +1263,9 @@ const RuntimeConfigSections: React.FC = () => {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel label="Client ID" />
+            <FieldLabel label="Client ID" htmlFor={fieldId('linuxdo-client-id')} />
             <input
+              id={fieldId('linuxdo-client-id')}
               value={linuxdoForm.clientId}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, clientId: e.target.value }))}
               className={studioFieldClassName}
@@ -1256,8 +1273,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Client Secret" hint={linuxdoSetting?.config.clientSecret || '未配置'} />
+            <FieldLabel label="Client Secret" htmlFor={fieldId('linuxdo-client-secret')} hint={linuxdoSetting?.config.clientSecret || '未配置'} />
             <input
+              id={fieldId('linuxdo-client-secret')}
               value={linuxdoSecretInput}
               onChange={(e) => setLinuxdoSecretInput(e.target.value)}
               placeholder="留空表示保持现有 Client Secret"
@@ -1266,8 +1284,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Discovery URL" />
+            <FieldLabel label="Discovery URL" htmlFor={fieldId('linuxdo-discovery-url')} />
             <input
+              id={fieldId('linuxdo-discovery-url')}
               value={linuxdoForm.discoveryUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, discoveryUrl: e.target.value }))}
               className={studioFieldClassName}
@@ -1275,8 +1294,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Scopes" />
+            <FieldLabel label="Scopes" htmlFor={fieldId('linuxdo-scopes')} />
             <input
+              id={fieldId('linuxdo-scopes')}
               value={linuxdoForm.scopes}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, scopes: e.target.value }))}
               className={studioFieldClassName}
@@ -1284,8 +1304,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Authorization Endpoint" />
+            <FieldLabel label="Authorization Endpoint" htmlFor={fieldId('linuxdo-authorization-endpoint')} />
             <input
+              id={fieldId('linuxdo-authorization-endpoint')}
               value={linuxdoForm.authorizationEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, authorizationEndpoint: e.target.value }))}
               className={studioFieldClassName}
@@ -1293,8 +1314,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Token Endpoint" />
+            <FieldLabel label="Token Endpoint" htmlFor={fieldId('linuxdo-token-endpoint')} />
             <input
+              id={fieldId('linuxdo-token-endpoint')}
               value={linuxdoForm.tokenEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, tokenEndpoint: e.target.value }))}
               className={studioFieldClassName}
@@ -1302,8 +1324,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="User Endpoint" />
+            <FieldLabel label="User Endpoint" htmlFor={fieldId('linuxdo-user-endpoint')} />
             <input
+              id={fieldId('linuxdo-user-endpoint')}
               value={linuxdoForm.userEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, userEndpoint: e.target.value }))}
               className={studioFieldClassName}
@@ -1311,8 +1334,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Forum Base URL" />
+            <FieldLabel label="Forum Base URL" htmlFor={fieldId('linuxdo-forum-base-url')} />
             <input
+              id={fieldId('linuxdo-forum-base-url')}
               value={linuxdoForm.forumBaseUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, forumBaseUrl: e.target.value }))}
               className={studioFieldClassName}
@@ -1320,8 +1344,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Callback URL" />
+            <FieldLabel label="Callback URL" htmlFor={fieldId('linuxdo-callback-url')} />
             <input
+              id={fieldId('linuxdo-callback-url')}
               value={linuxdoForm.callbackUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, callbackUrl: e.target.value }))}
               className={studioFieldClassName}
@@ -1332,8 +1357,9 @@ const RuntimeConfigSections: React.FC = () => {
             </p>
           </div>
           <div>
-            <FieldLabel label="Frontend Callback URL" />
+            <FieldLabel label="Frontend Callback URL" htmlFor={fieldId('linuxdo-frontend-callback-url')} />
             <input
+              id={fieldId('linuxdo-frontend-callback-url')}
               value={linuxdoForm.frontendCallbackUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, frontendCallbackUrl: e.target.value }))}
               className={studioFieldClassName}
@@ -1409,8 +1435,9 @@ const RuntimeConfigSections: React.FC = () => {
 
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel label="GOOGLE_CLIENT_ID (Web application)" />
+            <FieldLabel label="Google Client ID（Web 应用）" htmlFor={fieldId('google-auth-client-id')} hint="GOOGLE_CLIENT_ID" />
             <input
+              id={fieldId('google-auth-client-id')}
               value={googleAuthForm.clientId}
               onChange={(e) => setGoogleAuthForm((prev) => ({ ...prev, clientId: e.target.value }))}
               placeholder="GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com"
@@ -1459,8 +1486,9 @@ const RuntimeConfigSections: React.FC = () => {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel label="API Base URL" />
+            <FieldLabel label="API Base URL" htmlFor={fieldId('deeplx-base-url')} />
             <input
+              id={fieldId('deeplx-base-url')}
               value={deeplxForm.baseUrl}
               onChange={(e) => setDeeplxForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
               placeholder="https://api.deeplx.org"
@@ -1469,8 +1497,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="API Key" hint={deeplxSetting?.config.apiKey || '未配置'} />
+            <FieldLabel label="API Key" htmlFor={fieldId('deeplx-api-key')} hint={deeplxSetting?.config.apiKey || '未配置'} />
             <input
+              id={fieldId('deeplx-api-key')}
               value={deeplxApiKeyInput}
               onChange={(e) => setDeeplxApiKeyInput(e.target.value)}
               placeholder="留空表示保持现有 API Key"
@@ -1520,8 +1549,9 @@ const RuntimeConfigSections: React.FC = () => {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel label="JWT Secret" hint={nexaiSetting?.config.jwtSecret || '未配置'} />
+            <FieldLabel label="JWT Secret" htmlFor={fieldId('nexai-jwt-secret')} hint={nexaiSetting?.config.jwtSecret || '未配置'} />
             <input
+              id={fieldId('nexai-jwt-secret')}
               value={nexaiJwtSecretInput}
               onChange={(e) => setNexaiJwtSecretInput(e.target.value)}
               placeholder="留空表示保持现有 JWT Secret"
@@ -1530,8 +1560,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Frontend URL" />
+            <FieldLabel label="Frontend URL" htmlFor={fieldId('nexai-frontend-url')} />
             <input
+              id={fieldId('nexai-frontend-url')}
               value={nexaiForm.frontendUrl}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, frontendUrl: e.target.value }))}
               className={studioFieldClassName}
@@ -1539,8 +1570,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="JWT Expires In" />
+            <FieldLabel label="JWT Expires In" htmlFor={fieldId('nexai-jwt-expires-in')} />
             <input
+              id={fieldId('nexai-jwt-expires-in')}
               value={nexaiForm.jwtExpiresIn}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, jwtExpiresIn: e.target.value }))}
               className={studioFieldClassName}
@@ -1548,8 +1580,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="Refresh Expires In" />
+            <FieldLabel label="Refresh Expires In" htmlFor={fieldId('nexai-refresh-expires-in')} />
             <input
+              id={fieldId('nexai-refresh-expires-in')}
               value={nexaiForm.refreshExpiresIn}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, refreshExpiresIn: e.target.value }))}
               className={studioFieldClassName}
@@ -1557,8 +1590,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div>
-            <FieldLabel label="NEXAI_GOOGLE_CLIENT_ID" />
+            <FieldLabel label="NexAI Google Client ID" htmlFor={fieldId('nexai-google-client-id')} hint="NEXAI_GOOGLE_CLIENT_ID" />
             <input
+              id={fieldId('nexai-google-client-id')}
               value={nexaiForm.googleClientId}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, googleClientId: e.target.value }))}
               placeholder="NEXAI_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com"
@@ -1572,8 +1606,9 @@ const RuntimeConfigSections: React.FC = () => {
             </p>
           </div>
           <div>
-            <FieldLabel label="GitHub Client ID" />
+            <FieldLabel label="GitHub Client ID" htmlFor={fieldId('nexai-github-client-id')} />
             <input
+              id={fieldId('nexai-github-client-id')}
               value={nexaiForm.githubClientId}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, githubClientId: e.target.value }))}
               className={studioFieldClassName}
@@ -1581,8 +1616,9 @@ const RuntimeConfigSections: React.FC = () => {
             />
           </div>
           <div className="md:col-span-2">
-            <FieldLabel label="GitHub Client Secret" hint={nexaiSetting?.config.github.clientSecret || '未配置'} />
+            <FieldLabel label="GitHub Client Secret" htmlFor={fieldId('nexai-github-client-secret')} hint={nexaiSetting?.config.github.clientSecret || '未配置'} />
             <input
+              id={fieldId('nexai-github-client-secret')}
               value={nexaiGithubSecretInput}
               onChange={(e) => setNexaiGithubSecretInput(e.target.value)}
               placeholder="留空表示保持现有 GitHub Client Secret"

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaCheck, FaShieldAlt, FaSync } from 'react-icons/fa';
 import { PenaltyAppealActions } from './PenaltyAppealActions';
@@ -1318,7 +1319,12 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
               <FaShieldAlt size={17} aria-hidden="true" />
             </div>
             <span className="mt-1 text-[10px] font-semibold leading-none text-[#555]">Synapse</span>
-            <span className="mt-1 whitespace-nowrap text-[8px] leading-none text-[#5b6470]">隐私 · 条款</span>
+            <Link
+              to="/policy"
+              className="mt-1 whitespace-nowrap text-[8px] leading-none text-[#5b6470] underline-offset-2 hover:text-[#232323] hover:underline"
+            >
+              隐私 · 条款
+            </Link>
           </div>
         </div>
 
@@ -1376,16 +1382,15 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
                         ? `暂时封禁，剩余 ${remainingBanSec}s`
                         : error}
                   </span>
-                  {retryCount >= RETRY_CONFIG.maxRetries && (
-                    <button
-                      type="button"
-                      onClick={fetchNonce}
-                      disabled={fetchingNonce || cooldownActive || isBanned}
-                      className="min-h-8 rounded-sm border border-[#c9c9c9] bg-[#f7f7f7] px-3 text-xs font-semibold text-[#333] hover:bg-[#efefef] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {fetchingNonce ? '重试中' : '重试'}
-                    </button>
-                  )}
+                  {/* 失败即可手动重试（自动退避仍并行进行），不再等自动重试耗尽才给出路 */}
+                  <button
+                    type="button"
+                    onClick={fetchNonce}
+                    disabled={fetchingNonce || cooldownActive || isBanned}
+                    className="min-h-8 rounded-sm border border-[#c9c9c9] bg-[#f7f7f7] px-3 text-xs font-semibold text-[#333] hover:bg-[#efefef] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {fetchingNonce ? '重试中' : '重试'}
+                  </button>
                 </div>
                 {lastErrorCode === 'ABUSE_BANNED' && isBanned && (
                   <PenaltyAppealActions

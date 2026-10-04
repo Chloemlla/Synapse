@@ -173,7 +173,8 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
       setOverview(data);
       onLoadedRef.current?.(data);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : '安全总览加载失败');
+      console.error('加载账号安全总览失败:', err);
+      setError('安全总览加载失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -191,7 +192,8 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error && err.message ? err.message : '安全总览加载失败');
+        console.error('加载账号安全总览失败:', err);
+        setError('安全总览加载失败，请稍后重试。');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import {
   FaAngleLeft,
   FaAngleRight,
@@ -93,8 +94,17 @@ const inputClass = `${studioFieldClassName} py-2.5`;
 const BilibiliSyncAdmin: React.FC = () => {
   const { user } = useAuth();
   const [records, setRecords] = useState<BilibiliSyncRecord[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0, totalPages: 0 });
-  const [keyword, setKeyword] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [pagination, setPagination] = useState<Pagination>(() => {
+    const value = Number(searchParams.get('page'));
+    return {
+      page: Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1,
+      limit: 20,
+      total: 0,
+      totalPages: 0,
+    };
+  });
+  const [keyword, setKeyword] = useState(() => searchParams.get('q') ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -107,6 +117,11 @@ const BilibiliSyncAdmin: React.FC = () => {
   const fetchRecords = useCallback(async (page: number, searchTerm: string) => {
     setLoading(true);
     setError('');
+    // 当前筛选与页码写入 URL，刷新/分享后不丢（F4-18）。
+    const urlParams = new URLSearchParams();
+    if (searchTerm) urlParams.set('q', searchTerm);
+    if (page > 1) urlParams.set('page', String(page));
+    setSearchParams(urlParams, { replace: true });
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (searchTerm) params.set('search', searchTerm);
@@ -124,9 +139,16 @@ const BilibiliSyncAdmin: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setSearchParams]);
 
-  useEffect(() => { fetchRecords(1, ''); }, [fetchRecords]);
+  const didInitRef = useRef(false);
+  useEffect(() => {
+    // 只在挂载时按 URL 还原一次；后续筛选/翻页由用户操作驱动。
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchRecords(pagination.page, keyword);
+  }, [fetchRecords]);
 
   const handleSearch = () => fetchRecords(1, keyword);
   const handlePageChange = (page: number) => fetchRecords(page, keyword);

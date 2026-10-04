@@ -86,6 +86,18 @@ const statusOptions: LicenseStatus[] = [
   "suspended",
   "revoked",
 ];
+
+// F4-22：审计/风控表里原本直渲 success/failure、low/medium/high，这里映射成中文，
+// 原始枚举值仍保留在元素的 title 上供排查。
+const AUDIT_RESULT_LABELS: Record<EcoAuditLog["result"], string> = {
+  success: "成功",
+  failure: "失败",
+};
+const RISK_SEVERITY_LABELS: Record<EcoRiskEvent["severity"], string> = {
+  low: "低危",
+  medium: "中危",
+  high: "高危",
+};
 const inputClass = `${studioFieldClassName} py-2.5`;
 
 const isFulfilled = <T,>(
@@ -536,10 +548,10 @@ const EcoEnchantsAdminPage: React.FC = () => {
       return;
     }
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定吊销授权「${licenseId}」？此操作不可撤销。`,
+      title: `吊销授权「${licenseId}」？`,
+      description: '此操作不可撤销，吊销后该授权立即失效，用户无法再使用对应的权益。',
       tone: 'danger',
-      confirmLabel: '确认',
+      confirmLabel: '吊销',
     });
     if (!ok) return;
     await runSubmit(
@@ -1179,7 +1191,9 @@ const EcoEnchantsAdminPage: React.FC = () => {
                           <InfoBadge
                             tone={log.result === "success" ? "emerald" : "rose"}
                           >
-                            {log.result}
+                            <span title={log.result}>
+                              {AUDIT_RESULT_LABELS[log.result]}
+                            </span>
                           </InfoBadge>
                         </td>
                       </tr>
@@ -1214,7 +1228,9 @@ const EcoEnchantsAdminPage: React.FC = () => {
                       <InfoBadge
                         tone={event.severity === "high" ? "rose" : "slate"}
                       >
-                        {event.severity}
+                        <span title={event.severity}>
+                          {RISK_SEVERITY_LABELS[event.severity]}
+                        </span>
                       </InfoBadge>
                       <InfoBadge tone="slate">{event.status}</InfoBadge>
                       <span className="text-xs text-slate-500">

@@ -482,6 +482,20 @@ export class CDKService {
 
       const resource = await this.resourceService.getResourceById(cdk.resourceId);
       if (!resource) {
+        // 回滚：CDK 已在上一步被置为已用，若不补偿，用户会「码被扣掉却拿不到资源」。
+        // 条件带上 usedAt 精确定位本次消耗，避免误撤销期间被其它流程重新处置的那条。
+        try {
+          await CDKModel.updateOne(
+            { _id: cdk._id, isUsed: true, usedAt: cdk.usedAt },
+            { $set: { isUsed: false }, $unset: { usedAt: "", usedIp: "", usedBy: "" } },
+          );
+        } catch (rollbackError) {
+          logger.error("CDK兑换失败：资源不存在，且回滚CDK消耗失败", {
+            code,
+            resourceId: cdk.resourceId,
+            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          });
+        }
         logger.warn("CDK兑换失败：资源不存在", { code, resourceId: cdk.resourceId });
         throw new CdkBusinessError("资源不存在");
       }

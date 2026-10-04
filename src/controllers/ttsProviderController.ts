@@ -13,6 +13,17 @@ import logger from "../utils/logger";
 
 const FISH_CATALOG_TIMEOUT_MS = 20_000;
 
+/**
+ * undici 把所有网络失败统一抛成 TypeError("fetch failed")，真实原因（DNS/TLS/超时/重定向）
+ * 只在 error.cause 里；展平后再记日志，并抹掉可能出现的 Bearer 令牌。
+ */
+function describeFetchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const causeMessage = cause instanceof Error ? cause.message : "";
+  return (causeMessage ? `${message} (cause: ${causeMessage})` : message).replace(/Bearer\s+\S+/gi, "Bearer ***");
+}
+
 export interface FishAudioCatalogItem {
   id: string;
   title: string;
@@ -168,7 +179,7 @@ export const ttsProviderController = {
       return res.json({ success: true, ...result, page });
     } catch (error) {
       logger.warn("[TTS] Fish catalog request failed", {
-        error: error instanceof Error ? error.message.replace(/Bearer\s+\S+/gi, "Bearer ***") : "unknown",
+        error: describeFetchError(error),
       });
       return res.status(502).json({ success: false, error: "Fish Audio 音色列表暂时不可用" });
     }
@@ -229,7 +240,7 @@ export const ttsProviderController = {
       }
     } catch (error) {
       logger.warn("[TTS] Fish audio sample proxy failed", {
-        error: error instanceof Error ? error.message : "unknown",
+        error: describeFetchError(error),
       });
       if (!res.headersSent) {
         res.status(502).json({ success: false, error: "获取音频样本失败" });

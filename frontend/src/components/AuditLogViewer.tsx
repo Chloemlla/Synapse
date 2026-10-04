@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import {
   FaChevronLeft,
   FaChevronRight,
@@ -87,14 +88,46 @@ const DEFAULT_FILTERS: AuditLogQuery = {
 };
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
+
+/** 从 URL 还原筛选条件与页码，刷新/分享链接后不丢（F4-18）。 */
+const readAuditLogFilters = (params: URLSearchParams): AuditLogQuery => ({
+  module: params.get('module') ?? '',
+  result: params.get('result') ?? '',
+  keyword: params.get('keyword') ?? '',
+  requestId: params.get('requestId') ?? '',
+  action: params.get('action') ?? '',
+  userId: params.get('userId') ?? '',
+  username: params.get('username') ?? '',
+  role: params.get('role') ?? '',
+  method: params.get('method') ?? '',
+  path: params.get('path') ?? '',
+  ip: params.get('ip') ?? '',
+  targetId: params.get('targetId') ?? '',
+  targetName: params.get('targetName') ?? '',
+  statusCode: params.get('statusCode') ?? '',
+  minDurationMs: params.get('minDurationMs') ?? '',
+  maxDurationMs: params.get('maxDurationMs') ?? '',
+  startDate: params.get('startDate') ?? '',
+  endDate: params.get('endDate') ?? '',
+});
+
+const readPageSize = (params: URLSearchParams): number => {
+  const value = Number(params.get('pageSize'));
+  return PAGE_SIZE_OPTIONS.includes(value) ? value : 20;
+};
+
 const FALLBACK_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 const AuditLogViewer: React.FC = () => {
   const { setNotification } = useNotification();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(() => {
+    const value = Number(searchParams.get('page'));
+    return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+  });
+  const [pageSize, setPageSize] = useState(() => readPageSize(searchParams));
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -102,8 +135,8 @@ const AuditLogViewer: React.FC = () => {
   const [meta, setMeta] = useState<AuditLogMeta | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<AuditLogQuery>(DEFAULT_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<AuditLogQuery>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<AuditLogQuery>(() => readAuditLogFilters(searchParams));
+  const [appliedFilters, setAppliedFilters] = useState<AuditLogQuery>(() => readAuditLogFilters(searchParams));
   const [queryVersion, setQueryVersion] = useState(0);
   // 筛选预设：内置几条常用条件 + 允许把当前筛选存成自己的（localStorage，只存条件）。
   const [customPresets, setCustomPresets] = useState<AuditLogPreset[]>(() => readCustomAuditLogPresets());
@@ -157,6 +190,18 @@ const AuditLogViewer: React.FC = () => {
   useEffect(() => {
     void fetchStats(appliedFilters);
   }, [appliedFilters, fetchStats, queryVersion]);
+
+  // 已应用的筛选与页码写入 URL，便于刷新与分享（F4-18）。
+  useEffect(() => {
+    const params = new URLSearchParams();
+    (Object.keys(appliedFilters) as Array<keyof AuditLogQuery>).forEach((key) => {
+      const value = appliedFilters[key];
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    });
+    if (page > 1) params.set('page', String(page));
+    if (pageSize !== 20) params.set('pageSize', String(pageSize));
+    setSearchParams(params, { replace: true });
+  }, [appliedFilters, page, pageSize, setSearchParams]);
 
   const moduleOptions = useMemo(() => {
     const modules = meta?.modules?.length ? meta.modules : Object.keys(MODULE_LABELS).sort();

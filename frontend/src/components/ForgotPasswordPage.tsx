@@ -30,6 +30,7 @@ import {
     authMutedLinkClassName,
     authPageShellClassName,
     authPrimaryButtonClassName,
+    authSecondaryButtonClassName,
     authSuccessPanelClassName,
     authTitleClassName,
     authWarningPanelClassName,
@@ -78,8 +79,8 @@ export const ForgotPasswordPage: React.FC = () => {
     const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
     const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         setError(null);
 
         const sanitizedEmail = DOMPurify.sanitize(email).trim();
@@ -102,6 +103,11 @@ export const ForgotPasswordPage: React.FC = () => {
         }
 
         setLoading(true);
+
+        // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），这里内联中止逻辑，
+        // 后端挂起时最多等 15 秒后进入可重试的错误态。
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
         try {
             const [fingerprint, clientIP] = await Promise.all([
@@ -135,7 +141,8 @@ export const ForgotPasswordPage: React.FC = () => {
                         }
                         : {}),
                 }),
-                credentials: 'include'
+                credentials: 'include',
+                signal: controller.signal,
             });
 
             const data = await response.json();
@@ -151,11 +158,19 @@ export const ForgotPasswordPage: React.FC = () => {
                 setNotification({ message: data.error || '发送重置链接失败', type: 'error' });
             }
         } catch (err: any) {
-            setError('网络错误，请重试');
-            setNotification({ message: '网络错误，请重试', type: 'error' });
+            const timedOut = err?.name === 'AbortError';
+            setError(timedOut ? '请求超时，请稍后重试' : '网络错误，请重试');
+            setNotification({ message: timedOut ? '请求超时，请稍后重试' : '网络错误，请重试', type: 'error' });
         } finally {
+            window.clearTimeout(timeoutId);
             setLoading(false);
         }
+    };
+
+    // 成功态的重发入口：复用 handleSubmit。若当前要求人机验证，先回到表单重新过验证再发送。
+    const handleResend = () => {
+        if (captchaStatus.required) { setCaptcha(null); setSuccess(false); return; }
+        void handleSubmit();
     };
 
     return (
@@ -179,7 +194,7 @@ export const ForgotPasswordPage: React.FC = () => {
                                         <div className="mx-auto mb-5 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-emerald-100">
                                             <FaCheckCircle className="h-8 w-8 text-emerald-600" />
                                         </div>
-                                        <div className={authEyebrowClassName}>Reset Link Sent</div>
+                                        <div className={authEyebrowClassName}>密码重置</div>
                                         <h2 className="mt-2 text-2xl font-semibold text-slate-900">重置链接已发送</h2>
                                         <p className="mt-3 text-sm leading-7 text-slate-600">我们已将密码重置链接发送至</p>
                                         <p className="font-semibold text-slate-900">{email}</p>
@@ -203,6 +218,18 @@ export const ForgotPasswordPage: React.FC = () => {
                                         没有收到邮件？请检查垃圾邮件文件夹
                                     </p>
 
+                                    <m.button
+                                        type="button"
+                                        onClick={handleResend}
+                                        disabled={loading}
+                                        aria-busy={loading}
+                                        className={cn(authSecondaryButtonClassName, 'mb-3')}
+                                        whileHover={effectiveItemHover}
+                                        whileTap={effectiveButtonTap}
+                                    >
+                                        {loading ? '重新发送中...' : '重新发送重置链接'}
+                                    </m.button>
+
                                     <Link to="/login" className={authPrimaryButtonClassName}>
                                         返回登录
                                     </Link>
@@ -214,7 +241,7 @@ export const ForgotPasswordPage: React.FC = () => {
                                             <FaKey />
                                         </div>
                                         <div>
-                                            <div className={authEyebrowClassName}>Password Reset</div>
+                                            <div className={authEyebrowClassName}>密码重置</div>
                                             <h2 className={authTitleClassName}>重置密码</h2>
                                             <p className={authDescriptionClassName}>输入邮箱地址，我们将向您发送重置链接。</p>
                                         </div>

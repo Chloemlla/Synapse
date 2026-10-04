@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { api } from '../api/api';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import { useNotification } from './Notification';
@@ -82,6 +82,13 @@ const SECURITY_RISK_LABEL: Record<'good' | 'watch' | 'risk', string> = {
   good: '良好',
   watch: '待加固',
   risk: '高风险',
+};
+
+/** 第三方登录来源的中文展示名；原值仍保留在 title 里供排障。 */
+const AUTH_PROVIDER_LABELS: Record<string, string> = {
+  local: '本地账号',
+  linuxdo: 'LinuxDo 登录',
+  google: 'Google 登录',
 };
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
@@ -193,6 +200,35 @@ const emptyUser: User = {
   accountStatus: 'active',
 };
 
+/** 把 URL 查询串还原成用户列表筛选条件（刷新/分享链接后不丢筛选）。 */
+const readUserListFilters = (params: URLSearchParams): UserListFilters => {
+  const filters: UserListFilters = { ...DEFAULT_USER_LIST_FILTERS };
+  const keyword = params.get('q');
+  if (keyword) filters.keyword = keyword;
+  const role = params.get('role');
+  if (role) filters.role = role as UserListRoleFilter;
+  const accountStatus = params.get('accountStatus');
+  if (accountStatus) filters.accountStatus = accountStatus as UserListAccountStatusFilter;
+  const security = params.get('security');
+  if (security) filters.security = security as UserListSecurityFilter;
+  const ticket = params.get('ticket');
+  if (ticket) filters.ticket = ticket as UserListTicketFilter;
+  const translation = params.get('translation');
+  if (translation) filters.translation = translation as UserListTranslationFilter;
+  const sortBy = params.get('sortBy');
+  if (sortBy) filters.sortBy = sortBy;
+  const sortOrder = params.get('sortOrder');
+  if (sortOrder === 'asc' || sortOrder === 'desc') filters.sortOrder = sortOrder;
+  const pageSize = Number(params.get('pageSize'));
+  if (PAGE_SIZE_OPTIONS.includes(pageSize)) filters.pageSize = pageSize;
+  return filters;
+};
+
+const readUserListPage = (params: URLSearchParams): number => {
+  const page = Number(params.get('page'));
+  return Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+};
+
 const ROW_INITIAL = { opacity: 0, x: -20 } as const;
 const ROW_ANIMATE = { opacity: 1, x: 0 } as const;
 
@@ -210,6 +246,8 @@ const UserManagement: React.FC = () => {
   const canWrite = isSuperAdmin(user?.role);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  // 行内删除 / 批量操作 / 表单提交各自独立 in-flight，不把整表替换成「加载中」。
+  const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [form, setForm] = useState<User>(emptyUser);
@@ -218,9 +256,10 @@ const UserManagement: React.FC = () => {
   const [showFpModal, setShowFpModal] = useState(false);
   const [fpLoading, setFpLoading] = useState(false);
   const [fpRequireMap, setFpRequireMap] = useState<Record<string, number>>({});
-  const [pendingFilters, setPendingFilters] = useState<UserListFilters>(DEFAULT_USER_LIST_FILTERS);
-  const [activeFilters, setActiveFilters] = useState<UserListFilters>(DEFAULT_USER_LIST_FILTERS);
-  const [pagination, setPagination] = useState<UserListPagination>(DEFAULT_PAGINATION);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [pendingFilters, setPendingFilters] = useState<UserListFilters>(() => readUserListFilters(searchParams));
+  const [activeFilters, setActiveFilters] = useState<UserListFilters>(() => readUserListFilters(searchParams));
+  const [pagination, setPagination] = useState<UserListPagination>(() => ({ ...DEFAULT_PAGINATION, page: readUserListPage(searchParams) }));
   const [stats, setStats] = useState<UserListStats>(DEFAULT_STATS);
   const [filteredStats, setFilteredStats] = useState<UserListStats>(DEFAULT_STATS);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -244,19 +283,52 @@ const UserManagement: React.FC = () => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
   }, []);
 
-  const closeForm = useCallback(() => {
+  // 表单基线：新建时为空用户，编辑时为该用户的初始值（密码永远从空开始）。
+  const formBaseline = useMemo<User>(() => (
+    editingUser ? { ...emptyUser, ...editingUser, password: '' } : emptyUser
+  ), [editingUser]);
+
+  const isFormDirty = useMemo(() => {
+    if (!showForm) return false;
+    const keys = new Set<keyof User>([
+      ...(Object.keys(emptyUser) as Array<keyof User>),
+      ...(Object.keys(form) as Array<keyof User>),
+    ]);
+    for (const key of keys) {
+      if (JSON.stringify(form[key]) !== JSON.stringify(formBaseline[key])) return true;
+    }
+    return false;
+  }, [form, formBaseline, showForm]);
+
+  const resetFormState = useCallback(() => {
     setShowForm(false);
     setEditingUser(null);
     setForm(emptyUser);
     setCollapsedSections(createDefaultCollapsedSections());
   }, []);
 
-  const openCreate = useCallback(() => {
+  const confirmDiscardIfDirty = useCallback(async (): Promise<boolean> => {
+    if (!isFormDirty) return true;
+    return confirm({
+      title: '放弃未保存的修改？',
+      description: '表单里还有未保存的内容，继续操作会丢失这些修改。',
+      tone: 'danger',
+      confirmLabel: '放弃修改',
+    });
+  }, [confirm, isFormDirty]);
+
+  const closeForm = useCallback(async () => {
+    if (!(await confirmDiscardIfDirty())) return;
+    resetFormState();
+  }, [confirmDiscardIfDirty, resetFormState]);
+
+  const openCreate = useCallback(async () => {
+    if (showForm && !(await confirmDiscardIfDirty())) return;
     setShowForm(true);
     setEditingUser(null);
     setForm(emptyUser);
     setCollapsedSections(createDefaultCollapsedSections());
-  }, []);
+  }, [confirmDiscardIfDirty, showForm]);
 
   const updatePendingFilter = useCallback(<K extends keyof UserListFilters,>(key: K, value: UserListFilters[K]) => {
     setPendingFilters(prev => ({ ...prev, [key]: value }));
@@ -360,8 +432,8 @@ const UserManagement: React.FC = () => {
     }
   }, [activeFilters.pageSize, setNotification]);
 
-  const fetchUsers = useCallback(async (showTip: boolean = false) => {
-    setLoading(true);
+  const fetchUsers = useCallback(async (showTip: boolean = false, silent: boolean = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const res = await api.get('/api/admin/users', {
@@ -384,11 +456,37 @@ const UserManagement: React.FC = () => {
     } catch (e: unknown) {
       setNotification({ type: 'error', message: getErrorMessage(e, '获取用户列表失败') });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [activeFilters, applyUserListPayload, pagination.page, setNotification]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  // 筛选 / 页码写入 URL，刷新与分享链接后可以还原（F4-18）。
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (activeFilters.keyword) params.set('q', activeFilters.keyword);
+    if (activeFilters.role !== DEFAULT_USER_LIST_FILTERS.role) params.set('role', activeFilters.role);
+    if (activeFilters.accountStatus !== DEFAULT_USER_LIST_FILTERS.accountStatus) params.set('accountStatus', activeFilters.accountStatus);
+    if (activeFilters.security !== DEFAULT_USER_LIST_FILTERS.security) params.set('security', activeFilters.security);
+    if (activeFilters.ticket !== DEFAULT_USER_LIST_FILTERS.ticket) params.set('ticket', activeFilters.ticket);
+    if (activeFilters.translation !== DEFAULT_USER_LIST_FILTERS.translation) params.set('translation', activeFilters.translation);
+    if (activeFilters.sortBy !== DEFAULT_USER_LIST_FILTERS.sortBy) params.set('sortBy', activeFilters.sortBy);
+    if (activeFilters.sortOrder !== DEFAULT_USER_LIST_FILTERS.sortOrder) params.set('sortOrder', activeFilters.sortOrder);
+    if (activeFilters.pageSize !== DEFAULT_USER_LIST_FILTERS.pageSize) params.set('pageSize', String(activeFilters.pageSize));
+    if (pagination.page > 1) params.set('page', String(pagination.page));
+    setSearchParams(params, { replace: true });
+  }, [activeFilters, pagination.page, setSearchParams]);
+
+  // 指纹详情弹窗：支持 Escape 关闭（F4-19）。
+  useEffect(() => {
+    if (!showFpModal) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowFpModal(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [showFpModal]);
 
   const handleChange: UserFormChangeHandler = (e) => {
     const target = e.target as HTMLInputElement;
@@ -448,7 +546,7 @@ const UserManagement: React.FC = () => {
       setNotification({ type: 'error', message });
       return;
     }
-    setLoading(true);
+    setActionBusy(true);
     setError('');
     try {
       const method = editingUser ? 'put' : 'post';
@@ -463,14 +561,14 @@ const UserManagement: React.FC = () => {
       }
       delete submitData.fingerprints;
       await api.request({ url, method, data: submitData });
-      closeForm();
+      resetFormState();
       setNotification({ type: 'success', message: editingUser ? '用户信息已更新' : '用户已创建' });
-      fetchUsers(true);
+      fetchUsers(true, true);
     } catch (e: unknown) {
       setError(getErrorMessage(e, '操作失败'));
       setNotification({ type: 'error', message: getErrorMessage(e, '操作失败') });
     } finally {
-      setLoading(false);
+      setActionBusy(false);
     }
   };
 
@@ -482,17 +580,17 @@ const UserManagement: React.FC = () => {
       confirmLabel: '删除用户',
     });
     if (!ok) return;
-    setLoading(true);
+    setActionBusy(true);
     setError('');
     try {
       await api.delete(`/api/admin/users/${id}`);
       setNotification({ type: 'success', message: '用户已删除' });
-      fetchUsers(true);
+      fetchUsers(true, true);
     } catch (e: unknown) {
       setError(getErrorMessage(e, '删除失败'));
       setNotification({ type: 'error', message: getErrorMessage(e, '删除失败') });
     } finally {
-      setLoading(false);
+      setActionBusy(false);
     }
   }, [confirm, fetchUsers, setNotification]);
 
@@ -533,7 +631,7 @@ const UserManagement: React.FC = () => {
       return;
     }
 
-    setLoading(true);
+    setActionBusy(true);
     setError('');
     try {
       const res = await api.post('/api/admin/users/bulk-action', {
@@ -548,21 +646,22 @@ const UserManagement: React.FC = () => {
         type: failed > 0 ? 'warning' : 'success',
         message: failed > 0 ? `已处理 ${processed} 个用户，${failed} 个失败` : `已处理 ${processed} 个用户`,
       });
-      fetchUsers(false);
+      fetchUsers(false, true);
     } catch (e: unknown) {
       setError(getErrorMessage(e, '批量操作失败'));
       setNotification({ type: 'error', message: getErrorMessage(e, '批量操作失败') });
     } finally {
-      setLoading(false);
+      setActionBusy(false);
     }
   }, [bulkAction, confirm, fetchUsers, selectedUserIds, setNotification, stats, user, users]);
 
-  const openEdit = useCallback((u: User) => {
+  const openEdit = useCallback(async (u: User) => {
+    if (showForm && !(await confirmDiscardIfDirty())) return;
     setEditingUser(u);
     setForm({ ...emptyUser, ...u, password: '' });
     setCollapsedSections(createDefaultCollapsedSections());
     setShowForm(true);
-  }, []);
+  }, [confirmDiscardIfDirty, showForm]);
 
   /** 安全态势面板的快速筛选：与「筛选」按钮同一语义（待应用值 + 立即生效值一起改），并回到第 1 页。 */
   const applyQuickFilter = useCallback(
@@ -907,10 +1006,10 @@ const UserManagement: React.FC = () => {
                 <motion.button
                   type="button"
                   onClick={handleBulkAction}
-                  disabled={selectedUserIds.length === 0 || !bulkAction || loading}
+                  disabled={selectedUserIds.length === 0 || !bulkAction || actionBusy}
                   className={studioPrimaryButtonClassName}
-                  whileHover={hoverScale(undefined, selectedUserIds.length > 0 && Boolean(bulkAction) && !loading)}
-                  whileTap={tapScale(undefined, selectedUserIds.length > 0 && Boolean(bulkAction) && !loading)}
+                  whileHover={hoverScale(undefined, selectedUserIds.length > 0 && Boolean(bulkAction) && !actionBusy)}
+                  whileTap={tapScale(undefined, selectedUserIds.length > 0 && Boolean(bulkAction) && !actionBusy)}
                 >
                   执行
                 </motion.button>
@@ -933,7 +1032,7 @@ const UserManagement: React.FC = () => {
                   <EditUserForm
                     username={editingUser.username}
                     form={form}
-                    loading={loading}
+                    loading={actionBusy}
                     onSubmit={handleSubmit}
                     onCancel={closeForm}
                     onFieldChange={handleChange}
@@ -946,7 +1045,7 @@ const UserManagement: React.FC = () => {
                 ) : (
                   <CreateUserForm
                     form={form}
-                    loading={loading}
+                    loading={actionBusy}
                     onSubmit={handleSubmit}
                     onCancel={closeForm}
                     onFieldChange={handleChange}
@@ -1012,9 +1111,11 @@ const UserManagement: React.FC = () => {
                       </td>
                       <td className="px-2 sm:px-4 py-3 font-medium">
                         <div>{u.username}</div>
-                        <div className="text-[11px] text-slate-400 font-normal">ID {u.id}</div>
+                        <div className="text-[11px] text-slate-400 font-normal" title={u.id}>用户 ID {u.id}</div>
                         {u.authProvider && u.authProvider !== 'local' && (
-                          <div className="text-[11px] text-slate-500 font-normal">{u.authProvider}</div>
+                          <div className="text-[11px] text-slate-500 font-normal" title={u.authProvider}>
+                            {AUTH_PROVIDER_LABELS[u.authProvider] || u.authProvider}
+                          </div>
                         )}
                       </td>
                       <td className="px-2 sm:px-4 py-3 text-slate-600">
@@ -1209,10 +1310,24 @@ const UserManagement: React.FC = () => {
                 </tbody>
               </table>
               {users.length === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  <FaUsers className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                  暂无用户数据
-                </div>
+                hasActiveFilters ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <FaSearch className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                    <div>没有符合当前筛选条件的用户</div>
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className={`${studioSecondaryButtonClassName} mt-3`}
+                    >
+                      清除筛选
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">
+                    <FaUsers className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                    暂无用户数据
+                  </div>
+                )
               )}
               {/* 分页 */}
               <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between text-sm text-slate-600">
@@ -1275,13 +1390,16 @@ const UserManagement: React.FC = () => {
                 exit={{ opacity: 0 }}
               >
                 <motion.div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="user-fingerprint-modal-title"
                   className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white/82 shadow-sm backdrop-blur-xl p-5 sm:p-7 max-h-[90vh] overflow-y-auto overscroll-contain"
                   initial={{ scale: 0.95, y: 20, opacity: 0 }}
                   animate={{ scale: 1, y: 0, opacity: 1 }}
                   exit={{ scale: 0.95, y: 20, opacity: 0 }}
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-slate-900">指纹详情 - {fpUser.username}</h3>
+                    <h3 id="user-fingerprint-modal-title" className="text-lg font-semibold text-slate-900">指纹详情 - {fpUser.username}</h3>
                     <div className="flex items-center gap-2">
                       {canWrite && (
                       <motion.button

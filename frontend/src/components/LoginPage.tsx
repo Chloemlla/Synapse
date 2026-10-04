@@ -151,6 +151,8 @@ export const LoginPage: React.FC = () => {
     // 每次登录都要重新勾选四份政策文件，因此初始状态不持久化
     const [policyConsent, setPolicyConsent] = useState<PolicyConsentSelection>(createPolicyConsentSelection);
     const [policyConsentInvalid, setPolicyConsentInvalid] = useState(false);
+    // 只标记「字段自身的错误」：条款/人机验证等非字段错误不得让无辜输入框被读屏报为无效
+    const [invalidFields, setInvalidFields] = useState<{ username: boolean; password: boolean }>({ username: false, password: false });
     const consentComplete = React.useMemo(() => isPolicyConsentComplete(policyConsent), [policyConsent]);
 
     const effectiveCardVariants = React.useMemo(() => prefersReducedMotion ? FADE_VARIANTS : cardVariants, [prefersReducedMotion]);
@@ -244,8 +246,9 @@ export const LoginPage: React.FC = () => {
         e.preventDefault();
         setError(null);
         setAttemptStatus(null);
+        setInvalidFields({ username: false, password: false });
         const sanitizedUsername = DOMPurify.sanitize(username).trim();
-        if (!sanitizedUsername || !password) { setError('请输入用户名和密码'); return; }
+        if (!sanitizedUsername || !password) { setInvalidFields({ username: !sanitizedUsername, password: !password }); setError('请输入用户名和密码'); return; }
         const consentPayload = buildPolicyConsentPayload(policyConsent);
         if (!consentPayload) {
             setPolicyConsentInvalid(true);
@@ -364,7 +367,7 @@ export const LoginPage: React.FC = () => {
                             Synapse Access
                         </div>
                         <h1 className={authBrandTitleClassName}>Synapse</h1>
-                        <p className={authBrandSubtitleClassName}>Welcome back</p>
+                        <p className={authBrandSubtitleClassName}>欢迎回来</p>
                     </m.div>
 
                     <m.div className={authCardClassName} variants={effectiveCardVariants} initial="hidden" animate="visible" transition={effectiveCardTransition}>
@@ -374,7 +377,7 @@ export const LoginPage: React.FC = () => {
                                     {adminLoginRequested ? <FaUserShield /> : <FaSignInAlt />}
                                 </div>
                                 <div>
-                                    <div className={authEyebrowClassName}>{adminLoginRequested ? 'Admin Access' : 'Account Login'}</div>
+                                    <div className={authEyebrowClassName}>{adminLoginRequested ? '管理员入口' : '账号登录'}</div>
                                     <h2 className={authTitleClassName}>{adminLoginRequested ? '管理员登录' : '登录账户'}</h2>
                                 </div>
                             </div>
@@ -441,7 +444,7 @@ export const LoginPage: React.FC = () => {
                                     <label htmlFor="username" className={authLabelClassName}>邮箱或用户名</label>
                                     <div className="relative">
                                         <FaEnvelope className={authFieldIconClassName} />
-                                        <input id="username" name="username" type="text" required inputMode="text" enterKeyHint="next" aria-label="用户名或邮箱" aria-required="true" aria-invalid={!!error}
+                                        <input id="username" name="username" type="text" required inputMode="text" enterKeyHint="next" aria-label="用户名或邮箱" aria-required="true" aria-invalid={invalidFields.username}
                                             className={authFieldClassName}
                                             placeholder="请输入邮箱或用户名" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
                                     </div>
@@ -454,7 +457,7 @@ export const LoginPage: React.FC = () => {
                                     </div>
                                     <div className="relative">
                                         <FaLock className={authFieldIconClassName} />
-                                        <input id="password" name="password" type={showPassword ? 'text' : 'password'} required enterKeyHint="done" aria-label="密码" aria-required="true" aria-invalid={!!error}
+                                        <input id="password" name="password" type={showPassword ? 'text' : 'password'} required enterKeyHint="done" aria-label="密码" aria-required="true" aria-invalid={invalidFields.password}
                                             className={authPasswordFieldClassName}
                                             placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
                                         <button type="button" onClick={() => setShowPassword(!showPassword)} className={authFieldActionClassName} aria-label={showPassword ? '隐藏密码' : '显示密码'}>
@@ -464,7 +467,7 @@ export const LoginPage: React.FC = () => {
                                 </div>
 
                                 <div className="flex items-center">
-                                    <input id="remember-me" name="remember-me" type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} aria-label="Remember my username" className={authCheckboxClassName} />
+                                    <input id="remember-me" name="remember-me" type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className={authCheckboxClassName} />
                                     <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-600">记住我</label>
                                 </div>
 

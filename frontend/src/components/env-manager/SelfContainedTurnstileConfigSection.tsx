@@ -70,9 +70,10 @@ export default function SelfContainedTurnstileConfigSection({ prefersReducedMoti
   const handleDelete = useCallback(async (key: 'TURNSTILE_SECRET_KEY' | 'TURNSTILE_SITE_KEY') => {
     if (!canWrite) return;
     if (deleting) return;
+    const keyLabel = key === 'TURNSTILE_SECRET_KEY' ? 'Turnstile Secret Key' : 'Turnstile Site Key';
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定删除 Turnstile 配置「${key}」？`,
+      title: `删除 ${keyLabel}？`,
+      description: '删除后该配置会退回环境变量默认值或被清空，Turnstile 人机验证可能立即失效。',
       tone: 'danger',
       confirmLabel: '删除',
     });

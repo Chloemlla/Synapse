@@ -487,23 +487,26 @@ export abstract class ProductionServiceBase {
         throw new Error(`Circuit breaker is OPEN for ${this.config.serviceName}`);
       }
 
-      // 执行操作（带超时保护）
-      const result = await Promise.race([
-        operation(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error(`${operationName} timeout`)),
-            this.config.performance?.operationTimeout || 10000,
-          ),
-        ),
-      ]);
+      // 执行操作（带超时保护）；操作先完成时清掉计时器，避免悬挂 timer 拖住事件循环与进程退出。
+      const timeoutMs = this.config.performance?.operationTimeout || 10000;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const result = await Promise.race([
+          operation(),
+          new Promise<never>((_, reject) => {
+            timeoutTimer = setTimeout(() => reject(new Error(`${operationName} timeout`)), timeoutMs);
+          }),
+        ]);
 
-      // 记录成功
-      this.stats.successfulOperations++;
-      this.recordCircuitBreakerSuccess();
-      this.updateResponseTime(Date.now() - startTime);
+        // 记录成功
+        this.stats.successfulOperations++;
+        this.recordCircuitBreakerSuccess();
+        this.updateResponseTime(Date.now() - startTime);
 
-      return result;
+        return result;
+      } finally {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+      }
     } catch (error) {
       // 记录失败
       this.stats.failedOperations++;
@@ -523,12 +526,20 @@ export abstract class ProductionServiceBase {
   protected async executeQuery<T>(query: Promise<T>, queryName: string = "Query"): Promise<T> {
     const queryTimeout = this.config.performance?.queryTimeout || 5000;
 
-    return await Promise.race([
-      query,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${queryName} timeout after ${queryTimeout}ms`)), queryTimeout),
-      ),
-    ]);
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        query,
+        new Promise<never>((_, reject) => {
+          timeoutTimer = setTimeout(
+            () => reject(new Error(`${queryName} timeout after ${queryTimeout}ms`)),
+            queryTimeout,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    }
   }
 
   /**

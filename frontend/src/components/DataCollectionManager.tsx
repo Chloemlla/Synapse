@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState, useDeferredValue, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useDeferredValue, useCallback, useRef, useId } from 'react';
 import ReactDOM from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { getApiBaseUrl } from '../api/api';
 import { FaChartBar, FaSync, FaSearch, FaRedo, FaTrash, FaEye, FaTimes, FaPlus, FaClipboard, FaCopy, FaListAlt, FaClock } from 'react-icons/fa';
@@ -35,6 +36,18 @@ interface Item {
 }
 
 type SortOrder = 'asc' | 'desc';
+
+const PAGE_SIZE_CHOICES = [10, 20, 50, 100];
+
+const readPageFromParams = (params: URLSearchParams): number => {
+    const value = Number(params.get('page'));
+    return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+};
+
+const readLimitFromParams = (params: URLSearchParams): number => {
+    const value = Number(params.get('limit'));
+    return PAGE_SIZE_CHOICES.includes(value) ? value : 20;
+};
 
 const jsonPretty = (obj: any) => {
     try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
@@ -157,13 +170,14 @@ const DataCard = React.memo(({ item, checked, onToggle, onView, onDelete, openDe
 });
 
 const DataCollectionManager: React.FC = () => {
-    const [page, setPage] = useState(1);
-    const [limit, setLimit] = useState(20);
-    const [sort, setSort] = useState<SortOrder>('desc');
-    const [userId, setUserId] = useState('');
-    const [action, setAction] = useState('');
-    const [start, setStart] = useState('');
-    const [end, setEnd] = useState('');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [page, setPage] = useState(() => readPageFromParams(searchParams));
+    const [limit, setLimit] = useState(() => readLimitFromParams(searchParams));
+    const [sort, setSort] = useState<SortOrder>(() => (searchParams.get('sort') === 'asc' ? 'asc' : 'desc'));
+    const [userId, setUserId] = useState(() => searchParams.get('userId') ?? '');
+    const [action, setAction] = useState(() => searchParams.get('action') ?? '');
+    const [start, setStart] = useState(() => searchParams.get('start') ?? '');
+    const [end, setEnd] = useState(() => searchParams.get('end') ?? '');
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [items, setItems] = useState<Item[]>([]);
@@ -184,6 +198,7 @@ const DataCollectionManager: React.FC = () => {
     const confirm = useConfirm();
     const { user } = useAuth();
     const canWrite = isSuperAdmin(user?.role);
+    const createFormId = useId();
     const prefersReducedMotion = useReducedMotion();
     const hoverScale = React.useCallback((scale: number, enabled: boolean = true) => (
         enabled && !prefersReducedMotion ? { scale } : undefined
@@ -313,6 +328,19 @@ const DataCollectionManager: React.FC = () => {
         fetchStats();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // 筛选/页码写入 URL，刷新或分享链接后不丢（F4-18）。
+    useEffect(() => {
+        const params = new URLSearchParams();
+        if (userId) params.set('userId', userId);
+        if (action) params.set('action', action);
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        if (sort !== 'desc') params.set('sort', sort);
+        if (limit !== 20) params.set('limit', String(limit));
+        if (page > 1) params.set('page', String(page));
+        setSearchParams(params, { replace: true });
+    }, [action, end, limit, page, setSearchParams, sort, start, userId]);
 
     useEffect(() => {
         return () => {
@@ -635,6 +663,19 @@ const DataCollectionManager: React.FC = () => {
         );
     }, [batchView]);
 
+    // 弹窗支持 Escape 关闭（F4-19）。
+    useEffect(() => {
+        if (!viewItem && !creating && !batchView) return undefined;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            if (creating) closeCreateModal();
+            else if (batchView) closeBatchModal();
+            else if (viewItem) closeDetailModal();
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [batchView, closeBatchModal, closeCreateModal, closeDetailModal, creating, viewItem]);
+
     return (
         <div className="mx-auto max-w-7xl space-y-6 px-4">
             <InfoPanel>
@@ -844,6 +885,9 @@ const DataCollectionManager: React.FC = () => {
             {viewItem && (
                 <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setViewItem(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="data-collection-detail-title"
                         initial={{ scale: 0.95, y: 10, opacity: 0 }}
                         animate={{ scale: 1, y: 0, opacity: 1 }}
                         exit={{ scale: 0.95, y: 10, opacity: 0 }}
@@ -852,7 +896,7 @@ const DataCollectionManager: React.FC = () => {
                         data-source-modal="data-collection-detail"
                     >
                         <div className="flex items-center justify-between mb-3">
-                            <div className="font-semibold text-slate-900">记录详情</div>
+                            <div id="data-collection-detail-title" className="font-semibold text-slate-900">记录详情</div>
                             <div className="flex items-center gap-2">
                               <motion.button
                                 onClick={async () => {
@@ -1032,6 +1076,9 @@ const DataCollectionManager: React.FC = () => {
             {creating && (
                 <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setCreating(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="data-collection-create-title"
                         initial={{ scale: 0.95, y: 10, opacity: 0 }}
                         animate={{ scale: 1, y: 0, opacity: 1 }}
                         exit={{ scale: 0.95, y: 10, opacity: 0 }}
@@ -1040,27 +1087,27 @@ const DataCollectionManager: React.FC = () => {
                         data-source-modal="data-collection-create"
                     >
                         <div className="flex items-center justify-between mb-3">
-                            <div className="font-semibold text-slate-900">新增数据收集记录</div>
+                            <div id="data-collection-create-title" className="font-semibold text-slate-900">新增数据收集记录</div>
                             <motion.button className={studioSecondaryButtonClassName} onClick={closeCreateModal} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaTimes className="w-4 h-4" /> 关闭
                             </motion.button>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-700">userId</label>
-                                <input className={studioFieldClassName} value={newUserId} onChange={e => setNewUserId(e.target.value)} />
+                                <label htmlFor={`${createFormId}-userId`} className="mb-1 block text-sm font-semibold text-slate-700">userId</label>
+                                <input id={`${createFormId}-userId`} className={studioFieldClassName} value={newUserId} onChange={e => setNewUserId(e.target.value)} />
                             </div>
                             <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-700">action</label>
-                                <input className={studioFieldClassName} value={newAction} onChange={e => setNewAction(e.target.value)} />
+                                <label htmlFor={`${createFormId}-action`} className="mb-1 block text-sm font-semibold text-slate-700">action</label>
+                                <input id={`${createFormId}-action`} className={studioFieldClassName} value={newAction} onChange={e => setNewAction(e.target.value)} />
                             </div>
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-semibold text-slate-700">时间(timestamp)</label>
-                                <input type="datetime-local" className={studioFieldClassName} value={newTsLocal} onChange={e => setNewTsLocal(e.target.value)} />
+                                <label htmlFor={`${createFormId}-timestamp`} className="mb-1 block text-sm font-semibold text-slate-700">时间(timestamp)</label>
+                                <input id={`${createFormId}-timestamp`} type="datetime-local" className={studioFieldClassName} value={newTsLocal} onChange={e => setNewTsLocal(e.target.value)} />
                             </div>
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-semibold text-slate-700">详情(details)</label>
-                                <textarea className={`${studioFieldClassName} h-32`} value={newDetailsRaw} onChange={e => setNewDetailsRaw(e.target.value)} placeholder="可填写纯文本或 JSON" />
+                                <label htmlFor={`${createFormId}-details`} className="mb-1 block text-sm font-semibold text-slate-700">详情(details)</label>
+                                <textarea id={`${createFormId}-details`} className={`${studioFieldClassName} h-32`} value={newDetailsRaw} onChange={e => setNewDetailsRaw(e.target.value)} placeholder="可填写纯文本或 JSON" />
                             </div>
                         </div>
                         <div className="flex items-center justify-end gap-2 mt-3">
@@ -1081,9 +1128,9 @@ const DataCollectionManager: React.FC = () => {
             <AnimatePresence>
             {batchView && (
               <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setBatchView(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <motion.div initial={{ scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`} onClick={e => e.stopPropagation()} data-source-modal="data-collection-batch">
+                <motion.div role="dialog" aria-modal="true" aria-labelledby="data-collection-batch-title" initial={{ scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`} onClick={e => e.stopPropagation()} data-source-modal="data-collection-batch">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
+                    <div id="data-collection-batch-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
                     <div className="flex items-center gap-2">
                       <motion.button onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                         <FaClipboard className="w-4 h-4" /> 复制

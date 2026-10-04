@@ -39,9 +39,14 @@ const getDeviceIcon = (session: UserDeviceSession) => {
 
 const displayValue = (value?: string | null): string => value || '未记录';
 
-const FAILED_LOCATION_SENTINELS = new Set(['未知', '未找到位置', '获取位置时出错']);
-const displayLocation = (value?: string | null): string =>
-  value && !FAILED_LOCATION_SENTINELS.has(value.trim()) ? value : '未知';
+const UNKNOWN_LOCATION_SENTINELS = new Set(['未知']);
+const FAILURE_LOCATION_SENTINELS = new Set(['未找到位置', '获取位置时出错']);
+const displayLocation = (value?: string | null): string => {
+  const trimmed = value?.trim();
+  if (!trimmed || UNKNOWN_LOCATION_SENTINELS.has(trimmed)) return '未知';
+  if (FAILURE_LOCATION_SENTINELS.has(trimmed)) return '定位失败';
+  return trimmed;
+};
 
 const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
   sessions,
@@ -167,7 +172,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
                         studioPrimaryButtonClassName,
                         'w-full shrink-0 px-3 py-2 text-xs sm:w-auto',
                       )}
-                      title="需要安全会话验证"
+                      title={securitySessionActive ? '退出此设备全部会话' : '验证后退出此设备'}
                     >
                       {actionLoading ? <FaSyncAlt className="animate-spin" /> : <FaSignOutAlt />}
                       {securitySessionActive ? '退出此设备全部会话' : '验证后退出此设备'}

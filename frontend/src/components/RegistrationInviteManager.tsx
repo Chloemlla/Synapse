@@ -251,8 +251,8 @@ const RegistrationInviteManager: React.FC = () => {
 
   const deleteInvite = async (invite: RegistrationInvite) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确认删除邀请码 ${invite.code}？`,
+      title: `删除邀请码「${invite.code}」？`,
+      description: `已使用 ${invite.usedCount}/${invite.maxUses} 次；删除后该邀请码立即失效，其使用记录也不可再查。`,
       tone: 'danger',
       confirmLabel: '删除',
     });

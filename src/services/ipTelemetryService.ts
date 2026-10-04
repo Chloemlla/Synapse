@@ -221,6 +221,23 @@ function markProviderFailure(name: string): void {
 let lastAllFailedWarnAt = 0;
 const ALL_FAILED_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * undici/fetch 的网络失败只把真实原因（DNS / TLS / 拒重定向 / 超时）放在 error.cause，
+ * 只记录 error.message 会恒为 "fetch failed"，多 provider 轮询失败时无从归因。
+ * tsconfig 的 lib 低于 es2022，Error 类型上没有 cause，故显式取值。
+ */
+function describeFetchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const causeMessage =
+    cause instanceof Error
+      ? cause.message
+      : typeof (cause as { message?: unknown } | null | undefined)?.message === "string"
+        ? String((cause as { message: unknown }).message)
+        : "";
+  return causeMessage ? `${message} (cause: ${causeMessage})` : message;
+}
+
 export async function lookupIpLocation(ip: string, timeoutMs = IP_LOCATION_TIMEOUT_MS): Promise<string> {
   const validIp = normalizeIpAddress(ip);
   if (!validIp) return "未知";
@@ -256,7 +273,7 @@ export async function lookupIpLocation(ip: string, timeoutMs = IP_LOCATION_TIMEO
       logger.warn("[IPLocation] Provider lookup failed", {
         provider: provider.name,
         ip: targetIp,
-        error: error instanceof Error ? error.message : String(error),
+        error: describeFetchError(error),
       });
     } finally {
       clearTimeout(timeout);

@@ -11,6 +11,7 @@ import { mongoose } from "../services/mongoService";
 import { ShortUrlService } from "../services/shortUrlService";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
 import { config } from "../config/config";
+import logger from "../utils/logger";
 
 // 允许的 URL 协议白名单（防止 javascript:/data:/file: 等协议导致的开放重定向）
 const ALLOWED_URL_PROTOCOLS = ["http:", "https:"];
@@ -274,7 +275,8 @@ router.post("/public/create", publicCreateLimiter, optionalAdminAuth, async (req
       throw createError;
     }
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "创建失败" });
+    logger.error("[ShortUrl] 公共短链创建失败:", error);
+    return res.status(500).json({ error: "创建失败" });
   }
 });
 

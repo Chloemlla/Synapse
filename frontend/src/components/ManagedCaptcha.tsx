@@ -107,6 +107,8 @@ const ManagedCaptcha = ({
   const [widgetKey, setWidgetKey] = useState(0);
   const [solved, setSolved] = useState(false);
   const [widgetError, setWidgetError] = useState('');
+  // trycap 静默换挑战期间给用户一句可见提示，避免「明明在重试却毫无动静」的困惑。
+  const [rearming, setRearming] = useState(false);
   // 验证成功是终态：成功后面板会卸载控件，而 Cap 控件在 disconnectedCallback 里自己会 reset 一次
   // 并派发 reset 事件。若把这声噪声当真上报，就会变成「解出 → 显示过期 → 重挂 → 又自动解出」的循环。
   // 用 ref 记住终态（同步生效，不跟 setState 的异步调度）——与 CaptchaVerificationPage 同一套做法。
@@ -161,6 +163,7 @@ const ManagedCaptcha = ({
     tryCapRearmCountRef.current = 0;
     setSolved(false);
     setWidgetError('');
+    setRearming(false);
     setWidgetKey((value) => value + 1);
     onCleared?.();
     regenerateSelection();
@@ -172,6 +175,7 @@ const ManagedCaptcha = ({
     (token: string) => {
       if (!providerMode || !token) return;
       setWidgetError('');
+      setRearming(false);
       solvedRef.current = true;
       tryCapRearmCountRef.current = 0;
       setSolved(true);
@@ -192,11 +196,13 @@ const ManagedCaptcha = ({
     if (providerMode === 'trycap' && tryCapRearmCountRef.current < TRY_CAP_REARM_LIMIT) {
       tryCapRearmCountRef.current += 1;
       setWidgetError('');
+      setRearming(true);
       setWidgetKey((value) => value + 1);
       return;
     }
 
     setSolved(false);
+    setRearming(false);
     setWidgetError('验证已过期，请重新完成');
     setWidgetKey((value) => value + 1);
     onCleared?.();
@@ -214,6 +220,7 @@ const ManagedCaptcha = ({
     solvedRef.current = false;
     tryCapRearmCountRef.current = 0;
     setSolved(false);
+    setRearming(false);
     onCleared?.();
 
     if (canRetry) {
@@ -335,6 +342,13 @@ const ManagedCaptcha = ({
               </Suspense>
             )}
           </div>
+
+          {rearming && (
+            <p className="flex items-center gap-2 text-xs text-slate-500" role="status" aria-live="polite">
+              <FaRedo className="h-3 w-3 animate-spin" />
+              正在重试，请稍候…
+            </p>
+          )}
 
           {!solved && (
             <p className="flex items-center gap-2 text-xs text-slate-500">

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -93,6 +93,21 @@ const STATUS_OPTIONS = [
   'bounced',
   'complained',
 ];
+
+// F4-22：下拉与表格里渲染中文名，原始枚举值仍作为 option 的 value 提交给后端。
+const STATUS_LABELS: Record<string, string> = {
+  received: '已接收',
+  testing: '测试中',
+  processed: '已处理',
+  replayed: '已重放',
+  ignored: '已忽略',
+  failed: '失败',
+  delivered: '已投递',
+  bounced: '邮件退回',
+  complained: '投诉',
+};
+
+const statusLabel = (status?: string | null) => (status ? STATUS_LABELS[status] || status : '');
 
 const defaultStats: WebhookStats = {
   total: 0,
@@ -389,14 +404,14 @@ const WebhookEventsManager: React.FC = () => {
   }, [handleFetchSecret, notifySuccess, secretInput, secretKeyInput, setNotification]);
 
   const handleDeleteSecret = useCallback(async () => {
+    const key = secretKeyInput.trim().toUpperCase() || 'DEFAULT';
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: '确认删除该 Resend Webhook 密钥？',
+      title: `删除 Resend Webhook 密钥「${key}」？`,
+      description: '删除后该密钥对应的 Webhook 验签会立即失效，需要重新配置才能继续接收回调。',
       tone: 'danger',
       confirmLabel: '删除',
     });
     if (!ok) return;
-    const key = secretKeyInput.trim().toUpperCase() || 'DEFAULT';
     try {
       setActionLoading('secret-delete');
       await parseApiResponse(
@@ -459,8 +474,8 @@ const WebhookEventsManager: React.FC = () => {
   const handleDelete = useCallback(
     async (id: string) => {
       const ok = await confirm({
-        title: '确认执行该操作？',
-        description: '确认删除该事件记录？',
+        title: `删除事件记录 ${id.slice(0, 8)}…？`,
+        description: '删除后这条 Webhook 事件不可恢复。',
         tone: 'danger',
         confirmLabel: '删除',
       });
@@ -488,10 +503,10 @@ const WebhookEventsManager: React.FC = () => {
   const handleReplay = useCallback(
     async (id: string) => {
       const ok = await confirm({
-        title: '确认执行该操作？',
-        description: '确认重放该事件？可能会触发下游业务副作用。',
+        title: `重放事件 ${id.slice(0, 8)}…？`,
+        description: '会按原始 payload 重新投递到下游，可能触发重复的业务副作用。',
         tone: 'danger',
-        confirmLabel: '确认',
+        confirmLabel: '重放',
       });
       if (!ok) return;
       try {
@@ -569,8 +584,8 @@ const WebhookEventsManager: React.FC = () => {
       return;
     }
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确认删除选中的 ${selectedIds.length} 条事件？`,
+      title: `批量删除 ${selectedIds.length} 条事件记录？`,
+      description: '选中的 Webhook 事件将被永久删除，此操作不可恢复。',
       tone: 'danger',
       confirmLabel: '删除',
     });
@@ -1043,7 +1058,7 @@ const WebhookEventsManager: React.FC = () => {
             >
               <option value="" disabled>批量状态</option>
               {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>{status}</option>
+                <option key={status} value={status}>{statusLabel(status)}</option>
               ))}
             </select>
             )}
@@ -1158,12 +1173,12 @@ const WebhookEventsManager: React.FC = () => {
                     >
                       <option value="">未设置</option>
                       {STATUS_OPTIONS.map((status) => (
-                        <option key={status} value={status}>{status}</option>
+                        <option key={status} value={status}>{statusLabel(status)}</option>
                       ))}
                       {item.status && !STATUS_OPTIONS.includes(item.status) && <option value={item.status}>{item.status}</option>}
                     </select>
                     ) : (
-                      <span className={`inline-flex px-2 py-1 rounded-md border text-xs ${statusClass(item.status)}`}>{item.status || '-'}</span>
+                      <span className={`inline-flex px-2 py-1 rounded-md border text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
                     )}
                   </td>
                   <td className="p-3 text-[#023047]/70 whitespace-nowrap">{formatDate(item.receivedAt)}</td>
@@ -1422,12 +1437,12 @@ function EventCard({
         <select value={item.status || ''} onChange={(event) => onStatusChange(event.target.value)} className={`px-2 py-2 rounded-lg border text-xs ${statusClass(item.status)}`}>
           <option value="">未设置</option>
           {STATUS_OPTIONS.map((status) => (
-            <option key={status} value={status}>{status}</option>
+            <option key={status} value={status}>{statusLabel(status)}</option>
           ))}
           {item.status && !STATUS_OPTIONS.includes(item.status) && <option value={item.status}>{item.status}</option>}
         </select>
         ) : (
-          <span className={`inline-flex items-center px-2 py-2 rounded-lg border text-xs ${statusClass(item.status)}`}>{item.status || '-'}</span>
+          <span className={`inline-flex items-center px-2 py-2 rounded-lg border text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
         )}
         <div className="grid grid-cols-4 gap-2">
           <IconButton title="详情" onClick={onDetail}><Eye className="w-4 h-4" /></IconButton>
@@ -1441,16 +1456,41 @@ function EventCard({
 }
 
 function Modal({ title, onClose, children, width = 'max-w-4xl' }: { title: string; onClose: () => void; children: React.ReactNode; width?: string }) {
+  const titleId = useId();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previouslyFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    containerRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocusedRef.current?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <motion.div className={cn(studioModalOverlayClassName, "z-[9999] bg-black/50 p-3")} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div
-        className={`bg-white/95 backdrop-blur rounded-2xl ${width} w-[95vw] max-h-[90vh] flex flex-col p-4 sm:p-6 border border-[#8ECAE6]/30 shadow-xl`}
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`bg-white/95 backdrop-blur rounded-2xl ${width} w-[95vw] max-h-[90vh] flex flex-col p-4 sm:p-6 border border-[#8ECAE6]/30 shadow-xl outline-none`}
         initial={{ scale: 0.96, y: 10, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.96, y: 10, opacity: 0 }}
       >
         <div className="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
-          <div className="font-semibold text-[#023047]">{title}</div>
+          <div id={titleId} className="font-semibold text-[#023047]">{title}</div>
           <button onClick={onClose} className="p-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10" title="关闭">
             <X className="w-4 h-4" />
           </button>

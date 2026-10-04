@@ -515,7 +515,7 @@ const PrivacyConsentPanel: React.FC = () => {
                       勾选：{entry.agreementsComplete ? '四份齐全' : `缺 ${entry.missingAgreements.length} 份`}
                     </span>
                     <span className="text-slate-400">·</span>
-                    <span title={entry.consentDocumentHash ?? '早期记录没有条文指纹'}>
+                    <span>
                       条文指纹：{entry.documentHashMatchesCurrent ? '与当前一致' : '与当前不一致'}
                     </span>
                     {entry.revokedAt && (

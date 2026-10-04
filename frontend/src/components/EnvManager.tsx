@@ -308,6 +308,16 @@ const EnvManager: React.FC = () => {
     handleSourceModalClose(setShowSourceModal);
   }, []);
 
+  // 数据来源弹窗：Escape 关闭（F4-19）。
+  useEffect(() => {
+    if (!showSourceModal) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleSourceModalCloseWrapper();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [handleSourceModalCloseWrapper, showSourceModal]);
+
   const configurationCurrentIds = new Set(configurationIssues.map((issue) => issue.id));
   const configurationProgressItems = configurationWorkflow?.issues.filter(
     (issue) => !configurationWorkflow.ignoredIds.includes(issue.id),
@@ -562,12 +572,12 @@ const EnvManager: React.FC = () => {
         <AnimatePresence>
           {showSourceModal && (
             <m.div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={modalTrans} onClick={handleSourceModalCloseWrapper} data-source-modal>
-              <m.div className="rounded-2xl border border-slate-200 bg-white/90 backdrop-blur-xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] p-6 sm:p-8 w-full max-w-md mx-4 relative z-[10000] max-h-[90vh] overflow-y-auto overscroll-contain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={modalTrans} onClick={(e) => e.stopPropagation()}>
+              <m.div role="dialog" aria-modal="true" aria-labelledby="env-source-modal-title" className="rounded-2xl border border-slate-200 bg-white/90 backdrop-blur-xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] p-6 sm:p-8 w-full max-w-md mx-4 relative z-[10000] max-h-[90vh] overflow-y-auto overscroll-contain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={modalTrans} onClick={(e) => e.stopPropagation()}>
                 <div className="text-center">
                   <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <FaInfoCircle className="w-8 h-8 text-slate-600" />
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">数据来源</h3>
+                  <h3 id="env-source-modal-title" className="text-xl font-bold text-slate-900 mb-2">数据来源</h3>
                   <p className="text-slate-600 mb-6">{selectedSource}</p>
                   <button onClick={handleSourceModalCloseWrapper} className={studioPrimaryButtonClassName}>确定</button>
                 </div>

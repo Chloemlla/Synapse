@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -114,6 +115,12 @@ const SUB_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'templates', label: '快捷模板', icon: <FaClipboardList /> },
 ];
 
+const TAB_KEYS = SUB_TABS.map(tab => tab.key);
+const HISTORY_FILTER_VALUES = HISTORY_FILTER_OPTIONS.map(option => option.value);
+// URL 键名带前缀：`/admin` shell 的 ?tab= 是路由级参数，不能复用。
+const TAB_QUERY_KEY = 'broadcastTab';
+const AUDIENCE_QUERY_KEY = 'broadcastAudience';
+
 // ========== 工具函数 ==========
 
 const api = (path: string, opts?: RequestInit) =>
@@ -164,7 +171,11 @@ const formatRelativeDuration = (timestamp?: number) => {
 // ========== 组件 ==========
 
 const BroadcastManager: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabKey>('broadcast');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const tab = searchParams.get(TAB_QUERY_KEY);
+    return TAB_KEYS.includes(tab as TabKey) ? (tab as TabKey) : 'broadcast';
+  });
   const { setNotification } = useNotification();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -205,7 +216,12 @@ const BroadcastManager: React.FC = () => {
   // --- 广播历史 ---
   const [history, setHistory] = useState<BroadcastLogItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historyAudienceFilter, setHistoryAudienceFilter] = useState<HistoryAudienceFilter>('any');
+  const [historyAudienceFilter, setHistoryAudienceFilter] = useState<HistoryAudienceFilter>(() => {
+    const audience = searchParams.get(AUDIENCE_QUERY_KEY);
+    return HISTORY_FILTER_VALUES.includes(audience as HistoryAudienceFilter)
+      ? (audience as HistoryAudienceFilter)
+      : 'any';
+  });
 
   const directTargetUserIds = useMemo(() => parseUserIds(directUserIds), [directUserIds]);
   const availableChannels = useMemo(() => {
@@ -297,10 +313,10 @@ const BroadcastManager: React.FC = () => {
 
   const handleKick = async (userId: string) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定断开用户 ${userId} 的全部在线连接？`,
+      title: `强制下线用户 ${userId}？`,
+      description: '将断开该用户当前的全部在线连接，其页面上的实时推送会立即中断，用户可重新登录恢复。',
       tone: 'danger',
-      confirmLabel: '确认',
+      confirmLabel: '断开连接',
     });
     if (!ok) return;
     setKickingUser(userId);
@@ -335,6 +351,18 @@ const BroadcastManager: React.FC = () => {
     if (activeTab === 'online') fetchClients();
     if (activeTab === 'history') fetchHistory();
   }, [activeTab, fetchClients, fetchHistory]);
+
+  // F4-18：把当前 tab 与历史筛选写回 URL，刷新或分享链接后可复原。
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (activeTab === 'broadcast') next.delete(TAB_QUERY_KEY);
+      else next.set(TAB_QUERY_KEY, activeTab);
+      if (historyAudienceFilter === 'any') next.delete(AUDIENCE_QUERY_KEY);
+      else next.set(AUDIENCE_QUERY_KEY, historyAudienceFilter);
+      return next;
+    }, { replace: true });
+  }, [activeTab, historyAudienceFilter, setSearchParams]);
 
   const applyTemplate = (tpl: typeof QUICK_TEMPLATES[0]) => {
     setMessage(tpl.message);

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils/cn';
 import {
@@ -236,6 +237,12 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                         <h3 className="mb-3 text-lg font-semibold text-slate-900">未设置验证方式</h3>
                                         <p className="mb-2 text-slate-600">检测到您还未设置任何二次验证方式</p>
                                         <p className="text-sm text-slate-500">请先在设置中启用验证方式</p>
+                                        <Link
+                                            to="/profile"
+                                            className={cn(authSecondaryButtonClassName, 'mt-6 inline-flex justify-center')}
+                                        >
+                                            前往账户安全设置
+                                        </Link>
                                     </motion.div>
                                 )}
                                 

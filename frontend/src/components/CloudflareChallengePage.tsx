@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { FaArrowLeft, FaCheckCircle, FaExclamationTriangle, FaRedo, FaShieldAlt } from 'react-icons/fa';
+import { Link, useSearchParams } from 'react-router-dom';
+import { FaArrowLeft, FaArrowRight, FaCheckCircle, FaExclamationTriangle, FaRedo, FaShieldAlt } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
 import ManagedCaptcha, {
   type ManagedCaptchaChallenge,
@@ -17,6 +17,13 @@ const CloudflareChallengePage: React.FC = () => {
   // 失败原因：后端原文优先，其次给可行动的中文文案（技术细节只进 console）
   const [failureMessage, setFailureMessage] = React.useState('');
   const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+  // 验证通过后的前进目标：沿用全站既有的 redirectTo 查询参数（登录页同款约定），
+  // 只接受站内相对路径，缺省回首页，避免把用户带去第三方站点。
+  const [searchParams] = useSearchParams();
+  const continueTarget = React.useMemo(() => {
+    const raw = searchParams.get('redirectTo') || '';
+    return raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
+  }, [searchParams]);
   // 人机验证供应商由 /admin/captcha-providers 统一调控（三家共用同一套下发链路）。
   const [captchaStatus, setCaptchaStatus] = React.useState<ManagedCaptchaStatus>({
     required: false,
@@ -118,9 +125,19 @@ const CloudflareChallengePage: React.FC = () => {
             <div className="space-y-4">
               <div className={cn(studioSoftBadgeClassName, "min-h-[78px] border px-3 py-4")}>
                 {verificationState === 'verified' ? (
-                  <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                    <FaCheckCircle className="h-5 w-5" />
-                    验证通过
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                      <FaCheckCircle className="h-5 w-5" />
+                      验证通过
+                    </div>
+                    {/* 通过后必须有明确的前进动作，否则用户只能返回首页，等于白验证一次 */}
+                    <Link
+                      to={continueTarget}
+                      className={cn(studioMutedPrimaryButtonClassName, "bg-[#FFB703] px-3 py-2 text-[#023047] hover:bg-[#FB8500]")}
+                    >
+                      <FaArrowRight className="h-3.5 w-3.5" />
+                      继续访问
+                    </Link>
                   </div>
                 ) : verificationState === 'failed' ? (
                   // 页面已判定失败时不再渲染控件，避免控件自己还显示「人机验证通过」造成两态矛盾

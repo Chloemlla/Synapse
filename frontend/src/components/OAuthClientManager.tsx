@@ -340,10 +340,10 @@ const OAuthClientManager: React.FC = () => {
 
   const rotateSecret = async (client: OAuthClient) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定轮换 ${client.name} 的 client secret？既有 token 会被吊销。`,
+      title: `轮换「${client.name}」的客户端密钥？`,
+      description: '轮换后既有 token 会被吊销，使用旧密钥的集成需要立即更新。',
       tone: 'danger',
-      confirmLabel: '确认',
+      confirmLabel: '轮换密钥',
     });
     if (!ok) return;
     try {
@@ -358,10 +358,10 @@ const OAuthClientManager: React.FC = () => {
 
   const deleteClient = async (client: OAuthClient) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定停用 ${client.name}？相关授权和 token 会被吊销。`,
+      title: `停用 OAuth 客户端「${client.name}」？`,
+      description: '相关授权与已签发的 token 都会被吊销。',
       tone: 'danger',
-      confirmLabel: '确认',
+      confirmLabel: '停用',
     });
     if (!ok) return;
     try {
@@ -375,10 +375,10 @@ const OAuthClientManager: React.FC = () => {
 
   const revokeGrant = async (grant: OAuthGrant) => {
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定撤销 ${grant.client?.name || grant.clientId} 的授权？`,
+      title: `撤销「${grant.client?.name || grant.clientId}」的授权？`,
+      description: '撤销后该应用将无法再访问此账号，需要重新走一次授权流程。',
       tone: 'danger',
-      confirmLabel: '确认',
+      confirmLabel: '撤销授权',
     });
     if (!ok) return;
     try {

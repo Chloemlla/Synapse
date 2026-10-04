@@ -22,7 +22,12 @@ export function ProfileSidebarSummary({
   linkedAccounts,
 }: ProfileSidebarSummaryProps) {
   const boundAccountCount = linkedAccounts.filter((account) => account.status === "bound").length;
-  const accountStatusLabel = profile?.accountStatus === "suspended" ? "已暂停" : "正常";
+  const accountStatusLabel =
+    profile === null
+      ? "未知"
+      : profile.accountStatus === "suspended"
+        ? "已暂停"
+        : "正常";
 
   return (
     <>

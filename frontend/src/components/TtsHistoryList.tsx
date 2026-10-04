@@ -88,6 +88,8 @@ interface TtsHistoryListProps {
   audioElement: HTMLAudioElement | null;
   historyAudioElement: HTMLAudioElement | null;
   onRefresh: () => void;
+  /** 空态「去生成」入口：回到本页上方的生成表单 */
+  onGoGenerate?: () => void;
   onTogglePlayback: (record: TtsHistoryRecord) => void;
   onDownload: (record: TtsHistoryRecord) => void;
   onHistoryPlay: () => void;
@@ -124,6 +126,7 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   audioElement,
   historyAudioElement,
   onRefresh,
+  onGoGenerate,
   onTogglePlayback,
   onDownload,
   onHistoryPlay,
@@ -132,6 +135,7 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   onDeleteRecord,
 }) => {
   const [tagFilter, setTagFilter] = useState<string>(ALL_TAGS_FILTER);
+  const [audioErrorId, setAudioErrorId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id: string; draft: HistoryDraft } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -293,11 +297,27 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
           </div>
         ) : history.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-            暂无生成记录
+            <p>暂无生成记录</p>
+            {onGoGenerate ? (
+              <button
+                type="button"
+                onClick={onGoGenerate}
+                className={cn(studioPrimaryButtonClassName, "mt-3")}
+              >
+                去生成语音
+              </button>
+            ) : null}
           </div>
         ) : visibleHistory.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-            「{tagFilter}」标签下暂无记录
+            <p>「{tagFilter}」标签下暂无记录</p>
+            <button
+              type="button"
+              onClick={() => setTagFilter(ALL_TAGS_FILTER)}
+              className={cn(studioGhostButtonClassName, "mt-3")}
+            >
+              清除筛选
+            </button>
           </div>
         ) : (
           <div className="mt-5 grid gap-3 lg:grid-cols-2">
@@ -383,11 +403,20 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
                         controls
                         preload="none"
                         className="w-full"
-                        onPlay={onHistoryPlay}
+                        onPlay={() => {
+                          setAudioErrorId(null);
+                          onHistoryPlay();
+                        }}
+                        onError={() => setAudioErrorId(record.id)}
                       >
                         <source src={record.audioUrl} type={record.audioMimeType || getAudioMimeType(record.outputFormat)} />
                         您的浏览器不支持音频播放
                       </audio>
+                      {audioErrorId === record.id ? (
+                        <p role="alert" className="mt-2 break-words text-xs leading-5 text-rose-600">
+                          音频加载失败，可能已被清理或暂不可用。请稍后重试，或点击下方「下载」保存后本地播放。
+                        </p>
+                      ) : null}
                     </div>
                   )}
 

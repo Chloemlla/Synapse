@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   studioFieldClassName,
@@ -47,6 +47,16 @@ export function RevealPasswordModal({
   onChange,
   onVerify,
 }: RevealPasswordModalProps) {
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!state.open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [state.open, onClose]);
+
   if (!state.open || !state.targetUser) return null;
 
   return (
@@ -61,9 +71,12 @@ export function RevealPasswordModal({
         initial={{ scale: 0.95, y: 20, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.95, y: 20, opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reveal-password-title"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-slate-800">
+          <h3 id="reveal-password-title" className="text-lg font-semibold text-slate-800">
             查看密码 - {state.targetUser.username}
           </h3>
           <motion.button
@@ -71,6 +84,7 @@ export function RevealPasswordModal({
             onClick={onClose}
             whileHover={hoverScale?.(1.02)}
             whileTap={tapScale?.(0.95)}
+            aria-label="关闭"
           >
             ✕
           </motion.button>

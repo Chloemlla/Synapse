@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { validateTOTPToken, validateBackupCode, cleanTOTPToken, cleanBackupCode } from '../utils/totpUtils';
 import { FaLock, FaInfoCircle } from 'react-icons/fa';
@@ -106,6 +106,16 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
     onClose();
   };
 
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -125,6 +135,9 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
           transition={{ duration: 0.4, type: "spring", stiffness: 300, damping: 25 }}
           className={`${authModalCardClassName} max-h-[90vh] overflow-y-auto overscroll-contain`}
           onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="totp-verification-title"
         >
           {/* 可滚动的内容容器 */}
           <div className="p-4 sm:p-6 md:p-8 overflow-y-auto max-h-[85vh]">
@@ -146,7 +159,7 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
                     <FaLock className="h-8 w-8 text-slate-600" />
                   </motion.div>
                 </div>
-                <h2 className="mb-2 text-2xl font-semibold text-slate-900">二次验证</h2>
+                <h2 id="totp-verification-title" className="mb-2 text-2xl font-semibold text-slate-900">二次验证</h2>
                 <div className="text-slate-600">请输入验证码完成登录</div>
               </div>
             </motion.div>
@@ -336,7 +349,11 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3, delay: 1.2 }}
                   >
-                    如果无法使用认证器，请使用备用恢复码登录。如果都没有，请联系管理员。
+                    如果无法使用认证器，请使用备用恢复码登录。如果两者都没有，请发送邮件到{' '}
+                    <a href="mailto:support@chloemlla.com" className="font-medium text-slate-900 underline">
+                      support@chloemlla.com
+                    </a>{' '}
+                    联系支持申诉。
                   </motion.p>
                 </div>
               </div>

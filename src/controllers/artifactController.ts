@@ -8,6 +8,9 @@ import { firstString, firstStringOr } from "../utils/httpParam";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 
+// 列表分页上限（对齐仓库通用 100 档：coinFlipService/auditLogService/crashReportQuery）。
+const MAX_ARTIFACT_LIST_LIMIT = 100;
+
 function optionalNumber(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
 
@@ -121,10 +124,11 @@ export class ArtifactController {
       });
     } catch (error: any) {
       logger.error("[ArtifactController] createArtifact error:", error);
-      res.status(isArtifactValidationError(error) ? 400 : 500).json({
-        success: false,
-        error: error.message || "创建失败",
-      });
+      if (isArtifactValidationError(error)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: "创建失败" });
     }
   }
 
@@ -182,7 +186,7 @@ export class ArtifactController {
       logger.error("[ArtifactController] getArtifact error:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "获取失败",
+        error: "获取失败",
       });
     }
   }
@@ -231,10 +235,11 @@ export class ArtifactController {
       });
     } catch (error: any) {
       logger.error("[ArtifactController] updateArtifact error:", error);
-      res.status(isArtifactValidationError(error) ? 400 : 500).json({
-        success: false,
-        error: error.message || "更新失败",
-      });
+      if (isArtifactValidationError(error)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: "更新失败" });
     }
   }
 
@@ -272,7 +277,7 @@ export class ArtifactController {
       logger.error("[ArtifactController] deleteArtifact error:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "删除失败",
+        error: "删除失败",
       });
     }
   }
@@ -292,7 +297,7 @@ export class ArtifactController {
       }
 
       const page = parseInt(firstStringOr(req.query.page, "1"), 10) || 1;
-      const limit = parseInt(firstStringOr(req.query.limit, "20"), 10) || 20;
+      const limit = Math.min(Math.max(parseInt(firstStringOr(req.query.limit, "20"), 10) || 20, 1), MAX_ARTIFACT_LIST_LIMIT);
       const sort = firstStringOr(req.query.sort, "createdAt");
       const order = firstString(req.query.order) === "asc" ? "asc" : "desc";
 
@@ -314,7 +319,7 @@ export class ArtifactController {
       logger.error("[ArtifactController] listArtifacts error:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "获取列表失败",
+        error: "获取列表失败",
       });
     }
   }

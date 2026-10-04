@@ -157,6 +157,18 @@ const EmailTraceability: React.FC = () => {
     setViewMode("text");
   };
 
+  // 邮件详情弹窗：Escape 关闭（F4-19）。
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleCloseDetail();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // handleCloseDetail 每次渲染都会重建，仅依赖 detailOpen 避免反复重订阅
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailOpen]);
+
   const handleCopyContent = async () => {
     if (!detailRecord?.content) return;
     try {
@@ -388,6 +400,9 @@ const EmailTraceability: React.FC = () => {
       {detailOpen && (
         <div className={cn(studioModalOverlayClassName, "z-50 bg-black/40")} onClick={handleCloseDetail}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="email-traceability-detail-title"
             className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -398,7 +413,7 @@ const EmailTraceability: React.FC = () => {
                   <FaEnvelope className="size-3.5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">邮件详情</h3>
+                  <h3 id="email-traceability-detail-title" className="text-base font-bold text-slate-900">邮件详情</h3>
                   <p className="text-xs text-slate-400">完整邮件内容查看</p>
                 </div>
               </div>

@@ -80,6 +80,7 @@ export class MarkdownArticleService {
     return ensureConnection(async () => {
       const articles = await MarkdownArticleModel.find({ status: "published" })
         .sort({ publishedAt: -1, updatedAt: -1 })
+        .limit(500)
         .select("title slug excerpt status authorName publishedAt createdAt updatedAt")
         .lean()
         .exec();
@@ -102,6 +103,7 @@ export class MarkdownArticleService {
     return ensureConnection(async () => {
       const articles = await MarkdownArticleModel.find({})
         .sort({ updatedAt: -1 })
+        .limit(500)
         .select("title slug excerpt status authorName publishedAt createdAt updatedAt")
         .lean()
         .exec();

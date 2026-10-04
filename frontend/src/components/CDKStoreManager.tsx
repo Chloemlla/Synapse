@@ -807,10 +807,9 @@ export default function CDKStoreManager() {
   };
 
   const handleDelete = async (cdk: CDK) => {
-    // 使用浏览器原生确认对话框，因为这是关键操作
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定要删除CDK"${cdk.code}"吗？此操作不可撤销。`,
+      title: `删除 CDK「${cdk.code}」？`,
+      description: '删除后该兑换码立即失效且无法恢复。',
       tone: 'danger',
       confirmLabel: '删除',
     });
@@ -887,8 +886,8 @@ export default function CDKStoreManager() {
 
     // 使用浏览器原生确认对话框，因为这是关键操作
     const ok = await confirm({
-      title: '确认执行该操作？',
-      description: `确定要删除以下${selectedCDKs.size}个CDK吗？\n${cdkCodes}\n\n此操作不可撤销。`,
+      title: `批量删除 ${selectedCDKs.size} 个 CDK？`,
+      description: `将删除以下兑换码：\n${cdkCodes}\n\n此操作不可撤销。`,
       tone: 'danger',
       confirmLabel: '删除',
     });

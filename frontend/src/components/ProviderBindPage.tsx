@@ -156,6 +156,9 @@ const ProviderBindPage: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    // 裸 fetch 不走 axios，没有 api.ts 的 15s 超时；超时/卸载都中止，避免按钮永久 loading
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
     const loadSession = async () => {
       if (!sessionToken) {
@@ -172,6 +175,7 @@ const ProviderBindPage: React.FC = () => {
           },
           credentials: "include",
           body: JSON.stringify({ sessionToken }),
+          signal: controller.signal,
         });
         const data = (await response.json().catch(() => null)) as SessionResponse | null;
 
@@ -192,9 +196,16 @@ const ProviderBindPage: React.FC = () => {
         setSyncAvatar(Boolean(data.session.avatarUrl));
       } catch (sessionError) {
         if (!cancelled) {
-          setError(sessionError instanceof Error ? sessionError.message : "第三方登录绑定会话加载失败。");
+          setError(
+            sessionError instanceof DOMException && sessionError.name === "AbortError"
+              ? "读取绑定会话超时，请检查网络后返回登录页重试。"
+              : sessionError instanceof Error
+                ? sessionError.message
+                : "第三方登录绑定会话加载失败。",
+          );
         }
       } finally {
+        window.clearTimeout(timeoutId);
         if (!cancelled) {
           setLoading(false);
         }
@@ -205,6 +216,8 @@ const ProviderBindPage: React.FC = () => {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [sessionToken]);
 
@@ -253,6 +266,9 @@ const ProviderBindPage: React.FC = () => {
     setSubmitting(true);
     setError("");
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
     try {
       const response = await fetch(`${getApiBaseUrl()}/api/auth/provider-bind/confirm`, {
         method: "POST",
@@ -270,6 +286,7 @@ const ProviderBindPage: React.FC = () => {
             avatar: syncAvatar,
           },
         }),
+        signal: controller.signal,
       });
       const data = (await response.json().catch(() => null)) as ConfirmResponse | null;
 
@@ -308,8 +325,15 @@ const ProviderBindPage: React.FC = () => {
 
       window.location.replace("/");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "第三方登录绑定失败。");
+      setError(
+        submitError instanceof DOMException && submitError.name === "AbortError"
+          ? "绑定请求超时，请检查网络后重试。"
+          : submitError instanceof Error
+            ? submitError.message
+            : "第三方登录绑定失败。",
+      );
     } finally {
+      window.clearTimeout(timeoutId);
       setSubmitting(false);
     }
   };

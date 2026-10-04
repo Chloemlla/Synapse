@@ -422,6 +422,8 @@ export const DeepLXTranslatorPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSwap}
+                    aria-label="交换源语言与目标语言"
+                    title="交换源语言与目标语言"
                     className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white transition hover:bg-slate-800 active:scale-[0.98]"
                   >
                     <FaExchangeAlt />
@@ -623,6 +625,8 @@ export const DeepLXTranslatorPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSwap}
+                aria-label="交换源语言与目标语言"
+                title="交换源语言与目标语言"
                 className="absolute left-1/2 top-1/2 z-10 hidden h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:rotate-180 hover:text-slate-900 lg:flex"
               >
                 <FaExchangeAlt />

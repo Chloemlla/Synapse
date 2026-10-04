@@ -25,7 +25,7 @@ export const imageDataController = {
       console.error("验证图片数据失败:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "验证失败",
+        error: "验证失败",
       });
     }
   },
@@ -52,7 +52,7 @@ export const imageDataController = {
       console.error("批量验证图片数据失败:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "批量验证失败",
+        error: "批量验证失败",
       });
     }
   },
@@ -86,7 +86,7 @@ export const imageDataController = {
       console.error("获取图片数据信息失败:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "获取失败",
+        error: "获取失败",
       });
     }
   },
@@ -122,7 +122,7 @@ export const imageDataController = {
       console.error("记录图片数据失败:", error);
       res.status(500).json({
         success: false,
-        error: error.message || "记录失败",
+        error: "记录失败",
       });
     }
   },

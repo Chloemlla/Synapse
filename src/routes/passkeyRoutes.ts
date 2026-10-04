@@ -131,9 +131,7 @@ router.post("/register/start", passkeyAuthLimiter, authenticateToken, requireTwo
         return res.status(400).json({ error: err.message });
       }
       logger.error("[Passkey] generateRegistrationOptions error", { userId, credentialName, clientOrigin, err });
-      return res
-        .status(500)
-        .json({ error: "生成注册选项失败", details: err instanceof Error ? err.message : String(err) });
+      return res.status(500).json({ error: "生成注册选项失败" });
     }
     logger.info("[Passkey] /register/start options", { userId, options });
 
@@ -158,9 +156,7 @@ router.post("/register/start", passkeyAuthLimiter, authenticateToken, requireTwo
       body: sanitizeLogValue(req.body),
       headers: sanitizeLogValue(req.headers),
     });
-    res
-      .status(500)
-      .json({ error: "生成 Passkey 注册选项失败", details: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: "生成 Passkey 注册选项失败" });
   }
 });
 
@@ -264,7 +260,7 @@ router.post("/authenticate/start/discoverable", passkeyAuthLimiter, async (req, 
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: error?.message || "生成认证选项失败" });
+    res.status(500).json({ error: "生成认证选项失败" });
   }
 });
 
@@ -332,8 +328,7 @@ router.post("/authenticate/start", passkeyAuthLimiter, async (req, res) => {
       username: req.body.username,
     });
 
-    const errorMessage = error?.message || "生成 Passkey 认证选项失败";
-    res.status(500).json({ error: errorMessage });
+    res.status(500).json({ error: "生成 Passkey 认证选项失败" });
   }
 });
 
@@ -484,7 +479,7 @@ router.post("/authenticate/finish/discoverable", passkeyAuthLimiter, async (req,
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: error?.message || "完成认证失败" });
+    res.status(500).json({ error: "完成认证失败" });
   }
 });
 
@@ -600,8 +595,7 @@ router.post("/authenticate/finish", passkeyAuthLimiter, async (req, res) => {
 
     // G2-09: 认证路径绝不自动改写/删除用户凭证数据。
     // 需要修复走显式入口：超管 POST /api/passkey/admin/data/repair-all。
-    const errorMessage = error?.message || "完成 Passkey 认证失败";
-    res.status(500).json({ error: errorMessage });
+    res.status(500).json({ error: "完成 Passkey 认证失败" });
   }
 });
 

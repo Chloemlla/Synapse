@@ -45,6 +45,16 @@ export const PenaltyAppealHost: React.FC = () => {
     });
   }, []);
 
+  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
+  useEffect(() => {
+    if (!payload) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPayload(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [payload]);
+
   const ticketEnabled = payload?.ticketChannelEnabled !== false && payload?.kind !== 'ticket_permission_ban';
   const mailHref = useMemo(() => (payload ? buildMailHref(payload) : `mailto:${SUPPORT_EMAIL}`), [payload]);
   const supportEmail = payload?.supportEmail || SUPPORT_EMAIL;
@@ -67,11 +77,15 @@ export const PenaltyAppealHost: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="penalty-appeal-title"
           >
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
                 <div className={studioEyebrowClassName}>Penalty Appeal</div>
                 <h3
+                  id="penalty-appeal-title"
                   className="mt-1 text-xl font-semibold text-slate-900"
                   style={{ fontFamily: studioDisplayFont }}
                 >

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FaBan,
   FaChevronLeft,
   FaChevronRight,
   FaCopy,
@@ -10,12 +9,13 @@ import {
   FaSearch,
   FaSync,
   FaTachometerAlt,
-  FaTrash,
   FaUnlock,
   FaUserShield,
 } from 'react-icons/fa';
 import { turnstileApi, type IPBan, type IPBanListSummary } from '../../api/turnstile';
 import { useNotification } from '../Notification';
+import { useConfirm } from '../confirm/ConfirmDialogProvider';
+import { useSearchParams } from 'react-router-dom';
 import { getBackendErrorMessage } from '../../utils/backendError';
 import { buildCsv, csvFileStamp, downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
@@ -32,6 +32,30 @@ type SortField = 'bannedAt' | 'expiresAt' | 'violationCount' | 'ipAddress';
 type SortOrder = 'asc' | 'desc';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
+const STATUS_FILTERS: StatusFilter[] = ['all', 'active', 'expired'];
+const SORT_FIELDS: SortField[] = ['bannedAt', 'expiresAt', 'violationCount', 'ipAddress'];
+
+/** 从 URL 还原筛选/页码，刷新或分享链接后不丢（F4-18）。 */
+const readStatusFilter = (params: URLSearchParams): StatusFilter => {
+  const value = params.get('status');
+  return value && STATUS_FILTERS.includes(value as StatusFilter) ? (value as StatusFilter) : 'all';
+};
+
+const readSortField = (params: URLSearchParams): SortField => {
+  const value = params.get('sort');
+  return value && SORT_FIELDS.includes(value as SortField) ? (value as SortField) : 'bannedAt';
+};
+
+const readPageSizeParam = (params: URLSearchParams): number => {
+  const value = Number(params.get('pageSize'));
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(value) ? value : 20;
+};
+
+const readPageParam = (params: URLSearchParams): number => {
+  const value = Number(params.get('page'));
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+};
 
 const formatDateTime = (value?: string | null): string => {
   if (!value) return '—';
@@ -70,6 +94,7 @@ interface Props {
  */
 const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => {
   const { setNotification } = useNotification();
+  const confirmDialog = useConfirm();
   // `onSummary` 由父组件传入；用 ref 承接，避免把回调身份放进 load 的依赖里
   // ——父组件每渲染一次都会给出新函数，那样 load 会变、加载 effect 会重跑，形成死循环。
   const onSummaryRef = useRef<Props['onSummary']>(undefined);
@@ -78,17 +103,17 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
   }, [onSummary]);
   const [bans, setBans] = useState<IPBan[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(20);
-  const [keyword, setKeyword] = useState('');
-  const [debouncedKeyword, setDebouncedKeyword] = useState('');
-  const [status, setStatus] = useState<StatusFilter>('all');
-  const [sort, setSort] = useState<SortField>('bannedAt');
-  const [order, setOrder] = useState<SortOrder>('desc');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(() => readPageParam(searchParams));
+  const [pageSize, setPageSize] = useState<number>(() => readPageSizeParam(searchParams));
+  const [keyword, setKeyword] = useState(() => searchParams.get('q') ?? '');
+  const [debouncedKeyword, setDebouncedKeyword] = useState(() => searchParams.get('q') ?? '');
+  const [status, setStatus] = useState<StatusFilter>(() => readStatusFilter(searchParams));
+  const [sort, setSort] = useState<SortField>(() => readSortField(searchParams));
+  const [order, setOrder] = useState<SortOrder>(() => (searchParams.get('order') === 'asc' ? 'asc' : 'desc'));
   const [loading, setLoading] = useState(false);
   const [busyIp, setBusyIp] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [confirm, setConfirm] = useState<{ title: string; description: string; action: () => Promise<void> } | null>(null);
 
   // 关键词防抖：输入每个字符都打一次接口既浪费 adminLimiter 配额，也让列表闪。
   useEffect(() => {
@@ -96,10 +121,27 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
     return () => clearTimeout(timer);
   }, [keyword]);
 
-  // 筛选条件变化时回到第 1 页，否则会停在一个空页上。
+  // 筛选条件变化时回到第 1 页，否则会停在一个空页上；首次挂载保留 URL 里的页码。
+  const filtersMountedRef = useRef(false);
   useEffect(() => {
+    if (!filtersMountedRef.current) {
+      filtersMountedRef.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedKeyword, status, sort, order, pageSize]);
+
+  // 筛选/页码写入 URL（F4-18）。
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (debouncedKeyword) params.set('q', debouncedKeyword);
+    if (status !== 'all') params.set('status', status);
+    if (sort !== 'bannedAt') params.set('sort', sort);
+    if (order !== 'desc') params.set('order', order);
+    if (pageSize !== 20) params.set('pageSize', String(pageSize));
+    if (page > 1) params.set('page', String(page));
+    setSearchParams(params, { replace: true });
+  }, [debouncedKeyword, order, page, pageSize, setSearchParams, sort, status]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,41 +189,41 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
     }
   };
 
-  const unbanOne = (ip: string) => {
-    setConfirm({
+  const unbanOne = async (ip: string) => {
+    const ok = await confirmDialog({
       title: '解封该 IP',
       description: `确认解除 ${ip} 的封禁？该地址将立即恢复访问。`,
-      action: async () => {
-        setBusyIp(ip);
-        try {
-          await turnstileApi.unbanIP(ip);
-          setNotification({ type: 'success', message: `已解除 ${ip} 的封禁` });
-          await load();
-        } catch (error) {
-          setNotification({ type: 'error', message: getBackendErrorMessage(error, '解封失败') });
-        } finally {
-          setBusyIp(null);
-        }
-      },
+      confirmLabel: '解封',
     });
+    if (!ok) return;
+    setBusyIp(ip);
+    try {
+      await turnstileApi.unbanIP(ip);
+      setNotification({ type: 'success', message: `已解除 ${ip} 的封禁` });
+      await load();
+    } catch (error) {
+      setNotification({ type: 'error', message: getBackendErrorMessage(error, '解封失败') });
+    } finally {
+      setBusyIp(null);
+    }
   };
 
-  const unbanSelected = () => {
+  const unbanSelected = async () => {
     if (selected.length === 0) return;
-    setConfirm({
+    const ok = await confirmDialog({
       title: `批量解封 ${selected.length} 个地址`,
       description: `将解除：${selected.slice(0, 5).join('、')}${selected.length > 5 ? ' 等' : ''}`,
-      action: async () => {
-        try {
-          const result = await turnstileApi.unbanIPs(selected);
-          setNotification({ type: 'success', message: `批量解封完成，解除 ${result.unbannedCount} 个地址` });
-          setSelected([]);
-          await load();
-        } catch (error) {
-          setNotification({ type: 'error', message: getBackendErrorMessage(error, '批量解封失败') });
-        }
-      },
+      confirmLabel: '解封',
     });
+    if (!ok) return;
+    try {
+      const result = await turnstileApi.unbanIPs(selected);
+      setNotification({ type: 'success', message: `批量解封完成，解除 ${result.unbannedCount} 个地址` });
+      setSelected([]);
+      await load();
+    } catch (error) {
+      setNotification({ type: 'error', message: getBackendErrorMessage(error, '批量解封失败') });
+    }
   };
 
   const exportCsv = () => {
@@ -446,35 +488,6 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
           </button>
         </div>
       </div>
-
-      {confirm ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-xl">
-            <h4 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-              <FaBan className="h-4 w-4 text-rose-500" aria-hidden="true" />
-              {confirm.title}
-            </h4>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{confirm.description}</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setConfirm(null)} className={studioSecondaryButtonClassName}>
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const action = confirm.action;
-                  setConfirm(null);
-                  void action();
-                }}
-                className={cn(studioSecondaryButtonClassName, 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100')}
-              >
-                <FaTrash className="h-3.5 w-3.5" />
-                确认执行
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {loading && bans.length === 0 ? (
         <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-400">

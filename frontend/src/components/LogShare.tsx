@@ -228,6 +228,8 @@ const LogShare: React.FC = React.memo(() => {
   const [logsPageSize, setLogsPageSize] = useState(DEFAULT_LOGS_PAGE_SIZE);
   const [showFullLogContent, setShowFullLogContent] = useState(false);
   const [isLoadingAllLogs, setIsLoadingAllLogs] = useState(false);
+  const [allLogsError, setAllLogsError] = useState('');
+  const [hasLoadedAllLogs, setHasLoadedAllLogs] = useState(false);
   const [selectedLogIndex, setSelectedLogIndex] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingLog, setEditingLog] = useState<{ id: string, fileName?: string, note?: string } | null>(null);
@@ -508,10 +510,13 @@ const LogShare: React.FC = React.memo(() => {
     if (uploadResult && uploadResult.link) {
       // 安全地复制到剪贴板，处理焦点问题
       navigator.clipboard.writeText(uploadResult.link).then(() => {
+        // F5-45：自动复制成功才置真，让「已自动复制」提示真实反映结果
+        setCopied(true);
         setNotification({ message: '上传成功，链接已复制', type: 'success' });
       }).catch((error) => {
+        setCopied(false);
         console.log('剪贴板复制失败:', error);
-        setNotification({ message: '上传成功，但链接复制失败', type: 'success' });
+        setNotification({ message: '上传成功，但链接复制失败，请手动复制', type: 'warning' });
       });
     }
   }, [uploadResult, setNotification]);
@@ -538,6 +543,7 @@ const LogShare: React.FC = React.memo(() => {
     setError('');
     setSuccess('');
     setUploadResult(null);
+    setCopied(false);
 
     // 客户端文件大小验证
     if (file && file.size > 10 * 1024 * 1024) {
@@ -661,6 +667,7 @@ const LogShare: React.FC = React.memo(() => {
   // 获取所有日志列表
   const loadAllLogs = async () => {
     setIsLoadingAllLogs(true);
+    setAllLogsError('');
     try {
       const res = await axios.get(getApiBaseUrl() + '/api/sharelog/all');
 
@@ -671,9 +678,11 @@ const LogShare: React.FC = React.memo(() => {
       setSelectedIds([]);
       setNotification({ message: '日志列表加载成功', type: 'success' });
     } catch (e: any) {
-      setNotification({ message: e.response?.data?.error || '加载日志列表失败', type: 'error' });
+      // F5-44：失败保留内联错误与重试入口，不再只依赖 3 秒 toast
+      setAllLogsError(e.response?.data?.error || '加载日志列表失败，请重试');
     } finally {
       setIsLoadingAllLogs(false);
+      setHasLoadedAllLogs(true);
     }
   };
 
@@ -1105,8 +1114,26 @@ const LogShare: React.FC = React.memo(() => {
                 )}
               </div>
 
-              {/* 所有日志列表 */}
-              {allLogs.length > 0 && (
+              {/* 所有日志列表：F5-44 补齐加载骨架 / 内联错误与重试 / 空态 */}
+              {isLoadingAllLogs ? (
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-4" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-12 animate-pulse rounded-xl bg-slate-100" />
+                  ))}
+                </div>
+              ) : allLogsError ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
+                  <span>{allLogsError}</span>
+                  <button type="button" onClick={loadAllLogs} className={secondaryButtonClass}>
+                    <FaSync className="text-xs" />
+                    重试
+                  </button>
+                </div>
+              ) : hasLoadedAllLogs && allLogs.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-6 text-center text-sm text-slate-500">
+                  暂无上传记录，先上传一条日志。
+                </div>
+              ) : allLogs.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}

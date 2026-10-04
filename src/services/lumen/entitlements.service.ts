@@ -133,7 +133,12 @@ export async function verifyGooglePurchase(
   // codeql[js/sql-injection] purchaseToken is a static-key equality filter value in a Mongoose findOne; no operator/key injection possible
   const existing = await Entitlement.findOne({ purchaseToken }).lean().exec();
   if (existing) {
-    logger.info("[Lumen Entitlements] Duplicate purchase token rejected", { userId, productId, purchaseToken });
+    // 只记短指纹：完整 purchaseToken 是可向 Google 校验/消耗的凭据，且重复提交流程攻击者可控。
+    logger.info("[Lumen Entitlements] Duplicate purchase token rejected", {
+      userId,
+      productId,
+      purchaseTokenHash: crypto.createHash("sha256").update(purchaseToken).digest("hex").slice(0, 16),
+    });
     return {
       status: existing.status as EntitlementStatus,
       tier: existing.tier as EntitlementTier,

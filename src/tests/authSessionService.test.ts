@@ -53,7 +53,7 @@ describe("authSessionService", () => {
     const active = makeSession({ credentialHash: hashAuthCredential("active-token") });
     const revoked = makeSession({ sessionId: "as_revoked", credentialHash: "revoked-hash", revokedAt: new Date("2026-08-02T01:00:00.000Z") });
     (AuthSessionModel.find as jest.Mock).mockReturnValue({
-      sort: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([active, revoked] as never) }),
+      sort: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([active, revoked] as never) }),
     });
 
     const devices = await listAuthDevices("user-1", "active-token");

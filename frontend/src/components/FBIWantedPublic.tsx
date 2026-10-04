@@ -9,6 +9,7 @@ import {
   FaPhone,
   FaEnvelope,
   FaSpinner,
+  FaSync,
   FaEye,
   FaTimes,
   FaUser,
@@ -154,6 +155,8 @@ const FBIWantedPublic: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  // 输入框即时回显 searchTerm，请求只跟防抖后的值走，避免每次击键都打一次接口。
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [dangerFilter, setDangerFilter] = useState('ALL');
   const [statistics, setStatistics] = useState<FBIStatistics | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -170,7 +173,7 @@ const FBIWantedPublic: React.FC = () => {
         limit: PAGE_SIZE,
         status: 'ACTIVE',
         ...(dangerFilter !== 'ALL' && { dangerLevel: dangerFilter }),
-        ...(searchTerm && { search: searchTerm }),
+        ...(debouncedSearchTerm && { search: debouncedSearchTerm }),
       });
 
       setWantedList(response.data);
@@ -181,7 +184,7 @@ const FBIWantedPublic: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, dangerFilter, searchTerm]);
+  }, [currentPage, dangerFilter, debouncedSearchTerm]);
 
   const fetchStatistics = useCallback(async () => {
     try {
@@ -192,9 +195,15 @@ const FBIWantedPublic: React.FC = () => {
     }
   }, []);
 
+  // 输入防抖：300ms 内不再击键才真正发起搜索（与站内其它搜索框同口径）。
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [dangerFilter, searchTerm]);
+  }, [dangerFilter, debouncedSearchTerm]);
 
   useEffect(() => {
     fetchWantedList();
@@ -301,8 +310,17 @@ const FBIWantedPublic: React.FC = () => {
           />
 
           {error && (
-            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-              {error}
+            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => void fetchWantedList()}
+                disabled={loading}
+                className="inline-flex items-center gap-2 self-start rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:self-auto"
+              >
+                <FaSync className={loading ? 'animate-spin' : ''} />
+                重试
+              </button>
             </div>
           )}
 
@@ -311,7 +329,7 @@ const FBIWantedPublic: React.FC = () => {
               <FaSpinner className="mr-3 animate-spin text-2xl text-sky-600" />
               正在加载通缉信息...
             </div>
-          ) : wantedList.length === 0 ? (
+          ) : error ? null : wantedList.length === 0 ? (
             <div className="flex min-h-[260px] flex-col items-center justify-center text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                 <FaSearch />

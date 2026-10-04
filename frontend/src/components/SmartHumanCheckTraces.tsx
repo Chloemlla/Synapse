@@ -161,6 +161,10 @@ const SmartHumanCheckTraces: React.FC = () => {
   const [zoom, setZoom] = useState<number>(1);
   const [autoFit] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // 两个 Portal 弹窗的对话框语义：焦点进入弹窗、关闭后回归触发元素。
+  const detailDialogRef = useRef<HTMLDivElement | null>(null);
+  const batchDialogRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
   const [success, setSuccess] = useState<string>(''); // '', 'true', 'false'
   const [reason, setReason] = useState('');
@@ -397,6 +401,35 @@ const SmartHumanCheckTraces: React.FC = () => {
       }
     );
   }, [batchView]);
+
+  // 弹窗打开时把焦点移入对话框，关闭后回归到触发元素（Portal 到 body 会打断默认焦点流）。
+  useEffect(() => {
+    const activeDialog = detailDialogRef.current ?? batchDialogRef.current;
+    if (activeDialog) {
+      if (!lastFocusedRef.current && document.activeElement instanceof HTMLElement) {
+        lastFocusedRef.current = document.activeElement;
+      }
+      activeDialog.focus();
+      return;
+    }
+    if (lastFocusedRef.current) {
+      lastFocusedRef.current.focus();
+      lastFocusedRef.current = null;
+    }
+  }, [selected, batchView]);
+
+  // Esc 关闭当前弹窗：键盘用户在补上对话语义后还要能退出来。
+  useEffect(() => {
+    if (!selected && !batchView) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      if (batchView) closeBatchModal();
+      else closeDetailModal();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selected, batchView, closeBatchModal, closeDetailModal]);
 
   // 选择相关 - 使用 useCallback 优化
   const isAllSelected = useMemo(() => 
@@ -718,9 +751,17 @@ const SmartHumanCheckTraces: React.FC = () => {
       {/* 详情弹窗 — Portal 到 body */}
       {ReactDOM.createPortal(selected && (
         <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <div className={`${studioSurfaceClassName} max-w-3xl w-[95vw] p-4 sm:p-6 overflow-y-auto max-h-[90vh]`} data-source-modal="trace-detail">
+        <div
+          ref={detailDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="trace-detail-title"
+          tabIndex={-1}
+          className={`${studioSurfaceClassName} max-w-3xl w-[95vw] p-4 sm:p-6 overflow-y-auto max-h-[90vh] outline-none`}
+          data-source-modal="trace-detail"
+        >
           <div className="flex items-center justify-between mb-3">
-            <div className="font-semibold text-slate-900">日志详情</div>
+            <div id="trace-detail-title" className="font-semibold text-slate-900">日志详情</div>
             <div className="flex items-center gap-2">
               <button
                 onClick={async () => {
@@ -766,9 +807,17 @@ const SmartHumanCheckTraces: React.FC = () => {
       {/* 批量合并查看弹窗 — Portal 到 body */}
       {ReactDOM.createPortal(batchView && (
         <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div className={`${studioSurfaceClassName} max-w-5xl w-[95vw] p-4 sm:p-6 overflow-y-auto max-h-[90vh]`} data-source-modal="batch-trace-detail">
+          <div
+            ref={batchDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="batch-trace-detail-title"
+            tabIndex={-1}
+            className={`${studioSurfaceClassName} max-w-5xl w-[95vw] p-4 sm:p-6 overflow-y-auto max-h-[90vh] outline-none`}
+            data-source-modal="batch-trace-detail"
+          >
             <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
+              <div id="batch-trace-detail-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
               <div className="flex items-center gap-2">
                 <button onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName}>
                   <FaClipboard className="w-4 h-4" /> 复制

@@ -45,12 +45,20 @@ export default function EstablishSecuritySession({
   const [submitting, setSubmitting] = useState<'password' | 'totp' | 'passkey' | null>(null);
   // null = 尚未探测到（比如 /api/totp/status 请求失败）
   const [factors, setFactors] = useState<{ totp: boolean; passkey: boolean } | null>(null);
+  // 验证失败的内联错误：toast 3 秒后消失，错过就不知道失败原因，所以按因素在卡片内联展示
+  const [verifyError, setVerifyError] = useState<{ kind: 'password' | 'totp' | 'passkey'; message: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    // 裸 fetch 不走 axios，没有 api.ts 的 15s 超时；后端挂起时用同一档超时中止并走兜底展示
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
     void (async () => {
       try {
-        const res = await fetch(`${getApiBaseUrl()}/api/totp/status`, { credentials: 'include' });
+        const res = await fetch(`${getApiBaseUrl()}/api/totp/status`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
         if (!res.ok) return;
         const data = await res.json();
         const explicitPasskey =
@@ -74,10 +82,14 @@ export default function EstablishSecuritySession({
         if (!cancelled) setFactors({ totp: Boolean(data?.enabled), passkey });
       } catch {
         // 拉取因素失败时保持 null：不阻塞，由渲染逻辑决定兜底展示哪些方式
+      } finally {
+        window.clearTimeout(timeoutId);
       }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, []);
 
@@ -102,15 +114,16 @@ export default function EstablishSecuritySession({
   const runVerify = useCallback(
     async (kind: 'password' | 'totp' | 'passkey', fn: () => Promise<VerifyResult>, fallbackMsg: string) => {
       setSubmitting(kind);
+      setVerifyError(null);
       try {
         applySuccess(await fn(), kind);
       } catch (error) {
-        setNotification({ message: getBackendErrorMessage(error, fallbackMsg), type: 'error' });
+        setVerifyError({ kind, message: getBackendErrorMessage(error, fallbackMsg) });
       } finally {
         setSubmitting(null);
       }
     },
-    [applySuccess, setNotification],
+    [applySuccess],
   );
 
   const verifyPassword = () => {
@@ -189,10 +202,11 @@ export default function EstablishSecuritySession({
       {/* 当前密码（requireTwoFactor 时隐藏，避免只拿到密码就能改动双因素配置） */}
       {requireTwoFactor ? null : (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-          <div className="text-sm font-medium text-slate-700">当前密码</div>
+          <label htmlFor="ess-password" className="text-sm font-medium text-slate-700">当前密码</label>
           <div className="mb-2 text-xs text-slate-500">使用登录密码建立 10 分钟安全会话</div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
+              id="ess-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -207,6 +221,11 @@ export default function EstablishSecuritySession({
               {submitting === 'password' ? '验证中…' : '使用密码验证'}
             </button>
           </div>
+          {verifyError?.kind === 'password' ? (
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+              {verifyError.message}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -214,9 +233,12 @@ export default function EstablishSecuritySession({
       {totpAvailable ? (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-medium text-slate-700">
+            <label
+              htmlFor={totpMode === 'backup' ? 'ess-backup-code' : 'ess-totp-code'}
+              className="text-sm font-medium text-slate-700"
+            >
               {totpMode === 'backup' ? '备用恢复码' : '动态验证码'}
-            </div>
+            </label>
             <button
               type="button"
               className="text-xs text-blue-600 hover:underline"
@@ -234,6 +256,7 @@ export default function EstablishSecuritySession({
           <div className="flex flex-col gap-2 sm:flex-row">
             {totpMode === 'backup' ? (
               <input
+                id="ess-backup-code"
                 value={backupCode}
                 maxLength={8}
                 onChange={(e) => setBackupCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
@@ -245,6 +268,7 @@ export default function EstablishSecuritySession({
               />
             ) : (
               <input
+                id="ess-totp-code"
                 inputMode="numeric"
                 maxLength={6}
                 value={totpCode}
@@ -260,6 +284,11 @@ export default function EstablishSecuritySession({
               {submitting === 'totp' ? '验证中…' : totpMode === 'backup' ? '使用恢复码验证' : '使用动态验证码验证'}
             </button>
           </div>
+          {verifyError?.kind === 'totp' ? (
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+              {verifyError.message}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -271,6 +300,11 @@ export default function EstablishSecuritySession({
           <button type="button" disabled={submitting !== null} onClick={verifyPasskey} className={studioSecondaryButtonClassName}>
             {submitting === 'passkey' ? '验证中…' : '使用通行密钥验证'}
           </button>
+          {verifyError?.kind === 'passkey' ? (
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+              {verifyError.message}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AntiCounterfeitError, ProductQueryParams } from '../types/anta';
 import { FaBarcode, FaFileAlt, FaLink, FaRulerCombined, FaSearch, FaTag, FaTimes, FaTrash } from 'react-icons/fa';
@@ -57,6 +57,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
   const [importUrl, setImportUrl] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const importTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const validateForm = (): string | null => {
     if (!formData.barcode.trim()) {
@@ -193,6 +194,41 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
     barcodeRef.current?.focus();
   };
 
+  useEffect(() => {
+    if (!showImportDialog) return undefined;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const timer = window.setTimeout(() => importTextareaRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setShowImportDialog(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [showImportDialog]);
+
+  const handleImportDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const focusables = event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), textarea, input, a[href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div className="w-full">
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -204,7 +240,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
 
             return (
               <div key={field.key}>
-                <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <label htmlFor={`product-query-${field.key}`} className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
                   <Icon className={isFocused ? 'text-emerald-600' : 'text-slate-400'} />
                   <span>{field.label}</span>
                   {field.required && <span className="text-emerald-600">*</span>}
@@ -212,6 +248,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
                 <div className="relative">
                   <Icon className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 ${isFocused ? 'text-emerald-600' : 'text-slate-400'}`} />
                   <input
+                    id={`product-query-${field.key}`}
                     ref={field.key === 'barcode' ? barcodeRef : undefined}
                     type="text"
                     value={formData[field.key] || ''}
@@ -238,6 +275,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
+              role="alert"
               className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
             >
               {validationError || error?.message}
@@ -294,6 +332,10 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
             onClick={() => setShowImportDialog(false)}
           >
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="product-query-import-title"
+              onKeyDown={handleImportDialogKeyDown}
               className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm backdrop-blur-xl sm:p-6 max-h-[90vh] overflow-y-auto overscroll-contain"
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -302,8 +344,8 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
             >
               <div className="mb-5 flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Import URL</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-950">导入查询链接</h3>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">导入链接</p>
+                  <h3 id="product-query-import-title" className="mt-1 text-xl font-semibold text-slate-950">导入查询链接</h3>
                 </div>
                 <button
                   type="button"
@@ -318,6 +360,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
               <label className="block text-sm font-semibold text-slate-700">
                 粘贴安踏查询链接
                 <textarea
+                  ref={importTextareaRef}
                   value={importUrl}
                   onChange={(event) => setImportUrl(event.target.value)}
                   placeholder="https://ascm.anta.com/consumer/innerbox/search?code=112535584-1&11&2000000134554&BRA047EBXF&CN"

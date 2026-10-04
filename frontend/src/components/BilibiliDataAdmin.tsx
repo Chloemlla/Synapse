@@ -294,7 +294,7 @@ const BilibiliDataAdmin: React.FC = () => {
           <p className='text-xs leading-6 text-slate-500'>{TAB_META[tab].description}</p>
 
           <div className='grid gap-4 md:grid-cols-4'>
-            <InfoMetricCard label='本页记录' value={stats.total} detail='数据库全部记录' icon={FaDatabase} />
+            <InfoMetricCard label='记录总数' value={stats.total} detail='数据库全部记录' icon={FaDatabase} />
             <InfoMetricCard
               label='凭据有效'
               value={stats.active}

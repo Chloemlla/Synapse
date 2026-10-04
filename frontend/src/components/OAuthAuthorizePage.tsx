@@ -246,17 +246,17 @@ const OAuthAuthorizePage: React.FC = () => {
   const roleBadgeClass = getRoleBadgeClass(preview.user.role);
   const statusCards = [
     {
-      label: "Client",
+      label: "应用",
       value: preview.client.name,
       tone: "sky",
     },
     {
-      label: "Account",
+      label: "账号",
       value: roleLabel,
       tone: "emerald",
     },
     {
-      label: "Scopes",
+      label: "授权范围",
       value: `${preview.scopes.length} 项权限`,
       tone: "violet",
     },
@@ -462,7 +462,7 @@ const OAuthAuthorizePage: React.FC = () => {
                     身份资料
                   </h3>
                   <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {identityScopes.length} Items
+                    共 {identityScopes.length} 项
                   </span>
                 </div>
                 {identityScopes.length > 0 ? (
@@ -495,7 +495,7 @@ const OAuthAuthorizePage: React.FC = () => {
                       API 能力
                     </h3>
                     <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {apiScopes.length} Items
+                      共 {apiScopes.length} 项
                     </span>
                   </div>
                   <div className="grid min-w-0 gap-3">

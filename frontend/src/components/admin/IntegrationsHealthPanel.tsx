@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FaBellSlash,
   FaBoxOpen,
@@ -25,6 +26,7 @@ import {
   type WebhookHealthResponse,
 } from '@/api/integrations';
 import { useNotification } from '@/components/Notification';
+import { useConfirm } from '@/components/confirm/ConfirmDialogProvider';
 import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell, InfoSectionTitle } from '@/components/studioTheme';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
@@ -53,6 +55,13 @@ const REASON_LABELS: Record<SuppressionReason, string> = {
   manual: '人工添加',
 };
 
+// F4-18：tab 与邮件抑制筛选同步到 URL 时用的键（加前缀避免与其他管理页的查询参数冲突）。
+const TAB_QUERY_KEY = 'ihpTab';
+const EMAIL_QUERY_KEY = 'ihpQ';
+const EMAIL_REASON_QUERY_KEY = 'ihpReason';
+const TAB_VALUES = TABS.map((item) => item.key);
+const REASON_VALUES: SuppressionReason[] = ['bounce', 'complaint', 'unsubscribe', 'manual'];
+
 const formatBytes = (value: number | null): string => {
   if (value === null || !Number.isFinite(value)) return '—';
   if (value < 1024) return `${value} B`;
@@ -71,7 +80,12 @@ const formatTime = (value: string | null): string => {
 
 const IntegrationsHealthPanel: React.FC = () => {
   const { setNotification } = useNotification();
-  const [tab, setTab] = useState<TabKey>('overview');
+  const confirm = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<TabKey>(() => {
+    const value = searchParams.get(TAB_QUERY_KEY);
+    return TAB_VALUES.includes(value as TabKey) ? (value as TabKey) : 'overview';
+  });
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [overview, setOverview] = useState<IntegrationsOverview | null>(null);
@@ -83,8 +97,11 @@ const IntegrationsHealthPanel: React.FC = () => {
   const requestRef = useRef(0);
 
   const [suppressions, setSuppressions] = useState<SuppressionListResponse | null>(null);
-  const [suppressionQuery, setSuppressionQuery] = useState('');
-  const [suppressionReason, setSuppressionReason] = useState('');
+  const [suppressionQuery, setSuppressionQuery] = useState(() => searchParams.get(EMAIL_QUERY_KEY) ?? '');
+  const [suppressionReason, setSuppressionReason] = useState(() => {
+    const value = searchParams.get(EMAIL_REASON_QUERY_KEY);
+    return REASON_VALUES.includes(value as SuppressionReason) ? (value as SuppressionReason) : '';
+  });
   const [newEmail, setNewEmail] = useState('');
   const [newReason, setNewReason] = useState<SuppressionReason>('manual');
 
@@ -181,6 +198,20 @@ const IntegrationsHealthPanel: React.FC = () => {
     if (tab === 'recommendations') void loadRecommendations();
   }, [tab, loadRecommendations, refreshNonce]);
 
+  // F4-18：把当前 tab 与邮件抑制筛选写回 URL，刷新或分享链接后可复原。
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'overview') next.delete(TAB_QUERY_KEY);
+      else next.set(TAB_QUERY_KEY, tab);
+      if (suppressionQuery) next.set(EMAIL_QUERY_KEY, suppressionQuery);
+      else next.delete(EMAIL_QUERY_KEY);
+      if (suppressionReason) next.set(EMAIL_REASON_QUERY_KEY, suppressionReason);
+      else next.delete(EMAIL_REASON_QUERY_KEY);
+      return next;
+    }, { replace: true });
+  }, [tab, suppressionQuery, suppressionReason, setSearchParams]);
+
   const providerBadges = useMemo(() => {
     if (!overview) return null;
     const { openai, resend, svix } = overview.providers;
@@ -234,9 +265,17 @@ const IntegrationsHealthPanel: React.FC = () => {
   };
 
   const handleInvalidateCache = async () => {
+    const prefix = cachePrefix.trim();
+    const ok = await confirm({
+      title: `失效缓存前缀「${prefix}」？`,
+      description: '将删除所有以该前缀开头的缓存键，命中这些键的请求会回源重建，可能带来一次短时延迟。',
+      tone: 'danger',
+      confirmLabel: '失效缓存',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
-      const res = await integrationsApi.invalidateCache(cachePrefix.trim());
+      const res = await integrationsApi.invalidateCache(prefix);
       setNotification({ message: `已失效 ${res.deleted} 个缓存键（前缀 ${res.prefix}）`, type: 'success' });
       setRefreshNonce((current) => current + 1);
     } catch (error) {
@@ -247,6 +286,13 @@ const IntegrationsHealthPanel: React.FC = () => {
   };
 
   const handleFlushMemory = async () => {
+    const ok = await confirm({
+      title: '清空本进程内存缓存？',
+      description: '会清空当前进程内的全部内存缓存条目，随后的请求需要回源重建；多实例部署下只影响本实例。',
+      tone: 'danger',
+      confirmLabel: '清空缓存',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const res = await integrationsApi.flushMemoryCache();

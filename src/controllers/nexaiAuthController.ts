@@ -15,6 +15,19 @@ function sanitizeUser(user: any) {
   return safeUser;
 }
 
+/**
+ * 计算回给客户端的错误文案。
+ * 预期的业务错误由服务层显式带 statusCode（400/401/404/409/503…），其 message 可控，照常返回；
+ * 未预期异常（无 statusCode，最终落到 500）不回原始 message，记日志后改用通用中文文案。
+ */
+function clientErrorMessage(error: any, fallback: string, context: string): string {
+  if (typeof error?.statusCode === "number") {
+    return error.message || fallback;
+  }
+  logger.error(`[NexAI] ${context} 未预期异常:`, error);
+  return fallback;
+}
+
 export class NexaiAuthController {
   /**
    * POST /api/nexai/auth/register
@@ -46,7 +59,7 @@ export class NexaiAuthController {
       const statusCode = error.statusCode || 500;
       const response: any = {
         success: false,
-        error: error.message || "注册失败",
+        error: clientErrorMessage(error, "注册失败", "register"),
       };
       if (error.validationErrors) {
         response.validationErrors = error.validationErrors;
@@ -85,7 +98,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "登录失败",
+        error: clientErrorMessage(error, "登录失败", "login"),
       });
     }
   }
@@ -121,7 +134,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "Google 认证失败",
+        error: clientErrorMessage(error, "Google 认证失败", "googleAuth"),
       });
     }
   }
@@ -157,7 +170,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "GitHub 认证失败",
+        error: clientErrorMessage(error, "GitHub 认证失败", "githubAuth"),
       });
     }
   }
@@ -191,7 +204,9 @@ export class NexaiAuthController {
     } catch (error: any) {
       logger.error("[NexAI] GitHub callback 错误:", error);
       const frontendUrl = config.nexai.frontendUrl;
-      res.redirect(`${frontendUrl}/nexai/auth/callback?error=${encodeURIComponent(error.message)}`);
+      // 未预期异常不回原始 message（重定向参数会被前端展示），仅保留可控的业务错误文案。
+      const message = typeof error?.statusCode === "number" ? error.message || "认证失败" : "认证失败";
+      res.redirect(`${frontendUrl}/nexai/auth/callback?error=${encodeURIComponent(message)}`);
     }
   }
 
@@ -218,7 +233,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(500).json({
         success: false,
-        error: error.message || "获取用户信息失败",
+        error: clientErrorMessage(error, "获取用户信息失败", "getCurrentUser"),
       });
     }
   }
@@ -255,7 +270,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "Token 刷新失败",
+        error: clientErrorMessage(error, "Token 刷新失败", "refreshToken"),
       });
     }
   }
@@ -274,7 +289,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(500).json({
         success: false,
-        error: error.message || "登出失败",
+        error: clientErrorMessage(error, "登出失败", "logout"),
       });
     }
   }
@@ -309,7 +324,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "更新失败",
+        error: clientErrorMessage(error, "更新失败", "updateProfile"),
       });
     }
   }
@@ -341,7 +356,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "关联失败",
+        error: clientErrorMessage(error, "关联失败", "账号关联"),
       });
     }
   }
@@ -367,7 +382,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "取消关联失败",
+        error: clientErrorMessage(error, "取消关联失败", "账号取消关联"),
       });
     }
   }
@@ -399,7 +414,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "关联失败",
+        error: clientErrorMessage(error, "关联失败", "账号关联"),
       });
     }
   }
@@ -425,7 +440,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "取消关联失败",
+        error: clientErrorMessage(error, "取消关联失败", "账号取消关联"),
       });
     }
   }
@@ -453,7 +468,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "操作失败",
+        error: clientErrorMessage(error, "操作失败", "forgotPassword"),
       });
     }
   }
@@ -482,7 +497,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "密码重置失败",
+        error: clientErrorMessage(error, "密码重置失败", "resetPassword"),
       });
     }
   }
@@ -529,7 +544,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "获取注册选项失败",
+        error: clientErrorMessage(error, "获取注册选项失败", "generatePasskeyRegistrationOptions"),
       });
     }
   }
@@ -555,7 +570,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "验证失败",
+        error: clientErrorMessage(error, "验证失败", "verifyPasskeyRegistration"),
       });
     }
   }
@@ -582,7 +597,7 @@ export class NexaiAuthController {
       // 为安全起见，用户不存在等也返回相同状态，但此处按需
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "获取登录选项失败",
+        error: clientErrorMessage(error, "获取登录选项失败", "generatePasskeyAuthenticationOptions"),
       });
     }
   }
@@ -629,7 +644,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       const response: any = {
         success: false,
-        error: error.message || "登录验证失败",
+        error: clientErrorMessage(error, "登录验证失败", "passkey 登录验证"),
       };
       if (error.code) {
         response.code = error.code;
@@ -653,7 +668,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "获取 Discoverable 登录选项失败",
+        error: clientErrorMessage(error, "获取 Discoverable 登录选项失败", "generateDiscoverablePasskeyAuthenticationOptions"),
       });
     }
   }
@@ -685,7 +700,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       const body: any = {
         success: false,
-        error: error.message || "登录验证失败",
+        error: clientErrorMessage(error, "登录验证失败", "passkey 登录验证"),
       };
       if (error.code) {
         body.code = error.code;
@@ -714,7 +729,7 @@ export class NexaiAuthController {
     } catch (error: any) {
       res.status(error.statusCode || 500).json({
         success: false,
-        error: error.message || "获取 Passkey Signal 选项失败",
+        error: clientErrorMessage(error, "获取 Passkey Signal 选项失败", "getPasskeySignalOptions"),
       });
     }
   }

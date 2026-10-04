@@ -129,6 +129,16 @@ const TtsGenerationManager: React.FC = () => {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [limit, total]);
 
+  const filtersActive = useMemo(
+    () =>
+      Boolean(query.trim()) ||
+      Boolean(userId.trim()) ||
+      reviewStatus !== "all" ||
+      scope !== "all" ||
+      userDeleted !== "all",
+    [query, userId, reviewStatus, scope, userDeleted],
+  );
+
   const mergeDrafts = useCallback((nextRecords: TtsHistoryRecord[]) => {
     setDrafts((current) => {
       const next = { ...current };
@@ -267,6 +277,17 @@ const TtsGenerationManager: React.FC = () => {
     document.body.removeChild(link);
   }, []);
 
+  const clearFilters = useCallback(() => {
+    setDraftQuery("");
+    setDraftUserId("");
+    setQuery("");
+    setUserId("");
+    setReviewStatus("all");
+    setScope("all");
+    setUserDeleted("all");
+    setPage(1);
+  }, []);
+
   const goToPage = useCallback(
     (nextPage: number) => {
       setPage(Math.max(1, Math.min(totalPages, nextPage)));
@@ -369,8 +390,17 @@ const TtsGenerationManager: React.FC = () => {
       </div>
 
       {error && (
-        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <span className="min-w-0 break-words">{error}</span>
+          <button
+            type="button"
+            onClick={() => void fetchRecords(page)}
+            disabled={loading}
+            className={cn(secondaryButtonClassName, "shrink-0")}
+          >
+            <FaRedo className={loading ? "animate-spin" : ""} />
+            重试
+          </button>
         </div>
       )}
 
@@ -394,9 +424,28 @@ const TtsGenerationManager: React.FC = () => {
             <SimpleLoadingSpinner size={0.75} />
           </div>
         ) : records.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-            暂无 TTS 生成记录
-          </div>
+          error ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+              加载失败，请点击上方「重试」重新获取记录。
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+              {filtersActive ? (
+                <>
+                  <p>没有符合当前筛选条件的记录</p>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className={cn(secondaryButtonClassName, "mt-3")}
+                  >
+                    清除筛选
+                  </button>
+                </>
+              ) : (
+                <p>暂无 TTS 生成记录</p>
+              )}
+            </div>
+          )
         ) : (
           <div className="space-y-4">
             {records.map((record) => {

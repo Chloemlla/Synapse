@@ -111,6 +111,8 @@ const Footer: React.FC = () => {
   const year = new Date().getFullYear();
   const [ipInfo, setIpInfo] = useState<IPInfo | null>(() => readFooterCache<IPInfo>(IP_CACHE_KEY));
   const [ipLoading, setIpLoading] = useState(() => readFooterCache<IPInfo>(IP_CACHE_KEY) === null);
+  // 拉取失败时用自增令牌重跑上面的 effect，给页脚一个原地重试的出路（否则只能整页刷新）。
+  const [ipRetryToken, setIpRetryToken] = useState(0);
   // 后端版本/SHA 以「刷新后向后端询问一次」的结果为准；
   // 初值用构建期注入的那份，查询失败时页脚不会出现空值。
   const [backendBuild, setBackendBuild] = useState<BackendBuildInfo>(
@@ -181,7 +183,7 @@ const Footer: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ipRetryToken]);
 
   useEffect(() => {
     // 每次页面刷新只问一次：/api/status 是后端启动时算好的常量，公开、无鉴权。
@@ -270,7 +272,16 @@ const Footer: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <span className="font-mono font-bold text-rose-600">获取失败</span>
+              <span className="inline-flex items-center gap-2">
+                <span className="font-mono font-bold text-rose-600">获取失败</span>
+                <button
+                  type="button"
+                  onClick={() => setIpRetryToken((token) => token + 1)}
+                  className="rounded border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                >
+                  重试
+                </button>
+              </span>
             )}
           </div>
         </div>

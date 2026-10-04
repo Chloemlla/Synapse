@@ -179,7 +179,22 @@ export const AdminHub: React.FC = () => {
           </span>
         </div>
 
-        {groups.map((group) => (
+        {scopeLoading ? (
+          <InfoPanel>
+            <InfoSectionTitle title='正在校验页面授权' icon={FaShieldAlt} eyebrow='Loading' />
+            <p className='mt-3 text-sm text-slate-500'>
+              正在从服务端获取你的页面授权，加载完成前暂不显示模块入口，以免点到尚未授权的模块。
+            </p>
+            <div className='mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3' aria-hidden='true'>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className='h-[62px] animate-pulse rounded-2xl border border-slate-200/80 bg-slate-100/70'
+                />
+              ))}
+            </div>
+          </InfoPanel>
+        ) : groups.map((group) => (
           <InfoPanel key={group.id || group.title}>
             <InfoSectionTitle
               title={group.title}
@@ -391,7 +406,9 @@ export const AdminModulePage: React.FC = () => {
     );
   }
 
-  const title = activeItem?.title ?? module;
+  // F4-35：模块未登记进导航时，回退链为「中文名 → 模块 key」，避免面包屑直接暴露 admin-scope 这类内部段。
+  const titleFromScope = scopeAvailablePages.find((page) => page.key === adminPageKeyForModule(module))?.label;
+  const title = activeItem?.title ?? titleFromScope ?? module;
   const pinnedNow = Boolean(activeItem && isPinned(activeItem.url));
 
   return (

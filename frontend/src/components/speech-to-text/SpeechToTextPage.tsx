@@ -81,6 +81,9 @@ export const SpeechToTextPage: React.FC = () => {
   const [chosen, setChosen] = useState<string[]>([]);
   const [outputs, setOutputs] = useState<TranscribeOutput[]>(['plain']);
   const [jobs, setJobs] = useState<MediaJobRecord[]>([]);
+  // 任务列表加载失败必须与「本来就没有任务」区分开：把接口失败渲染成首用空态会让用户以为
+  // 自己没提交过任务，从而放弃重试。
+  const [jobsError, setJobsError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptItem[]>>({});
   const [uploading, setUploading] = useState<string | null>(null);
@@ -109,8 +112,10 @@ export const SpeechToTextPage: React.FC = () => {
   const loadJobs = useCallback(async () => {
     try {
       setJobs(await transcribeApi.listJobs(20));
+      setJobsError(null);
     } catch (err) {
       console.error('加载我的转写任务失败:', err);
+      setJobsError('加载转写任务失败，请稍后重试。');
     }
   }, []);
 
@@ -383,11 +388,50 @@ export const SpeechToTextPage: React.FC = () => {
             }
           />
           {jobs.length === 0 ? (
-            <div className={cn(studioSubPanelClassName, 'px-4 py-8 text-center text-sm text-slate-400')}>
-              还没有任务,先上传一段录音试试。
-            </div>
+            jobsError ? (
+              <div
+                role="alert"
+                className={cn(studioSubPanelClassName, 'flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-rose-700')}
+              >
+                <span className="flex items-center gap-2">
+                  <FaExclamationTriangle className="shrink-0" />
+                  {jobsError}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void loadJobs()}
+                  className={cn(studioSecondaryButtonClassName, 'px-3 py-1.5 text-xs')}
+                >
+                  <FaRedo className="text-[10px]" />
+                  重试
+                </button>
+              </div>
+            ) : (
+              <div className={cn(studioSubPanelClassName, 'px-4 py-8 text-center text-sm text-slate-400')}>
+                还没有任务,先上传一段录音试试。
+              </div>
+            )
           ) : (
             <div className="space-y-2">
+              {jobsError ? (
+                <div
+                  role="alert"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                >
+                  <span className="flex items-center gap-2">
+                    <FaExclamationTriangle className="shrink-0" />
+                    {jobsError}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void loadJobs()}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
+                  >
+                    <FaRedo className="text-[10px]" />
+                    重试
+                  </button>
+                </div>
+              ) : null}
               {jobs.map((job) => {
                 const active = job.status === 'queued' || job.status === 'running';
                 const expanded = expandedId === job.id;
@@ -465,9 +509,12 @@ export const SpeechToTextPage: React.FC = () => {
                           ))
                         )}
                         {active && job.logs.length > 0 ? (
-                          <pre className="max-h-32 overflow-y-auto rounded-xl bg-slate-950/90 px-3 py-2 font-mono text-[11px] leading-5 text-slate-100">
-                            {job.logs.slice(-12).map((l) => l.text).join('\n')}
-                          </pre>
+                          <details className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                            <summary className="cursor-pointer text-[11px] font-semibold text-slate-500">技术详情</summary>
+                            <pre className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-slate-950/90 px-3 py-2 font-mono text-[11px] leading-5 text-slate-100">
+                              {job.logs.slice(-12).map((l) => l.text).join('\n')}
+                            </pre>
+                          </details>
                         ) : null}
                       </div>
                     ) : null}
