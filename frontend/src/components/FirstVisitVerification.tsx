@@ -59,9 +59,9 @@ const Spinner: React.FC<{ className?: string; reducedMotion: boolean }> = ({
 );
 
 const REVIEW_STEPS = [
-  { id: 'scan', label: 'Checking connection', Icon: FaGlobe },
-  { id: 'challenge', label: 'Confirming it is you', Icon: FaShieldAlt },
-  { id: 'token', label: 'Almost done', Icon: FaLock },
+  { id: 'scan', label: '正在检查网络连接', Icon: FaGlobe },
+  { id: 'challenge', label: '正在确认您的身份', Icon: FaShieldAlt },
+  { id: 'token', label: '即将完成', Icon: FaLock },
 ] as const;
 
 const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
@@ -101,8 +101,8 @@ const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
             }`}
           >
             {step.label}
-            {current && <span className="ml-2 font-medium text-[#f48120]">in progress</span>}
-            {done && <span className="ml-2 font-medium text-[#2f7a4b]">passed</span>}
+            {current && <span className="ml-2 font-medium text-[#f48120]">进行中</span>}
+            {done && <span className="ml-2 font-medium text-[#2f7a4b]">已完成</span>}
           </span>
         </li>
       );
@@ -272,7 +272,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (succeededRef.current) return;
     setTurnstileToken('');
     setTurnstileVerified(false);
-    setError('The check expired. Complete it again to continue.');
+    setError('验证已过期，请重新完成验证后继续。');
   }, []);
 
   const handleHCaptchaVerify = useCallback((token: string) => {
@@ -286,7 +286,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (succeededRef.current) return;
     setHCaptchaToken('');
     setHCaptchaVerified(false);
-    setError('The check expired. Complete it again to continue.');
+    setError('验证已过期，请重新完成验证后继续。');
   }, []);
 
   const handleCapVerify = useCallback((token: string) => {
@@ -300,7 +300,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (succeededRef.current) return;
     setCapToken('');
     setCapVerified(false);
-    setError('The check expired. Complete it again to continue.');
+    setError('验证已过期，请重新完成验证后继续。');
   }, []);
 
   /** 控件加载失败 → 排除这一家、按分配策略换下一家（上限由管理端下发）。 */
@@ -316,12 +316,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       failedProvidersRef.current = [...attempted, current];
       succeededRef.current = false;
       setError('');
-      setNotification({ message: 'Switching to a backup verification provider...', type: 'info' });
+      setNotification({ message: '正在切换到备用验证服务…', type: 'info' });
       regenerateSelection({ exclude: failedProvidersRef.current });
       return;
     }
 
-    setError('The verification widget did not load correctly. Refresh and retry.');
+    setError('验证控件加载失败，请刷新页面后重试。');
   }, [failoverMaxAttempts, regenerateSelection, secureCaptchaConfig?.captchaType, setNotification]);
 
   const handleVerify = useCallback(async () => {
@@ -334,11 +334,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       const result = await completeIpVerification(fingerprint, currentToken, verificationMode);
       if (!result.success || !result.verified || !result.token) {
         // 后端原文不直铺界面，只给中性可重试文案。
-        throw new Error('Verification was not accepted. Please try again.');
+        throw new Error('验证未通过，请重试。');
       }
 
       setNotification({
-        message: 'Verification complete.',
+        message: '验证已完成。',
         type: 'success',
       });
 
@@ -360,7 +360,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
       // 原始异常只进 console；界面用中性文案。
       console.error('IP verification complete failed:', verifyError);
-      const message = 'Verification was not accepted. Please try again.';
+      const message = '验证未通过，请重试。';
       setError(message);
       resetChallenge(verificationMode);
       setNotification({
@@ -373,7 +373,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   }, [currentToken, fingerprint, isVerified, onVerificationComplete, resetChallenge, setNotification, verificationMode]);
 
   const fingerprintPreview = useMemo(() => {
-    if (!fingerprint) return 'unavailable';
+    if (!fingerprint) return '不可用';
     return `${fingerprint.slice(0, 10)}...${fingerprint.slice(-6)}`;
   }, [fingerprint]);
 
@@ -413,24 +413,24 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           </span>
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#e0562b]">
-              Security check
+              安全检查
             </p>
             <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#1d2735] sm:text-2xl">
-              Access temporarily restricted
+              访问暂时受限
             </h1>
           </div>
         </div>
 
         <div className="space-y-4 px-6 py-6 text-sm leading-6 text-[#526071] sm:px-8 sm:py-7">
-          <p>{banState.reason || 'This IP is currently restricted because of repeated abnormal traffic.'}</p>
+          <p>{banState.reason || '该 IP 因异常流量频繁触发限制，当前暂不可访问。'}</p>
           {banState.expiresAt && (
             <div className="flex items-center gap-2.5 rounded-2xl border border-[#e7ecf3] bg-[#f8fafc] px-4 py-3 text-[#2c3948]">
               <FaClock className="h-3.5 w-3.5 text-[#8b97a6]" />
-              <span>Retry after {banState.expiresAt.toLocaleString()}</span>
+              <span>{banState.expiresAt.toLocaleString()} 后可重试</span>
             </div>
           )}
           {clientIP && clientIP !== 'unknown' && (
-            <MetaRow Icon={FaGlobe} label="IP address">
+            <MetaRow Icon={FaGlobe} label="IP 地址">
               <p className="font-mono text-xs text-[#334155]">{clientIP}</p>
             </MetaRow>
           )}
@@ -448,8 +448,8 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   }
 
   const statusPill = isVerified
-    ? { className: 'border-[#bfe3cd] bg-[#eef9f1] text-[#2f7a4b]', label: 'Challenge passed' }
-    : { className: 'border-[#ffd9c8] bg-[#fff4ef] text-[#f48120]', label: 'Required' };
+    ? { className: 'border-[#bfe3cd] bg-[#eef9f1] text-[#2f7a4b]', label: '验证已通过' }
+    : { className: 'border-[#ffd9c8] bg-[#fff4ef] text-[#f48120]', label: '待验证' };
 
   return shell(
     <m.div
@@ -466,17 +466,16 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             </span>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#f48120]">
-                Traffic review
+                流量审查
               </p>
               <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-[#1d2735] sm:text-[28px]">
-                Checking your browser
+                正在检查您的浏览器
               </h1>
             </div>
           </div>
 
           <p className="mt-5 text-sm leading-6 text-[#526071]">
-            One quick security check is needed before you can continue. Finish the challenge below and
-            you are straight back to the site.
+            在继续访问前需要完成一次快速安全验证。完成下方的挑战后即可直接返回站点。
           </p>
 
           <div className="mt-6 rounded-2xl border border-[#eceff4] bg-[#fbfcfe] px-5 py-5">
@@ -484,10 +483,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
               <Spinner className="h-5 w-5 text-[#f48120]" reducedMotion={reducedMotion} />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-[#253140]">
-                  {isVerified ? 'Challenge accepted' : 'Review in progress'}
+                  {isVerified ? '验证已通过' : '审查进行中'}
                 </p>
                 <p className="text-xs text-[#7b8796]">
-                  One-time check · bound to this browser and network
+                  一次性检查 · 已绑定当前浏览器与网络
                 </p>
               </div>
             </div>
@@ -496,7 +495,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
           <div className="mt-6 rounded-2xl border border-[#eceff4] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[#253140]">Complete the security challenge</p>
+              <p className="text-sm font-semibold text-[#253140]">完成安全验证</p>
               <AnimatePresence mode="wait" initial={false}>
                 <m.span
                   key={statusPill.label}
@@ -515,7 +514,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
               {secureSelectionLoading ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-[#eceff4] bg-[#fbfcfe] px-5 py-6 text-sm text-[#637082]">
                   <Spinner className="h-4 w-4 text-[#94a3b8]" reducedMotion={reducedMotion} />
-                  Loading verification provider...
+                  正在加载验证服务…
                 </div>
               ) : configError ? (
                 <div className="space-y-4">
@@ -528,7 +527,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                     className="inline-flex items-center gap-2 rounded-2xl border border-[#1d2735] px-4 py-3 text-sm font-semibold text-[#1d2735] transition hover:bg-[#1d2735] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
                   >
                     <FaRedo className="h-3.5 w-3.5" />
-                    Reload page
+                    重新加载页面
                   </button>
                 </div>
               ) : (
@@ -617,11 +616,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                       {verifying ? (
                         <>
                           <Spinner className="h-4 w-4 text-white" reducedMotion={reducedMotion} />
-                          Finalizing check...
+                          正在完成验证…
                         </>
                       ) : (
                         <>
-                          Continue to site
+                          继续访问站点
                           <FaArrowRight className="h-3.5 w-3.5" />
                         </>
                       )}
@@ -637,7 +636,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7dde6] px-5 py-3.5 text-sm font-semibold text-[#253140] transition hover:border-[#bcc6d3] hover:bg-[#f6f8fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <FaRedo className="h-3.5 w-3.5" />
-                      Reload challenge
+                      重新加载验证
                     </button>
                   </div>
                 </>
@@ -647,41 +646,39 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
           {secureWidget.showProviderLabel && (
             <p className="mt-5 text-xs text-[#8b97a6]">
-              Powered by {verificationMode ? serviceLabel : 'the site verification provider'} · tokens are never
-              stored in logs or URLs.
+              由 {verificationMode ? serviceLabel : '站点验证服务'} 提供 · 验证令牌不会记录到日志或 URL 中。
             </p>
           )}
         </div>
 
         <div className="border-t border-[#eef2f7] bg-[#fafbfe] px-5 py-7 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7f8a98]">
-            Session context
+            会话信息
           </p>
 
           <div className="mt-4 space-y-3">
-            <MetaRow Icon={FaFingerprint} label="Fingerprint">
+            <MetaRow Icon={FaFingerprint} label="浏览器指纹">
               <p className="truncate font-mono text-xs text-[#334155]">{fingerprintPreview}</p>
             </MetaRow>
 
-            <MetaRow Icon={FaGlobe} label="IP address">
-              <p className="truncate font-mono text-xs text-[#334155]">{clientIP || 'Detecting...'}</p>
+            <MetaRow Icon={FaGlobe} label="IP 地址">
+              <p className="truncate font-mono text-xs text-[#334155]">{clientIP || '正在检测…'}</p>
             </MetaRow>
 
-            <MetaRow Icon={FaClock} label="Token policy">
+            <MetaRow Icon={FaClock} label="令牌策略">
               <p className="text-xs leading-5 text-[#526071]">
-                Once the check passes, you can keep browsing as usual. The check stays valid for the rest
-                of your session, so it does not come back on reload.
+                通过检查后即可照常浏览。本次检查在您的整个会话内有效，刷新页面不会再次出现。
               </p>
             </MetaRow>
           </div>
 
           <div className="mt-6 rounded-2xl border border-[#eceff4] bg-white px-5 py-5">
-            <p className="text-sm font-semibold text-[#253140]">Why this page appears</p>
+            <p className="text-sm font-semibold text-[#253140]">为什么会出现此页面</p>
             <ul className="mt-3.5 space-y-3 text-xs leading-5 text-[#637082]">
               {[
-                'Your network needs a quick one-time verification before you can continue.',
-                'It only takes a few seconds and helps keep the site safe.',
-                'After the check you can continue browsing as usual.',
+                '您的网络需要先完成一次快速的一次性验证。',
+                '整个过程只需几秒，有助于保障站点安全。',
+                '验证完成后即可照常继续浏览。',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
                   <FaCheck className="mt-0.5 h-3 w-3 shrink-0 text-[#c9a48f]" aria-hidden="true" />

@@ -153,7 +153,11 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
 
     } catch (err) {
       console.error('安全CAPTCHA选择失败:', err);
-      setError(err instanceof Error && err.message ? err.message : '验证服务暂不可用，请稍后重试');
+      // 中止（超时）与网络失败抛出的原生 message 是英文技术串，不能直铺界面。
+      const aborted =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (err as { name?: string } | null)?.name === 'AbortError';
+      setError(aborted ? '请求超时，请稍后重试' : '验证服务暂不可用，请稍后重试');
       setCaptchaConfig(null);
       setEncryptedSelection(null);
 
