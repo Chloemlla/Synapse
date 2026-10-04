@@ -89,15 +89,28 @@ beforeEach(() => {
 describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', () => {
   it('三家都没可用供应商时不要求验证，也不渲染任何控件', async () => {
     const statuses: ManagedCaptchaStatus[] = [];
-    setSelection({ enabled: false, siteKey: '', captchaConfig: null });
+    // 拿到下发配置即「有结论」：配置说不启用，才是真的不要求验证
+    setSelection({ enabled: false, siteKey: '', captchaConfig: { captchaType: 'turnstile' } });
 
     render(<ManagedCaptcha onStatusChange={(status) => statuses.push(status)} />);
 
     await waitFor(() => expect(statuses.length).toBeGreaterThan(0));
-    expect(statuses.at(-1)).toMatchObject({ required: false, provider: null, solved: false });
+    expect(statuses.at(-1)).toMatchObject({ required: false, loading: false, provider: null, solved: false });
     expect(screen.queryByTestId('turnstile-widget')).toBeNull();
     expect(screen.queryByTestId('hcaptcha-widget')).toBeNull();
     expect(screen.queryByTestId('trycap-widget')).toBeNull();
+  });
+
+  it('服务端结论未到之前不得谎报「不需要验证」：报 loading 而非 required:false', async () => {
+    const statuses: ManagedCaptchaStatus[] = [];
+    // captchaConfig 为 null 且无错误 = 真实组件在「指纹尚未采集完 / 请求在途」时的状态。
+    // 报成 required:false 会让页面以为不必验证而收起区块、放行提交，冻结在错误状态上。
+    setSelection({ enabled: false, siteKey: '', captchaConfig: null, loading: false, error: null });
+
+    render(<ManagedCaptcha onStatusChange={(status) => statuses.push(status)} />);
+
+    await waitFor(() => expect(statuses.length).toBeGreaterThan(0));
+    expect(statuses.at(-1)).toMatchObject({ required: false, loading: true });
   });
 
   it('后端选中 Turnstile 时渲染 Turnstile 控件，并把 token + provider 交给页面', async () => {

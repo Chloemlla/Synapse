@@ -102,6 +102,8 @@ const ManagedCaptcha = ({
   ref,
 }: ManagedCaptchaProps & { ref?: React.Ref<ManagedCaptchaRef> }) => {
   const [fingerprint, setFingerprint] = useState(fingerprintOverride ?? '');
+  // 指纹采集是异步的：采集没落定之前根本问不了服务端，也就给不出「要不要验证」的结论。
+  const [fingerprintSettled, setFingerprintSettled] = useState(Boolean(fingerprintOverride));
   // 控件加载失败时逐个排除，等于前端侧的故障转移（次数上限由管理端分配策略下发）。
   const failedProvidersRef = useRef<CaptchaType[]>([]);
   const [widgetKey, setWidgetKey] = useState(0);
@@ -121,11 +123,14 @@ const ManagedCaptcha = ({
   useEffect(() => {
     if (fingerprintOverride) {
       setFingerprint(fingerprintOverride);
+      setFingerprintSettled(true);
       return;
     }
     let cancelled = false;
     void getFingerprint().then((value) => {
-      if (!cancelled) setFingerprint(value || '');
+      if (cancelled) return;
+      setFingerprint(value || '');
+      setFingerprintSettled(true);
     });
     return () => {
       cancelled = true;
@@ -151,6 +156,14 @@ const ManagedCaptcha = ({
 
   const required = Boolean(providerMode);
   const attempts = Math.max(1, Math.min(3, failoverMaxAttempts || DEFAULT_FAILOVER_ATTEMPTS));
+
+  // 服务端结论（拿到下发配置，或拿到错误）是否已到手。指纹采集若落定为「没有指纹」，
+  // 就再也问不出结论了，这时不该永远停在加载中，按「不要求验证」交给后端把关。
+  const resolved = Boolean(captchaConfig) || Boolean(selectionError);
+  const fingerprintUnavailable = fingerprintSettled && !fingerprint;
+  // 报给页面的 loading 必须涵盖「还没问到」这一段：页面拿 required 决定是否放行提交、
+  // 是否收起验证区块，把这种未定状态谎报成「不需要验证」，页面就会在控件还没就绪时先行动。
+  const statusLoading = selectionLoading || (!resolved && !fingerprintUnavailable);
 
   // 换指纹/换场景即换一轮分配，排除名单随之作废。
   useEffect(() => {
@@ -235,9 +248,9 @@ const ManagedCaptcha = ({
   }, [attempts, captchaConfig?.captchaType, onCleared, regenerateSelection]);
 
   const error = useMemo(() => {
-    if (selectionLoading) return null;
+    if (statusLoading) return null;
     return selectionError || widgetError || null;
-  }, [selectionError, selectionLoading, widgetError]);
+  }, [selectionError, statusLoading, widgetError]);
 
   // 状态回报：页面用它决定提交按钮可用性与错误提示（required 为 false 时页面直接放行）。
   // 回调放进 ref：页面即使传内联箭头函数也不会因为回调身份变化而重复触发。
@@ -246,12 +259,12 @@ const ManagedCaptcha = ({
   useEffect(() => {
     statusCallbackRef.current?.({
       required,
-      loading: selectionLoading,
+      loading: statusLoading,
       error,
       provider: providerMode ? providerTypeOf(providerMode) : null,
       solved,
     });
-  }, [error, providerMode, required, selectionLoading, solved]);
+  }, [error, providerMode, required, solved, statusLoading]);
 
   const providerLabel = providerMode ? getCaptchaDisplayName(providerTypeOf(providerMode)) : '人机验证';
   const theme = widget.theme ?? fallbackTheme;
@@ -259,14 +272,14 @@ const ManagedCaptcha = ({
 
   return (
     <div className={className} data-captcha-provider={providerMode ?? 'none'}>
-      {selectionLoading && (
+      {statusLoading && (
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <SimpleLoadingSpinner size={0.75} />
           正在加载人机验证…
         </div>
       )}
 
-      {!selectionLoading && error && (
+      {!statusLoading && error && (
         <div className="space-y-2">
           <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
             <FaExclamationTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -283,7 +296,7 @@ const ManagedCaptcha = ({
         </div>
       )}
 
-      {!selectionLoading && !error && providerMode && (
+      {!statusLoading && !error && providerMode && (
         <div className="space-y-2">
           <div
             className={

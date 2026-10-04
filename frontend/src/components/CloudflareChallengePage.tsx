@@ -121,57 +121,71 @@ const CloudflareChallengePage: React.FC = () => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               正在加载验证组件...
             </div>
-          ) : captchaStatus.required ? (
-            <div className="space-y-4">
-              <div className={cn(studioSoftBadgeClassName, "min-h-[78px] border px-3 py-4")}>
-                {verificationState === 'verified' ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                      <FaCheckCircle className="h-5 w-5" />
-                      验证通过
-                    </div>
-                    {/* 通过后必须有明确的前进动作，否则用户只能返回首页，等于白验证一次 */}
-                    <Link
-                      to={continueTarget}
-                      className={cn(studioMutedPrimaryButtonClassName, "bg-[#FFB703] px-3 py-2 text-[#023047] hover:bg-[#FB8500]")}
-                    >
-                      <FaArrowRight className="h-3.5 w-3.5" />
-                      继续访问
-                    </Link>
-                  </div>
-                ) : verificationState === 'failed' ? (
-                  // 页面已判定失败时不再渲染控件，避免控件自己还显示「人机验证通过」造成两态矛盾
-                  <div className="flex items-center gap-2 text-sm font-medium text-rose-700">
-                    <FaExclamationTriangle className="h-5 w-5" />
-                    本次验证未通过
-                  </div>
-                ) : (
-                  <ManagedCaptcha
-                    ref={captchaRef}
-                    scenario="standalone"
-                    onSolved={handleCaptchaSolved}
-                    onCleared={handleCaptchaCleared}
-                    onStatusChange={handleCaptchaStatus}
-                  />
-                )}
-              </div>
+          ) : null}
 
-              {verificationState === 'verifying' && (
-                <p className="text-center text-xs font-medium text-slate-500" role="status" aria-live="polite">
-                  正在确认验证结果...
-                </p>
-              )}
-              {verificationState === 'failed' && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-                  {failureMessage || '验证失败，请重新验证'}
-                </div>
-              )}
-            </div>
-          ) : (
+          {!captchaStatus.loading && !captchaStatus.required && !captchaStatus.error ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               人机验证尚未启用
             </div>
-          )}
+          ) : null}
+
+          {/* 本页这几种展示态全部由 captchaStatus 决定，而 captchaStatus 只由 ManagedCaptcha 的
+              onStatusChange 写入 —— 因此控件必须常驻挂载，绝不能放进任何按 captchaStatus 分出的
+              分支里：否则它会因为自己「还没问到」的那次回报被卸载，此后无人再能更新 captchaStatus，
+              页面就永远停在首帧的「正在加载验证组件...」，控件再也不出现。 */}
+          <div className={cn("space-y-4", !captchaStatus.required && !captchaStatus.error && "hidden")}>
+            <div className={cn(studioSoftBadgeClassName, "min-h-[78px] border px-3 py-4")}>
+              {verificationState === 'verified' ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                    <FaCheckCircle className="h-5 w-5" />
+                    验证通过
+                  </div>
+                  {/* 通过后必须有明确的前进动作，否则用户只能返回首页，等于白验证一次 */}
+                  <Link
+                    to={continueTarget}
+                    className={cn(studioMutedPrimaryButtonClassName, "bg-[#FFB703] px-3 py-2 text-[#023047] hover:bg-[#FB8500]")}
+                  >
+                    <FaArrowRight className="h-3.5 w-3.5" />
+                    继续访问
+                  </Link>
+                </div>
+              ) : null}
+
+              {/* 页面已判定失败时不再展示控件，避免控件自己还显示「人机验证通过」造成两态矛盾 */}
+              {verificationState === 'failed' ? (
+                <div className="flex items-center gap-2 text-sm font-medium text-rose-700">
+                  <FaExclamationTriangle className="h-5 w-5" />
+                  本次验证未通过
+                </div>
+              ) : null}
+
+              <div
+                className={
+                  verificationState === 'idle' || verificationState === 'verifying' ? undefined : 'hidden'
+                }
+              >
+                <ManagedCaptcha
+                  ref={captchaRef}
+                  scenario="standalone"
+                  onSolved={handleCaptchaSolved}
+                  onCleared={handleCaptchaCleared}
+                  onStatusChange={handleCaptchaStatus}
+                />
+              </div>
+            </div>
+
+            {verificationState === 'verifying' ? (
+              <p className="text-center text-xs font-medium text-slate-500" role="status" aria-live="polite">
+                正在确认验证结果...
+              </p>
+            ) : null}
+            {verificationState === 'failed' ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                {failureMessage || '验证失败，请重新验证'}
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex items-center justify-between gap-3">
             <Link

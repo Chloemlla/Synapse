@@ -13,6 +13,7 @@ import ManagedCaptcha, {
   type ManagedCaptchaStatus,
 } from './ManagedCaptcha';
 import { studioEyebrowPillClassName } from './studioTheme';
+import { cn } from '../utils/cn';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole } from '../utils/rbac';
 import {
@@ -382,6 +383,12 @@ const ImageUploadPage: React.FC = () => {
     provider: null,
     solved: false,
   });
+  // 人机验证外壳的显隐（加载中/要求验证/出错时可见）。**只用于外壳**：
+  // captchaStatus 的唯一写入者是 ManagedCaptcha 自己的 onStatusChange，
+  // 若把它的挂载也交给这个条件，控件会被自己「还没问到」的那次回报卸载掉，
+  // 之后没人能再更新 captchaStatus —— 区块永久消失、校验被放行，后端只能回缺人机验证。
+  const captchaSectionVisible =
+    captchaStatus.required || captchaStatus.loading || Boolean(captchaStatus.error);
 
   // 加载本地图片
   React.useEffect(() => {
@@ -1334,10 +1341,15 @@ const ImageUploadPage: React.FC = () => {
               </motion.div>
             )}
 
-            {/* 人机验证：三家供应商由 /admin/captcha-providers 统一调控；管理员直接跳过 */}
-            {!isAdmin && !captchaStatus.loading && captchaStatus.required && (
+            {/* 人机验证：三家供应商由 /admin/captcha-providers 统一调控；管理员直接跳过。
+                ManagedCaptcha 必须无条件挂载（理由见 captchaSectionVisible 的说明），
+                没有可见内容时只隐藏外壳，免得在版式里留下空档。 */}
+            {!isAdmin && (
               <motion.div
-                className="mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4"
+                className={cn(
+                  "mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4",
+                  !captchaSectionVisible && "hidden",
+                )}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
