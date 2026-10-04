@@ -192,6 +192,12 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
   // 管理端关掉人机验证时 ManagedCaptcha 不渲染任何控件；标题、必填星号与说明必须跟着一起收起来，
   // 否则用户会看到一个带必填标记却无从操作的区块。加载中与出错（可在原地重试）时保留外壳。
+  //
+  // 注意：这个条件只能决定「可见外壳」的显隐，**绝不能**用来决定 ManagedCaptcha 是否挂载。
+  // captchaStatus 的唯一写入者就是 ManagedCaptcha 的 onStatusChange，而它首帧拿到的指纹是空的
+  // （采集是异步的，且 useSecureCaptchaSelection 以非空指纹为前提才发请求），于是挂载后会先回报
+  // 一次 { required:false, loading:false } —— 若挂载由这里决定，控件会被自己这一次回报卸载掉，
+  // 之后再没有人能更新 captchaStatus，区块永久消失、提交放行，后端只能回 403「请先完成人机验证」。
   const showCaptchaSection =
     captchaStatus.required || captchaStatus.loading || Boolean(captchaStatus.error);
 
@@ -1080,22 +1086,25 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           </div>
         </motion.div>
 
-        {showCaptchaSection ? (
+        {/* ManagedCaptcha 必须无条件挂载（理由见上方 showCaptchaSection 的说明）；
+            没有可见内容时把整个外壳隐藏，免得在表单的 space-y-* 里留下一段空档。 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.0 }}
-          className="space-y-3"
+          className={cn("space-y-3", !showCaptchaSection && "hidden")}
         >
-          <motion.label
-            className={cn(studioEyebrowClassName, "mb-3 block")}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 1.1 }}
-          >
-            人机验证
-            {captchaStatus.required ? <span className="text-red-500 ml-1">*</span> : null}
-          </motion.label>
+          {showCaptchaSection ? (
+            <motion.label
+              className={cn(studioEyebrowClassName, "mb-3 block")}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 1.1 }}
+            >
+              人机验证
+              {captchaStatus.required ? <span className="text-red-500 ml-1">*</span> : null}
+            </motion.label>
+          ) : null}
 
           {/* 三家供应商共用同一套下发链路；是否要求验证由管理端配置决定。 */}
           <ManagedCaptcha
@@ -1119,7 +1128,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             </motion.div>
           ) : null}
         </motion.div>
-        ) : null}
 
         <AnimatePresence>
           {displayError && (
