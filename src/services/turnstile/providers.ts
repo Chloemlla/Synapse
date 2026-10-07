@@ -474,8 +474,7 @@ export async function selectCaptchaProvider(
  *
  * - `required` = 三家供应商里有任一家**真正可下发**（已上线 + 凭据齐 + 本月额度未用尽）。
  *   三家都不可用时为 false，与历史「Turnstile 开关关闭即放行」等价。
- * - `enabledProviders` 提供给校验侧：若客户端声明的供应商已不在名单里，
- *   说明管理端在用户答题期间把它下线了，此时不再把人卡死。
+ * - `enabledProviders` 用于诊断和重新分配挑战，不能作为客户端跳过验证的依据。
  *
  * 注意这里与场景无关：请求到达时只关心「现在到底有没有一家人机验证可用」。
  */

@@ -17,6 +17,14 @@ const CloudflareChallengePage: React.FC = () => {
   // 失败原因：后端原文优先，其次给可行动的中文文案（技术细节只进 console）
   const [failureMessage, setFailureMessage] = React.useState('');
   const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+  const requestRef = React.useRef<AbortController | null>(null);
+  const attemptedTokenRef = React.useRef<string | null>(null);
+  const generationRef = React.useRef(0);
+
+  React.useEffect(() => () => {
+    generationRef.current += 1;
+    requestRef.current?.abort();
+  }, []);
   // 验证通过后的前进目标：沿用全站既有的 redirectTo 查询参数（登录页同款约定），
   // 只接受站内相对路径，缺省回首页，避免把用户带去第三方站点。
   const [searchParams] = useSearchParams();
@@ -42,11 +50,15 @@ const CloudflareChallengePage: React.FC = () => {
 
   // 把挑战令牌交给后端统一校验（后端按 captchaProvider 分派到对应供应商）。
   const verifyToken = React.useCallback(async (challenge: ManagedCaptchaChallenge) => {
+    if (requestRef.current || attemptedTokenRef.current === challenge.token) return;
+    attemptedTokenRef.current = challenge.token;
+    const generation = generationRef.current;
     setVerificationState('verifying');
     setFailureMessage('');
 
     // 请求自身带超时：后端或网络卡住时不能永久停在「正在确认验证结果…」
     const controller = new AbortController();
+    requestRef.current = controller;
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
     try {
@@ -66,6 +78,7 @@ const CloudflareChallengePage: React.FC = () => {
       });
 
       const data = await response.json().catch(() => ({}));
+      if (generation !== generationRef.current) return;
       if (response.ok && data?.success) {
         setVerificationState('verified');
         return;
@@ -77,6 +90,7 @@ const CloudflareChallengePage: React.FC = () => {
       setFailureMessage(backendReason || '验证未通过，请重新完成人机验证。');
       setVerificationState('failed');
     } catch (error) {
+      if (generation !== generationRef.current) return;
       console.error('确认人机验证结果失败:', error);
       setFailureMessage(
         error instanceof DOMException && error.name === 'AbortError'
@@ -86,6 +100,7 @@ const CloudflareChallengePage: React.FC = () => {
       setVerificationState('failed');
     } finally {
       window.clearTimeout(timeoutId);
+      if (requestRef.current === controller) requestRef.current = null;
     }
   }, []);
 
@@ -97,6 +112,10 @@ const CloudflareChallengePage: React.FC = () => {
   );
 
   const handleCaptchaCleared = React.useCallback(() => {
+    generationRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
+    attemptedTokenRef.current = null;
     setVerificationState('idle');
   }, []);
 

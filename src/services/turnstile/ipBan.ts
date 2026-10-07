@@ -72,7 +72,6 @@ export async function recordViolation(
         $set: { reason },
         $setOnInsert: {
           ipAddress: validatedIp,
-          violationCount: 0, // $inc below makes this 1 on first insert
           fingerprint,
           userAgent,
           bannedAt: now,

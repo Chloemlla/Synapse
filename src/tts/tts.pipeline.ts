@@ -308,11 +308,6 @@ export class TtsSubmissionPipeline {
       return;
     }
 
-    // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
-    if (!policy.enabledProviders.includes(provider)) {
-      return;
-    }
-
     throw new TtsRequestError(403, "人机验证失败，请重新验证", "TTS_CAPTCHA_FAILED");
   }
 

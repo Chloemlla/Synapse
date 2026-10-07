@@ -133,6 +133,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     solved: false,
   });
   const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const submittingRef = useRef(false);
   const [providerConfig, setProviderConfig] = useState(FALLBACK_TTS_PROVIDER_CONFIG);
   const [providerConfigLoading, setProviderConfigLoading] = useState(true);
   const [usingProviderFallback, setUsingProviderFallback] = useState(false);
@@ -490,6 +491,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
   // 实际提交：表单提交与「同意政策后续跑」都走这里，保证两条路径的载荷完全一致。
   const submitRequest = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
       const result = await onSubmit({
         text,
@@ -514,10 +517,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
     } catch (submitError) {
       // 用户主动取消：不是失败，不弹红色错误；后端任务仍可能跑完并进入生成历史。
       if (cancelRequestedRef.current) {
-        // 挑战令牌一次性，任务已提交即被核销，下次生成前需重新验证。
-        if (captchaStatus.required) {
-          captchaRef.current?.reset();
-        }
         setNotification({
           message: "已取消本次生成，稍后可在生成历史中查看结果",
           type: "warning",
@@ -530,14 +529,14 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
       const needsConsent =
         submitError instanceof TtsApiError && submitError.code === TTS_POLICY_CONSENT_REQUIRED;
       setPolicyConsentRequired(needsConsent);
-      // 挑战令牌一次性：走到这里说明它多半已被核销（人机验证在政策门禁之前），重新验证。
-      if (!needsConsent && captchaStatus.required) {
-        captchaRef.current?.reset();
-      }
       setNotification({
         message,
         type: "error",
       });
+    } finally {
+      // 请求结果不决定令牌是否已消费；成功、业务拒绝和取消都需要新挑战。
+      if (captcha?.token) captchaRef.current?.reset();
+      submittingRef.current = false;
     }
   }, [
     activeProviderConfig.provider,
@@ -574,13 +573,11 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
   // 同意落库后续跑这次生成。人机验证开启时不能直接重试：挑战令牌是一次性的，
   // 而后端的校验顺序里人机验证在政策门禁之前，说明令牌已被核销，重发只会撞
-  // TTS_CAPTCHA_FAILED。这里清掉令牌并重挂控件，让用户重新验证。
+  // TTS_CAPTCHA_FAILED。请求收尾已准备新挑战，这里等待用户重新验证。
   const handlePolicyConsentAccepted = useCallback(() => {
     setPolicyConsentRequired(false);
 
     if (captchaStatus.required) {
-      setCaptcha(null);
-      captchaRef.current?.reset();
       setNotification({ message: "已确认政策，请重新完成人机验证后再生成", type: "success" });
       return;
     }

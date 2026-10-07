@@ -6,7 +6,7 @@ import { mongoose } from "../mongoService";
 import { generateAccessToken } from "./accessToken";
 import { verifyCapToken } from "./cap";
 import { sanitizeCapEndpoint } from "./capEndpoint";
-import { HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
+import { BAN_DURATION, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { verifyHCaptchaToken } from "./hcaptcha";
 import { isIpBanned, recordViolation } from "./ipBan";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
@@ -240,6 +240,7 @@ export async function verifyTokenDetailed(
       recordVerificationOutcome(remoteIp, userAgent, false, new Date(), fingerprint);
 
       await persistTurnstileTrace({
+        verificationMethod: captchaType,
         traceId,
         time: new Date(),
         ip: remoteIp,
@@ -273,6 +274,7 @@ export async function verifyTokenDetailed(
       recordVerificationOutcome(validatedIp, userAgent, false, new Date(), fingerprint);
 
       await persistTurnstileTrace({
+        verificationMethod: captchaType,
         traceId,
         time: new Date(),
         ip: validatedIp,
@@ -330,6 +332,7 @@ export async function verifyTokenDetailed(
       recordVerificationOutcome(validatedIp, userAgent, false, new Date(), fingerprint);
 
       await persistTurnstileTrace({
+        verificationMethod: captchaType,
         traceId,
         time: new Date(),
         ip: validatedIp,
@@ -365,6 +368,7 @@ export async function verifyTokenDetailed(
         recordVerificationOutcome(validatedIp, userAgent, false, new Date(), fingerprint);
 
         await persistTurnstileTrace({
+          verificationMethod: captchaType,
           traceId,
           time: new Date(),
           ip: validatedIp,
@@ -423,9 +427,11 @@ export async function verifyTokenDetailed(
     // trycap 用 { success, error } 表达失败，这里归一到 error-codes 形状，后面的通用失败分支无需分叉。
     const capError = captchaType === "trycap" ? (result as CapVerifyResponse).error : undefined;
     const legacyResult = result as TurnstileResponse | HCaptchaResponse;
-    const resultErrorCodes = legacyResult["error-codes"] || (capError ? [String(capError)] : []);
+    const lowScore = captchaType === "hcaptcha" && result.success &&
+      typeof (result as HCaptchaResponse).score === "number" && (result as HCaptchaResponse).score! < 0.5;
+    const resultErrorCodes = lowScore ? ["LOW_SCORE"] : legacyResult["error-codes"] || (capError ? [String(capError)] : []);
 
-    if (!result.success) {
+    if (!result.success || lowScore) {
       const riskAssessment = assessClientRisk(validatedIp, userAgent, fingerprint);
 
       const errorCodes = resultErrorCodes;
@@ -451,11 +457,19 @@ export async function verifyTokenDetailed(
         traceId,
       });
 
-      const banned = await recordViolation(validatedIp, `${serviceName}验证失败`, fingerprint, userAgent);
+      // 重复/过期令牌、配置错误与供应商故障需要新挑战或修复配置，不应封禁正常用户。
+      // 只对供应商明确判为无效响应或低分的结果累计处罚，未知错误仍拒绝验证。
+      const violation = errorCodes.some((code) =>
+        ["invalid-input-response", "invalid-response", "LOW_SCORE"].includes(code),
+      );
+      const banned = violation
+        ? await recordViolation(validatedIp, `${serviceName}验证失败`, fingerprint, userAgent)
+        : false;
 
       recordVerificationOutcome(validatedIp, userAgent, false, now, fingerprint);
 
       await persistTurnstileTrace({
+        verificationMethod: captchaType,
         traceId,
         time: now,
         ip: validatedIp,
@@ -483,7 +497,7 @@ export async function verifyTokenDetailed(
         violationInfo: {
           violationCount: 0,
           banned,
-          banExpiresAt: banned ? new Date(Date.now() + 24 * 60 * 60 * 1000) : undefined,
+          banExpiresAt: banned ? new Date(Date.now() + BAN_DURATION) : undefined,
         },
         traceId,
       };
@@ -493,6 +507,7 @@ export async function verifyTokenDetailed(
     recordVerificationOutcome(validatedIp, userAgent, true, now, fingerprint);
 
     await persistTurnstileTrace({
+      verificationMethod: captchaType,
       traceId,
       time: now,
       ip: validatedIp,
@@ -528,6 +543,7 @@ export async function verifyTokenDetailed(
     recordVerificationOutcome(remoteIp, userAgent, false, new Date(), fingerprint);
 
     await persistTurnstileTrace({
+      verificationMethod: captchaType,
       traceId,
       time: new Date(),
       ip: remoteIp,

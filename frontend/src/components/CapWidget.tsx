@@ -71,6 +71,54 @@ declare global {
   }
 }
 
+let capScriptPromise: Promise<void> | null = null;
+
+function loadCapScript(): Promise<void> {
+  if (window.capWidgetScriptState === 'ready') return Promise.resolve();
+  if (capScriptPromise) return capScriptPromise;
+  capScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.getElementById(CAP_WIDGET_SCRIPT_ID) as HTMLScriptElement | null;
+    const script = existing ?? document.createElement('script');
+    let settled = false;
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      script.removeEventListener('load', ready);
+      script.removeEventListener('error', fail);
+    };
+    const ready = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      window.capWidgetScriptState = 'ready';
+      resolve();
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      script.remove();
+      window.capWidgetScriptState = 'failed';
+      reject(new Error('Cap widget script failed to load'));
+    };
+    const timeout = window.setTimeout(fail, CAP_WIDGET_SCRIPT_TIMEOUT_MS);
+    script.addEventListener('load', ready);
+    script.addEventListener('error', fail);
+    window.capWidgetScriptState = 'loading';
+    if (!existing) {
+      script.id = CAP_WIDGET_SCRIPT_ID;
+      script.src = CAP_WIDGET_SCRIPT_SRC;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  }).then(() => {
+    capScriptPromise = null;
+  }, (error) => {
+    capScriptPromise = null;
+    throw error;
+  });
+  return capScriptPromise;
+}
+
 type CapWidgetInternalProps = CapWidgetProps & { ref?: React.Ref<CapWidgetRef> };
 
 const CapWidget = ({
@@ -95,73 +143,6 @@ const CapWidget = ({
   const resetToken = useCallback(() => {
     tokenRef.current = '';
   }, []);
-
-  const loadScript = useCallback(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        if (window.capWidgetScriptState === 'ready') {
-          resolve();
-          return;
-        }
-
-        // 同一 Promise 只允许落定一次：load/error/超时三者谁先到谁算数，其余一律忽略。
-        let settled = false;
-        let ownScript: HTMLScriptElement | null = null;
-        const timeoutId = window.setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          // 自己注入的脚本若仍挂起，移除它并复位全局状态，否则重试时 load 事件永远不会再来
-          // （元素还在、事件已错过），只能一路超时。
-          if (ownScript) {
-            ownScript.remove();
-            if (window.capWidgetScriptState === 'loading') window.capWidgetScriptState = undefined;
-          }
-          reject(new Error('Cap widget script load timed out'));
-        }, CAP_WIDGET_SCRIPT_TIMEOUT_MS);
-        const settle = (finish: () => void) => {
-          if (settled) return;
-          settled = true;
-          window.clearTimeout(timeoutId);
-          finish();
-        };
-
-        const existing = document.getElementById(CAP_WIDGET_SCRIPT_ID) as HTMLScriptElement | null;
-        if (existing) {
-          existing.addEventListener('load', () => settle(() => resolve()), { once: true });
-          existing.addEventListener(
-            'error',
-            () => settle(() => reject(new Error('Cap widget script failed to load'))),
-            { once: true },
-          );
-          return;
-        }
-
-        window.capWidgetScriptState = 'loading';
-        const script = document.createElement('script');
-        script.id = CAP_WIDGET_SCRIPT_ID;
-        script.src = CAP_WIDGET_SCRIPT_SRC;
-        script.async = true;
-        ownScript = script;
-        script.addEventListener(
-          'load',
-          () => {
-            window.capWidgetScriptState = 'ready';
-            settle(() => resolve());
-          },
-          { once: true },
-        );
-        script.addEventListener(
-          'error',
-          () => {
-            window.capWidgetScriptState = 'failed';
-            settle(() => reject(new Error('Cap widget script failed to load')));
-          },
-          { once: true },
-        );
-        document.head.appendChild(script);
-      }),
-    [],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -189,7 +170,7 @@ const CapWidget = ({
             if (!window.CAP_CSS_NONCE) window.CAP_CSS_NONCE = nonceSource;
           }
         }
-        await loadScript();
+        await loadCapScript();
       } catch (error) {
         if (!cancelled) callbacksRef.current.onError?.(error);
         return;
@@ -208,7 +189,7 @@ const CapWidget = ({
       // 文本语言由控件自己的 i18n 表决定（data-cap-lang），auto 时不设，跟随浏览器。
       if (language && language !== 'auto') element.setAttribute('data-cap-lang', language);
       element.addEventListener('solve', (event: Event) => {
-        if (cancelled) return;
+        if (cancelled || !element.isConnected) return;
         const detail = (event as CustomEvent<{ token?: string }>).detail;
         const token = detail?.token ?? '';
         if (!token) {
@@ -219,12 +200,11 @@ const CapWidget = ({
         callbacksRef.current.onVerify(token);
       });
       element.addEventListener('error', (event: Event) => {
+        if (cancelled || !element.isConnected) return;
         resetToken();
-        if (cancelled) return;
         callbacksRef.current.onError?.((event as CustomEvent).detail);
       });
       element.addEventListener('reset', () => {
-        resetToken();
         // Cap 控件在断连/卸载时会自己走一遍 reset() 并派发 reset 事件，这**不是**用户令牌过期。
         // 若据实上报，上层刚收到的「验证成功」会被立刻抹掉、只剩「验证码已过期」，且每次重挂都复现。
         //
@@ -233,6 +213,7 @@ const CapWidget = ({
         // cancelled 仍是 false。所以再加一道「元素已经不在文档里」的判定：真正的超时过期发生时
         // 控件还挂在树上（isConnected === true），照常上报。
         if (cancelled || !element.isConnected) return;
+        resetToken();
         callbacksRef.current.onExpire?.();
       });
       container.appendChild(element);
@@ -254,18 +235,24 @@ const CapWidget = ({
       elementRef.current = null;
       container.replaceChildren();
     };
-  }, [apiEndpoint, siteKey, ariaLabel, language, workerCount, deferUntilIdle, loadScript, resetToken]);
+  }, [apiEndpoint, siteKey, ariaLabel, language, workerCount, deferUntilIdle, resetToken]);
 
   useImperativeHandle(
     ref,
     () => ({
       execute: () => {
         const element = elementRef.current;
-        if (element?.solve) {
+        if (element?.isConnected && element.solve) {
+          const reportError = (error: unknown) => {
+            if (elementRef.current === element && element.isConnected) {
+              resetToken();
+              callbacksRef.current.onError?.(error);
+            }
+          };
           try {
-            void element.solve();
+            void Promise.resolve(element.solve()).catch(reportError);
           } catch (error) {
-            callbacksRef.current.onError?.(error);
+            reportError(error);
           }
         }
       },

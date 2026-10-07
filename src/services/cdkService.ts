@@ -372,7 +372,7 @@ export class CDKService {
       if (!isAdmin) {
         const captchaPolicy = await TurnstileService.getCaptchaRequestPolicy();
         if (captchaPolicy.required) {
-          const challenge = readCaptchaChallenge({ token: cfToken, provider: captchaProvider });
+          const challenge = readCaptchaChallenge({ captchaToken: cfToken, captchaProvider });
           if (!challenge.token) {
             logger.warn("非管理员用户缺少人机验证 token，拒绝CDK兑换", {
               userId: userInfo?.userId,
@@ -389,8 +389,7 @@ export class CDKService {
               remoteIp: ip,
             });
 
-            // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死。
-            if (!verified && captchaPolicy.enabledProviders.includes(challenge.provider)) {
+            if (!verified) {
               logger.warn("人机验证失败", {
                 userId: userInfo?.userId,
                 userRole,

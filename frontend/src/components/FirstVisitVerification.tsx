@@ -152,6 +152,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   // 自己 reset 一次），这声噪声不得把已拿到的令牌与「已验证」状态抹掉。
   // 新一轮挑战（用户重试 resetChallenge / 供应商故障转移 handleChallengeError）会把终态置回 false。
   const succeededRef = useRef(false);
+  const verifyingRef = useRef(false);
+  const generationRef = useRef(0);
+  const attemptedTokenRef = useRef<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileVerified, setTurnstileVerified] = useState(false);
@@ -234,6 +238,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
   const resetChallenge = useCallback(
     (mode: VerificationMode = verificationMode) => {
+      generationRef.current += 1;
+      requestRef.current?.abort();
+      requestRef.current = null;
+      verifyingRef.current = false;
+      attemptedTokenRef.current = null;
+      setVerifying(false);
       // 用户主动重试：清掉「已排除的供应商」，否则会一直被锁在备选名单上。
       failedProvidersRef.current = [];
       // 新一轮挑战开始，终态作废。
@@ -325,13 +335,20 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   }, [failoverMaxAttempts, regenerateSelection, secureCaptchaConfig?.captchaType, setNotification]);
 
   const handleVerify = useCallback(async () => {
-    if (!verificationMode || !currentToken || !isVerified) return;
+    if (!verificationMode || !currentToken || !isVerified || verifyingRef.current || attemptedTokenRef.current === currentToken) return;
+
+    verifyingRef.current = true;
+    attemptedTokenRef.current = currentToken;
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    requestRef.current = controller;
 
     setVerifying(true);
     setError('');
 
     try {
-      const result = await completeIpVerification(fingerprint, currentToken, verificationMode);
+      const result = await completeIpVerification(fingerprint, currentToken, verificationMode, controller.signal);
+      if (generation !== generationRef.current) return;
       if (!result.success || !result.verified || !result.token) {
         // 后端原文不直铺界面，只给中性可重试文案。
         throw new Error('验证未通过，请重试。');
@@ -343,9 +360,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       });
 
       window.setTimeout(() => {
-        onVerificationComplete();
+        if (generation === generationRef.current) onVerificationComplete();
       }, 180);
     } catch (verifyError) {
+      if (generation !== generationRef.current) return;
       // complete 在解验证码这一刻被封时抛出带 banData 的错误：切到阻断页（页面自带申诉入口），
       // 不再当作普通失败只显示一句「未被接受」。
       const banData = (verifyError as { banData?: { reason?: string; expiresAt?: string } })?.banData;
@@ -368,9 +386,37 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         type: 'error',
       });
     } finally {
-      setVerifying(false);
+      if (requestRef.current === controller) requestRef.current = null;
+      if (generation === generationRef.current) {
+        verifyingRef.current = false;
+        setVerifying(false);
+      }
     }
   }, [currentToken, fingerprint, isVerified, onVerificationComplete, resetChallenge, setNotification, verificationMode]);
+
+  // 配置/设备换轮或组件卸载后，旧 complete 响应不得完成新一轮验证。
+  useEffect(() => {
+    generationRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
+    verifyingRef.current = false;
+    attemptedTokenRef.current = null;
+    succeededRef.current = false;
+    setVerifying(false);
+    setTurnstileToken('');
+    setTurnstileVerified(false);
+    setHCaptchaToken('');
+    setHCaptchaVerified(false);
+    setCapToken('');
+    setCapVerified(false);
+    setTurnstileKey((value) => value + 1);
+    setHCaptchaKey((value) => value + 1);
+    setCapKey((value) => value + 1);
+    return () => {
+      generationRef.current += 1;
+      requestRef.current?.abort();
+    };
+  }, [fingerprint, secureCaptchaConfig]);
 
   const fingerprintPreview = useMemo(() => {
     if (!fingerprint) return '不可用';

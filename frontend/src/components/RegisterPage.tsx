@@ -87,6 +87,7 @@ export const RegisterPage: React.FC = () => {
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({ score: 0, feedback: '' });
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
     const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+    const submittingRef = React.useRef(false);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -152,7 +153,9 @@ export const RegisterPage: React.FC = () => {
     }, [password, username, email]);
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault(); setError(null);
+        e.preventDefault();
+        if (submittingRef.current) return;
+        setError(null);
         setInvalidFields({ username: false, email: false, password: false });
         const usernameError = validateInput(username, 'username'); if (usernameError) { setInvalidFields({ username: true, email: false, password: false }); setError(usernameError); return; }
         const emailError = validateInput(email, 'email'); if (emailError) { setInvalidFields({ username: false, email: true, password: false }); setError(emailError); return; }
@@ -169,6 +172,8 @@ export const RegisterPage: React.FC = () => {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
+        submittingRef.current = true;
+        let requestSent = false;
         try {
             const sanitizedUsername = DOMPurify.sanitize(username).trim();
             const sanitizedEmail = DOMPurify.sanitize(email).trim();
@@ -183,20 +188,23 @@ export const RegisterPage: React.FC = () => {
                 requestBody.captchaProvider = captcha.provider;
                 requestBody.cfToken = captcha.token;
             }
+            requestSent = true;
             const res = await api.post('/api/auth/register', requestBody);
             const data = res.data;
             if (data && data.needVerify) {
                 setNotification({ message: data.message || '验证链接已发送到您的邮箱，请点击链接完成注册', type: 'success' });
                 setError(''); setShowEmailVerify(true); setPendingEmail(sanitizedEmail);
-                // 挑战令牌一次性：注册请求已核销过它，下一次必须重新验证
-                captchaRef.current?.reset();
             } else {
                 setError(data?.error || '注册失败'); setNotification({ message: data?.error || '注册失败', type: 'error' });
             }
         } catch (err: any) {
             const msg = getBackendErrorMessage(err, '注册失败');
             setError(msg); setNotification({ message: msg, type: 'error' });
-        } finally { setLoading(false); }
+        } finally {
+            if (requestSent && captcha?.token) captchaRef.current?.reset();
+            submittingRef.current = false;
+            setLoading(false);
+        }
     };
 
     const strengthLabel = passwordStrength.score >= 4 ? '很强' : passwordStrength.score >= 3 ? '强' : passwordStrength.score >= 2 ? '中等' : '弱';

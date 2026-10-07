@@ -130,6 +130,7 @@ export const LoginPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
     const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+    const submittingRef = React.useRef(false);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -244,6 +245,7 @@ export const LoginPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submittingRef.current) return;
         setError(null);
         setAttemptStatus(null);
         setInvalidFields({ username: false, password: false });
@@ -260,6 +262,7 @@ export const LoginPage: React.FC = () => {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
+        submittingRef.current = true;
         try {
             if (rememberMe) { localStorage.setItem('rememberedUsername', sanitizedUsername); }
             else { localStorage.removeItem('rememberedUsername'); }
@@ -276,6 +279,8 @@ export const LoginPage: React.FC = () => {
                 loginTokenRef.current = result.token;
             }
             if (result && result.requires2FA && result.twoFactorType) {
+                // 密码步骤已消费令牌；二次验证取消或过期后重新登录需要新挑战。
+                if (captcha?.token) captchaRef.current?.reset();
                 setNotification({ message: '需要二次验证，请选择验证方式', type: 'info' });
                 setPendingToken(result.token);
                 const verificationTypes = result.twoFactorType;
@@ -311,7 +316,7 @@ export const LoginPage: React.FC = () => {
                 captchaRef.current?.reset();
             }
             setError(authError.message || '登录失败'); setNotification({ message: authError.message || '登录失败', type: 'error' });
-        } finally { setLoading(false); }
+        } finally { submittingRef.current = false; setLoading(false); }
     };
 
     const handleVerificationMethodSelect = async (method: 'passkey' | 'totp') => {

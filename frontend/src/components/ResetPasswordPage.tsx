@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
-import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaRef, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { FaEnvelope, FaLock, FaArrowLeft, FaVolumeUp, FaEye, FaEyeSlash, FaKey, FaCheckCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
@@ -56,6 +56,8 @@ export const ResetPasswordPage: React.FC = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+    const submittingRef = React.useRef(false);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -78,7 +80,9 @@ export const ResetPasswordPage: React.FC = () => {
     const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault(); setError(null);
+        e.preventDefault();
+        if (submittingRef.current) return;
+        setError(null);
         const sanitizedEmail = DOMPurify.sanitize(email).trim();
         const sanitizedCode = DOMPurify.sanitize(code).trim();
         if (!sanitizedEmail || !sanitizedCode || !newPassword) { setError('请填写所有字段'); return; }
@@ -89,13 +93,16 @@ export const ResetPasswordPage: React.FC = () => {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
         setLoading(true);
+        submittingRef.current = true;
         // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑，
         // 后端挂起时最多等 15 秒后进入可重试的错误态。
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+        let requestSent = false;
         try {
             const [clientIP, fingerprint] = await Promise.all([getClientIP(), getFingerprint()]);
             const deviceName = navigator.userAgent || 'unknown';
+            requestSent = true;
             const response = await fetch(getApiBaseUrl() + '/api/auth/reset-password', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 body: JSON.stringify({
@@ -129,7 +136,12 @@ export const ResetPasswordPage: React.FC = () => {
             const timedOut = err?.name === 'AbortError';
             const message = timedOut ? '请求超时，请稍后重试' : '网络错误，请稍后重试';
             setError(message); setNotification({ message, type: 'error' });
-        } finally { window.clearTimeout(timeoutId); setLoading(false); }
+        } finally {
+            window.clearTimeout(timeoutId);
+            if (requestSent && captcha?.token) captchaRef.current?.reset();
+            submittingRef.current = false;
+            setLoading(false);
+        }
     };
 
     return (
@@ -218,6 +230,7 @@ export const ResetPasswordPage: React.FC = () => {
                                     </div>
 
                                     <ManagedCaptcha
+                                        ref={captchaRef}
                                         scenario="default"
                                         onSolved={handleCaptchaSolved}
                                         onCleared={handleCaptchaCleared}

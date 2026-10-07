@@ -11,6 +11,12 @@ const mockGetAllocationPolicy = jest.fn();
 const mockGetWidgetSettings = jest.fn();
 const mockPersistTurnstileTrace = jest.fn();
 const mockAxiosPost = jest.fn();
+const mockRecordViolation = jest.fn();
+
+jest.mock("../services/turnstile/ipBan", () => ({
+  isIpBanned: async () => ({ banned: false }),
+  recordViolation: (...args: unknown[]) => mockRecordViolation(...args),
+}));
 
 jest.mock("axios", () => ({
   __esModule: true,
@@ -40,6 +46,7 @@ jest.mock("../services/turnstile/quota", () => {
     resetsAt: "2026-10-31T16:00:00.000Z",
   });
   return {
+    consumeConfiguredCaptchaQuota: async () => ({ allowed: true }),
     getCaptchaQuotaSnapshots: async () => ({
       turnstile: build("turnstile"),
       hcaptcha: build("hcaptcha"),
@@ -56,13 +63,13 @@ jest.mock("../services/turnstile/trace", () => ({
 jest.mock("../services/turnstile/risk", () => ({
   assessClientRisk: () => ({ riskLevel: "LOW", riskScore: 0, riskReasons: [] }),
   recordVerificationOutcome: jest.fn(),
-  translateTurnstileErrors: jest.fn(),
+  translateTurnstileErrors: (codes: string[]) => codes,
 }));
 
 import { readCaptchaChallenge, readCaptchaToken } from "../services/turnstile/challenge";
 import { getCaptchaRequestPolicy } from "../services/turnstile/providers";
 import { normalizeCaptchaProviderId } from "../services/turnstile/types";
-import { verifyCaptchaChallenge } from "../services/turnstile/verify";
+import { verifyCaptchaChallenge, verifyTokenDetailed } from "../services/turnstile/verify";
 
 type KeyMap = Record<string, string | null>;
 
@@ -83,6 +90,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPersistTurnstileTrace.mockResolvedValue(undefined);
   mockAxiosPost.mockResolvedValue({ data: { success: false } });
+  mockRecordViolation.mockResolvedValue(false);
   setProviderConfig({});
 });
 
@@ -201,5 +209,49 @@ describe("统一校验入口：按供应商分派", () => {
     expect(mockPersistTurnstileTrace).toHaveBeenCalledWith(
       expect.objectContaining({ verificationMethod: "trycap", reason: "service_unavailable" }),
     );
+  });
+});
+
+
+describe("详细校验的重试与供应商契约", () => {
+  beforeEach(() => setProviderConfig({ keys: {
+    TURNSTILE_SECRET_KEY: "test-secret", HCAPTCHA_SECRET_KEY: "test-secret",
+    CAP_SECRET_KEY: "test-secret", CAP_SITE_KEY: "0123456789",
+  } }));
+
+  it.each(["timeout-or-duplicate", "expired-input-response", "already-seen-response", "internal-error", "invalid-input-secret"])(
+    "%s 拒绝当前挑战但不累计封禁", async (code) => {
+      mockAxiosPost.mockResolvedValue({ data: { success: false, "error-codes": [code] } });
+      const result = await verifyTokenDetailed("valid-token-value", "203.0.113.5");
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error("Expected verification failure");
+      expect(result.retryable).toBe(true);
+      expect(mockRecordViolation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("无效响应仍累计违规，封禁时间采用实际的一小时", async () => {
+    mockAxiosPost.mockResolvedValue({ data: { success: false, "error-codes": ["invalid-input-response"] } });
+    mockRecordViolation.mockResolvedValue(true);
+    const before = Date.now();
+    const result = await verifyTokenDetailed("valid-token-value", "203.0.113.5");
+    if (result.success) throw new Error("Expected verification failure");
+    expect(mockRecordViolation).toHaveBeenCalledTimes(1);
+    expect(result.retryable).toBe(false);
+    expect(result.violationInfo?.banExpiresAt?.getTime()).toBeGreaterThanOrEqual(before + 3600000);
+    expect(result.violationInfo?.banExpiresAt?.getTime()).toBeLessThanOrEqual(Date.now() + 3600000);
+  });
+
+  it.each(["hcaptcha", "trycap"] as const)("%s 的详细验证保留供应商归属", async (provider) => {
+    mockAxiosPost.mockResolvedValue({ data: { success: true } });
+    const result = await verifyTokenDetailed("valid-token-value", "203.0.113.5", undefined, undefined, provider);
+    expect(result.success).toBe(true);
+    expect(mockPersistTurnstileTrace).toHaveBeenCalledWith(expect.objectContaining({ verificationMethod: provider, success: true }));
+  });
+
+  it("hCaptcha 的详细验证与普通验证均拒绝低分响应", async () => {
+    mockAxiosPost.mockResolvedValue({ data: { success: true, score: 0.1 } });
+    expect((await verifyTokenDetailed("valid-token-value", "203.0.113.5", undefined, undefined, "hcaptcha")).success).toBe(false);
+    expect(await verifyCaptchaChallenge({ token: "valid-token-value", provider: "hcaptcha" })).toBe(false);
   });
 });

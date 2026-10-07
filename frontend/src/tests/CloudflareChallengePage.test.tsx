@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * 回归：ManagedCaptcha 是页面 captchaStatus 的**唯一**写入者，页面绝不能反过来按
@@ -13,12 +13,16 @@ const h = vi.hoisted(() => ({
   statusCallback: null as null | ((status: unknown) => void),
   mounts: 0,
   unmounts: 0,
+  solved: null as null | ((challenge: { token: string; provider: string }) => void),
+  cleared: null as null | (() => void),
 }));
 
 vi.mock('../components/ManagedCaptcha', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
 
-  const CaptchaStub = ({ onStatusChange }: { onStatusChange?: (status: unknown) => void }) => {
+  const CaptchaStub = ({ onStatusChange, onSolved, onCleared }: any) => {
+    h.solved = onSolved;
+    h.cleared = onCleared;
     React.useEffect(() => {
       h.statusCallback = onStatusChange ?? null;
       h.mounts += 1;
@@ -48,8 +52,33 @@ beforeEach(() => {
   h.mounts = 0;
   h.unmounts = 0;
 });
+afterEach(() => vi.unstubAllGlobals());
 
 describe('CloudflareChallengePage：控件不得因自身的状态回报被卸载', () => {
+  it('coalesces duplicate solve callbacks and ignores the previous round response', async () => {
+    const resolvers: Array<(response: unknown) => void> = [];
+    const fetchMock = vi.fn(() => new Promise((resolve) => resolvers.push(resolve)));
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    act(() => {
+      h.statusCallback?.({ required: true, loading: false, error: null, provider: 'turnstile', solved: true });
+      h.solved?.({ token: 'old', provider: 'turnstile' });
+      h.solved?.({ token: 'old', provider: 'turnstile' });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    act(() => {
+      h.cleared?.();
+      h.solved?.({ token: 'new', provider: 'turnstile' });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => resolvers[1]({ ok: true, json: async () => ({ success: true }) }));
+    expect(screen.getByRole('link', { name: '继续访问' })).toBeInTheDocument();
+    await act(async () => resolvers[0]({ ok: false, json: async () => ({ error: 'Old rejection' }) }));
+    expect(screen.getByRole('link', { name: '继续访问' })).toBeInTheDocument();
+    act(() => h.solved?.({ token: 'new', provider: 'turnstile' }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('控件首次回报「结论未到」后仍保持挂载，也不谎报「尚未启用」', async () => {
     renderPage();
 

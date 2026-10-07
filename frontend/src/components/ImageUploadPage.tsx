@@ -366,6 +366,7 @@ const ImageUploadPage: React.FC = () => {
   const captchaChallengeRef = useRef<ManagedCaptchaChallenge | null>(null);
   const captchaResolveRef = useRef<((challenge: ManagedCaptchaChallenge) => void) | null>(null);
   const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const submittingRef = useRef(false);
 
   // 新增闪烁效果状态
   const [flashingImages, setFlashingImages] = useState<Set<string>>(new Set());
@@ -609,6 +610,7 @@ const ImageUploadPage: React.FC = () => {
   };
 
   const handleUpload = async () => {
+    if (submittingRef.current) return;
     if (!file) return;
 
     // 检查人机验证（是否需要由管理端配置决定；管理员直接跳过）
@@ -619,6 +621,7 @@ const ImageUploadPage: React.FC = () => {
     }
 
     setUploading(true);
+    submittingRef.current = true;
     setError(null);
     setUploadedUrl(null);
     try {
@@ -636,16 +639,10 @@ const ImageUploadPage: React.FC = () => {
       console.log('[图片上传] 响应状态:', res.status);
       const result = await res.json();
       console.log('[图片上传] 响应内容:', result);
-      setUploading(false);
       if (result?.data?.web2url) {
         setUploadedUrl(result.data.web2url);
         setUploadedShortUrl(result.data.shortUrl || null);
         setNotification({ message: '上传成功', type: 'success' });
-
-        // 重置人机验证状态（令牌一次性）
-        setCaptcha(null);
-        captchaChallengeRef.current = null;
-        captchaRef.current?.reset();
 
         // 生成图片数据验证信息
         let imageId: string;
@@ -705,8 +702,6 @@ const ImageUploadPage: React.FC = () => {
         });
       } else if (result?.error) {
         setUploadedShortUrl(null);
-        // 挑战令牌一次性：失败后重新验证
-        captchaRef.current?.reset();
         const friendly = toUploadErrorMessage(result.error);
         setError(friendly);
         setNotification({ message: friendly, type: 'error' });
@@ -717,17 +712,20 @@ const ImageUploadPage: React.FC = () => {
         console.error('[图片上传] 上传失败，未知响应:', result);
       }
     } catch (e: any) {
-      setUploading(false);
-      captchaRef.current?.reset();
       const friendly = toUploadErrorMessage(e);
       setError(friendly);
       setNotification({ message: friendly, type: 'error' });
       console.error('[图片上传] 异常:', e);
+    } finally {
+      if (!isAdmin && captcha?.token) captchaRef.current?.reset();
+      submittingRef.current = false;
+      setUploading(false);
     }
   };
 
   // 批量上传处理
   const handleBatchUpload = async () => {
+    if (submittingRef.current) return;
     if (batchFiles.length === 0) return;
 
     // 检查人机验证（批量上传要求用户先完成一次验证；管理员直接跳过）
@@ -737,6 +735,8 @@ const ImageUploadPage: React.FC = () => {
     }
 
     setBatchUploading(true);
+    submittingRef.current = true;
+    try {
     setBatchDone(0);
     // F5-04：整批共用一个 AbortController，「取消上传」可中止在途请求与等待
     const controller = new AbortController();
@@ -913,9 +913,6 @@ const ImageUploadPage: React.FC = () => {
       }
     }
 
-    setBatchUploading(false);
-    batchAbortRef.current = null;
-
     // F5-04：用户主动取消：保留队列（未完成项回到「等待上传」），不进入成功项收敛逻辑
     if (controller.signal.aborted) {
       setBatchProgress(prev => {
@@ -929,9 +926,6 @@ const ImageUploadPage: React.FC = () => {
         message: `已取消上传：已完成 ${results.length}/${batchFiles.length} 个，其余保留在队列中`,
         type: 'warning'
       });
-      setCaptcha(null);
-      captchaChallengeRef.current = null;
-      captchaRef.current?.reset();
       return;
     }
 
@@ -1033,10 +1027,14 @@ const ImageUploadPage: React.FC = () => {
       });
     }
 
-    // 重置人机验证状态
-    setCaptcha(null);
-    captchaChallengeRef.current = null;
-    captchaRef.current?.reset();
+    } finally {
+      setBatchUploading(false);
+      submittingRef.current = false;
+      batchAbortRef.current = null;
+      setCaptcha(null);
+      captchaChallengeRef.current = null;
+      captchaRef.current?.reset();
+    }
   };
 
   // 3. 拖拽上传相关事件
