@@ -37,7 +37,8 @@ export function subscribeCaptchaRecovery(listener: RecoveryListener): () => void
 export function notifyCaptchaFailure(responseBody: unknown, requestBody: unknown, status?: number): boolean {
     const body = asRecord(responseBody);
     if (!body || body.success === true || body.verified === true) return false;
-    const failed = (typeof status === 'number' && status >= 400) || body.success === false || body.verified === false;
+    const failed = (typeof status === 'number' && status >= 400) || body.success === false || body.verified === false ||
+        (typeof body.error === 'string' && body.error.trim().length > 0);
     if (!failed) return false;
 
     const request = readRequestBody(requestBody);

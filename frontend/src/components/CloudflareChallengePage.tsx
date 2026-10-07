@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FaArrowLeft, FaArrowRight, FaCheckCircle, FaExclamationTriangle, FaRedo, FaShieldAlt } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import ManagedCaptcha, {
   type ManagedCaptchaChallenge,
   type ManagedCaptchaRef,
@@ -62,7 +63,7 @@ const CloudflareChallengePage: React.FC = () => {
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
     try {
-      const response = await fetch(`${getApiBaseUrl()}/api/turnstile/verify-token`, {
+      const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/turnstile/verify-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

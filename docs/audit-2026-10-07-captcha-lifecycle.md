@@ -32,3 +32,7 @@
 - CAPTCHA-17：utils/ipVerification.ts:328 在调用页面核对响应代际之前写入本地会话；旧请求可能覆盖新会话。提供取消信号/有效性判据并在持久化前检查。
 - CAPTCHA-18：ImageUploadPage.tsx:596 批量等待器遗留 abort listener，旧回调会清除新等待器，reset 在 resolver 安装前且无已取消预检；改为一次性 settle、清理计时器/监听器、先安装等待再 reset，卸载释放。
 - CAPTCHA-19：LotteryPage.tsx:538 多轮抽奖卡片共享单一 captcha/status/ref，提交后重置最后一卡而非消费令牌的一卡；卡片隔离状态/ref，请求收尾刷新自己的挑战。
+
+CAPTCHA-01/16 补充：长请求期间令牌可能已经过期并生成新令牌，旧请求 finally 无参 reset 会再清掉新挑战；请求收尾传消费的令牌，只有仍匹配本轮才重置。三个历史裸 fetch 表单迁入共享包装器以覆盖自动识别。
+
+CI 迭代：cb9fb199 的前端/镜像构建发现抽奖回归样例缺 LotteryRound.blockchainHeight/seed，补齐真实字段并去掉类型断言，等待新轮验证。

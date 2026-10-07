@@ -6,6 +6,7 @@ import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaRef, t
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { FaEnvelope, FaLock, FaArrowLeft, FaVolumeUp, FaEye, FaEyeSlash, FaKey, FaCheckCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getFingerprint, getClientIP } from '../utils/fingerprint';
 import {
     authAlertClassName,
@@ -103,7 +104,7 @@ export const ResetPasswordPage: React.FC = () => {
             const [clientIP, fingerprint] = await Promise.all([getClientIP(), getFingerprint()]);
             const deviceName = navigator.userAgent || 'unknown';
             requestSent = true;
-            const response = await fetch(getApiBaseUrl() + '/api/auth/reset-password', {
+            const response = await fetchWithTimeout(getApiBaseUrl() + '/api/auth/reset-password', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 body: JSON.stringify({
                     email: sanitizedEmail,
@@ -138,7 +139,7 @@ export const ResetPasswordPage: React.FC = () => {
             setError(message); setNotification({ message, type: 'error' });
         } finally {
             window.clearTimeout(timeoutId);
-            if (requestSent && captcha?.token) captchaRef.current?.reset();
+            if (requestSent && captcha?.token) captchaRef.current?.reset(captcha.token);
             submittingRef.current = false;
             setLoading(false);
         }

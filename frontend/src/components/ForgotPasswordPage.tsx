@@ -6,6 +6,7 @@ import { useNotification } from './Notification';
 import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaRef, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { FaEnvelope, FaArrowLeft, FaVolumeUp, FaKey, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getFingerprint, getClientIP } from '../utils/fingerprint';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import {
@@ -127,7 +128,7 @@ export const ForgotPasswordPage: React.FC = () => {
             }
 
             requestSent = true;
-            const response = await fetch(getApiBaseUrl() + '/api/auth/forgot-password', {
+            const response = await fetchWithTimeout(getApiBaseUrl() + '/api/auth/forgot-password', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -169,7 +170,7 @@ export const ForgotPasswordPage: React.FC = () => {
             setNotification({ message: timedOut ? '请求超时，请稍后重试' : '网络错误，请重试', type: 'error' });
         } finally {
             window.clearTimeout(timeoutId);
-            if (requestSent && captcha?.token) captchaRef.current?.reset();
+            if (requestSent && captcha?.token) captchaRef.current?.reset(captcha.token);
             submittingRef.current = false;
             setLoading(false);
         }

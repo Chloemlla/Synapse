@@ -201,7 +201,7 @@ export const RegisterPage: React.FC = () => {
             const msg = getBackendErrorMessage(err, '注册失败');
             setError(msg); setNotification({ message: msg, type: 'error' });
         } finally {
-            if (requestSent && captcha?.token) captchaRef.current?.reset();
+            if (requestSent && captcha?.token) captchaRef.current?.reset(captcha.token);
             submittingRef.current = false;
             setLoading(false);
         }

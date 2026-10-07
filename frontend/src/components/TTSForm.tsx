@@ -535,7 +535,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
       });
     } finally {
       // 请求结果不决定令牌是否已消费；成功、业务拒绝和取消都需要新挑战。
-      if (captcha?.token) captchaRef.current?.reset();
+      if (captcha?.token) captchaRef.current?.reset(captcha.token);
       submittingRef.current = false;
     }
   }, [

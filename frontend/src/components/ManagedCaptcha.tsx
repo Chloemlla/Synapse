@@ -68,7 +68,7 @@ export interface ManagedCaptchaProps {
 
 export interface ManagedCaptchaRef {
   /** 每次实际提交结束后调用（成功或失败均消费令牌），重新准备挑战。 */
-  reset: () => void;
+  reset: (consumedToken?: string) => void;
 }
 
 type ProviderMode = 'turnstile' | 'hcaptcha' | 'trycap';
@@ -188,7 +188,8 @@ const ManagedCaptcha = ({
     tryCapRearmCountRef.current = 0;
   }, [fingerprint, scenario]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback((consumedToken?: string) => {
+    if (consumedToken !== undefined && consumedToken !== tokenRef.current) return;
     // 响应拦截器与页面 finally 可能同时申请恢复，同一轮只发一次配置请求。
     if (resetInProgressRef.current && !solvedRef.current) return;
     resetInProgressRef.current = true;
@@ -351,7 +352,7 @@ const ManagedCaptcha = ({
           </div>
           <button
             type="button"
-            onClick={reset}
+            onClick={() => reset()}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
             <FaRedo className="h-3 w-3" />

@@ -320,6 +320,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     expect(screen.getByTestId('turnstile-widget')).toBeVisible();
     act(() => lastWidgetProps.turnstile.onVerify('second-token'));
     act(() => notifyCaptchaFailure({ error: '人机验证失败，请重试' }, { captchaToken: 'first-token' }, 400));
+    act(() => ref.current?.reset('first-token'));
     expect(onCleared).toHaveBeenCalledTimes(1);
     expect(screen.getByText('人机验证通过')).toBeInTheDocument();
   });
