@@ -107,8 +107,7 @@ export function getFrontendBaseUrl(): string {
  * - 「要不要验」不再看 Turnstile 凭据是否存在，而是看三家供应商里有没有任一家真正可下发
  *   （已上线 + 凭据齐 + 本月额度未用尽）；三家全下线 ⇒ 放行，与历史「开关关掉即放行」等价。
  * - 「验哪家」由客户端声明的 `captchaProvider` 决定（缺失/非法 → turnstile，兼容老客户端）。
- * - 客户端声明的供应商已不在可下发名单（管理端在用户答题期间把它下线了）时不再卡人：
- *   该家的凭据可能已被清掉，再怎么验都会失败，此时放行与「管理端关掉这家」语义一致。
+ * - 只要仍要求验证，供应商校验失败就必须重新获取挑战；客户端声明不能豁免验证。
  */
 export async function verifyRequiredCaptcha(
   challenge: unknown,
@@ -132,16 +131,6 @@ export async function verifyRequiredCaptcha(
     return null;
   }
 
-  if (!policy.enabledProviders.includes(provider)) {
-    logger.warn(`[${logTag}] 声明的供应商已下线，本次放行`, {
-      subject,
-      ip,
-      provider,
-      enabledProviders: policy.enabledProviders,
-    });
-    return null;
-  }
-
   logger.warn(`[${logTag}] 人机验证失败`, { subject, ip, provider });
   return "人机验证失败，请重试";
 }
@@ -156,5 +145,5 @@ export async function verifyRequiredTurnstile(
   logTag: string,
   subject?: string,
 ): Promise<string | null> {
-  return verifyRequiredCaptcha({ token, captchaProvider: "turnstile" }, ip, logTag, subject);
+  return verifyRequiredCaptcha({ captchaToken: token, captchaProvider: "turnstile" }, ip, logTag, subject);
 }

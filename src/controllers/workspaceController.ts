@@ -232,7 +232,7 @@ export class WorkspaceController {
           subject: "您收到了一个工作空间邀请",
           html: emailHtml,
           logTag: "工作空间邀请通知",
-          checkQuota: true,
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {
@@ -329,7 +329,7 @@ export class WorkspaceController {
           subject: "您的工作空间邀请已被接受",
           html: emailHtml,
           logTag: "工作空间邀请被接受通知",
-          checkQuota: true,
+          checkQuota: false,
         })
           .then((result) => {
             if (result.success) {

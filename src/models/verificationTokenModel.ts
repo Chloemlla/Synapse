@@ -226,6 +226,7 @@ class VerificationTokenStorage {
     token: unknown,
     fingerprint: string,
     ipAddress: string,
+    expectedType?: VerificationTokenType,
   ): Promise<{ success: boolean; error?: string; data?: VerificationToken }> {
     if (typeof token !== "string" || !VERIFICATION_TOKEN_PATTERN.test(token)) {
       return { success: false, error: "验证链接无效或已过期" };
@@ -239,6 +240,10 @@ class VerificationTokenStorage {
 
     if (verificationToken.used) {
       return { success: false, error: "验证链接已被使用" };
+    }
+
+    if (expectedType && verificationToken.type !== expectedType) {
+      return { success: false, error: "无效的验证类型" };
     }
 
     // 校验设备指纹
@@ -256,12 +261,12 @@ class VerificationTokenStorage {
     // 标记为已使用
     const usedAt = Date.now();
     const updateResult = await VerificationTokenModel.updateOne(
-      { token: { $eq: token }, used: false },
+      { token: { $eq: token }, used: false, expiresAt: { $gt: usedAt }, ...(expectedType ? { type: expectedType } : {}) },
       { $set: { used: true, usedAt } },
     ).exec();
 
     if (updateResult.matchedCount === 0) {
-      return { success: false, error: "验证链接已被使用" };
+      return { success: false, error: "验证链接已被使用或已过期" };
     }
 
     logger.info(`[验证令牌] 验证成功`);
@@ -284,7 +289,7 @@ class VerificationTokenStorage {
    * @param ipAddress 当前IP地址
    * @returns 验证结果
    */
-  async validateToken(token: unknown, fingerprint: string, ipAddress: string): Promise<{ valid: boolean; error?: string }> {
+  async validateToken(token: unknown, fingerprint: string, ipAddress: string, expectedType?: VerificationTokenType): Promise<{ valid: boolean; error?: string }> {
     const verificationToken = await this.getToken(token);
 
     if (!verificationToken) {
@@ -293,6 +298,10 @@ class VerificationTokenStorage {
 
     if (verificationToken.used) {
       return { valid: false, error: "验证链接已被使用" };
+    }
+
+    if (expectedType && verificationToken.type !== expectedType) {
+      return { valid: false, error: "无效的验证类型" };
     }
 
     // 校验设备指纹

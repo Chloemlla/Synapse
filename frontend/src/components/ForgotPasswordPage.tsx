@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useEmailCooldown } from '../hooks/useEmailCooldown';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
 import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
@@ -47,6 +48,7 @@ const BUTTON_TAP = { scale: 0.99 } as const;
 
 export const ForgotPasswordPage: React.FC = () => {
     const { user } = useAuth();
+    const { seconds: cooldownSeconds, applyCooldown } = useEmailCooldown();
     const { setNotification } = useNotification();
     const prefersReducedMotion = useReducedMotion();
 
@@ -81,6 +83,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
+        if (cooldownSeconds > 0) return;
         setError(null);
 
         const sanitizedEmail = DOMPurify.sanitize(email).trim();
@@ -96,6 +99,10 @@ export const ForgotPasswordPage: React.FC = () => {
             return;
         }
 
+        if (captchaStatus.loading || captchaStatus.error) {
+            setError(captchaStatus.error || '人机验证正在加载，请稍候');
+            return;
+        }
         if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证');
             setNotification({ message: '请先完成人机验证', type: 'warning' });
@@ -146,6 +153,7 @@ export const ForgotPasswordPage: React.FC = () => {
             });
 
             const data = await response.json();
+            applyCooldown(data);
 
             if (response.ok && data.success) {
                 setSuccess(true);
@@ -169,6 +177,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
     // 成功态的重发入口：复用 handleSubmit。若当前要求人机验证，先回到表单重新过验证再发送。
     const handleResend = () => {
+        if (cooldownSeconds > 0) return;
         if (captchaStatus.required) { setCaptcha(null); setSuccess(false); return; }
         void handleSubmit();
     };
@@ -195,8 +204,8 @@ export const ForgotPasswordPage: React.FC = () => {
                                             <FaCheckCircle className="h-8 w-8 text-emerald-600" />
                                         </div>
                                         <div className={authEyebrowClassName}>密码重置</div>
-                                        <h2 className="mt-2 text-2xl font-semibold text-slate-900">重置链接已发送</h2>
-                                        <p className="mt-3 text-sm leading-7 text-slate-600">我们已将密码重置链接发送至</p>
+                                        <h2 className="mt-2 text-2xl font-semibold text-slate-900">重置请求已提交</h2>
+                                        <p className="mt-3 text-sm leading-7 text-slate-600">如果该邮箱已注册，您将收到密码重置链接</p>
                                         <p className="font-semibold text-slate-900">{email}</p>
                                     </div>
 
@@ -221,13 +230,13 @@ export const ForgotPasswordPage: React.FC = () => {
                                     <m.button
                                         type="button"
                                         onClick={handleResend}
-                                        disabled={loading}
+                                        disabled={loading || cooldownSeconds > 0}
                                         aria-busy={loading}
                                         className={cn(authSecondaryButtonClassName, 'mb-3')}
                                         whileHover={effectiveItemHover}
                                         whileTap={effectiveButtonTap}
                                     >
-                                        {loading ? '重新发送中...' : '重新发送重置链接'}
+                                        {loading ? '重新发送中...' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重试` : '重新发送重置链接'}
                                     </m.button>
 
                                     <Link to="/login" className={authPrimaryButtonClassName}>
@@ -292,14 +301,14 @@ export const ForgotPasswordPage: React.FC = () => {
 
                                         <m.button
                                             type="submit"
-                                            disabled={loading || (captchaStatus.required && !captcha?.token)}
-                                            aria-label={loading ? '发送中...' : '发送重置链接'}
+                                            disabled={loading || cooldownSeconds > 0 || captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token)}
+                                            aria-label={loading ? '发送中...' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重试` : '发送重置链接'}
                                             aria-busy={loading}
                                             className={authPrimaryButtonClassName}
                                             whileHover={effectiveItemHover}
                                             whileTap={effectiveButtonTap}
                                         >
-                                            {loading ? '发送中...' : '发送重置链接'}
+                                            {loading ? '发送中...' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重试` : '发送重置链接'}
                                         </m.button>
                                     </form>
 

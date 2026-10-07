@@ -18,6 +18,8 @@ import {
 import MarkdownPreview from "./MarkdownPreview";
 import { useNotification } from "./Notification";
 import { api, getApiBaseUrl } from "../api/api";
+import { useEmailQuota } from "../hooks/useEmailQuota";
+import { buildEmailDeliveryNotice } from "../utils/emailDelivery";
 import { cn } from '../utils/cn';
 import { studioEyebrowPillClassName, studioModalCardClassName, studioPageClassName, studioPanelClassName } from './studioTheme';
 
@@ -32,12 +34,6 @@ interface EmailForm {
 interface ServiceStatus {
   available: boolean;
   error?: string;
-}
-
-interface QuotaInfo {
-  used: number;
-  total: number;
-  resetAt: string;
 }
 
 interface OutemailSettingItem {
@@ -144,10 +140,6 @@ const EmailSender: React.FC = () => {
 
   // G11-10: 防双击重复提交（setState 是异步的，光靠 loading 挡不住同帧内的第二次点击）
   const sendingRef = useRef(false);
-  // G11-10: 发件人域名配额查询的 300ms debounce + 结果缓存
-  const quotaDebounceRef = useRef<number | null>(null);
-  const quotaCacheRef = useRef<Record<string, number>>({});
-  const QUOTA_CACHE_TTL_MS = 30000;
 
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [emailMode, setEmailMode] = useState<EmailMode>("html");
@@ -157,20 +149,12 @@ const EmailSender: React.FC = () => {
 
   const [senderDomains, setSenderDomains] = useState<string[]>([]);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
-  const [quota, setQuota] = useState<QuotaInfo>({
-    used: 0,
-    total: 100,
-    resetAt: "",
-  });
+  const { quota, loading: quotaLoading, refresh: fetchQuota } = useEmailQuota("/api/email/quota");
 
   const [outemailStatus, setOutemailStatus] = useState<ServiceStatus | null>(
     null
   );
-  const [outemailQuota, setOutemailQuota] = useState<QuotaInfo>({
-    used: 0,
-    total: 100,
-    resetAt: "",
-  });
+  const { quota: outemailQuota, loading: outemailQuotaLoading, refresh: fetchOutemailQuota } = useEmailQuota("/api/outemail/quota");
   const [outemailDomain, setOutemailDomain] = useState("");
   const [outemailSettings, setOutemailSettings] = useState<OutemailSettingItem[]>(
     []
@@ -197,7 +181,6 @@ const EmailSender: React.FC = () => {
   } | null>(null);
   const [checkingRecipientWhitelist, setCheckingRecipientWhitelist] =
     useState(false);
-  const [skipWhitelistCheck, setSkipWhitelistCheck] = useState(false);
 
   const [simpleContent, setSimpleContent] = useState("");
   const [markdownContent, setMarkdownContent] = useState("");
@@ -230,21 +213,6 @@ const EmailSender: React.FC = () => {
       syncDefaultSender(domains);
     } catch (error) {
       console.error("获取发件域名失败", error);
-    }
-  };
-
-  const fetchQuota = async (domain?: string) => {
-    try {
-      const response = await api.get(
-        `/api/email/quota${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`
-      );
-      setQuota({
-        used: Number(response.data?.used) || 0,
-        total: Number(response.data?.quotaTotal || response.data?.total) || 0,
-        resetAt: String(response.data?.resetAt || ""),
-      });
-    } catch (error) {
-      console.error("获取内部邮件配额失败", error);
     }
   };
 
@@ -281,19 +249,6 @@ const EmailSender: React.FC = () => {
     }
   };
 
-  const fetchOutemailQuota = async () => {
-    try {
-      const response = await api.get("/api/outemail/quota");
-      setOutemailQuota({
-        used: Number(response.data?.used) || 0,
-        total: Number(response.data?.total) || 0,
-        resetAt: String(response.data?.resetAt || ""),
-      });
-    } catch (error) {
-      console.error("获取公开外发配额失败", error);
-    }
-  };
-
   const fetchOutemailSettings = async () => {
     setSettingsLoading(true);
     try {
@@ -318,32 +273,10 @@ const EmailSender: React.FC = () => {
 
   useEffect(() => {
     fetchSenderDomains();
-    fetchQuota();
     checkServiceStatus();
     fetchOutemailStatus();
-    fetchOutemailQuota();
     fetchOutemailSettings();
   }, []);
-
-  useEffect(() => {
-    const domain = form.from.split("@")[1];
-    if (!domain) return;
-    if (quotaDebounceRef.current) {
-      window.clearTimeout(quotaDebounceRef.current);
-    }
-    quotaDebounceRef.current = window.setTimeout(() => {
-      const now = Date.now();
-      const lastFetched = quotaCacheRef.current[domain];
-      if (lastFetched && now - lastFetched < QUOTA_CACHE_TTL_MS) {
-        return;
-      }
-      quotaCacheRef.current[domain] = now;
-      void fetchQuota(domain);
-    }, 300);
-    return () => {
-      if (quotaDebounceRef.current) window.clearTimeout(quotaDebounceRef.current);
-    };
-  }, [form.from, fetchQuota]);
 
   const validateEmails = async (emails: string[]) => {
     try {
@@ -398,9 +331,7 @@ const EmailSender: React.FC = () => {
       return false;
     }
 
-    const emailsToValidate = skipWhitelistCheck
-      ? [form.from]
-      : [form.from, ...validRecipients];
+    const emailsToValidate = [form.from, ...validRecipients];
     const validation = await validateEmails(emailsToValidate);
     if (validation?.serviceError) {
       // F5-41：校验服务不可用时给可重试的独立提示，不再误导为「邮箱格式无效」
@@ -448,7 +379,6 @@ const EmailSender: React.FC = () => {
             subject: form.subject,
             html: form.html,
             text: form.text,
-            skipWhitelist: skipWhitelistCheck,
           });
         }
       } else if (emailMode === "simple") {
@@ -457,7 +387,6 @@ const EmailSender: React.FC = () => {
           to: validRecipients,
           subject: form.subject,
           content: simpleContent,
-          skipWhitelist: skipWhitelistCheck,
         });
       } else {
         response = await api.post("/api/email/send-markdown", {
@@ -465,12 +394,11 @@ const EmailSender: React.FC = () => {
           to: validRecipients,
           subject: form.subject,
           markdown: markdownContent,
-          skipWhitelist: skipWhitelistCheck,
         });
       }
 
       if (response.data?.success) {
-        setNotification({ message: "邮件发送成功", type: "success" });
+        setNotification(buildEmailDeliveryNotice(response.data.acceptedCount, validRecipients.length));
         const defaultDomain = form.from.split("@")[1] || senderDomains[0];
         setForm({
           from: buildDefaultFrom(defaultDomain),
@@ -481,7 +409,7 @@ const EmailSender: React.FC = () => {
         });
         setSimpleContent("");
         setMarkdownContent("");
-        await fetchQuota(defaultDomain);
+        await fetchQuota();
       }
     } catch (error: any) {
       // F5-38：不把 axios 的英文原文/HTTP 状态码抛给用户；原始错误只进控制台
@@ -643,9 +571,9 @@ const EmailSender: React.FC = () => {
   };
 
   const internalQuotaPercent =
-    quota.total > 0 ? Math.min((quota.used / quota.total) * 100, 100) : 0;
+    quota && quota.total > 0 ? Math.min((quota.used / quota.total) * 100, 100) : 0;
   const publicQuotaPercent =
-    outemailQuota.total > 0
+    outemailQuota && outemailQuota.total > 0
       ? Math.min((outemailQuota.used / outemailQuota.total) * 100, 100)
       : 0;
 
@@ -758,10 +686,10 @@ const EmailSender: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-xs uppercase tracking-[0.16em] text-slate-500">
-                          站内邮件配额
+                          当前用户手动发信配额
                         </div>
                         <div className="mt-2 text-3xl font-black text-slate-900">
-                          {quota.used} / {quota.total}
+                          {quota ? `${quota.used} / ${quota.total}` : quotaLoading ? "读取中…" : "暂不可用"}
                         </div>
                       </div>
                       <FaEnvelope className="text-2xl text-sky-500" />
@@ -773,7 +701,7 @@ const EmailSender: React.FC = () => {
                       />
                     </div>
                     <div className="mt-3 text-xs text-slate-500">
-                      重置时间：{formatDateTime(quota.resetAt)}
+                      重置时间：{formatDateTime(quota?.resetAt)}
                     </div>
                   </div>
 
@@ -784,7 +712,7 @@ const EmailSender: React.FC = () => {
                           公开外发配额
                         </div>
                         <div className="mt-2 text-3xl font-black text-slate-900">
-                          {outemailQuota.used} / {outemailQuota.total}
+                          {outemailQuota ? `${outemailQuota.used} / ${outemailQuota.total}` : outemailQuotaLoading ? "读取中…" : "暂不可用"}
                         </div>
                       </div>
                       <FaGlobe className="text-2xl text-teal-500" />
@@ -796,7 +724,7 @@ const EmailSender: React.FC = () => {
                       />
                     </div>
                     <div className="mt-3 text-xs text-slate-500">
-                      重置时间：{formatDateTime(outemailQuota.resetAt)}
+                      重置时间：{formatDateTime(outemailQuota?.resetAt)}
                     </div>
                   </div>
                 </div>
@@ -815,7 +743,7 @@ const EmailSender: React.FC = () => {
                       type="button"
                       onClick={() => {
                         checkServiceStatus();
-                        fetchQuota(form.from.split("@")[1]);
+                        fetchQuota();
                         fetchOutemailStatus();
                         fetchOutemailQuota();
                         fetchOutemailSettings();
@@ -1114,20 +1042,6 @@ const EmailSender: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <label className="flex items-start gap-3 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={skipWhitelistCheck}
-                      onChange={(e) => setSkipWhitelistCheck(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-amber-300"
-                    />
-                    <span className="leading-6 text-amber-800">
-                      跳过收件人白名单检查。启用后，后端将跳过收件人域名白名单校验；仅管理员可用，建议只用于明确受控的临时发送。
-                    </span>
-                  </label>
-                </div>
-
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-between">
                     <label className="block text-sm font-semibold text-slate-700">
@@ -1293,7 +1207,7 @@ const EmailSender: React.FC = () => {
                     <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
                       <span>公开外发每日配额</span>
                       <span>
-                        {outemailQuota.used} / {outemailQuota.total}
+                        {outemailQuota ? `${outemailQuota.used} / ${outemailQuota.total}` : outemailQuotaLoading ? "读取中…" : "暂不可用"}
                       </span>
                     </div>
                     <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
@@ -1303,7 +1217,7 @@ const EmailSender: React.FC = () => {
                       />
                     </div>
                     <div className="mt-3 text-xs text-slate-500">
-                      重置时间：{formatDateTime(outemailQuota.resetAt)}
+                      重置时间：{formatDateTime(outemailQuota?.resetAt)}
                     </div>
                   </div>
 

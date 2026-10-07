@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from './Notification';
 import { FaVolumeUp, FaCheckCircle, FaTimesCircle, FaUser, FaInfoCircle } from 'react-icons/fa';
-import getApiBaseUrl from '../api';
-import { getFingerprint } from '../utils/fingerprint';
+import { verifyEmailLinkOnce } from '../utils/emailLinkVerification';
+import { getBackendErrorMessage } from '../utils/backendError';
 import {
     authBackLinkClassName,
     authBrandBlockClassName,
@@ -24,72 +24,51 @@ export const EmailVerifyPage: React.FC = () => {
     const { setNotification } = useNotification();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const token = searchParams.get('token');
     const [loading, setLoading] = useState(true);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑。
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+        let active = true;
+        let redirectTimer: ReturnType<typeof setTimeout> | undefined;
+        setLoading(true);
+        setSuccess(false);
+        setError(null);
 
         const verifyEmail = async () => {
-            const token = searchParams.get('token');
-
             if (!token) {
-                setError('验证链接无效：缺少验证令牌');
+                setError('验证链接无效，请重新获取');
                 setLoading(false);
                 return;
             }
-
             try {
-                // 获取设备指纹
-                const fingerprint = await getFingerprint();
-                if (!fingerprint) {
-                    setError('无法获取设备信息，请刷新页面重试');
-                    setLoading(false);
-                    return;
-                }
-
-                const response = await fetch(getApiBaseUrl() + '/api/auth/verify-email-link', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        token,
-                        fingerprint
-                    }),
-                    signal: controller.signal,
-                });
-
-                const data = await response.json();
-
-                if (response.ok && data.success) {
+                const data = await verifyEmailLinkOnce(token);
+                if (!active) return;
+                if (data.success) {
                     setSuccess(true);
                     setNotification({ message: data.message || '邮箱验证成功！', type: 'success' });
-                    // 3秒后跳转到登录页面
-                    setTimeout(() => {
-                        navigate('/login');
-                    }, 3000);
+                    redirectTimer = setTimeout(() => navigate('/login'), 3000);
                 } else {
                     setError(data.error || '验证失败，请重试');
                     setNotification({ message: data.error || '验证失败', type: 'error' });
                 }
-            } catch (err: any) {
-                const timedOut = err?.name === 'AbortError';
-                const message = timedOut ? '请求超时，请稍后重试' : '网络错误，请稍后重试';
+            } catch (err) {
+                if (!active) return;
+                const message = getBackendErrorMessage(err, '验证暂时失败，请刷新页面重试');
                 setError(message);
                 setNotification({ message, type: 'error' });
             } finally {
-                window.clearTimeout(timeoutId);
-                setLoading(false);
+                if (active) setLoading(false);
             }
         };
 
-        verifyEmail();
-        return () => { window.clearTimeout(timeoutId); };
-    }, [searchParams, navigate, setNotification]);
+        void verifyEmail();
+        return () => {
+            active = false;
+            if (redirectTimer !== undefined) clearTimeout(redirectTimer);
+        };
+    }, [token, navigate, setNotification]);
 
     return (
         <div className={authPageShellClassName}>

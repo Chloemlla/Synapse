@@ -231,7 +231,7 @@ const MailSystemConfigManager: React.FC = () => {
 
   const saveSetting = useCallback(async () => {
     if (saving) return;
-    if (!canWrite) return;
+    if (!canWrite || !setting || loading || resetting) return;
     setSaving(true);
     try {
       const response = await fetch(MAIL_SYSTEM_API, {
@@ -254,7 +254,7 @@ const MailSystemConfigManager: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [canWrite, loadSetting, payload, saving, setNotification]);
+  }, [canWrite, loadSetting, loading, payload, resetting, saving, setting, setNotification]);
 
   const resetSetting = useCallback(async () => {
     if (resetting) return;
@@ -321,7 +321,7 @@ const MailSystemConfigManager: React.FC = () => {
             <motion.button
               type="button"
               onClick={resetSetting}
-              disabled={saving || resetting || !canWrite}
+              disabled={saving || resetting || !canWrite || !setting}
               className={studioDangerButtonClassName}
               whileTap={{ scale: 0.97 }}
             >
@@ -331,7 +331,7 @@ const MailSystemConfigManager: React.FC = () => {
             <motion.button
               type="button"
               onClick={saveSetting}
-              disabled={saving || resetting || !canWrite}
+              disabled={saving || resetting || !canWrite || !setting}
               className={studioPrimaryButtonClassName}
               whileTap={{ scale: 0.97 }}
             >
@@ -366,7 +366,7 @@ const MailSystemConfigManager: React.FC = () => {
               <ToggleField
                 label="启用主邮件服务"
                 checked={form.enabled}
-                disabled={!canWrite}
+                disabled={!canWrite || !setting || saving || resetting}
                 onChange={(checked) => setForm((prev) => ({ ...prev, enabled: checked }))}
               />
               <div>
@@ -376,7 +376,7 @@ const MailSystemConfigManager: React.FC = () => {
                   value={form.resendDomain}
                   onChange={(event) => setForm((prev) => ({ ...prev, resendDomain: event.target.value }))}
                   placeholder="example.com"
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
@@ -388,19 +388,19 @@ const MailSystemConfigManager: React.FC = () => {
                   value={resendApiKey}
                   onChange={(event) => setResendApiKey(event.target.value)}
                   placeholder="留空表示保留现有 API Key"
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
               <div>
-                <FieldLabel label="每日配额" htmlFor={`${fieldIdBase}-quota-total`} />
+                <FieldLabel label="每位用户每日手动发信配额" hint="账号验证与密码找回不占用此配额" htmlFor={`${fieldIdBase}-quota-total`} />
                 <input
                   id={`${fieldIdBase}-quota-total`}
                   type="number"
                   min={1}
                   value={form.quotaTotal}
                   onChange={(event) => setForm((prev) => ({ ...prev, quotaTotal: Number(event.target.value) || 1 }))}
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
@@ -419,7 +419,7 @@ const MailSystemConfigManager: React.FC = () => {
               <ToggleField
                 label="启用对外邮件服务"
                 checked={form.outemailEnabled}
-                disabled={!canWrite}
+                disabled={!canWrite || !setting || saving || resetting}
                 onChange={(checked) => setForm((prev) => ({ ...prev, outemailEnabled: checked }))}
               />
               <div>
@@ -429,7 +429,7 @@ const MailSystemConfigManager: React.FC = () => {
                   value={form.outemailDomain}
                   onChange={(event) => setForm((prev) => ({ ...prev, outemailDomain: event.target.value }))}
                   placeholder="example.com"
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
@@ -441,7 +441,7 @@ const MailSystemConfigManager: React.FC = () => {
                   value={outemailApiKey}
                   onChange={(event) => setOutemailApiKey(event.target.value)}
                   placeholder="留空表示保留现有 API Key"
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
@@ -453,19 +453,19 @@ const MailSystemConfigManager: React.FC = () => {
                   value={outemailCode}
                   onChange={(event) => setOutemailCode(event.target.value)}
                   placeholder="留空表示保留现有校验码"
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>
               <div>
-                <FieldLabel label="对外每日配额" htmlFor={`${fieldIdBase}-outemail-quota-total`} />
+                <FieldLabel label="对外每日全局配额" htmlFor={`${fieldIdBase}-outemail-quota-total`} />
                 <input
                   id={`${fieldIdBase}-outemail-quota-total`}
                   type="number"
                   min={1}
                   value={form.outemailQuotaTotal}
                   onChange={(event) => setForm((prev) => ({ ...prev, outemailQuotaTotal: Number(event.target.value) || 1 }))}
-                  disabled={!canWrite}
+                  disabled={!canWrite || !setting || saving || resetting}
                   className={`${studioFieldClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                 />
               </div>

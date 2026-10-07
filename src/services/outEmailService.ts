@@ -1,15 +1,14 @@
 import crypto from "node:crypto";
-import dayjs from "dayjs";
 import { logger } from "./logger";
 import { mongoose } from "./mongoService";
 import {
   EmailService,
   getOutEmailCodeFallback,
-  getOutEmailQuotaTotal,
   getOutEmailServiceStatus,
   resolveOutEmailDomain,
   type EmailAttachmentInput,
 } from "./emailService";
+import { getPublicEmailQuota, reservePublicEmailQuota, settleEmailQuota, refundEmailQuota, type EmailQuotaResult } from "./emailQuotaService";
 import { plainTextifyHtmlContent } from "./htmlToPlainText";
 import { containsHtmlTag } from "./outEmailHtmlProbe";
 import { sanitizeEmailHtml } from "../utils/announcementHtml";
@@ -46,19 +45,6 @@ function buildEmailBodies(content: unknown): { text: string; html: string } {
   const html = sanitized.trim() ? sanitized : plainHtml;
   return { text, html };
 }
-
-const OutEmailQuotaSchema = new mongoose.Schema(
-  {
-    date: String,
-    minute: String,
-    countDay: Number,
-    countMinute: Number,
-  },
-  { collection: "outemail_quotas" },
-);
-// 每日一个计数文档，唯一索引避免并发 create 产生同 date 多文档导致计数分裂。
-OutEmailQuotaSchema.index({ date: 1 }, { unique: true });
-const OutEmailQuota = mongoose.models.OutEmailQuota || mongoose.model("OutEmailQuota", OutEmailQuotaSchema);
 
 interface OutEmailSettingDoc {
   domain: string;
@@ -254,61 +240,6 @@ export async function ensureOutEmailAuth({
   return { success: false, error: "鉴权失败" };
 }
 
-async function reserveQuota(count: number) {
-  const now = dayjs();
-  const date = now.format("YYYY-MM-DD");
-  const minute = now.format("YYYY-MM-DD-HH-mm");
-  const outemailQuotaTotal = getOutEmailQuotaTotal();
-
-  // 幂等确保当日文档存在（$setOnInsert 并发安全，不会互相覆盖）。
-  await OutEmailQuota.findOneAndUpdate(
-    { date },
-    { $setOnInsert: { date, minute, countDay: 0, countMinute: 0 } },
-    { upsert: true },
-  ).exec();
-
-  // 同一分钟：单条原子条件自增，天然避免 findOne+save 读改写丢更新。
-  const sameMinute = await OutEmailQuota.findOneAndUpdate(
-    {
-      date,
-      minute,
-      countMinute: { $lte: 20 - count },
-      countDay: { $lte: outemailQuotaTotal - count },
-    },
-    { $inc: { countMinute: count, countDay: count } },
-    { returnDocument: "after" },
-  ).exec();
-
-  if (sameMinute) {
-    return { success: true as const };
-  }
-
-  // 跨分钟切换窗口：同样原子。
-  const crossMinute = await OutEmailQuota.findOneAndUpdate(
-    { date, minute: { $ne: minute }, countDay: { $lte: outemailQuotaTotal - count } },
-    { $set: { minute, countMinute: count }, $inc: { countDay: count } },
-    { returnDocument: "after" },
-  ).exec();
-
-  if (crossMinute) {
-    return { success: true as const };
-  }
-
-  // 两条原子路径都未命中 => 触发分钟或日额度上限，读取当前值生成提示信息。
-  const current = await OutEmailQuota.findOne({ date }).exec();
-  const currentMinuteCount = current && current.minute === minute ? current.countMinute : 0;
-  if (currentMinuteCount + count > 20) {
-    return {
-      success: false as const,
-      error: `当前一分钟可发送剩余额度不足（剩余 ${Math.max(0, 20 - currentMinuteCount)} 封）`,
-    };
-  }
-  return {
-    success: false as const,
-    error: `今日可发送剩余额度不足（剩余 ${Math.max(0, outemailQuotaTotal - (current?.countDay || 0))} 封）`,
-  };
-}
-
 function buildPublicSender(fromUser: string | undefined, displayName: string | undefined, domain: string) {
   // display-name 必须按 RFC 5322 净化后再进 replyTo / X-From-Name，防止地址列表注入。
   const safeName = sanitizeDisplayName(String(displayName || ""));
@@ -316,15 +247,34 @@ function buildPublicSender(fromUser: string | undefined, displayName: string | u
 }
 
 export async function getOutEmailQuota(): Promise<OutEmailQuotaInfo> {
-  const now = dayjs();
-  const date = now.format("YYYY-MM-DD");
-  const quota = await OutEmailQuota.findOneAndUpdate(
-    { date },
-    { $setOnInsert: { date, minute: now.format("YYYY-MM-DD-HH-mm"), countDay: 0, countMinute: 0 } },
-    { upsert: true, returnDocument: "after" },
-  ).exec();
-  const resetAt = now.add(1, "day").startOf("day").toISOString();
-  return { used: quota?.countDay || 0, total: getOutEmailQuotaTotal(), resetAt };
+  return getPublicEmailQuota();
+}
+
+export interface OutEmailFailure {
+  success: false;
+  error: string;
+  code: "INVALID_EMAIL_REQUEST" | "EMAIL_AUTH_FAILED" | "EMAIL_QUOTA_EXCEEDED" | "EMAIL_RATE_LIMITED" | "EMAIL_SERVICE_UNAVAILABLE" | "EMAIL_SEND_FAILED";
+  statusCode: number;
+  retryAfterSeconds?: number;
+}
+
+export type OutEmailSendResult = OutEmailFailure | {
+  success: true;
+  messageId?: string;
+  ids?: string[];
+  acceptedCount: number;
+};
+
+function failure(error: string, code: OutEmailFailure["code"] = "INVALID_EMAIL_REQUEST", statusCode = 400, retryAfterSeconds?: number): OutEmailFailure {
+  return { success: false, error, code, statusCode, ...(retryAfterSeconds ? { retryAfterSeconds } : {}) };
+}
+
+function quotaFailure(result: Extract<EmailQuotaResult, { success: false }>): OutEmailFailure {
+  if (result.reason === "unavailable") return failure("邮件服务暂时不可用，请稍后重试", "EMAIL_SERVICE_UNAVAILABLE", 503);
+  if (result.reason === "invalid") return failure("收件人数无效");
+  return result.reason === "rate_limited"
+    ? failure("发送过于频繁，单次最多发送20个收件人，请稍后重试", "EMAIL_RATE_LIMITED", 429, result.retryAfterSeconds)
+    : failure("今日邮件发送额度不足", "EMAIL_QUOTA_EXCEEDED", 429, result.retryAfterSeconds);
 }
 
 export async function getOutEmailRecords(params: {
@@ -433,13 +383,7 @@ export async function getOutEmailAuthStatus(domain?: string): Promise<{
 }
 
 export async function sendOutEmailBatch({
-  messages,
-  code,
-  apiKey,
-  ip,
-  from: fromUser,
-  displayName,
-  domain,
+  messages, code, apiKey, ip, from: fromUser, displayName, domain,
 }: {
   messages: Array<{ to: string | string[]; subject: string; content: string }>;
   code?: string;
@@ -448,96 +392,75 @@ export async function sendOutEmailBatch({
   from?: string;
   displayName?: string;
   domain?: string;
-}) {
-  const outemailStatus = getOutEmailServiceStatus();
-  if (!outemailStatus.available) {
-    return { success: false, error: outemailStatus.error || "对外邮件服务不可用" };
+}): Promise<OutEmailSendResult> {
+  const status = getOutEmailServiceStatus(domain);
+  if (!status.available) return failure(status.error || "对外邮件服务不可用", "EMAIL_SERVICE_UNAVAILABLE", 503);
+  if (!Array.isArray(messages) || !messages.length || messages.length > 100) {
+    return failure("消息列表必须包含1至100条消息");
   }
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return { success: false, error: "消息列表不能为空" };
-  }
-  if (messages.length > 100) {
-    return { success: false, error: "单次最多批量发送100封" };
-  }
-
   const outemailDomain = resolveOutEmailDomain(domain);
-  if (!outemailDomain) return { success: false, error: "域名未配置" };
-  if (!EmailService.isValidSenderDomain(`noreply@${outemailDomain}`)) {
-    return { success: false, error: "API密钥未配置" };
-  }
-
+  if (!EmailService.isValidSenderDomain(`noreply@${outemailDomain}`, "outemail")) return failure("发件域名不可用");
   const authResult = await ensureOutEmailAuth({ code, apiKey, domain: outemailDomain, ip });
-  if (!authResult.success) return authResult;
+  if (!authResult.success) return failure(authResult.error, "EMAIL_AUTH_FAILED", 401);
 
-  // 逐封净化收件人 / 主题 / 内容；任一收件人无效即整体拒绝。
-  const sanitizedMessages: Array<{ to: string[]; subject: string; text: string; html: string }> = [];
-  for (const message of messages) {
-    const recipients = (Array.isArray(message.to) ? message.to : [message.to])
-      .map(sanitizeRecipient)
-      .filter((item): item is string => item !== null);
-    if (recipients.length === 0) {
-      return { success: false, error: "消息包含无效的收件人邮箱地址" };
+  // Validate every target before reserving quota: never silently discard malformed addresses.
+  const prepared: Array<{ to: string[]; subject: string; text: string; html: string }> = [];
+  try {
+    for (const message of messages) {
+      if (!message || typeof message.subject !== "string" || typeof message.content !== "string") return failure("消息内容格式无效");
+      const rawRecipients = Array.isArray(message.to) ? message.to : [message.to];
+      const recipients = rawRecipients.map(sanitizeRecipient);
+      if (!recipients.length || recipients.some((recipient) => recipient === null)) return failure("消息包含无效的收件人邮箱地址");
+      const to = [...new Set((recipients as string[]).map((recipient) => recipient.toLowerCase()))];
+      prepared.push({ to, subject: stripControlChars(message.subject) || "(无主题)", ...buildEmailBodies(message.content) });
     }
-    const { text, html } = buildEmailBodies(message.content);
-    sanitizedMessages.push({
-      to: recipients,
-      subject: stripControlChars(message.subject) || "(无主题)",
-      text,
-      html,
-    });
+  } catch (error) {
+    logger.error("对外邮件正文处理失败", { error });
+    return failure("邮件内容无法处理");
   }
+  const requestedCount = prepared.reduce((count, message) => count + message.to.length, 0);
+  const quota = await reservePublicEmailQuota(requestedCount);
+  if (!quota.success) return quotaFailure(quota);
 
-  const quotaResult = await reserveQuota(messages.length);
-  if (!quotaResult.success) return quotaResult;
-
+  let result: Awaited<ReturnType<typeof EmailService.sendBatchEmail>>;
   try {
     const sender = buildPublicSender(fromUser, displayName, outemailDomain);
-    const batch = sanitizedMessages.map((message) => ({
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-      ...(sender.name && sender.name !== (fromUser || "")
-        ? { replyTo: `${sender.name} <${sender.email}>`, headers: { "X-From-Name": sender.name } }
-        : {}),
-    }));
-
-    const result = await EmailService.sendBatchEmail({
+    result = await EmailService.sendBatchEmail({
+      channel: "outemail",
       from: sender.email,
-      messages: batch,
+      messages: prepared.map((message) => ({
+        ...message,
+        ...(sender.name && sender.name !== (fromUser || "")
+          ? { replyTo: `${sender.name} <${sender.email}>`, headers: { "X-From-Name": sender.name } }
+          : {}),
+      })),
     });
-
-    if (!result.success) {
-      logger.error("对外批量邮件发送失败", { error: result.error });
-      return { success: false, error: result.error || "批量发送失败" };
-    }
-
-    const records = messages.map((message) => ({
-      to: Array.isArray(message.to) ? message.to.join(",") : message.to,
-      subject: message.subject,
-      content: message.content,
-      ip,
-    }));
-    await OutEmailRecord.insertMany(records);
-    return { success: true, ids: result.ids };
-  } catch (error: any) {
-    logger.error("对外批量邮件发送异常", { error, stack: error?.stack });
-    return { success: false, error: error?.message || error?.toString() };
+  } catch (error) {
+    await refundEmailQuota(quota.reservation);
+    logger.error("对外批量邮件发送异常", { error });
+    return failure("邮件发送失败，请稍后重试", "EMAIL_SEND_FAILED", 502);
   }
+  if (!result.success) {
+    await refundEmailQuota(quota.reservation);
+    return failure("邮件发送失败，请稍后重试", "EMAIL_SEND_FAILED", 502);
+  }
+  const acceptedCount = result.acceptedCount ?? requestedCount;
+  await settleEmailQuota(quota.reservation, acceptedCount);
+  // Provider acceptance is the send result. History persistence cannot undo delivery.
+  try {
+    const acceptedMessages = result.acceptedMessages ?? prepared.map((message, index) => ({ index, to: message.to }));
+    const records = acceptedMessages.map(({ index, to }) => ({
+      to: to.join(","), subject: prepared[index].subject, content: messages[index].content, ip,
+    }));
+    if (records.length) await OutEmailRecord.insertMany(records);
+  } catch (error) {
+    logger.error("对外邮件已发送，但发送记录保存失败", { error });
+  }
+  return { success: true, ids: result.ids, acceptedCount };
 }
 
 export async function sendOutEmail({
-  to,
-  subject,
-  content,
-  code,
-  apiKey,
-  ip,
-  from: fromUser,
-  displayName,
-  domain,
-  attachments,
+  to, subject, content, code, apiKey, ip, from: fromUser, displayName, domain, attachments,
 }: {
   to: string;
   subject: string;
@@ -549,65 +472,53 @@ export async function sendOutEmail({
   displayName?: string;
   domain?: string;
   attachments?: EmailAttachmentInput[];
-}) {
-  const outemailStatus = getOutEmailServiceStatus();
-  if (!outemailStatus.available) {
-    return { success: false, error: outemailStatus.error || "对外邮件服务不可用" };
-  }
-
+}): Promise<OutEmailSendResult> {
+  const status = getOutEmailServiceStatus(domain);
+  if (!status.available) return failure(status.error || "对外邮件服务不可用", "EMAIL_SERVICE_UNAVAILABLE", 503);
   const outemailDomain = resolveOutEmailDomain(domain);
-  if (!outemailDomain) {
-    return { success: false, error: "域名未配置" };
-  }
-  if (!EmailService.isValidSenderDomain(`noreply@${outemailDomain}`)) {
-    return { success: false, error: "API密钥未配置" };
-  }
-
+  if (!EmailService.isValidSenderDomain(`noreply@${outemailDomain}`, "outemail")) return failure("发件域名不可用");
   const recipient = sanitizeRecipient(to);
-  if (!recipient) {
-    return { success: false, error: "收件人邮箱地址格式无效" };
-  }
-
+  if (!recipient || typeof subject !== "string" || typeof content !== "string") return failure("收件人或邮件内容格式无效");
   const authResult = await ensureOutEmailAuth({ code, apiKey, domain: outemailDomain, ip });
-  if (!authResult.success) return authResult;
-
-  const quotaResult = await reserveQuota(1);
-  if (!quotaResult.success) return quotaResult;
-
+  if (!authResult.success) return failure(authResult.error, "EMAIL_AUTH_FAILED", 401);
+  let bodies: ReturnType<typeof buildEmailBodies>;
+  try {
+    bodies = buildEmailBodies(content);
+  } catch (error) {
+    logger.error("对外邮件正文处理失败", { error });
+    return failure("邮件内容无法处理");
+  }
+  const quota = await reservePublicEmailQuota(1);
+  if (!quota.success) return quotaFailure(quota);
+  let result: Awaited<ReturnType<typeof EmailService.sendEmail>>;
   try {
     const sender = buildPublicSender(fromUser, displayName, outemailDomain);
-    // 自定义发件前缀/display-name 会让本域 DKIM/SPF 签名名义上指向该地址，
-    // 存在仿冒（品牌/安全团队）风险，记录审计日志便于追溯。
-    if (fromUser && fromUser !== "noreply") {
-      logger.warn("[OutEmail] 使用自定义发件人发送对外邮件", {
-        fromUser,
-        displayName,
-        domain: outemailDomain,
-        ip,
-      });
-    }
-    const { text, html } = buildEmailBodies(content);
-    const result = await EmailService.sendEmail({
+    result = await EmailService.sendEmail({
+      channel: "outemail",
       from: sender.email,
       to: [recipient],
       subject: stripControlChars(subject) || "(无主题)",
-      text,
-      html,
+      ...bodies,
       attachments: EmailService.normalizeAttachments(attachments),
       ...(sender.name && sender.name !== (fromUser || "")
         ? { replyTo: `${sender.name} <${sender.email}>`, headers: { "X-From-Name": sender.name } }
         : {}),
     });
-
-    if (!result.success) {
-      logger.error("对外邮件发送失败", { error: result.error });
-      return { success: false, error: result.error || "发送失败" };
-    }
-
-    await OutEmailRecord.create({ to: recipient, subject, content, ip });
-    return { success: true, messageId: result.messageId };
-  } catch (error: any) {
-    logger.error("对外邮件发送异常", { error, stack: error?.stack });
-    return { success: false, error: error?.message || error?.toString() };
+  } catch (error) {
+    await refundEmailQuota(quota.reservation);
+    logger.error("对外邮件发送异常", { error });
+    return failure("邮件发送失败，请稍后重试", "EMAIL_SEND_FAILED", 502);
   }
+  if (!result.success) {
+    await refundEmailQuota(quota.reservation);
+    return failure("邮件发送失败，请稍后重试", "EMAIL_SEND_FAILED", 502);
+  }
+  const acceptedCount = result.acceptedCount ?? 1;
+  await settleEmailQuota(quota.reservation, acceptedCount);
+  try {
+    await OutEmailRecord.create({ to: result.acceptedRecipients?.[0] || recipient, subject: stripControlChars(subject), content, ip });
+  } catch (error) {
+    logger.error("对外邮件已发送，但发送记录保存失败", { error });
+  }
+  return { success: true, messageId: result.messageId, acceptedCount };
 }

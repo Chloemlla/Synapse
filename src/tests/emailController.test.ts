@@ -1,91 +1,102 @@
-export {};
+import type { Request, Response } from "express";
 
-describe("EmailController - 跳过白名单检查功能", () => {
-  let _adminToken: string;
+jest.mock("../services/emailService", () => ({
+  EmailService: {
+    sendEmail: jest.fn(), sendSimpleEmail: jest.fn(), sendMarkdownEmail: jest.fn(), sendBatchHtmlEmails: jest.fn(),
+    isValidSenderDomain: jest.fn(() => true),
+    validateEmails: jest.fn((emails: string[]) => ({ valid: emails, invalid: [] })),
+  },
+  getAllSenderDomains: jest.fn(() => ["chloemlla.com"]),
+  getEmailQuota: jest.fn(), consumeEmailQuota: jest.fn(), refundEmailQuota: jest.fn(), settleEmailQuota: jest.fn(),
+}));
+jest.mock("../services/emailSuppressionService", () => ({ addSuppression: jest.fn(), verifyUnsubscribeToken: jest.fn() }));
+jest.mock("../utils/logger", () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-  beforeAll(async () => {
-    // 这里需要设置管理员token，实际测试中需要先登录获取token
-    // adminToken = await getAdminToken();
+import { EmailController } from "../controllers/emailController";
+import { EmailService, consumeEmailQuota, refundEmailQuota, settleEmailQuota } from "../services/emailService";
+
+const reservation = { id: "reservation", ledgerId: "ledger", userId: "admin", count: 2, resetAt: "2026-10-08T00:00:00Z" };
+const bodies = {
+  sendEmail: { html: "<p>Notice</p>" },
+  sendSimpleEmail: { content: "Notice" },
+  sendMarkdownEmail: { markdown: "# Notice" },
+  sendEmailBatch: { text: "Notice" },
+};
+type Method = keyof typeof bodies;
+function request(method: Method, extra: Record<string, unknown> = {}) {
+  return { user: { id: "admin" }, body: { from: "noreply@chloemlla.com", to: ["one@gmail.com", "two@gmail.com"], subject: "Notice", ...bodies[method], ...extra } } as unknown as Request;
+}
+function response() {
+  return { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis(), setHeader: jest.fn() } as unknown as Response;
+}
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(consumeEmailQuota).mockResolvedValue({ success: true, quotaTotal: 100, reservation });
+  jest.mocked(refundEmailQuota).mockResolvedValue(undefined);
+  jest.mocked(settleEmailQuota).mockResolvedValue(undefined);
+  for (const send of [EmailService.sendEmail, EmailService.sendSimpleEmail, EmailService.sendMarkdownEmail, EmailService.sendBatchHtmlEmails]) {
+    jest.mocked(send).mockReset().mockResolvedValue({ success: true, acceptedCount: 2 });
+  }
+});
+
+describe("EmailController delivery and quota", () => {
+  it("validates configured custom sender domains separately from recipient policy", async () => {
+    await EmailController.sendEmail(request("sendEmail", { from: "noreply@mail.example.com" }), response());
+    expect(EmailService.isValidSenderDomain).toHaveBeenCalledWith("noreply@mail.example.com");
+    expect(EmailService.validateEmails).toHaveBeenCalledWith(["one@gmail.com", "two@gmail.com"]);
+    expect(EmailService.sendEmail).toHaveBeenCalled();
+  });
+  it.each(Object.keys(bodies) as Method[])("%s shares one budget and reserves recipients", async (method) => {
+    const res = response();
+    await EmailController[method](request(method), res);
+    expect(consumeEmailQuota).toHaveBeenCalledWith("admin", undefined, 2);
+    expect(settleEmailQuota).toHaveBeenCalledWith(reservation, 2);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, acceptedCount: 2 }));
   });
 
-  describe("POST /api/email/send", () => {
-    it("应该允许跳过白名单检查发送邮件到无效格式邮箱", async () => {
-      const _emailData = {
-        from: "noreply@chloemlla.com",
-        to: ["jubao@dinghaoinc.com"], // 这个邮箱格式可能无效
-        subject: "测试邮件",
-        html: "<h1>测试</h1>",
-        skipWhitelist: true,
-      };
-
-      // 注意：这个测试需要有效的管理员token
-      // const response = await request(app)
-      //   .post('/api/email/send')
-      //   .set('Authorization', `Bearer ${adminToken}`)
-      //   .send(emailData);
-
-      // expect(response.status).toBe(200);
-      // expect(response.body.success).toBe(true);
-    });
-
-    it("不跳过白名单检查时应该验证邮箱格式", async () => {
-      const _emailData = {
-        from: "noreply@chloemlla.com",
-        to: ["invalid-email-format"],
-        subject: "测试邮件",
-        html: "<h1>测试</h1>",
-        skipWhitelist: false,
-      };
-
-      // 注意：这个测试需要有效的管理员token
-      // const response = await request(app)
-      //   .post('/api/email/send')
-      //   .set('Authorization', `Bearer ${adminToken}`)
-      //   .send(emailData);
-
-      // expect(response.status).toBe(400);
-      // expect(response.body.error).toContain('邮箱格式无效');
-    });
+  it("settles only recipients accepted after suppression", async () => {
+    jest.mocked(EmailService.sendEmail).mockResolvedValue({ success: true, acceptedCount: 1 });
+    await EmailController.sendEmail(request("sendEmail"), response());
+    expect(settleEmailQuota).toHaveBeenCalledWith(reservation, 1);
+    expect(refundEmailQuota).not.toHaveBeenCalled();
   });
 
-  describe("POST /api/email/send-simple", () => {
-    it("应该允许跳过白名单检查发送简单邮件", async () => {
-      const _emailData = {
-        to: ["jubao@dinghaoinc.com"],
-        subject: "测试简单邮件",
-        content: "这是一封测试邮件",
-        skipWhitelist: true,
-      };
-
-      // 注意：这个测试需要有效的管理员token
-      // const response = await request(app)
-      //   .post('/api/email/send-simple')
-      //   .set('Authorization', `Bearer ${adminToken}`)
-      //   .send(emailData);
-
-      // expect(response.status).toBe(200);
-      // expect(response.body.success).toBe(true);
-    });
+  it("refunds exactly once when transport rejects", async () => {
+    jest.mocked(EmailService.sendEmail).mockRejectedValue(new Error("transport unavailable"));
+    const res = response();
+    await EmailController.sendEmail(request("sendEmail"), res);
+    expect(refundEmailQuota).toHaveBeenCalledTimes(1);
+    expect(refundEmailQuota).toHaveBeenCalledWith(reservation);
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 
-  describe("POST /api/email/send-markdown", () => {
-    it("应该允许跳过白名单检查发送Markdown邮件", async () => {
-      const _emailData = {
-        from: "noreply@chloemlla.com",
-        to: ["jubao@dinghaoinc.com"],
-        subject: "测试Markdown邮件",
-        markdown: "# 测试\n这是一封测试邮件",
-        skipWhitelist: true,
-      };
+  it("settles a definite provider rejection to zero", async () => {
+    jest.mocked(EmailService.sendSimpleEmail).mockResolvedValue({ success: false, error: "Rejected", acceptedCount: 0 });
+    await EmailController.sendSimpleEmail(request("sendSimpleEmail"), response());
+    expect(settleEmailQuota).toHaveBeenCalledWith(reservation, 0);
+  });
 
-      // 注意：这个测试需要有效的管理员token
-      // const response = await request(app)
-      //   .post('/api/email/send-markdown')
-      //   .set('Authorization', `Bearer ${adminToken}`)
-      //   .send(emailData);
+  it("does not refund or misreport accepted mail when settlement fails", async () => {
+    jest.mocked(settleEmailQuota).mockRejectedValue(new Error("database unavailable"));
+    const res = response();
+    await EmailController.sendEmail(request("sendEmail"), res);
+    expect(refundEmailQuota).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
 
-      // expect(response.status).toBe(200);
-      // expect(response.body.success).toBe(true);
-    });
+  it.each([{ to: [] }, { to: {} }, { to: [42] }, { from: {} }, { html: {} }, { subject: " " }, { html: "x".repeat(50_001) }])("rejects malformed input before reserving quota", async (extra) => {
+    const res = response();
+    await EmailController.sendEmail(request("sendEmail", extra), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(consumeEmailQuota).not.toHaveBeenCalled();
+    expect(EmailService.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([["exhausted", 429], ["unavailable", 503]] as const)("reports %s distinctly", async (reason, status) => {
+    jest.mocked(consumeEmailQuota).mockResolvedValue({ success: false, quotaTotal: 0, reason });
+    const res = response();
+    await EmailController.sendEmail(request("sendEmail"), res);
+    expect(res.status).toHaveBeenCalledWith(status);
+    expect(EmailService.sendEmail).not.toHaveBeenCalled();
   });
 });
