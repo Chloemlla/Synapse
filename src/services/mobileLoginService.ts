@@ -854,6 +854,6 @@ export async function resolveMobileLoginUser(req: Request): Promise<User | null>
   return loadActiveUser(payload.user.id);
 }
 
-export function resetMobileLoginStateForTests(): void {
-  challenges.clear();
+export async function resetMobileLoginStateForTests(): Promise<void> {
+  await sharedStateStore.deleteByPrefix(CHALLENGE_PREFIX);
 }

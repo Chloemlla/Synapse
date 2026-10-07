@@ -20,6 +20,14 @@ function getAllowedSenderDomains(): string[] {
   return getAllSenderDomains();
 }
 
+function summarizeEmailBody(body: unknown) {
+  const value = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+  return {
+    recipientCount: Array.isArray(value.to) ? value.to.length : typeof value.to === 'string' ? 1 : 0,
+    subjectLength: typeof value.subject === 'string' ? value.subject.length : 0,
+  };
+}
+
 export class EmailController {
   /**
    * 发送邮件
