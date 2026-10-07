@@ -95,8 +95,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     render(<ManagedCaptcha onStatusChange={(status) => statuses.push(status)} />);
 
-    await waitFor(() => expect(statuses.length).toBeGreaterThan(0));
-    expect(statuses.at(-1)).toMatchObject({ required: false, loading: false, provider: null, solved: false });
+    await waitFor(() => expect(statuses.at(-1)).toMatchObject({ required: false, loading: false, provider: null, solved: false }));
     expect(screen.queryByTestId('turnstile-widget')).toBeNull();
     expect(screen.queryByTestId('hcaptcha-widget')).toBeNull();
     expect(screen.queryByTestId('trycap-widget')).toBeNull();
