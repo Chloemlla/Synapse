@@ -120,6 +120,7 @@ const ManagedCaptcha = ({
   const generationRef = useRef(0);
   const tokenRef = useRef('');
   const resetInProgressRef = useRef(false);
+  const contextRef = useRef({ fingerprint, scenario });
   // trycap 的静默重挂计数：Cap 控件在断连/重挂/内部重取挑战时都会自己 reset 并派发 reset，
   // 这不是「用户令牌失效」。对 trycap 先静默换一张挑战（Cap 挂载后会自动解题），
   // 连续超过上限仍拿不到新令牌才报错，避免真卡死时无声无息。
@@ -172,10 +173,14 @@ const ManagedCaptcha = ({
   const fingerprintUnavailable = fingerprintSettled && !fingerprint;
   // 报给页面的 loading 必须涵盖「还没问到」这一段：页面拿 required 决定是否放行提交、
   // 是否收起验证区块，把这种未定状态谎报成「不需要验证」，页面就会在控件还没就绪时先行动。
-  const statusLoading = selectionLoading || (!resolved && !fingerprintUnavailable);
+  const statusLoading = !fingerprintSettled || selectionLoading || (!resolved && !fingerprintUnavailable);
 
   // 换指纹/换场景即换一轮分配，排除名单随之作废。
   useEffect(() => {
+    const previous = contextRef.current;
+    contextRef.current = { fingerprint, scenario };
+    // 首次采集只是完成初始化，不应在首个可见控件挂载后再把它立刻换掉。
+    if (previous.scenario === scenario && (!previous.fingerprint || previous.fingerprint === fingerprint)) return;
     failedProvidersRef.current = [];
     generationRef.current += 1;
     setWidgetKey(generationRef.current);
@@ -217,6 +222,7 @@ const ManagedCaptcha = ({
   recoveryRef.current = { reset, loading: statusLoading };
   useEffect(() => {
     const identity = Symbol('captcha');
+    setWidgetKey(generationRef.current);
     mountedCaptchas.add(identity);
     const unsubscribe = subscribeCaptchaRecovery((failedToken) => {
       if (failedToken !== null) {
