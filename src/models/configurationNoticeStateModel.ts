@@ -1,7 +1,7 @@
 import { mongoose } from "../services/mongoService";
 
 const ConfigurationNoticeStateSchema = new mongoose.Schema({
-  key: { type: String, required: true, unique: true },
+  key: { type: String, required: true },
   fingerprint: { type: String, required: true, default: "" },
   issueIds: { type: [String], default: [] },
   notifiedAt: Date,
