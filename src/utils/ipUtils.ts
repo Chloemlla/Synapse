@@ -120,7 +120,7 @@ export function isIPInCIDR(ip: string, cidr: string): boolean {
 
     const ipNum = ipToNumber(ip);
     const networkNum = ipToNumber(network);
-    const mask = (0xffffffff << (32 - prefix)) >>> 0;
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
 
     return (ipNum & mask) === (networkNum & mask);
   } catch (_error) {

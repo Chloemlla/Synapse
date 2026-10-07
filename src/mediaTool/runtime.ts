@@ -199,8 +199,12 @@ export function audioDurationSec(filePath: string, ffprobePath?: string): number
   try {
     const buf = Buffer.alloc(1024 * 1024);
     const fd = fs.openSync(filePath, "r");
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
-    fs.closeSync(fd);
+    let n: number;
+    try {
+      n = fs.readSync(fd, buf, 0, buf.length, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     const idx = buf.indexOf(Buffer.from("mvhd"), 0, n);
     if (idx >= 0) {
       const ver = buf[idx + 4];

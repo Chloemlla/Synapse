@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { lifeService } from "../services/lifeService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { sendToolFailure } from "./errorResponse";
 
 export class LifeController {
   /**
@@ -42,10 +43,7 @@ export class LifeController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "查询失败";
@@ -55,10 +53,7 @@ export class LifeController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -93,10 +88,7 @@ export class LifeController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "查询失败";
@@ -106,10 +98,7 @@ export class LifeController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 

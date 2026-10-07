@@ -46,7 +46,7 @@ export class CDictDonationController {
     } catch (error) {
       const message = error instanceof Error ? error.message : "赞赏配置读取失败";
       logger.warn("[CDict] 赞赏渠道读取失败", { message });
-      fail(res, 502, message);
+      fail(res, 502, "上游服务暂时不可用");
     }
   }
 
@@ -74,7 +74,7 @@ export class CDictDonationController {
     } catch (error) {
       const message = error instanceof Error ? error.message : "收款码获取失败";
       logger.warn("[CDict] 收款码获取失败", { channel: channelId, message });
-      fail(res, 502, message);
+      fail(res, 502, "上游服务暂时不可用");
     }
   }
 

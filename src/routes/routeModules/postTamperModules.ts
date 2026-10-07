@@ -79,6 +79,11 @@ export const postTamperRouteModules: RouteModule[] = [
       handlers: ["authenticateToken", "authenticateSuperAdmin"],
       note: "System command operations require JWT authentication and are gated to superadmin at route level (execute/status included).",
     },
+    rateLimitPolicy: {
+      mode: "route",
+      limiters: ["commandLimiter"],
+      note: "Each command endpoint applies commandLimiter exactly once inside the router.",
+    },
     strictStackCheck: true,
     publicEndpoints: [],
   },
@@ -132,9 +137,9 @@ export const postTamperRouteModules: RouteModule[] = [
       note: "Admin reads (stats, list, raw) are admin-level; creation, deletion, batch-delete, and clear-all writes are gated to superadmin at route level.",
     },
     rateLimitPolicy: {
-      mode: "route",
-      limiters: ["dataCollectionLimiter"],
-      note: "The admin data-collection router rate-limits each route through its shared guard tuple.",
+      mode: "route-module",
+      limiters: ["data-collection-limiter"],
+      note: "The earlier /api/data-collection limiter module also covers this admin subtree.",
     },
   },
   {

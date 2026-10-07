@@ -21,6 +21,10 @@ export interface ResourcesResponse {
 }
 
 export const resourcesApi = {
+  getAdminResources: async (page = 1, category?: string): Promise<ResourcesResponse> => {
+    const response = await api.get('/api/resources/admin', { params: { page, category } });
+    return response.data;
+  },
   // 获取资源列表
   getResources: async (page = 1, category?: string): Promise<ResourcesResponse> => {
     const params = new URLSearchParams();
@@ -65,4 +69,4 @@ export const resourcesApi = {
   deleteResource: async (id: string): Promise<void> => {
     await api.delete(`${getApiBaseUrl()}/api/resources/${id}`);
   }
-}; 
+};

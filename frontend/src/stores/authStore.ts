@@ -4,6 +4,7 @@ import type { User } from "../types/auth";
 import { api } from "../api/api";
 import { getFingerprint } from "../utils/fingerprint";
 import type { PolicyConsentPayload } from "../utils/policyConsent";
+import { beginAuthTransition, endAuthTransition, getAuthRequestGeneration, invalidateAuthRequests, isAuthTransitionPending, isCurrentAuthRequest, readAuthResponse } from '../utils/authRequestGeneration';
 
 /**
  * Enriched error thrown by auth actions so UI can surface lockout / retry hints.
@@ -67,17 +68,19 @@ const buildAuthError = (error: any): AuthRequestError => {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       isLoading: true,
       error: null,
 
       login: async (username, password, cfToken, policyConsent, captchaProvider) => {
+        const generation = beginAuthTransition();
         set({ isLoading: true, error: null });
         try {
           // 设备指纹随登录一起上送：服务端用它给政策同意记录归档（拿不到时为 null，不影响登录）
           const fingerprint = await getFingerprint().catch(() => null);
+          if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
           const response = await api.post<LoginResponse>("/api/auth/login", {
             identifier: username,
             password,
@@ -86,6 +89,7 @@ export const useAuthStore = create<AuthState>()(
             ...(policyConsent ? { policyConsent } : {}),
             ...(fingerprint ? { fingerprint } : {}),
           });
+          if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
           const { user, requires2FA, twoFactorType } = response.data;
           // 2FA required: keep the session pending — do NOT mark authenticated yet.
           if (requires2FA && twoFactorType && twoFactorType.length > 0) {
@@ -96,19 +100,25 @@ export const useAuthStore = create<AuthState>()(
           return { requires2FA: false, user, token: response.data.token };
         } catch (error: any) {
           const authError = buildAuthError(error);
-          set({ isLoading: false, error: authError.message });
+          if (isCurrentAuthRequest(generation)) set({ isLoading: false, error: authError.message });
           throw authError;
+        } finally {
+          endAuthTransition(generation);
         }
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false, error: null });
+        invalidateAuthRequests();
+        set({ user: null, isAuthenticated: false, isLoading: false, error: null });
       },
 
       checkAuth: async () => {
+        if (isAuthTransitionPending()) return;
+        const generation = getAuthRequestGeneration();
         set({ isLoading: true, error: null });
         try {
-          const response = await api.get<User>("/api/auth/me");
+          const response = await readAuthResponse(() => api.get<User>("/api/auth/me"));
+          if (!isCurrentAuthRequest(generation)) return;
           const data = response.data;
           if (data) {
             set({ user: data, isAuthenticated: true, isLoading: false });
@@ -116,6 +126,7 @@ export const useAuthStore = create<AuthState>()(
             set({ user: null, isAuthenticated: false, isLoading: false });
           }
         } catch (error: any) {
+          if (!isCurrentAuthRequest(generation)) return;
           if (isAuthRejectionStatus(error.response?.status)) {
             set({ user: null, isAuthenticated: false, isLoading: false, error: "登录状态已失效，请重新登录" });
           } else {
@@ -125,7 +136,8 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setUser: (user) => {
-        set({ user, isAuthenticated: user !== null });
+        if (get().user?.id !== user?.id) invalidateAuthRequests();
+        set({ user, isAuthenticated: user !== null, isLoading: false });
       },
 
       setIsLoading: (isLoading) => set({ isLoading }),
@@ -133,6 +145,7 @@ export const useAuthStore = create<AuthState>()(
       setError: (error) => set({ error }),
 
       reset: () => {
+        invalidateAuthRequests();
         set({ user: null, isAuthenticated: false, isLoading: false, error: null });
       },
     }),

@@ -15,6 +15,22 @@ import { cn } from '../utils/cn';
 import { studioPanelClassName } from './studioTheme';
 
 
+function localDateTime(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function loadResourceOptions(): Promise<Resource[]> {
+  const resources: Resource[] = [];
+  for (let page = 1; page <= 1000; page++) {
+    const result = await resourcesApi.getAdminResources(page);
+    resources.push(...result.resources);
+    if (resources.length >= result.total) return resources;
+    if (!result.resources.length) break;
+  }
+  throw new Error('资源列表未加载完整，请稍后重试');
+}
+
 interface GenerateCDKModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -226,11 +242,10 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
 
   const fetchResources = async () => {
     try {
-      const response = await resourcesApi.getResources();
-      console.log('获取到的资源列表:', response);
-      setResources(response.resources || []);
+      setResources(await loadResourceOptions());
     } catch (error) {
       console.error('获取资源列表失败:', error);
+      setError(getBackendErrorMessage(error, '资源列表加载失败，请重新打开窗口重试'));
       setResources([]);
     }
   };
@@ -462,7 +477,7 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
       setFormData({
         code: cdk.code,
         resourceId: cdk.resourceId,
-        expiresAt: cdk.expiresAt ? new Date(cdk.expiresAt).toISOString().slice(0, 16) : ''
+        expiresAt: cdk.expiresAt ? localDateTime(new Date(cdk.expiresAt)) : ''
       });
     }
   }, [cdk]);
@@ -475,10 +490,14 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
 
   const fetchResources = async () => {
     try {
-      const response = await resourcesApi.getResources();
-      setResources(response.resources);
+      const options = await loadResourceOptions();
+      if (cdk && !options.some(resource => resource.id === cdk.resourceId)) {
+        options.push(await resourcesApi.getResource(cdk.resourceId));
+      }
+      setResources(options);
     } catch (error) {
       console.error('获取资源列表失败:', error);
+      setError(getBackendErrorMessage(error, '资源列表加载失败，请重新打开窗口重试'));
       setResources([]);
     }
   };
@@ -497,10 +516,13 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
     setError('');
 
     try {
-      const updateData: Partial<CDK> = {
+      const originalExpiry = cdk.expiresAt ? localDateTime(new Date(cdk.expiresAt)) : '';
+      const updateData = {
         code: formData.code,
         resourceId: formData.resourceId,
-        expiresAt: formData.expiresAt ? new Date(formData.expiresAt) : undefined
+        ...(formData.expiresAt !== originalExpiry
+          ? { expiresAt: formData.expiresAt ? new Date(formData.expiresAt) : null }
+          : {}),
       };
 
       await cdksApi.updateCDK(cdk.id, updateData);
@@ -715,15 +737,7 @@ export default function CDKStoreManager() {
   const overscan = 5; // 额外渲染的项目数量，确保平滑滚动
 
   useEffect(() => {
-    console.log('CDKStoreManager: 组件已加载');
-    fetchCDKs();
-  }, []);
-
-  // 当页码变化时重新获取数据
-  useEffect(() => {
-    if (currentPage > 1) {
-      fetchCDKs();
-    }
+    void fetchCDKs(currentPage);
   }, [currentPage]);
 
   const fetchCDKs = async (page = currentPage) => {

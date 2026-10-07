@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { MediaToolCookiesModel } from "../models/mediaToolModels";
+import { decryptMediaCookies, encryptMediaCookies } from "../models/mediaToolCookiesCrypto";
 import { ensureDir, statOrNull, tmpRoot } from "./runtime";
 import type { BiliOptions } from "./types";
 
@@ -35,14 +36,26 @@ export interface CookiesValidation {
 export function createMongoMediaCookiesStore(): MediaCookiesStore {
   return {
     async read(): Promise<string | null> {
-      const doc = await MediaToolCookiesModel.findOne({ key: COOKIES_KEY }).lean().exec();
-      return typeof doc?.content === "string" ? doc.content : null;
+      const doc = await MediaToolCookiesModel.findOne({ key: COOKIES_KEY })
+        .select("+content +credentialCiphertext +credentialIv +credentialTag").lean().exec();
+      if (!doc) return null;
+      if (doc.credentialCiphertext !== undefined) return decryptMediaCookies(doc);
+      if (typeof doc.content !== "string") return null;
+      // Compare the legacy value so migration cannot overwrite a concurrent upload.
+      await MediaToolCookiesModel.updateOne(
+        { _id: doc._id, content: doc.content, credentialCiphertext: { $exists: false } },
+        { $set: encryptMediaCookies(doc.content), $unset: { content: "" } },
+      ).exec();
+      return doc.content;
     },
     async write(content: string, by: string) {
       const updatedAt = Date.now();
       await MediaToolCookiesModel.updateOne(
         { key: COOKIES_KEY },
-        { $set: { key: COOKIES_KEY, content, bytes: Buffer.byteLength(content, "utf8"), updatedAt, updatedBy: by } },
+        {
+          $set: { key: COOKIES_KEY, ...encryptMediaCookies(content), bytes: Buffer.byteLength(content, "utf8"), updatedAt, updatedBy: by },
+          $unset: { content: "" },
+        },
         { upsert: true },
       ).exec();
       return { bytes: Buffer.byteLength(content, "utf8"), updatedAt };

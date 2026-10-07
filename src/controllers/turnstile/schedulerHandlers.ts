@@ -1,3 +1,4 @@
+import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { schedulerService } from "../../services/schedulerService";
 import { requireAdmin, requireSuperAdmin } from "./_helpers";
@@ -9,7 +10,7 @@ export async function getSchedulerStatus(req: Request, res: Response) {
     const status = schedulerService.getStatus();
     res.json({ success: true, status });
   } catch (error) {
-    console.error("获取定时任务状态失败:", error);
+    logger.error("获取定时任务状态失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -31,7 +32,7 @@ export async function manualCleanup(req: Request, res: Response) {
       error: result.error,
     });
   } catch (error) {
-    console.error("手动清理失败:", error);
+    logger.error("手动清理失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -43,7 +44,7 @@ export async function startScheduler(req: Request, res: Response) {
     schedulerService.start();
     res.json({ success: true, message: "定时任务已启动" });
   } catch (error) {
-    console.error("启动定时任务失败:", error);
+    logger.error("启动定时任务失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -55,7 +56,7 @@ export async function stopScheduler(req: Request, res: Response) {
     schedulerService.stop();
     res.json({ success: true, message: "定时任务已停止" });
   } catch (error) {
-    console.error("停止定时任务失败:", error);
+    logger.error("停止定时任务失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

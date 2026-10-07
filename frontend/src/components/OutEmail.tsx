@@ -364,8 +364,10 @@ const OutEmail: React.FC = () => {
             onClick={async () => {
               try {
                 const statusRes = await fetch(getApiBaseUrl() + '/api/outemail/status');
-                if (statusRes.ok) {
-                  const d = await statusRes.json().catch(() => null);
+                if (!statusRes.ok) throw new Error('状态刷新失败');
+                {
+                  const d = await statusRes.json();
+                  if (!d || typeof d.available !== 'boolean') throw new Error('状态响应无效');
                   if (d && typeof d.available === 'boolean') {
                     setOutemailStatus({ available: d.available, error: d.error });
                     if (d.domain && typeof d.domain === 'string') {
@@ -376,7 +378,8 @@ const OutEmail: React.FC = () => {
                 }
                 setNotification({ message: '已刷新', type: 'success' });
               } catch {
-                setNotification({ message: '刷新失败', type: 'error' });
+                setOutemailStatus(prev => prev ? { ...prev, error: '状态刷新失败，当前显示上次数据' } : { available: false, error: '状态读取失败' });
+                setNotification({ message: '刷新失败，当前状态未更新', type: 'error' });
               }
             }}
             className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500 transition hover:border-slate-300 hover:text-slate-700"

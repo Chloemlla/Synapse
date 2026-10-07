@@ -2635,7 +2635,8 @@ export class RuntimeConfigService {
     ): Promise<{ plain: string; hash: string }> => {
       if (typeof incoming === "string" && incoming.trim().length > 0) {
         const value = incoming.trim().slice(0, 1024);
-        return { plain: "", hash: await bcrypt.hash(value, 10) };
+        const { config } = await import("../config/config");
+        return { plain: "", hash: await bcrypt.hash(value, config.bcryptSaltRounds) };
       }
       return { plain: currentPlain, hash: currentHash ?? "" };
     };

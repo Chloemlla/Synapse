@@ -21,6 +21,8 @@ interface UseWebSocketOptions {
   maxReconnects?: number;
   /** 消息处理器 */
   onMessage?: WsEventHandler;
+  /** Reauthenticate the connection when the confirmed identity changes. */
+  connectionKey?: string;
 }
 
 export function getWsUrl(): string {
@@ -39,6 +41,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     reconnectInterval = 3000,
     maxReconnects = 10,
     onMessage,
+    connectionKey = '',
   } = options;
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -63,7 +66,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
   }, []);
 
-  const connect = useCallback(() => {
+  const openConnection = useCallback((): void => {
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) return;
     cleanup();
 
     try {
@@ -72,6 +76,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) { ws.close(); return; }
         setConnected(true);
         reconnectCountRef.current = 0;
         setReconnectLimitReached(false);
@@ -85,6 +90,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return;
         try {
           const msg: WsServerMessage = JSON.parse(event.data);
           onMessageRef.current?.(msg);
@@ -94,6 +100,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onclose = () => {
+        if (wsRef.current !== ws) return;
+        wsRef.current = null;
         setConnected(false);
         cleanup();
 
@@ -104,7 +112,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             reconnectInterval * Math.pow(2, reconnectCountRef.current - 1),
             30000,
           );
-          reconnectTimerRef.current = setTimeout(connect, backoffDelay);
+          reconnectTimerRef.current = setTimeout(openConnection, backoffDelay);
         } else {
           setReconnectLimitReached(true);
         }
@@ -114,17 +122,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         // onclose 会紧跟触发，重连逻辑在 onclose 里处理
       };
     } catch {
-      // URL 构造失败等异常
+      setConnected(false);
+      setReconnectLimitReached(true);
     }
-  }, [cleanup, reconnectInterval, maxReconnects]);
+  }, [cleanup, reconnectInterval, maxReconnects, connectionKey]);
+
+  const connect = useCallback(() => {
+    reconnectCountRef.current = 0;
+    openConnection();
+  }, [openConnection]);
 
   const disconnect = useCallback(() => {
     reconnectCountRef.current = maxReconnects; // 阻止自动重连
     setReconnectLimitReached(false);
     cleanup();
     if (wsRef.current) {
-      wsRef.current.close();
+      const oldSocket = wsRef.current;
       wsRef.current = null;
+      oldSocket.onopen = null;
+      oldSocket.onmessage = null;
+      oldSocket.onclose = null;
+      oldSocket.onerror = null;
+      oldSocket.close();
     }
     setConnected(false);
   }, [cleanup, maxReconnects]);

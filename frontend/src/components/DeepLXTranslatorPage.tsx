@@ -84,7 +84,11 @@ function loadHistory(): TranslatorHistoryItem[] {
 }
 
 function saveHistory(items: TranslatorHistoryItem[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 8)));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 8)));
+  } catch {
+    // 浏览器拒绝存储时仍保留本次会话的译文和历史。
+  }
 }
 
 async function copyText(value: string): Promise<void> {
@@ -113,16 +117,26 @@ export const DeepLXTranslatorPage: React.FC = () => {
   const { user } = useAuth();
   const [config, setConfig] = useState<DeepLXConfigResponse | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
-  const [sourceText, setSourceText] = useState('');
+  const [sourceText, setSourceTextState] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [alternatives, setAlternatives] = useState<string[]>([]);
-  const [sourceLang, setSourceLang] = useState(AUTO_LANGUAGE_CODE);
+  const [sourceLang, setSourceLangState] = useState(AUTO_LANGUAGE_CODE);
   const [detectedSourceLang, setDetectedSourceLang] = useState(AUTO_LANGUAGE_CODE);
-  const [targetLang, setTargetLang] = useState(DEFAULT_TARGET);
+  const [targetLang, setTargetLangState] = useState(DEFAULT_TARGET);
   const [autoTranslate, setAutoTranslate] = useState(true);
   const [translating, setTranslating] = useState(false);
-  const [history, setHistory] = useState<TranslatorHistoryItem[]>([]);
+  const [history, setHistory] = useState<TranslatorHistoryItem[]>(loadHistory);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const translationVersionRef = useRef(0);
+  const invalidateTranslation = useCallback(() => {
+    translationVersionRef.current++;
+    activeControllerRef.current?.abort();
+    activeControllerRef.current = null;
+    setTranslating(false);
+  }, []);
+  const setSourceText = useCallback((value: string) => { invalidateTranslation(); setSourceTextState(value); }, [invalidateTranslation]);
+  const setSourceLang = useCallback((value: string) => { invalidateTranslation(); setSourceLangState(value); }, [invalidateTranslation]);
+  const setTargetLang = useCallback((value: string) => { invalidateTranslation(); setTargetLangState(value); }, [invalidateTranslation]);
 
   const displaySourceLang = sourceLang === AUTO_LANGUAGE_CODE ? detectedSourceLang : sourceLang;
   const sourceLanguageLabel = getLanguageByCode(displaySourceLang)?.nativeLabel || '自动识别';
@@ -133,11 +147,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
   const translationRestricted = Number.isFinite(translationRestrictedUntil)
     && translationRestrictedUntil > Date.now();
 
-  useEffect(() => {
-    startTransition(() => {
-      setHistory(loadHistory());
-    });
-  }, []);
+  useEffect(() => { saveHistory(history); }, [history]);
 
   useEffect(() => {
     let mounted = true;
@@ -179,7 +189,6 @@ export const DeepLXTranslatorPage: React.FC = () => {
     startTransition(() => {
       setHistory((prev) => {
         const next = [item, ...prev.filter((entry) => entry.id !== item.id)].slice(0, 8);
-        saveHistory(next);
         return next;
       });
     });
@@ -188,6 +197,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
   const translateNow = useCallback(async (textOverride?: string) => {
     const text = (textOverride ?? sourceText).trim();
     if (!text) {
+      invalidateTranslation();
       setTranslatedText('');
       setAlternatives([]);
       return;
@@ -210,6 +220,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
     }
 
     activeControllerRef.current?.abort();
+    const version = ++translationVersionRef.current;
     const controller = new AbortController();
     activeControllerRef.current = controller;
     setTranslating(true);
@@ -224,6 +235,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
         controller.signal,
       );
 
+      if (controller.signal.aborted || version !== translationVersionRef.current) return;
       setTranslatedText(result.translatedText);
       setAlternatives(result.alternatives);
       setDetectedSourceLang(result.sourceLang || AUTO_LANGUAGE_CODE);
@@ -237,7 +249,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
         targetLang: result.targetLang,
       });
     } catch (error) {
-      if ((error as Error).name === 'AbortError') {
+      if (controller.signal.aborted || version !== translationVersionRef.current || (error as Error).name === 'AbortError') {
         return;
       }
 
@@ -248,10 +260,10 @@ export const DeepLXTranslatorPage: React.FC = () => {
     } finally {
       if (activeControllerRef.current === controller) {
         activeControllerRef.current = null;
+        setTranslating(false);
       }
-      setTranslating(false);
     }
-  }, [config?.enabled, persistHistory, setNotification, sourceLang, sourceText, targetLang]);
+  }, [config?.enabled, invalidateTranslation, persistHistory, setNotification, sourceLang, sourceText, targetLang, translationRestricted]);
 
   useEffect(() => {
     if (!autoTranslate || !sourceText.trim()) {

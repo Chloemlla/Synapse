@@ -11,6 +11,8 @@ interface RegistrationInviteConfigSectionProps {
   onToggle: () => void;
   prefersReducedMotion?: boolean | null;
   loading: boolean;
+  loaded?: boolean;
+  loadError?: boolean;
   saving: boolean;
   deleting: boolean;
   disabled: boolean;
@@ -31,6 +33,8 @@ export default function RegistrationInviteConfigSection({
   onToggle,
   prefersReducedMotion,
   loading,
+  loaded = true,
+  loadError = false,
   saving,
   deleting,
   disabled,
@@ -70,17 +74,19 @@ export default function RegistrationInviteConfigSection({
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
         <div>
-          当前状态：{loading ? '加载中...' : required ? '必须提供邀请码' : '邀请码可选'}
+          当前状态：{loading ? '加载中...' : !loaded ? '尚未读取' : required ? '必须提供邀请码' : '邀请码可选'}
         </div>
         <div className="mt-1">
           最后更新：
           {loading
             ? '加载中...'
-            : updatedAt
+            : !loaded ? '尚未读取' : updatedAt
               ? new Date(updatedAt).toLocaleString()
               : '未保存过（当前使用部署环境变量 / 默认值）'}
         </div>
       </div>
+
+      {loadError && <p role="alert">读取配置失败，请点击刷新重试；成功读取前无法保存。</p>}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         <m.button

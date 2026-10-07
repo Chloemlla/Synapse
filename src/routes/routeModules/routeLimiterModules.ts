@@ -7,7 +7,6 @@ import {
   cdictTrustedLimiter,
   cdictTrustedUpstreamIpLimiter,
   cdictTrustedUpstreamLimiter,
-  commandLimiter,
   dataCollectionLimiter,
   dataProcessLimiter,
   deeplxLimiter,
@@ -98,14 +97,6 @@ export const routeLimiterModules: RouteModule[] = [
     requiresAuth: false,
     rateLimited: true,
     isPublic: true,
-  },
-  {
-    name: "command-limiter",
-    path: "/api/command",
-    router: commandLimiter,
-    requiresAuth: "mixed",
-    rateLimited: true,
-    isPublic: "mixed",
   },
   {
     name: "libre-chat-limiter",

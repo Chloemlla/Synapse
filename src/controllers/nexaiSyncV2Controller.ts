@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { NexaiEncryptedSyncService } from "../services/nexaiEncryptedSyncService";
 import logger from "../utils/logger";
+import { errorStatus } from "./errorResponse";
 
 function getRequiredNexaiUserId(req: Request, res: Response): string | null {
   const userId = req.nexaiUser?.id;
@@ -17,11 +18,11 @@ function getRequiredNexaiUserId(req: Request, res: Response): string | null {
 }
 
 function sendError(res: Response, error: any, fallback: string): void {
-  const statusCode = Number(error?.statusCode) || 500;
+  const statusCode = errorStatus(error);
   res.status(statusCode).json({
     success: false,
-    error: error?.message || fallback,
-    code: error?.code || "NEXAI_SYNC_V2_ERROR",
+    error: statusCode < 500 && typeof error?.message === "string" ? error.message : fallback,
+    code: statusCode < 500 && typeof error?.code === "string" ? error.code : "NEXAI_SYNC_V2_ERROR",
   });
 }
 

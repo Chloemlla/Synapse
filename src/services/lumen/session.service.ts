@@ -59,10 +59,21 @@ function deviceKeyOf(userId: string, doc: ISession): string {
   return deriveLumenDeviceKey(userId, doc.clientType, doc.deviceInstallationId, doc.userAgent);
 }
 
+const MAX_LISTED_SESSIONS = 200;
+const SESSION_VIEW_FIELDS = "_id userId deviceInstallationId deviceName platform clientType userAgent ipAddress lastActiveAt lastUsedAt createdAt expiresAt";
+
 export async function listLumenDevices(userId: string, currentAccessToken?: string): Promise<LumenDeviceView[]> {
   const docs = (await Session.find({ userId, expiresAt: { $gt: new Date() } })
     .sort({ lastActiveAt: -1, lastUsedAt: -1, createdAt: -1 })
+    .select(SESSION_VIEW_FIELDS)
+    .limit(MAX_LISTED_SESSIONS)
     .lean()) as unknown as ISession[];
+  // Always retain the current-device protection even when it is outside the recent slice.
+  if (currentAccessToken && !docs.some((doc) => doc._id === currentAccessToken)) {
+    const current = await Session.findOne({ userId, _id: currentAccessToken, expiresAt: { $gt: new Date() } })
+      .select(SESSION_VIEW_FIELDS).lean();
+    if (current) docs.push(current as ISession);
+  }
 
   const groups = new Map<string, LumenDeviceView>();
   for (const doc of docs) {
@@ -114,20 +125,36 @@ export async function revokeLumenDevice(
   deviceKey: string,
   currentAccessToken?: string,
 ): Promise<{ revoked: number }> {
-  const docs = (await Session.find({ userId }).lean()) as unknown as ISession[];
-  const matching = docs.filter((doc) => deviceKeyOf(userId, doc) === deviceKey);
-  if (matching.length === 0) {
-    throw new LumenSessionError("设备会话不存在", "SESSION_NOT_FOUND");
+  if (currentAccessToken) {
+    const current = await Session.findOne({ userId, _id: currentAccessToken })
+      .select("_id clientType deviceInstallationId userAgent").lean();
+    if (current && deviceKeyOf(userId, current as ISession) === deviceKey) {
+      throw new LumenSessionError("当前会话不可撤销", "CURRENT_SESSION_PROTECTED");
+    }
   }
 
-  if (currentAccessToken && matching.some((doc) => doc._id === currentAccessToken)) {
-    // 与 auth_sessions 同语义：撤销当前设备会把调用者自己踢下线，必须拒绝。
-    throw new LumenSessionError("当前会话不可撤销", "CURRENT_SESSION_PROTECTED");
+  // Legacy documents have no persisted derived key. Stream the narrow projection
+  // and delete bounded batches rather than loading every session/token into RAM.
+  const cursor = Session.find({ userId }).select("_id clientType deviceInstallationId userAgent")
+    .lean().cursor({ batchSize: 200 });
+  let ids: string[] = [];
+  let revoked = 0;
+  const flush = async () => {
+    if (!ids.length) return;
+    const result = await Session.deleteMany({ userId, _id: { $in: ids } });
+    revoked += Number(result.deletedCount || 0);
+    ids = [];
+  };
+  try {
+    for await (const doc of cursor) {
+      if (deviceKeyOf(userId, doc as ISession) === deviceKey) ids.push(doc._id);
+      if (ids.length >= 200) await flush();
+    }
+    await flush();
+  } finally {
+    await cursor.close();
   }
-
-  const ids = matching.map((doc) => doc._id);
-  const result = await Session.deleteMany({ userId, _id: { $in: ids } });
-  const revoked = Number(result.deletedCount || 0);
+  if (!revoked) throw new LumenSessionError("设备会话不存在", "SESSION_NOT_FOUND");
   logger.info("[LumenSessions] Revoked device sessions", { userId, deviceKey, revoked });
   return { revoked };
 }

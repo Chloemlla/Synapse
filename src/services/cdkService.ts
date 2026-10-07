@@ -1,3 +1,5 @@
+import { withOperationTimeout } from "./withOperationTimeout";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
@@ -598,13 +600,14 @@ export class CDKService {
       }
 
       // 添加超时保护的并发查询
-      const [cdks, total] = (await Promise.race([
+      const [cdks, total] = await withOperationTimeout(
         Promise.all([
           CDKModel.find(queryFilter).skip(skip).limit(pageSize).sort({ createdAt: -1 }).lean().maxTimeMS(5000), // 5秒超时
           CDKModel.countDocuments(queryFilter).maxTimeMS(5000),
         ]),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000)),
-      ])) as [any[], number];
+        10000,
+        "Query timeout",
+      );
 
       logger.info("[CDKService] 获取CDK列表成功", { page: validatedPage, resourceId: validatedResourceId, total });
       return {
@@ -629,13 +632,14 @@ export class CDKService {
 
   async getCDKStats() {
     try {
-      const [total, used] = (await Promise.race([
+      const [total, used] = await withOperationTimeout(
         Promise.all([
           CDKModel.countDocuments().maxTimeMS(5000),
           CDKModel.countDocuments({ isUsed: true }).maxTimeMS(5000),
         ]),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Stats query timeout")), 10000)),
-      ])) as [number, number];
+        10000,
+        "Stats query timeout",
+      );
 
       logger.info("[CDKService] 获取CDK统计成功", { total, used, available: total - used });
       return {
@@ -660,7 +664,7 @@ export class CDKService {
     }
   }
 
-  async updateCDK(id: string, updateData: { code?: string; resourceId?: string; expiresAt?: Date }) {
+  async updateCDK(id: string, updateData: { code?: string; resourceId?: string; expiresAt?: Date | null }) {
     try {
       // 验证ID格式
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -717,14 +721,18 @@ export class CDKService {
         validatedData.resourceId = updateData.resourceId;
       }
 
-      if (updateData.expiresAt !== undefined) {
-        if (updateData.expiresAt && new Date(updateData.expiresAt) <= new Date()) {
+      if (updateData.expiresAt !== undefined && updateData.expiresAt !== null) {
+        if (!Number.isFinite(new Date(updateData.expiresAt).getTime()) || new Date(updateData.expiresAt) <= new Date()) {
           throw new Error("过期时间必须晚于当前时间");
         }
         validatedData.expiresAt = updateData.expiresAt;
       }
 
-      const updatedCDK = await CDKModel.findByIdAndUpdate(id, { $set: validatedData }, { returnDocument: "after" });
+      const update = {
+        $set: validatedData,
+        ...(updateData.expiresAt === null ? { $unset: { expiresAt: 1 } } : {}),
+      };
+      const updatedCDK = await CDKModel.findByIdAndUpdate(id, update, { returnDocument: "after" });
 
       logger.info("更新CDK成功", { id, updateData: validatedData });
       return updatedCDK;
@@ -1133,9 +1141,10 @@ export class CDKService {
       const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
       const filterLabel = filterType === "all" ? "全部" : filterType === "unused" ? "未使用" : "已使用";
+      const exportId = randomUUID();
       const rawFilename = validatedResourceId
-        ? `CDK导出_${filterLabel}_${validatedResourceId}_${ts}.txt`
-        : `CDK导出_${filterLabel}_${ts}.txt`;
+        ? `CDK导出_${filterLabel}_${validatedResourceId}_${ts}_${exportId}.txt`
+        : `CDK导出_${filterLabel}_${ts}_${exportId}.txt`;
       // 额外净化：仅允许字母数字、下划线、短横线与中文，强制使用 basename 与 .txt 后缀
       const safeBase = basename(rawFilename).replace(/[^\w\-\u4e00-\u9fa5.]+/g, "_");
       const filename = safeBase.endsWith(".txt") ? safeBase : `${safeBase}.txt`;

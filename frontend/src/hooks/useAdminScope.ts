@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { getMyAdminScope, type AdminScopeMe } from '../api/adminScope';
 import { useAuth } from './useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
+import { getAuthRequestGeneration } from '../utils/authRequestGeneration';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * 读一次「我能看哪些管理页面」（`GET /api/admin/admin-scope/me`），并在整个 SPA 会话内复用。
@@ -14,29 +16,40 @@ import { isAdminRole, isSuperAdmin } from '../utils/rbac';
  * 也不会因为“拿不到就全放开”而放大权限。
  */
 
-let cached: AdminScopeMe | null = null;
-let inflight: Promise<AdminScopeMe | null> | null = null;
+type ScopedResult = { key: string; value: AdminScopeMe | null };
+let cached: ScopedResult | null = null;
+let inflight: { key: string; promise: Promise<AdminScopeMe | null> } | null = null;
+let revision = 0;
+const listeners = new Set<() => void>();
+
+const scopeKey = (userId?: string): string => `${userId ?? ''}:${getAuthRequestGeneration()}`;
 
 /** 授权变更（如超管改完配置）后强制下次重新拉取。 */
 export function invalidateAdminScopeCache(): void {
   cached = null;
   inflight = null;
+  revision += 1;
+  listeners.forEach(listener => listener());
 }
 
-function loadAdminScope(): Promise<AdminScopeMe | null> {
-  if (cached) return Promise.resolve(cached);
-  if (!inflight) {
-    inflight = getMyAdminScope()
+function loadAdminScope(key: string): Promise<AdminScopeMe | null> {
+  if (cached?.key === key) return Promise.resolve(cached.value);
+  if (inflight?.key !== key) {
+    const startedRevision = revision;
+    const request = getMyAdminScope()
       .then((data) => {
-        cached = data;
+        if (startedRevision === revision && key === scopeKey(useAuthStore.getState().user?.id)) {
+          cached = { key, value: data };
+        }
         return data;
       })
       .catch(() => null)
       .finally(() => {
-        inflight = null;
+        if (inflight?.promise === request) inflight = null;
       });
+    inflight = { key, promise: request };
   }
-  return inflight;
+  return inflight.promise;
 }
 
 export interface UseAdminScopeResult {
@@ -58,10 +71,18 @@ export function useAdminScope(): UseAdminScopeResult {
   const role = user?.role;
   const adminUser = isAdminRole(role);
   const superAdmin = isSuperAdmin(role);
+  const key = scopeKey(user?.id);
+  const [cacheRevision, setCacheRevision] = useState(revision);
 
-  const [data, setData] = useState<AdminScopeMe | null>(cached);
-  const [loading, setLoading] = useState<boolean>(adminUser && !cached);
+  const [data, setData] = useState<ScopedResult | null>(cached?.key === key ? cached : null);
+  const [loading, setLoading] = useState<boolean>(adminUser && cached?.key !== key);
   const [degraded, setDegraded] = useState(false);
+
+  useEffect(() => {
+    const update = () => setCacheRevision(revision);
+    listeners.add(update);
+    return () => { listeners.delete(update); };
+  }, []);
 
   useEffect(() => {
     if (!adminUser) {
@@ -72,11 +93,12 @@ export function useAdminScope(): UseAdminScopeResult {
     }
 
     let cancelled = false;
-    if (!cached) setLoading(true);
+    const startedRevision = revision;
+    if (cached?.key !== key) setLoading(true);
 
-    void loadAdminScope().then((value) => {
-      if (cancelled) return;
-      setData(value);
+    void loadAdminScope(key).then((value) => {
+      if (cancelled || startedRevision !== revision || key !== scopeKey(useAuthStore.getState().user?.id)) return;
+      setData({ key, value });
       setDegraded(value === null);
       setLoading(false);
     });
@@ -84,25 +106,29 @@ export function useAdminScope(): UseAdminScopeResult {
     return () => {
       cancelled = true;
     };
-  }, [adminUser, role]);
+  }, [adminUser, role, key, cacheRevision]);
 
   const refresh = useCallback(async () => {
     invalidateAdminScopeCache();
+    const startedRevision = revision;
     if (!adminUser) return;
     setLoading(true);
-    const value = await loadAdminScope();
-    setData(value);
+    const value = await loadAdminScope(key);
+    if (startedRevision !== revision || key !== scopeKey(useAuthStore.getState().user?.id)) return;
+    setData({ key, value });
     setDegraded(value === null);
     setLoading(false);
-  }, [adminUser]);
+  }, [adminUser, key]);
+
+  const visible = data?.key === key ? data.value : null;
 
   return {
     loading,
     degraded,
     // 超管不参与页面授权（后端对超管直接返回全部页面），但仍把集合传下去，
     // 这样导航过滤逻辑只有一条路径。
-    grantedPages: data?.pages,
-    availablePages: data?.availablePages ?? [],
+    grantedPages: visible?.pages,
+    availablePages: visible?.availablePages ?? [],
     isSuperAdmin: superAdmin,
     refresh,
   };

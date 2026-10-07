@@ -9,7 +9,6 @@ import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { signedFetch } from '../utils/requestSigner';
 import { getBackendErrorMessage } from '../utils/backendError';
-import CryptoJS from 'crypto-js';
 import { cn } from '../utils/cn';
 import { studioMainSurfaceClassName, studioSurfaceClassName } from './studioTheme';
 
@@ -25,33 +24,11 @@ interface ShortLink {
 
 const PAGE_SIZE = 10;
 
-// AES-256解密函数
-function decryptAES256(encryptedData: string, iv: string, key: string): string {
-  try {
-    const keyBytes = CryptoJS.SHA256(key);
-    const ivBytes = CryptoJS.enc.Hex.parse(iv);
-    const encryptedBytes = CryptoJS.enc.Hex.parse(encryptedData);
-
-    const decrypted = CryptoJS.AES.decrypt(
-      { ciphertext: encryptedBytes },
-      keyBytes,
-      {
-        iv: ivBytes,
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7
-      }
-    );
-
-    return decrypted.toString(CryptoJS.enc.Utf8);
-  } catch {
-    throw new Error('解密失败');
-  }
-}
-
 const ShortLinkManager: React.FC = () => {
   const { user } = useAuth();
   const [links, setLinks] = useState<ShortLink[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -98,11 +75,13 @@ const ShortLinkManager: React.FC = () => {
 
   const fetchLinks = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/admin/shortlinks?search=${encodeURIComponent(search)}&page=${page}&pageSize=${PAGE_SIZE}`, { credentials: 'include' });
       const data = await res.json();
 
-      const nextTotal = data.total || 0;
+      if (!res.ok || !Array.isArray(data.items) || typeof data.total !== 'number') throw new Error('列表响应无效');
+      const nextTotal = data.total;
       setLinks(data.items || []);
       setTotal(nextTotal);
       setTotalPages(Math.max(1, Math.ceil(nextTotal / PAGE_SIZE)));
@@ -110,6 +89,7 @@ const ShortLinkManager: React.FC = () => {
       setLinks([]);
       setTotal(0);
       setTotalPages(1);
+      setLoadError('获取短链列表失败，请刷新重试。');
       setNotification({ message: '获取短链列表失败，请重试', type: 'error' });
     }
     setLoading(false);
@@ -439,10 +419,10 @@ const ShortLinkManager: React.FC = () => {
       return;
     }
     const ok = await confirm({
-      title: `删除全部 ${links.length} 个短链？`,
-      description: '当前列表范围内的全部短链都会失效，且不可撤销。',
+      title: '删除全站全部短链？',
+      description: '将删除全站数据库中的所有短链，包括其他页面、其他用户及当前筛选未显示的短链。所有已发出的短链会立即失效，且不可撤销。',
       tone: 'danger',
-      confirmLabel: '全部删除',
+      confirmLabel: '删除全站全部短链',
     });
     if (!ok) return;
     setDeletingAll(true);
@@ -461,7 +441,7 @@ const ShortLinkManager: React.FC = () => {
         throw new Error(`删除失败: ${response.status}`);
       }
       const data = await response.json();
-      setNotification({ message: `成功删除 ${data.deletedCount} 个短链数据`, type: 'success' });
+      setNotification({ message: `成功删除 ${data.data?.deletedCount ?? data.deletedCount ?? 0} 个短链数据`, type: 'success' });
       fetchLinks();
     } catch (error) {
       console.error('删除所有短链数据失败:', error);
@@ -582,6 +562,7 @@ const ShortLinkManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {loadError && <p role="alert">{loadError}</p>}
       {/* 标题和说明 — 头部横幅：纯色 bg-[#023047] */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1020,7 +1001,7 @@ const ShortLinkManager: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ) : totalItems === 0 ? (
+                ) : totalItems === 0 && !loadError ? (
                   <tr>
                     <td colSpan={isSelectMode ? 7 : 6} className="text-center py-12 text-[#023047]/30">
                       <div className="flex flex-col items-center gap-2">
@@ -1108,7 +1089,7 @@ const ShortLinkManager: React.FC = () => {
                       <span className="text-lg font-medium text-[#023047]/70">加载中…</span>
                     </div>
                   </div>
-                ) : totalItems === 0 ? (
+                ) : totalItems === 0 && !loadError ? (
                   <div className="bg-white/80 rounded-lg shadow p-6 text-center border border-[#8ECAE6]/30">
                     <div className="flex flex-col items-center gap-2">
                       <FaList className="text-3xl text-[#8ECAE6]/50" />

@@ -269,6 +269,7 @@ export class TtsAudioAssetStore {
   }
 
   public async restoreAudioAssetToDisk(fileName: string, outputDir: string) {
+    if (!fileName || fileName === '.' || fileName === '..' || fileName !== path.basename(fileName) || fileName.includes('\\')) return false;
     if (mongoose.connection.readyState !== 1) {
       return false;
     }

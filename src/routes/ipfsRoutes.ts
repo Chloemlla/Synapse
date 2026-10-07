@@ -7,7 +7,7 @@ import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
-import { connectMongo } from "../services/mongoService";
+import { waitForConnection } from "../services/mongoService";
 import logger from "../utils/logger";
 import { createLimiter } from "../middleware/routeLimiters";
 import { getClientIP } from "../utils/ipUtils";
@@ -289,22 +289,21 @@ router.get("/:code", shortlinkLimiter, async (req, res) => {
     return res.status(400).send("缺少短链码");
   }
   try {
-    // 强制确保数据库已连接
-    logger.info("[ShortLink] 检查数据库连接状态", { readyState: mongoose.connection.readyState });
+    // 请求只等候驱动恢复连接，避免并发请求各自重建连接池。
     if (mongoose.connection.readyState !== 1) {
-      logger.warn("[ShortLink] 数据库未连接，尝试重连...");
-      await connectMongo();
-      logger.info("[ShortLink] 数据库重连完成", { readyState: mongoose.connection.readyState });
+      if (!(await waitForConnection(5000))) {
+        return res.status(503).send("短链服务暂不可用，请稍后重试");
+      }
     }
     const ShortUrlModel = mongoose.models.ShortUrl || mongoose.model("ShortUrl");
     logger.info("[ShortLink] 查询短链", { code, model: ShortUrlModel.modelName });
     const record = await ShortUrlModel.findOne({ code });
-    logger.info("[ShortLink] 查询结果", { code, record });
+    logger.debug("[ShortLink] 查询结果", { code, found: Boolean(record) });
     if (!record) {
       logger.warn("[ShortLink] 短链不存在", { ip, code });
       return res.status(404).send("短链不存在");
     }
-    logger.info("[ShortLink] 短链跳转", { ip, code, target: record.target });
+    logger.debug("[ShortLink] 短链跳转", { ip, code });
     res.redirect(301, record.target); // 永久重定向
   } catch (err) {
     logger.error("[ShortLink] 短链跳转异常", { ip, code, error: err });

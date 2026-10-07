@@ -1,4 +1,3 @@
-import { generateProviderGeneratedPasswordEmailHtml } from "../templates/emailTemplates";
 import logger from "../utils/logger";
 import { sendEmail } from "./emailSender";
 
@@ -21,7 +20,7 @@ export function canSendProviderCredentialEmail(email: string): boolean {
 export async function sendProviderGeneratedPasswordEmail(params: {
   email: string;
   username: string;
-  password: string;
+  password?: string;
   providerLabel: string;
 }): Promise<void> {
   if (!canSendProviderCredentialEmail(params.email)) {
@@ -34,12 +33,13 @@ export async function sendProviderGeneratedPasswordEmail(params: {
   }
 
   try {
-    const html = generateProviderGeneratedPasswordEmailHtml(params.username, params.providerLabel, params.password);
+    // 邮件长期留存；新账号只发送操作指引，随机初始口令不离开认证流程。
+    const html = "<p>您的 Synapse 账号已创建。</p><p>请使用第三方账号登录。若需要密码登录，请在登录页选择“忘记密码”，通过验证邮箱设置密码。</p>";
     const result = await sendEmail({
       to: params.email,
-      subject: "Synapse 账号密码凭据",
+      subject: "Synapse 账号已创建",
       html,
-      logTag: "第三方注册密码凭据",
+      logTag: "第三方注册通知",
       // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
       checkQuota: false,
     });

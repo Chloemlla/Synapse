@@ -3,6 +3,7 @@ import IpVerificationService from "../services/ipVerificationService";
 import { config } from "../config/config";
 import { createLimiter } from "../middleware/routeLimiters";
 import { getClientIP } from "../utils/ipUtils";
+import logger from "../utils/logger";
 
 const router = express.Router();
 
@@ -46,11 +47,12 @@ router.post("/session", sessionLimiter, async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
+    logger.error("[IpVerification] 初始化验证会话失败", error);
     res.status(500).json({
       success: false,
       verified: false,
       requiresVerification: true,
-      error: error instanceof Error ? error.message : "Failed to initialize verification session",
+      error: "Failed to initialize verification session",
       // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
       // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
       tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
@@ -78,11 +80,12 @@ router.post("/complete", sessionLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    logger.error("[IpVerification] 完成验证失败", error);
     res.status(500).json({
       success: false,
       verified: false,
       requiresVerification: true,
-      error: error instanceof Error ? error.message : "Failed to complete verification",
+      error: "Failed to complete verification",
       // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
       // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
       tokenTtlMinutes: config.ipqs.tokenTtlMinutes,

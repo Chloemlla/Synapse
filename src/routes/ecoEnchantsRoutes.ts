@@ -13,6 +13,7 @@ import {
 import { firstString } from "../utils/httpParam";
 import { getTokenFromRequest } from "../utils/authCookie";
 import { UserStorage } from "../utils/userStorage";
+import { assertActiveAuthSession, hashAuthCredential, touchAuthSession } from "../services/authSessionService";
 
 const router = Router();
 
@@ -241,6 +242,13 @@ async function authenticateEcoCustomer(req: Request, res: Response, next: NextFu
       return;
     }
 
+    // These are Synapse login JWTs, so revocation must match the main auth middleware.
+    const credentialHash = hashAuthCredential(jwtToken);
+    const session = await assertActiveAuthSession(String(userId), jwtToken, credentialHash);
+    await touchAuthSession(String(userId), jwtToken, {
+      ipAddress: getRequestIp(req),
+      userAgent: firstString(req.headers["user-agent"]) || session.userAgent,
+    }, credentialHash, session);
     (req as any).user = user;
     next();
   } catch {

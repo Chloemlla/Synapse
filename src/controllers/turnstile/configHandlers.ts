@@ -27,7 +27,7 @@ export async function getTurnstileConfig(req: Request, res: Response) {
       ...(isAdmin && { secretKey: maskedSecretKey }),
     });
   } catch (error) {
-    console.error("获取Turnstile配置失败:", error);
+    logger.error("获取Turnstile配置失败:", error);
     res.status(500).json({ error: "获取配置失败" });
   }
 }
@@ -48,7 +48,7 @@ export async function getPublicConfig(_req: Request, res: Response) {
       capApiEndpoint: capConfig.apiEndpoint,
     });
   } catch (error) {
-    console.error("获取公共配置失败:", error);
+    logger.error("获取公共配置失败:", error);
     res.status(500).json({ error: "获取配置失败" });
   }
 }
@@ -58,7 +58,7 @@ export async function getPublicTurnstile(_req: Request, res: Response) {
     const config = await TurnstileService.getConfig();
     res.json({ enabled: config.enabled, siteKey: config.siteKey });
   } catch (error) {
-    console.error("获取Turnstile公共配置失败:", error);
+    logger.error("获取Turnstile公共配置失败:", error);
     res.status(500).json({ error: "获取配置失败" });
   }
 }
@@ -86,7 +86,7 @@ export async function verifyTurnstileToken(req: Request, res: Response) {
 
     return res.status(400).json({ success: false, verified: false, captchaProvider: challenged.provider });
   } catch (error) {
-    console.error("验证人机验证 token 失败:", error);
+    logger.error("验证人机验证 token 失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -174,7 +174,7 @@ export async function updateTurnstileConfig(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置更新失败" });
     }
   } catch (error) {
-    console.error("更新Turnstile配置失败:", error);
+    logger.error("更新Turnstile配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -197,7 +197,7 @@ export async function deleteTurnstileConfig(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置删除失败" });
     }
   } catch (error) {
-    console.error("删除Turnstile配置失败:", error);
+    logger.error("删除Turnstile配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

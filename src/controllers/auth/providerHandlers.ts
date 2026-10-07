@@ -123,13 +123,13 @@ export async function googleBindSession(req: Request, res: Response) {
   }
 }
 
-export function getProviderBindSession(req: Request, res: Response) {
+export async function getProviderBindSession(req: Request, res: Response) {
   const sessionToken = typeof req.body?.sessionToken === "string" ? req.body.sessionToken : "";
   if (!sessionToken) {
     return res.status(400).json({ error: "缺少第三方登录绑定会话" });
   }
 
-  const session = getProviderBindSessionView(sessionToken);
+  const session = await getProviderBindSessionView(sessionToken);
   if (!session) {
     // 与 confirmProviderBind 的"已过期"分支统一成 410：同一种状态不该在两个接口上
     // 分别表现为 404 与 410（前端两处提示也因此能对齐）。

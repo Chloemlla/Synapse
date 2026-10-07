@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '../api/api';
 import { useAuthStore } from '../stores/authStore';
+import { getAuthRequestGeneration } from '../utils/authRequestGeneration';
+
+const currentIdentityKey = () => {
+  const state = useAuthStore.getState();
+  return `${state.isAuthenticated ? state.user?.id ?? '' : ''}:${getAuthRequestGeneration()}`;
+};
 
 
 interface FingerprintRequestStatus {
@@ -22,10 +28,14 @@ export const useFingerprintRequest = () => {
 
   // 订阅真实登录态：未登录不拉取/不轮询管理端接口（G9-06）
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const userId = isAuthenticated ? user?.id : undefined;
+  const identityKey = `${userId ?? ''}:${getAuthRequestGeneration()}`;
+  const [requestOwnerKey, setRequestOwnerKey] = useState('');
 
   // 检查用户是否已登录（认证由 HttpOnly Cookie 维护，无法从 JS 读取）
   const isUserLoggedIn = useCallback((): boolean => {
-    return Boolean(useAuthStore.getState().user);
+    return Boolean(useAuthStore.getState().isAuthenticated && useAuthStore.getState().user);
   }, []);
 
   // 获取用户ID用于dismissal tracking
@@ -40,18 +50,20 @@ export const useFingerprintRequest = () => {
 
     const dismissKey = `fp_request_dismissed_${userId}_${requireFingerprintAt}`;
     const dismissedAt = localStorage.getItem(dismissKey);
-    
+
     if (!dismissedAt) return false;
-    
+
     const dismissTime = parseInt(dismissedAt);
     const now = Date.now();
     const oneHour = 60 * 60 * 1000; // 1小时冷却时间
-    
+
     return (now - dismissTime) < oneHour;
   }, [getUserId]);
 
   // 记录用户永久关闭（一生只能关闭一次）
   const recordDismissOnce = useCallback(async (): Promise<boolean> => {
+    const requestedIdentity = currentIdentityKey();
+    if (!isUserLoggedIn()) return false;
     try {
       const response = await fetch(`${getApiBaseUrl()}/api/admin/user/fingerprint/dismiss`, {
         method: 'POST',
@@ -69,8 +81,9 @@ export const useFingerprintRequest = () => {
       }
 
       const data = await response.json();
+      if (requestedIdentity !== currentIdentityKey()) return false;
       console.log(' 已记录用户永久关闭指纹请求:', data);
-      
+
       // 更新本地状态
       setRequestStatus(prev => ({
         ...prev,
@@ -99,7 +112,7 @@ export const useFingerprintRequest = () => {
     console.log(' 用户主动跳过，记录 dismissal tracking（1小时冷却）');
     const dismissKey = `fp_request_dismissed_${userId}_${requestStatus.requireFingerprintAt}`;
     localStorage.setItem(dismissKey, Date.now().toString());
-    
+
     // 清理旧的dismiss记录（超过24小时的）
     const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
@@ -116,8 +129,8 @@ export const useFingerprintRequest = () => {
   // 获取指纹请求状态
   const checkFingerprintRequest = useCallback(async (): Promise<FingerprintRequestStatus> => {
     if (!isUserLoggedIn()) {
-      return { 
-        requireFingerprint: false, 
+      return {
+        requireFingerprint: false,
         requireFingerprintAt: 0,
         fingerprintRequestDismissedOnce: false,
         fingerprintRequestDismissedAt: 0
@@ -165,6 +178,8 @@ export const useFingerprintRequest = () => {
 
   // 初始化检查
   useEffect(() => {
+    let active = true;
+    const requestedIdentity = identityKey;
     const initializeCheck = async () => {
       if (!isUserLoggedIn()) {
         setLoading(false);
@@ -174,50 +189,57 @@ export const useFingerprintRequest = () => {
       try {
         setLoading(true);
         const status = await checkFingerprintRequest();
+        if (!active || requestedIdentity !== currentIdentityKey()) return;
+        setRequestOwnerKey(requestedIdentity);
         setRequestStatus(status);
       } catch (err) {
-        setError(err instanceof Error ? err.message : '检查失败');
+        if (active && requestedIdentity === currentIdentityKey()) setError(err instanceof Error ? err.message : '检查失败');
       } finally {
-        setLoading(false);
+        if (active && requestedIdentity === currentIdentityKey()) setLoading(false);
       }
     };
 
     initializeCheck();
-  }, [isUserLoggedIn, checkFingerprintRequest, user]);
+    return () => { active = false; };
+  }, [isUserLoggedIn, checkFingerprintRequest, identityKey]);
 
   // 定期检查（每30秒）——仅在登录态下轮询，登录后启动、登出即清理（G9-06）
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       return;
     }
+
+    let active = true;
 
     const interval = setInterval(async () => {
       try {
         const status = await checkFingerprintRequest();
-        setRequestStatus(status);
+        if (active && identityKey === currentIdentityKey()) {
+          setRequestOwnerKey(identityKey);
+          setRequestStatus(status);
+        }
       } catch (err) {
         console.error('定期检查指纹请求状态失败:', err);
       }
     }, 30000); // 30秒检查一次
 
-    return () => clearInterval(interval);
-  }, [user, checkFingerprintRequest]);
+    return () => { active = false; clearInterval(interval); };
+  }, [userId, identityKey, checkFingerprintRequest]);
 
-  // 登出时清理状态
+  // 每个身份代次从空提示开始；旧账号的请求不能在换号时闪现。
   useEffect(() => {
-    if (!isUserLoggedIn()) {
-      setRequestStatus({ 
-        requireFingerprint: false, 
+      setRequestOwnerKey('');
+      setRequestStatus({
+        requireFingerprint: false,
         requireFingerprintAt: 0,
         fingerprintRequestDismissedOnce: false,
         fingerprintRequestDismissedAt: 0
       });
       setError('');
-    }
-  }, [isUserLoggedIn]);
+  }, [identityKey]);
 
   // 检查是否应该显示请求弹窗
-  const shouldShowRequest = requestStatus.requireFingerprint && 
+  const shouldShowRequest = Boolean(userId) && requestOwnerKey === identityKey && requestStatus.requireFingerprint &&
                            requestStatus.requireFingerprintAt > 0 &&
                            !loading &&
                            !isDismissedRecently(requestStatus.requireFingerprintAt);

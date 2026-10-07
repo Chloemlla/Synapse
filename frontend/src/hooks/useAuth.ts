@@ -14,6 +14,7 @@ import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
 import type { PolicyConsentPayload } from '../utils/policyConsent';
 import { isAdminRole } from '../utils/rbac';
 import { resetAdminVerifyCache } from '../utils/adminVerifyCache';
+import { beginAuthTransition, endAuthTransition, getAuthRequestGeneration, isAuthTransitionPending, isCurrentAuthRequest, readAuthResponse } from '../utils/authRequestGeneration';
 
 export type { AuthRequestError, LoginResult };
 
@@ -53,7 +54,8 @@ const CHECK_INTERVAL = 30000;
 const ERROR_RETRY_INTERVAL = 60000;
 let moduleLastCheckRef = 0;
 let moduleLastErrorRef = 0;
-let moduleCheckingRef = false;
+let moduleCheckingRef: number | null = null;
+let moduleCheckGeneration = -1;
 
 // auth 请求走共享 api 实例：它在请求拦截器里补 IP 验证头，并在收到 IP_VERIFICATION_REQUIRED 时
 // 触发首访验证页。这里若自建裸 axios 实例，/api/auth/me 与 /api/auth/session 会不带验证头，
@@ -130,10 +132,21 @@ export const useAuth = () => {
 
     const checkAuth = useCallback(async () => {
         const now = Date.now();
-        if (moduleCheckingRef
-            || now - moduleLastCheckRef < CHECK_INTERVAL
-            || now - moduleLastErrorRef < ERROR_RETRY_INTERVAL) {
-            // 模块级检查正在执行或 30s 内刚完成：认证态已(即将)写入 store。
+        const generation = getAuthRequestGeneration();
+        if (isAuthTransitionPending()) {
+            setLoading(false);
+            setIsChecking(false);
+            return;
+        }
+        if (moduleCheckGeneration !== generation) {
+            moduleCheckGeneration = generation;
+            moduleLastCheckRef = 0;
+            moduleLastErrorRef = 0;
+        }
+        if (moduleCheckingRef !== generation && (
+            now - moduleLastCheckRef < CHECK_INTERVAL
+            || now - moduleLastErrorRef < ERROR_RETRY_INTERVAL)) {
+            // 已完成检查的节流窗口不重复发送；在途检查由 readAuthResponse 共享。
             // 若不在此复位本实例 loading，节流窗口内新挂载的消费方(AdminGuard 等)会
             // 永久卡在 "正在验证管理员权限..."——loading 只在真正发请求的 finally 里复位。
             setLoading(false);
@@ -142,12 +155,13 @@ export const useAuth = () => {
             return;
         }
 
-        moduleCheckingRef = true;
+        moduleCheckingRef = generation;
         setIsChecking(true);
 
         try {
             // 认证由 HttpOnly Cookie 自动携带，无需手动读取 token
-            const response = await api.get<User>('/api/auth/me');
+            const response = await readAuthResponse(() => api.get<User>('/api/auth/me'));
+            if (!isCurrentAuthRequest(generation)) return;
 
             console.log('认证检查响应:', response.status);
 
@@ -178,9 +192,11 @@ export const useAuth = () => {
                 console.log('认证检查返回空数据，清除用户状态');
                 setUser(null);
             }
+            moduleCheckGeneration = getAuthRequestGeneration();
             moduleLastCheckRef = now;
             setLastCheckTime(now);
         } catch (error: any) {
+            if (!isCurrentAuthRequest(generation)) return;
             moduleLastErrorRef = now;
             setLastErrorTime(now);
             if (error.response?.status === 429) {
@@ -194,9 +210,9 @@ export const useAuth = () => {
         } finally {
             setLoading(false);
             // Keep the store's auth-operation flag coherent with the app's session check.
-            setIsLoading(false);
+            if (isCurrentAuthRequest(generation) && !isAuthTransitionPending()) setIsLoading(false);
             setIsChecking(false);
-            moduleCheckingRef = false;
+            if (moduleCheckingRef === generation) moduleCheckingRef = null;
         }
     }, [loadSavedAccounts, saveAccount, navigate]);
 
@@ -244,14 +260,20 @@ export const useAuth = () => {
 
     const loginWithToken = useCallback(async (token: string, user: User) => {
         if (!token) throw new Error('缺少登录令牌');
-        // 将 Bearer token 转换为 cookie 会话
-        await api.post('/api/auth/session', undefined, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        saveAccount(user, token);
-        setUser(user);
-        moduleLastCheckRef = Date.now();
-        setLastCheckTime(Date.now());
+        const generation = beginAuthTransition();
+        try {
+            // 将 Bearer token 转换为 cookie 会话
+            await api.post('/api/auth/session', undefined, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
+            saveAccount(user, token);
+            setUser(user);
+            moduleLastCheckRef = Date.now();
+            setLastCheckTime(Date.now());
+        } finally {
+            endAuthTransition(generation);
+        }
     }, [saveAccount, setUser]);
 
     // 恢复原始代码的精细化 verifyTOTP 错误处理
@@ -259,6 +281,7 @@ export const useAuth = () => {
         const userId = pendingTOTP?.userId || pending2FA?.userId;
         if (!userId) throw new Error('没有待验证的TOTP请求');
         if (!pendingToken) throw new Error('缺少二次验证临时令牌');
+        const generation = beginAuthTransition();
 
         try {
             const response = await api.post('/api/totp/verify-token', {
@@ -268,8 +291,10 @@ export const useAuth = () => {
                 pendingToken
             });
 
+            if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
             if (response.data.verified) {
                 const userData = await getCurrentUser();
+                if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
                 setUser(userData);
                 saveAccount(userData);
                 setPendingTOTP(null);
@@ -280,6 +305,7 @@ export const useAuth = () => {
             }
             throw new Error('TOTP验证失败');
         } catch (error: any) {
+            if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
             setPendingTOTP(null);
             const errorData = error.response?.data;
             if (error.response?.status === 429) {
@@ -296,15 +322,19 @@ export const useAuth = () => {
             } else {
                 throw new Error(errorData?.error || error.message || 'TOTP验证失败');
             }
+        } finally {
+            endAuthTransition(generation);
         }
     }, [getCurrentUser, pending2FA, pendingTOTP, saveAccount, setUser]);
 
     const register = useCallback(async (username: string, email: string, password: string) => {
+        const generation = beginAuthTransition();
         try {
             const response = await api.post<{ user: User; token: string }>('/api/auth/register', {
                 username, email, password
             });
             const { user, token } = response.data;
+            if (!isCurrentAuthRequest(generation)) throw new Error('注册操作已取消');
             saveAccount(user, token);
             setUser(user);
             moduleLastCheckRef = Date.now();
@@ -312,16 +342,14 @@ export const useAuth = () => {
         } catch (error: any) {
             const msg = error.response?.data?.error || error.message || '注册失败';
             throw new Error(msg);
+        } finally {
+            endAuthTransition(generation);
         }
     }, [saveAccount, setUser]);
 
     const logout = useCallback(async () => {
-        try {
-            await api.post('/api/auth/logout');
-        } catch (error) {
-            // ignore network failures; still clear local state
-            console.warn('登出请求失败，仍会清理本地状态:', error);
-        }
+        storeLogout();
+        const generation = beginAuthTransition();
         const accounts = loadSavedAccounts();
         if (user) {
             const updated = accounts.filter(a => a.user.id !== user.id);
@@ -329,7 +357,6 @@ export const useAuth = () => {
             setSavedAccounts(updated);
         }
 
-        storeLogout();
         resetAdminVerifyCache(); // G11-17: 登出即清空 AdminGuard 软缓存，避免降权账号会话内继续吃缓存
         setPendingTOTP(null);
         setPending2FA(null);
@@ -341,13 +368,21 @@ export const useAuth = () => {
         } else {
             navigate('/welcome');
         }
+        try {
+            await api.post('/api/auth/logout');
+        } catch (error) {
+            console.warn('登出请求失败，本地状态已清理:', error);
+        } finally {
+            endAuthTransition(generation);
+        }
     }, [loadSavedAccounts, navigate, storeLogout, switchAccount, user]);
 
     const logoutAll = useCallback(() => {
-        void api.post('/api/auth/logout').catch(() => undefined);
         resetAdminVerifyCache(); // G11-17: 登出即清空 AdminGuard 软缓存
         clearSavedAccounts();
         storeLogout();
+        const generation = beginAuthTransition();
+        void api.post('/api/auth/logout').catch(() => undefined).finally(() => endAuthTransition(generation));
         setSavedAccounts([]);
         setIsAdminChecked(false);
         navigate('/welcome');
@@ -370,8 +405,10 @@ export const useAuth = () => {
     }, [loadSavedAccounts, navigate, switchAccount, user]);
 
     const updateUserAvatar = useCallback(async () => {
+        const generation = getAuthRequestGeneration();
         try {
-            const response = await api.get<User>('/api/auth/me');
+            const response = await readAuthResponse(() => api.get<User>('/api/auth/me'));
+            if (!isCurrentAuthRequest(generation)) return;
             if (response.data) {
                 setUser(response.data);
                 const accounts = loadSavedAccounts();
@@ -387,8 +424,10 @@ export const useAuth = () => {
     // 此时 HttpOnly Cookie 已建立，需重新拉取用户信息，否则 AdminRoute 会因
     // user 为空把管理员弹回 /login。
     const refreshUser = useCallback(async (): Promise<User | null> => {
+        const generation = getAuthRequestGeneration();
         try {
-            const response = await api.get<User>('/api/auth/me');
+            const response = await readAuthResponse(() => api.get<User>('/api/auth/me'));
+            if (!isCurrentAuthRequest(generation)) return null;
             if (response.data) {
                 setUser(response.data);
                 const accounts = loadSavedAccounts();

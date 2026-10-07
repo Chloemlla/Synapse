@@ -7,7 +7,7 @@
 | ID | 严重度 | 类别 | 位置 file:line | 症状与根因 | 证据（不超过 3 行） | 建议改法 |
 | --- | --- | --- | --- | --- | --- | --- |
 | fe-comp-1-01 | 高 | 响应契约 | `frontend/src/components/CommandManager.tsx:279`、`:325`、`:391` | Cookie 登录管理员加载命令队列、查看下一条和加载历史时，接口有数据仍显示空。组件只在旧加密格式分支调用解包函数，正常 Cookie 分支直接读顶层 command/数组。 | `src/routes/commandRoutes.ts:109,306` 返回 `{success:true,payload:...,mode:'cookie-session'}`；前端 `:300,345,412` 只判断 response.data；`resolveCommandPayload` 已支持该包装却未调用。 | 三条读取路径先统一解包再判定形状；分别处理队列单条预览与历史数组。 |
-| fe-comp-1-02 | 高 | 分页状态 | `frontend/src/components/CDKStoreManager.tsx:723` | 从第 2 页或更后页点击首页/上一页回到第 1 页时，数字变成 1，仍显示上一页 CDK。加载 effect 被 `currentPage > 1` 排除了第一页。 | `:765` 仅 setCurrentPage；`:723-727` 仅 page > 1 才 fetchCDKs；首屏 effect `:717` 只执行一次。 | 所有页码统一由一个 effect 查询，包括第一页，去掉重复首屏请求入口。 |
+| fe-comp-1-02 | 中 | 分页状态 | `frontend/src/components/CDKStoreManager.tsx:723` | 从第 2 页或更后页点击首页/上一页回到第 1 页时，数字变成 1，仍显示上一页 CDK。加载 effect 被 `currentPage > 1` 排除了第一页。 | `:765` 仅 setCurrentPage；`:723-727` 仅 page > 1 才 fetchCDKs；首屏 effect `:717` 只执行一次。 | 所有页码统一由一个 effect 查询，包括第一页，去掉重复首屏请求入口。 |
 | fe-comp-1-03 | 高 | 有效期意外改写 | `frontend/src/components/ApiKeyManager.tsx:182`、`:433`、`:465` | 仅修改 Key 名称/限流也会延长有效期；已过期但 enabled=true 的 Key 被重新激活一天。编辑把剩余时间向上取整成天，提交又总是从当前时间重新计算。 | `daysUntil` 过期返回 1；每次 PUT 均传 expiresInDays；`src/routes/apiKeyRoutes.ts:273` 收到字段即 `Date.now()+days`。 | 有效期未改时省略字段；编辑绝对 expiresAt 或提供明确续期动作，并保留原始时间。 |
 | fe-comp-1-04 | 高 | 请求契约 / 功能阻断 | `frontend/src/components/EcoEnchantsOpsPanel.tsx:397`、`:425`、`:451`、`:466`、`:486`、`:501` | 创建任务、文件读写删、创建/恢复备份全部缺少必需幂等键，有效超管会话也会被服务端拒绝，运维写功能不可用。 | 所有 POST 无第三参数 headers；`ecoEnchantsController.ts:527,576,598,620,664,699` 调 withIdempotency；`ecoEnchantsService.ts:687` 强制 `ensureRequiredText(params.key,'Idempotency-Key',200)`。 | 每次逻辑操作生成键并随请求发送；同一操作的重试复用同一键，收到结果后再换键。 |
 | fe-comp-1-05 | 中 | 时区 / 数据完整性 | `frontend/src/components/CDKStoreManager.tsx:465`、`:503` | UTC+8 用户编辑有过期时间的 CDK，仅修改代码后保存也会把到期时间提前 8 小时；临近到期还可能被后端拒绝。ISO UTC 截掉 Z 后放入 datetime-local，再按本地时间解析。 | 初始化 `toISOString().slice(0,16)`；提交 `new Date(formData.expiresAt)`；`cdkController.ts:125` 与 `cdkService.ts:721` 持久化该时间。 | 用本地年月日时分格式填充 datetime-local，提交转 ISO；无关编辑不改时间字段。 |
@@ -50,3 +50,4 @@
 
 静态局限：无真实请求、浏览器焦点/触摸/媒体事件重放；未读取每个组件全部间接依赖。展示样式和静态文案重复段不构成视觉审计覆盖。结论是可复核的代码路径分析，不能替代后续 GitHub Actions 或经授权的运行验证。
 
+并发变动：本组报告落盘后，另一会话在工作树修改 `CapWidget.tsx`、`CloudflareChallengePage.tsx`、`frontend/src/api/api.ts`、`frontend/src/utils/ipVerification.ts`、`src/services/cdkService.ts` 等验证码/传输链文件。本报告结论对应审查基线，不代表这些未提交改动后的状态；尤其 09 需由协调者与并发修复对账。遵照用户转入修复的新指令，未继续扩展审查。

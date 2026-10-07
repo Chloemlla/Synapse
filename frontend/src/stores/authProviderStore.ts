@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import getApiBaseUrl from "../api";
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 interface GoogleAuthConfig {
   enabled: boolean;
@@ -17,6 +18,8 @@ interface AuthProviderState {
   loading: boolean;
   /** true if the initial fetch completed (even on error) */
   initialized: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
 }
 
 interface AuthProvidersPublicConfigResponse {
@@ -34,20 +37,20 @@ interface AuthProvidersPublicConfigResponse {
   };
 }
 
-const fetchWithTimeout = (url: string, ms = 5000): Promise<Response> => {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), ms);
-  return fetch(url, { signal: ctrl.signal, credentials: "include" }).finally(() => clearTimeout(id));
-};
-
 export const useAuthProviderStore = create<AuthProviderState>()((set) => {
+  let inflight: Promise<void> | null = null;
+  let attempts = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   // Fire pre-fetch immediately on store creation (app startup)
-  const init = async () => {
+  const load = async (): Promise<void> => {
+    set({ loading: true, error: null });
     try {
-      const res = await fetchWithTimeout(`${getApiBaseUrl()}/api/auth/providers/public-config`);
+      const res = await fetchWithTimeout(`${getApiBaseUrl()}/api/auth/providers/public-config`, { credentials: 'include' }, 5000);
+      if (!res.ok) throw new Error('登录方式暂时无法加载');
       const data = (await res.json().catch(() => null)) as AuthProvidersPublicConfigResponse | null;
 
-      if (data) {
+      if (data?.google && data?.linuxdo) {
+        attempts = 0;
         set({
           google: {
             enabled: Boolean(data.google.enabled && data.google.clientId),
@@ -58,23 +61,35 @@ export const useAuthProviderStore = create<AuthProviderState>()((set) => {
           },
           loading: false,
           initialized: true,
+          error: null,
         });
       } else {
-        set({ loading: false, initialized: true });
+        throw new Error('登录方式暂时无法加载');
       }
     } catch {
-      // On error, keep defaults (disabled) and mark as initialized
-      set({ loading: false, initialized: true });
+      set({ loading: false, initialized: true, error: '登录方式暂时无法加载' });
+      attempts += 1;
+      if (attempts < 3) retryTimer = setTimeout(() => { void refresh(false); }, 2000 * 2 ** (attempts - 1));
     }
   };
 
+  const refresh = (manual = true): Promise<void> => {
+    if (inflight) return inflight;
+    if (retryTimer) clearTimeout(retryTimer);
+    if (manual) attempts = 0;
+    inflight = load().finally(() => { inflight = null; });
+    return inflight;
+  };
+
   // Fire and forget — don't block render
-  void init();
+  void Promise.resolve().then(() => refresh());
 
   return {
     google: { enabled: false, clientId: "" },
     linuxdo: { enabled: false },
     loading: true,
     initialized: false,
+    error: null,
+    refresh: () => refresh(),
   };
 });

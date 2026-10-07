@@ -41,8 +41,16 @@ const stringToBoolean = z
   .optional()
   .transform((value) => {
     if (typeof value === "boolean") return value;
-    if (typeof value === "number") return value !== 0;
-    if (typeof value === "string") return !["false", "0", "no", "off", ""].includes(value.trim().toLowerCase());
+    if (typeof value === "number") {
+      if (value === 0 || value === 1) return value === 1;
+      throw new Error("Invalid boolean configuration; use true or false");
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) return true;
+      if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+      throw new Error("Invalid boolean configuration; use true or false");
+    }
     return undefined;
   });
 

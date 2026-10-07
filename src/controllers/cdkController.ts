@@ -118,11 +118,18 @@ export const updateCDK = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "无效的CDK ID" });
     }
 
-    const updateData: { code?: string; resourceId?: string; expiresAt?: Date } = {};
+    const updateData: { code?: string; resourceId?: string; expiresAt?: Date | null } = {};
 
     if (code !== undefined) updateData.code = code;
     if (resourceId !== undefined) updateData.resourceId = resourceId;
-    if (expiresAt !== undefined) updateData.expiresAt = expiresAt ? new Date(expiresAt) : undefined;
+    if (expiresAt === null) {
+      updateData.expiresAt = null;
+    } else if (expiresAt !== undefined) {
+      if (typeof expiresAt !== "string" || !expiresAt.trim() || Number.isNaN(Date.parse(expiresAt))) {
+        return res.status(400).json({ message: "过期时间格式无效" });
+      }
+      updateData.expiresAt = new Date(expiresAt);
+    }
 
     const updatedCDK = await cdkService.updateCDK(id, updateData);
 

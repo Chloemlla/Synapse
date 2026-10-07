@@ -18,6 +18,15 @@ function renderUnsubscribePage(ok: boolean, message: string): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head><body style="font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;background:#f6f7f9;color:#1f2937"><main style="max-width:420px;padding:32px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center"><h1 style="font-size:20px;color:${color};margin:0 0 12px">${title}</h1><p style="font-size:14px;line-height:1.6;color:#4b5563;margin:0">${message}</p></main></body></html>`;
 }
 
+function summarizeEmailBody(body: any) {
+  const emails = Array.isArray(body?.emails) ? body.emails : [body];
+  return {
+    messageCount: emails.length,
+    recipientCount: emails.reduce((count: number, email: any) => count + (Array.isArray(email?.to) ? email.to.length : typeof email?.to === "string" ? 1 : 0), 0),
+    subjectLength: typeof body?.subject === "string" ? body.subject.length : 0,
+  };
+}
+
 function getAllowedSenderDomains(): string[] {
   return getAllSenderDomains();
 }
@@ -109,7 +118,7 @@ export class EmailController {
       // 验证必填字段
       if (!from || !to || !subject || !html) {
         logger.warn("邮件发送失败：缺少必填字段", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -212,7 +221,7 @@ export class EmailController {
 
         res.status(500).json({
           success: false,
-          error: result.error || "邮件发送失败",
+          error: "邮件发送失败",
         });
       }
     } catch (error) {
@@ -220,7 +229,7 @@ export class EmailController {
       logger.error("邮件发送异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -328,13 +337,13 @@ export class EmailController {
         ip,
         userId: quotaKey,
       });
-      return res.status(500).json({ success: false, error: result.error || "批量发送失败" });
+      return res.status(500).json({ success: false, error: "批量发送失败" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "未知错误";
       logger.error("批量邮件发送异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -364,7 +373,7 @@ export class EmailController {
       // 验证必填字段
       if (!to || !subject || !content) {
         logger.warn("简单邮件发送失败：缺少必填字段", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -455,7 +464,7 @@ export class EmailController {
 
         res.status(500).json({
           success: false,
-          error: result.error || "邮件发送失败",
+          error: "邮件发送失败",
         });
       }
     } catch (error) {
@@ -463,7 +472,7 @@ export class EmailController {
       logger.error("简单邮件发送异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -496,7 +505,7 @@ export class EmailController {
       // 验证必填字段
       if (!from || !to || !subject || !markdown) {
         logger.warn("Markdown邮件发送失败：缺少必填字段", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -586,7 +595,7 @@ export class EmailController {
         });
         res.status(500).json({
           success: false,
-          error: result.error || "邮件发送失败",
+          error: "邮件发送失败",
         });
       }
     } catch (error) {
@@ -594,7 +603,7 @@ export class EmailController {
       logger.error("Markdown邮件发送异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -696,7 +705,7 @@ export class EmailController {
 
       if (!email) {
         logger.warn("发件人域名验证失败：参数无效", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -725,7 +734,7 @@ export class EmailController {
       logger.error("发件人域名验证异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -755,7 +764,7 @@ export class EmailController {
 
       if (!emails || !Array.isArray(emails)) {
         logger.warn("邮箱验证失败：参数无效", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -785,7 +794,7 @@ export class EmailController {
       logger.error("邮箱验证异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });

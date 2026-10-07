@@ -8,6 +8,7 @@ import { usePasskey } from '../hooks/usePasskey';
 import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinuxDoAuthButton from './LinuxDoAuthButton';
+import { useAuthProviderStore } from '../stores/authProviderStore';
 import MobileLoginPanel from './MobileLoginPanel';
 import ManagedCaptcha, {
     type ManagedCaptchaChallenge,
@@ -117,6 +118,9 @@ const buildLoginAttemptStatus = (error: AuthRequestError): LoginAttemptStatus | 
 };
 
 export const LoginPage: React.FC = () => {
+    const providerError = useAuthProviderStore(state => state.error);
+    const providerLoading = useAuthProviderStore(state => state.loading);
+    const refreshProviders = useAuthProviderStore(state => state.refresh);
     const { user, login, loginWithToken, pending2FA, setPending2FA, refreshUser } = useAuth();
     const { setNotification } = useNotification();
     const navigate = useNavigate();
@@ -509,6 +513,14 @@ export const LoginPage: React.FC = () => {
                                     </div>
 
                                     <div className="space-y-4">
+                                        {providerError && (
+                                            <div role="alert" className={authWarningPanelClassName}>
+                                                <p>{providerError}</p>
+                                                <button type="button" disabled={providerLoading} onClick={() => void refreshProviders()} className={authTextLinkClassName}>
+                                                    {providerLoading ? '正在重试…' : '重试'}
+                                                </button>
+                                            </div>
+                                        )}
                                         <MobileLoginPanel
                                             disabled={loading}
                                             loginWithToken={loginWithToken}

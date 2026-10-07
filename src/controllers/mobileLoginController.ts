@@ -17,7 +17,7 @@ import { getClientIP } from "../utils/ipUtils";
 import { getAuthSessionMetadata } from "../services/authSessionService";
 import {
   buildAccountSuspendedBody,
-  isAccountSuspendedFailure,
+  AccountSuspendedError,
 } from "../services/providerAuthErrors";
 import logger from "../utils/logger";
 import type { User } from "../utils/userStorage";
@@ -33,23 +33,16 @@ function getUserAgent(req: Request): string {
   return String(req.headers["user-agent"] || "unknown");
 }
 
-function errorStatus(message: string): number {
-  if (message.includes("封停")) return 403;
-  if (message.includes("过期") || message.includes("无效")) return 401;
-  if (message.includes("不匹配")) return 403;
-  return 400;
-}
-
 /**
  * 令牌相关的失败带自己的 HTTP 状态、错误码与可选 retryAfterSeconds，
- * 不再靠“文案里有没有某个词”猜状态码；其它错误回退到旧的文案判定。
+ * 旧服务层的两个固定业务错误暂以精确映射兼容，其余异常仅在日志中保留。
  */
 function respondError(res: Response, error: unknown, fallbackMessage: string) {
   const message = error instanceof Error && error.message ? error.message : fallbackMessage;
   // 封停账户走 web 端同一契约（403 + ACCOUNT_SUSPENDED + supportEmail）：
   // Android 客户端与前端申诉入口都靠 `code` 判定，不再只给一句文案。
-  if (isAccountSuspendedFailure(error)) {
-    return res.status(403).json(buildAccountSuspendedBody(message));
+  if (error instanceof AccountSuspendedError || ["账户已被封停", "账户已暂停", "账户已被暂停"].includes(message)) {
+    return res.status(403).json(buildAccountSuspendedBody());
   }
   if (error instanceof MobileTokenError) {
     const body: Record<string, unknown> = { success: false, error: message, errorCode: error.errorCode };
@@ -58,7 +51,14 @@ function respondError(res: Response, error: unknown, fallbackMessage: string) {
     }
     return res.status(error.status).json(body);
   }
-  return res.status(errorStatus(message)).json({ error: message });
+  const legacyErrors: Record<string, { status: number; error: string }> = {
+    "用户不存在": { status: 401, error: "登录会话无效，请重新登录" },
+    "轮询令牌无效": { status: 401, error: "轮询令牌无效" },
+  };
+  const known = Object.prototype.hasOwnProperty.call(legacyErrors, message) ? legacyErrors[message] : undefined;
+  if (known) return res.status(known.status).json({ error: known.error });
+  logger.error("[MobileLogin] Unexpected failure", { error });
+  return res.status(500).json({ error: fallbackMessage });
 }
 
 function getFingerprint(req: Request): string | undefined {
@@ -67,9 +67,9 @@ function getFingerprint(req: Request): string | undefined {
 }
 
 export class MobileLoginController {
-  public static createChallenge(req: Request, res: Response) {
+  public static async createChallenge(req: Request, res: Response) {
     try {
-      const challenge = createMobileLoginChallenge({
+      const challenge = await createMobileLoginChallenge({
         apiBaseUrl: getApiBaseUrl(req),
         browserIp: getClientIP(req),
         browserUserAgent: getUserAgent(req),
@@ -83,21 +83,21 @@ export class MobileLoginController {
     }
   }
 
-  public static scanChallenge(req: Request, res: Response) {
+  public static async scanChallenge(req: Request, res: Response) {
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
     const scanToken = typeof req.body?.scanToken === "string" ? req.body.scanToken : "";
     if (!sessionId || !scanToken) {
       return res.status(400).json({ error: "缺少扫码登录会话参数" });
     }
 
-    const result = markMobileLoginChallengeScanned({
+    const result = await markMobileLoginChallengeScanned({
       sessionId,
       scanToken,
       mobileIp: getClientIP(req),
       mobileUserAgent: getUserAgent(req),
     });
     if (!result.ok) {
-      return res.status(errorStatus(result.error || "扫码登录会话无效")).json(result);
+      return res.status(result.status === "expired" || result.error === "扫码令牌无效" ? 401 : 400).json(result);
     }
     return res.json({ success: true, ...result });
   }
@@ -123,7 +123,8 @@ export class MobileLoginController {
         mobileUserAgent: getUserAgent(req),
       });
       if (!result.ok) {
-        return res.status(errorStatus(result.error || "扫码登录确认失败")).json(result);
+        if (result.error === "账户已被封停") return res.status(403).json(buildAccountSuspendedBody());
+        return res.status(result.status === "expired" || result.error === "扫码令牌无效" ? 401 : 400).json(result);
       }
       return res.json({ success: true, ...result });
     } catch (error) {
@@ -132,7 +133,7 @@ export class MobileLoginController {
         error: message,
         sessionId: req.body?.sessionId,
       });
-      return res.status(errorStatus(message)).json({ error: message });
+      return respondError(res, error, "扫码登录确认失败");
     }
   }
 
@@ -151,8 +152,7 @@ export class MobileLoginController {
       });
       return res.json({ success: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "扫码登录轮询失败";
-      return res.status(errorStatus(message)).json({ error: message });
+      return respondError(res, error, "扫码登录轮询失败");
     }
   }
 
@@ -194,7 +194,7 @@ export class MobileLoginController {
         deviceId: typeof req.body?.deviceId === "string" ? req.body.deviceId : undefined,
         ip: getClientIP(req),
       });
-      const challenge = issueIntegrityNonce({ userId: identity.userId, deviceId: identity.deviceId });
+      const challenge = await issueIntegrityNonce({ userId: identity.userId, deviceId: identity.deviceId });
       return res.json({ success: true, required: true, ...challenge });
     } catch (error) {
       return respondError(res, error, "申请设备证明失败");

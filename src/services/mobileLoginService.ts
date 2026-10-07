@@ -34,10 +34,11 @@ import {
   reportLineageOverGenerationCap,
 } from "./mobileTokenLineageAlertService";
 import type { Request } from "express";
+import { sharedStateStore } from "./sharedStateStore";
 
 const CHALLENGE_TTL_MS = 3 * 60 * 1000;
 const CLIENT_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-const MAX_CHALLENGES = 5000;
+const CHALLENGE_PREFIX = "mobile-login:challenge:";
 
 /**
  * 客户端登录令牌（sml_）轮换风控参数。
@@ -109,7 +110,9 @@ export interface MobileLoginPayload {
   };
 }
 
-const challenges = new Map<string, MobileLoginChallenge>();
+async function saveChallenge(challenge: MobileLoginChallenge): Promise<void> {
+  await sharedStateStore.set(`${CHALLENGE_PREFIX}${challenge.sessionId}`, challenge, Math.max(1, challenge.expiresAt - Date.now()));
+}
 
 function randomToken(bytes = 32): string {
   return crypto.randomBytes(bytes).toString("base64url");
@@ -121,22 +124,6 @@ function hashToken(token: string): string {
 
 function isExpired(expiresAt: number): boolean {
   return expiresAt <= Date.now();
-}
-
-function cleanupChallenges(): void {
-  const now = Date.now();
-  for (const [sessionId, challenge] of challenges.entries()) {
-    if (challenge.expiresAt <= now || challenge.status === "consumed") {
-      challenges.delete(sessionId);
-    }
-  }
-
-  if (challenges.size <= MAX_CHALLENGES) return;
-
-  const ordered = [...challenges.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
-  for (const [sessionId] of ordered.slice(0, challenges.size - MAX_CHALLENGES)) {
-    challenges.delete(sessionId);
-  }
 }
 
 async function toLoginPayload(user: User, metadata: AuthSessionMetadata = {}, clientTokenHash?: string): Promise<MobileLoginPayload> {
@@ -174,13 +161,11 @@ async function loadActiveUser(userId: string): Promise<User> {
   return user;
 }
 
-export function createMobileLoginChallenge(params: {
+export async function createMobileLoginChallenge(params: {
   apiBaseUrl: string;
   browserIp?: string;
   browserUserAgent?: string;
 }) {
-  cleanupChallenges();
-
   const sessionId = randomToken(18);
   const pollToken = randomToken(32);
   const scanToken = randomToken(32);
@@ -196,7 +181,7 @@ export function createMobileLoginChallenge(params: {
     browserIp: params.browserIp,
     browserUserAgent: params.browserUserAgent,
   };
-  challenges.set(sessionId, challenge);
+  await saveChallenge(challenge);
 
   const qrUrl = new URL("synapse://mobile-login");
   qrUrl.searchParams.set("sessionId", sessionId);
@@ -213,28 +198,29 @@ export function createMobileLoginChallenge(params: {
   };
 }
 
-export function markMobileLoginChallengeScanned(params: {
+export async function markMobileLoginChallengeScanned(params: {
   sessionId: string;
   scanToken: string;
   mobileIp?: string;
   mobileUserAgent?: string;
 }) {
-  cleanupChallenges();
-  const challenge = challenges.get(params.sessionId);
-  if (!challenge || isExpired(challenge.expiresAt)) {
-    return { ok: false, status: "expired" as ChallengeStatus, error: "扫码登录会话已过期" };
-  }
-  if (challenge.scanTokenHash !== hashToken(params.scanToken)) {
-    return { ok: false, status: challenge.status, error: "扫码令牌无效" };
-  }
-  if (challenge.status === "pending") {
-    challenge.status = "scanned";
-    challenge.scannedAt = Date.now();
-    challenge.mobileIp = params.mobileIp;
-    challenge.mobileUserAgent = params.mobileUserAgent;
-    challenges.set(params.sessionId, challenge);
-  }
-  return { ok: true, status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
+  return sharedStateStore.withLock(`${CHALLENGE_PREFIX}lock:${params.sessionId}`, 60_000, async () => {
+    const challenge = await sharedStateStore.get<MobileLoginChallenge>(`${CHALLENGE_PREFIX}${params.sessionId}`);
+    if (!challenge || isExpired(challenge.expiresAt)) {
+      return { ok: false, status: "expired" as ChallengeStatus, error: "扫码登录会话已过期" };
+    }
+    if (challenge.scanTokenHash !== hashToken(params.scanToken)) {
+      return { ok: false, status: challenge.status, error: "扫码令牌无效" };
+    }
+    if (challenge.status === "pending") {
+      challenge.status = "scanned";
+      challenge.scannedAt = Date.now();
+      challenge.mobileIp = params.mobileIp;
+      challenge.mobileUserAgent = params.mobileUserAgent;
+      await saveChallenge(challenge);
+    }
+    return { ok: true, status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
+  });
 }
 
 export async function approveMobileLoginChallenge(params: {
@@ -244,29 +230,30 @@ export async function approveMobileLoginChallenge(params: {
   mobileIp?: string;
   mobileUserAgent?: string;
 }) {
-  cleanupChallenges();
-  const challenge = challenges.get(params.sessionId);
-  if (!challenge || isExpired(challenge.expiresAt)) {
-    return { ok: false, status: "expired" as ChallengeStatus, error: "扫码登录会话已过期" };
-  }
-  if (challenge.scanTokenHash !== hashToken(params.scanToken)) {
-    return { ok: false, status: challenge.status, error: "扫码令牌无效" };
-  }
-  if (challenge.status === "consumed" || challenge.status === "approved") {
-    return { ok: false, status: challenge.status, error: "扫码登录会话已完成" };
-  }
-  if ((params.user as any).accountStatus === "suspended") {
-    return { ok: false, status: challenge.status, error: "账户已被封停" };
-  }
+  return sharedStateStore.withLock(`${CHALLENGE_PREFIX}lock:${params.sessionId}`, 60_000, async () => {
+    const challenge = await sharedStateStore.get<MobileLoginChallenge>(`${CHALLENGE_PREFIX}${params.sessionId}`);
+    if (!challenge || isExpired(challenge.expiresAt)) {
+      return { ok: false, status: "expired" as ChallengeStatus, error: "扫码登录会话已过期" };
+    }
+    if (challenge.scanTokenHash !== hashToken(params.scanToken)) {
+      return { ok: false, status: challenge.status, error: "扫码令牌无效" };
+    }
+    if (challenge.status === "consumed" || challenge.status === "approved") {
+      return { ok: false, status: challenge.status, error: "扫码登录会话已完成" };
+    }
+    if ((params.user as any).accountStatus === "suspended") {
+      return { ok: false, status: challenge.status, error: "账户已被封停" };
+    }
 
-  challenge.status = "approved";
-  challenge.approvedAt = Date.now();
-  challenge.approvedUserId = params.user.id;
-  challenge.mobileIp = params.mobileIp;
-  challenge.mobileUserAgent = params.mobileUserAgent;
-  challenges.set(params.sessionId, challenge);
+    challenge.status = "approved";
+    challenge.approvedAt = Date.now();
+    challenge.approvedUserId = params.user.id;
+    challenge.mobileIp = params.mobileIp;
+    challenge.mobileUserAgent = params.mobileUserAgent;
+    await saveChallenge(challenge);
 
-  return { ok: true, status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
+    return { ok: true, status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
+  });
 }
 
 export async function pollMobileLoginChallenge(params: {
@@ -274,34 +261,37 @@ export async function pollMobileLoginChallenge(params: {
   pollToken: string;
   browserIp?: string;
 }) {
-  cleanupChallenges();
-  const challenge = challenges.get(params.sessionId);
-  if (!challenge || isExpired(challenge.expiresAt)) {
-    return { status: "expired" as ChallengeStatus, expiresAt: null };
-  }
-  if (challenge.pollTokenHash !== hashToken(params.pollToken)) {
-    throw new Error("轮询令牌无效");
-  }
-  if (challenge.status !== "approved" || !challenge.approvedUserId) {
-    return { status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
-  }
+  return sharedStateStore.withLock(`${CHALLENGE_PREFIX}lock:${params.sessionId}`, 60_000, async () => {
+    const challenge = await sharedStateStore.get<MobileLoginChallenge>(`${CHALLENGE_PREFIX}${params.sessionId}`);
+    if (!challenge || isExpired(challenge.expiresAt)) {
+      return { status: "expired" as ChallengeStatus, expiresAt: null };
+    }
+    if (challenge.pollTokenHash !== hashToken(params.pollToken)) {
+      throw new Error("轮询令牌无效");
+    }
+    if (challenge.status !== "approved" || !challenge.approvedUserId) {
+      return { status: challenge.status, expiresAt: new Date(challenge.expiresAt).toISOString() };
+    }
 
-  const user = await loadActiveUser(challenge.approvedUserId);
-  const updatedUser = await updateLoginAudit(user, params.browserIp || "unknown");
-  challenge.status = "consumed";
-  challenge.consumedAt = Date.now();
-  challenges.set(params.sessionId, challenge);
+    const user = await loadActiveUser(challenge.approvedUserId);
+    const updatedUser = await updateLoginAudit(user, params.browserIp || "unknown");
+    challenge.status = "consumed";
+    challenge.consumedAt = Date.now();
+    // 先原子消费再签发登录态，并发轮询最多只有一方能获得凭据。
+    const consumed = await sharedStateStore.consume<MobileLoginChallenge>(`${CHALLENGE_PREFIX}${params.sessionId}`);
+    if (!consumed) return { status: "expired" as ChallengeStatus, expiresAt: null };
 
-  return {
-    status: "approved" as ChallengeStatus,
-    expiresAt: new Date(challenge.expiresAt).toISOString(),
-    ...(await toLoginPayload(updatedUser, {
-      ipAddress: params.browserIp,
-      userAgent: challenge.browserUserAgent,
-      clientType: "web",
-      deviceName: challenge.browserUserAgent,
-    })),
-  };
+    return {
+      status: "approved" as ChallengeStatus,
+      expiresAt: new Date(challenge.expiresAt).toISOString(),
+      ...(await toLoginPayload(updatedUser, {
+        ipAddress: params.browserIp,
+        userAgent: challenge.browserUserAgent,
+        clientType: "web",
+        deviceName: challenge.browserUserAgent,
+      })),
+    };
+  });
 }
 
 export async function issueClientLoginToken(params: {

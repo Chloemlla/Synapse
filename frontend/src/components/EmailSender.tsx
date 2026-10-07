@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import DOMPurify from "dompurify";
@@ -146,7 +146,9 @@ const EmailSender: React.FC = () => {
   const sendingRef = useRef(false);
   // G11-10: 发件人域名配额查询的 300ms debounce + 结果缓存
   const quotaDebounceRef = useRef<number | null>(null);
-  const quotaCacheRef = useRef<Record<string, number>>({});
+  const quotaCacheRef = useRef<Record<string, { fetchedAt: number; data: QuotaInfo }>>({});
+  const quotaRequestsRef = useRef<Record<string, number>>({});
+  const currentDomainRef = useRef('');
   const QUOTA_CACHE_TTL_MS = 30000;
 
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
@@ -209,6 +211,10 @@ const EmailSender: React.FC = () => {
     text: "",
   });
 
+  const draftSignature = JSON.stringify({ form, emailMode, simpleContent, markdownContent, skipWhitelistCheck });
+  const draftSignatureRef = useRef(draftSignature);
+  draftSignatureRef.current = draftSignature;
+  currentDomainRef.current = form.from.split('@')[1] || '';
   const apiBaseUrl = getApiBaseUrl();
 
   const syncDefaultSender = (domains: string[]) => {
@@ -233,20 +239,24 @@ const EmailSender: React.FC = () => {
     }
   };
 
-  const fetchQuota = async (domain?: string) => {
+  const fetchQuota = useCallback(async (domain = currentDomainRef.current) => {
+    if (!domain) return;
+    const request = (quotaRequestsRef.current[domain] || 0) + 1;
+    quotaRequestsRef.current[domain] = request;
     try {
-      const response = await api.get(
-        `/api/email/quota${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`
-      );
-      setQuota({
+      const response = await api.get(`/api/email/quota?domain=${encodeURIComponent(domain)}`);
+      if (quotaRequestsRef.current[domain] !== request) return;
+      const data = {
         used: Number(response.data?.used) || 0,
         total: Number(response.data?.quotaTotal || response.data?.total) || 0,
-        resetAt: String(response.data?.resetAt || ""),
-      });
+        resetAt: String(response.data?.resetAt || ''),
+      };
+      quotaCacheRef.current[domain] = { fetchedAt: Date.now(), data };
+      if (currentDomainRef.current === domain) setQuota(data);
     } catch (error) {
-      console.error("获取内部邮件配额失败", error);
+      console.error('获取内部邮件配额失败', error);
     }
-  };
+  }, []);
 
   const checkServiceStatus = async () => {
     try {
@@ -326,20 +336,11 @@ const EmailSender: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const domain = form.from.split("@")[1];
-    if (!domain) return;
-    if (quotaDebounceRef.current) {
-      window.clearTimeout(quotaDebounceRef.current);
-    }
-    quotaDebounceRef.current = window.setTimeout(() => {
-      const now = Date.now();
-      const lastFetched = quotaCacheRef.current[domain];
-      if (lastFetched && now - lastFetched < QUOTA_CACHE_TTL_MS) {
-        return;
-      }
-      quotaCacheRef.current[domain] = now;
-      void fetchQuota(domain);
-    }, 300);
+    const domain = form.from.split('@')[1];
+    const cached = domain ? quotaCacheRef.current[domain] : undefined;
+    setQuota(cached?.data || { used: 0, total: 0, resetAt: '' });
+    if (!domain || (cached && Date.now() - cached.fetchedAt < QUOTA_CACHE_TTL_MS)) return;
+    quotaDebounceRef.current = window.setTimeout(() => void fetchQuota(domain), 300);
     return () => {
       if (quotaDebounceRef.current) window.clearTimeout(quotaDebounceRef.current);
     };
@@ -423,6 +424,7 @@ const EmailSender: React.FC = () => {
     // 消除“校验期间按钮仍可点击”导致的双击重复发送窗口。
     if (sendingRef.current) return;
     sendingRef.current = true;
+    const submittedDraft = draftSignature;
     setLoading(true);
 
     try {
@@ -472,15 +474,17 @@ const EmailSender: React.FC = () => {
       if (response.data?.success) {
         setNotification({ message: "邮件发送成功", type: "success" });
         const defaultDomain = form.from.split("@")[1] || senderDomains[0];
-        setForm({
-          from: buildDefaultFrom(defaultDomain),
-          to: [""],
-          subject: "",
-          html: DEFAULT_HTML,
-          text: "",
-        });
-        setSimpleContent("");
-        setMarkdownContent("");
+        if (draftSignatureRef.current === submittedDraft) {
+          setForm({
+            from: buildDefaultFrom(defaultDomain),
+            to: [""],
+            subject: "",
+            html: DEFAULT_HTML,
+            text: "",
+          });
+          setSimpleContent("");
+          setMarkdownContent("");
+        }
         await fetchQuota(defaultDomain);
       }
     } catch (error: any) {

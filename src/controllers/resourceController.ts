@@ -11,6 +11,18 @@ import { ResourceService } from "../services/resourceService";
 
 const resourceService = new ResourceService();
 
+// Mounted only behind the administrator role and resource-page scope checks.
+export const getAdminResources = async (req: Request, res: Response) => {
+  try {
+    const page = Number(firstString(req.query.page) || "1");
+    const category = firstString(req.query.category);
+    res.json(await resourceService.getResources(page, category, { includeInactive: true }));
+  } catch (error) {
+    logger.error("获取管理员资源列表失败", { error });
+    res.status(500).json({ message: "获取资源列表失败" });
+  }
+};
+
 // 获取资源列表
 export const getResources = async (req: Request, res: Response) => {
   try {

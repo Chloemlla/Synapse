@@ -409,7 +409,7 @@ export async function getOutEmailRecordById(id: string): Promise<{
     };
   } catch (error) {
     logger.error("查询对外邮件详情失败", { error: (error as any)?.message, id });
-    return null;
+    throw error;
   }
 }
 

@@ -26,6 +26,7 @@ import {
   studioSecondaryButtonClassName,
   type InfoTone,
 } from './studioTheme';
+import { getReadingScrollContainer } from './policy/readingScrollContainer';
 import PolicyToc from './policy/PolicyToc';
 import { AgreementCard, HighlightCard, WarningCard } from './policy/policyCards';
 import PolicySearchBar, { PolicyReadingControls, READING_SCALES, type ReadingScale } from './policy/PolicySearchBar';
@@ -119,6 +120,7 @@ const PolicyPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [readingScale, setReadingScale] = useState<ReadingScale>(readStoredScale);
+  const [storedSection] = useState(readStoredSection);
   const [resumeSectionId, setResumeSectionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // 条文存档下载的进行中状态与结果提示（成功/失败都说清楚，不弹全局通知）
@@ -142,25 +144,27 @@ const PolicyPage: React.FC = () => {
   // 阅读进度与目录高亮共用一个 rAF 节流的滚动监听，避免两套监听互相抢帧。
   useEffect(() => {
     if (!policy) return;
+    const pane = getReadingScrollContainer();
+    const scrollTarget = pane ?? window;
     const ids = policy.sections.map((section) => `policy-${section.id}`);
     let frame = 0;
     let lastSaved = '';
 
-    const update = () => {
+    const update = (persist = false) => {
       frame = 0;
-      const scrollTop = window.scrollY;
-      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      const scrollTop = pane ? pane.scrollTop : window.scrollY;
+      const scrollable = pane ? pane.scrollHeight - pane.clientHeight : document.documentElement.scrollHeight - window.innerHeight;
       setProgress(scrollable > 0 ? Math.min(100, Math.max(0, Math.round((scrollTop / scrollable) * 100))) : 100);
 
       let current = ids[0] || '';
       for (const id of ids) {
         const element = document.getElementById(id);
-        if (element && element.getBoundingClientRect().top <= 140) current = id;
+        if (element && element.getBoundingClientRect().top <= (pane?.getBoundingClientRect().top ?? 0) + 140) current = id;
       }
       setActiveId(current);
 
       // 只在章节切换时写 localStorage（避免每帧写盘）：下次进入可以「继续阅读」。
-      if (current && current !== lastSaved) {
+      if (persist && current && current !== lastSaved) {
         lastSaved = current;
         try {
           window.localStorage.setItem(LAST_SECTION_STORAGE_KEY, current);
@@ -171,14 +175,14 @@ const PolicyPage: React.FC = () => {
     };
 
     const onScroll = () => {
-      if (!frame) frame = window.requestAnimationFrame(update);
+      if (!frame) frame = window.requestAnimationFrame(() => update(true));
     };
 
     update();
-    window.addEventListener('scroll', onScroll, { passive: true });
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      scrollTarget.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
       if (frame) window.cancelAnimationFrame(frame);
     };
@@ -200,13 +204,13 @@ const PolicyPage: React.FC = () => {
       setResumeSectionId(null);
       return;
     }
-    const stored = readStoredSection();
+    const stored = storedSection;
     if (!stored) return;
     const id = stored.replace(/^#/, '');
     const index = policy.sections.findIndex((section) => `policy-${section.id}` === id);
     // 首章不提示（那等于从顶部开始），也不提示已经不存在的章节
     setResumeSectionId(index > 0 ? id : null);
-  }, [policy]);
+  }, [policy, storedSection]);
 
   // 「/」聚焦检索框：条文页最常用的动作，鼠标不必先找输入框。
   // 正在输入（input/textarea/contenteditable）时不抢键。
@@ -242,7 +246,7 @@ const PolicyPage: React.FC = () => {
   }, [policy]);
 
   const scrollToTop = useCallback(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    (getReadingScrollContainer() ?? window).scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   // 锚点已自带 policy- 前缀（章节是 policy-<id>，四份文件是 policy-agreement-<key>），

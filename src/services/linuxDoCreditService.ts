@@ -221,6 +221,18 @@ function buildSubmitParams(input: {
   return { protocol: "epay", formAction, formFields: { ...base, sign } };
 }
 
+function safePayUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim() || /[\\\u0000-\u001f]/.test(value)) return null;
+  const candidate = value.trim();
+  if (!/^https?:\/\//i.test(candidate) && !(candidate.startsWith("/") && !candidate.startsWith("//"))) return null;
+  try {
+    const parsed = new URL(candidate, "https://credit.linux.do");
+    return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 async function resolvePayUrl(formAction: string, formFields: Record<string, string>): Promise<string | null> {
   try {
     const body = new URLSearchParams(formFields).toString();
@@ -233,9 +245,7 @@ async function resolvePayUrl(formAction: string, formFields: Record<string, stri
 
     const location = response.headers?.location || response.headers?.Location;
     if (typeof location === "string" && location.trim()) {
-      if (location.startsWith("http://") || location.startsWith("https://")) return location.trim();
-      if (location.startsWith("/")) return `https://credit.linux.do${location}`;
-      return location.trim();
+      return safePayUrl(location);
     }
 
     if (response.data && typeof response.data === "object") {
@@ -246,9 +256,9 @@ async function resolvePayUrl(formAction: string, formFields: Record<string, stri
           code: "LINUXDO_CREDIT_SUBMIT_FAILED",
         });
       }
-      if (typeof data.payurl === "string") return data.payurl;
-      if (typeof data.payUrl === "string") return data.payUrl;
-      if (typeof data.url === "string") return data.url;
+      if (typeof data.payurl === "string") return safePayUrl(data.payurl);
+      if (typeof data.payUrl === "string") return safePayUrl(data.payUrl);
+      if (typeof data.url === "string") return safePayUrl(data.url);
     }
 
     if (typeof response.data === "string") {

@@ -478,6 +478,7 @@ export const usePasskey = (): UsePasskeyReturn & {
         } catch (error) {
             // 失败提示交由外部 setNotification 统一管理
             console.error('删除 Passkey 凭证失败:', error);
+            throw error;
         } finally {
             setIsLoading(false);
         }

@@ -41,7 +41,7 @@ const AgeCalculatorPage: React.FC = () => {
       try {
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        const result = calculateAge(year, month, day, endDateString ? new Date(endDateString) : new Date());
+        const result = calculateAge(year, month, day, endDateString ? new Date(`${endDateString}T00:00:00`) : new Date());
 
         if ('error' in result) {
           setAgeResult(null);
@@ -112,14 +112,14 @@ const AgeCalculatorPage: React.FC = () => {
 
   const handleEndDateChange = useCallback((dateString: string) => {
     if (dateString) {
-      setEndDate(new Date(dateString));
+      setEndDate(new Date(`${dateString}T00:00:00`));
     } else {
       setEndDate(new Date());
     }
   }, []);
 
   const formatDateForInput = (date: Date): string => {
-    return date.toISOString().split('T')[0];
+    return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
   };
 
   const SELECT_CLASS =

@@ -8,6 +8,7 @@ import logger from "../utils/logger";
 export interface RedisServiceStatus {
   /** `REDIS_URL` 是否配置。配置了但连不上时为 true / available=false。 */
   configured: boolean;
+  /** 兼容字段：连接建立后启用；健康判定使用 available。 */
   enabled: boolean;
   /** `ready` 事件后的就绪态；命令层以它为准（`connect` 与 `ready` 之间有窗口期）。 */
   ready: boolean;
@@ -20,6 +21,9 @@ class RedisService {
   // RD-3: `connect` 事件只说明 TCP 建连；`ready` 才是可以收命令。分开跟踪，避免窗口期内误判可用。
   private isReady: boolean = false;
   private isEnabled: boolean = false;
+  private initializing = false;
+  private retryAfter = 0;
+  private stopped = false;
 
   constructor() {
     this.initialize();
@@ -29,6 +33,8 @@ class RedisService {
    * 初始化 Redis 连接
    */
   private async initialize(): Promise<void> {
+    if (this.initializing || this.stopped) return;
+    this.initializing = true;
     try {
       const redisUrl = process.env.REDIS_URL;
 
@@ -96,6 +102,13 @@ class RedisService {
       logger.error("❌ Redis 初始化失败:", error);
       this.isEnabled = false;
       this.isConnected = false;
+      this.isReady = false;
+      this.retryAfter = Date.now() + 30_000;
+      // 驱动的正常启动失败会自行重试；只有 connect 真正 reject 才释放旧实例。
+      if (this.client?.isOpen) this.client.destroy();
+      this.client = null;
+    } finally {
+      this.initializing = false;
     }
   }
 
@@ -103,6 +116,9 @@ class RedisService {
    * 检查 Redis 是否可用
    */
   public isAvailable(): boolean {
+    if (!this.stopped && !this.initializing && !this.client && process.env.REDIS_URL && Date.now() >= this.retryAfter) {
+      void this.initialize();
+    }
     return this.isEnabled && this.isConnected && this.isReady && this.client !== null;
   }
 
@@ -447,6 +463,7 @@ class RedisService {
    * 关闭 Redis 连接
    */
   public async disconnect(): Promise<void> {
+    this.stopped = true;
     if (this.client && this.isConnected) {
       try {
         await this.client.quit();
@@ -455,6 +472,11 @@ class RedisService {
         logger.error("❌ 关闭 Redis 连接失败:", error);
       }
     }
+    if (this.client?.isOpen) this.client.destroy();
+    this.client = null;
+    this.isReady = false;
+    this.isConnected = false;
+    this.isEnabled = false;
   }
 }
 

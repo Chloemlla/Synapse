@@ -35,6 +35,11 @@ interface Item {
     details?: any;
 }
 
+function localDateTime(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 type SortOrder = 'asc' | 'desc';
 
 const PAGE_SIZE_CHOICES = [10, 20, 50, 100];
@@ -170,6 +175,24 @@ const DataCard = React.memo(({ item, checked, onToggle, onView, onDelete, openDe
 });
 
 const DataCollectionManager: React.FC = () => {
+    const copyHideTimers = useRef(new Map<HTMLButtonElement, number>());
+    const showCopyButton = (button: HTMLButtonElement) => {
+        window.clearTimeout(copyHideTimers.current.get(button));
+        copyHideTimers.current.delete(button);
+        button.style.opacity = '1';
+    };
+    const scheduleHideCopyButton = (button: HTMLButtonElement) => {
+        window.clearTimeout(copyHideTimers.current.get(button));
+        const timer = window.setTimeout(() => {
+            copyHideTimers.current.delete(button);
+            button.style.opacity = '0';
+        }, 2000);
+        copyHideTimers.current.set(button, timer);
+    };
+    useEffect(() => () => {
+        copyHideTimers.current.forEach(timer => window.clearTimeout(timer));
+        copyHideTimers.current.clear();
+    }, []);
     const [searchParams, setSearchParams] = useSearchParams();
     const [page, setPage] = useState(() => readPageFromParams(searchParams));
     const [limit, setLimit] = useState(() => readLimitFromParams(searchParams));
@@ -523,7 +546,7 @@ const DataCollectionManager: React.FC = () => {
                     setCreating(true);
                     setNewUserId('');
                     setNewAction('');
-                    setNewTsLocal(new Date().toISOString().slice(0, 16));
+                    setNewTsLocal(localDateTime(new Date()));
                     setNewDetailsRaw('');
                 }
             },
@@ -532,7 +555,7 @@ const DataCollectionManager: React.FC = () => {
                     setCreating(true);
                     setNewUserId('');
                     setNewAction('');
-                    setNewTsLocal(new Date().toISOString().slice(0, 16));
+                    setNewTsLocal(localDateTime(new Date()));
                     setNewDetailsRaw('');
                 } else {
                     setCreating(false);
@@ -1013,13 +1036,11 @@ const DataCollectionManager: React.FC = () => {
                                             title="复制代码"
                                             onTouchStart={(e) => {
                                                 // 在移动端触摸时显示按钮
-                                                e.currentTarget.style.opacity = '1';
+                                                showCopyButton(e.currentTarget);
                                             }}
                                             onTouchEnd={(e) => {
                                                 // 触摸结束后延迟隐藏按钮
-                                                setTimeout(() => {
-                                                    e.currentTarget.style.opacity = '0';
-                                                }, 2000);
+                                                scheduleHideCopyButton(e.currentTarget);
                                             }}
                                         >
                                             <FaCopy className="w-3 h-3" />
@@ -1050,13 +1071,11 @@ const DataCollectionManager: React.FC = () => {
                                         title="复制代码"
                                         onTouchStart={(e) => {
                                             // 在移动端触摸时显示按钮
-                                            e.currentTarget.style.opacity = '1';
+                                            showCopyButton(e.currentTarget);
                                         }}
                                         onTouchEnd={(e) => {
                                             // 触摸结束后延迟隐藏按钮
-                                            setTimeout(() => {
-                                                e.currentTarget.style.opacity = '0';
-                                            }, 2000);
+                                            scheduleHideCopyButton(e.currentTarget);
                                         }}
                                     >
                                         <FaCopy className="w-3 h-3" />
@@ -1157,13 +1176,11 @@ const DataCollectionManager: React.FC = () => {
                       title="复制代码"
                       onTouchStart={(e) => {
                         // 在移动端触摸时显示按钮
-                        e.currentTarget.style.opacity = '1';
+                        showCopyButton(e.currentTarget);
                       }}
                       onTouchEnd={(e) => {
                         // 触摸结束后延迟隐藏按钮
-                        setTimeout(() => {
-                          e.currentTarget.style.opacity = '0';
-                        }, 2000);
+                        scheduleHideCopyButton(e.currentTarget);
                       }}
                     >
                       <FaCopy className="w-3 h-3" />

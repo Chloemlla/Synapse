@@ -68,7 +68,8 @@ router.get("/quota", statusQueryLimiter, async (_req, res) => {
     const info = await getOutEmailQuota();
     res.json({ success: true, used: info.used, total: info.total, resetAt: info.resetAt });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e?.message || "无法获取配额信息" });
+    logger.error("[OutEmail] 配额查询失败", e);
+    res.status(500).json({ success: false, error: "无法获取配额信息" });
   }
 });
 
@@ -195,7 +196,8 @@ router.post("/send", outEmailLimiter, async (req, res) => {
 
     return res.status(400).json({ error: "收件人邮箱格式无效" });
   } catch (e: any) {
-    return res.status(500).json({ error: e?.message || "服务器错误" });
+    logger.error("[OutEmail] 发送失败", e);
+    return res.status(500).json({ error: "发送失败" });
   }
 });
 
@@ -232,7 +234,8 @@ router.post("/batch-send", outEmailLimiter, async (req, res) => {
     if (result.success) return res.json({ success: true, ids: result.ids });
     return res.status(400).json({ error: result.error });
   } catch (e: any) {
-    return res.status(500).json({ error: e?.message || "服务器错误" });
+    logger.error("[OutEmail] 批量发送失败", e);
+    return res.status(500).json({ error: "批量发送失败" });
   }
 });
 
@@ -253,7 +256,8 @@ router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, 
     const result = await getOutEmailRecords({ page, pageSize, to, subject, startDate, endDate });
     res.json({ success: true, ...result });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e?.message || "查询失败" });
+    logger.error("[OutEmail] 记录查询失败", e);
+    res.status(500).json({ success: false, error: "查询失败" });
   }
 });
 
@@ -273,7 +277,8 @@ router.get("/records/:id", statusQueryLimiter, authMiddleware, adminAuthMiddlewa
     }
     res.json({ success: true, record });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e?.message || "查询失败" });
+    logger.error("[OutEmail] 单条记录查询失败", e);
+    res.status(500).json({ success: false, error: "查询失败" });
   }
 });
 

@@ -45,7 +45,7 @@ const secretField = (s: string): boolean => s === SECRET_MASK;
  * 媒体工具设置(引擎参数 / 账号凭据 / 工具路径 / 并发)。密钥字段以占位展示,
  * 不修改直接保存时后端会保留原值;输入新值即为覆盖。
  */
-export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
+export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> = ({ target, canManage = false }) => {
   const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,6 +104,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
   };
 
   const saveCookies = async () => {
+    if (!canManage) return;
     const content = cookieText.trim();
     if (!content) return;
     setCookieBusy(true);
@@ -128,6 +129,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
   };
 
   const clearCookies = async () => {
+    if (!canManage) return;
     const ok = await confirm({
       title: '清除已入库的 B 站 cookies？',
       description: '清除后 B 站下载将按游客请求走，很容易撞 412 风控；需要重新上传 cookies 才能恢复。',
@@ -167,7 +169,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
     });
 
   const save = async () => {
-    if (!form) return;
+    if (!form || !canManage) return;
     setSaving(true);
     setError(null);
     setOk(null);
@@ -207,7 +209,8 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
     secretField(form.lasr.appKey) || secretField(form.lasr.token) || secretField(form.lasr.openid);
 
   return (
-    <div className="space-y-4">
+    <fieldset disabled={!canManage} className="space-y-4">
+      {!canManage && <p role="status">当前账号可查看设置；修改设置及 cookies 需要超级管理员权限。</p>}
       <InfoSectionTitle
         title="媒体工具设置"
         description="转写接口参数、yt-dlp / cookies、代理与并发。密钥输入框显示 ******** 表示沿用当前值；cookies 正文单独入库保存。"
@@ -467,7 +470,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => 
           workDir/inbox。
         </span>
       </div>
-    </div>
+    </fieldset>
   );
 };
 

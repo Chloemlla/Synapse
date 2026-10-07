@@ -15,7 +15,7 @@ export class ResourceService {
     return obj;
   }
 
-  async getResources(page: number, category?: string) {
+  async getResources(page: number, category?: string, options: { includeInactive?: boolean } = {}) {
     try {
       // 验证和清理输入参数
       const validatedPage = Math.max(1, Math.floor(Number(page) || 1));
@@ -28,7 +28,7 @@ export class ResourceService {
         category && typeof category === "string" && validCategories.includes(category) ? category : undefined;
 
       // 构建安全的查询对象
-      const queryFilter: any = { isActive: true };
+      const queryFilter: any = options.includeInactive ? {} : { isActive: true };
       if (validatedCategory) {
         queryFilter.category = validatedCategory;
       }

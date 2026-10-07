@@ -42,7 +42,7 @@ const KIND_LABEL: Record<string, string> = {
  * 任务历史:~2.5s 轮询列表,运行中自动刷新详情与实时日志。
  * 支持取消 / 重试 / 删除(超级管理员),产物可预览文本或直接下载。
  */
-export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
+export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> = ({ target, canManage = false }) => {
   const confirm = useConfirm();
   const [jobs, setJobs] = useState<MediaJobRecord[]>([]);
   const [detail, setDetail] = useState<Record<string, MediaJobRecord>>({});
@@ -54,19 +54,24 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
   const [preview, setPreview] = useState<{ title: string; text: string } | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, AdminTranscriptItem[]>>({});
   const polling = useRef(false);
+  const detailRequests = useRef<Record<string, number>>({});
 
   /** 详情与分段一次取回(分段就装在同一个响应里,不再多发一个请求)。 */
   const loadDetail = useCallback(
-    (id: string) =>
-      mediaToolApi
+    (id: string) => {
+      const request = (detailRequests.current[id] ?? 0) + 1;
+      detailRequests.current[id] = request;
+      return mediaToolApi
         .getJob(target, id)
         .then((res) => {
+          if (detailRequests.current[id] !== request) return;
           const job = res.job;
           if (!job) return;
           setDetail((d) => ({ ...d, [job.id]: job }));
           setTranscripts((t) => ({ ...t, [job.id]: res.transcripts }));
         })
-        .catch(() => undefined),
+        .catch(() => undefined);
+    },
     [target],
   );
 
@@ -97,9 +102,10 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
   // 展开的运行任务:跟随轮询刷新详情
   useEffect(() => {
     const active = expandedId
-      ? (detail[expandedId] ?? jobs.find((j) => j.id === expandedId))
+      ? (jobs.find((j) => j.id === expandedId) ?? detail[expandedId])
       : undefined;
-    if (!expandedId || !active || (active.status !== 'queued' && active.status !== 'running')) return;
+    if (!expandedId || !active) return;
+    if (active.status !== 'queued' && active.status !== 'running' && detail[expandedId]?.status === active.status) return;
     const timer = window.setTimeout(() => {
       void loadDetail(expandedId);
     }, 800);
@@ -108,6 +114,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
 
   const act = async (action: 'cancel' | 'retry' | 'delete', job: MediaJobRecord) => {
     if (action === 'delete') {
+      if (!canManage) return;
       const ok = await confirm({
         title: '删除该任务？',
         description: '转写正文入库记录与产物文件会一并删除（已下载的媒体也会删，上传的入参音频保留）。此操作不可恢复。',
@@ -121,7 +128,12 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
     setFlash(null);
     try {
       if (action === 'cancel') await mediaToolApi.cancelJob(target, job.id);
-      else if (action === 'retry') await mediaToolApi.retryJob(target, job.id);
+      else if (action === 'retry') {
+        const retried = await mediaToolApi.retryJob(target, job.id);
+        setDetail((d) => ({ ...d, [job.id]: retried }));
+        setTranscripts((t) => ({ ...t, [job.id]: [] }));
+        await loadDetail(job.id);
+      }
       else await mediaToolApi.deleteJob(target, job.id);
       if (action === 'delete') {
         setJobs((prev) => prev.filter((j) => j.id !== job.id));
@@ -218,9 +230,13 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
             const failedItems = items.filter((it) => !it.ok);
             return (
               <div key={job.id} className={`${studioSurfaceClassName} overflow-hidden`}>
-                <div
+                <div className="flex flex-wrap items-center">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={`job-detail-${job.id}`}
                   className={cx(
-                    'flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3',
+                    'flex flex-1 cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3',
                     expanded ? 'bg-slate-50/70' : 'hover:bg-slate-50/50',
                   )}
                   onClick={() => toggleExpand(job.id)}
@@ -245,7 +261,8 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
                   <span className="whitespace-nowrap text-[10px] text-slate-400">
                     {fmtTime(job.createdAt)} · {job.createdBy}
                   </span>
-                  {/* 动作(阻止行点击) */}
+                  </button>
+                  {/* 行操作与展开按钮并列，键盘可独立访问。 */}
                   <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     {isActive ? (
                       <button
@@ -268,7 +285,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
                     ) : null}
                     <button
                       onClick={() => void act('delete', job)}
-                      disabled={pendingAction !== null || isActive}
+                      disabled={!canManage || pendingAction !== null || isActive}
                       className={cx(btnTiny, 'border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600', isActive && 'cursor-not-allowed opacity-40')}
                       title={isActive ? '运行中的任务需先取消' : '删除任务并清理正文与产物文件(需超级管理员)'}
                     >
@@ -279,7 +296,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget }> = ({ target }) => {
                 </div>
 
                 {expanded ? (
-                  <div className="space-y-3 border-t border-slate-100 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <div id={`job-detail-${job.id}`} className="space-y-3 border-t border-slate-100 px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     {failedItems.length > 0 ? (
                       <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                         {failedItems.map((it) => (

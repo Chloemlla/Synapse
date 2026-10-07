@@ -474,7 +474,7 @@ export const adminController = {
             changeTime,
             adminUsername,
             changes,
-            newPassword ? newPassword.trim() : undefined,
+            newPassword !== undefined,
           );
 
           // 确定邮件主题
@@ -1740,9 +1740,10 @@ export const adminController = {
         domains: getAllSenderDomains(),
       });
     } catch (error) {
+      logger.error("获取邮件系统配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取邮件系统配置失败",
+        error: "获取邮件系统配置失败",
       });
     }
   },
@@ -1799,9 +1800,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getIpqsSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 IPQS 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 IPQS 配置失败",
+        error: "获取 IPQS 配置失败",
       });
     }
   },
@@ -1838,9 +1840,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getLinuxDoSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 LinuxDo 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 LinuxDo 配置失败",
+        error: "获取 LinuxDo 配置失败",
       });
     }
   },
@@ -1877,9 +1880,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getGoogleAuthSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 Google Auth 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 Google Auth 配置失败",
+        error: "获取 Google Auth 配置失败",
       });
     }
   },
@@ -1916,9 +1920,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getSynapseAndroidSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 Synapse Android / assetlinks 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 Synapse Android / assetlinks 配置失败",
+        error: "获取 Synapse Android / assetlinks 配置失败",
       });
     }
   },
@@ -1955,9 +1960,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getDeepLXSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 DeepLX 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 DeepLX 配置失败",
+        error: "获取 DeepLX 配置失败",
       });
     }
   },
@@ -1994,9 +2000,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getNexaiSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 NexAI 配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 NexAI 配置失败",
+        error: "获取 NexAI 配置失败",
       });
     }
   },
@@ -2034,9 +2041,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getNexaiSigningSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 NexAI 请求签名配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 NexAI 请求签名配置失败",
+        error: "获取 NexAI 请求签名配置失败",
       });
     }
   },
@@ -2075,9 +2083,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getQqGuardSigningSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 QQ 群纪律机器人签名配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 QQ 群纪律机器人签名配置失败",
+        error: "获取 QQ 群纪律机器人签名配置失败",
       });
     }
   },
@@ -2117,9 +2126,10 @@ export const adminController = {
       res.setHeader("Cache-Control", "no-store");
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 proxycheck.io IP 风险配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 proxycheck.io IP 风险配置失败",
+        error: "获取 proxycheck.io IP 风险配置失败",
       });
     }
   },
@@ -2158,9 +2168,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getRegistrationInviteSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取注册邀请码配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取注册邀请码配置失败",
+        error: "获取注册邀请码配置失败",
       });
     }
   },
@@ -2199,9 +2210,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getFirstVisitVerificationSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取首访验证配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取首访验证配置失败",
+        error: "获取首访验证配置失败",
       });
     }
   },
@@ -2240,9 +2252,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getMobileTokenIntegritySetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取设备证明配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取设备证明配置失败",
+        error: "获取设备证明配置失败",
       });
     }
   },
@@ -2281,9 +2294,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getMobileTokenRotationRiskSetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取风险分级轮换配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取风险分级轮换配置失败",
+        error: "获取风险分级轮换配置失败",
       });
     }
   },
@@ -2321,9 +2335,10 @@ export const adminController = {
       res.setHeader("Cache-Control", "no-store");
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 CDict 请求签名配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 CDict 请求签名配置失败",
+        error: "获取 CDict 请求签名配置失败",
       });
     }
   },
@@ -2361,9 +2376,10 @@ export const adminController = {
       res.setHeader("Cache-Control", "no-store");
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取 Lumen 服务端配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取 Lumen 服务端配置失败",
+        error: "获取 Lumen 服务端配置失败",
       });
     }
   },
@@ -2400,9 +2416,10 @@ export const adminController = {
       const result = await RuntimeConfigService.getAdminSecuritySetting();
       return res.json({ success: true, ...result });
     } catch (error) {
+      logger.error("获取管理员安全配置失败", { error });
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "获取管理员安全配置失败",
+        error: "获取管理员安全配置失败",
       });
     }
   },

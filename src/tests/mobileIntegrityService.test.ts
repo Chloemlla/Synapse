@@ -41,6 +41,28 @@ import {
   type IntegrityVerdict,
 } from "../services/mobileIntegrityService";
 
+
+jest.mock("../services/sharedStateStore", () => {
+  const entries = new Map<string, { value: unknown; expiresAt: number }>();
+  const locks = new Set<string>();
+  const get = async (key: string) => {
+    const entry = entries.get(key);
+    return entry && entry.expiresAt > Date.now() ? structuredClone(entry.value) : null;
+  };
+  return { sharedStateStore: {
+    get,
+    set: async (key: string, value: unknown, ttl: number) => { entries.set(key, { value: structuredClone(value), expiresAt: Date.now() + ttl }); return true; },
+    consume: async (key: string) => { const entry = entries.get(key); entries.delete(key); return entry && entry.expiresAt > Date.now() ? structuredClone(entry.value) : null; },
+    delete: async (key: string) => entries.delete(key),
+    deleteByPrefix: async (prefix: string) => { for (const key of entries.keys()) if (key.startsWith(prefix)) entries.delete(key); return 0; },
+    withLock: async (key: string, _ttl: number, run: () => Promise<unknown>) => {
+      if (locks.has(key)) throw new Error("操作正在进行中");
+      locks.add(key);
+      try { return await run(); } finally { locks.delete(key); }
+    },
+  } };
+});
+
 const POLICY: IntegrityPolicy = {
   packageName: "com.chloemlla.synapse.mobile",
   minDeviceIntegrity: "MEETS_DEVICE_INTEGRITY",
@@ -101,8 +123,8 @@ function stubFetch(decoded: unknown, options: { ok?: boolean } = {}): jest.Mock 
 
 let privateKeyPem = "";
 
-beforeEach(() => {
-  resetIntegrityStateForTests();
+beforeEach(async () => {
+  await resetIntegrityStateForTests();
   privateKeyPem = crypto
     .generateKeyPairSync("rsa", { modulusLength: 2048 })
     .privateKey.export({ type: "pkcs8", format: "pem" })
@@ -245,7 +267,7 @@ describe("verifyClientIntegrity 的 nonce 生命周期", () => {
 
   it("不是本服务端签发的 nonce 一律不认", async () => {
     mockIntegrityConfig.mode = "enforce";
-    issueIntegrityNonce({ userId: "u" });
+    await issueIntegrityNonce({ userId: "u" });
 
     const verdict = await verifyClientIntegrity({ integrityToken: "t", nonce: "forged", userId: "u" });
 
@@ -254,7 +276,7 @@ describe("verifyClientIntegrity 的 nonce 生命周期", () => {
 
   it("别人的 nonce 不能拿来给自己的设备用", async () => {
     mockIntegrityConfig.mode = "enforce";
-    const challenge = issueIntegrityNonce({ userId: "other-user" });
+    const challenge = await issueIntegrityNonce({ userId: "other-user" });
 
     const verdict = await verifyClientIntegrity({ integrityToken: "t", nonce: challenge.nonce, userId: "u" });
 
@@ -263,7 +285,7 @@ describe("verifyClientIntegrity 的 nonce 生命周期", () => {
 
   it("走通签发 → 解码 → 判定后，同一个 nonce 不能再用第二次", async () => {
     mockIntegrityConfig.mode = "enforce";
-    const challenge = issueIntegrityNonce({ userId: "u", deviceId: "d" });
+    const challenge = await issueIntegrityNonce({ userId: "u", deviceId: "d" });
     stubFetch(makePayload({ requestDetails: { requestHash: challenge.nonce, timestampMillis: String(Date.now()) } }));
 
     const first = await verifyClientIntegrity({
@@ -287,7 +309,7 @@ describe("verifyClientIntegrity 的 nonce 生命周期", () => {
 
   it("解码链路故障时判为无法判定，而不是判为不可信", async () => {
     mockIntegrityConfig.mode = "enforce";
-    const challenge = issueIntegrityNonce({ userId: "u" });
+    const challenge = await issueIntegrityNonce({ userId: "u" });
     stubFetch(makePayload(), { ok: false });
 
     const verdict = await verifyClientIntegrity({ integrityToken: "t", nonce: challenge.nonce, userId: "u" });

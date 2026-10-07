@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import CollapsibleSection from './CollapsibleSection';
 import { REVEAL_KEY_API, END_SECURITY_SESSIONS_API, ROTATE_AES_KEY_API, authFetch } from './api';
@@ -69,6 +69,19 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RevealResult | null>(null);
 
+  const revealSeq = useRef(0);
+  const activeSession = useRef({ verificationToken, isActive, isOpen });
+  activeSession.current = { verificationToken, isActive, isOpen };
+  const forgetResult = () => {
+    ++revealSeq.current;
+    setResult(null);
+    setLoading(false);
+  };
+  useEffect(() => {
+    forgetResult();
+    return () => { ++revealSeq.current; };
+  }, [verificationToken, isActive, isOpen]);
+
   const postWithToken = async (url: string): Promise<{ ok: boolean; data: Record<string, unknown> }> => {
     const res = await authFetch(url, {
       method: 'POST',
@@ -88,6 +101,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       confirmLabel: '确认',
     });
     if (!ok) return;
+    forgetResult();
     setBusy(true);
     try {
       const { ok, data } = await postWithToken(END_SECURITY_SESSIONS_API);
@@ -95,6 +109,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
         setNotification({ message: (data.error as string) || '结束安全会话失败', type: 'error' });
         return;
       }
+      clear();
       setResult(null);
       setNotification({ message: `已结束 ${data.cleared ?? 0} 个安全会话`, type: 'success' });
     } catch {
@@ -112,6 +127,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       confirmLabel: '轮换密钥',
     });
     if (!ok) return;
+    forgetResult();
     setBusy(true);
     try {
       const { ok, data } = await postWithToken(ROTATE_AES_KEY_API);
@@ -119,6 +135,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
         setNotification({ message: (data.error as string) || '轮换主密钥失败', type: 'error' });
         return;
       }
+      clear();
       setResult(null);
       setNotification({
         message: `主密钥已轮换（新指纹 ${data.newFingerprint ?? '-'}），已结束 ${data.clearedSessions ?? 0} 个会话，请重新验证`,
@@ -136,6 +153,8 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       setNotification({ message: '安全会话无效，请先建立安全会话', type: 'warning' });
       return;
     }
+    const request = ++revealSeq.current;
+    const token = verificationToken;
     setLoading(true);
     try {
       const res = await authFetch(REVEAL_KEY_API, {
@@ -144,6 +163,8 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
         body: JSON.stringify({ verificationToken }),
       });
       const data = await res.json();
+      const current = activeSession.current;
+      if (request !== revealSeq.current || token !== current.verificationToken || !current.isActive || !current.isOpen) return;
       if (!res.ok || !data.success) {
         setResult(null);
         if (res.status === 403) clear();
@@ -152,9 +173,10 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       }
       setResult(data as RevealResult);
     } catch {
+      if (request !== revealSeq.current) return;
       setNotification({ message: '查看密钥请求失败', type: 'error' });
     } finally {
-      setLoading(false);
+      if (request === revealSeq.current) setLoading(false);
     }
   };
 
@@ -173,7 +195,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
       description="所有内部签名/加密密钥均由单一主密钥 AES_KEY 经 HKDF 按用途派生。先验证一次身份，邮箱、密码和第三方账号操作会复用同一安全会话；每次查看都会记入审计日志。"
       sectionKey="reveal-keys"
       isOpen={isOpen}
-      onToggle={() => setIsOpen((open) => !open)}
+      onToggle={() => { forgetResult(); setIsOpen((open) => !open); }}
       prefersReducedMotion={prefersReducedMotion}
     >
       <div className="space-y-3 px-4 py-4 sm:px-5">
@@ -194,7 +216,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
             <button
               type="button"
               onClick={() => {
-                setResult(null);
+                forgetResult();
                 clear();
               }}
               className={studioSecondaryButtonClassName}
@@ -204,7 +226,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
           </div>
         )}
 
-        {result ? (
+        {result && isOpen && isActive ? (
           <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-xs">
             <div className="font-semibold text-amber-700">以下为敏感明文，请勿外泄；点击“结束会话”或离开页面即清除。</div>
             <KeyRow

@@ -379,11 +379,11 @@ export async function listLinkedAccounts(user: User): Promise<LinkedAccountView[
     status: "active",
   }).lean<AccountIdentityDoc[]>();
 
-  return SUPPORTED_PROVIDERS.map((provider) => {
+  return Promise.all(SUPPORTED_PROVIDERS.map(async (provider) => {
     const identity = (identities as AccountIdentityDoc[]).find((item: AccountIdentityDoc) => item.provider === provider) || null;
-    const pendingMerge = getPendingMergeSessionForUser(user.id, provider);
+    const pendingMerge = await getPendingMergeSessionForUser(user.id, provider);
     return toLinkedAccountView(provider, identity, pendingMerge);
-  });
+  }));
 }
 
 export async function bindProviderIdentityToUser(params: {

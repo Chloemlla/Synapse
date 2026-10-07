@@ -270,6 +270,7 @@ const AdminScopeManager: React.FC = () => {
   }, [setNotification]);
 
   const addOrSelectUser = useCallback(() => {
+    if (!setting || loading || error || saving) return;
     const id = newUserId.trim();
     if (!id) {
       setNotification({ type: 'warning', message: '请先填写普通管理员的用户 ID' });
@@ -279,9 +280,10 @@ const AdminScopeManager: React.FC = () => {
     setActiveUserId(id);
     setNewUserId('');
     setDirty(true);
-  }, [newUserId, setNotification]);
+  }, [newUserId, setting, loading, error, saving, setNotification]);
 
   const save = useCallback(async () => {
+    if (!setting || loading || error || saving || !dirty) return;
     setSaving(true);
     try {
       const data = await updateAdminScopeSetting({
@@ -300,7 +302,7 @@ const AdminScopeManager: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [draftDefaults, draftPerUser, setNotification]);
+  }, [draftDefaults, draftPerUser, setting, loading, error, saving, dirty, setNotification]);
 
   const resetToDefault = useCallback(async () => {
     setConfirmReset(false);
@@ -412,7 +414,7 @@ const AdminScopeManager: React.FC = () => {
             <button
               type='button'
               onClick={() => setConfirmReset(true)}
-              disabled={saving}
+              disabled={saving || loading || !setting || !!error}
               className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
             >
               <FaUndoAlt aria-hidden /> 恢复后端默认
@@ -427,7 +429,7 @@ const AdminScopeManager: React.FC = () => {
             onSetAll={setDefaultAll}
             keyword={defaultKeyword}
             onKeywordChange={setDefaultKeyword}
-            disabled={saving || loading}
+            disabled={saving || loading || !setting || !!error}
             idPrefix='scope-default'
           />
         </div>
@@ -453,7 +455,7 @@ const AdminScopeManager: React.FC = () => {
           <button
             type='button'
             onClick={addOrSelectUser}
-            disabled={saving || loading}
+            disabled={saving || loading || !setting || !!error}
             className={cn(studioSecondaryButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
           >
             添加 / 选择
@@ -511,7 +513,7 @@ const AdminScopeManager: React.FC = () => {
                   <button
                     type='button'
                     onClick={() => removeUser(activeUserId)}
-                    disabled={saving}
+                    disabled={saving || loading || !setting || !!error}
                     className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs text-rose-600 disabled:opacity-50')}
                   >
                     删除该用户覆盖
@@ -525,7 +527,7 @@ const AdminScopeManager: React.FC = () => {
                     onSetAll={(keys, mode) => setPerUserAll(activeUserId, keys, mode)}
                     keyword={perUserKeyword}
                     onKeywordChange={setPerUserKeyword}
-                    disabled={saving || loading}
+                    disabled={saving || loading || !setting || !!error}
                     idPrefix={`scope-user-${activeUserId}`}
                   />
                 </div>
@@ -539,7 +541,7 @@ const AdminScopeManager: React.FC = () => {
         <button
           type='button'
           onClick={() => void save()}
-          disabled={saving || loading || !dirty}
+          disabled={saving || loading || !setting || !!error || !dirty}
           className={cn(studioPrimaryButtonClassName, 'px-4 py-2 text-sm disabled:opacity-50')}
         >
           {saving ? <FaSyncAlt className='animate-spin' aria-hidden /> : <FaSave aria-hidden />}

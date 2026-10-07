@@ -9,6 +9,7 @@ import { sanitizeCapEndpoint } from "./capEndpoint";
 import { BAN_DURATION, HCAPTCHA_VERIFY_URL, VERIFY_URL } from "./constants";
 import { verifyHCaptchaToken } from "./hcaptcha";
 import { isIpBanned, recordViolation } from "./ipBan";
+import { isLocalCaptchaIp } from "./localIp";
 import { getCapKey, getHCaptchaKey, getTurnstileKey } from "./models";
 import { consumeConfiguredCaptchaQuota } from "./quota";
 import { assessClientRisk, recordVerificationOutcome, translateTurnstileErrors } from "./risk";
@@ -712,13 +713,7 @@ export async function verifyTempFingerprint(
     }
 
     const isDev = process.env.NODE_ENV === "development" || process.env.NODE_ENV === "dev";
-    const isLocalhost =
-      validatedIp === "127.0.0.1" ||
-      validatedIp === "::1" ||
-      validatedIp === "::ffff:127.0.0.1" ||
-      validatedIp.startsWith("192.168.") ||
-      validatedIp.startsWith("10.") ||
-      validatedIp.startsWith("172.");
+    const isLocalhost = isLocalCaptchaIp(validatedIp);
     const devAutoPass = process.env.TURNSTILE_DEV_AUTO_PASS === "true";
 
     let isValid = false;

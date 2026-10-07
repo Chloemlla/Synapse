@@ -12,6 +12,17 @@ import { mongoose } from "../services/mongoService";
 import { getTokenFromRequest } from "../utils/authCookie";
 import logger from "../utils/logger";
 
+function sendModlistError(res: Response, error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : "";
+  const known = new Map<string, number>([["MOD名已存在", 409], ["未找到MOD", 404], ["MOD名非法", 400], ["参数非法", 400]]);
+  const status = known.get(message);
+  if (status) return res.status(status).json({ error: message });
+  if ((error as { code?: unknown } | null)?.code === 11000) {
+    return res.status(409).json({ error: "MOD名已存在" });
+  }
+  return res.status(500).json({ error: fallback });
+}
+
 // 使用 MongoDB 存储和读取修改码（MODIFY_CODE），不再读取环境变量
 const ModlistSettingSchema = new mongoose.Schema(
   {
@@ -112,7 +123,7 @@ export const addMod = async (req: Request, res: Response) => {
     res.json({ success: true, mod: newMod });
   } catch (e: any) {
     logger.error("添加MOD失败:", e);
-    res.status(409).json({ error: e.message || "添加失败" });
+    sendModlistError(res, e, "添加失败");
   }
 };
 
@@ -133,7 +144,7 @@ export const updateMod = async (req: Request, res: Response) => {
     res.json({ success: true, mod });
   } catch (e: any) {
     logger.error("更新MOD失败:", e);
-    res.status(404).json({ error: e.message || "修改失败" });
+    sendModlistError(res, e, "修改失败");
   }
 };
 
@@ -151,7 +162,7 @@ export const deleteMod = async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (e: any) {
     logger.error("删除MOD失败:", e);
-    res.status(404).json({ error: e.message || "删除失败" });
+    sendModlistError(res, e, "删除失败");
   }
 };
 
@@ -176,7 +187,7 @@ export const batchAddMods = async (req: Request, res: Response) => {
     res.json({ success: true, added });
   } catch (e: any) {
     logger.error("批量添加MOD失败:", e);
-    res.status(500).json({ error: e.message || "批量添加失败" });
+    sendModlistError(res, e, "批量添加失败");
   }
 };
 
@@ -201,6 +212,6 @@ export const batchDeleteMods = async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (e: any) {
     logger.error("批量删除MOD失败:", e);
-    res.status(500).json({ error: e.message || "批量删除失败" });
+    sendModlistError(res, e, "批量删除失败");
   }
 };

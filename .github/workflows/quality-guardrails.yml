@@ -51,6 +51,9 @@ jobs:
       - name: Privacy contract validation
         run: pnpm run check:privacy-contract
 
+      - name: Validate Mongo backup shell syntax
+        run: bash -n deploy/openresty/backup-mongo.sh
+
       - name: Storage responsibility report (advisory)
         # 只做可见性，从不失败：把「Mongo 过期字段 / TTL 索引」与「进程内共享状态」摆进日志，
         # 防止新的缓存集合或跨实例状态静默进场。判定规则见 docs/audit/audit-2026-10-01-storage-responsibility.md。

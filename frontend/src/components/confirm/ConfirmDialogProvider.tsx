@@ -56,6 +56,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
   // 的双调用下重复结算。
   const pendingRef = useRef<((value: boolean) => void) | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const confirm = useCallback<ConfirmFn>((input) => {
@@ -84,14 +85,31 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
     const timer = setTimeout(() => cancelButtonRef.current?.focus(), 0);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
         event.stopPropagation();
         settle(false);
+      } else if (event.key === 'Tab') {
+        const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+        if (!buttons?.length) return;
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+        if (!dialogRef.current?.contains(document.activeElement) ||
+            (event.shiftKey && document.activeElement === first) ||
+            (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
+    const containFocus = (event: FocusEvent) => {
+      if (!dialogRef.current?.contains(event.target as Node)) cancelButtonRef.current?.focus();
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('focusin', containFocus);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('focusin', containFocus);
       previouslyFocusedRef.current?.focus?.();
     };
   }, [open, settle]);
@@ -113,6 +131,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
               onClick={() => settle(false)}
             >
               <motion.div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="global-confirm-title"

@@ -1,3 +1,4 @@
+import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { config } from "../../config/config";
 import { TurnstileService } from "../../services/turnstileService";
@@ -19,7 +20,7 @@ export async function getCapConfigHandler(req: Request, res: Response) {
       apiEndpoint: capConfig.apiEndpoint,
     });
   } catch (error) {
-    console.error("获取 Cap 配置失败:", error);
+    logger.error("获取 Cap 配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -42,7 +43,7 @@ export async function updateCapConfigHandler(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置更新失败" });
     }
   } catch (error) {
-    console.error("更新 Cap 配置失败:", error);
+    logger.error("更新 Cap 配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -65,7 +66,7 @@ export async function deleteCapConfigHandler(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置删除失败" });
     }
   } catch (error) {
-    console.error("删除 Cap 配置失败:", error);
+    logger.error("删除 Cap 配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -107,7 +108,7 @@ export async function verifyCap(req: Request, res: Response) {
 
     res.json({ success: true, message: "验证成功", verified: true });
   } catch (error) {
-    console.error("trycap 验证失败:", error);
+    logger.error("trycap 验证失败:", error);
     res.status(500).json({ success: false, message: "服务器内部错误" });
   }
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FaChartBar,
   FaCheckCircle,
@@ -125,6 +125,8 @@ export default function FingerprintManager() {
   const [securityFilter, setSecurityFilter] = useState<SecurityFilter>('all');
   const [selectedUser, setSelectedUser] = useState<FingerprintUser | null>(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
+  const detailControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => detailControllerRef.current?.abort(), []);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // 拉取失败与「确实没有指纹数据」必须区分：失败时给持久错误条 + 重试，
@@ -206,17 +208,22 @@ export default function FingerprintManager() {
   }, [selectedUser]);
 
   const openUserDetail = useCallback(async (user: FingerprintUser) => {
+    detailControllerRef.current?.abort();
+    const controller = new AbortController();
+    detailControllerRef.current = controller;
     setSelectedUser(user);
     setSelectedLoading(true);
     try {
-      const response = await api.get<{ success: boolean; user?: FingerprintUser }>(`/api/admin/users/${user.id}`);
+      const response = await api.get<{ success: boolean; user?: FingerprintUser }>(`/api/admin/users/${user.id}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (response.data?.user?.id) {
         setSelectedUser(response.data.user);
       }
     } catch (error) {
+      if (controller.signal.aborted) return;
       setNotification({ type: 'error', message: getErrorMessage(error, '获取用户指纹详情失败') });
     } finally {
-      setSelectedLoading(false);
+      if (detailControllerRef.current === controller) setSelectedLoading(false);
     }
   }, [setNotification]);
 

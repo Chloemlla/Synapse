@@ -30,6 +30,8 @@ export default function SelfContainedRegistrationInviteConfigSection({
   const fetchedRef = useRef(false);
 
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [required, setRequired] = useState(false);
@@ -37,17 +39,23 @@ export default function SelfContainedRegistrationInviteConfigSection({
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
+    setLoaded(false);
+    setLoadError(false);
     try {
       const res = await authFetch(REGISTRATION_INVITE_API, { headers: { ...getAuthHeaders() } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        setLoadError(true);
         setNotification({ message: data.error || '获取注册邀请码配置失败', type: 'error' });
         return;
       }
       const cfg = (data?.setting?.config || {}) as Partial<RegistrationInviteConfigSetting>;
-      setRequired(cfg.required === true);
+      if (typeof cfg.required !== 'boolean') throw new Error('邀请码配置响应无效');
+      setRequired(cfg.required);
       setUpdatedAt(data?.setting?.updatedAt);
+      setLoaded(true);
     } catch (error) {
+      setLoadError(true);
       setNotification({
         message: `获取注册邀请码配置失败：${getBackendErrorMessage(error, '未知错误')}`,
         type: 'error',
@@ -65,7 +73,7 @@ export default function SelfContainedRegistrationInviteConfigSection({
   }, [isOpen, fetchConfig]);
 
   const handleSave = useCallback(async () => {
-    if (!canWrite) return;
+    if (!canWrite || !loaded || loading) return;
     if (saving) return;
     setSaving(true);
     try {
@@ -89,7 +97,7 @@ export default function SelfContainedRegistrationInviteConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [canWrite, saving, required, fetchConfig, setNotification]);
+  }, [canWrite, loaded, loading, saving, required, fetchConfig, setNotification]);
 
   const handleReset = useCallback(async () => {
     if (!canWrite) return;
@@ -127,9 +135,11 @@ export default function SelfContainedRegistrationInviteConfigSection({
       onToggle={() => setIsOpen((v) => !v)}
       prefersReducedMotion={prefersReducedMotion}
       loading={loading}
+      loaded={loaded}
+      loadError={loadError}
       saving={saving}
       deleting={deleting}
-      disabled={!canWrite}
+      disabled={!canWrite || !loaded}
       required={required}
       updatedAt={updatedAt}
       onRequiredChange={setRequired}

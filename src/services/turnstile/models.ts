@@ -1,5 +1,6 @@
 import logger from "../../utils/logger";
 import { isConnected, mongoose } from "../mongoService";
+import { readCaptchaKey } from "./keyStorage";
 import type {
   CapSettingDoc,
   CaptchaAllocationPolicyDoc,
@@ -125,22 +126,7 @@ export async function getTurnstileKey(keyName: TurnstileKeyName): Promise<string
     return cached.value;
   }
 
-  let value: string | null = null;
-  try {
-    if (isConnected()) {
-      const doc = await TurnstileSettingModel.findOne({ key: keyName }).lean().exec();
-      if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
-        value = doc.value.trim();
-      }
-    }
-  } catch (error) {
-    logger.error("获取Turnstile密钥失败", { keyName, error: error instanceof Error ? error.message : String(error) });
-  }
-
-  if (!value) {
-    const envValue = process.env[keyName]?.trim();
-    value = envValue && envValue.length > 0 ? envValue : null;
-  }
+  const value = await readCaptchaKey(TurnstileSettingModel, keyName);
 
   turnstileKeyCache.set(keyName, {
     value,
@@ -151,19 +137,7 @@ export async function getTurnstileKey(keyName: TurnstileKeyName): Promise<string
 }
 
 export async function getHCaptchaKey(keyName: "HCAPTCHA_SECRET_KEY" | "HCAPTCHA_SITE_KEY"): Promise<string | null> {
-  try {
-    if (isConnected()) {
-      const doc = await HCaptchaSettingModel.findOne({ key: keyName }).lean().exec();
-      if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
-        return doc.value.trim();
-      }
-    }
-  } catch (e) {
-    logger.error(`读取hCaptcha ${keyName} 失败，回退到环境变量`, e);
-  }
-
-  const envKey = process.env[keyName]?.trim();
-  return envKey && envKey.length > 0 ? envKey : null;
+  return readCaptchaKey(HCaptchaSettingModel, keyName);
 }
 
 type CapKeyName = "CAP_SITE_KEY" | "CAP_SECRET_KEY" | "CAP_API_ENDPOINT";
@@ -187,22 +161,7 @@ export async function getCapKey(keyName: CapKeyName): Promise<string | null> {
     return cached.value;
   }
 
-  let value: string | null = null;
-  try {
-    if (isConnected()) {
-      const doc = await CapSettingModel.findOne({ key: keyName }).lean().exec();
-      if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
-        value = doc.value.trim();
-      }
-    }
-  } catch (error) {
-    logger.error("获取Cap配置失败", { keyName, error: error instanceof Error ? error.message : String(error) });
-  }
-
-  if (!value) {
-    const envValue = process.env[keyName]?.trim();
-    value = envValue && envValue.length > 0 ? envValue : null;
-  }
+  const value = await readCaptchaKey(CapSettingModel, keyName);
 
   capKeyCache.set(keyName, { value, expiresAt: now + CAP_KEY_CACHE_TTL_MS });
   return value;
@@ -443,6 +402,9 @@ const SHCTraceSchema = new mongoose.Schema(
   },
   { collection: "shc_traces", timestamps: false },
 );
+
+// Keep security diagnostics for the same 90-day period as the audit log.
+SHCTraceSchema.index({ time: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 const SHCTraceModel = mongoose.models.SHCTrace || mongoose.model("SHCTrace", SHCTraceSchema);
 

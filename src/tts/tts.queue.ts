@@ -35,6 +35,7 @@ export class TtsQueue {
   private readonly concurrency = resolveQueueConcurrency();
   private processing = false;
   private drainRequested = false;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly callbacks: QueueCallbacks,
@@ -78,6 +79,9 @@ export class TtsQueue {
           });
         }
       }
+      // A failed claim can leave queued jobs without creating a stale lease.
+      // Always restart scheduling after a successful recovery pass.
+      void this.drain();
     } catch (error) {
       logger.error("TTS 过期任务回收失败", {
         error: error instanceof Error ? error.message : String(error),
@@ -92,10 +96,11 @@ export class TtsQueue {
     }
 
     this.processing = true;
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
+    const active = new Set<Promise<void>>();
     try {
       await ttsStorage.recoverStaleJobs(Date.now());
 
-      const active = new Set<Promise<void>>();
       while (true) {
         while (active.size < this.concurrency) {
           const nextJob = await ttsStorage.claimNextQueuedJob(this.workerId, PROCESSING_LEASE_MS);
@@ -103,7 +108,14 @@ export class TtsQueue {
             break;
           }
 
-          const task = this.processJob(nextJob).finally(() => {
+          // Attach a rejection handler immediately: another claim may still be
+          // waiting on Mongo when this job's failure persistence also rejects.
+          const task = this.processJob(nextJob).catch((error) => {
+            logger.error("TTS 任务终态持久化失败，等待租约回收", {
+              taskId: nextJob.taskId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }).finally(() => {
             active.delete(task);
           });
           active.add(task);
@@ -115,7 +127,13 @@ export class TtsQueue {
 
         await Promise.race(active);
       }
+    } catch (error) {
+      logger.error('TTS 队列调度失败，将重试', { error: error instanceof Error ? error.message : String(error) });
+      this.drainRequested = false;
+      this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.drain(); }, 5000);
+      this.retryTimer.unref?.();
     } finally {
+      await Promise.allSettled(active);
       this.processing = false;
       if (this.drainRequested) {
         this.drainRequested = false;

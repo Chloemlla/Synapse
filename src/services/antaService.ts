@@ -367,7 +367,7 @@ export class AntaService {
           httpsAgent: new https.Agent({
             rejectUnauthorized: true, // 启用证书验证以确保安全连接
             secureProtocol: "TLSv1_2_method",
-            keepAlive: true,
+            keepAlive: false, // 单次请求不保留空闲连接池
           }),
           proxy: false, // Explicitly disable proxy
           headers: {
@@ -494,7 +494,7 @@ export class AntaService {
           httpsAgent: new https.Agent({
             rejectUnauthorized: true, // 启用证书验证以确保安全连接
             secureProtocol: "TLSv1_2_method",
-            keepAlive: true,
+            keepAlive: false, // 单次请求不保留空闲连接池
           }),
           proxy: false, // Explicitly disable proxy
           headers: {
@@ -544,55 +544,6 @@ export class AntaService {
             fullResponseData: responseDataStr,
             timestamp: new Date().toISOString(),
           });
-        }
-
-        // 如果第一次尝试失败（状态码400），尝试使用正确的API格式
-        if (response.status === 400 && attempt === 1) {
-          logger.info("尝试使用正确的API格式重新请求", { productId });
-
-          // 尝试解析productId或使用示例数据进行测试
-          // 基于日志中的示例：条码：BRA047EBXF EAN：2000000134554 货号：112535584-1 尺码：11
-          const testUrl = `${this.apiBaseUrl}/consumer/innerbox/search?code=112535584-1&11&2000000134554&BRA047EBXF&CN`;
-
-          logger.info("尝试使用测试URL", { testUrl });
-
-          const testResponse = await axios.get(testUrl, {
-            timeout: this.timeout,
-            httpsAgent: new https.Agent({
-              rejectUnauthorized: true, // 启用证书验证以确保安全连接
-              secureProtocol: "TLSv1_2_method",
-              keepAlive: true,
-            }),
-            proxy: false, // Explicitly disable proxy
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
-              Accept:
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-              "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-              "Cache-Control": "max-age=0",
-              Priority: "u=0, i",
-              "Sec-Ch-Ua": '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-              "Sec-Ch-Ua-Mobile": "?0",
-              "Sec-Ch-Ua-Platform": '"Windows"',
-              "Sec-Fetch-Dest": "document",
-              "Sec-Fetch-Mode": "navigate",
-              "Sec-Fetch-Site": "none",
-              "Sec-Fetch-User": "?1",
-              "Upgrade-Insecure-Requests": "1",
-            },
-            validateStatus: (status) => status < 500,
-          });
-
-          if (testResponse.status === 200) {
-            logger.info("使用正确API格式请求成功", {
-              productId,
-              statusCode: testResponse.status,
-              contentLength: testResponse.data?.length || 0,
-              url: testUrl,
-            });
-            return testResponse;
-          }
         }
 
         return response;

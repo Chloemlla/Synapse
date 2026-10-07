@@ -123,8 +123,8 @@ export const RegisterPage: React.FC = () => {
         if (/[a-z]/.test(pwd)) score += 1; else feedback.push('需要包含小写字母');
         if (/[A-Z]/.test(pwd)) score += 1; else feedback.push('需要包含大写字母');
         if (/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) score += 1; else feedback.push('需要包含特殊字符');
-        const commonPatterns = [/^123/, /password/i, /qwerty/i, /abc/i, new RegExp(username, 'i')];
-        if (commonPatterns.some(pattern => pattern.test(pwd))) { score = 0; feedback.push('请避免使用常见密码模式'); }
+        const commonPatterns = [/^123/, /password/i, /qwerty/i, /abc/i];
+        if (commonPatterns.some(pattern => pattern.test(pwd)) || (username.length > 0 && pwd.toLowerCase().includes(username.toLowerCase()))) { score = 0; feedback.push('请避免使用常见密码模式'); }
         return { score, feedback: feedback.join('、') };
     };
 

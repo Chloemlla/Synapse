@@ -197,7 +197,7 @@ export class NexaiSyncService {
 
       const doc = await NexaiSyncModel.findOneAndUpdate(
         { userId },
-        { $set: update },
+        { $set: update, $inc: { version: 1 } },
         { upsert: true, returnDocument: "after", lean: true },
       );
 
@@ -308,159 +308,184 @@ export class NexaiSyncService {
   ): Promise<IIncrementalSyncResponse> {
     try {
       const safeIncoming = redactIncrementalRequest(incoming);
-      let doc = await NexaiSyncModel.findOne({ userId });
-      if (!doc) {
-        doc = new NexaiSyncModel({ userId });
-      }
-
-      const serverTime = new Date().toISOString();
-
-      // 通用的数组合并函数：按 id upsert，保留 updatedAt 较新的版本
-      const mergeArrays = <T extends { id: string; updatedAt?: string; createdAt?: string }>(
-        existing: T[],
-        incoming: T[] | undefined,
-      ): { merged: T[]; serverChanges: T[] } => {
-        if (!incoming || incoming.length === 0) {
-          return { merged: existing, serverChanges: [] };
+      // 所有写入共享 version；冲突必须重读再合并，不能覆盖另一设备的增量。
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        let doc = await NexaiSyncModel.findOne({ userId });
+        const isNew = !doc;
+        if (!doc) {
+          doc = new NexaiSyncModel({ userId });
         }
 
-        const map = new Map<string, T>();
-        const serverChanges: T[] = [];
+        const serverTime = new Date().toISOString();
 
-        // 先放入已有数据
-        for (const item of existing) {
-          map.set(item.id, item);
-        }
+        // 通用的数组合并函数：按 id upsert，保留 updatedAt 较新的版本
+        const mergeArrays = <T extends { id: string; updatedAt?: string; createdAt?: string }>(
+          existing: T[],
+          incoming: T[] | undefined,
+        ): { merged: T[]; serverChanges: T[] } => {
+          if (!incoming || incoming.length === 0) {
+            return { merged: existing, serverChanges: [] };
+          }
 
-        // 逐条合并 incoming
-        for (const item of incoming) {
-          const existingItem = map.get(item.id);
-          if (!existingItem) {
-            // 新增
+          const map = new Map<string, T>();
+          const serverChanges: T[] = [];
+
+          // 先放入已有数据
+          for (const item of existing) {
             map.set(item.id, item);
-          } else {
-            const existingTs = existingItem.updatedAt || existingItem.createdAt || "";
-            const incomingTs = item.updatedAt || item.createdAt || "";
-            if (incomingTs >= existingTs) {
-              // 客户端版本更新，覆盖服务端
+          }
+
+          // 逐条合并 incoming
+          for (const item of incoming) {
+            const existingItem = map.get(item.id);
+            if (!existingItem) {
+              // 新增
               map.set(item.id, item);
             } else {
-              // 服务端版本更新，需要回传给客户端
-              serverChanges.push(existingItem);
+              const existingTs = existingItem.updatedAt || existingItem.createdAt || "";
+              const incomingTs = item.updatedAt || item.createdAt || "";
+              if (incomingTs >= existingTs) {
+                // 客户端版本更新，覆盖服务端
+                map.set(item.id, item);
+              } else {
+                // 服务端版本更新，需要回传给客户端
+                serverChanges.push(existingItem);
+              }
             }
           }
-        }
 
-        // 找出服务端有但客户端没传的（在 clientLastSync 之后变更的）
-        for (const [id, item] of map) {
-          const inIncoming = incoming.some((i) => i.id === id);
-          if (!inIncoming) {
-            const ts = item.updatedAt || item.createdAt || "";
-            if (ts > clientLastSync) {
-              serverChanges.push(item);
+          // 找出服务端有但客户端没传的（在 clientLastSync 之后变更的）
+          for (const [id, item] of map) {
+            const inIncoming = incoming.some((i) => i.id === id);
+            if (!inIncoming) {
+              const ts = item.updatedAt || item.createdAt || "";
+              if (ts > clientLastSync) {
+                serverChanges.push(item);
+              }
             }
           }
-        }
 
-        return { merged: Array.from(map.values()), serverChanges };
-      };
-
-      // 处理删除
-      if (safeIncoming.deletedIds) {
-        const deleteFromArray = <T extends { id: string }>(arr: T[], ids: string[] | undefined): T[] => {
-          if (!ids || ids.length === 0) return arr;
-          const now = serverTime;
-          return arr.map((item) => {
-            if (ids.includes(item.id)) {
-              return { ...item, isDeleted: true, updatedAt: now } as T;
-            }
-            return item;
-          });
+          return { merged: Array.from(map.values()), serverChanges };
         };
 
-        doc.notes = deleteFromArray(doc.notes, safeIncoming.deletedIds.notes);
-        doc.conversations = deleteFromArray(doc.conversations, safeIncoming.deletedIds.conversations);
-        doc.translationHistory = deleteFromArray(doc.translationHistory, safeIncoming.deletedIds.translationHistory);
-        doc.savedPasswords = deleteFromArray(doc.savedPasswords, safeIncoming.deletedIds.savedPasswords);
-        doc.shortUrls = deleteFromArray(doc.shortUrls, safeIncoming.deletedIds.shortUrls);
-      }
+        // 处理删除
+        if (safeIncoming.deletedIds) {
+          const deleteFromArray = <T extends { id: string }>(arr: T[], ids: string[] | undefined): T[] => {
+            if (!ids || ids.length === 0) return arr;
+            const now = serverTime;
+            return arr.map((item) => {
+              if (ids.includes(item.id)) {
+                return { ...item, isDeleted: true, updatedAt: now } as T;
+              }
+              return item;
+            });
+          };
 
-      // 合并每个类别
-      const notesResult = mergeArrays(doc.notes, safeIncoming.notes);
-      const convsResult = mergeArrays(doc.conversations, safeIncoming.conversations);
-      const transResult = mergeArrays(doc.translationHistory, safeIncoming.translationHistory);
-      const passResult = mergeArrays(doc.savedPasswords, safeIncoming.savedPasswords);
-      const urlsResult = mergeArrays(doc.shortUrls, safeIncoming.shortUrls);
+          doc.notes = deleteFromArray(doc.notes, safeIncoming.deletedIds.notes);
+          doc.conversations = deleteFromArray(doc.conversations, safeIncoming.deletedIds.conversations);
+          doc.translationHistory = deleteFromArray(doc.translationHistory, safeIncoming.deletedIds.translationHistory);
+          doc.savedPasswords = deleteFromArray(doc.savedPasswords, safeIncoming.deletedIds.savedPasswords);
+          doc.shortUrls = deleteFromArray(doc.shortUrls, safeIncoming.deletedIds.shortUrls);
+        }
 
-      doc.notes = notesResult.merged;
-      doc.conversations = convsResult.merged;
-      doc.translationHistory = transResult.merged;
-      doc.savedPasswords = passResult.merged;
-      doc.shortUrls = urlsResult.merged;
+        // 合并每个类别
+        const notesResult = mergeArrays(doc.notes, safeIncoming.notes);
+        const convsResult = mergeArrays(doc.conversations, safeIncoming.conversations);
+        const transResult = mergeArrays(doc.translationHistory, safeIncoming.translationHistory);
+        const passResult = mergeArrays(doc.savedPasswords, safeIncoming.savedPasswords);
+        const urlsResult = mergeArrays(doc.shortUrls, safeIncoming.shortUrls);
 
-      // 合并 settings
-      const response: IIncrementalSyncResponse = {
-        notes: notesResult.serverChanges,
-        conversations: convsResult.serverChanges,
-        translationHistory: transResult.serverChanges,
-        savedPasswords: passResult.serverChanges,
-        shortUrls: urlsResult.serverChanges,
-        serverTime,
-      };
+        doc.notes = notesResult.merged;
+        doc.conversations = convsResult.merged;
+        doc.translationHistory = transResult.merged;
+        doc.savedPasswords = passResult.merged;
+        doc.shortUrls = urlsResult.merged;
 
-      if (safeIncoming.settings && safeIncoming.settingsUpdatedAt) {
-        const serverSettingsTs = doc.settingsUpdatedAt || "";
-        if (safeIncoming.settingsUpdatedAt >= serverSettingsTs) {
-          // 客户端设置更新
-          doc.settings = safeIncoming.settings;
-          doc.settingsUpdatedAt = safeIncoming.settingsUpdatedAt;
-        } else {
-          // 服务端设置更新，回传给客户端
+        // 合并 settings
+        const response: IIncrementalSyncResponse = {
+          notes: notesResult.serverChanges,
+          conversations: convsResult.serverChanges,
+          translationHistory: transResult.serverChanges,
+          savedPasswords: passResult.serverChanges,
+          shortUrls: urlsResult.serverChanges,
+          serverTime,
+        };
+
+        if (safeIncoming.settings && safeIncoming.settingsUpdatedAt) {
+          const serverSettingsTs = doc.settingsUpdatedAt || "";
+          if (safeIncoming.settingsUpdatedAt >= serverSettingsTs) {
+            // 客户端设置更新
+            doc.settings = safeIncoming.settings;
+            doc.settingsUpdatedAt = safeIncoming.settingsUpdatedAt;
+          } else {
+            // 服务端设置更新，回传给客户端
+            response.settings = redactSettings(doc.settings) as IIncrementalSyncResponse["settings"];
+            response.settingsUpdatedAt = doc.settingsUpdatedAt;
+          }
+        } else if (doc.settingsUpdatedAt && doc.settingsUpdatedAt > clientLastSync) {
+          // 服务端有更新的 settings，回传
           response.settings = redactSettings(doc.settings) as IIncrementalSyncResponse["settings"];
           response.settingsUpdatedAt = doc.settingsUpdatedAt;
         }
-      } else if (doc.settingsUpdatedAt && doc.settingsUpdatedAt > clientLastSync) {
-        // 服务端有更新的 settings，回传
-        response.settings = redactSettings(doc.settings) as IIncrementalSyncResponse["settings"];
-        response.settingsUpdatedAt = doc.settingsUpdatedAt;
+
+        doc.lastSyncedAt = new Date();
+
+        // G4-20: 增量合并落库前同样做近似字节数兜底
+        let mergedBytes = 0;
+        try {
+          mergedBytes = Buffer.byteLength(JSON.stringify(doc.toObject ? doc.toObject() : doc));
+        } catch {
+          mergedBytes = 0;
+        }
+        if (mergedBytes > NEXAI_SYNC_MAX_BYTES) {
+          throw new NexaiSyncTooLargeError(`同步数据体积过大 (${mergedBytes} bytes)`);
+        }
+
+        const snapshot = {
+          notes: doc.notes, conversations: doc.conversations, translationHistory: doc.translationHistory,
+          savedPasswords: doc.savedPasswords, shortUrls: doc.shortUrls, settings: doc.settings,
+          settingsUpdatedAt: doc.settingsUpdatedAt, lastSyncedAt: doc.lastSyncedAt,
+        };
+        if (isNew) {
+          try {
+            await NexaiSyncModel.create({ userId, ...snapshot, version: 2 });
+          } catch (error) {
+            if ((error as { code?: number })?.code === 11000) continue;
+            throw error;
+          }
+        } else {
+          // 老文档可能尚无 version；Mongoose 的读取默认值不等于数据库已存有该值。
+          const expectedVersion = doc.$isDefault?.("version") ? { $exists: false } : (doc.version ?? { $exists: false });
+          const result = await NexaiSyncModel.updateOne(
+            { _id: doc._id, version: expectedVersion },
+            { $set: snapshot, $inc: { version: 1 } },
+          );
+          if (result.modifiedCount !== 1) continue;
+        }
+
+        const totalIncoming =
+          (safeIncoming.notes?.length ?? 0) +
+          (safeIncoming.conversations?.length ?? 0) +
+          (safeIncoming.translationHistory?.length ?? 0) +
+          (safeIncoming.savedPasswords?.length ?? 0) +
+          (safeIncoming.shortUrls?.length ?? 0);
+
+        const safeResponse = redactIncrementalResponse(response);
+        const totalServerChanges =
+          safeResponse.notes.length +
+          safeResponse.conversations.length +
+          safeResponse.translationHistory.length +
+          safeResponse.savedPasswords.length +
+          safeResponse.shortUrls.length;
+
+        logger.info(
+          `[NexAI Sync] mergeIncremental OK for user ${userId}, ` +
+            `incoming=${totalIncoming}, serverChanges=${totalServerChanges}`,
+        );
+
+        return safeResponse;
       }
-
-      doc.lastSyncedAt = new Date();
-
-      // G4-20: 增量合并落库前同样做近似字节数兜底
-      let mergedBytes = 0;
-      try {
-        mergedBytes = Buffer.byteLength(JSON.stringify(doc.toObject ? doc.toObject() : doc));
-      } catch {
-        mergedBytes = 0;
-      }
-      if (mergedBytes > NEXAI_SYNC_MAX_BYTES) {
-        throw new NexaiSyncTooLargeError(`同步数据体积过大 (${mergedBytes} bytes)`);
-      }
-
-      await doc.save();
-
-      const totalIncoming =
-        (safeIncoming.notes?.length ?? 0) +
-        (safeIncoming.conversations?.length ?? 0) +
-        (safeIncoming.translationHistory?.length ?? 0) +
-        (safeIncoming.savedPasswords?.length ?? 0) +
-        (safeIncoming.shortUrls?.length ?? 0);
-
-      const safeResponse = redactIncrementalResponse(response);
-      const totalServerChanges =
-        safeResponse.notes.length +
-        safeResponse.conversations.length +
-        safeResponse.translationHistory.length +
-        safeResponse.savedPasswords.length +
-        safeResponse.shortUrls.length;
-
-      logger.info(
-        `[NexAI Sync] mergeIncremental OK for user ${userId}, ` +
-          `incoming=${totalIncoming}, serverChanges=${totalServerChanges}`,
-      );
-
-      return safeResponse;
+      throw new NexaiSyncVersionConflictError();
     } catch (error) {
       logger.error("[NexAI Sync] mergeIncrementalData error:", error);
       throw error;

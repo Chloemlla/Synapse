@@ -5,8 +5,6 @@ on:
     branches: [main, master]
   push:
     branches: [main, master, dev]
-    paths-ignore:
-      - ".github/**"
   workflow_dispatch:
 
 permissions:
@@ -149,6 +147,9 @@ jobs:
 
   deploy-amd64:
     name: Deploy AMD64 image
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     needs: publish-amd64
     if: >
       github.event_name != 'pull_request' &&
@@ -193,6 +194,14 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           CONTAINER_NAMES: ${{ secrets.CONTAINER_NAMES }}
           IMAGE_URL: happyclo/tts-node:${{ steps.meta.outputs.short_sha }}-amd64
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           SERVER_HOST_KEY_SHA256: ${{ secrets.SERVER_HOST_KEY_SHA256 }}
         run: node scripts/deploy_image.js
+
+      - name: Preserve deployment diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deployment-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: deploy.log
+          retention-days: 3
+          if-no-files-found: ignore

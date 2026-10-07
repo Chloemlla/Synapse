@@ -8,6 +8,7 @@ import { NexaiUserModel } from "../models/nexaiUserModel";
 import { NexaiAuthService } from "../services/nexaiAuthService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { errorStatus } from "./errorResponse";
 
 /** 安全的用户信息响应（去除敏感字段） */
 function sanitizeUser(user: any) {
@@ -627,7 +628,7 @@ export class NexaiAuthController {
         $or: [{ email: emailCandidate }, { username: usernameCandidate }],
       }).lean();
 
-      if (!user) throw Object.assign(new Error("用户不存在"), { statusCode: 404 });
+      if (!user) throw Object.assign(new Error("Passkey 登录失败"), { statusCode: 401 });
       userId = user.id;
 
       const result = await NexaiAuthService.verifyPasskeyAuthentication(userId, response, ip);
@@ -642,14 +643,15 @@ export class NexaiAuthController {
         },
       });
     } catch (error: any) {
-      const response: any = {
-        success: false,
-        error: clientErrorMessage(error, "登录验证失败", "passkey 登录验证"),
-      };
-      if (error.code) {
-        response.code = error.code;
+      const status = errorStatus(error);
+      logger.warn("[NexAI] Passkey login verification failed", { error });
+      if ([400, 401, 404].includes(status)) {
+        return res.status(401).json({ success: false, error: "Passkey 登录失败" });
       }
-      res.status(error.statusCode || 500).json(response);
+      return res.status(status).json({
+        success: false,
+        error: status < 500 ? clientErrorMessage(error, "登录验证失败", "passkey 登录验证") : "登录验证失败",
+      });
     }
   }
 

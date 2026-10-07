@@ -1180,8 +1180,8 @@ class LibreChatService {
             stream.on("data", (chunk: Buffer) => {
               streamBytes += chunk.length;
               if (streamBytes > MAX_STREAM_BYTES) {
+                reject(Object.assign(new Error("Provider stream exceeded response size limit"), { code: "STREAM_RESPONSE_TOO_LARGE" }));
                 stream.destroy();
-                resolve();
                 return;
               }
               buffer += chunk.toString();
@@ -1246,6 +1246,9 @@ class LibreChatService {
           code: failureAttempt.code,
           error: failureAttempt.message,
         });
+        // Partial deltas may already be visible; do not append a second provider's
+        // response to them. Surface the existing explicit fallback/failure event.
+        if (failureAttempt.code === "STREAM_RESPONSE_TOO_LARGE") break;
         // 继续尝试下一个 provider
       }
     }

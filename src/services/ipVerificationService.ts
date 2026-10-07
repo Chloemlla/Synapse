@@ -271,7 +271,7 @@ export class IpVerificationService {
     // G5-23: 去掉 env 合并。env 值只应经由 runtimeConfigDefaults 进入（"DB 未配置时才用 env"），
     // 否则管理员在后台删掉泄露的 key，env 里的旧 key 仍被选中，界面显示与实际不一致。
     const configuredKeys = Array.isArray(config.ipqs.apiKeys) ? config.ipqs.apiKeys : [];
-    return Array.from(new Set(configuredKeys.map((item) => item?.trim()).filter(Boolean) as string[]));
+    return Array.from(new Set(configuredKeys.map((item) => item?.trim()).filter((item): item is string => Boolean(item) && item !== 'api')));
   }
 
   private static async getReusableToken(fingerprint: string, ipAddress: string): Promise<any | null> {

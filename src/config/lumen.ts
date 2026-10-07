@@ -5,7 +5,11 @@ dotenv.config();
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value === "") return fallback;
-  return !["false", "0", "no", "off", ""].includes(value.trim().toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  // A typo must not silently enable a bypass or disable request signing.
+  throw new Error("Invalid Lumen boolean configuration; use true or false");
 }
 
 function intFromEnv(value: string | undefined, fallback: number, max?: number): number {

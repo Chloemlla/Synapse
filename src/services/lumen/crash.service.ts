@@ -55,6 +55,15 @@ export async function recordCrashReport(
     throw ApiError.badRequest("reportId is required");
   }
 
+  // Retries of an already accepted report do not consume the new-report quota.
+  const existing = await CrashReport.findOne({ userId, reportId: request.reportId })
+    .select({ receivedAt: 1 })
+    .lean()
+    .exec();
+  if (existing) {
+    return { accepted: true, id: request.reportId, duplicate: true, receivedAt: existing.receivedAt };
+  }
+
   // ── Rate limit: 20 per hour per user ──────────────────────────────────
   // G7-26: keyed on userId (server-authenticated), not the client-supplied
   // deviceInstallationId which a client could rotate to reset the window.
@@ -66,21 +75,6 @@ export async function recordCrashReport(
 
   if (recentCount >= MAX_CRASHES_PER_HOUR) {
     throw ApiError.tooManyRequests("Crash report rate limit exceeded (20/hour)");
-  }
-
-  // ── Idempotency: already ingested? ────────────────────────────────────
-  // Only receivedAt is needed, so avoid pulling the stack trace payload back.
-  const existing = await CrashReport.findOne({ userId, reportId: request.reportId })
-    .select({ receivedAt: 1 })
-    .lean()
-    .exec();
-  if (existing) {
-    return {
-      accepted: true,
-      id: request.reportId,
-      duplicate: true,
-      receivedAt: existing.receivedAt,
-    };
   }
 
   // ── Compute groupKey from clean stack ─────────────────────────────────
@@ -115,8 +109,9 @@ export async function recordCrashReport(
     .map((e) => e.slice(0, MAX_RECENT_EVENT_CHARS));
 
   // ── Persist the crash report ──────────────────────────────────────────
-  const doc = await CrashReport.create({
-    _id: crypto.randomUUID(),
+  let duplicateReceivedAt: number | undefined;
+  await CrashReport.create({
+    _id: `crash_${crypto.createHash("sha256").update(JSON.stringify([userId, request.reportId])).digest("hex")}`,
     userId,
     deviceInstallationId: request.deviceInstallationId,
     reportId: request.reportId,
@@ -140,7 +135,16 @@ export async function recordCrashReport(
     cleanStack: cleanStackLines,
     receivedAt: now,
     ttlExpireAt: lumenTtlExpireAt("crashReport", now),
+  }).catch(async (error: unknown) => {
+    if ((error as { code?: number })?.code !== 11000) throw error;
+    const winner = await CrashReport.findOne({ userId, reportId: request.reportId })
+      .select({ receivedAt: 1 }).lean().exec();
+    if (!winner) throw error;
+    duplicateReceivedAt = winner.receivedAt;
   });
+  if (duplicateReceivedAt !== undefined) {
+    return { accepted: true, id: request.reportId, duplicate: true, receivedAt: duplicateReceivedAt };
+  }
 
   // ── Update AdminCrashReport aggregation ───────────────────────────────
   const groupTtlExpireAt = lumenTtlExpireAt("adminCrashReport", now);

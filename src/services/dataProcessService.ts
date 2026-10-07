@@ -8,6 +8,9 @@ export interface DataProcessResponse {
 }
 
 export class DataProcessService {
+  // Provider contracts https://xxapi.cn/doc/base64 and /doc/hash specify GET
+  // query parameters (checked 2026-10-07). Retain that wire format; never log
+  // request URLs, payloads, response content or raw upstream error messages.
   private static readonly BASE_URL = "https://v2.xxapi.cn/api";
 
   /**
@@ -24,7 +27,7 @@ export class DataProcessService {
         timeout: 5000, // 5秒超时
       });
 
-      logger.info("Base64编码完成", { textLength: text.length, result: response.data });
+      logger.info("Base64编码完成", { textLength: text.length, success: true });
 
       return {
         success: true,
@@ -33,7 +36,7 @@ export class DataProcessService {
     } catch (error) {
       logger.error("Base64编码失败", {
         textLength: text.length,
-        error: error instanceof Error ? error.message : "未知错误",
+        status: axios.isAxiosError(error) ? error.response?.status : undefined,
       });
 
       if (axios.isAxiosError(error)) {
@@ -71,7 +74,7 @@ export class DataProcessService {
         timeout: 5000, // 5秒超时
       });
 
-      logger.info("Base64解码完成", { textLength: text.length, result: response.data });
+      logger.info("Base64解码完成", { textLength: text.length, success: true });
 
       return {
         success: true,
@@ -80,7 +83,7 @@ export class DataProcessService {
     } catch (error) {
       logger.error("Base64解码失败", {
         textLength: text.length,
-        error: error instanceof Error ? error.message : "未知错误",
+        status: axios.isAxiosError(error) ? error.response?.status : undefined,
       });
 
       if (axios.isAxiosError(error)) {
@@ -118,7 +121,7 @@ export class DataProcessService {
         timeout: 5000, // 5秒超时
       });
 
-      logger.info("MD5哈希加密完成", { textLength: text.length, result: response.data });
+      logger.info("MD5哈希加密完成", { textLength: text.length, success: true });
 
       return {
         success: true,
@@ -127,7 +130,7 @@ export class DataProcessService {
     } catch (error) {
       logger.error("MD5哈希加密失败", {
         textLength: text.length,
-        error: error instanceof Error ? error.message : "未知错误",
+        status: axios.isAxiosError(error) ? error.response?.status : undefined,
       });
 
       if (axios.isAxiosError(error)) {

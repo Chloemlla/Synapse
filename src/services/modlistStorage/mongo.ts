@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { mongoose } from "../mongoService";
 
 function sanitizeString(str: any): string {
@@ -37,7 +38,7 @@ export async function addMod(mod: { name: string; hash?: string; md5?: string })
   if (await ModModel.findOne({ name: safeName })) {
     throw new Error("MOD名已存在");
   }
-  const newMod: any = { id: Date.now().toString(), name: safeName };
+  const newMod: any = { id: `mod_${crypto.randomUUID()}`, name: safeName };
   if (safeHash) newMod.hash = safeHash;
   if (safeMd5) newMod.md5 = safeMd5;
   await ModModel.create(newMod);
@@ -90,7 +91,7 @@ export async function batchAddMods(mods: Array<{ name: string; hash?: string; md
     const safeMd5 = mod.md5 ? sanitizeString(mod.md5) : undefined;
     if (!safeName) continue;
     if (await ModModel.findOne({ name: safeName })) continue;
-    const newMod: any = { id: Date.now().toString() + Math.floor(Math.random() * 10000), name: safeName };
+    const newMod: any = { id: `mod_${crypto.randomUUID()}`, name: safeName };
     if (safeHash) newMod.hash = safeHash;
     if (safeMd5) newMod.md5 = safeMd5;
     await ModModel.create(newMod);

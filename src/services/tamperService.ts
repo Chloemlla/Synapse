@@ -91,6 +91,11 @@ class TamperService {
     this.blockedIPsRefreshTimer.unref?.();
   }
 
+  public destroy(): void {
+    if (this.blockedIPsRefreshTimer) clearInterval(this.blockedIPsRefreshTimer);
+    this.blockedIPsRefreshTimer = null;
+  }
+
   private async initializeDataDirectory(): Promise<void> {
     try {
       // 确保 data 目录存在
@@ -406,5 +411,8 @@ class TamperService {
 export const tamperService = TamperService.getInstance();
 
 // G5-21: 不再自行注册信号处理器，交给统一关闭编排（shutdown.ts），避免进程永不退出。
-registerShutdownStep("tamper-events-flush", () => tamperService.flushPendingEvents());
+registerShutdownStep("tamper-events-flush", async () => {
+  tamperService.destroy();
+  await tamperService.flushPendingEvents();
+});
 installShutdownHandlers();

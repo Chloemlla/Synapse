@@ -57,7 +57,7 @@ function writeDraft(key: string, content: string, internal: boolean): void {
  *  - 客服快捷回复一键插入；superadmin 可切「内部备注」；
  *  - 字数计数与超长提示。
  */
-const TicketComposer: React.FC<TicketComposerProps> = ({
+const TicketComposerEditor: React.FC<TicketComposerProps> = ({
   draftKey,
   disabled = false,
   disabledReason,
@@ -66,25 +66,21 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
   placeholder,
   onSend,
 }) => {
-  const [content, setContent] = useState('');
-  const [internal, setInternal] = useState(false);
+  const [initialDraft] = useState(() => readDraft(draftKey));
+  const [content, setContent] = useState(initialDraft.content);
+  const [internal, setInternal] = useState(initialDraft.internal && canWriteInternal);
   const [sending, setSending] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
-  const [restoredDraft, setRestoredDraft] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(Boolean(initialDraft.content));
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // 切换工单：载入该工单的草稿（没有则清空），并聚焦输入框
-  useEffect(() => {
-    const draft = readDraft(draftKey);
-    setContent(draft.content);
-    setInternal(draft.internal && canWriteInternal);
-    setRestoredDraft(Boolean(draft.content));
-    setShowQuick(false);
-    if (draft.content) {
-      window.setTimeout(() => resize(), 0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey, canWriteInternal]);
+  const draftRef = useRef({ content, internal });
+  draftRef.current = { content, internal };
+  useEffect(() => () => {
+    const draft = draftRef.current;
+    writeDraft(draftKey, draft.content, draft.internal);
+  }, [draftKey]);
+  useEffect(() => { if (!canWriteInternal) setInternal(false); }, [canWriteInternal]);
 
   const resize = useCallback(() => {
     const node = textareaRef.current;
@@ -92,6 +88,8 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
     node.style.height = 'auto';
     node.style.height = `${Math.min(node.scrollHeight, AUTO_GROW_MAX_PX)}px`;
   }, []);
+
+  useEffect(() => { resize(); }, [resize]);
 
   // 草稿落盘（轻量防抖）
   useEffect(() => {
@@ -108,6 +106,7 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
     try {
       const ok = await onSend(trimmed, internal && canWriteInternal);
       if (ok) {
+        draftRef.current = { content: '', internal: false };
         setContent('');
         setRestoredDraft(false);
         writeDraft(draftKey, '', false);
@@ -139,6 +138,7 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
           <button
             type="button"
             onClick={() => {
+              draftRef.current = { content: '', internal: false };
               setContent('');
               setRestoredDraft(false);
               writeDraft(draftKey, '', false);
@@ -264,5 +264,7 @@ const TicketComposer: React.FC<TicketComposerProps> = ({
     </div>
   );
 };
+
+const TicketComposer: React.FC<TicketComposerProps> = (props) => <TicketComposerEditor key={props.draftKey} {...props} />;
 
 export default TicketComposer;

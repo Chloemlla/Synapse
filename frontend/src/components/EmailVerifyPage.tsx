@@ -31,6 +31,8 @@ export const EmailVerifyPage: React.FC = () => {
     useEffect(() => {
         // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），内联中止逻辑。
         const controller = new AbortController();
+        let cancelled = false;
+        let navigationTimer: number | undefined;
         const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
         const verifyEmail = async () => {
@@ -45,6 +47,8 @@ export const EmailVerifyPage: React.FC = () => {
             try {
                 // 获取设备指纹
                 const fingerprint = await getFingerprint();
+                if (cancelled) return;
+                controller.signal.throwIfAborted();
                 if (!fingerprint) {
                     setError('无法获取设备信息，请刷新页面重试');
                     setLoading(false);
@@ -64,31 +68,38 @@ export const EmailVerifyPage: React.FC = () => {
                 });
 
                 const data = await response.json();
+                if (cancelled) return;
 
                 if (response.ok && data.success) {
                     setSuccess(true);
                     setNotification({ message: data.message || '邮箱验证成功！', type: 'success' });
                     // 3秒后跳转到登录页面
-                    setTimeout(() => {
-                        navigate('/login');
+                    navigationTimer = window.setTimeout(() => {
+                        if (!cancelled) navigate('/login');
                     }, 3000);
                 } else {
                     setError(data.error || '验证失败，请重试');
                     setNotification({ message: data.error || '验证失败', type: 'error' });
                 }
             } catch (err: any) {
+                if (cancelled) return;
                 const timedOut = err?.name === 'AbortError';
                 const message = timedOut ? '请求超时，请稍后重试' : '网络错误，请稍后重试';
                 setError(message);
                 setNotification({ message, type: 'error' });
             } finally {
                 window.clearTimeout(timeoutId);
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         verifyEmail();
-        return () => { window.clearTimeout(timeoutId); };
+        return () => {
+            cancelled = true;
+            controller.abort();
+            window.clearTimeout(timeoutId);
+            window.clearTimeout(navigationTimer);
+        };
     }, [searchParams, navigate, setNotification]);
 
     return (

@@ -83,18 +83,14 @@ export async function refreshAdminSession(refreshToken: string) {
     throw ApiError.badRequest("Refresh token is required");
   }
 
-  const oldSession = await AdminSession.findOne({ refreshToken }).exec();
+  const oldSession = await AdminSession.findOneAndDelete({ refreshToken }).exec();
   if (!oldSession) {
     throw ApiError.unauthorized("Admin refresh token not found");
   }
 
   if (oldSession.refreshExpiresAt && oldSession.refreshExpiresAt <= new Date()) {
-    await AdminSession.deleteOne({ _id: oldSession._id }).exec();
     throw ApiError.unauthorized("Admin refresh token expired");
   }
-
-  // Delete old session.
-  await AdminSession.deleteOne({ _id: oldSession._id }).exec();
 
   // Create new session.
   const now = Date.now();
@@ -195,12 +191,13 @@ export async function applyAdminAction(
             lastVerifiedAt: now,
             rawPayloadJson: JSON.stringify({ operator, action, previousTier: payload.previousTier }),
           },
+          // Sparse unique indexes skip missing fields, but index both empty strings and null.
+          $unset: { purchaseToken: "" },
           $setOnInsert: {
             _id: crypto.randomUUID(),
             userId,
             source: "admin",
             productId: (payload.productId as string) || `admin_${normalizedTier.toLowerCase()}`,
-            purchaseToken: "",
             purchasedAt: now,
             expiresAt: (payload.expiresAt as number) || 0,
           },

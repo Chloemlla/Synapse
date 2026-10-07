@@ -588,9 +588,19 @@ export const fbiWantedController = {
   // 根据条件批量删除通缉犯记录（管理员）
   async deleteMultiple(req: Request, res: Response) {
     try {
-      const { filter } = req.body;
-      if (!filter || typeof filter !== "object") {
+      const { filter, confirmAll } = req.body || {};
+      if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
         return res.status(400).json({ success: false, message: "请提供有效的过滤条件" });
+      }
+
+      const filterKeys = Object.keys(filter);
+      const allowedKeys = ["status", "dangerLevel", "isActive", "beforeDate", "afterDate"];
+      if (filterKeys.some((key) => !allowedKeys.includes(key))) {
+        return res.status(400).json({ success: false, message: "包含不支持的过滤条件" });
+      }
+      const deleteAll = filterKeys.length === 0 && confirmAll === true;
+      if (filterKeys.length === 0 && !deleteAll) {
+        return res.status(400).json({ success: false, message: "删除全部记录需要明确确认" });
       }
 
       // 白名单过滤，防止注入危险操作符
@@ -609,16 +619,27 @@ export const fbiWantedController = {
       }
       // 日期范围
       const dateFilter: any = {};
-      if (beforeDate) {
+      if (typeof beforeDate === "string" && beforeDate.trim()) {
         const d = new Date(beforeDate);
         if (!Number.isNaN(d.getTime())) dateFilter.$lte = d;
       }
-      if (afterDate) {
+      if (typeof afterDate === "string" && afterDate.trim()) {
         const d = new Date(afterDate);
         if (!Number.isNaN(d.getTime())) dateFilter.$gte = d;
       }
       if (Object.keys(dateFilter).length) {
         safeFilter.dateAdded = dateFilter;
+      }
+
+      // A typo or invalid date must never broaden the requested deletion.
+      const invalidFilter = filterKeys.some((key) => {
+        if (key === "beforeDate") return dateFilter.$lte === undefined;
+        if (key === "afterDate") return dateFilter.$gte === undefined;
+        return safeFilter[key] === undefined;
+      });
+      if (invalidFilter || (!deleteAll && Object.keys(safeFilter).length === 0)
+        || (dateFilter.$gte && dateFilter.$lte && dateFilter.$gte > dateFilter.$lte)) {
+        return res.status(400).json({ success: false, message: "过滤条件无效，未删除任何记录" });
       }
 
       const result = await FBIWantedModel.deleteMany(safeFilter);

@@ -9,7 +9,7 @@ import {
   FaTrash,
   FaUpload,
 } from 'react-icons/fa';
-import { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType } from 'docx';
+import { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType, Table, TableRow, TableCell } from 'docx';
 import MarkdownRenderer from './MarkdownRenderer';
 import { exportToPdf as exportPdfUtil } from './MarkdownExportPage/pdfExport';
 import { studioEyebrowPillClassName } from './studioTheme';
@@ -95,13 +95,6 @@ async function waitForAsyncContent(root: HTMLElement | null, timeoutMs = 5000): 
   }
 }
 
-function topLevelText(element: Element): string {
-  return Array.from(element.childNodes)
-    .map((node) => node.textContent || '')
-    .join('')
-    .trim();
-}
-
 const MarkdownExportPage: React.FC = () => {
   const confirm = useConfirm();
   const [isExporting, setIsExporting] = useState(false);
@@ -125,7 +118,13 @@ const MarkdownExportPage: React.FC = () => {
       await waitForAsyncContent(docxPreviewRef.current);
 
       const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = docxPreviewRef.current?.innerHTML || '';
+      tempDiv.innerHTML = docxPreviewRef.current?.querySelector('.markdown-renderer')?.innerHTML || '';
+      tempDiv.querySelectorAll('button, [aria-hidden="true"]').forEach((node) => node.remove());
+      tempDiv.querySelectorAll('[data-markdown-code]').forEach((node) => {
+        const pre = document.createElement('pre');
+        pre.textContent = node.getAttribute('data-markdown-code') || '';
+        node.replaceWith(pre);
+      });
 
       const processNode = (node: Node, formatting: RunFormatting = {}): TextRun[] => {
         if (node.nodeType === Node.TEXT_NODE) {
@@ -186,9 +185,13 @@ const MarkdownExportPage: React.FC = () => {
         }
       };
 
-      const paragraphs: Paragraph[] = [];
+      const paragraphs: Array<Paragraph | Table> = [];
+      const blockChildren = (container: Node): Node[] => Array.from(container.childNodes).flatMap((child) => {
+        if (child instanceof HTMLElement && ['DIV', 'SECTION'].includes(child.tagName)) return blockChildren(child);
+        return [child];
+      });
 
-      for (const child of Array.from(tempDiv.childNodes)) {
+      for (const child of blockChildren(tempDiv)) {
         if (child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) {
           paragraphs.push(new Paragraph({ children: [new TextRun(child.textContent.trim())] }));
           continue;
@@ -266,15 +269,12 @@ const MarkdownExportPage: React.FC = () => {
             break;
           }
           case 'table': {
-            for (const row of Array.from(element.querySelectorAll('tr'))) {
-              const rowText = Array.from(row.children)
-                .map((cell) => topLevelText(cell))
-                .filter(Boolean)
-                .join(' | ');
-              if (rowText) {
-                paragraphs.push(new Paragraph({ children: [new TextRun(rowText)] }));
-              }
-            }
+            const rows = Array.from(element.querySelectorAll('tr')).map((row) => new TableRow({
+              children: Array.from(row.children).map((cell) => new TableCell({
+                children: [new Paragraph({ children: processNode(cell, { bold: cell.tagName === 'TH' }) })],
+              })),
+            }));
+            if (rows.length) paragraphs.push(new Table({ rows }));
             break;
           }
           default: {

@@ -5,6 +5,7 @@ import {
   getUserAuthByEmail,
   getUserAuthByUsername,
   incrementUserDailyUsageAtomic,
+  getUserUsageDay,
   verifyAndMigrateUserPassword,
   type AdminUserListPageResult,
   type AdminUserListQueryParams,
@@ -270,10 +271,10 @@ export const userRepository = {
     if (!user) return 0;
     if (user.role === "admin" || user.role === "superadmin") return Infinity;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getUserUsageDay();
     let lastUsageDate = "";
     try {
-      lastUsageDate = new Date(user.lastUsageDate).toISOString().split("T")[0];
+      lastUsageDate = getUserUsageDay(new Date(user.lastUsageDate));
     } catch {
       return DAILY_LIMIT;
     }

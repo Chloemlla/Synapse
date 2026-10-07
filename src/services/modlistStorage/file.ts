@@ -10,11 +10,10 @@ const writer = new SerialAtomicJsonWriter();
 
 function readModList() {
   if (!fs.existsSync(MODLIST_PATH)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(MODLIST_PATH, "utf-8"));
-  } catch {
-    return [];
-  }
+  // Corrupt or unreadable data must never become an empty overwrite baseline.
+  const list: unknown = JSON.parse(fs.readFileSync(MODLIST_PATH, "utf-8"));
+  if (!Array.isArray(list)) throw new Error("MOD清单存储格式无效");
+  return list;
 }
 
 async function writeModList(list: any[]) {

@@ -5,6 +5,26 @@ import { IPFSService } from "../services/ipfsService";
 import { TransactionService } from "../services/transactionService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { errorStatus, safeFailureDetails } from "./errorResponse";
+
+const UPLOAD_INPUT_ERRORS = new Set([
+  "只支持图片文件格式：JPEG, PNG, GIF, WebP, BMP, SVG",
+  "出于安全考虑，已禁止上传 SVG 文件",
+  "默认只支持 PNG/JPEG/GIF/WebP/BMP/AVIF/TIFF 图片文件",
+  "启用密码保护时必须提供 image_password",
+  "问答式密码必须提供 password_question",
+]);
+const CAPTCHA_ERRORS = new Set(["IPFS上传需要先启用人机验证", "请先完成人机验证", "人机验证失败，请重新验证"]);
+
+function uploadErrorStatus(error: unknown, message: string) {
+  if (CAPTCHA_ERRORS.has(message)) return 403;
+  if (UPLOAD_INPUT_ERRORS.has(message) || /^文件大小不能超过 \d+(?:\.\d+)?MB$/.test(message)) return 400;
+  return errorStatus(error);
+}
+
+function isConfigValidationError(message: string): boolean {
+  return /^(?:IPFS_UPLOAD_URL|IPFS上传URL|IPFS User-Agent|UA绕过关键字|IMAGE_BED_API_URL|IMAGE_BED_CDN_DOMAIN|IMAGE_BED_STORAGE_DESTINATION|IMAGE_BED_OUTPUT_FORMAT)(?:不能为空|格式无效| 不能为空| 格式无效| 长度不能超过256字符|长度不能超过100字符| 仅允许 local \/ telegram \/ r2| 取值无效| 不是合法 URL| 必须使用 https 协议| 不允许指向内网\/本机地址)$/.test(message);
+}
 
 export class IPFSController {
   /**
@@ -32,8 +52,8 @@ export class IPFSController {
       // 使用事务包装整个上传过程，确保数据一致性
       const result = await TransactionService.executeTransaction(async (_session) => {
         const shortLinkFlag = req.body && req.body.source === "imgupload";
-        const userId = (req as any).user?.id || "admin";
-        const username = (req as any).user?.username || "admin";
+        const userId = (req as any).user?.id || "anonymous";
+        const username = (req as any).user?.username || "anonymous";
         const isAdmin = isAdminRole((req as any).user?.role);
         const authenticatedByApiKey = Boolean((req as any).apiKey);
         const authenticatedByOAuth = Boolean((req as any).oauthToken);
@@ -147,19 +167,12 @@ export class IPFSController {
 
       // 出网不可达（图床域名多 A 记录 + 本机无 IPv6 路由，见 services/ipfsService.ts 的重试注释）
       // 应归为 503 而不是 500：500 会被当成代码 bug，而这是上游/网络问题，运维该看出网与代理。
-      const explicitStatus = (error as { statusCode?: number } | null | undefined)?.statusCode;
-      const statusCode =
-        typeof explicitStatus === "number"
-          ? explicitStatus
-          : /人机验证|Turnstile|请先完成/.test(errorMessage)
-          ? 403
-          : /文件|图片|格式|大小|SVG|配置未设置/.test(errorMessage)
-            ? 400
-            : 500;
+      const statusCode = uploadErrorStatus(error, errorMessage);
 
       res.status(statusCode).json({
         success: false,
-        error: errorMessage,
+        error: statusCode < 500 ? errorMessage : "上传服务暂时不可用，请稍后重试",
+        ...(statusCode >= 500 ? { details: safeFailureDetails(error) } : {}),
       });
     }
   }
@@ -211,7 +224,7 @@ export class IPFSController {
 
       res.status(500).json({
         success: false,
-        error: errorMessage,
+        error: "获取上传配置失败",
       });
     }
   }
@@ -302,9 +315,9 @@ export class IPFSController {
         timestamp: new Date().toISOString(),
       });
 
-      res.status(500).json({
+      res.status(isConfigValidationError(errorMessage) ? 400 : 500).json({
         success: false,
-        error: errorMessage,
+        error: isConfigValidationError(errorMessage) ? errorMessage : "设置上传配置失败",
       });
     }
   }
@@ -389,7 +402,8 @@ export class IPFSController {
 
       res.status(500).json({
         success: false,
-        error: `配置测试失败: ${errorMessage}`,
+        error: "配置测试失败，请检查配置后重试",
+        details: safeFailureDetails(error),
       });
     }
   }

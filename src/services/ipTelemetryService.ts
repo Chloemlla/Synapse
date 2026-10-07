@@ -268,6 +268,7 @@ export async function lookupIpLocation(ip: string, timeoutMs = IP_LOCATION_TIMEO
       const data = (await response.json()) as unknown;
       const location = provider.parse(data);
       if (location) return location;
+      markProviderFailure(provider.name);
     } catch (error) {
       markProviderFailure(provider.name);
       logger.warn("[IPLocation] Provider lookup failed", {

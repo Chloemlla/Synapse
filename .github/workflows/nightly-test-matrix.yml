@@ -81,10 +81,9 @@ jobs:
             echo "- Core contracts: \`${{ steps.core.outcome }}\`"
             echo "- External API matrix: \`${{ steps.external.outcome }}\`"
             echo ""
-            echo "> 若测试步骤报 \`typescript ... does not expose the JavaScript compiler API required by ts-jest\`，"
-            echo "> 根因是 ts-jest@29 × typescript@7 不兼容（G13-10 / G13-11，决策项 D1），**不是** MongoDB 或本 workflow 的问题——"
-            echo "> Mongo 步骤为 success 即代表副本集已 PRIMARY，探测循环首轮的 ECONNREFUSED 只是重试噪音。"
-            echo "> 修复顺序：typescript 降到 ~5.9（或按 ts-jest 提示改用 @typescript/native + @typescript/typescript6 别名）→ 重新生成 lockfile。"
+            echo "> Mongo 启动成功只代表服务端已 PRIMARY，不代表应用驱动握手或认证通过。请查看失败步骤的首条异常。"
+            echo "> 若出现 Missing required sub-document driver，检查 mongodb runtimeAdapters.os：Jest 的 CJS VM 可能无法执行驱动默认适配器中的动态导入。"
+            echo "> Core contracts 必须实际执行成功；skipped 不算通过。"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Jest artifacts on failure

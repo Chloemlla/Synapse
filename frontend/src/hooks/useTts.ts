@@ -16,7 +16,6 @@ import { getFingerprint } from "../utils/fingerprint";
 import { canonicalizeBackendApiUrl } from "../utils/apiPath";
 import {
   buildIpVerificationHeaders,
-  clearIpVerificationToken,
   emitIpVerificationRequired,
   isExemptPath,
 } from "../utils/ipVerification";
@@ -78,7 +77,6 @@ api.interceptors.response.use(
       }
 
       if (!pathname || !isExemptPath(pathname)) {
-        clearIpVerificationToken();
         emitIpVerificationRequired(payload as Record<string, unknown>);
       }
     }

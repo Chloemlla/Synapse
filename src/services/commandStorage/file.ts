@@ -3,12 +3,23 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { SerialAtomicJsonWriter } from "../librechat/atomicJsonWriter";
 import { normalizeCommandId, normalizeCommandText } from "./commandText";
+import { assertQueueCapacity } from "./queuePolicy";
 
 const DATA_DIR = path.join(process.cwd(), "data", "commands");
 const QUEUE_FILE = path.join(DATA_DIR, "queue.json");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 
 const writer = new SerialAtomicJsonWriter();
+let queueOperations: Promise<void> = Promise.resolve();
+
+async function mutateQueue<T>(mutation: (queue: any[]) => Promise<T>): Promise<T> {
+  // File storage is a single-process backend. Include the read in serialization;
+  // atomic renames alone cannot prevent concurrent writers using stale snapshots.
+  // Multi-instance deployments must use the Mongo backend.
+  const operation = queueOperations.then(() => mutation(readJsonFile(QUEUE_FILE, [])));
+  queueOperations = operation.then(() => undefined, () => undefined);
+  return operation;
+}
 
 // 确保数据目录存在
 function ensureDataDir() {
@@ -24,10 +35,12 @@ function readJsonFile(filePath: string, defaultValue: any = []) {
       return defaultValue;
     }
     const data = fs.readFileSync(filePath, "utf8");
-    return JSON.parse(data);
+    const parsed: unknown = JSON.parse(data);
+    if (!Array.isArray(parsed)) throw new Error("命令存储格式无效");
+    return parsed;
   } catch (error) {
     console.error(`读取文件失败: ${filePath}`, error);
-    return defaultValue;
+    throw error;
   }
 }
 
@@ -46,49 +59,52 @@ async function writeJsonFile(filePath: string, data: any): Promise<void> {
 
 // 命令队列操作
 export async function getCommandQueue() {
-  const queue = readJsonFile(QUEUE_FILE, []);
-  return queue.filter((item: any) => item.status === "pending");
+  return mutateQueue(async (queue) => queue.filter((item: any) => item.status === "pending"));
 }
 
 export async function addToQueue(command: string) {
   const safeCommand = normalizeCommandText(command);
   if (!safeCommand) throw new Error("命令内容非法");
 
-  const queue = readJsonFile(QUEUE_FILE, []);
-  const commandId = `cmd_${crypto.randomUUID()}`;
+  return mutateQueue(async (queue) => {
+    assertQueueCapacity(queue.filter((item: any) => item.status === "pending").length);
+    const commandId = `cmd_${crypto.randomUUID()}`;
 
-  const newCommand = {
-    commandId,
-    command: safeCommand,
-    addedAt: new Date().toISOString(),
-    status: "pending",
-  };
+    const newCommand = {
+      commandId,
+      command: safeCommand,
+      addedAt: new Date().toISOString(),
+      status: "pending",
+    };
 
-  queue.push(newCommand);
-  await writeJsonFile(QUEUE_FILE, queue);
+    queue.push(newCommand);
+    await writeJsonFile(QUEUE_FILE, queue);
 
-  return { commandId, command: safeCommand };
+    return { commandId, command: safeCommand };
+  });
 }
 
 export async function removeFromQueue(commandId: string) {
   const safeCommandId = normalizeCommandId(commandId);
   if (!safeCommandId) throw new Error("命令ID非法");
 
-  const queue = readJsonFile(QUEUE_FILE, []);
-  const initialLength = queue.length;
-  const filteredQueue = queue.filter((item: any) => item.commandId !== safeCommandId);
+  return mutateQueue(async (queue) => {
+    const initialLength = queue.length;
+    const filteredQueue = queue.filter((item: any) => item.commandId !== safeCommandId);
 
-  if (filteredQueue.length !== initialLength) {
-    await writeJsonFile(QUEUE_FILE, filteredQueue);
-    return true;
-  }
-  return false;
+    if (filteredQueue.length !== initialLength) {
+      await writeJsonFile(QUEUE_FILE, filteredQueue);
+      return true;
+    }
+    return false;
+  });
 }
 
 export async function clearQueue() {
-  const queue = readJsonFile(QUEUE_FILE, []);
-  const filteredQueue = queue.filter((item: any) => item.status !== "pending");
-  await writeJsonFile(QUEUE_FILE, filteredQueue);
+  await mutateQueue(async (queue) => {
+    const filteredQueue = queue.filter((item: any) => item.status !== "pending");
+    await writeJsonFile(QUEUE_FILE, filteredQueue);
+  });
 }
 
 // 执行历史操作

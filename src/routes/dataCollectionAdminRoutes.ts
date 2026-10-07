@@ -3,7 +3,6 @@ import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { auditLog } from "../middleware/auditLog";
-import { dataCollectionLimiter } from "../middleware/routeLimiters";
 import { dataCollectionService } from "../services/dataCollectionService";
 import { firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
@@ -11,13 +10,13 @@ import logger from "../utils/logger";
 const router = Router();
 
 // Admin-only guard
-const guard = [dataCollectionLimiter, authenticateToken, authenticateAdmin] as const;
+const guard = [authenticateToken, authenticateAdmin] as const;
 
 // Super-admin-only guard for write operations
-const superAdminGuard = [dataCollectionLimiter, authenticateToken, authenticateSuperAdmin] as const;
+const superAdminGuard = [authenticateToken, authenticateSuperAdmin] as const;
 
 // 原始采集载荷可能包含用户提交的明文：只有超管能看 raw，列表/统计保持 admin 只读。
-const rawGuard = [dataCollectionLimiter, authenticateToken, authenticateSuperAdmin] as const;
+const rawGuard = [authenticateToken, authenticateSuperAdmin] as const;
 
 // GET /api/data-collection/admin/stats
 router.get("/stats", ...guard, async (_req: Request, res: Response) => {
@@ -26,7 +25,7 @@ router.get("/stats", ...guard, async (_req: Request, res: Response) => {
     res.json({ success: true, data: stats });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] stats error:", e);
-    res.status(500).json({ success: false, message: e?.message || "stats error" });
+    res.status(500).json({ success: false, message: "获取统计信息失败" });
   }
 });
 
@@ -46,7 +45,7 @@ router.get("/", ...guard, async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] list error:", e);
-    res.status(500).json({ success: false, message: e?.message || "list error" });
+    res.status(500).json({ success: false, message: "获取采集列表失败" });
   }
 });
 
@@ -86,7 +85,7 @@ router.get("/:id", ...guard, async (req: Request, res: Response) => {
     res.json({ success: true, data: item });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] getById error:", e);
-    res.status(500).json({ success: false, message: e?.message || "get error" });
+    res.status(500).json({ success: false, message: "获取采集记录失败" });
   }
 });
 
@@ -102,7 +101,7 @@ router.get("/:id/raw", ...rawGuard, async (req: Request, res: Response) => {
     res.json({ success: true, data: raw });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] getRaw error:", e);
-    res.status(500).json({ success: false, message: e?.message || "raw error" });
+    res.status(500).json({ success: false, message: "获取原始记录失败" });
   }
 });
 
@@ -124,7 +123,7 @@ router.delete(
     res.json({ success: result.deleted });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] deleteById error:", e);
-    res.status(500).json({ success: false, message: e?.message || "delete error" });
+    res.status(500).json({ success: false, message: "删除采集记录失败" });
   }
 });
 
@@ -147,7 +146,7 @@ router.post(
     res.json({ success: true, ...result });
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] deleteBatch error:", e);
-    res.status(500).json({ success: false, message: e?.message || "delete batch error" });
+    res.status(500).json({ success: false, message: "批量删除失败" });
   }
 });
 
@@ -164,7 +163,7 @@ router.delete(
     res.status(statusCode).json(body);
   } catch (e: any) {
     logger.error("[DataCollectionAdmin] deleteAll error:", e);
-    res.status(500).json({ success: false, message: e?.message || "delete all error" });
+    res.status(500).json({ success: false, message: "清空采集记录失败" });
   }
 });
 

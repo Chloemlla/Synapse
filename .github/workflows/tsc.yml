@@ -141,17 +141,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Check for path-to-regexp issues
-        run: |
-          echo "Checking for potential path-to-regexp issues..."
-          if grep -r "router\.(get|post|put|delete|patch).*-" src/routes/ --include="*.ts"; then
-            echo "Found routes with hyphens that might cause path-to-regexp issues:"
-            grep -r "router\.(get|post|put|delete|patch).*-" src/routes/ --include="*.ts"
-            echo "Consider replacing hyphens with slashes in route paths"
-          else
-            echo "No routes with hyphens found"
-          fi
-
   type-check-backend:
     name: type-check-backend
     runs-on: ubuntu-latest

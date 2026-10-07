@@ -24,6 +24,13 @@ function sanitizeString(str: unknown): string {
   return str;
 }
 
+function literalString(value: unknown): string {
+  // Values under static query keys are data: punctuation cannot inject operators.
+  if (typeof value !== "string") return "";
+  if (value.length > 1_000_000) throw new Error("生成记录字段过长");
+  return value;
+}
+
 export async function findDuplicateGeneration({
   userId,
   text,
@@ -32,10 +39,10 @@ export async function findDuplicateGeneration({
   contentHash,
 }: GenerationRecord): Promise<GenerationRecord | null> {
   const safeUserId = sanitizeString(userId);
-  const safeText = sanitizeString(text);
-  const safeVoice = sanitizeString(voice);
-  const safeModel = sanitizeString(model);
-  const safeContentHash = sanitizeString(contentHash);
+  const safeText = literalString(text);
+  const safeVoice = literalString(voice);
+  const safeModel = literalString(model);
+  const safeContentHash = literalString(contentHash);
   const query = safeContentHash
     ? { userId: safeUserId, contentHash: safeContentHash }
     : { userId: safeUserId, text: safeText, voice: safeVoice, model: safeModel };
@@ -46,10 +53,10 @@ export async function addGenerationRecord(record: GenerationRecord): Promise<Gen
   const safeRecord = {
     ...record,
     userId: sanitizeString(record.userId),
-    text: sanitizeString(record.text),
-    voice: sanitizeString(record.voice),
-    model: sanitizeString(record.model),
-    contentHash: sanitizeString(record.contentHash),
+    text: literalString(record.text),
+    voice: literalString(record.voice),
+    model: literalString(record.model),
+    contentHash: literalString(record.contentHash),
   };
   const created = await GenerationModel.create(safeRecord);
   return typeof created.toObject === "function" ? (created.toObject() as GenerationRecord) : safeRecord;
