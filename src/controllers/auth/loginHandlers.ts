@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../../services/authSessionService";
 import { sendEmail } from "../../services/emailSender";
+import { sendThrottledAuthNotification } from "../../services/authEmailNotificationService";
 import {
   POLICY_AGREEMENT_KEYS,
   POLICY_CONSENT_REQUIRED_MESSAGE,
@@ -151,13 +152,13 @@ export async function login(req: Request, res: Response) {
               ip,
               req.headers["user-agent"] || "未知设备"
             );
-            sendEmail({
+            sendThrottledAuthNotification({
               to: targetUser.email,
               subject: "Synapse 登录安全提醒：检测到多次登录失败",
               html: alertEmailHtml,
               logTag: "登录失败提醒",
-              checkQuota: true,
-            })
+              checkQuota: false,
+            }, "login-failure")
               .then((result) => {
                 if (result.success) {
                   logger.info(`[登录失败提醒] 已发送至 ${targetUser.email}`);
@@ -184,13 +185,13 @@ export async function login(req: Request, res: Response) {
           try {
             const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
             const lockEmailHtml = generateAccountLockedEmailHtml(targetUser.username, time, ip, userAgent, "15 分钟");
-            sendEmail({
+            sendThrottledAuthNotification({
               to: targetUser.email,
               subject: "Synapse 账号登录安全警报",
               html: lockEmailHtml,
               logTag: "账号锁定提醒",
-              checkQuota: true,
-            })
+              checkQuota: false,
+            }, "login-lockout")
               .then((result) => {
                 if (result.success) {
                   logger.info(`[账号锁定提醒] 已发送至 ${targetUser.email}`);

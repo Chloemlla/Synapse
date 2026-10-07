@@ -4,6 +4,7 @@ import { getAdminUserListPage } from "./userService";
 import { TurnstileService } from "./turnstileService";
 import { isConnected } from "./mongoService";
 import logger from "../utils/logger";
+import { sanitizeErrorForLog } from "../utils/requestLogSanitizer";
 import type { AdminUserListStats } from "./adminUserListAggregation";
 
 /**
@@ -103,7 +104,7 @@ export async function buildAdminOverview(): Promise<AdminOverviewSnapshot> {
       warnings.push("用户统计不可用");
     }
   } else {
-    logger.warn("[AdminOverview] 用户统计失败", usersResult.reason);
+    logger.warn("[AdminOverview] 用户统计失败", sanitizeErrorForLog(usersResult.reason));
     warnings.push("用户统计不可用");
   }
 
@@ -111,7 +112,7 @@ export async function buildAdminOverview(): Promise<AdminOverviewSnapshot> {
   if (apiKeysResult.status === "fulfilled") {
     apiKeys = apiKeysResult.value;
   } else {
-    logger.warn("[AdminOverview] API Key 统计失败", apiKeysResult.reason);
+    logger.warn("[AdminOverview] API Key 统计失败", sanitizeErrorForLog(apiKeysResult.reason));
     warnings.push("API Key 统计不可用");
   }
 
@@ -119,7 +120,7 @@ export async function buildAdminOverview(): Promise<AdminOverviewSnapshot> {
   if (auditLogsResult.status === "fulfilled") {
     auditLogs = auditLogsResult.value;
   } else {
-    logger.warn("[AdminOverview] 审计日志统计失败", auditLogsResult.reason);
+    logger.warn("[AdminOverview] 审计日志统计失败", sanitizeErrorForLog(auditLogsResult.reason));
     warnings.push("审计日志统计不可用");
   }
 
@@ -128,7 +129,7 @@ export async function buildAdminOverview(): Promise<AdminOverviewSnapshot> {
     const stats = ipBansResult.value;
     ipBans = { total: stats.total, active: stats.active, expired: stats.expired };
   } else {
-    logger.warn("[AdminOverview] IP 封禁统计失败", ipBansResult.reason);
+    logger.warn("[AdminOverview] IP 封禁统计失败", sanitizeErrorForLog(ipBansResult.reason));
     warnings.push("IP 封禁统计不可用");
   }
 

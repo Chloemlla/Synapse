@@ -29,9 +29,9 @@ export async function fetchWithTimeout(
 
   try {
     const response = await fetch(input, { ...init, signal: controller.signal });
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = response.headers?.get?.('content-type') || '';
     const isStream = /text\/event-stream|application\/(?:x-ndjson|ndjson|octet-stream)/i.test(contentType);
-    if (!isStream && (/\bjson\b/i.test(contentType) || readCaptchaRequestToken(init.body) !== null)) {
+    if (!isStream && typeof response.clone === 'function' && (/\bjson\b/i.test(contentType) || readCaptchaRequestToken(init.body) !== null)) {
       try {
         const body: unknown = await response.clone().json();
         notifyCaptchaFailure(body, init.body, response.status);

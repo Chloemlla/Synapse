@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,8 +21,8 @@ vi.mock('../components/ManagedCaptcha', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
   return {
     default: React.forwardRef<any, any>((props, ref) => {
-      React.useImperativeHandle(ref, () => ({ reset: () => {
-        h.reset();
+      React.useImperativeHandle(ref, () => ({ reset: (consumedToken?: string) => {
+        h.reset(consumedToken);
         props.onCleared();
       } }));
       React.useEffect(() => {
@@ -44,6 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function openPage(resetPassword: boolean) {
@@ -59,6 +60,16 @@ function openPage(resetPassword: boolean) {
 }
 
 describe.each([false, true])('password request captcha lifecycle (reset=%s)', (resetPassword) => {
+  it('retires the token after a successful request too', async () => {
+    vi.useFakeTimers();
+    h.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+    const form = openPage(resetPassword);
+    await act(async () => { fireEvent.submit(form); });
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    expect(h.reset).toHaveBeenCalledTimes(1);
+    expect(h.reset).toHaveBeenCalledWith('one-use-token');
+  });
+
   it('sends a solved token only once while the request is pending', async () => {
     let resolveRequest!: (response: unknown) => void;
     h.fetch.mockImplementationOnce(() => new Promise((resolve) => { resolveRequest = resolve; }));

@@ -128,10 +128,14 @@ export async function verifyGooglePurchase(
   const tier = tierForProduct(productId);
   const status: EntitlementStatus = accept ? "active" : "pending";
 
+  // purchaseToken 来自请求体：必须先确认是字符串，否则对象（如 {"$ne": null}）会被当成
+  // Mongoose 过滤条件注入（NoSQL）。$eq 再兜一层，保证按字面值做等值匹配。
+  if (typeof purchaseToken !== "string" || purchaseToken.length === 0 || purchaseToken.length > 4096) {
+    throw new TypeError("purchaseToken must be a non-empty string");
+  }
   // Idempotency: the same purchase token must not create unbounded duplicate
   // entitlement records. (A unique index on purchaseToken is the hard guard.)
-  // codeql[js/sql-injection] purchaseToken is a static-key equality filter value in a Mongoose findOne; no operator/key injection possible
-  const existing = await Entitlement.findOne({ purchaseToken }).lean().exec();
+  const existing = await Entitlement.findOne({ purchaseToken: { $eq: purchaseToken } }).lean().exec();
   if (existing) {
     // 只记短指纹：完整 purchaseToken 是可向 Google 校验/消耗的凭据，且重复提交流程攻击者可控。
     logger.info("[Lumen Entitlements] Duplicate purchase token rejected", {

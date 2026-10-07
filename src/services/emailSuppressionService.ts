@@ -117,7 +117,7 @@ export async function isEmailSuppressed(emailInput: unknown): Promise<boolean> {
 /**
  * 批量判定，供批量发送前置过滤使用（一次查询而不是 N 次）。
  */
-export async function filterSuppressedEmails(emails: string[]): Promise<{
+export async function filterSuppressedEmails(emails: string[], options: { transactional?: boolean } = {}): Promise<{
   allowed: string[];
   suppressed: string[];
 }> {
@@ -129,7 +129,12 @@ export async function filterSuppressedEmails(emails: string[]): Promise<{
   }
 
   try {
-    const docs = await EmailSuppressionModel.find({ email: { $in: normalized }, ...activeFilter() })
+    // An explicit account action is not a subscription. Keep delivery and manual safety blocks.
+    const docs = await EmailSuppressionModel.find({
+      email: { $in: normalized },
+      ...activeFilter(),
+      ...(options.transactional ? { reason: { $ne: "unsubscribe" } } : {}),
+    })
       .select({ email: 1 })
       .lean()
       .exec();

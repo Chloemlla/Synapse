@@ -1,4 +1,5 @@
-import express, { type Request } from "express";
+import express, { type Request, type Response } from "express";
+import validator from "validator";
 import { requireAdminScope } from "../middleware/adminScope";
 import { createLimiter } from "../middleware/rateLimiter";
 import { authMiddlewareV2 as authMiddleware, adminAuthMiddleware, authenticateSuperAdmin } from "../middleware/auth";
@@ -25,6 +26,24 @@ const statusQueryLimiter = createLimiter({
   message: "状态查询过于频繁，请稍后再试",
   routeName: "outemail.status",
 });
+
+function sendFailure(res: Response, result: { error?: string; code?: string; statusCode?: number; retryAfterSeconds?: number }) {
+  if (result.retryAfterSeconds) res.setHeader("Retry-After", String(result.retryAfterSeconds));
+  return res.status(result.statusCode || 400).json({
+    success: false,
+    error: result.error || "邮件发送失败，请稍后重试",
+    code: result.code,
+    retryAfterSeconds: result.retryAfterSeconds,
+  });
+}
+
+function isRecipient(value: unknown): value is string {
+  return typeof value === "string" && validator.isEmail(value.trim());
+}
+
+function isMessageText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+}
 
 function getHeaderValue(value: unknown): string {
   if (Array.isArray(value)) return typeof value[0] === "string" ? value[0].trim() : "";
@@ -67,9 +86,9 @@ router.get("/quota", statusQueryLimiter, async (_req, res) => {
   try {
     const info = await getOutEmailQuota();
     res.json({ success: true, used: info.used, total: info.total, resetAt: info.resetAt });
-  } catch (e: any) {
-    logger.error("[OutEmail] 配额查询失败", e);
-    res.status(500).json({ success: false, error: "无法获取配额信息" });
+  } catch (error) {
+    logger.error("[OutEmail] 配额查询失败", { error });
+    res.status(503).json({ success: false, code: "EMAIL_SERVICE_UNAVAILABLE", error: "邮件额度暂时无法查询，请稍后重试" });
   }
 });
 
@@ -117,87 +136,38 @@ router.post("/send", outEmailLimiter, async (req, res) => {
   try {
     const body = (req.body || {}) as Record<string, any>;
     const { to, subject, content, attachments, from, displayName, domain } = body;
-    if (!to || !subject || !content) {
-      return res.status(400).json({ error: "缺少参数" });
+    // Do not silently discard additional recipients from the single-message API.
+    const recipient = Array.isArray(to) && to.length === 1 ? to[0] : to;
+    if (!isRecipient(recipient)) {
+      return res.status(400).json({ error: Array.isArray(to) && to.length > 1
+        ? "单封发送仅支持一个收件人，请使用批量发送"
+        : "收件人邮箱格式无效" });
+    }
+    if (!isMessageText(subject, 200) || !isMessageText(content, 100_000)) {
+      return res.status(400).json({ error: "请提供有效的主题和正文（主题最多200字，正文最多100000字）" });
+    }
+    if ([from, displayName, domain].some((value) => value !== undefined && typeof value !== "string")) {
+      return res.status(400).json({ error: "发件人配置格式无效" });
+    }
+    if (attachments !== undefined && (!Array.isArray(attachments) || attachments.length > 10 ||
+      attachments.some((a: unknown) => {
+        if (!a || typeof a !== "object") return true;
+        const item = a as Record<string, unknown>;
+        return !isMessageText(item.filename, 255) ||
+          !(typeof item.path === "string" || typeof item.content === "string");
+      }))) {
+      return res.status(400).json({ error: "附件格式无效或超过10个" });
     }
     const auth = getRequestAuth(req, body);
-
-    const isValidEmail = (email: string) => /^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}$/.test(email);
-
-    if (typeof to === "string") {
-      if (!isValidEmail(to)) return res.status(400).json({ error: "收件人邮箱格式无效" });
-      const ip = getClientIP(req);
-      // 附件校验（可选）
-      let safeAttachments: any[] | undefined;
-      if (attachments && Array.isArray(attachments)) {
-        safeAttachments = attachments
-          .filter(
-            (a: any) =>
-              a && typeof a.filename === "string" && (typeof a.path === "string" || typeof a.content === "string"),
-          )
-          .slice(0, 10)
-          .map((a: any) => ({
-            filename: a.filename,
-            ...(a.path ? { path: a.path } : {}),
-            ...(a.content ? { content: a.content } : {}),
-            ...(a.content_id ? { content_id: a.content_id } : {}),
-          }));
-      }
-      const result = await sendOutEmail({
-        to,
-        subject,
-        content,
-        code: auth.code,
-        apiKey: auth.apiKey,
-        ip,
-        attachments: safeAttachments,
-        from,
-        displayName,
-        domain,
-      });
-      if (result.success) return res.json({ success: true, messageId: result.messageId });
-      return res.status(400).json({ error: result.error });
-    }
-
-    if (Array.isArray(to) && typeof to[0] === "string") {
-      const first = to[0];
-      if (!isValidEmail(first)) return res.status(400).json({ error: "收件人邮箱格式无效" });
-      const ip = getClientIP(req);
-      let safeAttachments: any[] | undefined;
-      if (attachments && Array.isArray(attachments)) {
-        safeAttachments = attachments
-          .filter(
-            (a: any) =>
-              a && typeof a.filename === "string" && (typeof a.path === "string" || typeof a.content === "string"),
-          )
-          .slice(0, 10)
-          .map((a: any) => ({
-            filename: a.filename,
-            ...(a.path ? { path: a.path } : {}),
-            ...(a.content ? { content: a.content } : {}),
-            ...(a.content_id ? { content_id: a.content_id } : {}),
-          }));
-      }
-      const result = await sendOutEmail({
-        to: first,
-        subject,
-        content,
-        code: auth.code,
-        apiKey: auth.apiKey,
-        ip,
-        attachments: safeAttachments,
-        from,
-        displayName,
-        domain,
-      });
-      if (result.success) return res.json({ success: true, messageId: result.messageId });
-      return res.status(400).json({ error: result.error });
-    }
-
-    return res.status(400).json({ error: "收件人邮箱格式无效" });
-  } catch (e: any) {
-    logger.error("[OutEmail] 发送失败", e);
-    return res.status(500).json({ error: "发送失败" });
+    const result = await sendOutEmail({
+      to: recipient.trim(), subject, content, code: auth.code, apiKey: auth.apiKey,
+      ip: getClientIP(req), attachments, from, displayName, domain,
+    });
+    if (result.success) return res.json({ success: true, messageId: result.messageId, acceptedCount: result.acceptedCount });
+    return sendFailure(res, result);
+  } catch (error) {
+    logger.error("[OutEmail] 发送请求失败", { error });
+    return res.status(503).json({ success: false, code: "EMAIL_SERVICE_UNAVAILABLE", error: "邮件服务暂时不可用，请稍后重试" });
   }
 });
 
@@ -206,21 +176,25 @@ router.post("/batch-send", outEmailLimiter, async (req, res) => {
   try {
     const body = (req.body || {}) as Record<string, any>;
     const { messages, from, displayName, domain } = body;
-    if (!Array.isArray(messages) || !messages.length) {
-      return res.status(400).json({ error: "缺少参数" });
+    if (!Array.isArray(messages) || !messages.length || messages.length > 100) {
+      return res.status(400).json({ error: "消息列表应包含1到100封邮件" });
+    }
+    if ([from, displayName, domain].some((value) => value !== undefined && typeof value !== "string")) {
+      return res.status(400).json({ error: "发件人配置格式无效" });
+    }
+    const normalized: Array<{ to: string[]; subject: string; content: string }> = [];
+    for (const message of messages) {
+      if (!message || typeof message !== "object" ||
+        !isMessageText(message.subject, 200) || !isMessageText(message.content, 100_000)) {
+        return res.status(400).json({ error: "每封邮件都需要有效的主题和正文" });
+      }
+      const recipients: unknown[] = Array.isArray(message.to) ? message.to : [message.to];
+      if (!recipients.length || recipients.length > 100 || !recipients.every(isRecipient)) {
+        return res.status(400).json({ error: "消息包含无效的收件人邮箱地址" });
+      }
+      normalized.push({ to: recipients.map((recipient) => (recipient as string).trim()), subject: message.subject, content: message.content });
     }
     const auth = getRequestAuth(req, body);
-    // 规范化与基本校验
-    const normalized = messages
-      .filter((m: any) => m?.to && m.subject && m.content)
-      .slice(0, 100)
-      .map((m: any) => ({
-        to: Array.isArray(m.to) ? m.to : String(m.to),
-        subject: String(m.subject),
-        content: String(m.content),
-      }));
-    if (!normalized.length) return res.status(400).json({ error: "消息列表无有效项" });
-
     const ip = getClientIP(req);
     const result = await sendOutEmailBatch({
       messages: normalized,
@@ -231,11 +205,11 @@ router.post("/batch-send", outEmailLimiter, async (req, res) => {
       displayName,
       domain,
     });
-    if (result.success) return res.json({ success: true, ids: result.ids });
-    return res.status(400).json({ error: result.error });
-  } catch (e: any) {
-    logger.error("[OutEmail] 批量发送失败", e);
-    return res.status(500).json({ error: "批量发送失败" });
+    if (result.success) return res.json({ success: true, ids: result.ids, acceptedCount: result.acceptedCount });
+    return sendFailure(res, result);
+  } catch (error) {
+    logger.error("[OutEmail] 批量发送请求失败", { error });
+    return res.status(503).json({ success: false, code: "EMAIL_SERVICE_UNAVAILABLE", error: "邮件服务暂时不可用，请稍后重试" });
   }
 });
 

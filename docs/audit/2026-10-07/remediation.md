@@ -222,3 +222,10 @@
 - 审查基线 15f6c1a2 的 Node Verification（37245521860）构建、后端 Jest、前端 Vitest 均 success；Quality Guardrails、Docker、CodeQL success。
 - Nightly 37529016437 为存量 failure：两个套件、10 个用例在 Mongo 握手报 Missing required sub-document driver；最终修复需重新验证，不沿用旧绿灯。
 - 最终提交、CI 与所有编号的处置将在修复完成后回填。
+
+## 提交与并发整合
+
+- 修复提交 `fa0bbf9a`：257 个文件，包含生产修复、逐条台账和回归用例。真实 `git commit -S` 等待 60 秒后超时，未产生签名提交；依照方法论回退 `--no-gpg-sign`，该提交签名状态为 N。不是根据预检失败跳过签名。
+- 合并同期 `origin/main` 的邮件/验证码/CodeQL 修复：邮件发送使用新的统一用户配额与共享投递模块，同时保留发送后新草稿保护；邮件链接采用按 token 共享请求，组件卸载只取消回填，不取消其他消费者共享的验证；邮件配置保留首次读取失败禁写及秘密字段留空保持；注册用户名使用字符串匹配。
+- 邮件投递共享模块的 500 响应继续固定文案，原始错误只记日志。保留远端 transactional 账户邮件、真实额度结算及 CodeQL 的 purchaseToken 类型/$eq 校验。
+- 独立工作树中的 13 个仅换行差异已逐字比较（只忽略 CRLF/LF）并备份到工作区 `.audit/2026-10-07-synapse/eol-before-merge/` 后恢复；无业务 WIP 丢弃，原 clone 未被本轮暂存或回滚。

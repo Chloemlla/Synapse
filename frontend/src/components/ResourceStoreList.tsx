@@ -276,7 +276,7 @@ export default function ResourceStoreList() {
         setError("兑换失败，CDK 无效或已经使用");
       }
     } finally {
-      if (!isAdmin && captcha?.token) captchaRef.current?.reset();
+      if (!isAdmin && captcha?.token) captchaRef.current?.reset(captcha.token);
       submittingRef.current = false;
       setCdkLoading(false);
     }

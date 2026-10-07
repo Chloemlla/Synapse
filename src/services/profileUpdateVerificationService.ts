@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { config } from "../config/config";
 import logger from "../utils/logger";
-import { sharedStateStore } from "./sharedStateStore";
+import { SharedStateLockedError, sharedStateStore } from "./sharedStateStore";
 
 export type ProfileVerificationMethod = "password" | "totp" | "passkey";
 
@@ -14,6 +14,7 @@ export interface ProfileVerificationSession {
 }
 
 interface PendingEmailChangeChallenge {
+  challengeId: string;
   userId: string;
   newEmail: string;
   code: string;
@@ -322,15 +323,26 @@ export async function createEmailChangeChallenge(
 ): Promise<{
   success: boolean;
   code?: string;
+  challengeId?: string;
   retryAfterMs?: number;
   error?: string;
 }> {
+  try {
+    return await sharedStateStore.withLock(`${emailChallengeKey(userId)}:lock`, 30_000, () =>
+      createEmailChangeChallengeUnlocked(userId, newEmail),
+    );
+  } catch (error) {
+    if (!(error instanceof SharedStateLockedError)) throw error;
+    return { success: false, retryAfterMs: 1_000, error: "验证码操作正在进行，请稍后重试" };
+  }
+}
+
+async function createEmailChangeChallengeUnlocked(userId: string, newEmail: string) {
   const now = Date.now();
   const existing = await sharedStateStore.get<PendingEmailChangeChallenge>(emailChallengeKey(userId));
 
   if (
     existing &&
-    existing.newEmail === newEmail &&
     now - existing.lastSentAt < EMAIL_CHANGE_RESEND_INTERVAL_MS
   ) {
     return {
@@ -341,6 +353,7 @@ export async function createEmailChangeChallenge(
   }
 
   const challenge: PendingEmailChangeChallenge = {
+    challengeId: crypto.randomUUID(),
     userId,
     newEmail,
     code: generateEmailCode(),
@@ -355,6 +368,7 @@ export async function createEmailChangeChallenge(
   return {
     success: true,
     code: challenge.code,
+    challengeId: challenge.challengeId,
   };
 }
 
@@ -367,6 +381,17 @@ export async function validateEmailChangeChallenge(
   status: number;
   error?: string;
 }> {
+  try {
+    return await sharedStateStore.withLock(`${emailChallengeKey(userId)}:lock`, 30_000, () =>
+      validateEmailChangeChallengeUnlocked(userId, newEmail, code),
+    );
+  } catch (error) {
+    if (!(error instanceof SharedStateLockedError)) throw error;
+    return { success: false, status: 429, error: "验证码操作正在进行，请稍后重试" };
+  }
+}
+
+async function validateEmailChangeChallengeUnlocked(userId: string, newEmail: string, code: string) {
   const key = emailChallengeKey(userId);
   const challenge = await sharedStateStore.get<PendingEmailChangeChallenge>(key);
   if (!challenge) {
@@ -434,8 +459,19 @@ export async function validateEmailChangeChallenge(
   };
 }
 
-export async function clearEmailChangeChallenge(userId: string): Promise<void> {
-  await sharedStateStore.delete(emailChallengeKey(userId));
+export async function clearEmailChangeChallenge(
+  userId: string,
+  expectedChallengeId?: string,
+  expectedCode?: string,
+): Promise<void> {
+  await sharedStateStore.withLock(`${emailChallengeKey(userId)}:lock`, 30_000, async () => {
+    const key = emailChallengeKey(userId);
+    const current = await sharedStateStore.get<PendingEmailChangeChallenge>(key);
+    // A slow failed send or profile save must not erase a more recent challenge.
+    if (expectedChallengeId && current?.challengeId !== expectedChallengeId) return;
+    if (expectedCode && current?.code !== expectedCode) return;
+    await sharedStateStore.delete(key);
+  });
 }
 
 function generateEmailCode(length = 6): string {

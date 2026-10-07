@@ -73,7 +73,7 @@ const PrizeDisplay: React.FC<{ prize: any }> = ({ prize }) => {
 // 抽奖轮次卡片组件
 export const LotteryRoundCard: React.FC<{
   round: LotteryRound;
-  /** 三家供应商共用同一套下发链路：提交时把令牌 + 供应商一起交给后端。 */
+  /** 返回 false 表示并发请求被拦下，当前令牌尚未发送。 */
   onParticipate: (roundId: string, challenge?: ManagedCaptchaChallenge | null) => Promise<boolean>;
   /** 是否正在参与抽奖（仅用于禁用按钮与按钮内进度，不再替换整份列表） */
   loading: boolean;
@@ -100,14 +100,16 @@ export const LotteryRoundCard: React.FC<{
   const onCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
   const hasParticipated = round.participants.includes(user?.id || '');
   const isActive = round.isActive && Date.now() >= round.startTime && Date.now() <= round.endTime;
+  const captchaUnavailable = !isAdmin && (captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token));
   const handleParticipate = async () => {
     if (submittingRef.current || loading || !isActive || hasParticipated) return;
-    if (!isAdmin && (captchaStatus.loading || captchaStatus.error || (captchaStatus.required && !captcha?.token))) return;
+    if (captchaUnavailable) return;
     submittingRef.current = true;
+    let requestSent = true;
     try {
-      const sent = await onParticipate(round.id, isAdmin ? null : captcha);
-      if (sent && captcha?.token) captchaRef.current?.reset();
+      requestSent = await onParticipate(round.id, isAdmin ? null : captcha);
     } finally {
+      if (requestSent && captcha?.token) captchaRef.current?.reset(captcha.token);
       submittingRef.current = false;
     }
   };
@@ -161,9 +163,9 @@ export const LotteryRoundCard: React.FC<{
           <div className="flex flex-col gap-2">
             <motion.button
               onClick={() => { void handleParticipate(); }}
-              disabled={!isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)}
+              disabled={!isActive || hasParticipated || loading || captchaUnavailable}
               className={`${
-                !isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)
+                !isActive || hasParticipated || loading || captchaUnavailable
                   ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500'
                   : studioPrimaryButtonClassName
               }`}

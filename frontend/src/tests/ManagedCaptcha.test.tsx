@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -95,8 +95,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     render(<ManagedCaptcha onStatusChange={(status) => statuses.push(status)} />);
 
-    await waitFor(() => expect(statuses.length).toBeGreaterThan(0));
-    expect(statuses.at(-1)).toMatchObject({ required: false, loading: false, provider: null, solved: false });
+    await waitFor(() => expect(statuses.at(-1)).toMatchObject({ required: false, loading: false, provider: null, solved: false }));
     expect(screen.queryByTestId('turnstile-widget')).toBeNull();
     expect(screen.queryByTestId('hcaptcha-widget')).toBeNull();
     expect(screen.queryByTestId('trycap-widget')).toBeNull();
@@ -121,7 +120,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     render(<ManagedCaptcha onSolved={onSolved} />);
 
     const button = await screen.findByText('solve-turnstile');
-    button.click();
+    fireEvent.click(button);
 
     await waitFor(() =>
       expect(onSolved).toHaveBeenCalledWith({ token: 'tok-turnstile', provider: 'turnstile' }),
@@ -134,7 +133,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     setSelection({ enabled: true, siteKey: 'hc-site', captchaConfig: { captchaType: 'hcaptcha' } });
 
     const { unmount } = render(<ManagedCaptcha onSolved={onSolved} />);
-    (await screen.findByText('solve-hcaptcha')).click();
+    fireEvent.click(await screen.findByText('solve-hcaptcha'));
     await waitFor(() => expect(onSolved).toHaveBeenCalledWith({ token: 'tok-hcaptcha', provider: 'hcaptcha' }));
     unmount();
 
@@ -146,7 +145,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
       apiEndpoint: 'https://cap.example.com',
     });
     render(<ManagedCaptcha onSolved={onSolved} />);
-    (await screen.findByText('solve-trycap')).click();
+    fireEvent.click(await screen.findByText('solve-trycap'));
     await waitFor(() => expect(onSolved).toHaveBeenCalledWith({ token: 'tok-trycap', provider: 'trycap' }));
   });
 
@@ -163,7 +162,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     render(<ManagedCaptcha onCleared={onCleared} />);
 
-    (await screen.findByText('fail-turnstile')).click();
+    fireEvent.click(await screen.findByText('fail-turnstile'));
 
     await waitFor(() =>
       expect(regenerate).toHaveBeenCalledWith({ exclude: ['turnstile'] }),
@@ -176,7 +175,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     render(<ManagedCaptcha onCleared={onCleared} />);
 
-    (await screen.findByText('expire-turnstile')).click();
+    fireEvent.click(await screen.findByText('expire-turnstile'));
 
     await waitFor(() => expect(onCleared).toHaveBeenCalled());
     expect(await screen.findByRole('alert')).toHaveTextContent('验证已过期');
@@ -203,7 +202,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     render(<ManagedCaptcha onSolved={onSolved} onCleared={onCleared} />);
 
-    (await screen.findByText('solve-trycap')).click();
+    fireEvent.click(await screen.findByText('solve-trycap'));
     await waitFor(() =>
       expect(onSolved).toHaveBeenCalledWith({ token: 'tok-trycap', provider: 'trycap' }),
     );
@@ -233,7 +232,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     await screen.findByTestId('trycap-widget');
     // 尚未解出就收到 reset：Cap 控件在重挂/内部重取挑战时就会这样，不能当成「页面令牌失效」。
-    lastWidgetProps.trycap?.onExpire?.();
+    act(() => lastWidgetProps.trycap?.onExpire?.());
 
     await waitFor(() => expect(screen.getByTestId('trycap-widget')).toBeInTheDocument());
     expect(screen.queryByRole('alert')).toBeNull();
@@ -320,6 +319,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     expect(screen.getByTestId('turnstile-widget')).toBeVisible();
     act(() => lastWidgetProps.turnstile.onVerify('second-token'));
     act(() => notifyCaptchaFailure({ error: '人机验证失败，请重试' }, { captchaToken: 'first-token' }, 400));
+    act(() => ref.current?.reset('first-token'));
     expect(onCleared).toHaveBeenCalledTimes(1);
     expect(screen.getByText('人机验证通过')).toBeInTheDocument();
   });

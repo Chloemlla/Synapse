@@ -4,6 +4,8 @@ import { fetchWithTimeout } from './fetchWithTimeout';
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 import { api } from '../api/api';
 
+// Exercise real interceptors with an in-memory adapter; the global axios stub has none.
+vi.unmock('axios');
 vi.mock('./fingerprint', () => ({ reportFingerprintOnce: vi.fn() }));
 vi.mock('./ipVerification', () => ({
     buildIpVerificationHeaders: async () => ({}),
@@ -39,6 +41,7 @@ describe('captcha recovery notifications', () => {
 
     it('recognizes HTTP 200 business failures but ignores ordinary success text', () => {
         expect(notifyCaptchaFailure({ success: false, error: 'Turnstile 验证失败' }, {}, 200)).toBe(true);
+        expect(notifyCaptchaFailure({ error: '人机验证失败，请重试' }, {}, 200)).toBe(true);
         expect(notifyCaptchaFailure({ message: '人机验证失败，请重试' }, {}, 200)).toBe(false);
         expect(notifyCaptchaFailure({ reason: 'VERIFICATION_FAILED', success: false }, { captchaToken: 'a' }, 200)).toBe(true);
     });

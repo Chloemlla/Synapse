@@ -704,7 +704,7 @@ const ImageUploadPage: React.FC = () => {
       setNotification({ message: friendly, type: 'error' });
       console.error('[图片上传] 异常:', e);
     } finally {
-      if (!isAdmin && captcha?.token) captchaRef.current?.reset();
+      if (!isAdmin && captcha?.token) captchaRef.current?.reset(captcha.token);
       submittingRef.current = false;
       setUploading(false);
     }
@@ -723,304 +723,304 @@ const ImageUploadPage: React.FC = () => {
 
     setBatchUploading(true);
     submittingRef.current = true;
+    let lastSubmittedCaptchaToken: string | undefined;
     try {
-    setBatchDone(0);
-    // F5-04：整批共用一个 AbortController，「取消上传」可中止在途请求与等待
-    const controller = new AbortController();
-    batchAbortRef.current = controller;
-    const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
+      setBatchDone(0);
+      // F5-04：整批共用一个 AbortController，「取消上传」可中止在途请求与等待
+      const controller = new AbortController();
+      batchAbortRef.current = controller;
+      const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
 
-    // G12-02：逐文件结果收集到局部数组，收尾统计/清理全部基于局部数据，避免读到过期闭包
-    const results: Array<{ name: string; ok: boolean }> = [];
-    const uploadResults: { [key: string]: { web2url: string; shortUrl?: string } } = {};
+      // G12-02：逐文件结果收集到局部数组，收尾统计/清理全部基于局部数据，避免读到过期闭包
+      const results: Array<{ name: string; ok: boolean }> = [];
+      const uploadResults: { [key: string]: { web2url: string; shortUrl?: string } } = {};
 
-    console.log('[批量上传] 开始上传，文件数量:', batchFiles.length);
+      console.log('[批量上传] 开始上传，文件数量:', batchFiles.length);
 
-    // 逐个上传文件
-    for (let i = 0; i < batchFiles.length; i++) {
-      const file = batchFiles[i];
-      const fileName = file.name;
+      // 逐个上传文件
+      for (let i = 0; i < batchFiles.length; i++) {
+        const file = batchFiles[i];
+        const fileName = file.name;
 
-      if (controller.signal.aborted) break;
+        if (controller.signal.aborted) break;
 
-      try {
-        // 更新进度状态
-        setBatchProgress(prev => ({
-          ...prev,
-          [fileName]: { status: 'uploading', progress: 0 }
-        }));
-
-        // G12-01：每个文件都需要一个「一次性」挑战令牌（后端逐请求校验）。
-        // 第 1 个文件复用用户已完成的验证；后续文件重置控件等待新令牌。
-        let challenge: ManagedCaptchaChallenge | null = null;
-        if (!isAdmin && captchaStatus.required) {
-          if (i === 0 && captchaChallengeRef.current) {
-            challenge = captchaChallengeRef.current;
-          } else {
-            challenge = await obtainFreshCaptcha(controller.signal);
-            if (controller.signal.aborted) break;
-            if (!challenge) {
-              const errorMsg = '人机验证失败或超时，请重试';
-              results.push({ name: fileName, ok: false });
-              setBatchProgress(prev => ({
-                ...prev,
-                [fileName]: { status: 'error', error: errorMsg }
-              }));
-              console.error(`[批量上传] 文件 ${fileName} 人机验证失败`);
-              continue;
-            }
-          }
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('source', 'batch-imgupload'); // 标记批量上传来源
-        appendCaptchaFields(formData, challenge);
-
-        console.log(`[批量上传] 上传文件 ${i + 1}/${batchFiles.length}:`, fileName);
-
-        const res = await fetch(uploadUrl, {
-          method: 'POST',
-          body: formData,
-          credentials: 'include', // G12-01：与单文件路径对齐，带登录态
-          signal: controller.signal,
-        });
-
-        const result = await res.json();
-
-        if (result?.data?.web2url) {
-          // 上传成功
-          const shortUrl = result.data.shortUrl || null;
-          results.push({ name: fileName, ok: true });
-          uploadResults[fileName] = { web2url: result.data.web2url, shortUrl: shortUrl || undefined };
+        try {
+          // 更新进度状态
           setBatchProgress(prev => ({
             ...prev,
-            [fileName]: { status: 'success', progress: 100, shortUrl }
+            [fileName]: { status: 'uploading', progress: 0 }
           }));
 
-          // 保存上传结果
-          setBatchUploadResults(prev => ({
-            ...prev,
-            [fileName]: {
-              web2url: result.data.web2url,
-              shortUrl: shortUrl || undefined
+          // G12-01：每个文件都需要一个「一次性」挑战令牌（后端逐请求校验）。
+          // 第 1 个文件复用用户已完成的验证；后续文件重置控件等待新令牌。
+          let challenge: ManagedCaptchaChallenge | null = null;
+          if (!isAdmin && captchaStatus.required) {
+            if (i === 0 && captchaChallengeRef.current) {
+              challenge = captchaChallengeRef.current;
+            } else {
+              challenge = await obtainFreshCaptcha(controller.signal);
+              if (controller.signal.aborted) break;
+              if (!challenge) {
+                const errorMsg = '人机验证失败或超时，请重试';
+                results.push({ name: fileName, ok: false });
+                setBatchProgress(prev => ({
+                  ...prev,
+                  [fileName]: { status: 'error', error: errorMsg }
+                }));
+                console.error(`[批量上传] 文件 ${fileName} 人机验证失败`);
+                continue;
+              }
             }
-          }));
-
-          // 生成图片数据验证信息
-          let imageId: string;
-          let fileHash: string;
-          let md5Hash: string;
-
-          try {
-            imageId = generateImageId();
-            const fileArrayBuffer = await file.arrayBuffer();
-            fileHash = await generateFileHash(fileArrayBuffer);
-            md5Hash = generateMD5Hash(fileArrayBuffer);
-          } catch (error) {
-            console.error('[批量上传] 哈希生成失败:', error);
-            imageId = generateImageId();
-            fileHash = 'hash-generation-failed';
-            md5Hash = 'md5-generation-failed';
           }
 
-          // 保存到本地存储
-          const imageData = {
-            imageId,
-            cid: result.data.cid || '',
-            url: result.data.url || '',
-            web2url: result.data.web2url,
-            fileSize: file.size,
-            fileName: file.name,
-            uploadTime: new Date().toISOString(),
-            fileHash,
-            md5Hash
-          };
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('source', 'batch-imgupload'); // 标记批量上传来源
+          appendCaptchaFields(formData, challenge);
 
-          try {
-            await saveImageToStorage(imageData);
-            console.log(`[批量上传] 文件 ${fileName} 已保存到本地存储`);
-          } catch (error) {
-            console.error('[批量上传] 保存到本地存储失败:', error);
-          }
+          console.log(`[批量上传] 上传文件 ${i + 1}/${batchFiles.length}:`, fileName);
 
-          // 记录到后端数据库
-          try {
-            await imageDataApi.recordImageData({
+          lastSubmittedCaptchaToken = challenge?.token;
+          const res = await fetch(uploadUrl, {
+            method: 'POST',
+            body: formData,
+            credentials: 'include', // G12-01：与单文件路径对齐，带登录态
+            signal: controller.signal,
+          });
+
+          const result = await res.json();
+
+          if (result?.data?.web2url) {
+            // 上传成功
+            const shortUrl = result.data.shortUrl || null;
+            results.push({ name: fileName, ok: true });
+            uploadResults[fileName] = { web2url: result.data.web2url, shortUrl: shortUrl || undefined };
+            setBatchProgress(prev => ({
+              ...prev,
+              [fileName]: { status: 'success', progress: 100, shortUrl }
+            }));
+
+            // 保存上传结果
+            setBatchUploadResults(prev => ({
+              ...prev,
+              [fileName]: {
+                web2url: result.data.web2url,
+                shortUrl: shortUrl || undefined
+              }
+            }));
+
+            // 生成图片数据验证信息
+            let imageId: string;
+            let fileHash: string;
+            let md5Hash: string;
+
+            try {
+              imageId = generateImageId();
+              const fileArrayBuffer = await file.arrayBuffer();
+              fileHash = await generateFileHash(fileArrayBuffer);
+              md5Hash = generateMD5Hash(fileArrayBuffer);
+            } catch (error) {
+              console.error('[批量上传] 哈希生成失败:', error);
+              imageId = generateImageId();
+              fileHash = 'hash-generation-failed';
+              md5Hash = 'md5-generation-failed';
+            }
+
+            // 保存到本地存储
+            const imageData = {
               imageId,
-              fileName: file.name,
-              fileSize: file.size,
-              fileHash,
-              md5Hash,
-              web2url: result.data.web2url,
               cid: result.data.cid || '',
-              uploadTime: new Date().toISOString()
-            });
-            console.log(`[批量上传] 文件 ${fileName} 已记录到后端数据库`);
-          } catch (error) {
-            console.error('[批量上传] 记录到后端失败:', error);
-          }
+              url: result.data.url || '',
+              web2url: result.data.web2url,
+              fileSize: file.size,
+              fileName: file.name,
+              uploadTime: new Date().toISOString(),
+              fileHash,
+              md5Hash
+            };
 
-          console.log(`[批量上传] 文件 ${fileName} 上传成功`);
-        } else {
-          // 上传失败
-          const errorMsg = toUploadErrorMessage(result?.error, '上传失败，请稍后重试');
+            try {
+              await saveImageToStorage(imageData);
+              console.log(`[批量上传] 文件 ${fileName} 已保存到本地存储`);
+            } catch (error) {
+              console.error('[批量上传] 保存到本地存储失败:', error);
+            }
+
+            // 记录到后端数据库
+            try {
+              await imageDataApi.recordImageData({
+                imageId,
+                fileName: file.name,
+                fileSize: file.size,
+                fileHash,
+                md5Hash,
+                web2url: result.data.web2url,
+                cid: result.data.cid || '',
+                uploadTime: new Date().toISOString()
+              });
+              console.log(`[批量上传] 文件 ${fileName} 已记录到后端数据库`);
+            } catch (error) {
+              console.error('[批量上传] 记录到后端失败:', error);
+            }
+
+            console.log(`[批量上传] 文件 ${fileName} 上传成功`);
+          } else {
+            // 上传失败
+            const errorMsg = toUploadErrorMessage(result?.error, '上传失败，请稍后重试');
+            results.push({ name: fileName, ok: false });
+            setBatchProgress(prev => ({
+              ...prev,
+              [fileName]: { status: 'error', error: errorMsg }
+            }));
+            console.error(`[批量上传] 文件 ${fileName} 上传失败:`, result?.error);
+          }
+        } catch (error: any) {
+          if (controller.signal.aborted) {
+            console.log(`[批量上传] 已取消，文件 ${fileName} 未完成`);
+            break;
+          }
+          const errorMsg = toUploadErrorMessage(error, '上传异常，请稍后重试');
           results.push({ name: fileName, ok: false });
           setBatchProgress(prev => ({
             ...prev,
             [fileName]: { status: 'error', error: errorMsg }
           }));
-          console.error(`[批量上传] 文件 ${fileName} 上传失败:`, result?.error);
+          console.error(`[批量上传] 文件 ${fileName} 上传异常:`, error);
         }
-      } catch (error: any) {
-        if (controller.signal.aborted) {
-          console.log(`[批量上传] 已取消，文件 ${fileName} 未完成`);
-          break;
+
+        setBatchDone(results.length);
+
+        // 添加延迟，避免请求过于频繁；取消时立即结束等待
+        if (i < batchFiles.length - 1) {
+          await new Promise<void>((resolve) => {
+            const timer = window.setTimeout(() => resolve(), 500);
+            controller.signal.addEventListener('abort', () => {
+              window.clearTimeout(timer);
+              resolve();
+            }, { once: true });
+          });
         }
-        const errorMsg = toUploadErrorMessage(error, '上传异常，请稍后重试');
-        results.push({ name: fileName, ok: false });
-        setBatchProgress(prev => ({
-          ...prev,
-          [fileName]: { status: 'error', error: errorMsg }
-        }));
-        console.error(`[批量上传] 文件 ${fileName} 上传异常:`, error);
       }
 
-      setBatchDone(results.length);
-
-      // 添加延迟，避免请求过于频繁；取消时立即结束等待
-      if (i < batchFiles.length - 1) {
-        await new Promise<void>((resolve) => {
-          const timer = window.setTimeout(() => resolve(), 500);
-          controller.signal.addEventListener('abort', () => {
-            window.clearTimeout(timer);
-            resolve();
-          }, { once: true });
-        });
-      }
-    }
-
-    // F5-04：用户主动取消：保留队列（未完成项回到「等待上传」），不进入成功项收敛逻辑
-    if (controller.signal.aborted) {
-      setBatchProgress(prev => {
-        const next = { ...prev };
-        for (const name of Object.keys(next)) {
-          if (next[name].status === 'uploading') next[name] = { status: 'pending' };
-        }
-        return next;
-      });
-      setNotification({
-        message: `已取消上传：已完成 ${results.length}/${batchFiles.length} 个，其余保留在队列中`,
-        type: 'warning'
-      });
-      return;
-    }
-
-    // G12-02：基于局部结果统计，而非渲染期闭包里的过期 state
-    const successCount = results.filter(r => r.ok).length;
-    const errorCount = results.length - successCount;
-    const successfulFiles = batchFiles.filter(file =>
-      results.some(r => r.name === file.name && r.ok)
-    );
-
-    // 重新加载图片列表，确保显示所有成功上传的文件
-    try {
-      const freshImages = await reloadImages();
-      console.log('[批量上传] 本地图片列表已重新加载');
-
-      // 为成功上传的图片添加闪烁效果
-      if (successfulFiles.length > 0) {
-        // 获取新上传的图片ID用于闪烁效果
-        const newImageIds = new Set<string>();
-
-        // 延迟一点时间确保图片列表已经更新
-        setTimeout(() => {
-          for (const file of successfulFiles) {
-            const result = uploadResults[file.name];
-            if (result) {
-              // 通过文件名和web2url来匹配新上传的图片
-              const newImage = freshImages.find(img =>
-                img.fileName === file.name && img.web2url === result.web2url
-              );
-              if (newImage) {
-                newImageIds.add(newImage.imageId);
-              }
-            }
+      // F5-04：用户主动取消：保留队列（未完成项回到「等待上传」），不进入成功项收敛逻辑
+      if (controller.signal.aborted) {
+        setBatchProgress(prev => {
+          const next = { ...prev };
+          for (const name of Object.keys(next)) {
+            if (next[name].status === 'uploading') next[name] = { status: 'pending' };
           }
-
-          // 设置闪烁效果
-          setFlashingImages(newImageIds);
-
-          // 3秒后清除闪烁效果
-          setTimeout(() => {
-            setFlashingImages(new Set());
-          }, 3000);
-        }, 100);
-      }
-    } catch (error) {
-      console.error('[批量上传] 重新加载图片列表失败:', error);
-    }
-
-    if (successCount > 0) {
-      // 显示成功上传的文件列表
-      const successfulFileNames = successfulFiles.map(file => sanitizeDisplayText(file.name)).join(', ');
-
-      // 根据上传结果显示不同的通知
-      if (successCount === batchFiles.length) {
-        // 全部成功
-        setNotification({
-          message: `批量上传完成！所有 ${successCount} 个文件上传成功。相关信息请在页面下方的"本地存储管理"区域查看。`,
-          type: 'success'
+          return next;
         });
-      } else {
-        // 部分成功
         setNotification({
-          message: `批量上传完成！成功 ${successCount} 个，失败 ${errorCount} 个。成功上传的文件信息请在页面下方的"本地存储管理"区域查看。`,
+          message: `已取消上传：已完成 ${results.length}/${batchFiles.length} 个，其余保留在队列中`,
           type: 'warning'
         });
+        return;
       }
 
-      // F5-29：失败项保留在队列里并带回错误原因，用户可以就地重传，而不是回本地重挑
-      const failedFiles = batchFiles.filter(file =>
-        results.some(r => r.name === file.name && !r.ok)
+      // G12-02：基于局部结果统计，而非渲染期闭包里的过期 state
+      const successCount = results.filter(r => r.ok).length;
+      const errorCount = results.length - successCount;
+      const successfulFiles = batchFiles.filter(file =>
+        results.some(r => r.name === file.name && r.ok)
       );
-      setBatchFiles(failedFiles);
 
-      // 进度表按本次结果重建：成功项标成功，失败项保留原因（从函数式更新里读最新值）
-      setBatchProgress(prev => {
-        const next: typeof prev = {};
-        for (const r of results) {
-          if (r.ok) {
-            next[r.name] = { status: 'success', progress: 100 };
-          } else {
-            next[r.name] = { status: 'error', error: prev[r.name]?.error || '上传失败，请重试' };
-          }
+      // 重新加载图片列表，确保显示所有成功上传的文件
+      try {
+        const freshImages = await reloadImages();
+        console.log('[批量上传] 本地图片列表已重新加载');
+
+        // 为成功上传的图片添加闪烁效果
+        if (successfulFiles.length > 0) {
+          // 获取新上传的图片ID用于闪烁效果
+          const newImageIds = new Set<string>();
+
+          // 延迟一点时间确保图片列表已经更新
+          setTimeout(() => {
+            for (const file of successfulFiles) {
+              const result = uploadResults[file.name];
+              if (result) {
+                // 通过文件名和web2url来匹配新上传的图片
+                const newImage = freshImages.find(img =>
+                  img.fileName === file.name && img.web2url === result.web2url
+                );
+                if (newImage) {
+                  newImageIds.add(newImage.imageId);
+                }
+              }
+            }
+
+            // 设置闪烁效果
+            setFlashingImages(newImageIds);
+
+            // 3秒后清除闪烁效果
+            setTimeout(() => {
+              setFlashingImages(new Set());
+            }, 3000);
+          }, 100);
         }
-        return next;
-      });
-
-      // 如果所有文件都上传成功，隐藏批量上传列表
-      if (successCount === batchFiles.length) {
-        setShowBatchList(false);
+      } catch (error) {
+        console.error('[批量上传] 重新加载图片列表失败:', error);
       }
 
-      // 显示成功上传的文件已添加到本地历史记录
-      console.log(`[批量上传] 成功上传的文件已添加到本地历史记录：`, successfulFileNames);
-    } else {
-      // 全部失败
-      setNotification({
-        message: `批量上传失败！所有 ${errorCount} 个文件上传失败，请检查网络连接或文件格式后重试。`,
-        type: 'error'
-      });
-    }
+      if (successCount > 0) {
+        // 显示成功上传的文件列表
+        const successfulFileNames = successfulFiles.map(file => sanitizeDisplayText(file.name)).join(', ');
+
+        // 根据上传结果显示不同的通知
+        if (successCount === batchFiles.length) {
+          // 全部成功
+          setNotification({
+            message: `批量上传完成！所有 ${successCount} 个文件上传成功。相关信息请在页面下方的"本地存储管理"区域查看。`,
+            type: 'success'
+          });
+        } else {
+          // 部分成功
+          setNotification({
+            message: `批量上传完成！成功 ${successCount} 个，失败 ${errorCount} 个。成功上传的文件信息请在页面下方的"本地存储管理"区域查看。`,
+            type: 'warning'
+          });
+        }
+
+        // F5-29：失败项保留在队列里并带回错误原因，用户可以就地重传，而不是回本地重挑
+        const failedFiles = batchFiles.filter(file =>
+          results.some(r => r.name === file.name && !r.ok)
+        );
+        setBatchFiles(failedFiles);
+
+        // 进度表按本次结果重建：成功项标成功，失败项保留原因（从函数式更新里读最新值）
+        setBatchProgress(prev => {
+          const next: typeof prev = {};
+          for (const r of results) {
+            if (r.ok) {
+              next[r.name] = { status: 'success', progress: 100 };
+            } else {
+              next[r.name] = { status: 'error', error: prev[r.name]?.error || '上传失败，请重试' };
+            }
+          }
+          return next;
+        });
+
+        // 如果所有文件都上传成功，隐藏批量上传列表
+        if (successCount === batchFiles.length) {
+          setShowBatchList(false);
+        }
+
+        // 显示成功上传的文件已添加到本地历史记录
+        console.log(`[批量上传] 成功上传的文件已添加到本地历史记录：`, successfulFileNames);
+      } else {
+        // 全部失败
+        setNotification({
+          message: `批量上传失败！所有 ${errorCount} 个文件上传失败，请检查网络连接或文件格式后重试。`,
+          type: 'error'
+        });
+      }
 
     } finally {
       setBatchUploading(false);
       submittingRef.current = false;
       batchAbortRef.current = null;
-      setCaptcha(null);
-      captchaChallengeRef.current = null;
-      captchaRef.current?.reset();
+      if (lastSubmittedCaptchaToken) captchaRef.current?.reset(lastSubmittedCaptchaToken);
     }
   };
 

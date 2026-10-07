@@ -284,7 +284,7 @@ export const LoginPage: React.FC = () => {
             }
             if (result && result.requires2FA && result.twoFactorType) {
                 // 密码步骤已消费令牌；二次验证取消或过期后重新登录需要新挑战。
-                if (captcha?.token) captchaRef.current?.reset();
+                if (captcha?.token) captchaRef.current?.reset(captcha.token);
                 setNotification({ message: '需要二次验证，请选择验证方式', type: 'info' });
                 setPendingToken(result.token);
                 const verificationTypes = result.twoFactorType;
@@ -315,9 +315,9 @@ export const LoginPage: React.FC = () => {
             const authError = err as AuthRequestError;
             const attemptFeedback = buildLoginAttemptStatus(authError);
             if (attemptFeedback) setAttemptStatus(attemptFeedback);
-            if (captchaStatus.required) {
+            if (captcha?.token) {
                 // 挑战令牌一次性：失败后必须重新验证（reset 会清状态并重挂控件）
-                captchaRef.current?.reset();
+                captchaRef.current?.reset(captcha.token);
             }
             setError(authError.message || '登录失败'); setNotification({ message: authError.message || '登录失败', type: 'error' });
         } finally { submittingRef.current = false; setLoading(false); }

@@ -42,6 +42,7 @@ export async function sendProviderGeneratedPasswordEmail(params: {
       logTag: "第三方注册通知",
       // 安全/账户事件通知（由合法操作触发，不可被匿名滥用），不占用也不受验证码发送配额限制。
       checkQuota: false,
+      purpose: "transactional",
     });
 
     if (!result.success) {

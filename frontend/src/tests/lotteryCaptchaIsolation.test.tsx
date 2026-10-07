@@ -27,7 +27,8 @@ function round(id: string): LotteryRound {
   return {
     id, name: id, description: '', participants: [], winners: [], prizes: [],
     isActive: true, startTime: Date.now() - 1000, endTime: Date.now() + 60000,
-  } as LotteryRound;
+    blockchainHeight: 1, seed: `seed-${id}`,
+  };
 }
 
 describe('lottery card challenge isolation', () => {

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/api';
+import { useEmailQuota } from '../hooks/useEmailQuota';
+import { useEmailCooldown } from '../hooks/useEmailCooldown';
+import { getBackendErrorMessage } from '../utils/backendError';
+import { buildEmailDeliveryNotice } from '../utils/emailDelivery';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaEnvelope, FaShieldAlt, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaSync, FaArrowLeft, FaUserSecret } from 'react-icons/fa';
@@ -18,6 +22,7 @@ const OutEmail: React.FC = () => {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
+  const [deliveryWarning, setDeliveryWarning] = useState(false);
   const [error, setError] = useState('');
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const [fromUser, setFromUser] = useState('noreply');
@@ -29,7 +34,9 @@ const OutEmail: React.FC = () => {
   const [domainExemptionStatus, setDomainExemptionStatus] = useState<{ exempted: boolean; message?: string } | null>(null);
   const [checkingExemption, setCheckingExemption] = useState(false);
   const { setNotification } = useNotification();
-  const [quota, setQuota] = useState<{ used: number; total: number; resetAt: string } | null>(null);
+  const { quota, loading: quotaLoading, refresh: refreshQuota } = useEmailQuota('/api/outemail/quota');
+  const { seconds: cooldownSeconds, applyCooldown } = useEmailCooldown();
+  const sendingRef = React.useRef(false);
 
   const [remoteAttachmentUrls, setRemoteAttachmentUrls] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -77,18 +84,9 @@ const OutEmail: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    const fetchQuota = async () => {
-      try {
-        const { data } = await api.get('/api/outemail/quota');
-        if (data?.success) {
-          setQuota({ used: Number(data.used) || 0, total: Number(data.total) || 0, resetAt: String(data.resetAt || '') });
-        }
-      } catch { }
-    };
-    fetchQuota();
-    const t = setInterval(fetchQuota, 30_000);
-    return () => clearInterval(t);
-  }, []);
+    const timer = setInterval(() => { void refreshQuota(); }, 30_000);
+    return () => clearInterval(timer);
+  }, [refreshQuota]);
 
   const checkDomainExemption = async () => {
     if (!selectedDomain) {
@@ -138,7 +136,8 @@ const OutEmail: React.FC = () => {
   };
 
   const handleSend = async () => {
-    setError(''); setSuccess('');
+    if (!canWrite || sendingRef.current || cooldownSeconds > 0) return;
+    setError(''); setSuccess(''); setDeliveryWarning(false);
     const toTrimmed = to.trim();
     const subjectTrimmed = subject.trim();
     const contentTrimmed = content.trim();
@@ -159,6 +158,7 @@ const OutEmail: React.FC = () => {
     const from = fromUserTrimmed;
     const domain = selectedDomain;
 
+    sendingRef.current = true;
     setLoading(true);
     try {
       if (batchMode) {
@@ -170,28 +170,23 @@ const OutEmail: React.FC = () => {
         if (uniqueRecipients.length === 0) {
           throw new Error('请填写至少一个收件人');
         }
-        if (uniqueRecipients.length > 100) {
-          throw new Error('一次最多发送100个收件人');
+        if (uniqueRecipients.length > 20) {
+          throw new Error('一次最多发送给20位收件人，每分钟也按实际收件人数计数');
         }
         const invalid = uniqueRecipients.filter(r => !emailRegex.test(r));
         if (invalid.length) {
           throw new Error(`存在无效邮箱：${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? ' 等' : ''}`);
         }
         const messages = uniqueRecipients.map(r => ({ to: r, subject: subjectTrimmed, content: contentTrimmed }));
-        const res = await fetch(getApiBaseUrl() + '/api/outemail/batch-send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ messages, code: codeTrimmed, from, displayName: displayNameTrimmed, domain })
+        const { data } = await api.post('/api/outemail/batch-send', {
+          messages, code: codeTrimmed, from, displayName: displayNameTrimmed, domain,
         });
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(txt || '批量发送失败');
-        }
-        const data = await res.json().catch(() => ({}));
+        applyCooldown(data);
         if (data && data.success) {
-          setSuccess(`批量发送成功（${data.ids?.length ?? uniqueRecipients.length} 封）`);
-          setNotification({ message: '批量发送成功', type: 'success' });
+          const notice = buildEmailDeliveryNotice(data.acceptedCount, uniqueRecipients.length);
+          setSuccess(notice.message);
+          setDeliveryWarning(notice.type === 'warning');
+          setNotification(notice);
           setBatchRecipients('');
         } else {
           throw new Error(data?.error || '批量发送失败');
@@ -216,20 +211,16 @@ const OutEmail: React.FC = () => {
         const fileList = await Promise.all(selectedFiles.map(async (f) => ({ filename: f.name, content: await fileToBase64(f) })));
         const attachments = [...remoteList, ...fileList].slice(0, MAX_ATTACHMENTS);
 
-        const res = await fetch(getApiBaseUrl() + '/api/outemail/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ to: toTrimmed, subject: subjectTrimmed, content: contentTrimmed, code: codeTrimmed, from, displayName: displayNameTrimmed, domain, ...(attachments.length ? { attachments } : {}) })
+        const { data } = await api.post('/api/outemail/send', {
+          to: toTrimmed, subject: subjectTrimmed, content: contentTrimmed, code: codeTrimmed,
+          from, displayName: displayNameTrimmed, domain, ...(attachments.length ? { attachments } : {}),
         });
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(txt || '发送失败');
-        }
-        const data = await res.json().catch(() => ({}));
+        applyCooldown(data);
         if (data && data.success) {
-          setSuccess('发送成功');
-          setNotification({ message: '发送成功', type: 'success' });
+          const notice = buildEmailDeliveryNotice(data.acceptedCount, 1);
+          setSuccess(notice.message);
+          setDeliveryWarning(notice.type === 'warning');
+          setNotification(notice);
           setTo('');
           setSubject('');
           setContent('');
@@ -243,10 +234,14 @@ const OutEmail: React.FC = () => {
           throw new Error(data?.error || '发送失败');
         }
       }
+      await refreshQuota();
     } catch (e: any) {
-      setError(e.message || (batchMode ? '批量发送失败' : '发送失败'));
-      setNotification({ message: e.message || (batchMode ? '批量发送失败' : '发送失败'), type: 'error' });
+      applyCooldown(e?.response?.data);
+      const message = getBackendErrorMessage(e, batchMode ? '批量发送失败' : '发送失败');
+      setError(message);
+      setNotification({ message, type: 'error' });
     } finally {
+      sendingRef.current = false;
       setLoading(false);
     }
   };
@@ -314,7 +309,7 @@ const OutEmail: React.FC = () => {
             对外邮件发送
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            支持自定义发件人域名与显示名称，需验证码防止滥用。可单封发送，亦可批量推送至最多 100 个收件人。
+            支持自定义发件人域名与显示名称，需验证码防止滥用。可单封发送，亦可批量推送至最多 20 位收件人，每分钟按实际收件人数计数。
           </p>
 
           <div className="mt-6 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-5 py-4 text-sm leading-7 text-slate-600">
@@ -333,6 +328,7 @@ const OutEmail: React.FC = () => {
       </motion.div>
 
       {/* Quota card */}
+      {!quota && <p role="status" className="text-sm text-slate-500">{quotaLoading ? "正在读取对外发信配额…" : "对外发信配额暂不可用，请稍后刷新"}</p>}
       {quota && (
         <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/82 p-5 shadow-sm backdrop-blur-xl">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -429,7 +425,7 @@ const OutEmail: React.FC = () => {
               onChange={(e) => setBatchMode(e.target.checked)}
               className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
             />
-            批量发送（最多 100 个）
+            批量发送（最多 20 位收件人）
           </label>
         </div>
 
@@ -450,9 +446,9 @@ const OutEmail: React.FC = () => {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200/70 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-700"
+              className={`mt-4 flex items-center gap-2 rounded-2xl border px-5 py-4 text-sm ${deliveryWarning ? 'border-amber-200/70 bg-amber-50/80 text-amber-700' : 'border-emerald-200/70 bg-emerald-50/80 text-emerald-700'}`}
             >
-              <FaCheckCircle className="flex-shrink-0" />
+              {deliveryWarning ? <FaExclamationTriangle className="flex-shrink-0" /> : <FaCheckCircle className="flex-shrink-0" />}
               {success}
             </motion.div>
           )}
@@ -664,7 +660,7 @@ const OutEmail: React.FC = () => {
         <div className="mt-7">
           <motion.button
             onClick={handleSend}
-            disabled={!canWrite || loading}
+            disabled={!canWrite || loading || cooldownSeconds > 0}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
             whileHover={!loading ? { scale: 1.005 } : {}}
             whileTap={!loading ? { scale: 0.995 } : {}}
@@ -677,7 +673,7 @@ const OutEmail: React.FC = () => {
             ) : (
               <>
                 <FaEnvelope className="text-[13px]" />
-                <span>{batchMode ? '批量发送' : '发送邮件'}</span>
+                <span>{cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重试` : batchMode ? '批量发送' : '发送邮件'}</span>
               </>
             )}
           </motion.button>
@@ -712,7 +708,7 @@ const OutEmail: React.FC = () => {
               <li className="flex items-start gap-2"><span className="mt-2 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-400" />确保收件人邮箱格式正确</li>
               <li className="flex items-start gap-2"><span className="mt-2 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-400" />邮件主题应简洁明了</li>
               <li className="flex items-start gap-2"><span className="mt-2 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-400" />内容应文明礼貌</li>
-              <li className="flex items-start gap-2"><span className="mt-2 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-400" />每分钟最多发送 20 封</li>
+              <li className="flex items-start gap-2"><span className="mt-2 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-400" />每分钟最多发送给 20 位收件人（含批量）</li>
             </ul>
           </div>
 

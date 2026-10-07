@@ -176,6 +176,17 @@ function maskSecret(value: string): string {
   return `${value.slice(0, 2)}***${value.slice(-4)}`;
 }
 
+// Older settings pages submit the masked GET value along with unrelated edits.
+// A display placeholder must never replace the credential used to send mail.
+function preserveMaskedEmailSecret(input: unknown, current: string, maxLength: number): string {
+  if (typeof input !== "string" || !input.trim()) return current;
+  const candidate = input.trim();
+  if (candidate === maskSecret(current) || /^\*+$/.test(candidate) || /^.{2}\*{3}.{4}$/.test(candidate)) {
+    return current;
+  }
+  return candidate.slice(0, maxLength);
+}
+
 function buildDeepLXTranslateUrl(baseUrl: string, apiKey: string): string {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
   const keySegment = apiKey.trim() || "<api-key>";
@@ -2468,21 +2479,12 @@ export class RuntimeConfigService {
     const nextConfig: EmailRuntimeConfig = {
       enabled: normalizeBoolean(input.enabled, current.enabled),
       resendDomain: normalizeDomain(input.resendDomain, current.resendDomain),
-      resendApiKey:
-        typeof input.resendApiKey === "string" && input.resendApiKey.trim().length > 0
-          ? input.resendApiKey.trim().slice(0, 2048)
-          : current.resendApiKey,
+      resendApiKey: preserveMaskedEmailSecret(input.resendApiKey, current.resendApiKey, 2048),
       quotaTotal: normalizeInteger(input.quotaTotal, current.quotaTotal, 1, 1_000_000),
       outemailEnabled: normalizeBoolean(input.outemailEnabled, current.outemailEnabled),
       outemailDomain: normalizeDomain(input.outemailDomain, current.outemailDomain),
-      outemailApiKey:
-        typeof input.outemailApiKey === "string" && input.outemailApiKey.trim().length > 0
-          ? input.outemailApiKey.trim().slice(0, 2048)
-          : current.outemailApiKey,
-      outemailCode:
-        typeof input.outemailCode === "string" && input.outemailCode.trim().length > 0
-          ? input.outemailCode.trim().slice(0, 256)
-          : current.outemailCode,
+      outemailApiKey: preserveMaskedEmailSecret(input.outemailApiKey, current.outemailApiKey, 2048),
+      outemailCode: preserveMaskedEmailSecret(input.outemailCode, current.outemailCode, 256),
       outemailQuotaTotal: normalizeInteger(input.outemailQuotaTotal, current.outemailQuotaTotal, 1, 1_000_000),
     };
 

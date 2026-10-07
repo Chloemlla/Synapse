@@ -5,5 +5,8 @@ module.exports = {
   maxWorkers: 1,
   clearMocks: true,
   restoreMocks: true,
+  transform: {
+    "^.+\\.tsx?$": ["ts-jest", { tsconfig: "tsconfig.jest.json" }],
+  },
   verbose: true,
 };

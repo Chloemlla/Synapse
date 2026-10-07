@@ -6,6 +6,8 @@ const mockGetUserById = jest.fn();
 const mockFindOne = jest.fn();
 const mockGetOutEmailCodeFallback = jest.fn(() => "");
 
+jest.mock("../services/emailQuotaService", () => ({}));
+
 jest.mock("../services/apiKeyService", () => ({
   validateApiKey: (...args: unknown[]) => mockValidateApiKey(...args),
   recordUsage: (...args: unknown[]) => mockRecordUsage(...args),
