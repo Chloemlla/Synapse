@@ -32,4 +32,64 @@
 
 ## 4. 覆盖面与局限
 
-审查尚在继续；逐文件阅读清单与未读项将于本轮结束补齐。未访问任何 .env/凭据；未改动现有 `.gitignore` 或其他会话文件。静态证明代表代码路径可达，不等于 CI 或浏览器运行结果。
+用户已要求停止审查并进入修复；本报告以停止时的证据收束，不将未读文件推定为已审。范围内共 50 个文件，完整读取控制流/JSX 的 47 个，未读 3 个。后续批次展示时省略纯 className 字面量与空行，未省略控制流、属性或事件处理；没有做视觉/像素校验。
+
+已逐文件读取（以下路径相对 `frontend/src/components/admin/`）：
+
+- `AdminCommandPalette.tsx`
+- `AdminGuard.tsx`
+- `AdminHub.tsx`
+- `AdminOverviewPanel.tsx`
+- `AdminScopeManager.tsx`
+- `CaptchaProviderAdmin.tsx`
+- `CoinFlipAdmin.tsx`
+- `CrashReportManager.tsx`
+- `DebugConsole.tsx`
+- `IntegrationsHealthPanel.tsx`
+- `IpRiskLogPanel.tsx`
+- `MediaToolAdmin.tsx`
+- `MobileTokenLineagePanel.tsx`
+- `PolicyConsentPanel.tsx`
+- `QqGuardManager.tsx`
+- `SuperAdminGuard.tsx`
+- `adminModules.tsx`
+- `captcha-providers/AllocationTab.tsx`
+- `captcha-providers/OverviewTab.tsx`
+- `captcha-providers/ProvidersTab.tsx`
+- `captcha-providers/QuotaTab.tsx`
+- `captcha-providers/WidgetsTab.tsx`
+- `captcha-providers/api.ts`
+- `captcha-providers/types.ts`
+- `crash-reports/CrashGroupDetailView.tsx`
+- `crash-reports/CrashGroupListView.tsx`
+- `crash-reports/constants.ts`
+- `crash-reports/exporters.ts`
+- `crash-reports/format.ts`
+- `crash-reports/ui.tsx`
+- `ip-risk-log/LookupsTab.tsx`
+- `ip-risk-log/QuotasTab.tsx`
+- `ip-risk-log/RiskCacheTab.tsx`
+- `ip-risk-log/format.ts`
+- `media-tool/BiliPanel.tsx`
+- `media-tool/JobsPanel.tsx`
+- `media-tool/SettingsPanel.tsx`
+- `media-tool/TranscribePanel.tsx`
+- `media-tool/ui.tsx`
+- `policy-consent/PolicyConsentOverviewTab.tsx`
+- `policy-consent/PolicyConsentRecordsTab.tsx`
+- `policy-consent/shared.tsx`
+- `qq-guard/AuditLogPanel.tsx`
+- `qq-guard/CommandPanel.tsx`
+- `qq-guard/TimelineDrawer.tsx`
+- `qq-guard/WhitelistPanel.tsx`
+- `qq-guard/ui.tsx`
+
+停止时未读（没有计入覆盖）：
+
+- `ip-risk-log/OverviewTab.tsx`
+- `ip-risk-log/ProbesTab.tsx`
+- `ip-risk-log/ui.tsx`
+
+只读契约核对：`src/middleware/adminScope.ts`；`src/services/adminScopeConfigService.ts:108-165`（覆盖写）；`src/mediaTool/http/mediaToolHttp.ts` 的 health/settings/cookies/任务重试与删除分支；`frontend/src/api/mediaTool.ts:229-330`；`src/config/adminPages.ts` 与 `frontend/src/navigation/navConfig.ts` 的 media-tool 授权登记。这里只把实际查阅的相关段落作为契约证据，不声称后端全文件审查。
+
+审查期间另一会话产生验证码生命周期相关 WIP；本组已读组件目录截至核对时没有源码 diff，后续读取使用 `git show 15f6c1a2:<path>` 固定基线。报告不把其他会话 WIP 当成已验证修复。未读取任何 .env/凭据，未改动既有文件或暂存区；新增的只有本报告与同组 fe-features 报告。未运行浏览器、测试或 CI，静态可达性与状态转移仍需修复后的 CI/交互验证。

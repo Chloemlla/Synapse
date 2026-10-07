@@ -32,4 +32,33 @@
 
 ## 4. 覆盖面与局限
 
-审查继续中，最终逐文件阅读清单与跳过项随后补齐。无浏览器/运行时/CI 验证，异步行为由静态状态转移证明。未读取 .env 或凭据。
+用户要求停止审查并进入修复，本报告据停止时证据终稿。范围内共 117 个文件；已逐文件读取控制流/JSX 的 28 个，未读 89 个。不能据此声称本组已全量审完。后续读取展示省略纯 className 字面量与空行，未省略控制流/属性/事件；未检查视觉像素。
+
+已读文件（以下路径相对 `frontend/src/components/`，列出的文件均实际读取）：
+
+- `CommandManager/`：`ResourceAnalysisPanel.tsx`、`ResourceTrendChart.tsx`。
+- `MarkdownExportPage/`：`MarkdownPreview.tsx`、`pdfExport.ts`、`useKatex.ts`。
+- `confirm/`：`ConfirmDialogProvider.tsx`。
+- `env-manager/`：`CollapsibleSection.tsx`、`RegistrationInviteConfigSection.tsx`、`RevealKeysSection.tsx`、`SelfContainedCodeSettingSection.tsx`、`SelfContainedEmailSystemSettingsSection.tsx`、`SelfContainedHcaptchaConfigSection.tsx`、`SelfContainedRegistrationInviteConfigSection.tsx`、`SelfContainedSecretKeySection.tsx`、`SelfContainedTurnstileConfigSection.tsx`、`api.ts`、`useEnvSection.ts`。
+- `ip-ban/`：`BanListPanel.tsx`、`ipValidation.ts`。
+- `speech-to-text/`：`SpeechToTextPage.tsx`、`TranscriptView.tsx`。
+- `ticket/`：`TicketComposer.tsx`、`TicketFilters.tsx`。
+- `ui/`：`CredentialIdModal.tsx`。
+- `user-management/`：`RevealPasswordModal.tsx`。
+- `user-profile/`：`DeviceSessionsPanel.tsx`、`PrivacyConsentPanel.tsx`。
+- `webhook-events/`：`webhookEventsShared.ts`。
+
+停止时未读（完整名单；包括未读测试、声明、CSS）：
+
+- `CommandManager/`：`ResourceAnalysisPanel.d.ts`、`ResourceTrendChart.d.ts`。
+- `VtRatioExplorer/`：`Tex.tsx`、`VtArticle.tsx`、`VtFigure.tsx`、`VtReadout.tsx`、`vt-ratios.css`、`vtModel.ts`、`vtReadout.ts`。
+- `env-manager/`：`CDictDonationConfigSection.tsx`、`CDictSigningConfigSection.tsx`、`ClarityConfigSection.tsx`、`CodeSettingSection.tsx`、`ConfigFieldRow.tsx`、`EcoEnchantsTokenSection.tsx`、`EcoEnchantsWebhookSection.tsx`、`EmailSystemSettingsSection.tsx`、`EnvRow.tsx`、`FirstVisitVerificationConfigSection.tsx`、`GithubBillingConfigSection.tsx`、`GoogleClientIdsSection.tsx`、`HcaptchaConfigSection.tsx`、`InfoBox.tsx`、`IpfsConfigSection.tsx`、`LibreChatProvidersSection.tsx`、`LumenServerConfigSection.tsx`、`MediaToolConfigSection.tsx`、`NexaiSigningConfigSection.tsx`、`OutemailSettingsSection.tsx`、`ProjectLumenConfigSection.tsx`、`ProxycheckConfigSection.tsx`、`SecretKeySection.tsx`、`SecuritySecretSection.tsx`、`SelfContainedCDictDonationConfigSection.tsx`、`SelfContainedCDictSigningConfigSection.tsx`、`SelfContainedClarityConfigSection.tsx`、`SelfContainedEcoEnchantsTokenSection.tsx`、`SelfContainedEcoEnchantsWebhookSection.tsx`、`SelfContainedFirstVisitVerificationConfigSection.tsx`、`SelfContainedGithubBillingConfigSection.tsx`、`SelfContainedGoogleClientIdsSection.tsx`、`SelfContainedIpfsConfigSection.tsx`、`SelfContainedLibreChatProvidersSection.tsx`、`SelfContainedLumenServerConfigSection.tsx`、`SelfContainedMediaToolConfigSection.tsx`、`SelfContainedNexaiSigningConfigSection.tsx`、`SelfContainedOutemailSettingsSection.tsx`、`SelfContainedProjectLumenConfigSection.tsx`、`SelfContainedProxycheckConfigSection.tsx`、`SelfContainedQqGuardSigningConfigSection.tsx`、`SelfContainedSecuritySecretSection.tsx`、`SelfContainedSynapseAndroidConfigSection.tsx`、`SynapseAndroidConfigSection.tsx`、`TtsProviderConfigSection.tsx`、`TurnstileConfigSection.tsx`、`configurationNotice.ts`、`motion.ts`、`types.ts`、`utils.ts`。
+- `policy/`：`PolicyConsentStatusPanel.tsx`、`PolicyDataInventoryPanel.tsx`、`PolicyFooter.tsx`、`PolicySearchBar.tsx`、`PolicySectionPanel.tsx`、`PolicyToc.tsx`、`policyCards.tsx`。
+- `ticket/`：`OverLengthMailNotice.tsx`、`TicketHero.tsx`、`TicketListItem.tsx`、`TicketProcessingToast.tsx`、`TicketStatsBar.tsx`、`ticketBadges.tsx`、`ticketConstants.ts`。
+- `ui/`：`Input.tsx`、`button.tsx`、`index.ts`、`scroll-area.tsx`、`separator.tsx`、`sheet.tsx`、`sidebar.tsx`、`skeleton.tsx`、`tooltip.tsx`。
+- `user-management/`：`AdminSecurityPosturePanel.tsx`、`UserFormControls.tsx`、`userManagementShared.ts`。
+- `user-profile/`：`DeviceSessionsPanel.test.tsx`、`ProfileSidebarSummary.tsx`、`SecurityScorecardPanel.tsx`、`profileHelpers.ts`。
+
+辅助核对段落：`frontend/src/components/TicketSystem.tsx:435-452`、`:651-676`、`:1421-1515`（挂载、切换与 onSend）；`frontend/src/components/MarkdownExportPage.tsx:1-130` 及 CommandManager 对辅助组件引用的检索（仅证实接线，非根组件全审）；`frontend/src/hooks/useSecuritySession.ts`；`src/services/runtimeConfigService.ts:1689-1711`（邀请码写入）；`src/routes/admin/config.ts` 的 registration-invite 路由；对 logout 清理仅做关键词检索，未把未证实的内部草稿跨账户问题提为确认。
+
+对 10-03/10-04 既有报告做相关条目去重；仓库有另一会话的验证码生命周期 WIP，未把它们当作本报告已验证修复。无应用、构建、测试、lint、依赖或 CI 执行；未读取 .env/凭据；未修改源码/既有文件或暂存区。两份报告仅是本轮允许新增的审查输出，确认项还需要后续修复与验证。
