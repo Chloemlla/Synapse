@@ -46,3 +46,24 @@ export function sanitizeLogValue(value: unknown, depth = 0): unknown {
   return sanitized;
 }
 
+/**
+ * 把任意异常/拒绝原因压成可写入日志的短文本：只保留错误类型与截断后的消息，
+ * 不落原始对象（拒绝原因里可能夹带凭据字段）。
+ */
+export function sanitizeErrorForLog(value: unknown, maxLength = 300): string {
+  if (value == null) {
+    return "unknown";
+  }
+
+  if (typeof value === "string") {
+    return truncateString(value).slice(0, maxLength);
+  }
+
+  if (value instanceof Error) {
+    const message = typeof value.message === "string" ? value.message : "";
+    return `${value.name}: ${truncateString(message)}`.slice(0, maxLength);
+  }
+
+  return typeof value;
+}
+

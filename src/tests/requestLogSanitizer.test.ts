@@ -1,4 +1,4 @@
-import { sanitizeLogValue } from "../utils/requestLogSanitizer";
+import { sanitizeErrorForLog, sanitizeLogValue } from "../utils/requestLogSanitizer";
 
 describe("request log sanitizer", () => {
   it("redacts sensitive keys recursively", () => {
@@ -20,6 +20,17 @@ describe("request log sanitizer", () => {
 
     expect(sanitized.body).toContain("[truncated");
     expect(sanitized.body.length).toBeLessThan(1100);
+  });
+
+  it("collapses errors to type and truncated message", () => {
+    const error = new Error(`boom ${"y".repeat(400)}`);
+    const text = sanitizeErrorForLog(error);
+
+    expect(text.startsWith("Error: boom")).toBe(true);
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect(text).not.toContain("y".repeat(400));
+    expect(sanitizeErrorForLog(null)).toBe("unknown");
+    expect(sanitizeErrorForLog({ apiKey: "secret" })).toBe("object");
   });
 });
 
