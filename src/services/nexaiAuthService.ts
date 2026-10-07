@@ -1392,6 +1392,7 @@ export class NexaiAuthService {
         logTag: "NexAI 密码重置",
         // 同 Synapse 侧：重置链接不占用/不受邮件服务商共享日配额限制，避免找回账号被批量邮件误伤。
         checkQuota: false,
+        purpose: "transactional",
       });
       if (!result.success) {
         logger.warn("[NexAI] 密码重置邮件发送失败", { userId: user.id, email: user.email, error: result.error });

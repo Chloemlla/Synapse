@@ -44,7 +44,7 @@ export default function SelfContainedEmailSystemSettingsSection({ prefersReduced
   }, [isOpen, fetchConfig]);
 
   const handleSave = useCallback(async (cfg: Partial<EmailSystemConfigItem>) => {
-    if (!canWrite) return;
+    if (!canWrite || !config || loading || deleting) return;
     if (saving) return;
     setSaving(true);
     try {
@@ -55,7 +55,7 @@ export default function SelfContainedEmailSystemSettingsSection({ prefersReduced
       await fetchConfig();
     } catch (e) { setNotification({ message: '保存失败：' + (e instanceof Error ? e.message : '未知错误'), type: 'error' }); }
     finally { setSaving(false); }
-  }, [canWrite, saving, fetchConfig, setNotification]);
+  }, [canWrite, config, loading, deleting, saving, fetchConfig, setNotification]);
 
   const handleDelete = useCallback(async () => {
     if (!canWrite) return;
@@ -81,7 +81,7 @@ export default function SelfContainedEmailSystemSettingsSection({ prefersReduced
   return (
     <EmailSystemSettingsSection
       isOpen={isOpen} onToggle={() => setIsOpen((v) => !v)} prefersReducedMotion={prefersReducedMotion}
-      loading={loading} saving={saving} deleting={deleting} config={config} disabled={!canWrite}
+      loading={loading} saving={saving} deleting={deleting} config={config} disabled={!canWrite || !config}
       onRefresh={fetchConfig} onSave={handleSave} onDelete={handleDelete}
     />
   );

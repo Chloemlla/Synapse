@@ -80,6 +80,12 @@ export const ResetPasswordPage: React.FC = () => {
     const handleCaptchaCleared = React.useCallback(() => setCaptcha(null), []);
     const handleCaptchaStatus = React.useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
 
+    useEffect(() => {
+        if (!success) return;
+        const timer = setTimeout(() => navigate('/login'), 2000);
+        return () => clearTimeout(timer);
+    }, [success, navigate]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (submittingRef.current) return;
@@ -90,6 +96,10 @@ export const ResetPasswordPage: React.FC = () => {
         if (!/^\d{8}$/.test(sanitizedCode)) { setError('验证码必须为8位数字'); return; }
         if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
         if (newPassword.length < 8) { setError('密码至少需要8个字符'); return; }
+        if (captchaStatus.loading || captchaStatus.error) {
+            setError(captchaStatus.error || '人机验证正在加载，请稍候');
+            return;
+        }
         if (captchaStatus.required && !captcha?.token) {
             setError('请先完成人机验证'); setNotification({ message: '请先完成人机验证', type: 'warning' }); return;
         }
@@ -129,7 +139,6 @@ export const ResetPasswordPage: React.FC = () => {
             const data = await response.json();
             if (response.ok && data.success) {
                 setSuccess(true); setNotification({ message: '密码重置成功', type: 'success' });
-                setTimeout(() => navigate('/login'), 2000);
             } else {
                 setError(data.error || '密码重置失败'); setNotification({ message: data.error || '密码重置失败', type: 'error' });
             }
@@ -238,7 +247,7 @@ export const ResetPasswordPage: React.FC = () => {
                                         onStatusChange={handleCaptchaStatus}
                                     />
 
-                                    <m.button type="submit" disabled={loading || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '重置密码中...' : '重置密码'} aria-busy={loading}
+                                    <m.button type="submit" disabled={loading || captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '重置密码中...' : '重置密码'} aria-busy={loading}
                                         className={authPrimaryButtonClassName}
                                         whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                         {loading ? '重置密码中...' : '重置密码'}

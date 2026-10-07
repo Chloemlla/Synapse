@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { VerificationTokenType, verificationTokenStorage } from "../../models/verificationTokenModel";
 import { sendEmail } from "../../services/emailSender";
+import { completeAuthEmail, releaseAuthEmail, reserveAuthEmail, type AuthEmailReservation } from "../../services/authEmailCooldownService";
 import {
   consumeRegistrationInvite,
   validateRegistrationInviteForRegistration,
@@ -32,12 +33,15 @@ import {
 } from "./_state";
 
 export async function register(req: Request, res: Response) {
+  let pendingToken: string | undefined;
+  let reservation: AuthEmailReservation | undefined;
+  let delivered = false;
   try {
     const { username, email, password, fingerprint, invitationCode } = req.body;
     if (!username || !email || !password) {
       return res.status(400).json({ error: "请提供所有必需的注册信息" });
     }
-    if (!fingerprint) {
+    if (typeof fingerprint !== "string" || !fingerprint.trim() || fingerprint.length > 512) {
       return res.status(400).json({ error: "设备信息缺失" });
     }
     // 注册必须逐项勾选四份政策文件；载荷无效直接拒绝，不进入格式校验与验证码流程
@@ -76,7 +80,7 @@ export async function register(req: Request, res: Response) {
       return res.status(400).json({ error: "用户名不能为保留字段" });
     }
     // 只允许主流邮箱
-    if (!emailPattern.test(email)) {
+    if (typeof email !== "string" || !emailPattern.test(email)) {
       return res.status(400).json({
         error: "只支持主流邮箱（如gmail、outlook、qq、163、126、hotmail、yahoo、icloud、foxmail、chloemlla.com等）",
       });
@@ -86,6 +90,8 @@ export async function register(req: Request, res: Response) {
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: "邮箱格式不正确" });
     }
+    const inputErrors = UserStorage.validateUserInput(username, password, email, true);
+    if (inputErrors.length > 0) return res.status(400).json({ error: inputErrors[0].message });
     // 检查用户名或邮箱是否已注册
     const existUser = await UserStorage.getUserByUsername(username);
     const existEmail = await UserStorage.getUserByEmail(email);
@@ -98,6 +104,23 @@ export async function register(req: Request, res: Response) {
       return res.status(400).json({ error: inviteValidation.error || "邀请码无效" });
     }
 
+    const reserved = await reserveAuthEmail(email, "registration");
+    if (!reserved.success) {
+      res.setHeader("Retry-After", String(reserved.retryAfterSeconds));
+      return res.status(429).json({ error: "验证邮件刚刚发送，请稍后再试", code: "EMAIL_SEND_COOLDOWN", retryAfterSeconds: reserved.retryAfterSeconds });
+    }
+    reservation = reserved.reservation;
+    // 必要的同意记录先完成；寄出可用链接后不再因辅助写入失败要求用户重新注册。
+    if (policyConsent) {
+      const userAgent = req.headers["user-agent"];
+      await writePolicyConsent({
+        fingerprint: resolveRequestFingerprint(req) || fingerprint,
+        source: "register",
+        userAgent: typeof userAgent === "string" ? userAgent : undefined,
+        ipAddress,
+      });
+    }
+
     // 创建验证令牌
     const verificationToken = await verificationTokenStorage.createToken(
       VerificationTokenType.EMAIL_REGISTRATION,
@@ -106,6 +129,7 @@ export async function register(req: Request, res: Response) {
       ipAddress,
       { username, email, password, invitationCode: inviteValidation.code },
     );
+    pendingToken = verificationToken.token;
 
     // 生成验证链接
     const frontendBaseUrl = getFrontendBaseUrl();
@@ -118,33 +142,29 @@ export async function register(req: Request, res: Response) {
       subject: "Synapse 电子邮件确认",
       html: emailHtml,
       logTag: "邮箱验证链接",
+      checkQuota: false,
+      purpose: "transactional",
     });
 
     if (result.success) {
-      // 验证邮件已发出即视为提交成立，此刻落同意记录（指纹是注册的硬要求，此处必然存在）
-      if (policyConsent) {
-        const userAgent = req.headers["user-agent"];
-        await writePolicyConsent({
-          fingerprint: resolveRequestFingerprint(req) || fingerprint,
-          source: "register",
-          userAgent: typeof userAgent === "string" ? userAgent : undefined,
-          ipAddress,
-        });
-      }
+      delivered = true;
+      await completeAuthEmail(reservation);
       res.json({
         needVerify: true,
         message: "验证链接已发送到邮箱，请查收",
       });
     } else {
-      await verificationTokenStorage.deleteToken(verificationToken.token);
-      if (result.error?.includes("上限")) {
-        res.status(429).json({ error: result.error });
-      } else {
-        res.status(500).json({ error: "验证链接发送失败，请稍后重试" });
-      }
+      res.status(500).json({ error: "验证链接发送失败，请稍后重试" });
     }
   } catch (_error) {
     res.status(500).json({ error: "注册失败" });
+  } finally {
+    if (!delivered) {
+      if (pendingToken) {
+        await verificationTokenStorage.deleteToken(pendingToken).catch((error) => logger.warn("[注册] 清理未发送令牌失败", { error }));
+      }
+      if (reservation) await releaseAuthEmail(reservation);
+    }
   }
 }
 
@@ -211,6 +231,8 @@ export async function verifyEmail(req: Request, res: Response) {
     if (!regInfo) {
       return res.status(400).json({ error: "注册信息已过期或无效" });
     }
+    // 正确验证码只能推进一个请求；在首次异步用户查询前消费。
+    emailCodeMap.delete(email);
     // 再次检查用户名/邮箱是否被注册（防止并发）
     const existUser = await UserStorage.getUserByUsername(regInfo.username);
     const existEmail = await UserStorage.getUserByEmail(regInfo.email);
@@ -246,7 +268,7 @@ export async function verifyEmail(req: Request, res: Response) {
       subject: "欢迎加入 Synapse",
       html: welcomeHtml,
       logTag: "欢迎邮件",
-      checkQuota: true,
+      checkQuota: false,
     })
       .then((result) => {
         if (result.success) {
@@ -266,13 +288,18 @@ export async function verifyEmail(req: Request, res: Response) {
 
 // 新增：重发验证码接口
 export async function sendVerifyEmail(req: Request, res: Response) {
+  let restore: (() => void) | undefined;
   try {
     const { email } = req.body;
-    if (!email || !emailPattern.test(email)) {
+    if (typeof email !== "string" || !emailPattern.test(email)) {
       return res.status(400).json({ error: "邮箱格式不正确" });
     }
     const entry = emailCodeMap.get(email);
     const now = Date.now();
+    if (entry && now - entry.time >= 10 * 60 * 1000) {
+      emailCodeMap.delete(email);
+      return res.status(400).json({ error: "注册信息已过期，请重新注册" });
+    }
     if (entry && now - entry.time < 60000) {
       return res.status(429).json({ error: "请60秒后再试" });
     }
@@ -286,7 +313,11 @@ export async function sendVerifyEmail(req: Request, res: Response) {
     const code = crypto.randomInt(0, 100_000_000).toString().padStart(8, "0");
 
     // 重新发码时重置失败计数
-    emailCodeMap.set(email, { code, time: now, regInfo: entry.regInfo, attempts: 0 });
+    const nextEntry = { code, time: now, regInfo: entry.regInfo, attempts: 0 };
+    emailCodeMap.set(email, nextEntry);
+    restore = () => {
+      if (emailCodeMap.get(email) === nextEntry) emailCodeMap.set(email, entry);
+    };
 
     // 统一邮件发送
     const emailHtml = generateVerificationCodeEmailHtml(entry.regInfo.username, code);
@@ -295,18 +326,19 @@ export async function sendVerifyEmail(req: Request, res: Response) {
       subject: "Synapse 电子邮件确认码",
       html: emailHtml,
       logTag: "重发邮箱验证码",
+      checkQuota: false,
+      purpose: "transactional",
     });
 
     if (result.success) {
+      restore = undefined;
       res.json({ success: true });
     } else {
-      if (result.error?.includes("上限")) {
-        res.status(429).json({ error: result.error });
-      } else {
-        res.status(500).json({ error: "验证码发送失败，请稍后重试" });
-      }
+      res.status(500).json({ error: "验证码发送失败，请稍后重试" });
     }
   } catch (_error) {
     res.status(500).json({ error: "验证码发送失败" });
+  } finally {
+    restore?.();
   }
 }

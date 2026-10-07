@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useEmailCooldown } from '../hooks/useEmailCooldown';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
 import GoogleAuthButton from './GoogleAuthButton';
@@ -69,6 +70,7 @@ const BUTTON_TAP = { scale: 0.99 } as const;
 
 export const RegisterPage: React.FC = () => {
     const { user } = useAuth();
+    const { seconds: cooldownSeconds, applyCooldown } = useEmailCooldown();
     const { setNotification } = useNotification();
     const navigate = useNavigate();
     const prefersReducedMotion = useReducedMotion();
@@ -123,8 +125,9 @@ export const RegisterPage: React.FC = () => {
         if (/[a-z]/.test(pwd)) score += 1; else feedback.push('需要包含小写字母');
         if (/[A-Z]/.test(pwd)) score += 1; else feedback.push('需要包含大写字母');
         if (/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) score += 1; else feedback.push('需要包含特殊字符');
-        const commonPatterns = [/^123/, /password/i, /qwerty/i, /abc/i, new RegExp(username, 'i')];
-        if (commonPatterns.some(pattern => pattern.test(pwd))) { score = 0; feedback.push('请避免使用常见密码模式'); }
+        const commonPatterns = [/^123/, /password/i, /qwerty/i, /abc/i];
+        const containsUsername = Boolean(username) && pwd.toLowerCase().includes(username.toLowerCase());
+        if (containsUsername || commonPatterns.some(pattern => pattern.test(pwd))) { score = 0; feedback.push('请避免使用常见密码模式'); }
         return { score, feedback: feedback.join('、') };
     };
 
@@ -154,7 +157,7 @@ export const RegisterPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (submittingRef.current) return;
+        if (submittingRef.current || cooldownSeconds > 0) return;
         setError(null);
         setInvalidFields({ username: false, email: false, password: false });
         const usernameError = validateInput(username, 'username'); if (usernameError) { setInvalidFields({ username: true, email: false, password: false }); setError(usernameError); return; }
@@ -166,6 +169,10 @@ export const RegisterPage: React.FC = () => {
             setPolicyConsentInvalid(true);
             setError('请先阅读并勾选同意全部四项条款');
             setNotification({ message: '请先阅读并勾选同意全部四项条款', type: 'warning' });
+            return;
+        }
+        if (captchaStatus.loading || captchaStatus.error) {
+            setError(captchaStatus.error || '人机验证正在加载，请稍候');
             return;
         }
         if (captchaStatus.required && !captcha?.token) {
@@ -191,6 +198,7 @@ export const RegisterPage: React.FC = () => {
             requestSent = true;
             const res = await api.post('/api/auth/register', requestBody);
             const data = res.data;
+            applyCooldown(data);
             if (data && data.needVerify) {
                 setNotification({ message: data.message || '验证链接已发送到您的邮箱，请点击链接完成注册', type: 'success' });
                 setError(''); setShowEmailVerify(true); setPendingEmail(sanitizedEmail);
@@ -198,6 +206,7 @@ export const RegisterPage: React.FC = () => {
                 setError(data?.error || '注册失败'); setNotification({ message: data?.error || '注册失败', type: 'error' });
             }
         } catch (err: any) {
+            applyCooldown(err?.response?.data);
             const msg = getBackendErrorMessage(err, '注册失败');
             setError(msg); setNotification({ message: msg, type: 'error' });
         } finally {
@@ -329,10 +338,10 @@ export const RegisterPage: React.FC = () => {
 
                                 {/* 不因「两次密码不一致」禁用提交：按钮点不动时页面没有任何原因说明，
                                     交给 handleSubmit 在提交后给出「两次输入的密码不一致」提示。 */}
-                                <m.button type="submit" disabled={loading || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
+                                <m.button type="submit" disabled={loading || cooldownSeconds > 0 || captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token)} aria-label={loading ? '正在注册' : '创建账号'} aria-busy={loading}
                                     className={authPrimaryButtonClassName}
                                     whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
-                                    {loading ? '注册中...' : '创建账户'}
+                                    {loading ? '注册中...' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重试` : '创建账户'}
                                 </m.button>
                             </form>
 

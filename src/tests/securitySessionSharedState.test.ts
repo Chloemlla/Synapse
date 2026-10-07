@@ -178,4 +178,28 @@ describe("邮箱变更验证码：落共享存储", () => {
     const result = await validateEmailChangeChallenge(USER_ID, "new@example.com", "123456");
     expect(result.error).toBe("请先向新邮箱发送验证码");
   });
+
+  it("切换目标邮箱也不能绕过同一用户的发送冷却", async () => {
+    expect((await createEmailChangeChallenge(USER_ID, "first@example.com")).success).toBe(true);
+    const second = await createEmailChangeChallenge(USER_ID, "second@example.com");
+    expect(second.success).toBe(false);
+    expect(second.retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it("并发发送只建立一个挑战", async () => {
+    const results = await Promise.all([
+      createEmailChangeChallenge(USER_ID, "first@example.com"),
+      createEmailChangeChallenge(USER_ID, "second@example.com"),
+    ]);
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+  });
+
+  it("旧发送失败不会删除后来创建的验证码", async () => {
+    const first = await createEmailChangeChallenge(USER_ID, "first@example.com");
+    await clearEmailChangeChallenge(USER_ID, first.challengeId);
+    const second = await createEmailChangeChallenge(USER_ID, "second@example.com");
+    await clearEmailChangeChallenge(USER_ID, first.challengeId);
+    expect(await validateEmailChangeChallenge(USER_ID, "second@example.com", second.code!))
+      .toEqual({ success: true, status: 200 });
+  });
 });

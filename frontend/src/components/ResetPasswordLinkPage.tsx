@@ -50,14 +50,17 @@ export const ResetPasswordLinkPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const prefersReducedMotion = useReducedMotion();
 
-    const [token, setToken] = useState<string | null>(null);
+    const token = searchParams.get('token');
+    const lifecycleRef = React.useRef(0);
+    const submittingRef = React.useRef(false);
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [verifying, setVerifying] = useState(true);
-    const [tokenValid, setTokenValid] = useState(false);
+    const [validatedToken, setValidatedToken] = useState<string | null>(null);
+    const tokenValid = Boolean(token && validatedToken === token);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -67,79 +70,93 @@ export const ResetPasswordLinkPage: React.FC = () => {
     const effectiveButtonTap = React.useMemo(() => prefersReducedMotion ? undefined : BUTTON_TAP, [prefersReducedMotion]);
 
     useEffect(() => {
+        const lifecycle = ++lifecycleRef.current;
+        const controller = new AbortController();
+        setValidatedToken(null);
+        setVerifying(true);
+        setSuccess(false);
+        setError(null);
+        setLoading(false);
+        submittingRef.current = false;
+        setNewPassword('');
+        setConfirmPassword('');
+
         const validateToken = async () => {
-            const tokenParam = searchParams.get('token');
-            if (!tokenParam) {
-                setError('重置链接无效：缺少令牌');
-                setTokenValid(false);
+            if (!token) {
+                setError('重置链接无效，请重新获取');
                 setVerifying(false);
                 return;
             }
-            setToken(tokenParam);
-
             try {
-                const [fingerprint, clientIP] = await Promise.all([
-                    getFingerprint(),
-                    getClientIP()
-                ]);
-
-                if (!fingerprint) {
-                    setError('无法获取设备信息，请刷新页面重试');
-                    setTokenValid(false);
-                    setVerifying(false);
-                    return;
-                }
-
+                const [fingerprint, clientIP] = await Promise.all([getFingerprint(), getClientIP()]);
+                if (lifecycle !== lifecycleRef.current) return;
+                if (!fingerprint) throw new Error('无法获取设备信息，请刷新页面重试');
                 const response = await api.post('/api/auth/validate-reset-token', {
-                    token: tokenParam, fingerprint, clientIP,
-                });
+                    token, fingerprint, clientIP,
+                }, { signal: controller.signal });
+                if (lifecycle !== lifecycleRef.current) return;
                 const data = response.data as { valid?: boolean; error?: string };
-
-                if (response.status === 200 && data.valid) {
-                    setTokenValid(true);
-                } else {
-                    setError(data.error || '重置链接验证失败');
-                    setTokenValid(false);
-                }
+                if (data.valid) setValidatedToken(token);
+                else setError(data.error || '重置链接验证失败');
             } catch (err) {
+                if (lifecycle !== lifecycleRef.current) return;
                 setError(getBackendErrorMessage(err, '验证重置链接时发生网络错误，请刷新页面重试'));
-                setTokenValid(false);
+            } finally {
+                if (lifecycle === lifecycleRef.current) setVerifying(false);
             }
-
-            setVerifying(false);
         };
-        validateToken();
-    }, [searchParams]);
+        void validateToken();
+        return () => {
+            lifecycleRef.current += 1;
+            controller.abort();
+        };
+    }, [token]);
+
+    useEffect(() => {
+        if (!success) return;
+        const timer = setTimeout(() => navigate('/login'), 3000);
+        return () => clearTimeout(timer);
+    }, [success, token, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setError(null);
-        if (!token) { setError('无效的重置令牌'); return; }
+        if (submittingRef.current || verifying || !tokenValid || !token) return;
         // 密码是凭据，不能做 HTML 净化（DOMPurify 会剥离未知标签、转义 & 等，静默改写用户密码）。
         // 只做空值/一致性校验，最小长度 8 与后端 authController（8-128）对齐。
         if (!newPassword || !confirmPassword) { setError('请填写所有字段'); return; }
         if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
         if (newPassword.length < 8) { setError('密码长度至少为8位'); return; }
+        submittingRef.current = true;
+        const lifecycle = lifecycleRef.current;
         setLoading(true);
         try {
             const fingerprint = await getFingerprint();
+            if (lifecycle !== lifecycleRef.current) return;
             if (!fingerprint) { setError('无法获取设备信息，请刷新页面重试'); setLoading(false); return; }
             const clientIP = await getClientIP();
+            if (lifecycle !== lifecycleRef.current) return;
             const deviceName = navigator.userAgent || 'unknown';
             const response = await api.post('/api/auth/reset-password-link', {
                 token, fingerprint, newPassword, clientIP, deviceName,
             });
 
+            if (lifecycle !== lifecycleRef.current) return;
             const data = response.data as { success?: boolean; message?: string; error?: string };
             if (response.status === 200 && data.success) {
                 setSuccess(true); setNotification({ message: data.message || '密码重置成功！', type: 'success' });
-                setTimeout(() => navigate('/login'), 3000);
             } else {
                 setError(data.error || '密码重置失败，请重试'); setNotification({ message: data.error || '密码重置失败', type: 'error' });
             }
         } catch (err: any) {
+            if (lifecycle !== lifecycleRef.current) return;
             const msg = getBackendErrorMessage(err, '网络错误，请稍后重试');
             setError(msg); setNotification({ message: msg, type: 'error' });
-        } finally { setLoading(false); }
+        } finally {
+            if (lifecycle === lifecycleRef.current) {
+                submittingRef.current = false;
+                setLoading(false);
+            }
+        }
     };
 
     return (
@@ -173,7 +190,7 @@ export const ResetPasswordLinkPage: React.FC = () => {
                                     <FaLock className="mt-1 shrink-0 text-slate-500" />
                                     <div>
                                         <p className="text-xs font-semibold text-slate-900">您当前登录为 {user.username}</p>
-                                        <p className="mt-1 text-[11px] leading-5 text-slate-600">您正在为另一个账号设置新密码。重置完成后，该账号的登录状态将生效。</p>
+                                        <p className="mt-1 text-[11px] leading-5 text-slate-600">请确认这是您要重置的账号。完成后请使用新密码重新登录。</p>
                                     </div>
                                 </m.div>
                             )}
@@ -245,7 +262,7 @@ export const ResetPasswordLinkPage: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <m.button type="submit" disabled={loading} aria-label={loading ? '重置中...' : '重置密码'} aria-busy={loading}
+                                        <m.button type="submit" disabled={loading || verifying || !tokenValid} aria-label={loading ? '重置中...' : '重置密码'} aria-busy={loading}
                                             className={authPrimaryButtonClassName}
                                             whileHover={effectiveItemHover} whileTap={effectiveButtonTap}>
                                             {loading ? '重置中...' : '重置密码'}

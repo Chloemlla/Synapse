@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { VerificationTokenType, verificationTokenStorage } from "../../models/verificationTokenModel";
 import { revokeAllAuthSessions } from "../../services/authSessionService";
 import { sendEmail } from "../../services/emailSender";
+import { completeAuthEmail, releaseAuthEmail, reserveAuthEmail, type AuthEmailReservation } from "../../services/authEmailCooldownService";
 import * as VerificationService from "../../services/verificationService";
 import {
   generatePasswordChangedEmailHtml,
@@ -21,13 +22,17 @@ import {
 
 // 忘记密码 - 发送重置验证链接
 export async function forgotPassword(req: Request, res: Response) {
+  let pendingToken: string | undefined;
+  let reservation: AuthEmailReservation | undefined;
+  let delivered = false;
+  const successResponse = { success: true, message: "如果该邮箱已注册，您将收到密码重置链接" };
   try {
     const { email, fingerprint } = req.body;
-    if (!email || !emailPattern.test(email)) {
+    if (typeof email !== "string" || !emailPattern.test(email)) {
       return res.status(400).json({ error: "邮箱格式不正确" });
     }
 
-    if (!fingerprint) {
+    if (typeof fingerprint !== "string" || !fingerprint.trim() || fingerprint.length > 512) {
       return res.status(400).json({ error: "设备信息缺失" });
     }
 
@@ -38,14 +43,20 @@ export async function forgotPassword(req: Request, res: Response) {
       return res.status(400).json({ error: captchaError });
     }
 
+    // 存在与不存在的邮箱共用冷却及成功响应，避免用文案或冷却分支枚举账户。
+    const reserved = await reserveAuthEmail(email, "password-reset");
+    if (!reserved.success) {
+      res.setHeader("Retry-After", String(reserved.retryAfterSeconds));
+      return res.status(429).json({ error: "请求已提交，请稍后再试", code: "EMAIL_SEND_COOLDOWN", retryAfterSeconds: reserved.retryAfterSeconds });
+    }
+    reservation = reserved.reservation;
     // 检查用户是否存在
     const user = await UserStorage.getUserByEmail(email);
     if (!user) {
       // 为了安全，不透露用户是否存在
-      return res.json({
-        success: true,
-        message: "如果该邮箱已注册，您将收到密码重置链接",
-      });
+      delivered = true;
+      await completeAuthEmail(reservation);
+      return res.json(successResponse);
     }
 
     // G2-16: 只信任服务端解析的 IP。客户端自报的 clientIP 不参与任何校验。
@@ -65,6 +76,7 @@ export async function forgotPassword(req: Request, res: Response) {
       ipAddress,
       { userId: user.id, username: user.username, email },
     );
+    pendingToken = verificationToken.token;
 
     // 生成重置链接
     const frontendBaseUrl = getFrontendBaseUrl();
@@ -77,22 +89,29 @@ export async function forgotPassword(req: Request, res: Response) {
       subject: "Synapse 账号密码重置",
       html: emailHtml,
       logTag: "密码重置",
-      // 重置链接不受邮件服务商的共享日配额约束：该配额是按发信账号计的总额，被其它批量邮件
-      // 耗尽后会把真正需要找回账号的用户一并挡在门外（表现为“发送次数已达上限，请明日再试”）。
-      // 本路径仍有三层约束：authPasswordResetLimiter（login 档，按 IP）+ 人机验证 + 一次性令牌。
+      // 找回属于账户事务；防刷由 IP/CAPTCHA/收件人冷却负责，与一般发信日配额隔离。
       checkQuota: false,
+      purpose: "transactional",
     });
 
     if (result.success) {
-      res.json({ success: true, message: "重置链接已发送到您的邮箱" });
+      delivered = true;
+      await completeAuthEmail(reservation);
+      res.json(successResponse);
     } else {
       resetPasswordCodeMap.delete(email);
-      await verificationTokenStorage.deleteToken(verificationToken.token);
       res.status(500).json({ error: "重置邮件发送失败，请稍后重试" });
     }
   } catch (error) {
     logger.error("[密码重置] 流程异常:", error);
     res.status(500).json({ error: "密码重置请求失败" });
+  } finally {
+    if (!delivered) {
+      if (pendingToken) {
+        await verificationTokenStorage.deleteToken(pendingToken).catch((error) => logger.warn("[密码重置] 清理未发送令牌失败", { error }));
+      }
+      if (reservation) await releaseAuthEmail(reservation);
+    }
   }
 }
 
@@ -189,7 +208,7 @@ export async function validateResetToken(req: Request, res: Response) {
     const ipAddress = getClientIP(req);
 
     // 使用验证令牌存储的 validateToken 方法进行只读检查
-    const result = await verificationTokenStorage.validateToken(token, fingerprint, ipAddress);
+    const result = await verificationTokenStorage.validateToken(token, fingerprint, ipAddress, VerificationTokenType.PASSWORD_RESET);
 
     if (result.valid) {
       res.json({ valid: true });
@@ -241,7 +260,7 @@ export async function resetPassword(req: Request, res: Response) {
     }
 
     // 校验设备指纹（如果存储时有记录）
-    if (entry.fingerprint && reqFingerprint && entry.fingerprint !== reqFingerprint) {
+    if (entry.fingerprint && entry.fingerprint !== reqFingerprint) {
       logger.warn(`[密码重置] 设备指纹不匹配: email=${email}`);
       return res.status(403).json({ error: "设备验证失败，请使用发起请求时的相同设备" });
     }
@@ -264,6 +283,8 @@ export async function resetPassword(req: Request, res: Response) {
       return res.status(400).json({ error: "验证码错误" });
     }
 
+    // 在首次 await 前消费匹配的旧验证码，防止两次并发改密。
+    resetPasswordCodeMap.delete(email);
     // 获取用户信息
     const user = await UserStorage.getUserById(entry.userId);
     if (!user) {
@@ -274,6 +295,9 @@ export async function resetPassword(req: Request, res: Response) {
     // 验证新密码强度（调用 UserStorage 层的规则）
     const passwordErrors = UserStorage.validateUserInput(user.username, newPassword, user.email, true);
     if (passwordErrors.length > 0) {
+      if (!resetPasswordCodeMap.has(email) && Date.now() - entry.time < 10 * 60 * 1000) {
+        resetPasswordCodeMap.set(email, entry);
+      }
       return res.status(400).json({ error: passwordErrors[0].message });
     }
 

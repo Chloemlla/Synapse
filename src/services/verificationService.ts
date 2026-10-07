@@ -13,6 +13,8 @@ import {
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
 import { EmailService } from "./emailService";
+import { sendEmail } from "./emailSender";
+import { completeAuthEmail, releaseAuthEmail, reserveAuthEmail, type AuthEmailReservation } from "./authEmailCooldownService";
 import { revokeAllAuthSessions } from "./authSessionService";
 import { getClientIP as resolveClientIP } from "../utils/ipUtils";
 import {
@@ -51,7 +53,13 @@ export async function createAndSendVerificationLink(
   fingerprint: string,
   ipAddress: string,
 ): Promise<{ success: boolean; error?: string }> {
+  let pendingToken: string | undefined;
+  let reservation: AuthEmailReservation | undefined;
+  let delivered = false;
   try {
+    const reserved = await reserveAuthEmail(email, "registration");
+    if (!reserved.success) return { success: false, error: "验证邮件刚刚发送，请稍后再试" };
+    reservation = reserved.reservation;
     // 创建验证令牌
     const verificationToken = await verificationTokenStorage.createToken(
       VerificationTokenType.EMAIL_REGISTRATION,
@@ -60,6 +68,7 @@ export async function createAndSendVerificationLink(
       ipAddress,
       { username, email, password },
     );
+    pendingToken = verificationToken.token;
 
     // 生成验证链接
     const frontendBaseUrl = getFrontendBaseUrl();
@@ -67,19 +76,25 @@ export async function createAndSendVerificationLink(
 
     // 发送邮件验证链接
     const emailHtml = generateVerificationLinkEmailHtml(username, verificationLink);
-    const emailResult = await EmailService.sendHtmlEmail([email], "Synapse 电子邮件确认", emailHtml);
+    const emailResult = await sendEmail({ to: email, subject: "Synapse 电子邮件确认", html: emailHtml, logTag: "邮箱验证链接", checkQuota: false, purpose: "transactional" });
 
     if (emailResult.success) {
+      delivered = true;
+      await completeAuthEmail(reservation);
       logger.info(`[邮箱验证链接] 成功发送到: ${email}`);
       return { success: true };
     } else {
       logger.error(`[邮箱验证链接] 发送失败: ${email}, 错误: ${emailResult.error}`);
-      await verificationTokenStorage.deleteToken(verificationToken.token);
       return { success: false, error: "验证链接发送失败，请稍后重试" };
     }
   } catch (error) {
     logger.error(`[邮箱验证链接] 发送异常: ${email}`, error);
     return { success: false, error: "验证链接发送失败，请稍后重试" };
+  } finally {
+    if (!delivered) {
+      if (pendingToken) await verificationTokenStorage.deleteToken(pendingToken).catch((error) => logger.warn("[邮箱验证链接] 清理失败", { error }));
+      if (reservation) await releaseAuthEmail(reservation);
+    }
   }
 }
 
@@ -97,13 +112,14 @@ export async function verifyEmailLink(
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   try {
     // 验证令牌
-    const result = await verificationTokenStorage.verifyAndUseToken(token, fingerprint, ipAddress);
+    const result = await verificationTokenStorage.validateToken(token, fingerprint, ipAddress, VerificationTokenType.EMAIL_REGISTRATION);
 
-    if (!result.success) {
+    if (!result.valid) {
       return { success: false, error: result.error };
     }
 
-    const verificationData = result.data!;
+    const verificationData = await verificationTokenStorage.getToken(token);
+    if (!verificationData?.metadata) return { success: false, error: "验证链接无效或已过期" };
 
     // 检查令牌类型
     if (verificationData.type !== VerificationTokenType.EMAIL_REGISTRATION) {
@@ -125,6 +141,11 @@ export async function verifyEmailLink(
       await verificationTokenStorage.deleteToken(token);
       return { success: false, error: inviteValidation.error || "邀请码无效" };
     }
+
+    const inputErrors = UserStorage.validateUserInput(username, password, email, true);
+    if (inputErrors.length > 0) return { success: false, error: inputErrors[0].message };
+    const consumed = await verificationTokenStorage.verifyAndUseToken(token, fingerprint, ipAddress, VerificationTokenType.EMAIL_REGISTRATION);
+    if (!consumed.success) return { success: false, error: consumed.error };
 
     // 创建用户
     const user = await UserStorage.createUser(username, email, password);
@@ -176,7 +197,13 @@ export async function createAndSendPasswordResetLink(
   fingerprint: string,
   ipAddress: string,
 ): Promise<{ success: boolean; error?: string }> {
+  let pendingToken: string | undefined;
+  let reservation: AuthEmailReservation | undefined;
+  let delivered = false;
   try {
+    const reserved = await reserveAuthEmail(email, "password-reset");
+    if (!reserved.success) return { success: false, error: "请求已提交，请稍后再试" };
+    reservation = reserved.reservation;
     // 创建验证令牌
     const verificationToken = await verificationTokenStorage.createToken(
       VerificationTokenType.PASSWORD_RESET,
@@ -185,6 +212,7 @@ export async function createAndSendPasswordResetLink(
       ipAddress,
       { userId, username, email },
     );
+    pendingToken = verificationToken.token;
 
     // 生成重置链接
     const frontendBaseUrl = getFrontendBaseUrl();
@@ -192,19 +220,25 @@ export async function createAndSendPasswordResetLink(
 
     // 发送邮件重置链接
     const emailHtml = generatePasswordResetLinkEmailHtml(username, resetLink);
-    const emailResult = await EmailService.sendHtmlEmail([email], "Synapse 账号密码重置", emailHtml);
+    const emailResult = await sendEmail({ to: email, subject: "Synapse 账号密码重置", html: emailHtml, logTag: "密码重置", checkQuota: false, purpose: "transactional" });
 
     if (emailResult.success) {
+      delivered = true;
+      await completeAuthEmail(reservation);
       logger.info(`[密码重置] 成功发送到: ${email}`);
       return { success: true };
     } else {
       logger.error(`[密码重置] 发送失败: ${email}, 错误: ${emailResult.error}`);
-      await verificationTokenStorage.deleteToken(verificationToken.token);
       return { success: false, error: "重置链接发送失败，请稍后重试" };
     }
   } catch (error) {
     logger.error(`[密码重置] 发送异常: ${email}`, error);
     return { success: false, error: "重置链接发送失败，请稍后重试" };
+  } finally {
+    if (!delivered) {
+      if (pendingToken) await verificationTokenStorage.deleteToken(pendingToken).catch((error) => logger.warn("[密码重置链接] 清理失败", { error }));
+      if (reservation) await releaseAuthEmail(reservation);
+    }
   }
 }
 
@@ -224,13 +258,14 @@ export async function verifyPasswordResetLink(
 ): Promise<{ success: boolean; error?: string; message?: string; email?: string; username?: string }> {
   try {
     // 验证令牌
-    const result = await verificationTokenStorage.verifyAndUseToken(token, fingerprint, ipAddress);
+    const result = await verificationTokenStorage.validateToken(token, fingerprint, ipAddress, VerificationTokenType.PASSWORD_RESET);
 
-    if (!result.success) {
+    if (!result.valid) {
       return { success: false, error: result.error };
     }
 
-    const verificationData = result.data!;
+    const verificationData = await verificationTokenStorage.getToken(token);
+    if (!verificationData?.metadata) return { success: false, error: "验证链接无效或已过期" };
 
     // 检查令牌类型
     if (verificationData.type !== VerificationTokenType.PASSWORD_RESET) {
@@ -246,11 +281,17 @@ export async function verifyPasswordResetLink(
       return { success: false, error: "用户不存在" };
     }
 
+    if (typeof newPassword !== "string" || newPassword.length < 8 || newPassword.length > 128) {
+      return { success: false, error: "新密码长度须在 8-128 字符之间" };
+    }
     // 验证新密码强度
     const passwordErrors = UserStorage.validateUserInput(user.username, newPassword, user.email, true);
     if (passwordErrors.length > 0) {
       return { success: false, error: passwordErrors[0].message };
     }
+
+    const consumed = await verificationTokenStorage.verifyAndUseToken(token, fingerprint, ipAddress, VerificationTokenType.PASSWORD_RESET);
+    if (!consumed.success) return { success: false, error: consumed.error };
 
     // 更新密码
     await UserStorage.updateUser(user.id, { password: newPassword });
