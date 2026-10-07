@@ -1,3 +1,5 @@
+import { notifyCaptchaFailure, readCaptchaRequestToken } from './captchaRecovery';
+
 /**
  * Shared fetch wrapper that unifies timeout + abort behaviour for the bare
  * fetch call-sites that are not routed through the main axios instance
@@ -26,7 +28,16 @@ export async function fetchWithTimeout(
   }
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    const contentType = response.headers.get('content-type') || '';
+    const isStream = /text\/event-stream|application\/(?:x-ndjson|ndjson|octet-stream)/i.test(contentType);
+    if (!isStream && (/\bjson\b/i.test(contentType) || readCaptchaRequestToken(init.body) !== null)) {
+      try {
+        const body: unknown = await response.clone().json();
+        notifyCaptchaFailure(body, init.body, response.status);
+      } catch { /* Parsing diagnostics must not consume or replace the original response. */ }
+    }
+    return response;
   } finally {
     window.clearTimeout(timeoutId);
     // {once:true} 只在 abort 真发生时自动摘除；未触发时监听器会一直挂在调用方的

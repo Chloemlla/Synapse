@@ -8,6 +8,7 @@ import {
 } from '../utils/ipVerification';
 import { canonicalizeBackendApiUrl } from '../utils/apiPath';
 import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
+import { notifyCaptchaFailure } from '../utils/captchaRecovery';
 
 
 // 获取API基础URL：生产环境固定指向 https://chloemlla.com，开发环境保留后端直连能力
@@ -143,6 +144,7 @@ export function markFingerprintHashProcessed(hash: string): void {
 // 响应拦截器：处理错误和重试
 api.interceptors.response.use(
     (response) => {
+        notifyCaptchaFailure(response.data, response.config?.data, response.status);
         try {
             if (handleFingerprintHeader(response.headers as any)) {
                 // 异步触发上报（不阻塞当前请求）
@@ -153,6 +155,8 @@ api.interceptors.response.use(
     },
     async (error) => {
         const originalRequest = error.config;
+        const captchaFailed = notifyCaptchaFailure(error.response?.data, originalRequest?.data, error.response?.status);
+        if (captchaFailed || !originalRequest) return Promise.reject(error);
 
         try {
             if (handleFingerprintHeader(error?.response?.headers as any)) {

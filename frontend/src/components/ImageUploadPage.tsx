@@ -12,6 +12,7 @@ import ManagedCaptcha, {
   type ManagedCaptchaRef,
   type ManagedCaptchaStatus,
 } from './ManagedCaptcha';
+import { waitForCaptcha } from '../utils/waitForCaptcha';
 import { studioEyebrowPillClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 import { useAuth } from '../hooks/useAuth';
@@ -417,6 +418,7 @@ const ImageUploadPage: React.FC = () => {
   // G12-12：组件卸载时 revoke 预览 object URL
   React.useEffect(() => {
     return () => {
+      batchAbortRef.current?.abort();
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current);
         previewUrlRef.current = null;
@@ -583,22 +585,7 @@ const ImageUploadPage: React.FC = () => {
 
     captchaChallengeRef.current = null;
     setCaptcha(null);
-    captchaRef.current?.reset();
-
-    return new Promise((resolve) => {
-      const finish = (challenge: ManagedCaptchaChallenge | null) => {
-        captchaResolveRef.current = null;
-        resolve(challenge);
-      };
-      const timeout = window.setTimeout(() => finish(null), 30000);
-      const settle = (challenge: ManagedCaptchaChallenge | null) => {
-        window.clearTimeout(timeout);
-        finish(challenge);
-      };
-      // 取消上传时立即结束等待，避免卡在 30s 超时（F5-04）
-      signal?.addEventListener('abort', () => settle(null), { once: true });
-      captchaResolveRef.current = (challenge) => settle(challenge);
-    });
+    return waitForCaptcha(captchaResolveRef, () => captchaRef.current?.reset(), signal);
   };
 
   /** 统一把挑战令牌写进上传表单（cfToken 为历史字段名，captchaProvider 说明供应商）。 */

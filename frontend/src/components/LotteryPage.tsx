@@ -71,38 +71,46 @@ const PrizeDisplay: React.FC<{ prize: any }> = ({ prize }) => {
 };
 
 // 抽奖轮次卡片组件
-const LotteryRoundCard: React.FC<{
+export const LotteryRoundCard: React.FC<{
   round: LotteryRound;
   /** 三家供应商共用同一套下发链路：提交时把令牌 + 供应商一起交给后端。 */
-  onParticipate: (roundId: string, challenge?: ManagedCaptchaChallenge | null) => void;
+  onParticipate: (roundId: string, challenge?: ManagedCaptchaChallenge | null) => Promise<boolean>;
   /** 是否正在参与抽奖（仅用于禁用按钮与按钮内进度，不再替换整份列表） */
   loading: boolean;
   /** 是否是「当前这一轮」正在参与（F5-37：只有被点击的轮次显示抽奖中） */
   isParticipatingRound?: boolean;
   isAdmin?: boolean;
-  captcha?: ManagedCaptchaChallenge | null;
-  captchaStatus?: ManagedCaptchaStatus;
-  /** 供父级在令牌被核销后重置挑战。 */
-  captchaRef?: React.Ref<ManagedCaptchaRef>;
-  onCaptchaSolved?: (challenge: ManagedCaptchaChallenge) => void;
-  onCaptchaCleared?: () => void;
-  onCaptchaStatus?: (status: ManagedCaptchaStatus) => void;
 }> = ({
   round,
   onParticipate,
   loading,
   isParticipatingRound = false,
   isAdmin = false,
-  captcha = null,
-  captchaStatus,
-  captchaRef,
-  onCaptchaSolved,
-  onCaptchaCleared,
-  onCaptchaStatus
 }) => {
   const { user } = useAuth();
+  // 每轮拥有独立的挑战，不能让另一张卡片的回调或 ref 消费本轮令牌。
+  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const submittingRef = useRef(false);
+  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false, loading: true, error: null, provider: null, solved: false,
+  });
+  const onCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
+  const onCaptchaCleared = useCallback(() => setCaptcha(null), []);
+  const onCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
   const hasParticipated = round.participants.includes(user?.id || '');
   const isActive = round.isActive && Date.now() >= round.startTime && Date.now() <= round.endTime;
+  const handleParticipate = async () => {
+    if (submittingRef.current || loading || !isActive || hasParticipated) return;
+    if (!isAdmin && (captchaStatus.loading || captchaStatus.error || (captchaStatus.required && !captcha?.token))) return;
+    submittingRef.current = true;
+    try {
+      const sent = await onParticipate(round.id, isAdmin ? null : captcha);
+      if (sent && captcha?.token) captchaRef.current?.reset();
+    } finally {
+      submittingRef.current = false;
+    }
+  };
 
   return (
     <motion.div
@@ -152,7 +160,7 @@ const LotteryRoundCard: React.FC<{
         {user && (
           <div className="flex flex-col gap-2">
             <motion.button
-              onClick={() => onParticipate(round.id, captcha)}
+              onClick={() => { void handleParticipate(); }}
               disabled={!isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)}
               className={`${
                 !isActive || hasParticipated || loading || (!isAdmin && captchaStatus?.required === true && !captcha?.token)
@@ -401,44 +409,26 @@ const LotteryPage: React.FC = () => {
 
   const [winner, setWinner] = useState<LotteryWinner | null>(null);
   
-  // 人机验证：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）。
-  const captchaRef = useRef<ManagedCaptchaRef | null>(null);
-  const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
-  const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
-    required: false,
-    loading: true,
-    error: null,
-    provider: null,
-    solved: false,
-  });
+  const submittingRef = useRef(false);
 
   // 检查是否为管理员（superadmin 同样视为管理员）
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
 
-  const handleCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
-  const handleCaptchaCleared = useCallback(() => setCaptcha(null), []);
-  const handleCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
-
   const handleParticipate = async (roundId: string, challenge?: ManagedCaptchaChallenge | null) => {
+    if (submittingRef.current) return false;
+    submittingRef.current = true;
     try {
-      // 检查非管理员用户的人机验证（是否需要由管理端配置决定）
-      if (!isAdmin && captchaStatus.required && !challenge?.token) {
-        setNotification({ message: '请先完成人机验证', type: 'error' });
-        return;
-      }
-
       const result = await participateInLottery(roundId, challenge?.token, challenge?.provider);
       setWinner(result);
       setNotification({ message: `恭喜获得 ${result.prizeName}！`, type: 'success' });
 
-      // 挑战令牌是一次性的：参与成功后必须重新验证
-      captchaRef.current?.reset();
     } catch (err) {
       const msg = err instanceof Error ? err.message : '参与抽奖失败';
-      // 挑战令牌一次性：失败后重新验证，避免拿已核销的令牌反复重试
-      if (captchaStatus.required) captchaRef.current?.reset();
       setNotification({ message: msg, type: 'error' });
+    } finally {
+      submittingRef.current = false;
     }
+    return true;
   };
 
   // F5-11：错误面板的「重试」必须真的重新拉数据，而不是只把错误清掉
@@ -543,12 +533,6 @@ const LotteryPage: React.FC = () => {
                   loading={participating}
                   isParticipatingRound={participatingRoundId === round.id}
                   isAdmin={isAdmin}
-                  captcha={captcha}
-                  captchaStatus={captchaStatus}
-                  captchaRef={captchaRef}
-                  onCaptchaSolved={handleCaptchaSolved}
-                  onCaptchaCleared={handleCaptchaCleared}
-                  onCaptchaStatus={handleCaptchaStatus}
                 />
               ))}
             </div>
