@@ -48,6 +48,6 @@ describe('OutEmail', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('请稍后再试')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /秒后可重试/ })).toBeDisabled();
-    expect(vi.mocked(api.post).mock.calls[0][1].messages).toHaveLength(20);
+    expect(vi.mocked(api.post).mock.calls[0][1]).toHaveProperty('messages.length', 20);
   });
 });
