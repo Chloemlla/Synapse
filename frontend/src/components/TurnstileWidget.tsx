@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface TurnstileWidgetProps {
   siteKey: string;
@@ -35,7 +35,6 @@ declare global {
 }
 
 // 全局脚本加载状态
-let scriptLoaded = false;
 let turnstileScriptPromise: Promise<void> | null = null;
 const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 const TURNSTILE_SCRIPT_SELECTOR = 'script[data-turnstile-api="true"], script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]';
@@ -44,14 +43,6 @@ const TURNSTILE_LOAD_TIMEOUT_MS = 10000;
 const debugTurnstile = (..._args: unknown[]) => {};
 
 const warnTurnstile = (..._args: unknown[]) => {};
-
-const maskSiteKey = (value: string) => {
-  if (value.length <= 8) {
-    return 'present';
-  }
-
-  return `${value.slice(0, 4)}...${value.slice(-4)}`;
-};
 
 const installDevelopmentTurnstile = () => {
   window.turnstile = {
@@ -95,105 +86,54 @@ const installDevelopmentTurnstile = () => {
   };
 };
 
-const waitForTurnstileApi = (timeoutMs = TURNSTILE_LOAD_TIMEOUT_MS): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const startedAt = Date.now();
-
-    const checkLoaded = () => {
-      if (window.turnstile) {
-        resolve();
-        return;
-      }
-
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('Turnstile API did not initialize'));
-        return;
-      }
-
-      window.setTimeout(checkLoaded, 100);
-    };
-
-    checkLoaded();
-  });
-};
-
 const loadTurnstileScript = (): Promise<void> => {
-  if (scriptLoaded && window.turnstile) {
-    return Promise.resolve();
-  }
-
-  if (turnstileScriptPromise) {
-    return turnstileScriptPromise;
-  }
-
+  if (window.turnstile) return Promise.resolve();
+  if (turnstileScriptPromise) return turnstileScriptPromise;
   if (import.meta.env.DEV) {
-    warnTurnstile('开发环境：使用模拟 Turnstile 控件');
     installDevelopmentTurnstile();
-    scriptLoaded = true;
     return Promise.resolve();
   }
 
-  turnstileScriptPromise = new Promise((resolve, reject) => {
-    if (scriptLoaded && window.turnstile) {
-      resolve();
-      return;
-    }
-
+  turnstileScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(TURNSTILE_SCRIPT_SELECTOR);
+    const script = existing ?? document.createElement('script');
     let settled = false;
-    const timeout = window.setTimeout(() => {
-      fail(new Error('Turnstile script load timed out'));
-    }, TURNSTILE_LOAD_TIMEOUT_MS);
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
+    const cleanup = () => {
       window.clearTimeout(timeout);
-      scriptLoaded = true;
+      window.clearInterval(poll);
+      script.removeEventListener('error', fail);
+    };
+    const ready = () => {
+      if (settled || !window.turnstile) return;
+      settled = true;
+      cleanup();
       resolve();
     };
-
-    const fail = (error: Error) => {
+    const fail = () => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timeout);
-      scriptLoaded = false;
-      turnstileScriptPromise = null;
-      reject(error);
+      cleanup();
+      script.remove();
+      reject(new Error('Turnstile script failed to load'));
     };
-
-    const waitForApi = () => {
-      waitForTurnstileApi()
-        .then(finish)
-        .catch(fail);
-    };
-
-    // 检查是否已经存在脚本
-    const existingScript = document.querySelector<HTMLScriptElement>(TURNSTILE_SCRIPT_SELECTOR);
-    if (existingScript) {
-      existingScript.addEventListener('load', waitForApi, { once: true });
-      existingScript.addEventListener('error', () => fail(new Error('Turnstile script failed to load')), { once: true });
-      waitForApi();
-      return;
+    const timeout = window.setTimeout(fail, TURNSTILE_LOAD_TIMEOUT_MS);
+    const poll = window.setInterval(ready, 100);
+    script.addEventListener('error', fail);
+    if (!existing) {
+      script.src = TURNSTILE_SCRIPT_SRC;
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstileApi = 'true';
+      script.setAttribute('data-cfasync', 'false');
+      document.head.appendChild(script);
     }
-
-    const script = document.createElement('script');
-    script.src = TURNSTILE_SCRIPT_SRC;
-    script.async = true;
-    script.defer = true;
-    script.dataset.turnstileApi = 'true';
-    script.setAttribute('data-cfasync', 'false');
-
-    script.onload = () => {
-      waitForApi();
-    };
-
-    script.onerror = () => {
-      fail(new Error('Turnstile script failed to load'));
-    };
-
-    document.head.appendChild(script);
+    ready();
+  }).then(() => {
+    turnstileScriptPromise = null;
+  }, (error) => {
+    turnstileScriptPromise = null;
+    throw error;
   });
-
   return turnstileScriptPromise;
 };
 
@@ -207,134 +147,55 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
   language,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetIdRef = useRef<string | null>(null);
-  const mountedRef = useRef(false);
-  const verifiedRef = useRef(false);
-
-  const renderWidget = useCallback(async () => {
-    if (!containerRef.current || !window.turnstile || mountedRef.current || verifiedRef.current) {
-      debugTurnstile('Turnstile: Skipping render', {
-        hasContainer: !!containerRef.current,
-        hasTurnstile: !!window.turnstile,
-        mounted: mountedRef.current,
-        verified: verifiedRef.current,
-      });
-      return;
-    }
-
-    try {
-      if (typeof siteKey !== 'string') {
-        console.error('Turnstile: siteKey must be a string', siteKey);
-        onError();
-        return;
-      }
-
-      const cleanSiteKey = siteKey.trim();
-      debugTurnstile('Turnstile siteKey loaded', { siteKey: maskSiteKey(cleanSiteKey) });
-      
-      if (!cleanSiteKey) {
-        console.error('Turnstile: Invalid siteKey provided');
-        onError();
-        return;
-      }
-
-      // 清理容器
-      containerRef.current.innerHTML = '';
-
-      debugTurnstile('Turnstile render options', {
-        sitekey: maskSiteKey(cleanSiteKey),
-        size,
-        theme,
-        language,
-        callback: typeof onVerify,
-        'expired-callback': typeof onExpire,
-        'error-callback': typeof onError,
-      });
-
-      // 传递完整的配置，包括回调函数
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: cleanSiteKey,
-        size,
-        theme,
-        ...(language && language !== 'auto' ? { language } : {}),
-        callback: (token: string) => {
-          debugTurnstile('Turnstile callback triggered', { tokenLength: token.length });
-          verifiedRef.current = true;
-          onVerify(token);
-        },
-        'expired-callback': () => {
-          debugTurnstile('Turnstile expired');
-          verifiedRef.current = false;
-          onExpire();
-        },
-        'error-callback': () => {
-          debugTurnstile('Turnstile error');
-          verifiedRef.current = false;
-          onError();
-        },
-      });
-
-      mountedRef.current = true;
-    } catch (error) {
-      console.error('Turnstile render error:', error);
-      onError();
-    }
-  }, [siteKey, size, theme, language]); // 移除回调函数依赖，避免无限循环
+  const callbacksRef = useRef({ onVerify, onExpire, onError });
+  callbacksRef.current = { onVerify, onExpire, onError };
 
   useEffect(() => {
-    let mounted = true;
-
-    const initWidget = async () => {
+    const container = containerRef.current;
+    if (!container) return;
+    let cancelled = false;
+    let widgetId: string | null = null;
+    const active = () => !cancelled && container.isConnected;
+    const mount = async () => {
       try {
+        const cleanSiteKey = typeof siteKey === 'string' ? siteKey.trim() : '';
+        if (!cleanSiteKey) throw new Error('Invalid Turnstile site key');
         await loadTurnstileScript();
-        if (mounted) {
-          await renderWidget();
-        }
+        if (!active()) return;
+        widgetId = window.turnstile.render(container, {
+          sitekey: cleanSiteKey,
+          size,
+          theme,
+          ...(language && language !== 'auto' ? { language } : {}),
+          callback: (token) => { if (active()) callbacksRef.current.onVerify(token); },
+          'expired-callback': () => { if (active()) callbacksRef.current.onExpire(); },
+          'error-callback': () => { if (active()) callbacksRef.current.onError(); },
+        });
       } catch (error) {
         console.error('Turnstile initialization error:', error);
-        if (mounted) {
-          onError();
-        }
+        if (active()) callbacksRef.current.onError();
       }
     };
-
-    initWidget();
+    void mount();
 
     return () => {
-      mounted = false;
-      mountedRef.current = false;
-      
-      // 清理 widget
-      if (widgetIdRef.current && window.turnstile) {
+      // remove/reset 可能同步派发 SDK 回调，必须先使本轮失效。
+      cancelled = true;
+      if (widgetId !== null && window.turnstile) {
         try {
-          if (typeof window.turnstile.remove === 'function') {
-            window.turnstile.remove(widgetIdRef.current);
-          } else {
-            window.turnstile.reset(widgetIdRef.current);
-          }
+          if (window.turnstile.remove) window.turnstile.remove(widgetId);
+          else window.turnstile.reset(widgetId);
         } catch (error) {
           warnTurnstile('Turnstile cleanup error:', error);
         }
-        widgetIdRef.current = null;
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
+      container.replaceChildren();
     };
-  }, []); // 只在组件挂载时执行一次
-
-  // 当 siteKey 或尺寸变化时重新渲染（仅在未验证成功时）
-  useEffect(() => {
-    if (mountedRef.current && window.turnstile && !verifiedRef.current) {
-      debugTurnstile('Turnstile: siteKey or size changed, re-rendering');
-      mountedRef.current = false;
-      renderWidget();
-    }
-  }, [siteKey, size, theme, language]); // 移除 renderWidget 依赖，避免无限循环
+  }, [siteKey, size, theme, language]);
 
   return (
     <div className="turnstile-widget">
       <div ref={containerRef} className="turnstile-widget-container" />
     </div>
   );
-}; 
+};

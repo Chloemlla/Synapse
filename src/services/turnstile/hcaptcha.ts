@@ -144,11 +144,10 @@ export async function verifyHCaptchaToken(token: string, remoteIp?: string, site
       return false;
     }
 
-    recordVerificationOutcome(remoteIp || "unknown", undefined, true, now);
-
     // hCaptcha Enterprise 返回 score (0-1)，低于阈值视为机器人，拒绝放行
     const HCAPTCHA_SCORE_THRESHOLD = 0.5;
     if (typeof result.score === "number" && result.score < HCAPTCHA_SCORE_THRESHOLD) {
+      recordVerificationOutcome(remoteIp || "unknown", undefined, false, now);
       logger.warn("hCaptcha 验证通过但 score 过低，拒绝", {
         remoteIp,
         score: result.score,
@@ -174,6 +173,8 @@ export async function verifyHCaptchaToken(token: string, remoteIp?: string, site
 
       return false;
     }
+
+    recordVerificationOutcome(remoteIp || "unknown", undefined, true, now);
 
     logger.info("hCaptcha 验证成功", {
       remoteIp,

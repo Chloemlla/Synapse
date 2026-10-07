@@ -182,3 +182,5 @@ _audit_scan6.py
 .codex/
 .trellis/
 给所有表格套网格样式.宏
+.audit-reports/
+deploy/openresty/gdrive.env

@@ -464,7 +464,7 @@ export class IPFSService {
         throw new Error("IPFS上传需要先启用人机验证");
       }
 
-      const challenge = readCaptchaChallenge({ token: cfToken, provider: context?.captchaProvider });
+      const challenge = readCaptchaChallenge({ captchaToken: cfToken, captchaProvider: context?.captchaProvider });
       if (!challenge.token) {
         throw new Error("请先完成人机验证");
       }
@@ -476,8 +476,7 @@ export class IPFSService {
           remoteIp: context?.clientIp,
           userAgent: context?.userAgent,
         });
-        // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
-        if (!isValid && captchaPolicy.enabledProviders.includes(challenge.provider)) {
+        if (!isValid) {
           throw new Error("人机验证失败，请重新验证");
         }
         logger.info("[IPFS] 人机验证通过", { provider: challenge.provider });

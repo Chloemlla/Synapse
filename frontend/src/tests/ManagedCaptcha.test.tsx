@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -64,7 +64,8 @@ vi.mock('../components/TurnstileWidget', () => ({ TurnstileWidget: fakeWidget('t
 vi.mock('../components/HCaptchaWidget', () => fakeWidget('hcaptcha'));
 vi.mock('../components/CapWidget', () => fakeWidget('trycap'));
 
-import ManagedCaptcha, { type ManagedCaptchaStatus } from '../components/ManagedCaptcha';
+import ManagedCaptcha, { type ManagedCaptchaRef, type ManagedCaptchaStatus } from '../components/ManagedCaptcha';
+import { notifyCaptchaFailure } from '../utils/captchaRecovery';
 
 function setSelection(overrides: Partial<typeof h.selection>) {
   h.selection = {
@@ -190,7 +191,7 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     expect(h.getFingerprint).not.toHaveBeenCalled();
   });
 
-  it('解出后再收到一次「过期」（Cap 卸载时自派发的 reset）不得回滚已验证结果', async () => {
+  it('成功后保持控件挂载，真实过期时清令牌并准备新验证', async () => {
     const onSolved = vi.fn();
     const onCleared = vi.fn();
     setSelection({
@@ -208,14 +209,15 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
     );
     expect(await screen.findByText('人机验证通过')).toBeInTheDocument();
 
-    // 控件此时已被卸载（面板改渲染「人机验证通过」），而 Cap 在断开连接时会自己 reset 一次
-    // 并派发 reset；这一声噪声不得把刚拿到的令牌与通过状态抹掉成「验证已过期」。
-    lastWidgetProps.trycap?.onExpire?.();
+    expect(screen.getByTestId('trycap-widget')).toBeInTheDocument();
+    expect(screen.getByTestId('trycap-widget')).not.toBeVisible();
+    act(() => lastWidgetProps.trycap?.onExpire?.());
 
-    await waitFor(() => expect(screen.getByText('人机验证通过')).toBeInTheDocument());
-    expect(onCleared).not.toHaveBeenCalled();
+    await waitFor(() => expect(onCleared).toHaveBeenCalledTimes(1));
+    expect(h.selection.regenerateSelection).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryByText('solve-trycap')).toBeNull();
+    expect(screen.queryByText('人机验证通过')).toBeNull();
+    expect(screen.getByTestId('trycap-widget')).toBeVisible();
   });
 
   it('trycap 未解出时的过期事件按「静默重挂」处理：不清令牌、不弹过期提示', async () => {
@@ -252,10 +254,92 @@ describe('ManagedCaptcha：后台页面共用的三家供应商下发链路', ()
 
     await screen.findByTestId('trycap-widget');
     for (let i = 0; i < 3; i += 1) {
-      lastWidgetProps.trycap?.onExpire?.();
+      act(() => lastWidgetProps.trycap?.onExpire?.());
     }
 
     expect(await screen.findByRole('alert')).toHaveTextContent('验证已过期');
     expect(onCleared).toHaveBeenCalled();
+  });
+
+  it.each(['turnstile', 'hcaptcha', 'trycap'])('连续三轮 %s 提交后可重置，旧轮回调不能恢复旧令牌', async (provider) => {
+    const ref = React.createRef<ManagedCaptchaRef>();
+    const onSolved = vi.fn();
+    const onCleared = vi.fn();
+    setSelection({ enabled: true, siteKey: 'key', captchaConfig: { captchaType: provider } });
+    render(<ManagedCaptcha ref={ref} onSolved={onSolved} onCleared={onCleared} fingerprintOverride="fp" />);
+    await screen.findByTestId(`${provider}-widget`);
+    for (let index = 0; index < 3; index += 1) {
+      const previous = lastWidgetProps[provider];
+      act(() => previous.onVerify(`token-${index}`));
+      expect(onSolved).toHaveBeenCalledTimes(index + 1);
+      act(() => ref.current?.reset());
+      act(() => {
+        previous.onVerify('stale');
+        previous.onExpire();
+        previous.onError();
+      });
+      expect(onSolved).toHaveBeenCalledTimes(index + 1);
+      expect(onCleared).toHaveBeenCalledTimes(index + 1);
+      expect(screen.getByTestId(`${provider}-widget`)).toBeVisible();
+    }
+    expect(h.selection.regenerateSelection).toHaveBeenCalledTimes(3);
+  });
+
+  it('切换场景清除旧成功状态', async () => {
+    setSelection({ enabled: true, siteKey: 'key', captchaConfig: { captchaType: 'turnstile' } });
+    const onCleared = vi.fn();
+    const { rerender } = render(<ManagedCaptcha fingerprintOverride="fp" onCleared={onCleared} />);
+    await screen.findByText('solve-turnstile');
+    act(() => lastWidgetProps.turnstile.onVerify('token'));
+    rerender(<ManagedCaptcha fingerprintOverride="fp" scenario="standalone" onCleared={onCleared} />);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('人机验证通过')).toBeNull();
+  });
+
+  it('指纹采集失败显示错误，不误报可跳过验证', async () => {
+    h.getFingerprint.mockRejectedValueOnce(new Error('unavailable'));
+    const statuses: ManagedCaptchaStatus[] = [];
+    render(<ManagedCaptcha onStatusChange={(status) => statuses.push(status)} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法准备人机验证');
+    expect(statuses.at(-1)).toMatchObject({ loading: false, solved: false, error: expect.any(String) });
+  });
+
+  it('自动识别后端验证失败，页面再次 reset 不重复请求，新挑战忽略旧响应', async () => {
+    setSelection({ enabled: true, siteKey: 'key', captchaConfig: { captchaType: 'turnstile' } });
+    const ref = React.createRef<ManagedCaptchaRef>();
+    const onCleared = vi.fn();
+    render(<ManagedCaptcha ref={ref} onCleared={onCleared} fingerprintOverride="fp" />);
+    await screen.findByText('solve-turnstile');
+    act(() => lastWidgetProps.turnstile.onVerify('first-token'));
+    act(() => {
+      notifyCaptchaFailure({ error: '人机验证失败，请重试' }, JSON.stringify({ captchaToken: 'first-token' }), 400);
+      ref.current?.reset();
+    });
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(h.selection.regenerateSelection).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('turnstile-widget')).toBeVisible();
+    act(() => lastWidgetProps.turnstile.onVerify('second-token'));
+    act(() => notifyCaptchaFailure({ error: '人机验证失败，请重试' }, { captchaToken: 'first-token' }, 400));
+    act(() => ref.current?.reset('first-token'));
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('人机验证通过')).toBeInTheDocument();
+  });
+
+  it('同页多个控件只恢复请求令牌对应的一家，不广播无归属错误', async () => {
+    setSelection({ enabled: true, siteKey: 'key', captchaConfig: { captchaType: 'turnstile' } });
+    const firstClear = vi.fn();
+    const secondClear = vi.fn();
+    const first = render(<ManagedCaptcha fingerprintOverride="first" onCleared={firstClear} />);
+    await screen.findByText('solve-turnstile');
+    act(() => lastWidgetProps.turnstile.onVerify('first-token'));
+    render(<ManagedCaptcha fingerprintOverride="second" onCleared={secondClear} />);
+    await waitFor(() => expect(screen.getAllByTestId('turnstile-widget')).toHaveLength(2));
+    act(() => lastWidgetProps.turnstile.onVerify('second-token'));
+    act(() => notifyCaptchaFailure({ error: '人机验证失败，请重试' }, { captchaToken: 'first-token' }, 403));
+    expect(firstClear).toHaveBeenCalledTimes(1);
+    expect(secondClear).not.toHaveBeenCalled();
+    act(() => notifyCaptchaFailure({ error: '人机验证失败，请重试' }, {}, 403));
+    expect(secondClear).not.toHaveBeenCalled();
+    first.unmount();
   });
 });

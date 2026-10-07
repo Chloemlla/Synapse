@@ -4,6 +4,7 @@ import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
 import { getFingerprint } from '../utils/fingerprint';
 import { CaptchaType, getCaptchaDisplayName } from '../utils/captchaSelection';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { subscribeCaptchaRecovery } from '../utils/captchaRecovery';
 
 // 按后端选中的供应商懒加载对应控件，不把三家 SDK 都塞进首屏。
 const TurnstileWidget = lazy(() =>
@@ -66,8 +67,8 @@ export interface ManagedCaptchaProps {
 }
 
 export interface ManagedCaptchaRef {
-  /** 重置挑战（提交失败后调用；会重新取一次下发配置）。 */
-  reset: () => void;
+  /** 每次实际提交结束后调用（成功或失败均消费令牌），重新准备挑战。 */
+  reset: (consumedToken?: string) => void;
 }
 
 type ProviderMode = 'turnstile' | 'hcaptcha' | 'trycap';
@@ -76,6 +77,8 @@ const DEFAULT_FAILOVER_ATTEMPTS = 2;
 
 /** trycap 在报「验证已过期」前允许静默重挂的次数（Cap 控件挂载后会自己重新解题）。 */
 const TRY_CAP_REARM_LIMIT = 2;
+// 无令牌的旧接口错误只能交给唯一控件；多表单页面必须靠令牌精确归属。
+const mountedCaptchas = new Set<symbol>();
 
 function providerModeOf(type: CaptchaType | null | undefined): ProviderMode | null {
   if (type === CaptchaType.TRYCAP) return 'trycap';
@@ -104,6 +107,7 @@ const ManagedCaptcha = ({
   const [fingerprint, setFingerprint] = useState(fingerprintOverride ?? '');
   // 指纹采集是异步的：采集没落定之前根本问不了服务端，也就给不出「要不要验证」的结论。
   const [fingerprintSettled, setFingerprintSettled] = useState(Boolean(fingerprintOverride));
+  const [fingerprintAttempt, setFingerprintAttempt] = useState(0);
   // 控件加载失败时逐个排除，等于前端侧的故障转移（次数上限由管理端分配策略下发）。
   const failedProvidersRef = useRef<CaptchaType[]>([]);
   const [widgetKey, setWidgetKey] = useState(0);
@@ -111,10 +115,11 @@ const ManagedCaptcha = ({
   const [widgetError, setWidgetError] = useState('');
   // trycap 静默换挑战期间给用户一句可见提示，避免「明明在重试却毫无动静」的困惑。
   const [rearming, setRearming] = useState(false);
-  // 验证成功是终态：成功后面板会卸载控件，而 Cap 控件在 disconnectedCallback 里自己会 reset 一次
-  // 并派发 reset 事件。若把这声噪声当真上报，就会变成「解出 → 显示过期 → 重挂 → 又自动解出」的循环。
-  // 用 ref 记住终态（同步生效，不跟 setState 的异步调度）——与 CaptchaVerificationPage 同一套做法。
+  // 同一轮只接受一次成功；过期或提交后开启新轮。
   const solvedRef = useRef(false);
+  const generationRef = useRef(0);
+  const tokenRef = useRef('');
+  const resetInProgressRef = useRef(false);
   // trycap 的静默重挂计数：Cap 控件在断连/重挂/内部重取挑战时都会自己 reset 并派发 reset，
   // 这不是「用户令牌失效」。对 trycap 先静默换一张挑战（Cap 挂载后会自动解题），
   // 连续超过上限仍拿不到新令牌才报错，避免真卡死时无声无息。
@@ -127,15 +132,20 @@ const ManagedCaptcha = ({
       return;
     }
     let cancelled = false;
+    setFingerprintSettled(false);
     void getFingerprint().then((value) => {
       if (cancelled) return;
       setFingerprint(value || '');
+      setFingerprintSettled(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setFingerprint('');
       setFingerprintSettled(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [fingerprintOverride]);
+  }, [fingerprintOverride, fingerprintAttempt]);
 
   const {
     captchaConfig,
@@ -157,8 +167,7 @@ const ManagedCaptcha = ({
   const required = Boolean(providerMode);
   const attempts = Math.max(1, Math.min(3, failoverMaxAttempts || DEFAULT_FAILOVER_ATTEMPTS));
 
-  // 服务端结论（拿到下发配置，或拿到错误）是否已到手。指纹采集若落定为「没有指纹」，
-  // 就再也问不出结论了，这时不该永远停在加载中，按「不要求验证」交给后端把关。
+  // 指纹获取失败必须结束加载并显示可恢复错误，不能误报不要求验证。
   const resolved = Boolean(captchaConfig) || Boolean(selectionError);
   const fingerprintUnavailable = fingerprintSettled && !fingerprint;
   // 报给页面的 loading 必须涵盖「还没问到」这一段：页面拿 required 决定是否放行提交、
@@ -168,28 +177,71 @@ const ManagedCaptcha = ({
   // 换指纹/换场景即换一轮分配，排除名单随之作废。
   useEffect(() => {
     failedProvidersRef.current = [];
+    generationRef.current += 1;
+    setWidgetKey(generationRef.current);
+    if (solvedRef.current) onCleared?.();
+    solvedRef.current = false;
+    tokenRef.current = '';
+    setSolved(false);
+    setWidgetError('');
+    setRearming(false);
+    tryCapRearmCountRef.current = 0;
   }, [fingerprint, scenario]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback((consumedToken?: string) => {
+    if (consumedToken !== undefined && consumedToken !== tokenRef.current) return;
+    // 响应拦截器与页面 finally 可能同时申请恢复，同一轮只发一次配置请求。
+    if (resetInProgressRef.current && !solvedRef.current) return;
+    resetInProgressRef.current = true;
+    generationRef.current += 1;
     failedProvidersRef.current = [];
     solvedRef.current = false;
+    tokenRef.current = '';
     tryCapRearmCountRef.current = 0;
     setSolved(false);
     setWidgetError('');
     setRearming(false);
-    setWidgetKey((value) => value + 1);
+    setWidgetKey(generationRef.current);
     onCleared?.();
+    if (fingerprintUnavailable) setFingerprintAttempt((value) => value + 1);
     regenerateSelection();
-  }, [onCleared, regenerateSelection]);
+  }, [fingerprintUnavailable, onCleared, regenerateSelection]);
 
   useImperativeHandle(ref, () => ({ reset }), [reset]);
 
+  useEffect(() => {
+    if (!statusLoading) resetInProgressRef.current = false;
+  }, [captchaConfig, selectionError, statusLoading]);
+
+  const recoveryRef = useRef({ reset, loading: statusLoading });
+  recoveryRef.current = { reset, loading: statusLoading };
+  useEffect(() => {
+    const identity = Symbol('captcha');
+    mountedCaptchas.add(identity);
+    const unsubscribe = subscribeCaptchaRecovery((failedToken) => {
+      if (failedToken !== null) {
+        if (!tokenRef.current || failedToken !== tokenRef.current) return;
+      } else if (mountedCaptchas.size !== 1 || recoveryRef.current.loading) {
+        return;
+      }
+      recoveryRef.current.reset();
+    });
+    return () => {
+      unsubscribe();
+      mountedCaptchas.delete(identity);
+      generationRef.current += 1;
+      tokenRef.current = '';
+    };
+  }, []);
+
   const handleVerify = useCallback(
     (token: string) => {
-      if (!providerMode || !token) return;
+      if (!providerMode || !token || solvedRef.current) return;
       setWidgetError('');
       setRearming(false);
       solvedRef.current = true;
+      tokenRef.current = token;
+      resetInProgressRef.current = false;
       tryCapRearmCountRef.current = 0;
       setSolved(true);
       onSolved?.({ token, provider: providerTypeOf(providerMode) });
@@ -198,9 +250,12 @@ const ManagedCaptcha = ({
   );
 
   const handleExpire = useCallback(() => {
-    // 成功之后控件会被卸载，卸载噪音产生的 reset 不得回滚已经拿到的令牌；
-    // 真需要重新验证时走上层显式 reset()（它会把 solvedRef 置回 false）。
-    if (solvedRef.current) return;
+    // 成功控件保留挂载，真实过期须清除页面令牌并立即准备下一轮。
+    // Cap 卸载噪音由底层 isConnected 检查过滤。
+    if (solvedRef.current) {
+      reset();
+      return;
+    }
 
     // trycap：reset 不是「用户令牌失效」的可靠信号（Cap 官方控件在断连、重挂、内部重取
     // 挑战时都会自己 reset 一次），而且它的控件挂载后会自动重新解题。
@@ -210,16 +265,18 @@ const ManagedCaptcha = ({
       tryCapRearmCountRef.current += 1;
       setWidgetError('');
       setRearming(true);
-      setWidgetKey((value) => value + 1);
+      generationRef.current += 1;
+      setWidgetKey(generationRef.current);
       return;
     }
 
     setSolved(false);
     setRearming(false);
     setWidgetError('验证已过期，请重新完成');
-    setWidgetKey((value) => value + 1);
+    generationRef.current += 1;
+    setWidgetKey(generationRef.current);
     onCleared?.();
-  }, [onCleared, providerMode]);
+  }, [onCleared, providerMode, reset]);
 
   /** 控件加载/解题失败 → 排除这一家，按管理端策略换下一家（上限 failoverMaxAttempts）。 */
   const handleWidgetError = useCallback(() => {
@@ -231,6 +288,9 @@ const ManagedCaptcha = ({
       attempted.length + 1 < attempts;
 
     solvedRef.current = false;
+    tokenRef.current = '';
+    generationRef.current += 1;
+    setWidgetKey(generationRef.current);
     tryCapRearmCountRef.current = 0;
     setSolved(false);
     setRearming(false);
@@ -239,7 +299,6 @@ const ManagedCaptcha = ({
     if (canRetry) {
       failedProvidersRef.current = [...attempted, current];
       setWidgetError('');
-      setWidgetKey((value) => value + 1);
       regenerateSelection({ exclude: failedProvidersRef.current });
       return;
     }
@@ -249,8 +308,14 @@ const ManagedCaptcha = ({
 
   const error = useMemo(() => {
     if (statusLoading) return null;
-    return selectionError || widgetError || null;
-  }, [selectionError, statusLoading, widgetError]);
+    if (selectionError || widgetError) return selectionError || widgetError;
+    if (fingerprintUnavailable) return '无法准备人机验证，请点击重试';
+    // 故障转移没有候选不等于管理员关闭验证；保留重试入口。
+    if (captchaConfig && !providerMode && (enabled || failedProvidersRef.current.length > 0)) {
+      return '验证服务暂不可用，请点击重试';
+    }
+    return null;
+  }, [captchaConfig, enabled, fingerprintUnavailable, providerMode, selectionError, statusLoading, widgetError]);
 
   // 状态回报：页面用它决定提交按钮可用性与错误提示（required 为 false 时页面直接放行）。
   // 回调放进 ref：页面即使传内联箭头函数也不会因为回调身份变化而重复触发。
@@ -287,7 +352,7 @@ const ManagedCaptcha = ({
           </div>
           <button
             type="button"
-            onClick={reset}
+            onClick={() => reset()}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
             <FaRedo className="h-3 w-3" />
@@ -305,12 +370,13 @@ const ManagedCaptcha = ({
                 : 'flex min-h-[86px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4'
             }
           >
-            {solved ? (
+            {solved && (
               <div className="flex items-center gap-2 text-sm font-medium text-emerald-600" role="status" aria-live="polite">
                 <FaCheckCircle className="h-4 w-4" />
                 人机验证通过
               </div>
-            ) : (
+            )}
+            <div hidden={solved}>
               <Suspense
                 fallback={
                   <div className="flex h-[60px] w-full items-center justify-center">
@@ -325,9 +391,9 @@ const ManagedCaptcha = ({
                     theme={theme}
                     language={widget.language}
                     size={widget.size}
-                    onVerify={handleVerify}
-                    onExpire={handleExpire}
-                    onError={handleWidgetError}
+                    onVerify={(token) => { if (widgetKey === generationRef.current) handleVerify(token); }}
+                    onExpire={() => { if (widgetKey === generationRef.current) handleExpire(); }}
+                    onError={() => { if (widgetKey === generationRef.current) handleWidgetError(); }}
                   />
                 ) : providerMode === 'trycap' ? (
                   <CapWidget
@@ -336,9 +402,9 @@ const ManagedCaptcha = ({
                     apiEndpoint={apiEndpoint || ''}
                     theme={theme}
                     language={widget.language}
-                    onVerify={handleVerify}
-                    onExpire={handleExpire}
-                    onError={handleWidgetError}
+                    onVerify={(token) => { if (widgetKey === generationRef.current) handleVerify(token); }}
+                    onExpire={() => { if (widgetKey === generationRef.current) handleExpire(); }}
+                    onError={() => { if (widgetKey === generationRef.current) handleWidgetError(); }}
                   />
                 ) : (
                   <HCaptchaWidget
@@ -347,13 +413,13 @@ const ManagedCaptcha = ({
                     theme={theme}
                     language={widget.language}
                     size={size}
-                    onVerify={handleVerify}
-                    onExpire={handleExpire}
-                    onError={handleWidgetError}
+                    onVerify={(token) => { if (widgetKey === generationRef.current) handleVerify(token); }}
+                    onExpire={() => { if (widgetKey === generationRef.current) handleExpire(); }}
+                    onError={() => { if (widgetKey === generationRef.current) handleWidgetError(); }}
                   />
                 )}
               </Suspense>
-            )}
+            </div>
           </div>
 
           {rearming && (

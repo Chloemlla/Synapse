@@ -4,9 +4,10 @@ import { useAuth } from '../hooks/useAuth';
 import { useEmailCooldown } from '../hooks/useEmailCooldown';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
-import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaStatus } from './ManagedCaptcha';
+import ManagedCaptcha, { type ManagedCaptchaChallenge, type ManagedCaptchaRef, type ManagedCaptchaStatus } from './ManagedCaptcha';
 import { FaEnvelope, FaArrowLeft, FaVolumeUp, FaKey, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getFingerprint, getClientIP } from '../utils/fingerprint';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import {
@@ -57,6 +58,8 @@ export const ForgotPasswordPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+    const captchaRef = React.useRef<ManagedCaptchaRef | null>(null);
+    const submittingRef = React.useRef(false);
     const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
         required: false,
         loading: true,
@@ -83,7 +86,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
-        if (cooldownSeconds > 0) return;
+        if (submittingRef.current || cooldownSeconds > 0) return;
         setError(null);
 
         const sanitizedEmail = DOMPurify.sanitize(email).trim();
@@ -110,11 +113,13 @@ export const ForgotPasswordPage: React.FC = () => {
         }
 
         setLoading(true);
+        submittingRef.current = true;
 
         // raw fetch 不走 axios（api.ts 的 15s timeout 覆盖不到），这里内联中止逻辑，
         // 后端挂起时最多等 15 秒后进入可重试的错误态。
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+        let requestSent = false;
 
         try {
             const [fingerprint, clientIP] = await Promise.all([
@@ -128,7 +133,8 @@ export const ForgotPasswordPage: React.FC = () => {
                 return;
             }
 
-            const response = await fetch(getApiBaseUrl() + '/api/auth/forgot-password', {
+            requestSent = true;
+            const response = await fetchWithTimeout(getApiBaseUrl() + '/api/auth/forgot-password', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -171,6 +177,8 @@ export const ForgotPasswordPage: React.FC = () => {
             setNotification({ message: timedOut ? '请求超时，请稍后重试' : '网络错误，请重试', type: 'error' });
         } finally {
             window.clearTimeout(timeoutId);
+            if (requestSent && captcha?.token) captchaRef.current?.reset(captcha.token);
+            submittingRef.current = false;
             setLoading(false);
         }
     };
@@ -293,6 +301,7 @@ export const ForgotPasswordPage: React.FC = () => {
                                         </div>
 
                                         <ManagedCaptcha
+                                            ref={captchaRef}
                                             scenario="default"
                                             onSolved={handleCaptchaSolved}
                                             onCleared={handleCaptchaCleared}

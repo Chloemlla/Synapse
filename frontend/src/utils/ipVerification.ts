@@ -282,7 +282,9 @@ export async function completeIpVerification(
   fingerprintInput: string,
   captchaToken: string,
   captchaType: IpCaptchaType,
+  signal?: AbortSignal,
 ): Promise<IpVerificationSession> {
+  if (signal?.aborted) throw new DOMException('Verification cancelled', 'AbortError');
   if (!isFirstVisitVerificationEnabled()) {
     return {
       success: true,
@@ -299,6 +301,7 @@ export async function completeIpVerification(
 
   const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/ip-verification/complete`, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json',
     },
@@ -311,6 +314,9 @@ export async function completeIpVerification(
   });
 
   const payload = await response.json().catch(() => ({}));
+
+  // fetch 已收到响应时也可能换轮；旧会话不能覆盖新挑战的本地凭证。
+  if (signal?.aborted) throw new DOMException('Verification cancelled', 'AbortError');
 
   if (!response.ok) {
     // 封禁可能恰在解验证码这一刻生效：complete 命中 EXEMPT_PATH_PREFIXES，transport 的 403

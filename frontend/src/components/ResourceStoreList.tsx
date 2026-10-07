@@ -111,6 +111,7 @@ export default function ResourceStoreList() {
   // 人机验证：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）。
   const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
   const captchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const submittingRef = useRef(false);
   const [captchaStatus, setCaptchaStatus] = useState<ManagedCaptchaStatus>({
     required: false,
     loading: true,
@@ -189,6 +190,7 @@ export default function ResourceStoreList() {
   }, [activeTab]);
 
   const handleRedeemCDK = async (forceRedeem = false) => {
+    if (submittingRef.current) return;
     const codeToRedeem = forceRedeem ? pendingCDKCode : cdkCode;
 
     if (!codeToRedeem.trim()) {
@@ -202,6 +204,7 @@ export default function ResourceStoreList() {
     }
 
     setCdkLoading(true);
+    submittingRef.current = true;
     setError("");
     setSuccess("");
 
@@ -238,7 +241,6 @@ export default function ResourceStoreList() {
       setCdkCode("");
       setPendingCDKCode("");
       setShowDuplicateDialog(false);
-      setCaptcha(null);
       fetchRedeemedResourcesCount();
       if (activeTab === "owned") {
         fetchRedeemedResources();
@@ -258,13 +260,13 @@ export default function ResourceStoreList() {
           id: err.response.data.resourceId,
         });
         setPendingCDKCode(codeToRedeem);
-        // 挑战令牌一次性：首次兑换已核销过它，强制兑换前必须重新验证。
-        captchaRef.current?.reset();
         setShowDuplicateDialog(true);
       } else {
         setError("兑换失败，CDK 无效或已经使用");
       }
     } finally {
+      if (!isAdmin && captcha?.token) captchaRef.current?.reset(captcha.token);
+      submittingRef.current = false;
       setCdkLoading(false);
     }
   };

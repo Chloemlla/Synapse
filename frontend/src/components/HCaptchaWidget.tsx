@@ -28,11 +28,59 @@ declare global {
       remove: (widgetId: string) => void;
       getResponse: (widgetId?: string) => string;
     };
-    onHCaptchaLoad?: () => void;
   }
 }
 
 type HCaptchaWidgetInternalProps = HCaptchaWidgetProps & { ref?: React.Ref<HCaptchaWidgetRef> };
+
+let hcaptchaScriptPromise: Promise<void> | null = null;
+
+function loadHCaptchaScript(): Promise<void> {
+  if (window.hcaptcha) return Promise.resolve();
+  if (hcaptchaScriptPromise) return hcaptchaScriptPromise;
+
+  hcaptchaScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[src^="https://js.hcaptcha.com/1/api.js"]');
+    const script = existing ?? document.createElement('script');
+    let settled = false;
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.clearInterval(poll);
+      script.removeEventListener('error', fail);
+    };
+    const ready = () => {
+      if (settled || !window.hcaptcha) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      // 失败的元素不会再次派发 load，保留它会让后续手动重试一直失败。
+      script.remove();
+      reject(new Error('hCaptcha script failed to load'));
+    };
+    const timeout = window.setTimeout(fail, 15000);
+    const poll = window.setInterval(ready, 100);
+    script.addEventListener('error', fail);
+    if (!existing) {
+      // 等待 API 就绪由共享轮询完成，多个实例不再覆盖同一个全局 onload 回调。
+      script.src = 'https://js.hcaptcha.com/1/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+    ready();
+  }).then(() => {
+    hcaptchaScriptPromise = null;
+  }, (error) => {
+    hcaptchaScriptPromise = null;
+    throw error;
+  });
+  return hcaptchaScriptPromise;
+}
 
 const HCaptchaWidget = ({
   siteKey,
@@ -48,15 +96,18 @@ const HCaptchaWidget = ({
 }: HCaptchaWidgetInternalProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const isLoadingRef = useRef(false);
+  const callbacksRef = useRef({ onVerify, onExpire, onError });
+  callbacksRef.current = { onVerify, onExpire, onError };
 
-  const renderWidget = useCallback(() => {
-    if (!containerRef.current || !window.hcaptcha || !siteKey || widgetIdRef.current) {
-      return;
-    }
-
-    try {
-      const widgetId = window.hcaptcha.render(containerRef.current, {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !siteKey) return;
+    let cancelled = false;
+    let widgetId: string | null = null;
+    const active = () => !cancelled && container.isConnected;
+    void loadHCaptchaScript().then(() => {
+      if (!active()) return;
+      widgetId = window.hcaptcha.render(container, {
         sitekey: siteKey,
         // hCaptcha 没有 flexible 尺寸，自适应需求用 normal 承载。
         size: size === 'flexible' ? 'normal' : size,
@@ -65,77 +116,33 @@ const HCaptchaWidget = ({
         ...(language && language !== 'auto' ? { language } : {}),
         tabindex: tabIndex,
         callback: (token: string) => {
-          onVerify(token);
+          if (active()) callbacksRef.current.onVerify(token);
         },
         'expired-callback': () => {
-          onExpire?.();
+          if (active()) callbacksRef.current.onExpire?.();
         },
         'error-callback': (error: any) => {
-          console.error('hCaptcha error:', error);
-          onError?.(error);
+          if (active()) callbacksRef.current.onError?.(error);
         }
       });
-
       widgetIdRef.current = widgetId;
-    } catch (error) {
-      console.error('Failed to render hCaptcha widget:', error);
-      onError?.(error);
-    }
-  }, [siteKey, size, theme, language, tabIndex, onVerify, onExpire, onError]);
-
-  const loadHCaptchaScript = useCallback(() => {
-    if (isLoadingRef.current || window.hcaptcha) {
-      if (window.hcaptcha) {
-        renderWidget();
-      }
-      return;
-    }
-
-    isLoadingRef.current = true;
-
-    const script = document.createElement('script');
-    script.src = 'https://js.hcaptcha.com/1/api.js?onload=onHCaptchaLoad&render=explicit';
-    script.async = true;
-    script.defer = true;
-
-    window.onHCaptchaLoad = () => {
-      renderWidget();
-    };
-
-    script.onerror = () => {
-      console.error('Failed to load hCaptcha script');
-      isLoadingRef.current = false;
-      onError?.(new Error('Failed to load hCaptcha script'));
-    };
-
-    document.head.appendChild(script);
-  }, [renderWidget, onError]);
-
-  useEffect(() => {
-    loadHCaptchaScript();
+    }).catch((error) => {
+      if (active()) callbacksRef.current.onError?.(error);
+    });
 
     return () => {
-      if (widgetIdRef.current && window.hcaptcha) {
+      cancelled = true;
+      widgetIdRef.current = null;
+      if (widgetId !== null && window.hcaptcha) {
         try {
-          window.hcaptcha.remove(widgetIdRef.current);
+          window.hcaptcha.remove(widgetId);
         } catch (error) {
           console.warn('Failed to remove hCaptcha widget:', error);
         }
-        widgetIdRef.current = null;
       }
+      container.replaceChildren();
     };
-  }, [loadHCaptchaScript]);
-
-  // Reset widget when siteKey changes
-  useEffect(() => {
-    if (widgetIdRef.current && window.hcaptcha) {
-      try {
-        window.hcaptcha.reset(widgetIdRef.current);
-      } catch (error) {
-        console.warn('Failed to reset hCaptcha widget:', error);
-      }
-    }
-  }, [siteKey]);
+  }, [siteKey, size, theme, language, tabIndex]);
 
   const executeChallenge = useCallback(() => {
     if (widgetIdRef.current && window.hcaptcha) {
@@ -143,10 +150,10 @@ const HCaptchaWidget = ({
         window.hcaptcha.execute(widgetIdRef.current);
       } catch (error) {
         console.error('Failed to execute hCaptcha challenge:', error);
-        onError?.(error);
+        callbacksRef.current.onError?.(error);
       }
     }
-  }, [onError]);
+  }, []);
 
   const resetWidget = useCallback(() => {
     if (widgetIdRef.current && window.hcaptcha) {

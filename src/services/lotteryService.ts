@@ -234,7 +234,7 @@ class LotteryService {
     if (!isAdmin) {
       const policy = await TurnstileService.getCaptchaRequestPolicy();
       if (policy.required) {
-        const challenge = readCaptchaChallenge({ token: cfToken, provider: captchaProvider });
+        const challenge = readCaptchaChallenge({ captchaToken: cfToken, captchaProvider });
         if (!challenge.token) {
           logger.warn("非管理员用户缺少人机验证 token，拒绝参与抽奖", { userId, userRole });
           throw new Error("需要完成人机验证才能参与抽奖");
@@ -251,8 +251,7 @@ class LotteryService {
           });
           throw new Error("人机验证服务暂时不可用，请稍后重试");
         });
-        // 该家已被管理端下线（凭据可能已清掉）：不再把人卡死，与历史「开关关闭即放行」一致。
-        if (!verified && policy.enabledProviders.includes(challenge.provider)) {
+        if (!verified) {
           logger.warn("人机验证失败", { userId, userRole, provider: challenge.provider });
           throw new Error("人机验证失败，请重新验证");
         }
