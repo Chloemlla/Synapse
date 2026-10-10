@@ -119,6 +119,9 @@ describe("LibreChat Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.response).toBeDefined();
+      // 成功响应回传扣减后的额度，前端据此即时更新剩余次数（不必再多发一次查询）。
+      expect(res.body.quota).toMatchObject({ banned: false, warnings: 0 });
+      expect(res.body.quota.remaining).toBe(res.body.quota.dailyLimit - res.body.quota.used);
     });
 
     it("应该处理超长消息", async () => {
@@ -175,6 +178,32 @@ describe("LibreChat Routes", () => {
       expect(Array.isArray(res.body.history)).toBe(true);
       expect(res.body.total).toBeDefined();
       expect(res.body.currentPage).toBe(1);
+    });
+  });
+
+  describe("GET /api/libre-chat/quota", () => {
+    it("应该拒绝未登录的额度查询", async () => {
+      const res = await request(app).get("/api/libre-chat/quota");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("未授权");
+    });
+
+    it("应该返回登录用户的今日额度视图（只读，不消耗次数）", async () => {
+      mockGetUserById.mockResolvedValue(activeUser);
+      const res = await request(app)
+        .get("/api/libre-chat/quota")
+        .set("Authorization", authHeader("u1"));
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.quota).toMatchObject({
+        banned: false,
+        bannedUntil: null,
+        warnings: 0,
+      });
+      expect(typeof res.body.quota.dailyLimit).toBe("number");
+      expect(res.body.quota.remaining).toBe(res.body.quota.dailyLimit - res.body.quota.used);
     });
   });
 

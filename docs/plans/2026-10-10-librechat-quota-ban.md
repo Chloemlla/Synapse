@@ -1,6 +1,6 @@
 # LibreChat 每日额度 + 自动封禁（普通用户 5 次/日）
 
-> 状态：**方案冻结，待实现**。日期：2026-10-10。
+> 状态：**已实现并经 CI 验证**（后端额度闸门 `5a505e05`；前端实时额度视图为后续提交，见 §5）。日期：2026-10-10。
 > 触发：普通用户每天 5 次对话；超出后多次警告；无视警告继续 → 自动封禁 LibreChat 权限**一天**，
 > 且**同时封禁工单权限**（不给申诉通道）。
 
@@ -79,9 +79,12 @@ export const LIBRECHAT_QUOTA_DEFAULTS: { dailyLimit: number; maxWarnings: number
 - 只读端点不动。
 - 网关（`/sse` 之类）若只是转发状态也归类为只读，不消耗额度。
 
-## 5. 前端（最小改动）
+## 5. 前端（已实现）
 
-- LibreChat 相关页面在发消息前/收到 403 时把 `quota` 与文案展示出来（讲状态、不提申诉）。
+- 只读端点 `GET /api/librechat/quota`（`libreChatQuotaService.readLibreChatQuota`；不消耗额度、暂停期间也可查；跳过旧历史迁移，只读轻查询不触发副作用）。
+- `/send`、`/retry` 的**成功响应内联同一 `quota` 视图**，前端据此就地更新剩余次数；被拒的 403 也带 `quota` 与文案（讲状态、不提申诉）。
+- 页面展示：hero 额度徽标 + 发送区「剩余 / 进度条 / 超额警告 / 暂停到何时」（`frontend/src/components/LibreChatQuotaIndicator.tsx`）；
+  状态源 `frontend/src/hooks/useLibreChatQuota.ts`：登录态就绪后读一次，之后由发送/重试响应与 SSE 完成事件更新（跨标签页在回复完成时同步）。
 - 管理面板可在用户详情看到这四个字段（走既有用户字段白名单/详情渲染，若已有通用渲染自动生效则不改）。
 
 ## 6. 判据（后端单测，CI 裁决）

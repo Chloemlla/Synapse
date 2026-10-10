@@ -31,6 +31,9 @@ import PromptModal from './PromptModal';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { LibreChatContext, LibreChatContextValue } from './LibreChatContext';
 import { LibreChatRealtimeDialog } from './LibreChatRealtimeDialog';
+import { LibreChatQuotaBadge, LibreChatQuotaPanel } from './LibreChatQuotaIndicator';
+import { parseLibreChatQuota, type LibreChatQuotaView } from '../api/librechatQuota';
+import { useLibreChatQuota } from '../hooks/useLibreChatQuota';
 import { getBackendErrorMessage } from '../utils/backendError';
 import {
   InfoBadge,
@@ -222,20 +225,35 @@ function parseHistoryResponse(data: unknown, fallbackPage: number): HistoryRespo
   };
 }
 
-async function readLibreChatError(response: Response, fallback: string): Promise<string> {
+interface LibreChatFailure {
+  message: string;
+  quota: LibreChatQuotaView | null;
+}
+
+/**
+ * 读一次失败响应：既拿用户文案，也把后端内联的额度视图带走（超额/暂停的 403 会带 quota）。
+ * 响应体只能读一次，所以需要额度的调用方一律走这里，不要再调 readLibreChatError。
+ */
+async function readLibreChatFailure(response: Response, fallback: string): Promise<LibreChatFailure> {
   try {
     const data = await response.clone().json();
-    if (typeof data?.error === 'string' && data.error.trim()) return data.error;
-    if (typeof data?.message === 'string' && data.message.trim()) return data.message;
+    const quota = parseLibreChatQuota(data?.quota);
+    if (typeof data?.error === 'string' && data.error.trim()) return { message: data.error, quota };
+    if (typeof data?.message === 'string' && data.message.trim()) return { message: data.message, quota };
+    return { message: fallback, quota };
   } catch {
     try {
       const text = await response.text();
-      if (text.trim()) return text.trim();
+      if (text.trim()) return { message: text.trim(), quota: null };
     } catch {
       // Ignore unreadable response bodies and use the fallback below.
     }
   }
-  return fallback;
+  return { message: fallback, quota: null };
+}
+
+async function readLibreChatError(response: Response, fallback: string): Promise<string> {
+  return (await readLibreChatFailure(response, fallback)).message;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -321,6 +339,15 @@ const LibreChatPage: React.FC = () => {
   const [promptModal, setPromptModal] = useState<{ open: boolean; title?: string; message?: string; placeholder?: string; defaultValue?: string; codeEditor?: boolean; language?: string; maxLength?: number; onConfirm: (value: string) => void }>({ open: false, message: '', onConfirm: () => { } });
 
   const apiBase = useMemo(() => getApiBaseUrl(), []);
+
+  // 今日额度：登录态就绪后读一次，之后由发送/重试响应与 SSE 完成事件更新（见 useLibreChatQuota）。
+  const {
+    quota,
+    loading: quotaLoading,
+    error: quotaError,
+    refresh: refreshQuota,
+    applyQuota,
+  } = useLibreChatQuota(!authLoading && isAuthenticated);
 
   // 统一的页面初始化函数，避免竞态条件
   const initializePage = useCallback(async () => {
@@ -500,11 +527,14 @@ const LibreChatPage: React.FC = () => {
         body: JSON.stringify(requestBody)
       });
       if (res.ok) {
+        const data = await res.json().catch(() => null);
+        applyQuota(parseLibreChatQuota(data?.quota));
         setNotification({ type: 'success', message: 'AI回复重试成功' });
         await fetchHistory(page);
       } else {
-        const errorMessage = await readLibreChatError(res, '重试失败');
-        setNotification({ type: 'error', message: errorMessage });
+        const failure = await readLibreChatFailure(res, '重试失败');
+        applyQuota(failure.quota);
+        setNotification({ type: 'error', message: failure.message });
       }
     } catch (e: unknown) {
       const errorMessage = getErrorMessage(e, '重试失败');
@@ -802,8 +832,13 @@ const LibreChatPage: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify(requestBody)
       });
-      if (!res.ok) throw new Error(await readLibreChatError(res, '发送消息失败'));
+      if (!res.ok) {
+        const failure = await readLibreChatFailure(res, '发送消息失败');
+        applyQuota(failure.quota);
+        throw new Error(failure.message);
+      }
       const data = await res.json();
+      applyQuota(parseLibreChatQuota(data?.quota));
       const txtRaw: string = (data && typeof data.response === 'string') ? data.response : '';
       const txt = txtRaw;
       setMessage('');
@@ -1005,8 +1040,13 @@ const LibreChatPage: React.FC = () => {
         body: JSON.stringify(requestBody),
         signal: controller.signal
       });
-      if (!res.ok) throw new Error(await readLibreChatError(res, '实时对话发送失败'));
+      if (!res.ok) {
+        const failure = await readLibreChatFailure(res, '实时对话发送失败');
+        applyQuota(failure.quota);
+        throw new Error(failure.message);
+      }
       const data = await res.json();
+      applyQuota(parseLibreChatQuota(data?.quota));
       // 客户端模拟流式展示（后端字段为 response）
       const txtRaw: string = (data && typeof data.response === 'string') ? data.response : '';
       const txt = txtRaw;
@@ -1173,9 +1213,10 @@ const LibreChatPage: React.FC = () => {
               setRtStreamContent('');
               setRtSending(false);
 
-              // 立即刷新历史记录
+              // 立即刷新历史记录；额度也一并重读——别的标签页发出的对话会在这里被看到
               setNotification({ type: 'success', message: 'AI回复已完成，正在刷新历史记录...' });
               fetchHistory(1);
+              void refreshQuota();
               break;
 
             case 'retry_completed':
@@ -1192,9 +1233,10 @@ const LibreChatPage: React.FC = () => {
               setRtStreamContent('');
               setRtSending(false);
 
-              // 立即刷新历史记录
+              // 立即刷新历史记录；额度也一并重读（同上）
               setNotification({ type: 'success', message: 'AI重试已完成，正在刷新历史记录...' });
               fetchHistory(1);
+              void refreshQuota();
               break;
 
             default:
@@ -1233,7 +1275,7 @@ const LibreChatPage: React.FC = () => {
     } catch {
       setSseConnected(false);
     }
-  }, [apiBase]);
+  }, [apiBase, refreshQuota]);
 
   // 断开SSE连接
   const disconnectSSE = useCallback(() => {
@@ -1344,6 +1386,7 @@ const LibreChatPage: React.FC = () => {
           meta={
             <>
               <InfoBadge tone="sky">当前账号：{user?.username || user?.email || user?.id || ''}</InfoBadge>
+              <LibreChatQuotaBadge quota={quota} loading={quotaLoading} isAdmin={isAdmin} />
               {sseRetryExhausted ? (
                 <button
                   type="button"
@@ -1420,6 +1463,7 @@ const LibreChatPage: React.FC = () => {
           </div>
 
           <div className="space-y-4">
+            <LibreChatQuotaPanel quota={quota} loading={quotaLoading} error={quotaError} isAdmin={isAdmin} />
             <textarea
               className={`${libreInputClass} min-h-[96px] resize-y leading-6`}
               aria-label="聊天消息"

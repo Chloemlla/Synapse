@@ -2,7 +2,11 @@ import { Router, type Request, type Response } from "express";
 import { isAdminRole } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { libreChatService } from "../services/libreChatService";
-import { consumeLibreChatQuota } from "../services/libreChatQuotaService";
+import {
+  consumeLibreChatQuota,
+  readLibreChatQuota,
+  type LibreChatQuotaDecision,
+} from "../services/libreChatQuotaService";
 import { toChatMessagesView } from "../services/librechat/diagnostics";
 import { type LibreChatIdentity, resolveLibreChatIdentity } from "./libreChatIdentity";
 import { registerLibreChatAdminRoutes } from "./libreChatRoutes.admin";
@@ -41,19 +45,34 @@ function isAdminRequest(req: any): boolean {
   return isAdminRole(req?.user?.role);
 }
 
+function sendIdentityFailure(res: Response, reason: "account-suspended" | "auth-required"): void {
+  if (reason === "account-suspended") {
+    // 纵深防御：真实挂载下 authenticateToken 前置已对封停账号返回 403；保留此分支以防
+    // 未来某挂载不前置鉴权时仍能正确拒绝（identity 解析器语义有测试钉死）。
+    sendLibreChatError(res, 403, "ACCOUNT_SUSPENDED", "账户已被封停");
+    return;
+  }
+  sendLibreChatError(res, 401, "AUTH_REQUIRED", "未认证：请先登录后再使用");
+}
+
 async function requireLibreChatIdentity(req: Request, res: Response): Promise<LibreChatIdentity | null> {
   const resolution = resolveLibreChatIdentity(req, res);
   if (resolution.ok) {
     await libreChatService.prepareOwnerHistory(resolution.identity.ownerKey, resolution.identity.legacyOwnerId);
     return resolution.identity;
   }
-  if (resolution.reason === "account-suspended") {
-    // 纵深防御：真实挂载下 authenticateToken 前置已对封停账号返回 403；保留此分支以防
-    // 未来某挂载不前置鉴权时仍能正确拒绝（identity 解析器语义有测试钉死）。
-    sendLibreChatError(res, 403, "ACCOUNT_SUSPENDED", "账户已被封停");
-  } else {
-    sendLibreChatError(res, 401, "AUTH_REQUIRED", "未认证：请先登录后再使用");
-  }
+  sendIdentityFailure(res, resolution.reason);
+  return null;
+}
+
+/**
+ * 额度查询只需要账号 id：跳过 prepareOwnerHistory 的旧历史迁移——额度会被频繁刷新，
+ * 只读的轻查询不该顺带触发一次历史迁移。身份与挂起判定仍复用同一解析器，两处口径不漂移。
+ */
+function requireLibreChatQuotaOwner(req: Request, res: Response): string | null {
+  const resolution = resolveLibreChatIdentity(req, res);
+  if (resolution.ok) return resolution.identity.legacyOwnerId;
+  sendIdentityFailure(res, resolution.reason);
   return null;
 }
 
@@ -63,10 +82,16 @@ async function requireLibreChatIdentity(req: Request, res: Response): Promise<Li
  *
  * 只读端点（history / export / clear / messages 删除 / sse）**故意不调它**：用户被封的是一天里
  * 「跟模型对话」的权限，不是查看与整理自己历史记录的能力，所以那些端点封禁期间也照常放行。
+ *
+ * 返回值：放行时交出决策（含扣减后的额度视图，供成功响应回传）；被拒时已写好 403 响应并返回 null。
  */
-async function enforceLibreChatQuota(userId: string, res: Response): Promise<boolean> {
+async function enforceLibreChatQuota(
+  userId: string,
+  res: Response,
+): Promise<LibreChatQuotaDecision | null> {
   const decision = await consumeLibreChatQuota(userId);
-  if (decision.allowed) return true;
+  // 放行时把决策原样交回调用方：成功响应里要回传扣减后的额度（前端即时更新剩余次数）。
+  if (decision.allowed) return decision;
 
   if (decision.retryAfterSeconds !== undefined) {
     res.setHeader("Retry-After", String(decision.retryAfterSeconds));
@@ -77,7 +102,7 @@ async function enforceLibreChatQuota(userId: string, res: Response): Promise<boo
     quota: decision.view,
     ...(decision.retryAfterSeconds !== undefined ? { retryAfterSeconds: decision.retryAfterSeconds } : {}),
   });
-  return false;
+  return null;
 }
 
 /**
@@ -100,6 +125,32 @@ router.get("/lc", (_req, res) => {
     });
   }
   return res.status(404).json({ error: "No data available." });
+});
+
+/**
+ * @openapi
+ * /quota:
+ *   get:
+ *     summary: 查询今日对话额度
+ *     description: 只读，不消耗额度；封禁暂停期间同样可查（被暂停的只是「跟模型对话」的权限）。管理员返回整额。
+ *     responses:
+ *       200:
+ *         description: 今日额度视图
+ *       401:
+ *         description: 认证失败
+ */
+// 只读状态端点：不调 enforceLibreChatQuota（那会扣减一次额度）。限流仍由挂载层的
+// libreChatLimiter 负责，子路由不重复挂载同一实例。
+router.get("/quota", async (req, res) => {
+  try {
+    const ownerId = requireLibreChatQuotaOwner(req, res);
+    if (!ownerId) return;
+    const quota = await readLibreChatQuota(ownerId);
+    return res.json({ success: true, quota });
+  } catch (error) {
+    console.error("查询LibreChat额度错误:", error);
+    return sendLibreChatError(res, 500, "QUOTA_FAILED", "查询对话额度失败");
+  }
 });
 
 /**
@@ -217,7 +268,8 @@ router.post("/send", async (req, res) => {
 
     // 普通用户每天有限次生成：参数校验之后、真正生成之前闸门；被拒即 403 并带上额度状态。
     // 放在参数校验之后，是为了不让空/超长消息白扣一次额度。
-    if (!(await enforceLibreChatQuota(identity.legacyOwnerId, res))) return;
+    const quota = await enforceLibreChatQuota(identity.legacyOwnerId, res);
+    if (!quota) return;
 
     // 发送消息到LibreChat服务
     const response = await libreChatService.sendMessage(identity.ownerKey, message);
@@ -225,6 +277,8 @@ router.post("/send", async (req, res) => {
     res.json({
       success: true,
       response,
+      // 回传本次扣减后的额度：前端据此即时更新剩余次数，不必再多发一次查询。
+      quota: quota.view,
       meta: {
         messageLength: message.length,
         generatedAt: new Date().toISOString(),
@@ -435,12 +489,14 @@ router.post("/retry", async (req, res) => {
     }
 
     // 重试同样会产生一次生成，因此与 /send 共用同一道额度闸门。
-    if (!(await enforceLibreChatQuota(identity.legacyOwnerId, res))) return;
+    const quota = await enforceLibreChatQuota(identity.legacyOwnerId, res);
+    if (!quota) return;
 
     const response = await libreChatService.retryMessage(identity.ownerKey, messageId as string);
     return res.json({
       success: true,
       response,
+      quota: quota.view,
       meta: {
         messageId,
         generatedAt: new Date().toISOString(),
