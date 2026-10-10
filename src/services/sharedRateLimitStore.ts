@@ -172,7 +172,8 @@ export class MongoRateLimitStore implements Store {
       doc = await this.model.findOneAndUpdate(
         { _id: this.key(key) },
         updatePipeline,
-        { upsert: true, new: true, lean: true },
+        // 同上：数组更新管道必须显式声明 updatePipeline（Mongoose 9）。
+        { upsert: true, new: true, lean: true, updatePipeline: true },
       );
     } catch (error) {
       if ((error as { code?: number })?.code !== 11000) throw error;
@@ -180,7 +181,7 @@ export class MongoRateLimitStore implements Store {
       doc = await this.model.findOneAndUpdate(
         { _id: this.key(key) },
         updatePipeline,
-        { upsert: false, new: true, lean: true },
+        { upsert: false, new: true, lean: true, updatePipeline: true },
       );
     }
 

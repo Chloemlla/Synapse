@@ -176,7 +176,7 @@ export async function recordCrashReport(
         },
       },
     ] as any,
-    { upsert: true, new: true, projection: { _id: 1, devices: 1, count: 1 } },
+    { upsert: true, new: true, projection: { _id: 1, devices: 1, count: 1 }, updatePipeline: true },
   ).exec();
 
   const affectedUsers = updated!.devices.length;

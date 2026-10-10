@@ -219,7 +219,7 @@ export async function consumeLibreChatQuota(userId: string): Promise<LibreChatQu
         },
       },
     ],
-    { returnDocument: "after" },
+    { returnDocument: "after", updatePipeline: true },
   )
     .select(QUOTA_SELECT)
     .lean()) as unknown as LibreChatQuotaDocument | null;
@@ -257,7 +257,7 @@ export async function consumeLibreChatQuota(userId: string): Promise<LibreChatQu
         },
       },
     ],
-    { returnDocument: "after" },
+    { returnDocument: "after", updatePipeline: true },
   )
     .select(QUOTA_SELECT)
     .lean()) as unknown as LibreChatQuotaDocument | null;
@@ -293,13 +293,15 @@ export async function consumeLibreChatQuota(userId: string): Promise<LibreChatQu
     .select(QUOTA_SELECT)
     .lean()) as unknown as LibreChatQuotaDocument | null;
 
-  // 工单封禁复用 moderationService 的既有路径（$inc ticketViolationCount + 写 ticketBannedUntil），
-  // 不在这里自己拼那两个字段——管理面板与工单拦截只认那一套事实。
+  // 工单封禁走 moderationService 的**连坐**入口：允许停用高成本通道，
+  // 但不递增 ticketViolationCount —— 那个计数只代表工单系统自身的违规次数，
+  // 被 LibreChat 推动会让从不在工单里违规的用户被工单梯级判成「多次违规、永久封禁」。
   try {
-    await ModerationService.banFromTicket(
+    await ModerationService.banTicketsBySpillover(
       userId,
       LIBRECHAT_BAN_HOURS,
       "LibreChat 每日额度内多次警告后继续使用",
+      "librechat-quota",
     );
   } catch (error) {
     // LibreChat 侧封禁已经落库：工单侧写失败不该把已决定的 403 变成 500，

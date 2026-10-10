@@ -939,7 +939,9 @@ export const incrementUserDailyUsageAtomic = async (
         },
       },
     ],
-    { returnDocument: "after" },
+    // Mongoose 9 起，数组形式的更新管道必须显式声明 updatePipeline，
+    // 否则运行时报「Cannot pass an array to query updates」。本地构建能过、只有真跑起来才爆。
+    { returnDocument: "after", updatePipeline: true },
   )
     .select(PUBLIC_USER_SELECT)
     .lean();

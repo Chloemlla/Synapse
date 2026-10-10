@@ -190,7 +190,7 @@ describe("LibreChat 每日额度", () => {
   it("已有更长的工单封禁不会被自动封禁缩短（处罚单调：只进不退）", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(NOW);
-    jest.spyOn(ModerationService, "banFromTicket");
+    jest.spyOn(ModerationService, "banTicketsBySpillover");
 
     // 该用户此前已被 handleViolation 判到长期封禁（例如 99 年）：远晚于本次的 now+24h
     const longBan = new Date(NOW.getTime() + 365 * 24 * HOUR_MS).toISOString();
@@ -214,12 +214,61 @@ describe("LibreChat 每日额度", () => {
 
     await consumeLibreChatQuota("u1");
 
-    // 关键：不能把长期工单封禁改写成 now+24h；违规计数照旧递增（事实不受影响）
+    // 关键：不能把长期工单封禁改写成 now+24h；且连坐路径不得动工单自己的违规计数
     const ticketWrites = callsOf(mockUpdateUser).map(
       (call) => (call as [string, { ticketBannedUntil?: string }])[1]?.ticketBannedUntil,
     );
     expect(ticketWrites.every((value) => value === undefined)).toBe(true);
-    expect(mockIncrementTicketViolationCount).toHaveBeenCalledWith("u1");
+    expect(mockIncrementTicketViolationCount).not.toHaveBeenCalled();
+  });
+
+  it("连坐不是「工单违规」：LibreChat 自动封禁不递增 ticketViolationCount", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+    const spilloverSpy = jest.spyOn(ModerationService, "banTicketsBySpillover");
+
+    mockFindOne.mockImplementationOnce(() =>
+      queryResult(userDoc({ libreChatDailyUsage: 5, libreChatViolationCount: 2 })),
+    );
+    mockFindOneAndUpdate
+      .mockImplementationOnce(() => queryResult(null))
+      .mockImplementationOnce(() => queryResult(userDoc({ libreChatDailyUsage: 5, libreChatViolationCount: 3 })))
+      .mockImplementationOnce(() =>
+        queryResult(
+          userDoc({
+            libreChatDailyUsage: 5,
+            libreChatViolationCount: 3,
+            libreChatBannedUntil: new Date(NOW.getTime() + DAY_MS).toISOString(),
+          }),
+        ),
+      );
+
+    const decision = await consumeLibreChatQuota("u1");
+
+    expect(decision.allowed).toBe(false);
+    expect(spilloverSpy).toHaveBeenCalledTimes(1);
+    expect(spilloverSpy).toHaveBeenCalledWith(
+      "u1",
+      24,
+      expect.stringContaining("LibreChat"),
+      "librechat-quota",
+    );
+    // 连坐只停通道：工单侧的违规计数（ticketViolationCount）不得被外部模块推动，
+    // 否则工单自身的梯级（1 警告 → 2 次 1h → 3 次 24h → 永久）会被 LibreChat 次数推满。
+    expect(mockIncrementTicketViolationCount).not.toHaveBeenCalled();
+  });
+
+  it("工单自身的封禁不连坐到 LibreChat：只看 libreChatBannedUntil", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+    // 用户被工单系统封了一年，但 LibreChat 侧从未被封过 —— 属于「工单自己的处罚」，不应越界。
+    mockFindOneAndUpdate.mockImplementationOnce(() => queryResult(userDoc({ libreChatDailyUsage: 1 })));
+    const decision = await consumeLibreChatQuota("u1");
+    expect(decision.allowed).toBe(true);
+
+    // 且判定条件里根本不应出现 ticketBannedUntil（只认自己的封禁字段）。
+    const [filter] = callsOf(mockFindOneAndUpdate)[0] as [Record<string, unknown>];
+    expect(JSON.stringify(filter)).not.toContain("ticketBannedUntil");
   });
 
   it("已过期的旧封禁不阻挡新写入（护栏只保护仍然生效的封禁）", async () => {
@@ -237,10 +286,10 @@ describe("LibreChat 每日额度", () => {
     expect(written).toContain(new Date(NOW.getTime() + DAY_MS).toISOString());
   });
 
-  it("警告累计到第 3 次 → 自动封禁：LibreChat 侧 24 小时 + 工单侧走 moderationService", async () => {
+  it("警告累计到第 3 次 → 自动封禁：LibreChat 侧 24 小时 + 工单侧走连坐入口", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(NOW);
-    const banSpy = jest.spyOn(ModerationService, "banFromTicket");
+    const spilloverSpy = jest.spyOn(ModerationService, "banTicketsBySpillover");
     const expectedBan = new Date(NOW.getTime() + DAY_MS).toISOString();
 
     mockFindOne.mockImplementationOnce(() =>
@@ -260,10 +309,15 @@ describe("LibreChat 每日额度", () => {
     expect(decision.retryAfterSeconds).toBe(24 * 60 * 60);
     expect(decision.view).toMatchObject({ banned: true, bannedUntil: expectedBan, warnings: 3, remaining: 0 });
 
-    // 工单封禁必须走 moderationService 的既有路径，且时长取 env 的 LIBRECHAT_BAN_HOURS
-    expect(banSpy).toHaveBeenCalledTimes(1);
-    expect(banSpy).toHaveBeenCalledWith("u1", 24, expect.stringContaining("LibreChat"));
-    expect(mockIncrementTicketViolationCount).toHaveBeenCalledWith("u1");
+    // 工单封禁必须走 moderationService 的连坐入口，且时长取 env 的 LIBRECHAT_BAN_HOURS
+    expect(spilloverSpy).toHaveBeenCalledTimes(1);
+    expect(spilloverSpy).toHaveBeenCalledWith(
+      "u1",
+      24,
+      expect.stringContaining("LibreChat"),
+      "librechat-quota",
+    );
+    expect(mockIncrementTicketViolationCount).not.toHaveBeenCalled();
     const ticketBanWrite = (callsOf(mockUpdateUser)[0] as [string, { ticketBannedUntil: string }])[1];
     expect(ticketBanWrite.ticketBannedUntil).toBe(new Date(NOW.getTime() + 24 * HOUR_MS).toISOString());
 

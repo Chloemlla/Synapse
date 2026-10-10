@@ -329,6 +329,45 @@ ${delimiter}
     hours: number,
     reason?: string,
   ): Promise<{ bannedUntil: string }> {
+    return ModerationService.writeTicketBan(userId, hours, reason, { incrementViolationCount: true });
+  }
+
+  /**
+   * 「连坐」入口：由**工单系统之外**的模块（当前只有 LibreChat 额度滥用）发起的工单权限停用。
+   *
+   * 与 `banFromTicket` 的差别只有一处，但很关键：**不递增 `ticketViolationCount`**。
+   * 工单封禁有两个来源：
+   *   (a) 工单系统自身的违规梯级（`handleViolation`：1 次警告 → 2 次 1h → 3 次 24h → 更多永久）；
+   *   (b) 其它模块的连坐（LibreChat 额度滥用 → 同时停用高成本通道）。
+   * 连坐本身允许（owner 2026-10-11），但**不允许把来源 (b) 的次数算进 (a) 的梯级** ——
+   * 否则一个从不在工单里违规的用户，只要反复刷爆 LibreChat 额度，就会被工单梯级推到「永久封禁」；
+   * 那已经不是连坐，而是拿另一个模块的计数器给他判重刑，而他在工单侧没有任何违规事实。
+   */
+  public static async banTicketsBySpillover(
+    userId: string,
+    hours: number,
+    reason: string,
+    origin: string,
+  ): Promise<{ bannedUntil: string }> {
+    return ModerationService.writeTicketBan(userId, hours, `${reason}（来源：${origin}）`, {
+      incrementViolationCount: false,
+      origin,
+    });
+  }
+
+  /**
+   * 写入工单封禁的**唯一实现**（两个入口共用）。
+   *
+   * `incrementViolationCount` 是两条路径唯一的区别：工单自己的违规事实才计数，连坐不计数。
+   * 单调护栏（只允许延长、不允许缩短）对两者都适用 —— 否则被长期封工单的用户
+   * 能靠刷爆一次 LibreChat 额度把长期封禁自助缩成一天。
+   */
+  private static async writeTicketBan(
+    userId: string,
+    hours: number,
+    reason: string | undefined,
+    options: { incrementViolationCount: boolean; origin?: string },
+  ): Promise<{ bannedUntil: string }> {
     const requested = Number(hours);
     // 非法值回落默认时长，而不是抛错：调用方已经判定了「要封」，不该因为传参失误放行。
     const effectiveHours = Number.isFinite(requested)
@@ -336,7 +375,10 @@ ${delimiter}
       : TICKET_BAN_DEFAULT_HOURS;
 
     // 先记违规次数（原子 $inc），再写到期时间：即使后者失败，违规事实也不会丢。
-    await userService.incrementUserTicketViolationCount(userId);
+    // 连坐路径不计数：那个字段只代表「工单系统自身的违规次数」。
+    if (options.incrementViolationCount) {
+      await userService.incrementUserTicketViolationCount(userId);
+    }
 
     const bannedUntil = new Date(Date.now() + effectiveHours * 60 * 60 * 1000).toISOString();
 
@@ -360,7 +402,7 @@ ${delimiter}
       type: "punishment",
       punishment:
         effectiveUntil === bannedUntil
-          ? `封禁工单权限 ${effectiveHours} 小时`
+          ? `封禁工单权限 ${effectiveHours} 小时${options.origin ? `（连坐来源：${options.origin}）` : ""}`
           : `维持原有更长的工单封禁至 ${effectiveUntil}（本次不再缩短）`,
     });
 
