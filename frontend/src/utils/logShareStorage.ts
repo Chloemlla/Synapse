@@ -26,7 +26,7 @@ export async function getLogShareDB() {
   return await openDB(LOGSHARE_DB, 1, {
     upgrade(db, oldVersion, newVersion) {
       console.log(`[LogShare存储] 数据库升级: v${oldVersion} -> v${newVersion}`);
-      
+
       if (oldVersion < 1) {
         // 初始版本：创建存储对象
         if (!db.objectStoreNames.contains(LOGSHARE_STORE)) {
@@ -96,17 +96,34 @@ export async function exportHistoryFromDB(): Promise<LogShareHistory[]> {
 
 // 导入时保存到IndexedDB
 export async function importHistoryToDB(history: LogShareHistory[]): Promise<void> {
+  await mergeHistoryIntoDB(history);
+}
+
+async function mergeHistoryIntoDB(history: LogShareHistory[]): Promise<number> {
+  if (!Array.isArray(history) || history.some((item) =>
+    !item || typeof item.id !== 'string' || !item.id.trim() ||
+    (item.type !== 'upload' && item.type !== 'query') ||
+    !item.data || typeof item.data !== 'object')) {
+    throw new Error('历史记录格式无效');
+  }
+  const db = await getLogShareDB();
+  const tx = db.transaction(LOGSHARE_STORE, 'readwrite');
   try {
-    const db = await getLogShareDB();
-    // 清空现有数据
-    await db.clear(LOGSHARE_STORE);
-    // 添加新数据
+    // Read and merge under one transaction; a failed import leaves all old data intact.
+    let added = 0;
     for (const item of history) {
-      await db.put(LOGSHARE_STORE, item);
+      if (await tx.store.get(item.id)) continue;
+      await tx.store.add(item);
+      added += 1;
     }
-    console.log('[LogShare存储] 导入成功，记录数量:', history.length);
+    await tx.done;
+    return added;
   } catch (error) {
-    console.error('[LogShare存储] 导入失败:', error);
+    try { tx.abort(); } catch { /* It may already have aborted. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  } finally {
+    db.close();
   }
 }
 
@@ -232,25 +249,16 @@ export async function importHistoryData(file: File): Promise<number> {
           throw new Error('未知的数据格式');
         }
 
-        const validData = importedData.filter((item: any) => item.id && item.type && item.data);
-        if (validData.length === 0) {
+        if (!Array.isArray(importedData) || importedData.length === 0) {
           throw new Error('没有找到有效的历史记录数据');
         }
-
-        // 从IndexedDB获取现有历史记录
-        const existingHistory = await getStoredHistory();
-        const existingIds = new Set(existingHistory.map((item: any) => item.id));
-        const newHistory = validData.filter((item: any) => !existingIds.has(item.id));
-        const mergedHistory = [...existingHistory, ...newHistory];
-
-        // 保存到IndexedDB
-        await importHistoryToDB(mergedHistory);
-
-        resolve(newHistory.length);
+        resolve(await mergeHistoryIntoDB(importedData));
       } catch (error: any) {
         reject(new Error(`导入失败: ${error.message}`));
       }
     };
+    reader.onerror = () => reject(new Error('读取历史记录文件失败'));
+    reader.onabort = () => reject(new Error('读取历史记录文件已取消'));
     reader.readAsText(file);
   });
-} 
+}

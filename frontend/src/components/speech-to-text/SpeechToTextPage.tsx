@@ -94,6 +94,7 @@ export const SpeechToTextPage: React.FC = () => {
   const [configError, setConfigError] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const loadedOnce = useRef(false);
+  const detailRequests = useRef<Record<string, number>>({});
 
   const loadConfig = useCallback(async () => {
     try {
@@ -135,8 +136,11 @@ export const SpeechToTextPage: React.FC = () => {
   }, [hasActive, loadJobs]);
 
   const openJob = useCallback(async (id: string) => {
+    const request = (detailRequests.current[id] ?? 0) + 1;
+    detailRequests.current[id] = request;
     try {
       const detail = await transcribeApi.getJob(id);
+      if (detailRequests.current[id] !== request) return;
       setTranscripts((prev) => ({ ...prev, [id]: detail.transcripts }));
     } catch (err) {
       console.error('加载转写详情失败:', err);
@@ -145,9 +149,8 @@ export const SpeechToTextPage: React.FC = () => {
 
   useEffect(() => {
     if (!expandedId) return;
-    if (transcripts[expandedId]) return;
     void openJob(expandedId);
-  }, [expandedId, transcripts, openJob]);
+  }, [expandedId, jobs, openJob]);
 
   const toggleOutput = (value: TranscribeOutput) =>
     setOutputs((prev) => (prev.includes(value) ? prev.filter((o) => o !== value) : [...prev, value]));
@@ -156,6 +159,7 @@ export const SpeechToTextPage: React.FC = () => {
 
   const onFilesPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
     if (files.length === 0) return;
     setError(null);
     setNotice(null);
@@ -176,14 +180,15 @@ export const SpeechToTextPage: React.FC = () => {
   };
 
   const submit = async () => {
-    if (chosen.length === 0) return;
+    if (chosen.length === 0 || uploading || busy) return;
+    const submitted = [...chosen];
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const job = await transcribeApi.createJob(chosen, outputs);
+      const job = await transcribeApi.createJob(submitted, outputs);
       setNotice(`任务已提交(${job.id}),可以关页面,回来还在。`);
-      setChosen([]);
+      setChosen((current) => current.filter((rel) => !submitted.includes(rel)));
       await loadJobs();
       if (config) setConfig({ ...config, limits: { ...config.limits, activeJobs: config.limits.activeJobs + 1 } });
     } catch (err) {
@@ -361,7 +366,7 @@ export const SpeechToTextPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => void submit()}
-                disabled={busy || chosen.length === 0 || config?.enabled === false}
+                disabled={!!uploading || busy || chosen.length === 0 || config?.enabled === false}
                 className={studioPrimaryButtonClassName}
               >
                 {busy ? <SimpleLoadingSpinner size={0.7} /> : <FaPlay className="text-xs" />}

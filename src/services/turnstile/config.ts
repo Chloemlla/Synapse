@@ -2,6 +2,7 @@ import logger from "../../utils/logger";
 import { isConnected } from "../mongoService";
 import { getTurnstileKey, invalidateTurnstileKeyCache, TurnstileSettingModel } from "./models";
 import { validateConfigKey, validateConfigValue } from "./validators";
+import { writeCaptchaKey } from "./keyStorage";
 
 export async function isEnabled(): Promise<boolean> {
   const [secretKey, siteKey] = await Promise.all([
@@ -56,15 +57,7 @@ export async function updateConfig(
       return false;
     }
 
-    const updateQuery =
-      key === "TURNSTILE_SECRET_KEY" ? { key: "TURNSTILE_SECRET_KEY" } : { key: "TURNSTILE_SITE_KEY" };
-
-    const updateData =
-      key === "TURNSTILE_SECRET_KEY"
-        ? { key: "TURNSTILE_SECRET_KEY", value: validatedValue, updatedAt: new Date() }
-        : { key: "TURNSTILE_SITE_KEY", value: validatedValue, updatedAt: new Date() };
-
-    await TurnstileSettingModel.findOneAndUpdate(updateQuery, updateData, { upsert: true, returnDocument: "after" });
+    await writeCaptchaKey(TurnstileSettingModel, key, validatedValue);
     invalidateTurnstileKeyCache(key);
 
     logger.info(`Turnstile配置更新成功: ${key}`);
@@ -89,7 +82,7 @@ export async function deleteConfig(key: "TURNSTILE_SECRET_KEY" | "TURNSTILE_SITE
       return false;
     }
 
-    await TurnstileSettingModel.findOneAndDelete({ key: validatedKey });
+    await TurnstileSettingModel.deleteMany({ key: validatedKey });
     invalidateTurnstileKeyCache(validatedKey);
     logger.info(`Turnstile配置删除成功: ${validatedKey}`);
     return true;

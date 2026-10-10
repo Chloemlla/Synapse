@@ -1,5 +1,6 @@
 import axios from "axios";
 import logger from "../utils/logger";
+import { describeNetworkError } from "./networkService";
 
 export interface SocialResponse {
   success: boolean;
@@ -31,7 +32,7 @@ export class SocialService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("微博热搜获取失败", { error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("微博热搜获取失败", { error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -74,7 +75,7 @@ export class SocialService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("百度热搜获取失败", { error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("百度热搜获取失败", { error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {

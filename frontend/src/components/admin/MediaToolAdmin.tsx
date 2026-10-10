@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FaCheckCircle,
   FaDownload,
@@ -19,6 +19,9 @@ import { JobsPanel } from './media-tool/JobsPanel';
 import { SettingsPanel } from './media-tool/SettingsPanel';
 import { TranscribePanel } from './media-tool/TranscribePanel';
 import { btnGhost, cx, ErrLine, inputCls } from './media-tool/ui';
+
+import { useAuth } from '../../hooks/useAuth';
+import { isSuperAdmin } from '../../utils/rbac';
 
 const LS_KEY = 'media-tool-conn-v1';
 
@@ -116,6 +119,8 @@ const TAB: Array<{ id: 'settings' | 'bili' | 'transcribe' | 'jobs'; label: strin
  * 连接偏好持久化到 localStorage,面板按目标重新挂载,避免跨后端串数据。
  */
 export const MediaToolAdmin: React.FC = () => {
+  const { user } = useAuth();
+  const probeSeq = useRef(0);
   const [persisted] = useState<PersistedConn>(loadPersisted);
   const [mode, setMode] = useState<ConnMode>(persisted.mode);
   const [baseUrl, setBaseUrl] = useState(persisted.baseUrl);
@@ -141,17 +146,18 @@ export const MediaToolAdmin: React.FC = () => {
   }, [mode, baseUrl, toolKey]);
 
   const probe = useCallback(async () => {
+    const request = ++probeSeq.current;
     setProbing(true);
     setProbeError(null);
-    setHealth(null);
     try {
       if (!isInternal && !target.baseUrl.trim()) {
         setProbeError('请填写独立后端的地址后再测试连接。');
         return;
       }
       const h = await mediaToolApi.health(target);
-      setHealth(h);
+      if (request === probeSeq.current) setHealth(h);
     } catch (err) {
+      if (request !== probeSeq.current) return;
       setProbeError(
         isInternal
           ? '内置媒体工具不可达:请确认后端已升级部署且当前账号具备管理员权限。'
@@ -159,13 +165,15 @@ export const MediaToolAdmin: React.FC = () => {
       );
       console.error('媒体工具连接探测失败:', err);
     } finally {
-      setProbing(false);
+      if (request === probeSeq.current) setProbing(false);
     }
   }, [target, isInternal]);
 
   // 切换运行目标 / 地址输入停顿后自动(重新)探测;本地模式地址为空时不探测
   const targetSig = `${target.baseUrl}|${target.toolKey}`;
   useEffect(() => {
+    ++probeSeq.current;
+    setProbing(false);
     if (!isInternal && !baseUrl.trim()) {
       setHealth(null);
       setProbeError('请填写独立后端的地址后再测试连接。');
@@ -176,7 +184,7 @@ export const MediaToolAdmin: React.FC = () => {
     const timer = window.setTimeout(() => {
       void probe();
     }, isInternal ? 0 : 700);
-    return () => window.clearTimeout(timer);
+    return () => { ++probeSeq.current; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetSig, isInternal]);
 
@@ -208,8 +216,9 @@ export const MediaToolAdmin: React.FC = () => {
     : [];
 
   const panelSettings = health ? health.settings : MEDIA_DEFAULT_SETTINGS;
-  // 健康信息返回后重挂载面板,让其按真实设置初始化默认值
-  const panelKey = `${targetSig}|${health ? 'h1' : 'h0'}`;
+  // 仅切换目标时重挂载；重复探测保留尚未提交的输入。
+  const panelKey = `${mode}|${targetSig}`;
+  const canManage = health?.mode === 'standalone' || isSuperAdmin(user?.role);
 
   return (
     <div className="space-y-4">
@@ -223,15 +232,15 @@ export const MediaToolAdmin: React.FC = () => {
           <span
             className={cx(
               'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold',
-              health
+              health && !probeError
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                 : probeError
                   ? 'border-rose-200 bg-rose-50 text-rose-700'
                   : 'border-slate-200 bg-slate-100 text-slate-500',
             )}
           >
-            {health ? <FaCheckCircle className="text-xs" /> : <FaExclamationTriangle className="text-xs" />}
-            {health ? `已连接 · ${health.mode === 'standalone' ? '独立后端' : '站点内置'}` : probeError ? '未连接' : '探测中'}
+            {health && !probeError ? <FaCheckCircle className="text-xs" /> : <FaExclamationTriangle className="text-xs" />}
+            {probeError ? '连接异常' : health ? `已连接 · ${health.mode === 'standalone' ? '独立后端' : '站点内置'}` : '探测中'}
           </span>
         }
       />
@@ -363,10 +372,14 @@ export const MediaToolAdmin: React.FC = () => {
       </div>
 
       <div key={panelKey}>
-        {activeTab === 'settings' ? <SettingsPanel target={target} /> : null}
-        {activeTab === 'bili' ? <BiliPanel target={target} settings={panelSettings} /> : null}
-        {activeTab === 'transcribe' ? <TranscribePanel target={target} settings={panelSettings} /> : null}
-        {activeTab === 'jobs' ? <JobsPanel target={target} /> : null}
+        {!health ? <p>连接成功后即可使用媒体工具。</p> : (
+          <>
+            {activeTab === 'settings' ? <SettingsPanel target={target} canManage={canManage} /> : null}
+            {activeTab === 'bili' ? <BiliPanel target={target} settings={panelSettings} /> : null}
+            {activeTab === 'transcribe' ? <TranscribePanel target={target} settings={panelSettings} /> : null}
+            {activeTab === 'jobs' ? <JobsPanel target={target} canManage={canManage} /> : null}
+          </>
+        )}
       </div>
 
       <div className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">

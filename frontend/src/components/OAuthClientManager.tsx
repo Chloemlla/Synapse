@@ -217,6 +217,7 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const beginEdit = (client: OAuthClient) => {
+    if (editSaving) return;
     setRevealedSecret(null);
     setEditingClientId(client.clientId);
     setEditForm({
@@ -246,6 +247,7 @@ const OAuthClientManager: React.FC = () => {
   };
 
   const saveClient = async (client: OAuthClient) => {
+    if (editSaving) return;
     if (!editForm.name.trim()) {
       setNotification({ message: '请输入客户端名称', type: 'warning' });
       return;
@@ -703,6 +705,7 @@ const OAuthClientManager: React.FC = () => {
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <button
                       type="button"
+                      disabled={editSaving}
                       onClick={() => (editingClientId === client.clientId ? cancelEdit() : beginEdit(client))}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
                       title={editingClientId === client.clientId ? '取消编辑' : '编辑客户端信息'}

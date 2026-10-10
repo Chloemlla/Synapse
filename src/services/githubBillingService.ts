@@ -634,7 +634,7 @@ export class GitHubBillingService {
   /**
    * 从缓存获取 GitHub Billing 数据（智能缓存策略）
    */
-  static async getCachedBillingData(customerId: string): Promise<GitHubBillingUsage | null> {
+  static async getCachedBillingData(customerId: string, config?: ParsedCurlCommand): Promise<GitHubBillingUsage | null> {
     try {
       if (mongoose.connection.readyState !== 1) {
         return null;
@@ -662,7 +662,7 @@ export class GitHubBillingService {
 
         if (timeToExpire < totalTTL * 0.25) {
           // 异步预热缓存，不阻塞当前请求
-          GitHubBillingService.warmupCache(customerId).catch((error: Error) => {
+          GitHubBillingService.warmupCache(customerId, config).catch((error: Error) => {
             logger.warn(`缓存预热失败 (客户ID: ${customerId}):`, error);
           });
         }
@@ -683,7 +683,7 @@ export class GitHubBillingService {
    * 修复：预热必须绕过缓存直连上游，否则 fetchBillingData 会命中同一份未过期缓存
    * 并原样返回，导致"用旧数据续新 TTL"无限陈旧；同时加去重锁防扇出。
    */
-  static async warmupCache(customerId: string): Promise<void> {
+  static async warmupCache(customerId: string, sourceConfig?: ParsedCurlCommand): Promise<void> {
     const lockKey = customerId || "default";
     const inFlight = GitHubBillingService.warmupLocks.get(lockKey);
     if (inFlight) {
@@ -694,14 +694,24 @@ export class GitHubBillingService {
     const task = (async () => {
       logger.info(`开始预热缓存 (客户ID: ${customerId})`);
 
-      const config = await GitHubBillingService.getSavedCurlConfig();
+      let config = sourceConfig;
+      if (!config) {
+        for (const configKey of ["config1", "config2", "config3"] as const) {
+          const candidate = await GitHubBillingService.getSavedCurlConfig(configKey);
+          if (candidate && (candidate.customerId || "default") === (customerId || "default")) {
+            config = candidate;
+            break;
+          }
+        }
+      }
       if (!config) {
         throw new Error("未找到保存的配置");
       }
 
       // 绕过缓存直连上游取真数据。
-      const freshData = await GitHubBillingService.fetchBillingData(true);
-      const targetCustomerId = config.customerId || customerId || "default";
+      const targetCustomerId = config.customerId || "default";
+      if (targetCustomerId !== (customerId || "default")) throw new Error("缓存客户与预热配置不匹配");
+      const freshData = await GitHubBillingService.fetchSingleConfigData(config, true);
 
       const intelligentTTL = await GitHubBillingService.calculateIntelligentTTL(targetCustomerId);
       await GitHubBillingService.cacheBillingData(targetCustomerId, freshData, intelligentTTL);
@@ -976,7 +986,7 @@ export class GitHubBillingService {
 
     // 检查缓存（如果有客户ID的话）；预热/强制刷新时绕过缓存。
     const cached =
-      !bypassCache && config.customerId ? await GitHubBillingService.getCachedBillingData(targetCustomerId) : null;
+      !bypassCache && config.customerId ? await GitHubBillingService.getCachedBillingData(targetCustomerId, config) : null;
     if (cached) {
       await GitHubBillingService.recordCacheMetrics(targetCustomerId, true);
       const duration = Date.now() - startTime;
@@ -1434,7 +1444,7 @@ export class GitHubBillingService {
     forceRefresh: boolean = false,
   ): Promise<GitHubBillingUsage> {
     const targetCustomerId = config.customerId || "default";
-    const cached = config.customerId ? await GitHubBillingService.getCachedBillingData(targetCustomerId) : null;
+    const cached = !forceRefresh && config.customerId ? await GitHubBillingService.getCachedBillingData(targetCustomerId, config) : null;
 
     // 如果不强制刷新且有缓存，返回缓存数据
     if (!forceRefresh && cached) {

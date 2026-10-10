@@ -368,6 +368,9 @@ class WsService {
           if (!WS_CHANNEL_PREFIX_PATTERN.test(msg.channel)) break;
           // 管理员频道只允许管理员订阅
           if (msg.channel.startsWith("admin:") && !client.isAdmin) break;
+          if (msg.channel.startsWith("user:") && msg.channel !== `user:${client.userId}`) break;
+          // 工单事件由服务端按用户/管理员投递，不接受客户端自选工单频道。
+          if (msg.channel.startsWith("ticket:")) break;
           if (client.channels.size >= WS_MAX_CHANNELS_PER_CLIENT) break;
           client.channels.add(msg.channel);
           this.indexChannel(client, msg.channel);

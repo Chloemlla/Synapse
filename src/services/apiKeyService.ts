@@ -203,14 +203,16 @@ export async function createApiKey(opts: {
 const VALID_KEY_PREFIX_PATTERN = /^ak_[a-f0-9]{8}\./;
 const VALIDATE_CACHE_TTL_MS = 30_000;
 const VALIDATE_CACHE_MAX = 500;
-const validateCache = new Map<string, { doc: ApiKeyDoc | null; expiresAt: number }>();
+// Cache only the expensive proof of possession. Authorization always comes from
+// a fresh database read, so revocation/permission changes apply across instances.
+const validateCache = new Map<string, { keyHash: string; expiresAt: number }>();
 
-function setValidateCache(key: string, doc: ApiKeyDoc | null, now: number): void {
+function setValidateCache(key: string, keyHash: string, now: number): void {
   if (validateCache.size >= VALIDATE_CACHE_MAX) {
     const oldest = validateCache.keys().next().value;
     if (oldest !== undefined) validateCache.delete(oldest);
   }
-  validateCache.set(key, { doc, expiresAt: now + VALIDATE_CACHE_TTL_MS });
+  validateCache.set(key, { keyHash, expiresAt: now + VALIDATE_CACHE_TTL_MS });
 }
 
 function timingSafeHashEqual(computed: string, stored: string): boolean {
@@ -231,30 +233,23 @@ export async function validateApiKey(plainKey: string): Promise<ApiKeyDoc | null
   }
 
   const now = Date.now();
-  const cached = validateCache.get(key);
-  if (cached && cached.expiresAt > now) {
-    return cached.doc;
-  }
-
   const keyId = key.split(".")[0];
   const doc = (await ApiKeyModel.findOne({ keyId }).lean()) as ApiKeyDoc | null;
   if (!doc || !doc.enabled) {
-    setValidateCache(key, null, now);
     return null;
   }
-  if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) {
-    setValidateCache(key, null, now);
+  if (doc.expiresAt && new Date(doc.expiresAt).getTime() <= Date.now()) {
     return null;
   }
 
+  const cacheKey = crypto.createHash("sha256").update(key).digest("hex");
+  const cached = validateCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return timingSafeHashEqual(cached.keyHash, doc.keyHash) ? doc : null;
+  }
   const hash = await hashKey(key);
-  if (!timingSafeHashEqual(hash, doc.keyHash)) {
-    setValidateCache(key, null, now);
-    return null;
-  }
-
-  setValidateCache(key, doc, now);
-  return doc;
+  setValidateCache(cacheKey, hash, now);
+  return timingSafeHashEqual(hash, doc.keyHash) ? doc : null;
 }
 
 /** 记录使用 */

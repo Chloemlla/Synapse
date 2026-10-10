@@ -7,6 +7,7 @@ import {
   getResourceById,
   getResourceStats,
   getResources,
+  getAdminResources,
   initializeTestResources,
   updateResource,
 } from "../controllers/resourceController";
@@ -22,6 +23,7 @@ router.get("/resources", resourceLimiter.getResources, authenticateToken, getRes
 router.get("/categories", resourceLimiter.getCategories, authenticateToken, getCategories);
 
 // 管理员API - 需要认证和速率限制（具体路由必须在参数路由之前）
+router.get('/resources/admin', resourceLimiter.getResources, authenticateToken, authenticateAdmin, requireAdminScope, getAdminResources);
 router.get("/resources/stats", resourceLimiter.stats, authenticateToken, authenticateAdmin, requireAdminScope, getResourceStats);
 router.post(
   "/resources",

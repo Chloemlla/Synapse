@@ -1,3 +1,4 @@
+import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { config } from "../../config/config";
 import { TurnstileService } from "../../services/turnstileService";
@@ -16,7 +17,7 @@ export async function getHCaptchaConfig(req: Request, res: Response) {
       secretKey: config.secretKey ? "***已设置***" : null,
     });
   } catch (error) {
-    console.error("获取hCaptcha配置失败:", error);
+    logger.error("获取hCaptcha配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -42,7 +43,7 @@ export async function updateHCaptchaConfig(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置更新失败" });
     }
   } catch (error) {
-    console.error("更新hCaptcha配置失败:", error);
+    logger.error("更新hCaptcha配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -65,7 +66,7 @@ export async function deleteHCaptchaConfig(req: Request, res: Response) {
       res.status(500).json({ success: false, error: "配置删除失败" });
     }
   } catch (error) {
-    console.error("删除hCaptcha配置失败:", error);
+    logger.error("删除hCaptcha配置失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -113,15 +114,11 @@ export async function verifyHCaptcha(req: Request, res: Response) {
         try {
           accessToken = await TurnstileService.generateAccessToken(fingerprint, validatedClientIp);
         } catch (error) {
-          console.warn("生成访问令牌失败，但hCaptcha验证成功", error);
+          logger.warn("生成访问令牌失败，但hCaptcha验证成功", error);
         }
       }
 
-      console.log("✅ hCaptcha验证成功，直接通过", {
-        ip: validatedClientIp,
-        token: `${token.substring(0, 8)}...`,
-        accessToken: accessToken ? `${accessToken.substring(0, 8)}...` : "null",
-      });
+      logger.debug("hCaptcha验证成功", { accessTokenIssued: Boolean(accessToken) });
 
       res.json({
         success: true,
@@ -143,7 +140,7 @@ export async function verifyHCaptcha(req: Request, res: Response) {
       });
     }
   } catch (error) {
-    console.error("hCaptcha验证失败:", error);
+    logger.error("hCaptcha验证失败:", error);
     res.status(500).json({
       success: false,
       message: "服务器内部错误",

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   studioModalCardClassName,
   studioModalOverlayClassName,
@@ -75,6 +75,8 @@ function normalizeMermaidCode(input: string): string {
 
 const Mermaid: React.FC<MermaidProps> = ({ code }) => {
   const [svg, setSvg] = useState<string | null>(null);
+  const zoomCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => zoomCleanup.current?.(), []);
   const [error, setError] = useState(false);
   const [isRendering, setIsRendering] = useState(true);
   const diagramId = useMemo(
@@ -170,32 +172,41 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
       return;
     }
 
+    zoomCleanup.current?.();
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     const modal = document.createElement('div');
     modal.className = `${studioModalOverlayClassName} cursor-pointer`;
 
     const container = document.createElement('div');
     container.className = `${studioModalCardClassName} max-h-[95%] max-w-[95%] overflow-auto`;
     container.innerHTML = svg;
+    container.setAttribute('role', 'dialog');
+    container.setAttribute('aria-modal', 'true');
+    container.setAttribute('aria-label', '图表预览');
+    container.onclick = (event) => event.stopPropagation();
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.textContent = '关闭图表';
+    container.prepend(closeButton);
 
     modal.appendChild(container);
     document.body.appendChild(modal);
 
-    const close = () => {
-      if (document.body.contains(modal)) {
-        document.body.removeChild(modal);
-      }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); close(); }
+      else if (event.key === 'Tab') { event.preventDefault(); closeButton.focus(); }
     };
-
+    const close = () => {
+      window.removeEventListener('keydown', onKeyDown);
+      modal.remove();
+      zoomCleanup.current = null;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+    zoomCleanup.current = close;
     modal.onclick = close;
-    window.addEventListener(
-      'keydown',
-      (event) => {
-        if (event.key === 'Escape') {
-          close();
-        }
-      },
-      { once: true }
-    );
+    closeButton.onclick = close;
+    closeButton.focus();
+    window.addEventListener('keydown', onKeyDown);
   };
 
   if (isRendering) {

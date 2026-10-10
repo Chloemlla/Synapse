@@ -113,8 +113,8 @@ export async function userHasTierAtLeast(userId: string, requiredTier: string): 
  * `acceptUnverifiedPurchases` switch is intentionally read from config only —
  * callers cannot override it — so an unverified purchase can never become
  * "active" unless an operator explicitly enables the escape hatch. Purchase
- * tokens are de-duplicated within the service; a unique index on
- * `purchaseToken` (model change) is still needed for a hard guarantee.
+ * New purchase records use a deterministic primary key, so idempotency also
+ * holds on legacy databases whose purchaseToken index has not been built yet.
  */
 export async function verifyGooglePurchase(
   userId: string,
@@ -145,7 +145,7 @@ export async function verifyGooglePurchase(
     });
     return {
       status: existing.status as EntitlementStatus,
-      tier: existing.tier as EntitlementTier,
+      tier: existing.status === "active" ? existing.tier as EntitlementTier : "FREE",
       verifiedAt: now,
       entitlement: {
         id: existing._id,
@@ -160,7 +160,7 @@ export async function verifyGooglePurchase(
   }
 
   const entitlement = await Entitlement.create({
-    _id: crypto.randomUUID(),
+    _id: `purchase_${crypto.createHash("sha256").update(purchaseToken).digest("hex")}`,
     userId,
     source: "google_play",
     productId,
@@ -174,6 +174,12 @@ export async function verifyGooglePurchase(
       deviceInstallationId,
       acceptUnverified: accept,
     }),
+  }).catch(async (error: unknown) => {
+    if ((error as { code?: number })?.code !== 11000) throw error;
+    // A concurrent retry won the insert. Only suppress a duplicate for this token.
+    const winner = await Entitlement.findOne({ purchaseToken }).lean().exec();
+    if (!winner) throw error;
+    return winner;
   });
 
   logger.info("[Lumen Entitlements] Purchase recorded", {
@@ -185,8 +191,8 @@ export async function verifyGooglePurchase(
   });
 
   return {
-    status,
-    tier: accept ? tier : "FREE",
+    status: entitlement.status,
+    tier: entitlement.status === "active" ? entitlement.tier : "FREE",
     verifiedAt: now,
     entitlement: {
       id: entitlement._id,

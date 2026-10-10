@@ -96,9 +96,13 @@ const FBIWantedManager: React.FC = () => {
     const [photoPreview, setPhotoPreview] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [formData, setFormData] = useState<Partial<FBIWanted>>({});
+    const [chargesDraft, setChargesDraft] = useState('');
+    const listRequestRef = useRef(0);
+    const draftVersionRef = useRef(0);
 
     // 获取通缉犯列表
     const fetchWantedList = useCallback(async () => {
+        const request = ++listRequestRef.current;
         try {
             setLoading(true);
             const params = new URLSearchParams({
@@ -118,8 +122,11 @@ const FBIWantedManager: React.FC = () => {
 
             if (response.ok) {
                 const data = await response.json();
+                if (request !== listRequestRef.current) return;
+                const pages = Math.max(1, Number(data.pagination.pages) || 1);
                 setWantedList(data.data);
-                setTotalPages(data.pagination.pages);
+                setTotalPages(pages);
+                setCurrentPage(page => Math.min(page, pages));
                 // DEBUG: log ages from list to observe any unexpected adjustments
                 try {
                     console.log('[FBIWanted][List] Ages:', Array.isArray(data?.data) ? data.data.map((w: any) => w?.age) : 'N/A');
@@ -128,9 +135,9 @@ const FBIWantedManager: React.FC = () => {
                 }
             }
         } catch (error) {
-            console.error('获取通缉犯列表失败:', error);
+            if (request === listRequestRef.current) console.error('获取通缉犯列表失败:', error);
         } finally {
-            setLoading(false);
+            if (request === listRequestRef.current) setLoading(false);
         }
     }, [currentPage, statusFilter, dangerFilter, searchTerm]);
 
@@ -187,6 +194,7 @@ const FBIWantedManager: React.FC = () => {
             setLoading(true);
             const dataToSubmit = {
                 ...formData,
+                charges: chargesDraft.split(',').map(charge => charge.trim()).filter(Boolean),
                 photoUrl: pendingPhoto || formData.photoUrl || ''
             };
 
@@ -212,7 +220,7 @@ const FBIWantedManager: React.FC = () => {
                     console.log('[FBIWanted][Create] No JSON body in create response or parse failed');
                 }
                 setShowCreateModal(false);
-                setFormData({});
+                resetForm();
                 fetchWantedList();
                 fetchStatistics();
                 setNotification({ message: '通缉犯创建成功！', type: 'success' });
@@ -237,6 +245,7 @@ const FBIWantedManager: React.FC = () => {
             // 构建提交数据，确保包含照片更新
             const dataToSubmit = {
                 ...formData,
+                charges: chargesDraft.split(',').map(charge => charge.trim()).filter(Boolean),
                 photoUrl: pendingPhoto || (formData as any).photoUrl || selectedWanted?.photoUrl || ''
             } as any;
             // DEBUG: log updated payload before sending
@@ -264,10 +273,8 @@ const FBIWantedManager: React.FC = () => {
                     console.log('[FBIWanted][Update] No JSON body in update response or parse failed');
                 }
                 setShowEditModal(false);
+                resetForm();
                 setSelectedWanted(null);
-                setFormData({});
-                setPendingPhoto('');
-                setPhotoPreview('');
                 fetchWantedList();
                 fetchStatistics();
                 setNotification({ message: '通缉犯信息更新成功！', type: 'success' });
@@ -284,7 +291,7 @@ const FBIWantedManager: React.FC = () => {
     };
 
     // 根据条件批量删除
-    const handleBatchDelete = async (filter: object, confirmationMessage: string) => {
+    const handleBatchDelete = async (filter: object, confirmationMessage: string, confirmAll = false) => {
         if (!canWrite) return;
         const ok = await confirm({
           title: '确认执行该操作？',
@@ -292,7 +299,7 @@ const FBIWantedManager: React.FC = () => {
           tone: 'danger',
           confirmLabel: '确认',
         });
-        if (ok) {
+        if (ok !== true) {
             return;
         }
 
@@ -304,7 +311,7 @@ const FBIWantedManager: React.FC = () => {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({ filter })
+                body: JSON.stringify({ filter, ...(confirmAll ? { confirmAll: true } : {}) })
             });
 
             const result = await response.json();
@@ -355,6 +362,8 @@ const FBIWantedManager: React.FC = () => {
 
     // 重置表单
     const resetForm = () => {
+        draftVersionRef.current++;
+        setChargesDraft('');
         setFormData({
             name: '',
             fbiNumber: '',
@@ -372,6 +381,7 @@ const FBIWantedManager: React.FC = () => {
     // 处理图片上传
     const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
         if (!canWrite) return;
+        const draftVersion = draftVersionRef.current;
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -399,6 +409,7 @@ const FBIWantedManager: React.FC = () => {
             });
 
             const result = await response.json();
+            if (draftVersion !== draftVersionRef.current) return;
 
             if (response.ok && result?.data) {
                 const url = result.data.web2url || result.data.url;
@@ -413,6 +424,7 @@ const FBIWantedManager: React.FC = () => {
                 setNotification({ message: (result && (result.message || result.error)) || '图片上传失败', type: 'error' });
             }
         } catch (error) {
+            if (draftVersion !== draftVersionRef.current) return;
             setNotification({ message: '图片上传失败，请检查网络连接', type: 'error' });
         } finally {
             setLoading(false);
@@ -538,14 +550,14 @@ const FBIWantedManager: React.FC = () => {
                                     type="text"
                                     placeholder="搜索通缉犯姓名、FBI编号或罪名..."
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onChange={(e) => { listRequestRef.current++; setSearchTerm(e.target.value); setCurrentPage(1); }}
                                     className="w-full pl-10 pr-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
                                 />
                             </div>
 
                             <select
                                 value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
+                                onChange={(e) => { listRequestRef.current++; setStatusFilter(e.target.value); setCurrentPage(1); }}
                                 className="px-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
                             >
                                 <option value="ALL">所有状态</option>
@@ -557,7 +569,7 @@ const FBIWantedManager: React.FC = () => {
 
                             <select
                                 value={dangerFilter}
-                                onChange={(e) => setDangerFilter(e.target.value)}
+                                onChange={(e) => { listRequestRef.current++; setDangerFilter(e.target.value); setCurrentPage(1); }}
                                 className="px-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
                             >
                                 <option value="ALL">所有危险等级</option>
@@ -580,7 +592,7 @@ const FBIWantedManager: React.FC = () => {
                                 <span>删除死亡记录</span>
                             </motion.button>
                             <motion.button
-                                onClick={() => handleBatchDelete({}, '警告：确定要删除所有的通缉犯记录吗？此操作将清空数据库，不可逆！')}
+                                onClick={() => handleBatchDelete({}, '警告：确定要删除所有的通缉犯记录吗？此操作将清空数据库，不可逆！', true)}
                                 disabled={!canWrite}
                                 className="flex items-center justify-center gap-2 px-4 py-3 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                                 whileHover={hoverScale(1.02)}
@@ -590,7 +602,7 @@ const FBIWantedManager: React.FC = () => {
                                 <span>删除所有记录</span>
                             </motion.button>
                             <motion.button
-                                onClick={() => setShowCreateModal(true)}
+                                onClick={() => { resetForm(); setShowCreateModal(true); }}
                                 disabled={!canWrite}
                                 className="flex items-center justify-center gap-2 px-6 py-3 bg-[#FFB703] text-[#023047] rounded-2xl hover:bg-[#FB8500] transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                                 whileHover={hoverScale(1.02)}
@@ -694,7 +706,9 @@ const FBIWantedManager: React.FC = () => {
                                                     <motion.button
                                                         onClick={() => {
                                                             setSelectedWanted(wanted);
+                                                            resetForm();
                                                             setFormData(wanted);
+                                                            setChargesDraft(wanted.charges.join(', '));
                                                             setShowEditModal(true);
                                                         }}
                                                         disabled={!canWrite}
@@ -782,7 +796,7 @@ const FBIWantedManager: React.FC = () => {
                                         <button
                                             onClick={() => {
                                                 setShowCreateModal(false);
-                                                setFormData({});
+                                                resetForm();
                                             }}
                                             className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
                                         >
@@ -936,14 +950,8 @@ const FBIWantedManager: React.FC = () => {
                                         <label className="block text-sm font-medium text-slate-700 mb-2">罪名</label>
                                         <input
                                             type="text"
-                                            value={formData.charges?.join(', ') || ''}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                charges: e.target.value
-                                                    .split(',')
-                                                    .map(s => s.trim())
-                                                    .filter(s => s.length > 0)
-                                            })}
+                                            value={chargesDraft}
+                                            onChange={(e) => setChargesDraft(e.target.value)}
                                             disabled={!canWrite}
                                             className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             placeholder="输入罪名，多个罪名用逗号分隔"
@@ -990,7 +998,7 @@ const FBIWantedManager: React.FC = () => {
                                             !canWrite ||
                                             loading ||
                                             !formData.name ||
-                                            !(formData.charges && formData.charges.length > 0) ||
+                                            !chargesDraft.split(',').some(charge => charge.trim()) ||
                                             !(typeof formData.reward === 'number' && formData.reward >= 0)
                                         }
                                         className="flex items-center gap-2 rounded-2xl bg-slate-900 px-6 py-2 text-white transition-all duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1027,6 +1035,7 @@ const FBIWantedManager: React.FC = () => {
                                         <button
                                             onClick={() => {
                                                 setShowEditModal(false);
+                                                resetForm();
                                                 setSelectedWanted(null);
                                                 setFormData({});
                                             }}
@@ -1110,8 +1119,8 @@ const FBIWantedManager: React.FC = () => {
                                         <label className="block text-sm font-medium text-slate-700 mb-2">罪名</label>
                                         <input
                                             type="text"
-                                            value={formData.charges?.join(', ') || ''}
-                                            onChange={(e) => setFormData({ ...formData, charges: e.target.value.split(',').map(s => s.trim()) })}
+                                            value={chargesDraft}
+                                            onChange={(e) => setChargesDraft(e.target.value)}
                                             disabled={!canWrite}
                                             className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             placeholder="输入罪名，多个罪名用逗号分隔"
@@ -1135,6 +1144,7 @@ const FBIWantedManager: React.FC = () => {
                                     <button
                                         onClick={() => {
                                             setShowEditModal(false);
+                                            resetForm();
                                             setSelectedWanted(null);
                                             setFormData({});
                                         }}

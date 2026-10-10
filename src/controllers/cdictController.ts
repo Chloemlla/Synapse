@@ -56,7 +56,7 @@ export class CDictController {
     } catch (error) {
       const message = error instanceof Error ? error.message : "翻译失败";
       logger.warn("[CDict] 翻译请求失败", { from, to, message });
-      fail(res, 502, message);
+      fail(res, 502, "上游服务暂时不可用");
     }
   }
 
@@ -71,7 +71,8 @@ export class CDictController {
       res.json({ success: true, ...(upstream as Record<string, unknown>) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "语言列表获取失败";
-      fail(res, 502, message);
+      logger.warn("[CDict] 语言列表获取失败", { message });
+      fail(res, 502, "上游服务暂时不可用");
     }
   }
 
@@ -114,7 +115,7 @@ export class CDictController {
     } catch (error) {
       const message = error instanceof Error ? error.message : "语音获取失败";
       logger.warn("[CDict] 语音请求失败", { source, message });
-      fail(res, 502, message);
+      fail(res, 502, "上游服务暂时不可用");
     }
   }
 }

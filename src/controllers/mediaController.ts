@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { MediaService } from "../services/mediaService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { sendToolFailure } from "./errorResponse";
 
 export class MediaController {
   // 允许的域名白名单
@@ -78,10 +79,7 @@ export class MediaController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "解析失败";
@@ -91,10 +89,7 @@ export class MediaController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -138,10 +133,7 @@ export class MediaController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "解析失败";
@@ -151,10 +143,7 @@ export class MediaController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 

@@ -1,5 +1,6 @@
 import path from "node:path";
 import dotenv from "dotenv";
+import { BCRYPT_SALT_ROUNDS } from './passwordPolicy';
 import { z } from "zod";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
 import { KL, deriveSecretHex } from "./keyDerivation";
@@ -41,8 +42,16 @@ const stringToBoolean = z
   .optional()
   .transform((value) => {
     if (typeof value === "boolean") return value;
-    if (typeof value === "number") return value !== 0;
-    if (typeof value === "string") return !["false", "0", "no", "off", ""].includes(value.trim().toLowerCase());
+    if (typeof value === "number") {
+      if (value === 0 || value === 1) return value === 1;
+      throw new Error("Invalid boolean configuration; use true or false");
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) return true;
+      if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+      throw new Error("Invalid boolean configuration; use true or false");
+    }
     return undefined;
   });
 
@@ -469,7 +478,7 @@ export const startupConfig = Object.freeze({
     passwordEncryptionKey: Boolean(process.env.PASSWORD_ENCRYPTION_KEY || process.env.AES_KEY || parsedEnv.JWT_SECRET),
   },
   jwtExpiresIn: parsedEnv.JWT_EXPIRES_IN,
-  bcryptSaltRounds: 12,
+  bcryptSaltRounds: BCRYPT_SALT_ROUNDS,
   localIps: ["127.0.0.1", "::1"],
   openai: {
     apiKey: openaiApiKey,

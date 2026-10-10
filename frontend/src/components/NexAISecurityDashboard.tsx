@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -128,6 +128,7 @@ const getEventTypeLabel = (type: string) => EVENT_TYPE_LABELS[type] || type;
 
 const NexAISecurityDashboard: React.FC = () => {
   const { setNotification } = useNotification();
+  const requestRef = useRef(0);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [devices, setDevices] = useState<DeviceTracking[]>([]);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -142,10 +143,12 @@ const NexAISecurityDashboard: React.FC = () => {
   useEffect(() => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 30000); // 每30秒刷新
-    return () => clearInterval(interval);
+    return () => { ++requestRef.current; clearInterval(interval); };
   }, [timeRange]);
 
   const fetchDashboardData = async () => {
+    const request = ++requestRef.current;
+    setLoading(true);
     try {
       // 使用 api 拦截器处理 token
       const [statsRes, devicesRes, eventsRes] = await Promise.all([
@@ -154,12 +157,14 @@ const NexAISecurityDashboard: React.FC = () => {
         api.get(`/api/nexai/security/events?page=1&limit=20`)
       ]);
 
+      if (request !== requestRef.current) return;
       setStats(statsRes.data);
       setDevices(devicesRes.data.devices || []);
       setEvents(eventsRes.data.events || []);
       setLoadError('');
       setLoading(false);
     } catch (error: any) {
+      if (request !== requestRef.current) return;
       console.error('Failed to fetch dashboard data:', error);
       if (error.response?.status !== 401) {
         setNotification({ type: 'error', message: '加载数据失败' });

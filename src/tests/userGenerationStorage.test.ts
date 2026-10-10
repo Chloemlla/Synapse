@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import fs from "node:fs";
-import mysql from "mysql2/promise";
 import {
   addGenerationRecord as fileAdd,
   findDuplicateGeneration as fileFind,
@@ -12,8 +11,6 @@ import {
   isAdminUser as mongoIsAdmin,
 } from "../services/userGenerationStorage/mongo";
 import {
-  addGenerationRecord as mysqlAdd,
-  findDuplicateGeneration as mysqlFind,
   isAdminUser as mysqlIsAdmin,
 } from "../services/userGenerationStorage/mysql";
 import { isAdminUser as sharedIsAdmin } from "../services/userGenerationStorage/types";
@@ -47,7 +44,7 @@ jest.mock("node:fs", () => ({
 
 jest.mock("mysql2/promise", () => ({
   __esModule: true,
-  default: { createConnection: jest.fn() },
+  default: { createPool: jest.fn() },
 }));
 
 const generationModel = (jest.requireMock("../services/mongoService") as any).mongoose.__mockModel as {
@@ -58,7 +55,6 @@ const mockGetUserById = getUserById as jest.Mock;
 const mockExistsSync = fs.existsSync as jest.Mock;
 const mockReadFileSync = fs.readFileSync as jest.Mock;
 const mockWriteFileSync = fs.writeFileSync as jest.Mock;
-const mockCreateConnection = mysql.createConnection as jest.Mock;
 
 const GOOD_MYSQL_URI = "mysql://svc:Str0ngPassw0rd@127.0.0.1:3306/synapse";
 
@@ -127,7 +123,16 @@ describe("userGenerationStorage/mongo", () => {
     });
   });
 
-  it("含 $ . { } [ ] 的入参被清空，拼不出注入条件", async () => {
+  it("句号、货币与括号在持久化和无哈希查重中保持原文", async () => {
+    const input = { userId: "u1", text: "Cost is $2.50 [today]. {ok}", voice: "voice.v2", model: "model.v3" };
+    generationModel.create.mockImplementation(async (value: unknown) => ({ toObject: () => value }));
+    await expect(mongoAdd(input)).resolves.toMatchObject(input);
+    mockFindOne(null);
+    await mongoFind(input);
+    expect(generationModel.findOne).toHaveBeenLastCalledWith(input);
+  });
+
+  it("操作符对象不能注入查询，字符串标点保留为字面量", async () => {
     mockFindOne(null);
     await mongoFind({
       userId: { $ne: "" } as never,
@@ -136,8 +141,7 @@ describe("userGenerationStorage/mongo", () => {
       model: "[admin]",
       contentHash: "{...}",
     });
-    // 净化后 contentHash 为空串 → 退回四字段查询，且值全是字面量字符串
-    expect(generationModel.findOne).toHaveBeenCalledWith({ userId: "", text: "", voice: "", model: "" });
+    expect(generationModel.findOne).toHaveBeenCalledWith({ userId: "", contentHash: "{...}" });
     const query = generationModel.findOne.mock.calls[0][0] as Record<string, unknown>;
     expect(Object.values(query).every((v) => typeof v === "string")).toBe(true);
   });
@@ -248,29 +252,35 @@ describe("userGenerationStorage/file", () => {
 });
 
 describe("userGenerationStorage/mysql", () => {
+  let isolatedMysql: typeof import("../services/userGenerationStorage/mysql");
+  let createPool: jest.Mock;
   function mockConn(rows: unknown[] = []) {
     const conn = { execute: jest.fn().mockResolvedValue([rows]), end: jest.fn().mockResolvedValue(undefined) };
-    mockCreateConnection.mockResolvedValue(conn);
+    createPool = jest.fn(() => conn);
+    jest.isolateModules(() => {
+      jest.doMock("mysql2/promise", () => ({ __esModule: true, default: { createPool } }));
+      isolatedMysql = require("../services/userGenerationStorage/mysql");
+    });
     return conn;
   }
 
   it("首次使用会建表并按哈希查询", async () => {
     const conn = mockConn([{ userId: "u1", contentHash: "hash-1" }]);
-    const found = await mysqlFind(record);
+    const found = await isolatedMysql.findDuplicateGeneration(record);
 
-    expect(mockCreateConnection).toHaveBeenCalledWith(GOOD_MYSQL_URI);
+    expect(createPool).toHaveBeenCalledWith(expect.objectContaining({ uri: GOOD_MYSQL_URI, connectionLimit: 10 }));
     expect(String(conn.execute.mock.calls[0][0])).toContain("CREATE TABLE IF NOT EXISTS user_generations");
     expect(conn.execute).toHaveBeenLastCalledWith(
       "SELECT * FROM user_generations WHERE userId=? AND contentHash=? LIMIT 1",
       ["u1", "hash-1"],
     );
     expect(found).toEqual({ userId: "u1", contentHash: "hash-1" });
-    expect(conn.end).toHaveBeenCalledTimes(1);
+    expect(conn.end).not.toHaveBeenCalled();
   });
 
   it("无哈希时按四字段查询，缺省 voice/model 传空串", async () => {
     const conn = mockConn([]);
-    await expect(mysqlFind({ userId: "u1", text: "你好" })).resolves.toBeNull();
+    await expect(isolatedMysql.findDuplicateGeneration({ userId: "u1", text: "你好" })).resolves.toBeNull();
     expect(conn.execute).toHaveBeenLastCalledWith(
       "SELECT * FROM user_generations WHERE userId=? AND text=? AND voice=? AND model=? LIMIT 1",
       ["u1", "你好", "", ""],
@@ -280,23 +290,44 @@ describe("userGenerationStorage/mysql", () => {
   it("插入时补齐默认值并保留原记录", async () => {
     const conn = mockConn([]);
     const input = { userId: "u1", text: "你好" };
-    await expect(mysqlAdd(input)).resolves.toBe(input);
+    await expect(isolatedMysql.addGenerationRecord(input)).resolves.toBe(input);
     expect(String(conn.execute.mock.calls[1][0])).toContain("INSERT INTO user_generations");
     const params = conn.execute.mock.calls[1][1] as unknown[];
     expect(params.slice(0, 8)).toEqual(["u1", "你好", "", "", "", 1, "", ""]);
     expect(params[8]).toBeInstanceOf(Date);
-    expect(conn.end).toHaveBeenCalledTimes(1);
+    expect(conn.end).not.toHaveBeenCalled();
+  });
+
+  it("并发首次调用共用连接池和DDL，查询失败后仍可复用", async () => {
+    const conn = mockConn([]);
+    await Promise.all([isolatedMysql.findDuplicateGeneration(record), isolatedMysql.findDuplicateGeneration(record)]);
+    expect(createPool).toHaveBeenCalledTimes(1);
+    expect(conn.execute.mock.calls.filter(([sql]) => String(sql).startsWith("CREATE TABLE"))).toHaveLength(1);
+    conn.execute.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(isolatedMysql.addGenerationRecord(record)).rejects.toThrow("database unavailable");
+    await expect(isolatedMysql.findDuplicateGeneration(record)).resolves.toBeNull();
+    expect(conn.end).not.toHaveBeenCalled();
+  });
+
+  it("建表失败后下次调用重试初始化", async () => {
+    const conn = mockConn([]);
+    conn.execute.mockRejectedValueOnce(new Error("DDL failed"));
+    await expect(isolatedMysql.findDuplicateGeneration(record)).rejects.toThrow("DDL failed");
+    await expect(isolatedMysql.findDuplicateGeneration(record)).resolves.toBeNull();
+    expect(conn.execute.mock.calls.filter(([sql]) => String(sql).startsWith("CREATE TABLE"))).toHaveLength(2);
   });
 
   it("MYSQL_URI 缺失时直接抛错，不回落到默认连接串", async () => {
+    mockConn();
     delete process.env.MYSQL_URI;
-    await expect(mysqlFind(record)).rejects.toThrow(/MYSQL_URI is required/);
-    expect(mockCreateConnection).not.toHaveBeenCalled();
+    await expect(isolatedMysql.findDuplicateGeneration(record)).rejects.toThrow(/MYSQL_URI is required/);
+    expect(createPool).not.toHaveBeenCalled();
   });
 
   it("弱凭据 MYSQL_URI 被拒绝", async () => {
+    mockConn();
     process.env.MYSQL_URI = weakMysqlUri("root", "password");
-    await expect(mysqlFind(record)).rejects.toThrow(/weak\/default credentials/);
+    await expect(isolatedMysql.findDuplicateGeneration(record)).rejects.toThrow(/weak\/default credentials/);
   });
 });
 

@@ -5,12 +5,14 @@ import { useBroadcastModal } from '../components/BroadcastModal';
 import { markFingerprintHashProcessed } from '../api/api';
 import { reportFingerprintOnce } from '../utils/fingerprint';
 import { isConfigurationNoticeIssue } from '../components/env-manager/configurationNotice';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * 将 WebSocket 消息接入应用通知系统
  * 在 App 顶层调用一次即可
  */
 export function useWsNotifications() {
+  const connectionKey = useAuthStore(state => state.isAuthenticated ? state.user?.id ?? '' : '');
   const { setNotification } = useNotification();
   const { showBroadcastModal } = useBroadcastModal();
 
@@ -89,7 +91,7 @@ export function useWsNotifications() {
     }
   }, [setNotification, showBroadcastModal]);
 
-  const wsHandle = useWebSocket({ onMessage });
+  const wsHandle = useWebSocket({ onMessage, connectionKey });
 
   // 暴露 send 方法，供外部发送 fingerprint:ack
   return wsHandle;

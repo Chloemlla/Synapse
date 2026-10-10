@@ -154,7 +154,11 @@ export const MediaToolTranscriptModel =
  * 运行容器里的任何文件都会在重新部署后静默消失（这正是“cookies 明明配了却像没生效”的根源）。 */
 export interface MediaToolCookiesDoc {
   key: string;
-  content: string;
+  /** Legacy plaintext is read only for an atomic migration on first access. */
+  content?: string;
+  credentialCiphertext?: string;
+  credentialIv?: string;
+  credentialTag?: string;
   bytes: number;
   updatedAt: number;
   updatedBy: string;
@@ -163,7 +167,10 @@ export interface MediaToolCookiesDoc {
 const cookiesSchema = new mongoose.Schema<MediaToolCookiesDoc>(
   {
     key: { type: String, required: true, unique: true },
-    content: { type: String, required: true },
+    content: { type: String, select: false },
+    credentialCiphertext: { type: String, select: false },
+    credentialIv: { type: String, select: false },
+    credentialTag: { type: String, select: false },
     bytes: { type: Number, required: true, default: 0 },
     updatedAt: { type: Number, required: true },
     updatedBy: { type: String, default: "" },

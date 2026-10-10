@@ -93,7 +93,8 @@ export async function deliverEmailRequest(req: Request, res: Response, mode: Ema
       logger.error("[EmailController] 邮件额度结算失败", { error, userId, acceptedCount });
     }
     if (!result.success) {
-      return res.status(500).json({ success: false, error: result.error || "邮件发送失败", acceptedCount });
+      logger.error('[EmailController] 邮件服务投递失败', { error: result.error, mode, acceptedCount });
+      return res.status(500).json({ success: false, error: "邮件发送失败，请稍后重试", acceptedCount });
     }
     return res.json({ success: true, message: mode === "batch" ? "批量发送成功" : "邮件发送成功", messageId: result.messageId, ids: result.ids, data: result.data, acceptedCount });
   } catch (error) {

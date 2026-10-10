@@ -174,10 +174,13 @@ const MailSystemConfigManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const fieldIdBase = useId();
 
   const loadSetting = useCallback(async () => {
     setLoading(true);
+    setSetting(null);
+    setLoadError(false);
     try {
       const response = await fetch(MAIL_SYSTEM_API, { credentials: 'include' });
       const data = (await response.json().catch(() => null)) as MailSystemResponse | null;
@@ -185,7 +188,8 @@ const MailSystemConfigManager: React.FC = () => {
         throw new Error(data?.error || '获取邮件系统配置失败');
       }
 
-      const nextSetting = data.setting || null;
+      const nextSetting = data.setting;
+      if (!nextSetting?.config) throw new Error('邮件配置响应无效');
       setSetting(nextSetting);
       setEmailStatus(data.status?.email);
       setOutemailStatus(data.status?.outemail);
@@ -204,6 +208,7 @@ const MailSystemConfigManager: React.FC = () => {
       setOutemailApiKey('');
       setOutemailCode('');
     } catch (error) {
+      setLoadError(true);
       setNotification({
         message: getBackendErrorMessage(error, '获取邮件系统配置失败'),
         type: 'error',
@@ -223,15 +228,19 @@ const MailSystemConfigManager: React.FC = () => {
       quotaTotal: Number(form.quotaTotal) || 100,
       outemailQuotaTotal: Number(form.outemailQuotaTotal) || 100,
     };
+    if (setting?.config) {
+      for (const key of Object.keys(form) as Array<keyof MailSystemForm>) {
+        if (nextPayload[key] === setting.config[key]) delete nextPayload[key];
+      }
+    }
     if (resendApiKey.trim()) nextPayload.resendApiKey = resendApiKey.trim();
     if (outemailApiKey.trim()) nextPayload.outemailApiKey = outemailApiKey.trim();
     if (outemailCode.trim()) nextPayload.outemailCode = outemailCode.trim();
     return nextPayload;
-  }, [form, outemailApiKey, outemailCode, resendApiKey]);
+  }, [form, setting, outemailApiKey, outemailCode, resendApiKey]);
 
   const saveSetting = useCallback(async () => {
-    if (saving) return;
-    if (!canWrite || !setting || loading || resetting) return;
+    if (!canWrite || saving || resetting || loading || !setting || loadError) return;
     setSaving(true);
     try {
       const response = await fetch(MAIL_SYSTEM_API, {
@@ -254,7 +263,7 @@ const MailSystemConfigManager: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [canWrite, loadSetting, loading, payload, resetting, saving, setting, setNotification]);
+  }, [canWrite, loadSetting, payload, saving, resetting, loading, setting, loadError, setNotification]);
 
   const resetSetting = useCallback(async () => {
     if (resetting) return;
@@ -295,6 +304,7 @@ const MailSystemConfigManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {loadError && <p role="alert">读取邮件配置失败，请刷新重试。成功读取前无法保存。</p>}
       {!canWrite ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
           当前账号是只读管理员：邮件系统配置的修改 / 重置需要超级管理员权限，相关控件已禁用。
@@ -321,7 +331,7 @@ const MailSystemConfigManager: React.FC = () => {
             <motion.button
               type="button"
               onClick={resetSetting}
-              disabled={saving || resetting || !canWrite || !setting}
+              disabled={saving || resetting || !canWrite || !setting || loadError}
               className={studioDangerButtonClassName}
               whileTap={{ scale: 0.97 }}
             >
@@ -331,7 +341,7 @@ const MailSystemConfigManager: React.FC = () => {
             <motion.button
               type="button"
               onClick={saveSetting}
-              disabled={saving || resetting || !canWrite || !setting}
+              disabled={saving || resetting || !canWrite || !setting || loadError}
               className={studioPrimaryButtonClassName}
               whileTap={{ scale: 0.97 }}
             >

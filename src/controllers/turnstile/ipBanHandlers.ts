@@ -1,3 +1,4 @@
+import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { TurnstileService } from "../../services/turnstileService";
 import { isValidIpOrCidr, requireSuperAdmin, validateBanDuration } from "./_helpers";
@@ -47,7 +48,7 @@ export async function banIp(req: Request, res: Response) {
       res.status(500).json({ success: false, error: banResult.error || "封禁失败" });
     }
   } catch (error) {
-    console.error("手动封禁IP失败:", error);
+    logger.error("手动封禁IP失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -77,7 +78,7 @@ export async function unbanIp(req: Request, res: Response) {
       res.status(404).json({ success: false, error: "IP地址未找到或未被封禁" });
     }
   } catch (error) {
-    console.error("解除IP封禁失败:", error);
+    logger.error("解除IP封禁失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -148,7 +149,7 @@ export async function batchBanIps(req: Request, res: Response) {
       errors,
     });
   } catch (error) {
-    console.error("批量封禁IP失败:", error);
+    logger.error("批量封禁IP失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }
@@ -199,7 +200,7 @@ export async function batchUnbanIps(req: Request, res: Response) {
       errors,
     });
   } catch (error) {
-    console.error("批量解封IP失败:", error);
+    logger.error("批量解封IP失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

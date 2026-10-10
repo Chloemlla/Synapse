@@ -60,7 +60,7 @@ interface OpsJob {
   instanceId: string;
   method: string;
   commandId: string;
-  status: "pending" | "accepted" | "running" | "succeeded" | "failed";
+  status: "queued" | "dispatched" | "acknowledged" | "running" | "succeeded" | "failed" | "canceled" | "expired";
   requestId: string;
   createdAt: string;
   acceptedAt: string;
@@ -108,12 +108,15 @@ const statusBadgeTone = (status: string): "emerald" | "amber" | "slate" | "rose"
     case "active":
       return "emerald";
     case "running":
-    case "accepted":
+    case "acknowledged":
+    case "dispatched":
       return "amber";
     case "offline":
-    case "pending":
+    case "queued":
       return "slate";
     case "failed":
+    case "canceled":
+    case "expired":
     case "suspended":
       return "rose";
     default:
@@ -336,7 +339,7 @@ function InstanceDetailSection({
 
   /* Backups state */
   const [backups, setBackups] = useState<
-    { backupId: string; sizeBytes: number; createdAt: string }[]
+    { backupId: string; sizeBytes: number; createdAt: string; status: string }[]
   >([]);
   const [backupsLoading, setBackupsLoading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -345,12 +348,78 @@ function InstanceDetailSection({
   const [createJobMethod, setCreateJobMethod] = useState("ops.command.runManaged");
   const [createJobCommandId, setCreateJobCommandId] = useState("ecoenchants.reload");
   const [creatingJob, setCreatingJob] = useState(false);
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [operationReason, setOperationReason] = useState('');
+  const [fileMount, setFileMount] = useState('plugin-data');
+  const [backupPaths, setBackupPaths] = useState('config.yml');
+  const operationControllerRef = useRef(new AbortController());
+  const operationBusyRef = useRef(false);
+  const pendingOperationsRef = useRef(new Map<string, { key: string; jobId?: string }>());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    operationControllerRef.current = controller;
+    return () => { controller.abort(); };
+  }, [instanceId]);
+
+  const runJob = useCallback(async (endpoint: string, body: Record<string, unknown>): Promise<OpsJob | null> => {
+    if (operationBusyRef.current) return null;
+    const signal = operationControllerRef.current.signal;
+    signal.throwIfAborted();
+    const signature = JSON.stringify([instanceId, endpoint, body]);
+    const pending: { key: string; jobId?: string } = pendingOperationsRef.current.get(signature) || { key: crypto.randomUUID() };
+    pendingOperationsRef.current.set(signature, pending);
+    operationBusyRef.current = true;
+    setOperationBusy(true);
+    try {
+      if (!pending.jobId) {
+        // 网络结果不明确时保留本次操作的键，重试不会创建第二个写入任务。
+        const response = await api.post(`${API_BASE}/ops/instances/${instanceId}${endpoint}`, body, {
+          headers: { 'Idempotency-Key': pending.key }, signal,
+        });
+        signal.throwIfAborted();
+        if (typeof response.data?.jobId !== 'string') throw new Error('未收到任务编号，请重试查询');
+        pending.jobId = response.data.jobId;
+        setNotification({ message: '任务已受理，正在等待执行结果', type: 'info' });
+      }
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const response = await api.get<OpsJob>(`${API_BASE}/ops/jobs/${pending.jobId}`, { signal });
+        signal.throwIfAborted();
+        const job = response.data;
+        setJobs(previous => [job, ...previous.filter(item => item.jobId !== job.jobId)]);
+        if (job.status === 'succeeded') {
+          pendingOperationsRef.current.delete(signature);
+          return job;
+        }
+        if (['failed', 'canceled', 'expired'].includes(job.status)) {
+          pendingOperationsRef.current.delete(signature);
+          throw new Error(job.error?.message || '任务未完成，请查看任务记录');
+        }
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => { window.clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+          const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, 2000);
+          signal.addEventListener('abort', onAbort, { once: true });
+        });
+      }
+      setNotification({ message: '任务仍在执行，可稍后重试查询或查看任务记录', type: 'info' });
+      return null;
+    } finally {
+      operationBusyRef.current = false;
+      if (!signal.aborted) setOperationBusy(false);
+    }
+  }, [instanceId, setNotification]);
+
+  const notifyOperationError = useCallback((error: unknown, message: string) => {
+    if (!operationControllerRef.current.signal.aborted) {
+      setNotification({ message: getErrorMessage(error, message), type: 'error' });
+    }
+  }, [setNotification]);
 
   const fetchInstance = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get(`${API_BASE}/ops/instances/${instanceId}`);
-      setInstance(res.data);
+      setInstance(res.data.instance);
     } catch (e) {
       setNotification({ message: getErrorMessage(e, "获取实例详情失败"), type: "error" });
     } finally {
@@ -387,129 +456,128 @@ function InstanceDetailSection({
     fetchJobs();
   }, [fetchInstance, fetchJobs]);
 
-  /* File handlers */
-  const handleFileRead = useCallback(async () => {
-    if (!canWrite) return;
-    if (!fileReadPath.trim()) return;
+  /* All six operations return a job; only a succeeded job is a completed action. */
+  const handleFileRead = async () => {
+    if (!canWrite || !fileReadPath.trim()) return;
     setFileOpsLoading(true);
     setFileResult(null);
     try {
-      const res = await api.post(`${API_BASE}/ops/instances/${instanceId}/files/read`, {
-        path: fileReadPath.trim(),
-      });
-      setFileResult(
-        typeof res.data.content === "string"
-          ? res.data.content
-          : JSON.stringify(res.data, null, 2),
-      );
-    } catch (e) {
-      setNotification({ message: getErrorMessage(e, "文件读取失败"), type: "error" });
-    } finally {
-      setFileOpsLoading(false);
-    }
-  }, [canWrite, instanceId, fileReadPath, setNotification]);
+      const job = await runJob('/files/read', { mount: fileMount, path: fileReadPath.trim() });
+      if (!job) return;
+      const result = job.result || {};
+      const content = typeof result.content === 'string' ? result.content
+        : typeof result.contentBase64 === 'string'
+          ? new TextDecoder().decode(Uint8Array.from(atob(result.contentBase64), character => character.charCodeAt(0)))
+          : JSON.stringify(result, null, 2);
+      setFileResult(content);
+    } catch (error) {
+      notifyOperationError(error, '文件读取失败');
+    } finally { setFileOpsLoading(false); }
+  };
 
-  const handleFileWrite = useCallback(async () => {
-    if (!canWrite) return;
-    if (!fileWritePath.trim() || !fileWriteContent.trim()) return;
+  const handleFileWrite = async () => {
+    if (!canWrite || !fileWritePath.trim() || !operationReason.trim()) return;
     const targetPath = fileWritePath.trim();
     const ok = await confirm({
       title: '确认覆盖远程文件？',
-      description: `将用当前内容覆盖实例「${instanceId}」上的文件「${targetPath}」，写入后不可撤销。`,
-      tone: 'danger',
-      confirmLabel: '覆盖写入',
+      description: `将覆盖实例「${instanceId}」目录「${fileMount}」中的「${targetPath}」，写入后不可撤销。`,
+      tone: 'danger', confirmLabel: '覆盖写入',
     });
     if (!ok) return;
     setFileOpsLoading(true);
     try {
-      await api.post(`${API_BASE}/ops/instances/${instanceId}/files/write`, {
-        path: targetPath,
-        content: fileWriteContent,
+      const bytes = new TextEncoder().encode(fileWriteContent);
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      const contentSha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      const contentBase64 = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
+      const job = await runJob('/files/write', {
+        mount: fileMount, path: targetPath, contentBase64, contentSha256,
+        reason: operationReason.trim(), confirmRisk: true, mode: 'overwrite',
       });
-      setNotification({ message: "文件写入成功", type: "success" });
-      setFileWritePath("");
-      setFileWriteContent("");
-    } catch (e) {
-      setNotification({ message: getErrorMessage(e, "文件写入失败"), type: "error" });
-    } finally {
-      setFileOpsLoading(false);
-    }
-  }, [canWrite, instanceId, fileWritePath, fileWriteContent, setNotification, confirm]);
+      if (!job) return;
+      setNotification({ message: '文件写入成功', type: 'success' });
+      setFileWritePath('');
+      setFileWriteContent('');
+    } catch (error) {
+      notifyOperationError(error, '文件写入失败');
+    } finally { setFileOpsLoading(false); }
+  };
 
-  const handleFileDelete = useCallback(async () => {
-    if (!canWrite) return;
-    if (!fileDeletePath.trim()) return;
+  const handleFileDelete = async () => {
+    if (!canWrite || !fileDeletePath.trim() || !operationReason.trim()) return;
     const ok = await confirm({
-      title: `删除远程文件「${fileDeletePath}」？`,
-      description: '该文件将从服务器实例上移除，删除后无法恢复。',
-      tone: 'danger',
-      confirmLabel: '删除',
+      title: `移除远程文件「${fileDeletePath}」？`,
+      description: `将把目录「${fileMount}」中的该文件移入隔离区。`,
+      tone: 'danger', confirmLabel: '移除文件',
     });
     if (!ok) return;
     setFileOpsLoading(true);
     try {
-      await api.post(`${API_BASE}/ops/instances/${instanceId}/files/delete`, {
-        path: fileDeletePath.trim(),
+      const job = await runJob('/files/delete', {
+        mount: fileMount, path: fileDeletePath.trim(), mode: 'quarantine',
+        reason: operationReason.trim(), confirmRisk: true,
       });
-      setNotification({ message: "文件删除成功", type: "success" });
-      setFileDeletePath("");
-    } catch (e) {
-      setNotification({ message: getErrorMessage(e, "文件删除失败"), type: "error" });
-    } finally {
-      setFileOpsLoading(false);
-    }
-  }, [canWrite, instanceId, fileDeletePath, setNotification]);
+      if (!job) return;
+      setNotification({ message: '文件已移入隔离区', type: 'success' });
+      setFileDeletePath('');
+    } catch (error) {
+      notifyOperationError(error, '文件移除失败');
+    } finally { setFileOpsLoading(false); }
+  };
 
-  const handleCreateBackup = useCallback(async () => {
-    if (!canWrite) return;
+  const handleCreateBackup = async () => {
+    if (!canWrite || !operationReason.trim() || !backupPaths.trim()) return;
     try {
-      await api.post(`${API_BASE}/ops/instances/${instanceId}/backups`);
-      setNotification({ message: "备份创建请求已发送", type: "success" });
-      await fetchBackups();
-    } catch (e) {
-      setNotification({ message: getErrorMessage(e, "创建备份失败"), type: "error" });
-    }
-  }, [canWrite, instanceId, fetchBackups, setNotification]);
-
-  const handleRestoreBackup = useCallback(
-    async (backupId: string) => {
-      if (!canWrite) return;
-      const ok = await confirm({
-        title: `恢复备份「${backupId.slice(0, 16)}…」？`,
-        description: '将用该备份覆盖当前实例数据与配置，此操作不可撤销，且会中断正在运行的服务。',
-        tone: 'danger',
-        confirmLabel: '恢复备份',
+      const job = await runJob('/backups', {
+        scope: { mounts: [fileMount], paths: backupPaths.split(',').map(path => path.trim()).filter(Boolean) },
+        reason: operationReason.trim(),
       });
-      if (!ok) return;
-      setRestoringId(backupId);
-      try {
-        await api.post(`${API_BASE}/ops/instances/${instanceId}/backups/${backupId}/restore`);
-        setNotification({ message: "备份恢复请求已发送", type: "success" });
-      } catch (e) {
-        setNotification({ message: getErrorMessage(e, "恢复备份失败"), type: "error" });
-      } finally {
-        setRestoringId(null);
-      }
-    },
-    [canWrite, instanceId, setNotification],
-  );
+      if (!job) return;
+      setNotification({ message: '备份创建成功', type: 'success' });
+      await fetchBackups();
+    } catch (error) { notifyOperationError(error, '创建备份失败'); }
+  };
 
-  const handleCreateJob = useCallback(async () => {
-    if (!canWrite) return;
+  const handleRestoreBackup = async (backupId: string) => {
+    if (!canWrite || !operationReason.trim() || !backupPaths.trim()) return;
+    const restorePaths = backupPaths.split(',').map(path => path.trim()).filter(Boolean);
+    const ok = await confirm({
+      title: `恢复备份「${backupId.slice(0, 16)}…」？`,
+      description: `将从备份恢复以下路径：${restorePaths.join('、')}。恢复前会创建备份，操作可能中断服务。`,
+      tone: 'danger', confirmLabel: '恢复备份',
+    });
+    if (!ok) return;
+    setRestoringId(backupId);
+    try {
+      const job = await runJob(`/backups/${backupId}/restore`, {
+        restorePaths, mode: 'staged', preRestoreBackup: true,
+        reason: operationReason.trim(), confirmRisk: true,
+      });
+      if (job) setNotification({ message: '备份恢复成功', type: 'success' });
+    } catch (error) {
+      notifyOperationError(error, '恢复备份失败');
+    } finally { setRestoringId(null); }
+  };
+
+  const handleCreateJob = async () => {
+    if (!canWrite || !operationReason.trim()) return;
+    const ok = await confirm({
+      title: '执行远程任务？', description: `将在实例「${instanceId}」上执行当前选择的任务。`,
+      confirmLabel: '执行', tone: 'danger',
+    });
+    if (!ok) return;
     setCreatingJob(true);
     try {
-      await api.post(`${API_BASE}/ops/instances/${instanceId}/jobs`, {
+      const job = await runJob('/jobs', {
         method: createJobMethod,
-        commandId: createJobCommandId,
+        params: createJobMethod === 'ops.command.runManaged' ? { commandId: createJobCommandId, arguments: {} } : {},
+        reason: operationReason.trim(), confirmRisk: true,
       });
-      setNotification({ message: "任务已创建", type: "success" });
-      await fetchJobs();
-    } catch (e) {
-      setNotification({ message: getErrorMessage(e, "创建任务失败"), type: "error" });
-    } finally {
-      setCreatingJob(false);
-    }
-  }, [canWrite, instanceId, createJobMethod, createJobCommandId, fetchJobs, setNotification]);
+      if (job) setNotification({ message: '任务执行成功', type: 'success' });
+    } catch (error) {
+      notifyOperationError(error, '执行任务失败');
+    } finally { setCreatingJob(false); }
+  };
 
   if (loading && !instance) {
     return (
@@ -576,6 +644,16 @@ function InstanceDetailSection({
         ))}
       </div>
 
+      <fieldset disabled={operationBusy} className="space-y-4 disabled:opacity-70">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="操作原因（写入、任务与备份必填）" value={operationReason} onChange={setOperationReason} />
+          {activeTab !== 'jobs' && <SelectField label="文件目录" value={fileMount} onChange={setFileMount} options={[
+            { label: '插件数据', value: 'plugin-data' }, { label: '服务器目录', value: 'server-root' },
+            { label: '配置', value: 'config' }, { label: '日志', value: 'logs' }, { label: '备份', value: 'backups' },
+          ]} />}
+          {activeTab === 'backups' && <Field label="备份 / 恢复相对路径（逗号分隔）" value={backupPaths} onChange={setBackupPaths} />}
+        </div>
+        {operationBusy && <p role="status" className="text-sm text-slate-600">任务处理中，正在等待执行结果…</p>}
       {/* Jobs Tab */}
       {activeTab === "jobs" && (
         <div className="space-y-4">
@@ -584,22 +662,17 @@ function InstanceDetailSection({
             <span className={labelClass}>创建新任务</span>
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <SelectField
-                label="Method"
+                label="任务类型"
                 value={createJobMethod}
                 onChange={setCreateJobMethod}
                 disabled={!canWrite}
                 options={[
                   { label: "ops.command.runManaged", value: "ops.command.runManaged" },
                   { label: "ops.diagnostics.snapshot", value: "ops.diagnostics.snapshot" },
-                  { label: "ops.file.read", value: "ops.file.read" },
-                  { label: "ops.file.write", value: "ops.file.write" },
-                  { label: "ops.file.delete", value: "ops.file.delete" },
-                  { label: "ops.backup.create", value: "ops.backup.create" },
-                  { label: "ops.backup.restore", value: "ops.backup.restore" },
                 ]}
               />
               <SelectField
-                label="Command ID"
+                label="托管命令"
                 value={createJobCommandId}
                 onChange={setCreateJobCommandId}
                 disabled={!canWrite}
@@ -612,7 +685,7 @@ function InstanceDetailSection({
                 <button
                   type="button"
                   onClick={handleCreateJob}
-                  disabled={creatingJob || !canWrite}
+                  disabled={creatingJob || !canWrite || !operationReason.trim()}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <FaPlus />
@@ -649,6 +722,7 @@ function InstanceDetailSection({
                       <span className="ml-3">完成于 {new Date(job.completedAt).toLocaleString()}</span>
                     )}
                   </div>
+                  {job.result && <details className="mt-2 text-xs"><summary>执行结果</summary><pre className="overflow-auto whitespace-pre-wrap">{JSON.stringify(job.result, null, 2)}</pre></details>}
                   {job.error && (
                     <div className="mt-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                       [{job.error.code}] {job.error.message}
@@ -671,7 +745,7 @@ function InstanceDetailSection({
                 type="text"
                 value={fileReadPath}
                 onChange={(e) => setFileReadPath(e.target.value)}
-                placeholder="远程文件路径，如 /server/plugins/config.yml"
+                placeholder="相对所选目录的路径，如 config.yml"
                 disabled={!canWrite}
                 className={`${inputClass} disabled:opacity-50 disabled:cursor-not-allowed`}
               />
@@ -699,7 +773,7 @@ function InstanceDetailSection({
                 type="text"
                 value={fileWritePath}
                 onChange={(e) => setFileWritePath(e.target.value)}
-                placeholder="远程文件路径"
+                placeholder="相对所选目录的路径"
                 disabled={!canWrite}
                 className={`${inputClass} disabled:opacity-50 disabled:cursor-not-allowed`}
               />
@@ -714,7 +788,7 @@ function InstanceDetailSection({
               <button
                 type="button"
                 onClick={handleFileWrite}
-                disabled={fileOpsLoading || !fileWritePath.trim() || !fileWriteContent.trim() || !canWrite}
+                disabled={fileOpsLoading || !fileWritePath.trim() || !operationReason.trim() || !canWrite}
                 className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <FaSave />
@@ -730,14 +804,14 @@ function InstanceDetailSection({
                 type="text"
                 value={fileDeletePath}
                 onChange={(e) => setFileDeletePath(e.target.value)}
-                placeholder="远程文件路径"
+                placeholder="相对所选目录的路径"
                 disabled={!canWrite}
                 className={`${inputClass} disabled:opacity-50 disabled:cursor-not-allowed`}
               />
               <button
                 type="button"
                 onClick={handleFileDelete}
-                disabled={fileOpsLoading || !fileDeletePath.trim() || !canWrite}
+                disabled={fileOpsLoading || !fileDeletePath.trim() || !operationReason.trim() || !canWrite}
                 className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <FaTrash />
@@ -755,7 +829,7 @@ function InstanceDetailSection({
             <button
               type="button"
               onClick={handleCreateBackup}
-              disabled={!canWrite}
+              disabled={!canWrite || !operationReason.trim() || !backupPaths.trim()}
               className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <FaPlus />
@@ -776,14 +850,14 @@ function InstanceDetailSection({
                   <div>
                     <div className="font-mono text-sm text-slate-700">{bk.backupId.slice(0, 20)}...</div>
                     <div className="mt-1 text-xs text-slate-500">
-                      {bk.createdAt ? new Date(bk.createdAt).toLocaleString() : "-"}
+                      {bk.status} · {bk.createdAt ? new Date(bk.createdAt).toLocaleString() : "-"}
                       {bk.sizeBytes > 0 && ` · ${(bk.sizeBytes / 1024 / 1024).toFixed(2)} MB`}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleRestoreBackup(bk.backupId)}
-                    disabled={restoringId === bk.backupId || !canWrite}
+                    disabled={restoringId === bk.backupId || bk.status !== "available" || !canWrite || !operationReason.trim() || !backupPaths.trim()}
                     className="inline-flex items-center gap-2 rounded-2xl bg-amber-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <FaUndo />
@@ -795,6 +869,7 @@ function InstanceDetailSection({
           )}
         </div>
       )}
+      </fieldset>
     </div>
   );
 }
@@ -982,6 +1057,7 @@ export function EcoEnchantsOpsPanel() {
 
       {selectedInstanceId ? (
         <InstanceDetailSection
+          key={selectedInstanceId}
           instanceId={selectedInstanceId}
           onBack={() => setSelectedInstanceId(null)}
         />

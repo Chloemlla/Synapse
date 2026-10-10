@@ -13,6 +13,7 @@ import { mongoose } from "./mongoService";
 import { AuditLogService, type AuditEntry } from "./auditLogService";
 import logger from "../utils/logger";
 import { type User, UserStorage } from "../utils/userStorage";
+import { sharedStateStore } from "./sharedStateStore";
 
 type MergeStrategy = "auto" | "smart" | "conservative";
 type RiskSeverity = "low" | "medium" | "high";
@@ -82,29 +83,18 @@ export interface AccountMergeActor {
 }
 
 const MERGE_SESSION_TTL_MS = 15 * 60 * 1000;
-// G2-19: 容量上限，防内存无限增长。
-const MAX_MERGE_SESSIONS = 2000;
-const mergeSessions = new Map<string, AccountMergeSession>();
+const MERGE_SESSION_PREFIX = "account-merge:session:";
+const MERGE_PENDING_PREFIX = "account-merge:pending:";
+
+function pendingSessionKey(targetUserId: string, provider: AccountIdentityProvider): string {
+  return `${MERGE_PENDING_PREFIX}${targetUserId}:${provider}`;
+}
 
 const ROLE_RANK: Record<string, number> = {
   viewer: 1,
   editor: 2,
   admin: 3,
 };
-
-function cleanupExpiredMergeSessions(now = Date.now()): void {
-  for (const [token, session] of mergeSessions.entries()) {
-    if (session.expiresAt <= now) {
-      mergeSessions.delete(token);
-    }
-  }
-  if (mergeSessions.size > MAX_MERGE_SESSIONS) {
-    const ordered = [...mergeSessions.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    for (const [token] of ordered.slice(0, mergeSessions.size - MAX_MERGE_SESSIONS)) {
-      mergeSessions.delete(token);
-    }
-  }
-}
 
 function toAccountSummary(user: User): AccountMergeAccountSummary {
   return {
@@ -368,37 +358,35 @@ export async function createMergePreviewSession(params: {
   provider: AccountIdentityProvider;
   providerUserId: string;
 }): Promise<{ token: string; preview: AccountMergePreview }> {
-  cleanupExpiredMergeSessions();
-
-  for (const [token, session] of mergeSessions.entries()) {
-    if (
-      session.sourceUserId === params.sourceUserId &&
-      session.targetUserId === params.targetUserId &&
-      session.provider === params.provider &&
-      session.providerUserId === params.providerUserId
-    ) {
-      mergeSessions.delete(token);
-    }
-  }
-
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = Date.now() + MERGE_SESSION_TTL_MS;
   const preview = await buildAccountMergePreview({ ...params, expiresAt });
 
-  mergeSessions.set(token, {
-    token,
-    ...params,
-    expiresAt,
-    preview,
+  const pendingKey = pendingSessionKey(params.targetUserId, params.provider);
+  const pairKey = `account-merge:pair:${crypto.createHash("sha256")
+    .update(JSON.stringify([params.targetUserId, params.provider, params.sourceUserId, params.providerUserId]))
+    .digest("hex")}`;
+  // Publish the token and pending UI index together under the same shared lock.
+  await sharedStateStore.withLock(`${pendingKey}:lock`, 30_000, async () => {
+    const previousToken = await sharedStateStore.get<string>(pairKey);
+    const previous = previousToken
+      ? await sharedStateStore.get<AccountMergeSession>(`${MERGE_SESSION_PREFIX}${previousToken}`)
+      : null;
+    if (previous && previous.sourceUserId === params.sourceUserId && previous.providerUserId === params.providerUserId) {
+      await sharedStateStore.delete(`${MERGE_SESSION_PREFIX}${previous.token}`);
+    }
+    await sharedStateStore.set<AccountMergeSession>(`${MERGE_SESSION_PREFIX}${token}`, {
+      token, ...params, expiresAt, preview,
+    }, MERGE_SESSION_TTL_MS);
+    await sharedStateStore.set(pairKey, token, MERGE_SESSION_TTL_MS);
+    await sharedStateStore.set(pendingKey, token, MERGE_SESSION_TTL_MS);
   });
 
   return { token, preview };
 }
 
 export async function getMergePreviewByToken(token: string, targetUserId: string): Promise<AccountMergePreview> {
-  cleanupExpiredMergeSessions();
-
-  const session = mergeSessions.get(token);
+  const session = await sharedStateStore.get<AccountMergeSession>(`${MERGE_SESSION_PREFIX}${token}`);
   if (!session || session.targetUserId !== targetUserId || session.expiresAt <= Date.now()) {
     throw new Error("合并预览不存在或已过期");
   }
@@ -410,19 +398,19 @@ export async function getMergePreviewByToken(token: string, targetUserId: string
     providerUserId: session.providerUserId,
     expiresAt: session.expiresAt,
   });
-  mergeSessions.set(token, session);
-
+  // Revalidation must not resurrect a session consumed by concurrent confirmation.
   return session.preview;
 }
 
-export function getPendingMergeSessionForUser(
+export async function getPendingMergeSessionForUser(
   targetUserId: string,
   provider?: AccountIdentityProvider,
-): { token: string; preview: AccountMergePreview } | null {
-  cleanupExpiredMergeSessions();
-
-  for (const session of mergeSessions.values()) {
-    if (session.targetUserId === targetUserId && (!provider || session.provider === provider)) {
+): Promise<{ token: string; preview: AccountMergePreview } | null> {
+  const providers: AccountIdentityProvider[] = provider ? [provider] : ["linuxdo", "google"];
+  for (const candidate of providers) {
+    const token = await sharedStateStore.get<string>(pendingSessionKey(targetUserId, candidate));
+    const session = token ? await sharedStateStore.get<AccountMergeSession>(`${MERGE_SESSION_PREFIX}${token}`) : null;
+    if (session && session.targetUserId === targetUserId && session.provider === candidate && session.expiresAt > Date.now()) {
       return {
         token: session.token,
         preview: session.preview,
@@ -810,9 +798,7 @@ export async function confirmAccountMerge(params: {
   options: AccountMergeConfirmOptions;
   actor: AccountMergeActor;
 }): Promise<{ success: true; preview: AccountMergePreview; migrated: Record<string, number> }> {
-  cleanupExpiredMergeSessions();
-
-  const mergeSession = mergeSessions.get(params.token);
+  const mergeSession = await sharedStateStore.get<AccountMergeSession>(`${MERGE_SESSION_PREFIX}${params.token}`);
   if (!mergeSession || mergeSession.targetUserId !== params.targetUserId || mergeSession.expiresAt <= Date.now()) {
     throw new Error("合并会话不存在或已过期");
   }
@@ -848,7 +834,7 @@ export async function confirmAccountMerge(params: {
   }
 
   const migrated = await runMergeTransaction({ sourceUser, targetUser, options: params.options });
-  mergeSessions.delete(params.token);
+  await sharedStateStore.delete(`${MERGE_SESSION_PREFIX}${params.token}`);
 
   await AuditLogService.log(
     buildAuditEntry({
@@ -874,5 +860,5 @@ export async function confirmAccountMerge(params: {
 }
 
 export function resetAccountMergeSessionsForTests(): void {
-  mergeSessions.clear();
+  sharedStateStore.clearMemory();
 }

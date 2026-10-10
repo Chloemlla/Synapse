@@ -3,6 +3,7 @@ import { NetworkService } from "../services/networkService";
 import { getClientIP } from "../utils/ipUtils";
 import { validatePublicHost, validatePublicUrl } from "../utils/ssrfGuard";
 import logger from "../utils/logger";
+import { sendToolFailure } from "./errorResponse";
 
 export class NetworkController {
   /**
@@ -50,10 +51,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "检测失败";
@@ -63,10 +61,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -107,10 +102,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "检测失败";
@@ -120,10 +112,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -164,10 +153,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "测速失败";
@@ -177,10 +163,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -221,10 +204,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "扫描失败";
@@ -234,10 +214,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -281,10 +258,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "查询失败";
@@ -294,10 +268,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -340,10 +311,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "获取失败";
@@ -353,10 +321,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -381,10 +346,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "获取失败";
@@ -394,10 +356,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -448,10 +407,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "加密失败";
@@ -461,10 +417,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -514,10 +467,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "操作失败";
@@ -527,10 +477,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -565,10 +512,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "BMI计算失败";
@@ -576,10 +520,7 @@ export class NetworkController {
         ip: NetworkController.getClientIp(req),
         error: errorMessage,
       });
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -642,10 +583,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "转换失败";
@@ -655,10 +593,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -700,10 +635,7 @@ export class NetworkController {
           data: result.data,
         });
       } else {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "获取失败";
@@ -713,10 +645,7 @@ export class NetworkController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 

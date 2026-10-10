@@ -15,6 +15,7 @@ const CREDENTIAL_ALGO = "aes-256-gcm";
 // v2 = 单一主密钥 AES_KEY 经 HKDF(KL.BILIBILI_CRED) 派生；v1 = 历史多密钥方案（仍可解密）。
 const CREDENTIAL_KEY_VERSION = "v2";
 const KNOWN_CREDENTIAL_VERSIONS = new Set(["v1", "v2"]);
+const CREDENTIAL_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export class BilibiliSyncError extends Error {
   constructor(
@@ -138,26 +139,40 @@ export async function verifyBilibiliCookie(cookie: string, expectedUid: string):
       validateStatus: () => true,
     });
     const data = response.data?.data;
-    if (response.status !== 200 || response.data?.code !== 0 || data?.isLogin !== true || String(data?.mid) !== expectedUid) {
-      throw new Error("identity mismatch");
+    // Only an explicit login rejection or verified identity mismatch invalidates
+    // stored credentials. Rate limits, gateways and malformed replies are retryable.
+    if (response.status === 401 || response.data?.code === -101 ||
+      (response.status === 200 && response.data?.code === 0 &&
+        (data?.isLogin === false || (data?.isLogin === true && data?.mid != null && String(data.mid) !== expectedUid)))) {
+      throw new BilibiliSyncError("Bilibili 登录凭据校验失败", "BILIBILI_COOKIE_INVALID", 401);
     }
-  } catch (_error) {
-    throw new BilibiliSyncError("Bilibili 登录凭据校验失败", "BILIBILI_COOKIE_INVALID", 401);
+    if (response.status !== 200 || response.data?.code !== 0 || data?.isLogin !== true || String(data?.mid) !== expectedUid) {
+      throw new BilibiliSyncError("Bilibili 暂时不可用，请稍后重试", "BILIBILI_UPSTREAM_UNAVAILABLE", 503);
+    }
+  } catch (error) {
+    if (error instanceof BilibiliSyncError) throw error;
+    throw new BilibiliSyncError("Bilibili 暂时不可用，请稍后重试", "BILIBILI_UPSTREAM_UNAVAILABLE", 503);
   }
 }
 
 async function requireActiveCredential(userId: string): Promise<BilibiliSyncDoc> {
   const doc = await BilibiliSyncModel.findOne({ userId }).select("+credentialCiphertext +credentialIv +credentialTag +credentialKeyVersion").lean<BilibiliSyncDoc | null>();
   if (!doc?.bilibiliUid || doc.credentialStatus !== "active") throw new BilibiliSyncError("请先绑定有效的 Bilibili 账号", "BILIBILI_BIND_REQUIRED", 403);
+  const checkedAt = doc.credentialLastCheckedAt ? new Date(doc.credentialLastCheckedAt).getTime() : 0;
+  // Do not invalidate credentials that were rebound while verification was in flight.
+  const credentialFilter = { userId, credentialCiphertext: doc.credentialCiphertext };
   try {
     const cookie = decryptCredential(doc);
+    if (checkedAt <= Date.now() && Date.now() - checkedAt < CREDENTIAL_CHECK_INTERVAL_MS) return doc;
     await verifyBilibiliCookie(cookie, doc.bilibiliUid);
-    await BilibiliSyncModel.updateOne({ userId }, { $set: { credentialLastCheckedAt: new Date() } });
+    await BilibiliSyncModel.updateOne(credentialFilter, { $set: { credentialLastCheckedAt: new Date() } });
     return doc;
   } catch (error) {
-    await BilibiliSyncModel.updateOne({ userId }, { $set: { credentialStatus: "invalid", credentialLastCheckedAt: new Date() } });
-    if (error instanceof BilibiliSyncError) throw error;
-    throw new BilibiliSyncError("Bilibili 登录凭据不可用", "BILIBILI_CREDENTIAL_INVALID", 403);
+    if (error instanceof BilibiliSyncError &&
+      (error.code === "BILIBILI_COOKIE_INVALID" || error.code === "BILIBILI_CREDENTIAL_INVALID")) {
+      await BilibiliSyncModel.updateOne(credentialFilter, { $set: { credentialStatus: "invalid", credentialLastCheckedAt: new Date() } });
+    }
+    throw error;
   }
 }
 

@@ -276,37 +276,10 @@ const CommandManager: React.FC = () => {
     try {
       const response = await api.get('/api/command/q');
       
-      // 检查是否为加密数据
-      if (response.data.data && response.data.iv && typeof response.data.data === 'string' && typeof response.data.iv === 'string') {
-        try {
-                                        
-          const decryptedData = await maybeDecryptCommandResponse(response.data);
-          
-                    
-          if (Array.isArray(decryptedData)) {
-            setCommandQueue(decryptedData);
-          } else if (decryptedData.command) {
-            setCommandQueue([decryptedData]);
-          } else {
-            setCommandQueue([]);
-          }
-          setQueueLoaded(true);
-          setNotification({ message: '命令队列加载成功', type: 'success' });
-        } catch (decryptError) {
-                    setNotification({ message: '数据解密失败，请检查登录状态', type: 'error' });
-        }
-      } else {
-        // 兼容未加密格式
-                if (Array.isArray(response.data)) {
-          setCommandQueue(response.data);
-        } else if (response.data.command) {
-          setCommandQueue([response.data]);
-        } else {
-          setCommandQueue([]);
-        }
-        setQueueLoaded(true);
-        setNotification({ message: '命令队列加载成功', type: 'success' });
-      }
+      const payload = await maybeDecryptCommandResponse(response.data);
+      setCommandQueue(Array.isArray(payload) ? payload : payload?.command ? [payload] : []);
+      setQueueLoaded(true);
+      setNotification({ message: '命令队列加载成功', type: 'success' });
     } catch (error: any) {
       setNotification({ 
         message: error.response?.data?.error || '加载命令队列失败', 
@@ -322,35 +295,9 @@ const CommandManager: React.FC = () => {
     try {
       const response = await api.get('/api/command/q');
       
-      // 检查是否为加密数据
-      if (response.data.data && response.data.iv && typeof response.data.data === 'string' && typeof response.data.iv === 'string') {
-        try {
-                                        
-          const decryptedData = await maybeDecryptCommandResponse(response.data);
-          
-                    
-          if (decryptedData.command) {
-            setNotification({ 
-              message: `下一个命令: ${decryptedData.command}`, 
-              type: 'info' 
-            });
-          } else {
-            setNotification({ message: '队列中没有命令', type: 'info' });
-          }
-        } catch (decryptError) {
-                    setNotification({ message: '数据解密失败，请检查登录状态', type: 'error' });
-        }
-      } else {
-        // 兼容未加密格式
-                if (response.data.command) {
-          setNotification({ 
-            message: `下一个命令: ${response.data.command}`, 
-            type: 'info' 
-          });
-        } else {
-          setNotification({ message: '队列中没有命令', type: 'info' });
-        }
-      }
+      const payload = await maybeDecryptCommandResponse(response.data);
+      const next = Array.isArray(payload) ? payload[0] : payload;
+      setNotification({ message: next?.command ? `下一个命令: ${next.command}` : '队列中没有命令', type: 'info' });
     } catch (error: any) {
       setNotification({ 
         message: error.response?.data?.error || '获取命令失败', 
@@ -388,35 +335,10 @@ const CommandManager: React.FC = () => {
     try {
       const response = await api.get('/api/command/history');
       
-      // 检查是否为加密数据
-      if (response.data.data && response.data.iv && typeof response.data.data === 'string' && typeof response.data.iv === 'string') {
-        try {
-          console.log(' 开始解密执行历史数据...');
-                              
-          const decryptedData = await maybeDecryptCommandResponse(response.data);
-          
-          console.log(' 解密成功，获取到执行历史数据');
-          
-          if (Array.isArray(decryptedData)) {
-            setCommandHistory(decryptedData);
-          } else {
-            setCommandHistory([]);
-          }
-          setHistoryLoaded(true);
-          setNotification({ message: '执行历史加载成功', type: 'success' });
-        } catch (decryptError) {
-                    setNotification({ message: '数据解密失败，请检查登录状态', type: 'error' });
-        }
-      } else {
-        // 兼容未加密格式
-                if (Array.isArray(response.data)) {
-          setCommandHistory(response.data);
-        } else {
-          setCommandHistory([]);
-        }
-        setHistoryLoaded(true);
-        setNotification({ message: '执行历史加载成功', type: 'success' });
-      }
+      const payload = await maybeDecryptCommandResponse(response.data);
+      setCommandHistory(Array.isArray(payload) ? payload : []);
+      setHistoryLoaded(true);
+      setNotification({ message: '执行历史加载成功', type: 'success' });
     } catch (error: any) {
       setNotification({ 
         message: error.response?.data?.error || '加载执行历史失败', 

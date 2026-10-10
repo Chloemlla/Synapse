@@ -197,7 +197,9 @@ function checkObject(obj: any): string | null {
 
   while (stack.length > 0) {
     const { val, path, depth, whitelisted } = stack.pop()!;
-    if (depth > 10 || val === null || val === undefined) continue;
+    if (val === null || val === undefined) continue;
+    // Reject unsupported depth instead of silently skipping an uninspected subtree.
+    if (depth > 10) return path || 'request-depth-limit';
 
     if (typeof val === "string") {
       // G1-03: 白名单字段不再整棵跳过，改为 relaxed 检查（攻击模式仍拦截）

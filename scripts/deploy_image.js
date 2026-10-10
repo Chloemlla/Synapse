@@ -14,6 +14,7 @@ const crypto = require("crypto");
 
 const DEPLOY_LOCK_FILE = path.join(__dirname, ".deploy_image.lock");
 const DEPLOY_LOCK_WAIT_MS = 5000;
+const DEPLOY_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 let deployLockHeld = false;
 
 // 各部署步骤历史上只把错误写进日志就继续跑，最后一律打印「所有服务器部署完成」
@@ -84,6 +85,9 @@ const inMemoryHandler = new InMemoryLogHandler();
 
 function sanitizeDeployLogMessage(message) {
   let sanitized = message;
+  for (const address of (process.env.SERVER_ADDRESS || "").split(",").map((value) => value.trim()).filter(Boolean)) {
+    sanitized = sanitized.split(address).join("[server redacted]");
+  }
   // Redact common secret material that may appear in command output or env-derived values.
   sanitized = sanitized.replace(/(PRIVATE_KEY|ADMIN_PASSWORD|PASSWORD|TOKEN|SECRET|API[_-]?KEY)\s*[:=]\s*\S+/gi, "$1=[REDACTED]");
   sanitized = sanitized.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]");
@@ -133,6 +137,7 @@ function getDeployLockContent() {
 }
 
 async function acquireDeployLock() {
+  const startedAt = Date.now();
   while (true) {
     try {
       const fd = fs.openSync(DEPLOY_LOCK_FILE, "wx");
@@ -147,6 +152,9 @@ async function acquireDeployLock() {
     } catch (err) {
       if (err.code !== "EEXIST") {
         throw err;
+      }
+      if (Date.now() - startedAt >= DEPLOY_LOCK_TIMEOUT_MS) {
+        throw new Error("等待部署锁超过 5 分钟，请确认现有部署结束后检查锁文件。");
       }
 
       logWarning(
@@ -1330,7 +1338,7 @@ function writeDeployLog(serverAddress, containerNames, imageUrl) {
 
   const logContent = [
     `部署时间: ${timestamp}`,
-    `服务器: ${serverAddress}`,
+    `服务器: [redacted]`,
     // Keep env-derived usernames out of on-disk deploy logs.
     `用户名: [redacted]`,
     `容器: ${containerNames.join(", ")}`,
@@ -1356,7 +1364,6 @@ async function main() {
     const ports = (process.env.PORT || "22").split(",");
     const privateKeys = (process.env.PRIVATE_KEY || "").split(",");
     const containerNamesList = (process.env.CONTAINER_NAMES || "").split(",");
-    const adminPassword = process.env.ADMIN_PASSWORD || "";
 
     const numServers = serverAddresses.length;
 
@@ -1437,17 +1444,8 @@ async function main() {
         }
       }
 
-      // 等待15秒，确保日志文件已生成
-      await new Promise((resolve) => setTimeout(resolve, 15000));
-
-      // 生成并上传日志
-      const logPath = writeDeployLog(serverAddress, containerNames, imageUrl);
-      const link = await uploadLogFile(logPath, adminPassword);
-      if (link) {
-        logInfo(`日志已上传: ${link}`);
-      } else {
-        logInfo("日志上传失败或未上传。");
-      }
+      // 部署日志由 CI artifact 保留；不再把生产管理员口令交给分享接口。
+      writeDeployLog(serverAddress, containerNames, imageUrl);
     }
 
     if (deployFailed) {

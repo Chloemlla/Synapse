@@ -324,6 +324,10 @@ class SchedulerService {
     if (this.isSyncRunning) {
       return { success: false, error: "同步任务正在进行中，请稍后再试" };
     }
+    const lockOwner = `${process.pid}-${randomUUID()}`;
+    if (!(await sharedStateStore.claim(SYNC_LOCK_KEY, TASK_LOCK_TTL_MS, lockOwner))) {
+      return { success: false, error: "另一实例正在执行同步，请稍后再试" };
+    }
     this.isSyncRunning = true;
     const startTime = Date.now();
     try {
@@ -344,6 +348,9 @@ class SchedulerService {
       };
     } finally {
       this.isSyncRunning = false;
+      await sharedStateStore.release(SYNC_LOCK_KEY, lockOwner).catch((error) => {
+        logger.warn("[Scheduler] 释放手动同步锁失败（等 TTL 自然过期）", { error });
+      });
     }
   }
 
@@ -444,6 +451,10 @@ class SchedulerService {
     if (this.isCleanupRunning) {
       return { success: false, deletedCount: 0, error: "清理任务正在进行中，请稍后再试" };
     }
+    const lockOwner = `${process.pid}-${randomUUID()}`;
+    if (!(await sharedStateStore.claim(CLEANUP_LOCK_KEY, TASK_LOCK_TTL_MS, lockOwner))) {
+      return { success: false, deletedCount: 0, error: "另一实例正在执行清理，请稍后再试" };
+    }
     this.isCleanupRunning = true;
     const startTime = Date.now();
     try {
@@ -469,6 +480,9 @@ class SchedulerService {
       };
     } finally {
       this.isCleanupRunning = false;
+      await sharedStateStore.release(CLEANUP_LOCK_KEY, lockOwner).catch((error) => {
+        logger.warn("[Scheduler] 释放手动清理锁失败（等 TTL 自然过期）", { error });
+      });
     }
   }
 

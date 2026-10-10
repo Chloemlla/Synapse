@@ -445,26 +445,19 @@ export default function ResourceStoreManager() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    fetchResources();
-  }, []);
-
-  // 当页码变化时重新获取数据
-  useEffect(() => {
-    if (currentPage > 1) {
-      fetchResources();
-    }
+    void fetchResources();
   }, [currentPage]);
 
   const fetchResources = async (page = currentPage) => {
     try {
       setLoading(true);
       setLoadError(null);
-      const response = await resourcesApi.getResources(page);
+      const response = await resourcesApi.getAdminResources(page);
       setResources(response.resources);
       setTotalItems(response.total);
       setCurrentPage(response.page);
       setPageSize(response.pageSize);
-      setTotalPages(Math.ceil(response.total / response.pageSize));
+      setTotalPages(Math.max(1, Math.ceil(response.total / response.pageSize)));
     } catch (error) {
       console.error('获取资源列表失败:', error);
       setLoadError('获取资源列表失败，请稍后重试');

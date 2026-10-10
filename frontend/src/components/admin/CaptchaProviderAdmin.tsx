@@ -407,12 +407,13 @@ export default function CaptchaProviderAdmin() {
         }
         notify('trycap 配置已保存', 'success');
         setCapInput({ siteKey: '', secretKey: '', apiEndpoint: key === 'CAP_API_ENDPOINT' ? value : capInput.apiEndpoint });
-        await loadAll({ silent: true });
+        const latest = await api.fetchCapConfig();
+        if (latest.ok && latest.data) setCapConfig(latest.data);
       } finally {
         setSavingCap(false);
       }
     },
-    [canWrite, capInput, loadAll, notify, savingCap],
+    [canWrite, capInput, notify, savingCap],
   );
 
   const deleteCapKey = useCallback(
@@ -433,12 +434,13 @@ export default function CaptchaProviderAdmin() {
           return;
         }
         notify('已删除', 'success');
-        await loadAll({ silent: true });
+        const latest = await api.fetchCapConfig();
+        if (latest.ok && latest.data) setCapConfig(latest.data);
       } finally {
         setSavingCap(false);
       }
     },
-    [canWrite, loadAll, notify],
+    [canWrite, notify],
   );
 
   const runTest = useCallback(

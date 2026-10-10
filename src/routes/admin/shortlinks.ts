@@ -60,6 +60,13 @@ router.get("/shortlinks", authenticateToken, async (req, res) => {
       .skip((page - 1) * pageSize)
       .limit(pageSize);
 
+    res.set("Cache-Control", "no-store");
+    // HttpOnly session cookies are unavailable to JavaScript. Bearer clients retain
+    // the existing encrypted response contract because they possess the token.
+    if (!req.headers.authorization?.startsWith("Bearer ")) {
+      return res.json({ success: true, items, total, page, pageSize });
+    }
+
     // 准备加密数据
     const responseData = { total, items };
     const jsonData = JSON.stringify(responseData);
@@ -199,7 +206,7 @@ router.post("/shortlinks/batch-delete", authenticateToken, auditLog({ module: "s
   } catch (error) {
     logger.error("[ShortLink] 批量删除短链失败:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "批量删除短链失败",
+      error: "批量删除短链失败",
     });
   }
 });

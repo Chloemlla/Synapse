@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { SocialService } from "../services/socialService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
+import { sendToolFailure } from "./errorResponse";
 
 export class SocialController {
   /**
@@ -25,10 +26,7 @@ export class SocialController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "获取失败";
@@ -38,10 +36,7 @@ export class SocialController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 
@@ -66,10 +61,7 @@ export class SocialController {
           data: result.data,
         });
       } else {
-        res.status(500).json({
-          success: false,
-          error: result.error,
-        });
+        sendToolFailure(res, result.error, "服务暂时不可用，请稍后重试");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "获取失败";
@@ -79,10 +71,7 @@ export class SocialController {
         error: errorMessage,
       });
 
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+      sendToolFailure(res, error, "服务暂时不可用，请稍后重试");
     }
   }
 

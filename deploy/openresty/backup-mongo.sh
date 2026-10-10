@@ -5,7 +5,7 @@
 # 不写进命令文本、不进日志。信任级与容器自身 env 一致（有 docker 权限就能 docker inspect 拿到）。
 #
 # 用法: backup-mongo.sh [保留份数=7] [--drill]
-# 退出码: 0 成功；1 备份本身失败（演练不一致只告警，不删归档）
+# 退出码: 0 成功；1 备份或演练失败（演练失败仍加密并保留归档）
 #
 # 实测坑（2026-10-03）：
 #  1. 演练实例必须 --ulimit nofile=64000:64000。否则批量建索引时 WiredTiger
@@ -17,7 +17,7 @@
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-KEEP=7; DRILL=0
+KEEP=7; DRILL=0; DRILL_FAILED=0
 for a in "$@"; do case "$a" in --drill) DRILL=1 ;; *[0-9]*) KEEP="$a" ;; esac; done
 CONTAINER="${MONGO_CONTAINER:-mongodb}"
 DEST="${BACKUP_DIR:-/root/backups}"
@@ -101,11 +101,15 @@ if [ "$DRILL" = 1 ]; then
     sleep 1
   done
   if [ "$up" != 1 ]; then
-    log 'WARN: 演练实例没起来，跳过演练（备份本身不受影响）'; docker logs --tail 5 "$DC" 2>&1 | sed 's/^/  /'
+    DRILL_FAILED=1
+    log 'ERROR: 演练实例没起来，备份保留但演练失败'; docker logs --tail 5 "$DC" 2>&1 | sed 's/^/  /' || true
   else
     if docker exec -i "$DC" mongorestore --port 27099 --gzip --archive --drop < "$OUT" > "$OUT.err" 2>&1; then
-      docker exec "$DC" mongosh --quiet --port 27099 --eval "$SCOPE" 2>/dev/null | sort > /var/tmp/drill-dst.txt
-      python3 - "$CHK" /var/tmp/drill-dst.txt <<'PYEOF'
+      if ! docker exec "$DC" mongosh --quiet --port 27099 --eval "$SCOPE" 2>/dev/null | sort > /var/tmp/drill-dst.txt; then
+        DRILL_FAILED=1
+        log 'ERROR: 无法读取演练库统计'
+      fi
+      if python3 - "$CHK" /var/tmp/drill-dst.txt <<'PYEOF'
 import sys, os
 SKIP = {'local', 'config', 'admin'}   # 节点内部/本地库不参与比对
 
@@ -120,6 +124,8 @@ def load(p):
 src, dst = load(sys.argv[1]), load(sys.argv[2])
 apps = [d for d in src if d not in SKIP]
 hard, drift, ok = [], [], []
+if not src or not dst:
+    hard.append('备份或演练统计为空，无法验证恢复结果')
 for d in sorted(apps):
     if d not in dst:
         hard.append('%s: 演练里没有这个库' % d); continue
@@ -138,9 +144,16 @@ for x in hard:  print('  !! 不一致: ' + x)
 print('  演练结论: ' + ('PASS 归档可完整恢复' if not hard else 'FAIL'))
 sys.exit(1 if hard else 0)
 PYEOF
-      [ $? = 0 ] && log '演练通过' || log 'WARN: 演练有不一致项，人工看一眼上面'
+      then
+        log '演练通过'
+      else
+        DRILL_FAILED=1
+        log 'ERROR: 演练有不一致项，归档保留供检查'
+      fi
     else
-      log "WARN: 演练恢复失败（rc=$?）"
+      RESTORE_RC=$?
+      DRILL_FAILED=1
+      log "ERROR: 演练恢复失败（rc=$RESTORE_RC）"
       tail -3 "$OUT.err" | sed 's/^/  /'
       docker inspect "$DC" --format '  演练实例 exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' 2>/dev/null || true
       docker logs --tail 6 "$DC" 2>&1 | grep -iE 'panic|too many open files|fassert|signal' | sed 's/^/  /' || true
@@ -159,3 +172,4 @@ ls -1t "$DEST"/mongo-* 2>/dev/null | grep -E '\.archive\.gz(\.age)?$' | tail -n 
   log "pruned $(basename "$old")"
 done
 log "完成 sha256=${SHA:0:16}…  保留 $(find "$DEST" -maxdepth 1 -name 'mongo-*.archive.gz*' ! -name '*.sha256' | wc -l)/$KEEP 份  $(du -sh "$DEST" | cut -f1)"
+exit "$DRILL_FAILED"

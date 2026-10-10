@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FaCookieBite,
   FaDatabase,
@@ -137,6 +137,7 @@ const BilibiliDataAdmin: React.FC = () => {
   // 删除是隐私删除权路径：只对超管开放，且按 (clientId, deviceId, uid) 精确命中。
   const canDelete = isSuperAdmin(user?.role);
 
+  const requestRef = useRef(0);
   const [tab, setTab] = useState<BilibiliTab>('reports');
   const [keyword, setKeyword] = useState('');
   const [reports, setReports] = useState<CookieReportRow[]>([]);
@@ -171,6 +172,7 @@ const BilibiliDataAdmin: React.FC = () => {
 
   const fetchData = useCallback(
     async (currentTab: BilibiliTab, page: number, searchTerm: string) => {
+      const request = ++requestRef.current;
       setLoading(true);
       setError('');
       try {
@@ -181,6 +183,7 @@ const BilibiliDataAdmin: React.FC = () => {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
+        if (request !== requestRef.current) return;
         if (!json.success) throw new Error(json.error || '请求失败');
         if (currentTab === 'reports') {
           setReports(json.data as CookieReportRow[]);
@@ -191,12 +194,13 @@ const BilibiliDataAdmin: React.FC = () => {
         }
         setPagination(json.pagination as Pagination);
       } catch (e) {
+        if (request !== requestRef.current) return;
         setError(getErrorMessage(e, '加载失败'));
         setReports([]);
         setAccounts([]);
         setPagination(EMPTY_PAGINATION);
       } finally {
-        setLoading(false);
+        if (request === requestRef.current) setLoading(false);
       }
     },
     [],
@@ -206,6 +210,7 @@ const BilibiliDataAdmin: React.FC = () => {
     if (isAdmin) fetchData(tab, 1, '');
     // Reset the search box when switching collections.
     setKeyword('');
+    return () => { requestRef.current++; };
   }, [tab, isAdmin, fetchData]);
 
   const handleSearch = () => fetchData(tab, 1, keyword);

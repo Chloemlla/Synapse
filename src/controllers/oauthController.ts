@@ -37,6 +37,10 @@ function sendNoStoreHeaders(res: Response): void {
 export function getPublicBaseUrl(req: Request): string {
   const configured = process.env.BASE_URL || process.env.FRONTEND_URL;
   if (configured) return stripTrailingSlashes(configured);
+  if (process.env.NODE_ENV === "production") {
+    logger.error("OAuth issuer requires BASE_URL or FRONTEND_URL");
+    throw new Error("OAuth issuer is not configured");
+  }
   return stripTrailingSlashes(`${req.protocol}://${req.get("host")}`);
 }
 

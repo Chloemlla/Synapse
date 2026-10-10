@@ -192,6 +192,9 @@ const EmailSender: React.FC = () => {
     text: "",
   });
 
+  const draftSignature = JSON.stringify({ form, emailMode, simpleContent, markdownContent });
+  const draftSignatureRef = useRef(draftSignature);
+  draftSignatureRef.current = draftSignature;
   const apiBaseUrl = getApiBaseUrl();
 
   const syncDefaultSender = (domains: string[]) => {
@@ -354,6 +357,7 @@ const EmailSender: React.FC = () => {
     // 消除“校验期间按钮仍可点击”导致的双击重复发送窗口。
     if (sendingRef.current) return;
     sendingRef.current = true;
+    const submittedDraft = draftSignature;
     setLoading(true);
 
     try {
@@ -400,15 +404,17 @@ const EmailSender: React.FC = () => {
       if (response.data?.success) {
         setNotification(buildEmailDeliveryNotice(response.data.acceptedCount, validRecipients.length));
         const defaultDomain = form.from.split("@")[1] || senderDomains[0];
-        setForm({
-          from: buildDefaultFrom(defaultDomain),
-          to: [""],
-          subject: "",
-          html: DEFAULT_HTML,
-          text: "",
-        });
-        setSimpleContent("");
-        setMarkdownContent("");
+        if (draftSignatureRef.current === submittedDraft) {
+          setForm({
+            from: buildDefaultFrom(defaultDomain),
+            to: [""],
+            subject: "",
+            html: DEFAULT_HTML,
+            text: "",
+          });
+          setSimpleContent("");
+          setMarkdownContent("");
+        }
         await fetchQuota();
       }
     } catch (error: any) {

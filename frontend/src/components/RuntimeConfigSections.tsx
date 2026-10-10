@@ -322,6 +322,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, []);
 
   const fetchIpqsSetting = useCallback(async () => {
+    setIpqsSetting(null);
     setIpqsLoading(true);
     try {
       const res = await fetch(IPQS_API, { credentials: 'include' });
@@ -365,6 +366,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [handleRequestError, setNotification]);
 
   const fetchLinuxDoSetting = useCallback(async () => {
+    setLinuxdoSetting(null);
     setLinuxdoLoading(true);
     try {
       const res = await fetch(LINUXDO_API, { credentials: 'include' });
@@ -402,6 +404,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [handleRequestError, setNotification]);
 
   const fetchNexaiSetting = useCallback(async () => {
+    setNexaiSetting(null);
     setNexaiLoading(true);
     try {
       const res = await fetch(NEXAI_API, { credentials: 'include' });
@@ -436,6 +439,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [handleRequestError, setNotification]);
 
   const fetchGoogleAuthSetting = useCallback(async () => {
+    setGoogleAuthSetting(null);
     setGoogleAuthLoading(true);
     try {
       const res = await fetch(GOOGLE_AUTH_API, { credentials: 'include' });
@@ -464,6 +468,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [handleRequestError, setNotification]);
 
   const fetchDeepLXSetting = useCallback(async () => {
+    setDeeplxSetting(null);
     setDeeplxLoading(true);
     try {
       const res = await fetch(DEEPLX_API, { credentials: 'include' });
@@ -493,6 +498,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [handleRequestError, setNotification]);
 
   const fetchAdminSecuritySetting = useCallback(async () => {
+    setAdminSecuritySetting(null);
     setAdminSecurityLoading(true);
     try {
       const res = await fetch(ADMIN_SECURITY_API, { credentials: 'include' });
@@ -550,6 +556,7 @@ const RuntimeConfigSections: React.FC = () => {
   ]);
 
   const saveIpqsSetting = useCallback(async () => {
+    if (!ipqsSetting || ipqsLoading || ipqsSaving) return;
     if (!canWrite) return;
     if (ipqsLoadError) {
       setNotification({ message: 'IPQS 配置尚未成功加载，已阻止保存以避免覆盖线上配置', type: 'error' });
@@ -581,7 +588,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setIpqsSaving(false);
     }
-  }, [canWrite, fetchIpqsSetting, handleRequestError, ipqsApiKeysInput, ipqsForm, ipqsLoadError, setNotification]);
+  }, [ipqsSetting, ipqsLoading, ipqsSaving, canWrite, fetchIpqsSetting, handleRequestError, ipqsApiKeysInput, ipqsForm, ipqsLoadError, setNotification]);
 
   const deleteIpqsSetting = useCallback(async () => {
     if (!canWrite) return;
@@ -615,6 +622,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [canWrite, fetchIpqsSetting, handleRequestError, setNotification]);
 
   const saveLinuxDoSetting = useCallback(async () => {
+    if (!linuxdoSetting || linuxdoLoading || linuxdoSaving) return;
     if (!canWrite) return;
     setLinuxdoSaving(true);
     try {
@@ -642,7 +650,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setLinuxdoSaving(false);
     }
-  }, [canWrite, fetchLinuxDoSetting, handleRequestError, linuxdoForm, linuxdoSecretInput, setNotification]);
+  }, [linuxdoSetting, linuxdoLoading, linuxdoSaving, canWrite, fetchLinuxDoSetting, handleRequestError, linuxdoForm, linuxdoSecretInput, setNotification]);
 
   const deleteLinuxDoSetting = useCallback(async () => {
     if (!canWrite) return;
@@ -676,6 +684,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [canWrite, fetchLinuxDoSetting, handleRequestError, setNotification]);
 
   const saveGoogleAuthSetting = useCallback(async () => {
+    if (!googleAuthSetting || googleAuthLoading || googleAuthSaving) return;
     if (!canWrite) return;
     setGoogleAuthSaving(true);
     try {
@@ -699,7 +708,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setGoogleAuthSaving(false);
     }
-  }, [canWrite, fetchGoogleAuthSetting, googleAuthForm, handleRequestError, setNotification]);
+  }, [googleAuthSetting, googleAuthLoading, googleAuthSaving, canWrite, fetchGoogleAuthSetting, googleAuthForm, handleRequestError, setNotification]);
 
   const deleteGoogleAuthSetting = useCallback(async () => {
     if (!canWrite) return;
@@ -773,6 +782,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [canWrite, fetchGoogleAuthSetting, handleRequestError, setNotification]);
 
   const saveDeepLXSetting = useCallback(async () => {
+    if (!deeplxSetting || deeplxLoading || deeplxSaving) return;
     if (!canWrite) return;
     setDeeplxSaving(true);
     try {
@@ -802,7 +812,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setDeeplxSaving(false);
     }
-  }, [canWrite, deeplxApiKeyInput, deeplxForm.baseUrl, fetchDeepLXSetting, handleRequestError, setNotification]);
+  }, [deeplxSetting, deeplxLoading, deeplxSaving, canWrite, deeplxApiKeyInput, deeplxForm.baseUrl, fetchDeepLXSetting, handleRequestError, setNotification]);
 
   const deleteDeepLXSetting = useCallback(async () => {
     if (!canWrite) return;
@@ -836,6 +846,7 @@ const RuntimeConfigSections: React.FC = () => {
   }, [canWrite, fetchDeepLXSetting, handleRequestError, setNotification]);
 
   const saveNexaiSetting = useCallback(async () => {
+    if (!nexaiSetting || nexaiLoading || nexaiSaving) return;
     if (!canWrite) return;
     setNexaiSaving(true);
     try {
@@ -879,7 +890,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setNexaiSaving(false);
     }
-  }, [
+  }, [nexaiSetting, nexaiLoading, nexaiSaving,
     canWrite,
     fetchNexaiSetting,
     handleRequestError,
@@ -921,11 +932,13 @@ const RuntimeConfigSections: React.FC = () => {
   }, [canWrite, fetchNexaiSetting, handleRequestError, setNotification]);
 
   const saveAdminSecuritySetting = useCallback(async () => {
+    if (!adminSecuritySetting || adminSecurityLoading || adminSecuritySaving) return;
     if (!canWrite) return;
     setAdminSecuritySaving(true);
     try {
       const payload: Record<string, unknown> = {
-        publicShortUrlEnabled: adminSecurityForm.publicShortUrlEnabled,
+        ...(adminSecurityForm.publicShortUrlEnabled !== adminSecuritySetting.config.publicShortUrlEnabled
+          ? { publicShortUrlEnabled: adminSecurityForm.publicShortUrlEnabled } : {}),
       };
       if (adminOperationPasswordInput.trim()) {
         payload.operationPassword = adminOperationPasswordInput.trim();
@@ -957,7 +970,7 @@ const RuntimeConfigSections: React.FC = () => {
     } finally {
       setAdminSecuritySaving(false);
     }
-  }, [
+  }, [adminSecuritySetting, adminSecurityLoading, adminSecuritySaving,
     adminOperationPasswordInput,
     adminSecurityForm.publicShortUrlEnabled,
     canWrite,
@@ -1018,6 +1031,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('adminSecurity')}
         onRefresh={() => refreshSection('adminSecurity', fetchAdminSecuritySetting)}
       >
+        {!adminSecurityLoading && !adminSecuritySetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="管理员操作密码" htmlFor={fieldId('admin-operation-password')} hint={adminSecuritySetting?.config.operationPassword || '未配置'} />
@@ -1028,7 +1042,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setAdminOperationPasswordInput(e.target.value)}
               placeholder="用于 LogShare、CommandManager，留空表示保持现有"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !adminSecuritySetting || adminSecurityLoading || adminSecuritySaving}
             />
           </div>
           <div>
@@ -1040,7 +1054,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setServerStatusPasswordInput(e.target.value)}
               placeholder="用于服务器状态接口，留空表示保持现有"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !adminSecuritySetting || adminSecurityLoading || adminSecuritySaving}
             />
           </div>
           <div>
@@ -1052,7 +1066,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setPublicShortUrlPasswordInput(e.target.value)}
               placeholder="用于匿名公共短链创建，留空表示保持现有"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !adminSecuritySetting || adminSecurityLoading || adminSecuritySaving}
             />
           </div>
           <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -1060,7 +1074,7 @@ const RuntimeConfigSections: React.FC = () => {
               type="checkbox"
               checked={adminSecurityForm.publicShortUrlEnabled}
               onChange={(e) => setAdminSecurityForm((prev) => ({ ...prev, publicShortUrlEnabled: e.target.checked }))}
-              disabled={!canWrite}
+              disabled={!canWrite || !adminSecuritySetting || adminSecurityLoading || adminSecuritySaving}
             />
             <span>启用公共短链匿名创建</span>
           </label>
@@ -1080,7 +1094,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveAdminSecuritySetting}
-              disabled={adminSecuritySaving || !canWrite}
+              disabled={adminSecuritySaving || !canWrite || !adminSecuritySetting || adminSecurityLoading}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {adminSecuritySaving ? '保存中...' : '保存'}
@@ -1098,6 +1112,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('ipqs')}
         onRefresh={() => refreshSection('ipqs', fetchIpqsSetting)}
       >
+        {!ipqsLoading && !ipqsSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         {ipqsLoadError ? (
           <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-2 text-sm text-rose-700">
@@ -1126,7 +1141,7 @@ const RuntimeConfigSections: React.FC = () => {
               rows={4}
               placeholder="每行一个，或用逗号分隔"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
             <div className="mt-2 text-xs text-slate-500">
               已配置 {ipqsSetting?.config.apiKeyCount || 0} 个：
@@ -1142,7 +1157,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, scamalyticsUser: e.target.value }))}
               placeholder="留空表示使用默认用户名"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
           <div>
@@ -1155,7 +1170,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={ipqsForm.strictness}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, strictness: Number(e.target.value) || 0 }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
           <div>
@@ -1167,7 +1182,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={ipqsForm.tokenTtlMinutes}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, tokenTtlMinutes: Number(e.target.value) || 1 }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
           <div>
@@ -1179,7 +1194,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={ipqsForm.timeoutMs}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, timeoutMs: Number(e.target.value) || 1000 }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
           <div>
@@ -1191,7 +1206,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={ipqsForm.monthlyQuotaPerKey}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, monthlyQuotaPerKey: Number(e.target.value) || 1 }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
           <div>
@@ -1204,7 +1219,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={ipqsForm.challengeFraudScore}
               onChange={(e) => setIpqsForm((prev) => ({ ...prev, challengeFraudScore: Number(e.target.value) || 0 }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
             />
           </div>
         </div>
@@ -1221,7 +1236,7 @@ const RuntimeConfigSections: React.FC = () => {
                 type="checkbox"
                 checked={Boolean(ipqsForm[key as keyof typeof ipqsForm])}
                 onChange={(e) => setIpqsForm((prev) => ({ ...prev, [key]: e.target.checked }))}
-                disabled={!canWrite}
+                disabled={!canWrite || !ipqsSetting || ipqsLoading || ipqsSaving}
               />
               <span>{label}</span>
             </label>
@@ -1242,7 +1257,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveIpqsSetting}
-              disabled={ipqsSaving || !canWrite || Boolean(ipqsLoadError)}
+              disabled={ipqsSaving || !canWrite || Boolean(ipqsLoadError) || !ipqsSetting || ipqsLoading}
               title={ipqsLoadError ? 'IPQS 配置加载失败，已阻止保存以免覆盖线上配置' : undefined}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
@@ -1261,6 +1276,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('linuxdo')}
         onRefresh={() => refreshSection('linuxdo', fetchLinuxDoSetting)}
       >
+        {!linuxdoLoading && !linuxdoSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="Client ID" htmlFor={fieldId('linuxdo-client-id')} />
@@ -1269,7 +1285,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.clientId}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, clientId: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1280,7 +1296,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setLinuxdoSecretInput(e.target.value)}
               placeholder="留空表示保持现有 Client Secret"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1290,7 +1306,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.discoveryUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, discoveryUrl: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1300,7 +1316,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.scopes}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, scopes: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1310,7 +1326,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.authorizationEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, authorizationEndpoint: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1320,7 +1336,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.tokenEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, tokenEndpoint: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1330,7 +1346,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.userEndpoint}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, userEndpoint: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1340,7 +1356,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.forumBaseUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, forumBaseUrl: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
           </div>
           <div>
@@ -1350,7 +1366,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.callbackUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, callbackUrl: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
             <p className="mt-1 text-xs text-slate-500">
               OAuth 服务端回调（redirect_uri），应为 <code>/api/auth/linuxdo/callback</code>。
@@ -1363,7 +1379,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={linuxdoForm.frontendCallbackUrl}
               onChange={(e) => setLinuxdoForm((prev) => ({ ...prev, frontendCallbackUrl: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !linuxdoSetting || linuxdoLoading || linuxdoSaving}
             />
             <p className="mt-1 text-xs text-slate-500">
               浏览器完成页，必须是 SPA 路径 <code>/auth/linuxdo/callback</code>。不要填后端
@@ -1386,7 +1402,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveLinuxDoSetting}
-              disabled={linuxdoSaving || !canWrite}
+              disabled={linuxdoSaving || !canWrite || !linuxdoSetting || linuxdoLoading}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {linuxdoSaving ? '保存中...' : '保存'}
@@ -1404,13 +1420,14 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('googleAuth')}
         onRefresh={() => refreshSection('googleAuth', fetchGoogleAuthSetting)}
       >
+        {!googleAuthLoading && !googleAuthSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         <input
           ref={googleAuthImportInputRef}
           type="file"
           accept=".json,application/json"
           onChange={importGoogleAuthSetting}
           className="hidden"
-          disabled={!canWrite}
+          disabled={!canWrite || !googleAuthSetting || googleAuthLoading || googleAuthSaving}
         />
 
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-4">
@@ -1444,7 +1461,7 @@ const RuntimeConfigSections: React.FC = () => {
               className={studioFieldClassName}
               autoComplete="off"
               spellCheck={false}
-              disabled={!canWrite}
+              disabled={!canWrite || !googleAuthSetting || googleAuthLoading || googleAuthSaving}
             />
             <p className="mt-2 text-xs leading-5 text-slate-500">
               对应环境变量 <code className="rounded bg-slate-100 px-1">GOOGLE_CLIENT_ID</code>。也可在进程环境 / <code className="rounded bg-slate-100 px-1">.env</code> 中配置同名变量作为启动默认值；此处保存到运行时配置后立即生效。官方步骤：Google Cloud Console → API 和服务 → 凭据 → 创建 OAuth 客户端 ID → 应用类型选「Web 应用」→ 配置 Authorized JavaScript origins。GSI 按钮登录只需 Client ID，不需要 Client Secret。
@@ -1466,7 +1483,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveGoogleAuthSetting}
-              disabled={googleAuthSaving || googleAuthImporting || !canWrite}
+              disabled={googleAuthSaving || googleAuthImporting || !canWrite || !googleAuthSetting || googleAuthLoading}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {googleAuthSaving ? '保存中...' : '保存'}
@@ -1484,6 +1501,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('deeplx')}
         onRefresh={() => refreshSection('deeplx', fetchDeepLXSetting)}
       >
+        {!deeplxLoading && !deeplxSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="API Base URL" htmlFor={fieldId('deeplx-base-url')} />
@@ -1493,7 +1511,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setDeeplxForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
               placeholder="https://api.deeplx.org"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !deeplxSetting || deeplxLoading || deeplxSaving}
             />
           </div>
           <div>
@@ -1504,7 +1522,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setDeeplxApiKeyInput(e.target.value)}
               placeholder="留空表示保持现有 API Key"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !deeplxSetting || deeplxLoading || deeplxSaving}
             />
           </div>
           <div className="md:col-span-2">
@@ -1529,7 +1547,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveDeepLXSetting}
-              disabled={deeplxSaving || !canWrite}
+              disabled={deeplxSaving || !canWrite || !deeplxSetting || deeplxLoading}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {deeplxSaving ? '保存中...' : '保存'}
@@ -1547,6 +1565,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('nexai')}
         onRefresh={() => refreshSection('nexai', fetchNexaiSetting)}
       >
+        {!nexaiLoading && !nexaiSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="JWT Secret" htmlFor={fieldId('nexai-jwt-secret')} hint={nexaiSetting?.config.jwtSecret || '未配置'} />
@@ -1556,7 +1575,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setNexaiJwtSecretInput(e.target.value)}
               placeholder="留空表示保持现有 JWT Secret"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
           <div>
@@ -1566,7 +1585,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={nexaiForm.frontendUrl}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, frontendUrl: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
           <div>
@@ -1576,7 +1595,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={nexaiForm.jwtExpiresIn}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, jwtExpiresIn: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
           <div>
@@ -1586,7 +1605,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={nexaiForm.refreshExpiresIn}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, refreshExpiresIn: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
           <div>
@@ -1599,7 +1618,7 @@ const RuntimeConfigSections: React.FC = () => {
               className={studioFieldClassName}
               autoComplete="off"
               spellCheck={false}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
             <p className="mt-2 text-xs leading-5 text-slate-500">
               对应环境变量 <code className="rounded bg-slate-100 px-1">NEXAI_GOOGLE_CLIENT_ID</code>（可回退使用 <code className="rounded bg-slate-100 px-1">GOOGLE_CLIENT_ID</code>）。保存到 NexAI 运行时配置后立即生效，与主站 Google Auth 配置独立。
@@ -1612,7 +1631,7 @@ const RuntimeConfigSections: React.FC = () => {
               value={nexaiForm.githubClientId}
               onChange={(e) => setNexaiForm((prev) => ({ ...prev, githubClientId: e.target.value }))}
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
           <div className="md:col-span-2">
@@ -1623,7 +1642,7 @@ const RuntimeConfigSections: React.FC = () => {
               onChange={(e) => setNexaiGithubSecretInput(e.target.value)}
               placeholder="留空表示保持现有 GitHub Client Secret"
               className={studioFieldClassName}
-              disabled={!canWrite}
+              disabled={!canWrite || !nexaiSetting || nexaiLoading || nexaiSaving}
             />
           </div>
         </div>
@@ -1642,7 +1661,7 @@ const RuntimeConfigSections: React.FC = () => {
             <button
               type="button"
               onClick={saveNexaiSetting}
-              disabled={nexaiSaving || !canWrite}
+              disabled={nexaiSaving || !canWrite || !nexaiSetting || nexaiLoading}
               className={`${studioPrimaryButtonClassName} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {nexaiSaving ? '保存中...' : '保存'}

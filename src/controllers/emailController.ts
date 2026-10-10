@@ -20,6 +20,14 @@ function getAllowedSenderDomains(): string[] {
   return getAllSenderDomains();
 }
 
+function summarizeEmailBody(body: unknown) {
+  const value = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+  return {
+    recipientCount: Array.isArray(value.to) ? value.to.length : typeof value.to === 'string' ? 1 : 0,
+    subjectLength: typeof value.subject === 'string' ? value.subject.length : 0,
+  };
+}
+
 export class EmailController {
   /**
    * 发送邮件
@@ -171,7 +179,7 @@ export class EmailController {
 
       if (!email) {
         logger.warn("发件人域名验证失败：参数无效", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -200,7 +208,7 @@ export class EmailController {
       logger.error("发件人域名验证异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });
@@ -230,7 +238,7 @@ export class EmailController {
 
       if (!emails || !Array.isArray(emails)) {
         logger.warn("邮箱验证失败：参数无效", {
-          body: req.body,
+          summary: summarizeEmailBody(req.body),
           ip,
           userId: user?.id,
         });
@@ -260,7 +268,7 @@ export class EmailController {
       logger.error("邮箱验证异常", {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
-        body: req.body,
+        summary: summarizeEmailBody(req.body),
         ip: req.ip,
         userId: (req as any).user?.id,
       });

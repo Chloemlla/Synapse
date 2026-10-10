@@ -94,6 +94,9 @@ const snippets = [
 const MarkdownArticleManager: React.FC = () => {
   const [articles, setArticles] = useState<MarkdownArticleSummary[]>([]);
   const [current, setCurrent] = useState<MarkdownArticle>(emptyArticle);
+  const [baseline, setBaseline] = useState<MarkdownArticle>(emptyArticle);
+  const detailRequest = useRef(0);
+  const savingRef = useRef(false);
   const [isPreview, setIsPreview] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -105,6 +108,7 @@ const MarkdownArticleManager: React.FC = () => {
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
 
+  const dirty = JSON.stringify(current) !== JSON.stringify(baseline);
   const publicUrl = useMemo(() => getPublicUrl(current.slug), [current.slug]);
   const wordCount = useMemo(() => current.content.trim().length, [current.content]);
   const hasEditorContent = Boolean(current.title || current.slug || current.excerpt || current.content !== starterMarkdown);
@@ -167,10 +171,12 @@ const MarkdownArticleManager: React.FC = () => {
   }, [current, hasEditorContent]);
 
   const updateField = (key: keyof MarkdownArticle, value: string) => {
+    if (savingRef.current || isLoading) return;
     setCurrent((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleTitleChange = (value: string) => {
+    if (savingRef.current || isLoading) return;
     setCurrent((prev) => ({
       ...prev,
       title: value,
@@ -179,9 +185,9 @@ const MarkdownArticleManager: React.FC = () => {
   };
 
   const resetEditor = async () => {
-    if (!canWrite) return;
+    if (!canWrite || savingRef.current || isLoading) return;
     // F5-06：编辑已保存文章时本地不存草稿（见上方 effect），丢弃前必须先确认
-    if (hasEditorContent) {
+    if (dirty) {
       const ok = await confirm({
         title: '放弃当前编辑内容？',
         description: '新建文章会清空当前的标题、摘要与正文。这份内容没有本地草稿副本，清空后无法找回。',
@@ -190,26 +196,34 @@ const MarkdownArticleManager: React.FC = () => {
       });
       if (!ok) return;
     }
+    ++detailRequest.current;
+    setBaseline(emptyArticle);
     setCurrent({ ...emptyArticle, content: starterMarkdown });
     setIsPreview(true);
     localStorage.removeItem(localDraftKey);
   };
 
   const selectArticle = async (article: MarkdownArticleSummary) => {
+    if (savingRef.current || article.id === current.id) return;
+    if (dirty && !(await confirm({ title: '放弃未保存的文章修改？', description: '切换文章会丢弃当前尚未保存的标题、摘要和正文。', tone: 'danger', confirmLabel: '放弃并切换' }))) return;
+    if (savingRef.current) return;
+    const request = ++detailRequest.current;
     setIsLoading(true);
     try {
       const result = await markdownArticleApi.getAdmin(article.id);
+      if (request !== detailRequest.current) return;
+      setBaseline(result.article);
       setCurrent(result.article);
       setIsPreview(true);
     } catch (error: any) {
       setNotification({ type: 'error', message: error?.response?.data?.message || '文章加载失败' });
     } finally {
-      setIsLoading(false);
+      if (request === detailRequest.current) setIsLoading(false);
     }
   };
 
   const insertSnippet = (text: string) => {
-    if (!canWrite) return;
+    if (!canWrite || savingRef.current || isLoading) return;
     const textarea = editorRef.current;
     if (!textarea) {
       updateField('content', `${current.content}${text}`);
@@ -228,12 +242,13 @@ const MarkdownArticleManager: React.FC = () => {
   };
 
   const saveArticle = async (status: 'draft' | 'published' = current.status) => {
-    if (!canWrite) return;
+    if (!canWrite || savingRef.current || isLoading) return;
     if (!current.title.trim() || !current.content.trim()) {
       setNotification({ type: 'warning', message: '标题和 Markdown 内容不能为空' });
       return;
     }
 
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const payload = {
@@ -247,6 +262,7 @@ const MarkdownArticleManager: React.FC = () => {
         ? await markdownArticleApi.update(current.id, payload)
         : await markdownArticleApi.create(payload);
 
+      setBaseline(result.article);
       setCurrent(result.article);
       localStorage.removeItem(localDraftKey);
       await loadArticles();
@@ -254,6 +270,7 @@ const MarkdownArticleManager: React.FC = () => {
     } catch (error: any) {
       setNotification({ type: 'error', message: error?.response?.data?.message || '保存失败' });
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -271,39 +288,50 @@ const MarkdownArticleManager: React.FC = () => {
   }, [current, isSaving]);
 
   const togglePublish = async (article: MarkdownArticleSummary) => {
-    if (!canWrite) return;
+    if (!canWrite || savingRef.current || isLoading) return;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const nextStatus = article.status === 'published' ? 'draft' : 'published';
       const result = await markdownArticleApi.setStatus(article.id, nextStatus);
-      if (current.id === article.id) setCurrent(result.article);
+      if (current.id === article.id) {
+        setCurrent((prev) => ({ ...prev, status: result.article.status }));
+        setBaseline((prev) => ({ ...prev, status: result.article.status }));
+      }
       await loadArticles();
       setNotification({ type: 'success', message: nextStatus === 'published' ? '文章已发布' : '文章已下线' });
     } catch (error: any) {
       setNotification({ type: 'error', message: error?.response?.data?.message || '状态更新失败' });
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
 
   const deleteArticle = async (article: MarkdownArticleSummary) => {
-    if (!canWrite) return;
+    if (!canWrite || savingRef.current || isLoading) return;
     const ok = await confirm({
       title: '确认执行该操作？',
       description: `确认删除「${article.title}」？`,
       tone: 'danger',
       confirmLabel: '删除',
     });
-    if (!ok) return;
+    if (!ok || savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       await markdownArticleApi.remove(article.id);
-      if (current.id === article.id) resetEditor();
+      if (current.id === article.id) {
+        setCurrent(emptyArticle);
+        setBaseline(emptyArticle);
+        localStorage.removeItem(localDraftKey);
+      }
       await loadArticles();
       setNotification({ type: 'success', message: '文章已删除' });
     } catch (error: any) {
       setNotification({ type: 'error', message: error?.response?.data?.message || '删除失败' });
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -321,7 +349,7 @@ const MarkdownArticleManager: React.FC = () => {
         description="编辑 Markdown 原文，实时预览完整语法效果，并发布生成对外查看链接。"
         icon={FaRegFileAlt}
         action={
-          <button type="button" className={studioSecondaryButtonClassName} onClick={() => { void resetEditor(); }} disabled={!canWrite}>
+          <button type="button" className={studioSecondaryButtonClassName} onClick={() => { void resetEditor(); }} disabled={!canWrite || isSaving || isLoading}>
             <Plus className="h-4 w-4" />
             新建文章
           </button>
@@ -375,7 +403,7 @@ const MarkdownArticleManager: React.FC = () => {
             )}
             {filteredArticles.map((article) => (
               <div key={article.id} className={`${studioTileClassName} p-3`}>
-                <button type="button" className="w-full text-left" onClick={() => void selectArticle(article)}>
+                <button type="button" className="w-full text-left" disabled={isSaving} onClick={() => void selectArticle(article)}>
                   <div className="line-clamp-2 text-sm font-semibold text-slate-900">{article.title}</div>
                   <div className="mt-1 break-all font-mono text-[11px] text-slate-500">/{article.slug}</div>
                 </button>
@@ -387,7 +415,7 @@ const MarkdownArticleManager: React.FC = () => {
                     type="button"
                     className="rounded-xl border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => void togglePublish(article)}
-                    disabled={isSaving || !canWrite}
+                    disabled={isSaving || isLoading || !canWrite}
                   >
                     {article.status === 'published' ? '下线' : '发布'}
                   </button>
@@ -395,7 +423,7 @@ const MarkdownArticleManager: React.FC = () => {
                     type="button"
                     className="rounded-xl border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => void deleteArticle(article)}
-                    disabled={isSaving || !canWrite}
+                    disabled={isSaving || isLoading || !canWrite}
                     title="删除文章"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -416,7 +444,7 @@ const MarkdownArticleManager: React.FC = () => {
                   value={current.title}
                   onChange={(event) => handleTitleChange(event.target.value)}
                   placeholder="输入文章标题"
-                  disabled={!canWrite}
+                  disabled={!canWrite || isSaving || isLoading}
                 />
               </label>
               <label className="block">
@@ -426,7 +454,7 @@ const MarkdownArticleManager: React.FC = () => {
                   value={current.slug}
                   onChange={(event) => updateField('slug', slugify(event.target.value))}
                   placeholder="article-slug"
-                  disabled={!canWrite}
+                  disabled={!canWrite || isSaving || isLoading}
                 />
               </label>
             </div>
@@ -437,15 +465,15 @@ const MarkdownArticleManager: React.FC = () => {
                 value={current.excerpt}
                 onChange={(event) => updateField('excerpt', event.target.value)}
                 placeholder="可选，用于文章列表和分享预览"
-                disabled={!canWrite}
+                disabled={!canWrite || isSaving || isLoading}
               />
             </label>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button type="button" className={studioPrimaryButtonClassName} onClick={() => void saveArticle('draft')} disabled={isSaving || !canWrite}>
+              <button type="button" className={studioPrimaryButtonClassName} onClick={() => void saveArticle('draft')} disabled={isSaving || isLoading || !canWrite}>
                 <Save className="h-4 w-4" />
                 保存草稿
               </button>
-              <button type="button" className={studioPrimaryButtonClassName} onClick={() => void saveArticle('published')} disabled={isSaving || !canWrite}>
+              <button type="button" className={studioPrimaryButtonClassName} onClick={() => void saveArticle('published')} disabled={isSaving || isLoading || !canWrite}>
                 <Send className="h-4 w-4" />
                 发布文章
               </button>
@@ -464,7 +492,7 @@ const MarkdownArticleManager: React.FC = () => {
                 </a>
               )}
               {current.id && (
-                <button type="button" className={studioDangerButtonClassName} onClick={() => void deleteArticle(current)} disabled={isSaving || !canWrite}>
+                <button type="button" className={studioDangerButtonClassName} onClick={() => void deleteArticle(current)} disabled={isSaving || isLoading || !canWrite}>
                   <Trash2 className="h-4 w-4" />
                   删除
                 </button>
@@ -489,7 +517,7 @@ const MarkdownArticleManager: React.FC = () => {
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => insertSnippet(snippet.text)}
-                      disabled={!canWrite}
+                      disabled={!canWrite || isSaving || isLoading}
                     >
                       <Icon className="h-3.5 w-3.5" />
                       {snippet.label}
@@ -503,7 +531,7 @@ const MarkdownArticleManager: React.FC = () => {
                 value={current.content}
                 onChange={(event) => updateField('content', event.target.value)}
                 spellCheck={false}
-                disabled={!canWrite}
+                disabled={!canWrite || isSaving || isLoading}
               />
             </InfoPanel>
             {isPreview && (

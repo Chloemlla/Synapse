@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { NexaiReleaseManifestService } from "../services/nexaiReleaseManifestService";
 import { firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
+import { errorStatus } from "./errorResponse";
 
 export class NexaiReleaseController {
   static async getManifest(req: Request, res: Response) {
@@ -30,10 +31,11 @@ export class NexaiReleaseController {
       });
     } catch (error: any) {
       logger.error("[NexAI Release] get manifest error:", error);
-      res.status(error?.statusCode || 500).json({
+      const status = errorStatus(error);
+      res.status(status).json({
         success: false,
-        error: error?.code || "release_manifest_error",
-        message: error?.message || "Failed to resolve release manifest",
+        error: status < 500 && typeof error?.code === "string" ? error.code : "release_manifest_error",
+        message: status < 500 && typeof error?.message === "string" ? error.message : "Failed to resolve release manifest",
       });
     }
   }

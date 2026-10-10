@@ -4,12 +4,6 @@ import speakeasy from "speakeasy";
 import bcrypt from "bcrypt";
 import logger from "../utils/logger";
 
-// 确保时区设置为上海
-if (process.env.TZ !== "Asia/Shanghai") {
-  process.env.TZ = "Asia/Shanghai";
-  logger.info("TOTP服务时区已设置为上海");
-}
-
 /** TOTP 时间步（秒）。RFC 6238 默认 30s；生成 URL、校验、重放防护三处必须同源。 */
 const TOTP_STEP_SECONDS = 30;
 

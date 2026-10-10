@@ -377,7 +377,7 @@ export function buildRuntimeConfigDefaults(options: {
 
   return {
     ipqs: {
-      apiKeys: ["api"],
+    apiKeys: [],
       scamalyticsUser: "happyclovo",
       enabled: false,
       strictness: 1,

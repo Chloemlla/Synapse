@@ -156,9 +156,9 @@ export class AnalyticsController {
           },
         });
       } catch (parseError) {
+        logger.warn("[AnalyticsController] 导入数据格式无效", { error: parseError });
         res.status(400).json({
           error: "数据格式无效",
-          details: parseError instanceof Error ? parseError.message : "Unknown error",
         });
       }
     } catch (error) {

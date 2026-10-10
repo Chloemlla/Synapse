@@ -8,6 +8,7 @@ import { assessClientRisk, recordVerificationOutcome } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { HCaptchaResponse } from "./types";
 import { validateConfigValue, validateToken } from "./validators";
+import { writeCaptchaKey } from "./keyStorage";
 
 export async function verifyHCaptchaToken(token: string, remoteIp?: string, siteKey?: string): Promise<boolean> {
   const traceId = generateUniqueTraceId();
@@ -165,7 +166,7 @@ export async function verifyHCaptchaToken(token: string, remoteIp?: string, site
         errorCode: "LOW_SCORE",
         errorMessage: `hCaptcha score 过低: ${result.score}`,
         fingerprint: undefined,
-        riskLevel: "HIGH",
+        riskLevel: "high",
         riskScore: Math.round((1 - result.score) * 100),
         riskReasons: result.score_reason || ["low_score"],
         verificationMethod: "hcaptcha",
@@ -223,7 +224,7 @@ export async function verifyHCaptchaToken(token: string, remoteIp?: string, site
       errorCode: "NETWORK_ERROR",
       errorMessage: error instanceof Error ? error.message : "网络请求失败",
       fingerprint: undefined,
-      riskLevel: "MEDIUM",
+      riskLevel: "medium",
       riskScore: 50,
       riskReasons: ["network_error"],
       verificationMethod: "hcaptcha",
@@ -273,22 +274,11 @@ export async function updateHCaptchaConfig(
       return false;
     }
 
-    if (key === "HCAPTCHA_SECRET_KEY") {
-      await HCaptchaSettingModel.findOneAndUpdate(
-        { key: "HCAPTCHA_SECRET_KEY" },
-        { key: "HCAPTCHA_SECRET_KEY", value: validatedValue, updatedAt: new Date() },
-        { upsert: true, returnDocument: "after" },
-      );
-    } else if (key === "HCAPTCHA_SITE_KEY") {
-      await HCaptchaSettingModel.findOneAndUpdate(
-        { key: "HCAPTCHA_SITE_KEY" },
-        { key: "HCAPTCHA_SITE_KEY", value: validatedValue, updatedAt: new Date() },
-        { upsert: true, returnDocument: "after" },
-      );
-    } else {
+    if (key !== "HCAPTCHA_SECRET_KEY" && key !== "HCAPTCHA_SITE_KEY") {
       logger.error("hCaptcha配置更新失败：未知的配置键", { key });
       return false;
     }
+    await writeCaptchaKey(HCaptchaSettingModel, key, validatedValue);
 
     logger.info(`hCaptcha配置更新成功: ${key}`);
     return true;
@@ -312,7 +302,7 @@ export async function deleteHCaptchaConfig(key: "HCAPTCHA_SECRET_KEY" | "HCAPTCH
       return false;
     }
 
-    await HCaptchaSettingModel.findOneAndDelete({ key: validatedKey });
+    await HCaptchaSettingModel.deleteMany({ key: validatedKey });
     logger.info(`hCaptcha配置删除成功: ${validatedKey}`);
     return true;
   } catch (error) {

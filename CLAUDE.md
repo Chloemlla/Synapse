@@ -251,7 +251,7 @@ frontend/src/
 ## 常见任务
 
 **新增一个 API 端点**
-1. `src/routes/<域>Routes.ts` 定义路径（不要在路径里写连字符，`path-to-regexp` 会歧义）；
+1. `src/routes/<域>Routes.ts` 定义路径（遵循 Express 5 的命名参数/通配符语法，路径中的普通连字符合法）；
 2. `src/controllers/` 加处理器（校验入参、调 service、回响应）；
 3. 需要业务逻辑就加 `src/services/`（函数式导出）；
 4. 需要持久化就加 `src/models/`（顺带想清楚索引与 TTL）；
@@ -288,7 +288,7 @@ frontend/src/
 | 前端白屏 / 深链 308 | 管理面板路径清单是否漂移（`check:admin-spa-paths`）；SPA 兜底是否被前端构建缺失影响（看启动日志里 `Serving static files from`） |
 | 体积闸门红灯 | `pnpm --dir frontend run build` 后看 `check:frontend-bundle` 的首屏闭包与重包归属；不要用 `manualChunks` 兜 |
 | 构建产物看着像是旧的 | `pnpm run build:backend:clean`（先清 `dist` 与 `dist-obfuscated`）再判；本地清缓存不能代替 CI |
-| 测试环境脏了 | `pnpm run test:clean`（清残留）、`pnpm run test:db-init`（初始化测试库） |
+| 测试环境脏了 | 在隔离的 CI 测试库运行 `pnpm run test:db-init`（初始化测试库） |
 | CI 红但本地看着没问题 | 按 `AGENTS.md` §0 第 2 条取父提交同名 job 的历史结论做归因；注意 `skipped` 的步骤不等于通过 |
 | 线上日志只有一句模糊错误 | 先确认是不是「把预期拒绝当异常」（如封停打成 `logger.error` + 堆栈）；处罚类必须带 `code` 才能被前端识别 |
 

@@ -127,6 +127,16 @@ const RegistrationInviteManager: React.FC = () => {
     }
   }, [setNotification]);
 
+  const refreshStats = async () => {
+    setStats(null);
+    try {
+      const response = await api.get('/api/admin/registration-invites/stats');
+      if (response.data?.success) setStats(response.data.stats as InviteStats);
+    } catch {
+      setNotification({ type: 'warning', message: '邀请码已更新，统计暂未刷新，请稍后刷新重试。' });
+    }
+  };
+
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }, []);
@@ -185,6 +195,7 @@ const RegistrationInviteManager: React.FC = () => {
       setInvites((current) => [invite, ...current]);
       setEditDrafts((current) => ({ ...current, [invite.id]: buildInviteDraft(invite) }));
       setForm({ code: "", note: "", maxUses: "1", expiresAt: "" });
+      await refreshStats();
       setNotification({ type: "success", message: "邀请码已创建" });
     } catch (error: any) {
       setNotification({ type: "error", message: error?.response?.data?.error || "创建邀请码失败" });
@@ -204,6 +215,7 @@ const RegistrationInviteManager: React.FC = () => {
       const nextInvite = response.data.invite as RegistrationInvite;
       setInvites((current) => current.map((item) => (item.id === invite.id ? nextInvite : item)));
       setEditDrafts((current) => ({ ...current, [invite.id]: buildInviteDraft(nextInvite) }));
+      await refreshStats();
       setNotification({ type: "success", message: "邀请码已更新" });
     } catch (error: any) {
       setNotification({ type: "error", message: error?.response?.data?.error || "更新邀请码失败" });
@@ -265,6 +277,7 @@ const RegistrationInviteManager: React.FC = () => {
         delete next[invite.id];
         return next;
       });
+      await refreshStats();
       setNotification({ type: "success", message: "邀请码已删除" });
     } catch (error: any) {
       setNotification({ type: "error", message: error?.response?.data?.error || "删除邀请码失败" });

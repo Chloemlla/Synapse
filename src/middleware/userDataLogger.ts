@@ -27,6 +27,8 @@ interface UserDataStore {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const USER_DATA_FILE = path.join(DATA_DIR, "user-registration-audits.json");
+// This duplicate registration view is bounded; the canonical audit log owns history.
+const MAX_RECENT_REGISTRATIONS = 1000;
 
 // 确保数据目录存在
 const ensureDataDir = async () => {
@@ -75,6 +77,7 @@ const appendUserDataToFile = (userData: UserData): Promise<void> => {
       await ensureDataDir();
       const store = await readUserDataFromFile();
       store.users.push(userData);
+      store.users = store.users.slice(-MAX_RECENT_REGISTRATIONS);
       const tempFile = `${USER_DATA_FILE}.${process.pid}.tmp`;
       await fs.promises.writeFile(tempFile, JSON.stringify(store, null, 2));
       await fs.promises.rename(tempFile, USER_DATA_FILE);
@@ -89,7 +92,7 @@ const appendUserDataToFile = (userData: UserData): Promise<void> => {
 const writeUserData = async (userData: UserData) => {
   try {
     if (mongoose.connection.readyState === 1) {
-      await UserDataModel.updateOne({}, { $push: { users: userData } }, { upsert: true });
+      await UserDataModel.updateOne({}, { $push: { users: { $each: [userData], $slice: -MAX_RECENT_REGISTRATIONS } } }, { upsert: true });
       return;
     }
   } catch (error) {
@@ -111,11 +114,11 @@ export const logUserData = (req: Request, res: Response, next: NextFunction) => 
       (async () => {
         try {
           const userData: UserData = {
-            username: req.body.username,
-            email: req.body.email,
+            username: String(req.body.username ?? '').slice(0, 200),
+            email: String(req.body.email ?? '').slice(0, 320),
             registeredAt: new Date().toISOString(),
             ip: req.ip,
-            userAgent: req.get("user-agent"),
+            userAgent: req.get("user-agent")?.slice(0, 512),
           };
 
           await writeUserData(userData);

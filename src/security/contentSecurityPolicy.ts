@@ -149,7 +149,7 @@ function buildConnectSrc(): string[] {
 /**
  * Production-compatible CSP:
  * - script-src: nonce only (no unsafe-inline / unsafe-eval)
- * - style-src / style-src-elem: nonce for SPA; unsafe-inline for Swagger docs only
+ * - style-src / style-src-elem: unsafe-inline for runtime-injected UI and Swagger styles
  * - style-src-attr: unsafe-inline kept for React style props + Swagger SVG attrs
  * - script-src-attr: none (blocks inline event handlers)
  */
@@ -208,7 +208,7 @@ export function buildHelmetCspDirectives(): Record<string, Iterable<HelmetCspDir
 
 /**
  * Materialize helmet-style directive functions into a CSP header string for tests/audits.
- * Optional surface forces docs vs spa style source selection.
+ * Surface metadata does not narrow style sources; script nonces remain mandatory.
  */
 export function renderCspHeaderValue(
   resLocals: { cspNonce?: string; cspSurface?: CspSurface } = {},

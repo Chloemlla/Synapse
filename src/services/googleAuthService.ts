@@ -35,7 +35,7 @@ export interface GoogleAuthPayload {
 export type GoogleBindSessionResult =
   | {
       requiresBinding: true;
-      session: ReturnType<typeof issueProviderBindSession>;
+      session: Awaited<ReturnType<typeof issueProviderBindSession>>;
       provider: "google";
     }
   | (GoogleAuthPayload & { requiresBinding: false });
@@ -328,7 +328,7 @@ export async function startGoogleBindSession(params: {
     };
   }
 
-  const session = issueProviderBindSession({
+  const session = await issueProviderBindSession({
     provider: "google",
     providerUserId: profile.id,
     providerEmail: profile.email,

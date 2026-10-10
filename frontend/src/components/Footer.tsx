@@ -151,7 +151,8 @@ const Footer: React.FC = () => {
           throw new Error(`预期JSON响应，但收到: ${contentType}`);
         }
 
-        const raw: any = await response.json();
+        if (cancelled) return;
+        const raw: any = await response.clone().json();
 
         // 兼容多种字段命名
         const info: IPInfo = {
@@ -206,7 +207,8 @@ const Footer: React.FC = () => {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const raw: any = await response.json();
+        if (cancelled) return;
+        const raw: any = await response.clone().json();
         const version = typeof raw?.version === 'string' ? raw.version.trim() : '';
         const shortSha = typeof raw?.shortSha === 'string' ? raw.shortSha.trim() : '';
 

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
 
 // 快速修复空用户文件
 function fixEmptyUsersFile() {
@@ -44,6 +45,14 @@ function fixEmptyUsersFile() {
         return false;
     }
     
+    // 旧文件修复也必须使用显式配置的口令，不能恢复公开的默认凭据。
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword) {
+        console.error('ADMIN_PASSWORD 未设置，未修改用户文件');
+        return false;
+    }
+    const passwordHash = bcrypt.hashSync(adminPassword, 12);
+
     // 备份原文件
     const backupFile = usersFile + '.backup.' + Date.now();
     try {
@@ -59,7 +68,7 @@ function fixEmptyUsersFile() {
         id: '1',
         username: 'admin',
         email: 'admin@example.com',
-        password: 'happyclo1145',
+        password: passwordHash,
         role: 'admin',
         dailyUsage: 0,
         lastUsageDate: new Date().toISOString(),
@@ -72,7 +81,7 @@ function fixEmptyUsersFile() {
         fs.writeFileSync(usersFile, JSON.stringify([defaultAdmin], null, 2));
         console.log('✅ 已创建默认管理员账户');
         console.log('用户名: admin');
-        console.log('密码: happyclo1145');
+        console.log('密码取自 ADMIN_PASSWORD，已使用 bcrypt 哈希存储');
         console.log('角色: admin');
         
         // 验证修复结果
@@ -102,4 +111,4 @@ if (require.main === module) {
     process.exit(success ? 0 : 1);
 }
 
-module.exports = { fixEmptyUsersFile }; 
+module.exports = { fixEmptyUsersFile };

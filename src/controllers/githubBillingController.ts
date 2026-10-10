@@ -1,6 +1,26 @@
 import type { Request, Response } from "express";
 import { GitHubBillingService } from "../services/githubBillingService";
 import { firstString } from "../utils/httpParam";
+import logger from "../utils/logger";
+import { safeFailureDetails } from "./errorResponse";
+
+function parseBillingCurl(curlCommand: string, res: Response) {
+  try {
+    const parsed = GitHubBillingService.parseCurlCommand(curlCommand);
+    const url = new URL(parsed.url);
+    if (url.protocol !== "https:" || !["github.com", "api.github.com"].includes(url.hostname) || url.username || url.password || (url.port && url.port !== "443")) {
+      res.status(400).json({ error: "无效的 curl 命令", message: "请求地址必须使用 GitHub HTTPS API" });
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && ["curl 命令中未找到有效的 GitHub URL", "curl 命令中未找到认证信息（headers 或 cookies）"].includes(error.message)) {
+      res.status(400).json({ error: "无效的 curl 命令", message: error.message });
+      return null;
+    }
+    throw error;
+  }
+}
 
 export class GitHubBillingController {
   /**
@@ -19,18 +39,10 @@ export class GitHubBillingController {
         return;
       }
 
-      // 严格的 URL 验证：确保是真正的 GitHub API URL
-      const githubUrlRegex = /https?:\/\/(?:api\.)?github\.com\//i;
-      if (!githubUrlRegex.test(curlCommand)) {
-        res.status(400).json({
-          error: "无效的 curl 命令",
-          message: "curl 命令必须包含有效的 GitHub API URL (https://api.github.com/ 或 https://github.com/)",
-        });
-        return;
-      }
+      const parsed = parseBillingCurl(curlCommand, res);
+      if (!parsed) return;
 
       await GitHubBillingService.saveCurlConfig(curlCommand, "config1");
-      const parsed = GitHubBillingService.parseCurlCommand(curlCommand);
 
       res.json({
         success: true,
@@ -44,10 +56,11 @@ export class GitHubBillingController {
         },
       });
     } catch (error) {
-      console.error("保存 curl 配置失败:", error);
+      logger.error("保存 curl 配置失败:", error);
       res.status(500).json({
         error: "保存配置失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -80,10 +93,11 @@ export class GitHubBillingController {
         },
       });
     } catch (error) {
-      console.error("获取 curl 配置失败:", error);
+      logger.error("获取 curl 配置失败:", error);
       res.status(500).json({
         error: "获取配置失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -111,7 +125,7 @@ export class GitHubBillingController {
         data: billingData,
       });
     } catch (error) {
-      console.error("获取 GitHub Billing 数据失败:", error);
+      logger.error("获取 GitHub Billing 数据失败:", error);
 
       if (error instanceof Error && error.message.includes("未找到保存的 curl 配置")) {
         res.status(404).json({
@@ -131,7 +145,8 @@ export class GitHubBillingController {
 
       res.status(500).json({
         error: "获取数据失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -159,10 +174,11 @@ export class GitHubBillingController {
         message: `客户 ${customerId} 的缓存已清除`,
       });
     } catch (error) {
-      console.error("清除缓存失败:", error);
+      logger.error("清除缓存失败:", error);
       res.status(500).json({
         error: "清除缓存失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -175,10 +191,10 @@ export class GitHubBillingController {
       await GitHubBillingService.clearExpiredCache();
       res.json({ success: true, message: "过期缓存已清理" });
     } catch (error) {
-      console.error("清理过期缓存失败:", error);
+      logger.error("清理过期缓存失败:", error);
       res.status(500).json({
         success: false,
-        message: `清理过期缓存失败: ${error instanceof Error ? error.message : "未知错误"}`,
+        message: "清理过期缓存失败",
       });
     }
   }
@@ -194,10 +210,10 @@ export class GitHubBillingController {
         data: metrics,
       });
     } catch (error) {
-      console.error("获取缓存性能指标失败:", error);
+      logger.error("获取缓存性能指标失败:", error);
       res.status(500).json({
         success: false,
-        message: `获取缓存性能指标失败: ${error instanceof Error ? error.message : "未知错误"}`,
+        message: "获取缓存性能指标失败",
       });
     }
   }
@@ -215,10 +231,11 @@ export class GitHubBillingController {
         count: customers.length,
       });
     } catch (error) {
-      console.error("获取缓存客户列表失败:", error);
+      logger.error("获取缓存客户列表失败:", error);
       res.status(500).json({
         error: "获取客户列表失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -248,18 +265,10 @@ export class GitHubBillingController {
         return;
       }
 
-      // 严格的 URL 验证：确保是真正的 GitHub API URL
-      const githubUrlRegex = /https?:\/\/(?:api\.)?github\.com\//i;
-      if (!githubUrlRegex.test(curlCommand)) {
-        res.status(400).json({
-          error: "无效的 curl 命令",
-          message: "curl 命令必须包含有效的 GitHub API URL (https://api.github.com/ 或 https://github.com/)",
-        });
-        return;
-      }
+      const parsed = parseBillingCurl(curlCommand, res);
+      if (!parsed) return;
 
       await GitHubBillingService.saveCurlConfig(curlCommand, configKey as "config1" | "config2" | "config3");
-      const parsed = GitHubBillingService.parseCurlCommand(curlCommand);
 
       res.json({
         success: true,
@@ -274,10 +283,11 @@ export class GitHubBillingController {
         },
       });
     } catch (error) {
-      console.error("保存多配置 curl 失败:", error);
+      logger.error("保存多配置 curl 失败:", error);
       res.status(500).json({
         error: "保存配置失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -321,10 +331,11 @@ export class GitHubBillingController {
         data: safeConfig,
       });
     } catch (error) {
-      console.error("获取多配置 curl 失败:", error);
+      logger.error("获取多配置 curl 失败:", error);
       res.status(500).json({
         error: "获取配置失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -352,9 +363,9 @@ export class GitHubBillingController {
         message: `配置 ${configKey} 已删除`,
       });
     } catch (error) {
-      console.error("删除多配置 curl 失败:", error);
+      logger.error("删除多配置 curl 失败:", error);
 
-      if (error instanceof Error && error.message.includes("不存在")) {
+      if (error instanceof Error && /^配置 config[123] 不存在$/.test(error.message)) {
         res.status(404).json({
           error: "配置不存在",
           message: error.message,
@@ -364,7 +375,8 @@ export class GitHubBillingController {
 
       res.status(500).json({
         error: "删除配置失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -397,7 +409,7 @@ export class GitHubBillingController {
         data: aggregatedData,
       });
     } catch (error) {
-      console.error("获取聚合 GitHub Billing 数据失败:", error);
+      logger.error("获取聚合 GitHub Billing 数据失败:", error);
 
       if (error instanceof Error && error.message.includes("未找到保存的 curl 配置")) {
         res.status(404).json({
@@ -417,7 +429,8 @@ export class GitHubBillingController {
 
       res.status(500).json({
         error: "获取聚合数据失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }
@@ -438,7 +451,8 @@ export class GitHubBillingController {
         return;
       }
 
-      const parsed = GitHubBillingService.parseCurlCommand(curlCommand);
+      const parsed = parseBillingCurl(curlCommand, res);
+      if (!parsed) return;
 
       res.json({
         success: true,
@@ -454,10 +468,11 @@ export class GitHubBillingController {
         },
       });
     } catch (error) {
-      console.error("解析 curl 命令失败:", error);
+      logger.error("解析 curl 命令失败:", error);
       res.status(500).json({
         error: "解析失败",
-        message: error instanceof Error ? error.message : "未知错误",
+        message: "服务暂时不可用，请稍后重试",
+        details: safeFailureDetails(error),
       });
     }
   }

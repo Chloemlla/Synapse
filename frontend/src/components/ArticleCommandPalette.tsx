@@ -9,6 +9,7 @@ const ArticleCommandPalette: React.FC = () => {
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<MarkdownArticleSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   // F5-07：加载失败必须有独立错误态，否则会被渲染成「没有匹配的文章」
   const [loadError, setLoadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +35,7 @@ const ArticleCommandPalette: React.FC = () => {
     setLoadError(null);
     markdownArticleApi
       .listPublished()
-      .then((result) => setArticles(result.articles || []))
+      .then((result) => { setArticles(result.articles || []); setLoaded(true); })
       .catch((error) => {
         console.error('[文章搜索] 加载已发布文章失败:', error);
         setLoadError('文章列表加载失败，请重试');
@@ -46,9 +47,9 @@ const ArticleCommandPalette: React.FC = () => {
     if (!isOpen) return;
     inputRef.current?.focus();
     // 失败后不再自动重试（此前 isLoading 参与依赖，失败会无限重发请求）
-    if (articles.length > 0 || isLoading || loadError) return;
+    if (loaded || isLoading || loadError) return;
     loadArticles();
-  }, [articles.length, isLoading, isOpen, loadError, loadArticles]);
+  }, [loaded, isLoading, isOpen, loadError, loadArticles]);
 
   const filteredArticles = useMemo(() => {
     const normalized = query.trim().toLowerCase();

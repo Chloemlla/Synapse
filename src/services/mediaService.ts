@@ -1,5 +1,6 @@
 import axios from "axios";
 import logger from "../utils/logger";
+import { describeNetworkError } from "./networkService";
 
 export interface MediaResponse {
   success: boolean;
@@ -33,7 +34,7 @@ export class MediaService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("网抑云音乐解析失败", { id, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("网抑云音乐解析失败", { id, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -78,7 +79,7 @@ export class MediaService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("皮皮虾视频解析失败", { url, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("皮皮虾视频解析失败", { url, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {

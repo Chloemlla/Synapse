@@ -413,11 +413,13 @@ export function maskStreamUrl(url: string): string {
 /** 多 P 批量时同一 bvid 会被反复问，缓存 5 分钟省掉 N 次 view 请求。 */
 const viewCache = new Map<string, { at: number; info: BiliVideoInfo }>();
 const VIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+const VIEW_CACHE_MAX_ENTRIES = 5000;
 
 /** BV → 分P 清单（多 P 展开用；yt-dlp 的 flat-playlist 要抓网页，412 时全靠这里）。 */
 export async function listBiliParts(opts: BiliOptions, bvid: string): Promise<BiliVideoInfo> {
   const hit = viewCache.get(bvid);
   if (hit && Date.now() - hit.at < VIEW_CACHE_TTL_MS) return hit.info;
+  if (hit) viewCache.delete(bvid);
   const query = await signedQuery(opts, { bvid, web_location: 1550101 });
   const data = (await apiJson<BiliViewResponse>(opts, "/x/web-interface/wbi/view", { query })).data;
   if (!data) throw new Error(`B 站 ${bvid} 的 wbi/view 没有 data`);
@@ -433,6 +435,11 @@ export async function listBiliParts(opts: BiliOptions, bvid: string): Promise<Bi
     parts,
   };
   viewCache.set(bvid, { at: Date.now(), info });
+  while (viewCache.size > VIEW_CACHE_MAX_ENTRIES) {
+    const oldest = viewCache.keys().next().value;
+    if (oldest === undefined) break;
+    viewCache.delete(oldest);
+  }
   return info;
 }
 

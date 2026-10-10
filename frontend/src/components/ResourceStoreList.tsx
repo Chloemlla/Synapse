@@ -84,6 +84,10 @@ function formatRelativeAge(value: Date | string): string {
 
 export default function ResourceStoreList() {
   const [resources, setResources] = useState<Resource[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const resourceRequest = useRef(0);
   const [redeemedResources, setRedeemedResources] = useState<
     RedeemedResource[]
   >([]);
@@ -128,15 +132,21 @@ export default function ResourceStoreList() {
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
 
   const fetchResources = async () => {
+    const request = ++resourceRequest.current;
+    setLoading(true);
     try {
-      const response = await resourcesApi.getResources(1, selectedCategory);
+      const response = await resourcesApi.getResources(page, selectedCategory);
+      if (request !== resourceRequest.current) return;
+      setTotal(response.total);
+      setPageSize(response.pageSize);
       setResources(response.resources);
       setResourcesError("");
     } catch {
+      if (request !== resourceRequest.current) return;
       setResourcesError("获取资源列表失败，请检查网络后重试。");
       setResources([]);
     } finally {
-      setLoading(false);
+      if (request === resourceRequest.current) setLoading(false);
     }
   };
 
@@ -181,7 +191,8 @@ export default function ResourceStoreList() {
 
   useEffect(() => {
     fetchResources();
-  }, [selectedCategory]);
+    return () => { ++resourceRequest.current; };
+  }, [selectedCategory, page]);
 
   useEffect(() => {
     if (activeTab === "owned") {
@@ -320,7 +331,7 @@ export default function ResourceStoreList() {
     {
       label: "可兑换",
       rawLabel: "Catalog",
-      value: `${resources.length} 个在架资源`,
+      value: `${total} 个在架资源`,
       tone: "sky" as const,
     },
     {
@@ -586,7 +597,7 @@ export default function ResourceStoreList() {
                   <div className="mb-5 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectedCategory("")}
+                      onClick={() => { setPage(1); setSelectedCategory(""); }}
                       className={studioPillClassName(
                         selectedCategory === "",
                         "dark",
@@ -598,7 +609,7 @@ export default function ResourceStoreList() {
                       <button
                         key={category}
                         type="button"
-                        onClick={() => setSelectedCategory(category)}
+                        onClick={() => { setPage(1); setSelectedCategory(category); }}
                         className={studioPillClassName(
                           selectedCategory === category,
                           "blue",
@@ -637,6 +648,11 @@ export default function ResourceStoreList() {
                         : "当前没有可展示的资源。"}
                     </div>
                   )}
+                  {!resourcesError && total > pageSize && <nav aria-label="资源分页" className="mt-4 flex items-center justify-center gap-4">
+                    <button type="button" disabled={loading || page <= 1} onClick={() => setPage((p) => p - 1)} className={studioGhostButtonClassName}>上一页</button>
+                    <span>第 {page} / {Math.max(1, Math.ceil(total / pageSize))} 页 · 共 {total} 项</span>
+                    <button type="button" disabled={loading || page * pageSize >= total} onClick={() => setPage((p) => p + 1)} className={studioGhostButtonClassName}>下一页</button>
+                  </nav>}
                 </>
               ) : redeemedLoading ? (
                 <div className="flex min-h-[380px] items-center justify-center">

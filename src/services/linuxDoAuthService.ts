@@ -618,7 +618,7 @@ export async function completeLinuxDoAuthorization(params: {
     (await UserStorage.getUserByLinuxDoId(normalizedProfile.id));
 
   if (!boundUser) {
-    const session = issueProviderBindSession(providerProfile);
+    const session = await issueProviderBindSession(providerProfile);
     logger.info("[Linux.do Auth] OAuth callback requires existing account binding", {
       providerUserId: normalizedProfile.id,
       intent,

@@ -9,10 +9,7 @@ import { Check, Clipboard, Code2, Eye, Maximize2, Minimize2 } from 'lucide-react
 import 'katex/dist/katex.min.css';
 import Mermaid from './Mermaid';
 
-type MarkdownCodeProps = ComponentPropsWithoutRef<'code'> &
-  ExtraProps & {
-    inline?: boolean;
-  };
+type MarkdownCodeProps = ComponentPropsWithoutRef<'code'> & ExtraProps;
 
 type MarkdownHeadingProps = ComponentPropsWithoutRef<'h1'> & ExtraProps;
 type MarkdownImageProps = ComponentPropsWithoutRef<'img'> & ExtraProps;
@@ -304,29 +301,23 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   };
 
   const components: Components = {
-    code({ node: _node, inline, className: codeClassName, children, ...props }: MarkdownCodeProps) {
+    code: ({ node: _node, children, ...props }: MarkdownCodeProps) => <code {...props}>{children}</code>,
+    pre({ children }) {
+      const child = React.Children.toArray(children).find((item) => React.isValidElement(item)) as React.ReactElement<MarkdownCodeProps> | undefined;
+      const { node: _node, className: codeClassName, children: codeChildren, ...props } = child?.props ?? {};
       const language = getCodeLanguage(codeClassName);
       const languageLabel = language || 'text';
       // 只把白名单内（PrismLight 已注册）的语言交给高亮器，其余退化成等宽纯文本：
       // 未注册语言在 refractor 里会直接抛错，且全量 Prism 会让首屏多背 298 个语法。
       const highlightLanguage = resolveCodeLanguage(language);
-      const rawCode = React.Children.toArray(children).join('').replace(/\n$/, '');
-      const isBlockCode = inline !== true;
+      const rawCode = React.Children.toArray(codeChildren).join('').replace(/\n$/, '');
 
-      if (isBlockCode && language.toLowerCase() === 'mermaid') {
+      if (language.toLowerCase() === 'mermaid') {
         return <Mermaid code={rawCode} />;
       }
 
-      if (!isBlockCode) {
-        return (
-          <code className={codeClassName} {...props}>
-            {children}
-          </code>
-        );
-      }
-
       return (
-        <div className="group relative my-4 overflow-hidden rounded-md border border-slate-700/50 shadow-lg">
+        <div data-markdown-code={rawCode} className="group relative my-4 overflow-hidden rounded-md border border-slate-700/50 shadow-lg">
           <div className="flex items-center justify-between border-b border-slate-700/30 bg-slate-800 px-3 py-2 font-mono text-[10px] text-slate-400 sm:px-4">
             <span className="truncate font-bold uppercase tracking-wider">{languageLabel}</span>
             <div className="flex shrink-0 gap-1.5">

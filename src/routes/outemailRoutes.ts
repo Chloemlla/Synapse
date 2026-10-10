@@ -230,7 +230,8 @@ router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, 
     const result = await getOutEmailRecords({ page, pageSize, to, subject, startDate, endDate });
     res.json({ success: true, ...result });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e?.message || "查询失败" });
+    logger.error("[OutEmail] 记录查询失败", e);
+    res.status(500).json({ success: false, error: "查询失败" });
   }
 });
 
@@ -250,7 +251,8 @@ router.get("/records/:id", statusQueryLimiter, authMiddleware, adminAuthMiddlewa
     }
     res.json({ success: true, record });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e?.message || "查询失败" });
+    logger.error("[OutEmail] 单条记录查询失败", e);
+    res.status(500).json({ success: false, error: "查询失败" });
   }
 });
 

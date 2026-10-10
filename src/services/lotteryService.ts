@@ -84,7 +84,7 @@ class LotteryService {
   private async getBlockchainHeight(): Promise<number> {
     try {
       // 模拟获取区块链高度，实际项目中可以调用真实的区块链API
-      const response = await fetch("https://api.blockcypher.com/v1/btc/main");
+      const response = await fetch("https://api.blockcypher.com/v1/btc/main", { signal: AbortSignal.timeout(5000) });
       if (response.ok) {
         const data = await response.json();
         return data.height;
@@ -318,7 +318,7 @@ class LotteryService {
     });
 
     // 更新用户记录
-    await this.updateUserRecord(userId, username, winner, prize);
+    await this.updateUserRecord(userId, username, winner, prize, roundId);
 
     logger.info(`用户 ${username} 在轮次 ${roundId} 中获得了 ${prize.name}`);
     return winner;
@@ -351,6 +351,7 @@ class LotteryService {
     username: string,
     winner: LotteryWinner,
     prize: LotteryPrize,
+    roundId: string,
   ): Promise<void> {
     const record = await getUserRecord(userId);
     await updateUserRecord(userId, {
@@ -363,7 +364,7 @@ class LotteryService {
       history: [
         ...(record?.history || []),
         {
-          roundId: winner.prizeId, // 兼容旧字段语义，这里实际是奖品 ID
+          roundId,
           prizeId: winner.prizeId,
           prizeName: winner.prizeName,
           drawTime: winner.drawTime,

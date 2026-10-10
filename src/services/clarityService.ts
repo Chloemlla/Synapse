@@ -1,3 +1,4 @@
+import { withOperationTimeout } from "./withOperationTimeout";
 import logger from "../utils/logger";
 import { mongoose } from "./mongoService";
 
@@ -200,15 +201,14 @@ async function recordHistory(
  * 从数据库获取Clarity项目ID
  */
 async function getClarityProjectId(): Promise<string | null> {
-  try {
-    if (mongoose.connection.readyState === 1) {
-      const doc = await ClaritySettingModel.findOne({ key: "CLARITY_PROJECT_ID" }).lean().exec();
-      if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
-        return doc.value.trim();
-      }
-    }
-  } catch (e) {
-    logger.error("读取Clarity项目ID失败，回退到环境变量", e);
+  // A failed read is unknown configuration, never an authoritative disabled value.
+  // Successful absence still permits the documented environment fallback.
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error("Clarity configuration database unavailable");
+  }
+  const doc = await ClaritySettingModel.findOne({ key: "CLARITY_PROJECT_ID" }).lean().exec();
+  if (doc && typeof doc.value === "string" && doc.value.trim().length > 0) {
+    return doc.value.trim();
   }
 
   // 回退到环境变量
@@ -501,18 +501,20 @@ export class ClarityService {
     }
 
     // 从数据库获取（带超时保护）
-    const projectId = await Promise.race([
-      getClarityProjectId(),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Get project ID timeout")), 5000)),
-    ]).catch((error) => {
-      logger.error("[ClarityService] Failed to get project ID:", error);
-      return null;
-    });
-
-    // 更新缓存
-    ClarityService.updateCache(projectId);
-
-    return projectId;
+    try {
+      const projectId = await withOperationTimeout(getClarityProjectId(), 5000, "Get project ID timeout");
+      ClarityService.updateCache(projectId);
+      return projectId;
+    } catch (error) {
+      // Preserve explicit environment fallback without caching an outage as a
+      // successful read; the next request must retry the authoritative store.
+      const fallback = process.env.CLARITY_PROJECT_ID?.trim();
+      if (fallback) {
+        logger.warn("[ClarityService] 配置读取失败，临时使用环境变量");
+        return fallback;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -586,14 +588,15 @@ export class ClarityService {
       }
 
       // 5. 获取旧值（用于历史记录，带超时）
-      const oldDoc = await Promise.race([
+      const oldDoc = await withOperationTimeout(
         ClaritySettingModel.findOne({ key: "CLARITY_PROJECT_ID" }).lean().maxTimeMS(5000).exec(),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000)),
-      ]);
+        10000,
+        "Query timeout",
+      );
       const oldValue = (oldDoc as any)?.value || null;
 
       // 6. 更新配置（带超时保护）
-      await Promise.race([
+      await withOperationTimeout(
         ClaritySettingModel.findOneAndUpdate(
           { key: "CLARITY_PROJECT_ID" },
           {
@@ -603,8 +606,9 @@ export class ClarityService {
           },
           { upsert: true, returnDocument: "after" },
         ).maxTimeMS(5000),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Update timeout")), 10000)),
-      ]);
+        10000,
+        "Update timeout",
+      );
 
       // 7. 记录历史
       const operation = oldValue ? "update" : "create";
@@ -699,17 +703,19 @@ export class ClarityService {
       }
 
       // 4. 获取旧值（用于历史记录，带超时）
-      const oldDoc = await Promise.race([
+      const oldDoc = await withOperationTimeout(
         ClaritySettingModel.findOne({ key: "CLARITY_PROJECT_ID" }).lean().maxTimeMS(5000).exec(),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000)),
-      ]);
+        10000,
+        "Query timeout",
+      );
       const oldValue = (oldDoc as any)?.value || null;
 
       // 5. 删除配置（带超时保护）
-      await Promise.race([
+      await withOperationTimeout(
         ClaritySettingModel.findOneAndDelete({ key: "CLARITY_PROJECT_ID" }).maxTimeMS(5000),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Delete timeout")), 10000)),
-      ]);
+        10000,
+        "Delete timeout",
+      );
 
       // 6. 记录历史
       await recordHistory("CLARITY_PROJECT_ID", oldValue, null, "delete", metadata);
@@ -768,15 +774,16 @@ export class ClarityService {
       const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100); // 1-100之间
 
       // 查询历史记录（带超时保护）
-      const history = await Promise.race([
+      const history = await withOperationTimeout(
         ClarityHistoryModel.find({ key: "CLARITY_PROJECT_ID" })
           .sort({ changedAt: -1 })
           .limit(safeLimit)
           .lean()
           .maxTimeMS(5000) // 5秒超时
           .exec(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000)),
-      ]);
+        10000,
+        "Query timeout",
+      );
 
       ClarityService.updateResponseTime(Date.now() - startTime);
 

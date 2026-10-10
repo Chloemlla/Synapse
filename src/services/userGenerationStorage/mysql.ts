@@ -4,11 +4,16 @@ import { requireMysqlUri } from "../../utils/mysqlUriPolicy";
 import { type GenerationRecord, isAdminUser as sharedIsAdminUser } from "./types";
 
 const TABLE = "user_generations";
+let pool: mysql.Pool | null = null;
+let tableReady: Promise<void> | null = null;
 
 async function getConn() {
-  // MYSQL_URI is mandatory when USER_GENERATION_STORAGE=mysql — no root/password default.
-  const conn = await mysql.createConnection(requireMysqlUri());
-  await conn.execute(`CREATE TABLE IF NOT EXISTS ${TABLE} (
+  const uri = requireMysqlUri();
+  pool ??= mysql.createPool({ uri, connectionLimit: 10, waitForConnections: true, queueLimit: 100 });
+  const conn = pool;
+  // Pool.execute releases its borrowed connection on both success and failure.
+  // A failed DDL is retryable, while concurrent first calls share one initialization.
+  tableReady ??= conn.execute(`CREATE TABLE IF NOT EXISTS ${TABLE} (
     id INT AUTO_INCREMENT PRIMARY KEY,
     userId VARCHAR(64),
     text TEXT,
@@ -19,7 +24,11 @@ async function getConn() {
     fileName VARCHAR(128),
     contentHash VARCHAR(128),
     timestamp DATETIME
-  )`);
+  )`).then(() => undefined).catch((error) => {
+    tableReady = null;
+    throw error;
+  });
+  await tableReady;
   return conn;
 }
 
@@ -35,12 +44,10 @@ export async function findDuplicateGeneration({
   if (contentHash) {
     const sql = `SELECT * FROM ${TABLE} WHERE userId=? AND contentHash=? LIMIT 1`;
     const [rows] = await conn.execute<RowDataPacket[]>(sql, [userId, contentHash]);
-    await conn.end();
     return rows?.[0] ? (rows[0] as GenerationRecord) : null;
   } else {
     const sql = `SELECT * FROM ${TABLE} WHERE userId=? AND text=? AND voice=? AND model=? LIMIT 1`;
     const [rows] = await conn.execute<RowDataPacket[]>(sql, [userId, text, voice || "", model || ""]);
-    await conn.end();
     return rows?.[0] ? (rows[0] as GenerationRecord) : null;
   }
 }
@@ -61,7 +68,6 @@ export async function addGenerationRecord(record: GenerationRecord): Promise<Gen
     new Date(),
   ]);
 
-  await conn.end();
   return record;
 }
 

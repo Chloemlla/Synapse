@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { runtimeMutableConfig } from "../config/config";
 import logger from "../utils/logger";
+import { sharedStateStore } from "./sharedStateStore";
 
 /**
  * Play Integrity 设备证明（`sml_` 令牌风控 P2 层）。
@@ -27,8 +28,7 @@ const PLAY_INTEGRITY_SCOPE = "https://www.googleapis.com/auth/playintegrity";
 /** access token 提前量：还剩不到这么久就重新换一次。 */
 const ACCESS_TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 
-/** 同时保留的未消费 nonce 上限，防止内存被刷爆。 */
-const MAX_PENDING_NONCES = 20_000;
+const NONCE_PREFIX = "mobile-integrity:nonce:";
 
 /**
  * 外部请求超时时长的静态有界区间。`cfg.timeoutMs` 来自运行时可变配置（超管配置面板可改），
@@ -101,8 +101,6 @@ interface AccessTokenCache {
   expiresAt: number;
 }
 
-/** nonceHash → 待消费记录。与 mobileLoginService 的扫码挑战同为进程内状态。 */
-const pendingNonces = new Map<string, PendingNonce>();
 let accessTokenCache: AccessTokenCache | null = null;
 
 function hashNonce(nonce: string): string {
@@ -138,35 +136,22 @@ export function getIntegrityPolicy(): IntegrityPolicy {
   };
 }
 
-function cleanupNonces(now: number): void {
-  for (const [key, record] of pendingNonces.entries()) {
-    if (record.expiresAt <= now) pendingNonces.delete(key);
-  }
-  if (pendingNonces.size <= MAX_PENDING_NONCES) return;
-
-  const ordered = [...pendingNonces.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
-  for (const [key] of ordered.slice(0, pendingNonces.size - MAX_PENDING_NONCES)) {
-    pendingNonces.delete(key);
-  }
-}
-
 /**
  * 签发一次性 nonce：客户端把它交给 Play Integrity SDK 换 integrity token，
  * 服务端在轮换时按 nonce 反查这次证明是"谁、为哪台设备"申请的。
  */
-export function issueIntegrityNonce(params: { userId: string; deviceId?: string }) {
+export async function issueIntegrityNonce(params: { userId: string; deviceId?: string }) {
   const now = Date.now();
-  cleanupNonces(now);
 
   const nonce = crypto.randomBytes(32).toString("base64url");
   const cfg = runtimeMutableConfig.mobileTokenIntegrity;
   const ttlMs = cfg.nonceTtlSeconds * 1000;
-  pendingNonces.set(hashNonce(nonce), {
+  await sharedStateStore.set(`${NONCE_PREFIX}${hashNonce(nonce)}`, {
     userId: params.userId,
     deviceId: params.deviceId,
     createdAt: now,
     expiresAt: now + ttlMs,
-  });
+  }, ttlMs);
 
   return {
     nonce,
@@ -179,11 +164,9 @@ export function issueIntegrityNonce(params: { userId: string; deviceId?: string 
 }
 
 /** nonce 一旦被用于一次校验就作废，无论校验成功与否，避免重放。 */
-function consumeNonce(nonce: string, params: { userId: string; deviceId?: string }): PendingNonce | null {
-  const key = hashNonce(nonce);
-  const record = pendingNonces.get(key);
+async function consumeNonce(nonce: string, params: { userId: string; deviceId?: string }): Promise<PendingNonce | null> {
+  const record = await sharedStateStore.consume<PendingNonce>(`${NONCE_PREFIX}${hashNonce(nonce)}`);
   if (!record) return null;
-  pendingNonces.delete(key);
 
   if (record.expiresAt <= Date.now()) return null;
   if (record.userId !== params.userId) return null;
@@ -444,7 +427,7 @@ export async function verifyClientIntegrity(params: {
   if (!integrityToken || !nonce) return notEvaluated("TOKEN_MISSING");
 
   // 先消费 nonce：无论后面的解码成功与否，这次 nonce 都不能再用第二次。
-  const record = consumeNonce(nonce, { userId: params.userId, deviceId: params.deviceId });
+  const record = await consumeNonce(nonce, { userId: params.userId, deviceId: params.deviceId });
   if (!record) return notEvaluated("NONCE_UNKNOWN");
 
   const payload = await decodeIntegrityToken(integrityToken);
@@ -500,7 +483,7 @@ export function logIntegrityVerdict(params: {
   });
 }
 
-export function resetIntegrityStateForTests(): void {
-  pendingNonces.clear();
+export async function resetIntegrityStateForTests(): Promise<void> {
+  await sharedStateStore.deleteByPrefix(NONCE_PREFIX);
   accessTokenCache = null;
 }

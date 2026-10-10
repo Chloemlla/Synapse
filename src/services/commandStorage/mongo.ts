@@ -1,5 +1,7 @@
 import { mongoose } from "../mongoService";
 import { normalizeCommandId, normalizeCommandText } from "./commandText";
+import { assertQueueCapacity } from "./queuePolicy";
+import { QUEUE_DB_TIMEOUT_MS, withCommandQueueLock } from "./mongoQueueLock";
 
 // 命令队列Schema
 const commandQueueSchema = new mongoose.Schema(
@@ -30,7 +32,7 @@ const CommandQueueModel = mongoose.models.CommandQueue || mongoose.model("Comman
 const ExecutionHistoryModel =
   mongoose.models.ExecutionHistory || mongoose.model("ExecutionHistory", executionHistorySchema);
 
-// 命令队列操作
+// Preserve the original authoritative collection during rolling deployments.
 export async function getCommandQueue() {
   const docs = await CommandQueueModel.find({ status: "pending" }).sort({ addedAt: 1 }).lean();
   return docs.map((d: any) => ({
@@ -46,10 +48,19 @@ export async function addToQueue(command: string) {
   const safeCommand = normalizeCommandText(command);
   if (!safeCommand) throw new Error("命令内容非法");
 
-  await CommandQueueModel.create({
-    commandId,
-    command: safeCommand,
-    status: "pending",
+  await withCommandQueueLock(async (assertLease) => {
+    const count = await CommandQueueModel.collection.countDocuments(
+      { status: "pending" },
+      { timeoutMS: QUEUE_DB_TIMEOUT_MS },
+    );
+    assertQueueCapacity(count);
+    await assertLease();
+    // Fixed validated fields reproduce schema defaults. The driver's operation
+    // timeout keeps the insert well inside the renewed lease, without a replica set.
+    await CommandQueueModel.collection.insertOne(
+      { commandId, command: safeCommand, status: "pending", addedAt: new Date() },
+      { timeoutMS: QUEUE_DB_TIMEOUT_MS },
+    );
   });
 
   return { commandId, command: safeCommand };

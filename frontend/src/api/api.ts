@@ -2,7 +2,6 @@ import axios, { AxiosHeaders, AxiosInstance, AxiosRequestConfig, AxiosResponse }
 import { reportFingerprintOnce } from '../utils/fingerprint';
 import {
     buildIpVerificationHeaders,
-    clearIpVerificationToken,
     emitIpVerificationRequired,
     isExemptPath,
 } from '../utils/ipVerification';
@@ -17,7 +16,7 @@ import { notifyCaptchaFailure } from '../utils/captchaRecovery';
 const getApiBaseUrl = () => {
     const configuredUrl = import.meta.env.VITE_API_URL?.trim();
     if (configuredUrl) {
-        return configuredUrl;
+        return configuredUrl.replace(/\/+$/, '');
     }
 
     if (import.meta.env.DEV) {
@@ -174,7 +173,8 @@ api.interceptors.response.use(
             if (pathname && isExemptPath(pathname)) {
                 return Promise.reject(error);
             }
-            clearIpVerificationToken();
+            // A delayed rejection must not delete a newer verification token.
+            // The session handshake decides whether the stored token is still valid.
             emitIpVerificationRequired(error.response.data);
             return Promise.reject(error);
         }

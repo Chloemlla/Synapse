@@ -214,11 +214,17 @@ async function processFile(
     scene: opts.scene,
   });
   let progress = -1;
+  const progressDeadline = Date.now() + Math.min(2 * 60 * 60 * 1000, Math.max(10 * 60 * 1000, meta.sliceNum * 30_000));
+  let invalidProgressCount = 0;
   while (progress !== 100) {
     throwIfCancelled(cb);
+    if (Date.now() >= progressDeadline) throw new Error('转写进度等待超时，请稍后重试');
     const progQuery = buildQuery(opts, String(Math.floor(Date.now() / 1000)), session.userId);
     const polled = parseResp(await doPost(opts, "/lasr/progress", progQuery, progBody, "application/json; charset=utf-8"));
-    progress = typeof polled.data.progress === "number" ? polled.data.progress : -1;
+    progress = typeof polled.data.progress === "number" && Number.isFinite(polled.data.progress) && polled.data.progress >= 0
+      ? polled.data.progress : -1;
+    invalidProgressCount = progress < 0 ? invalidProgressCount + 1 : 0;
+    if (invalidProgressCount >= 3) throw new Error('转写服务连续返回无效进度');
     cb.progress?.("progress", 44 + Math.round((Math.max(0, progress) / 100) * 50));
     log(`  进度: ${progress}%`);
     if (progress >= 100) break;

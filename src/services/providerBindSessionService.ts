@@ -11,10 +11,10 @@ import logger from "../utils/logger";
 import { type User, UserStorage } from "../utils/userStorage";
 import { issueTrackedLoginToken, type AuthSessionMetadata } from "./authSessionService";
 import { AccountSuspendedError } from "./providerAuthErrors";
+import { sharedStateStore } from "./sharedStateStore";
 
 const BIND_SESSION_TTL_MS = 5 * 60 * 1000;
-// G2-19: 容量上限，防内存无限增长。
-const MAX_BIND_SESSIONS = 5000;
+const BIND_SESSION_PREFIX = "provider-bind:session:";
 // 一个绑定会话允许的密码错误次数：只有 IP 级 loginLimiter 兜底时，
 // 拿到一个有 5 分钟有效期的 bind token（URL fragment）就能持续试密；
 // 计满即作废整个会话，逼攻击者重新走一遍第三方授权。
@@ -61,20 +61,8 @@ export interface ProviderBindConfirmResult extends Partial<ProviderLoginPayload>
   conflictReason?: string;
 }
 
-const providerBindSessions = new Map<string, ProviderBindSessionRecord>();
-
-function cleanupExpiredBindSessions(now = Date.now()): void {
-  for (const [token, record] of providerBindSessions.entries()) {
-    if (record.expiresAt <= now) {
-      providerBindSessions.delete(token);
-    }
-  }
-  if (providerBindSessions.size > MAX_BIND_SESSIONS) {
-    const ordered = [...providerBindSessions.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    for (const [token] of ordered.slice(0, providerBindSessions.size - MAX_BIND_SESSIONS)) {
-      providerBindSessions.delete(token);
-    }
-  }
+function sessionKey(token: string): string {
+  return `${BIND_SESSION_PREFIX}${crypto.createHash("sha256").update(token).digest("hex")}`;
 }
 
 function providerLabel(provider: AccountIdentityProvider): string {
@@ -114,26 +102,22 @@ async function toLoginPayload(
   };
 }
 
-export function issueProviderBindSession(profile: AccountProviderProfile): ProviderBindSessionView {
-  cleanupExpiredBindSessions();
-
+export async function issueProviderBindSession(profile: AccountProviderProfile): Promise<ProviderBindSessionView> {
   const token = crypto.randomBytes(32).toString("base64url");
   const record: ProviderBindSessionRecord = {
     profile,
     expiresAt: Date.now() + BIND_SESSION_TTL_MS,
     failedAttempts: 0,
   };
-  providerBindSessions.set(token, record);
+  await sharedStateStore.set(sessionKey(token), record, BIND_SESSION_TTL_MS);
 
   return toSessionView(token, record);
 }
 
-export function getProviderBindSessionView(sessionToken: string): ProviderBindSessionView | null {
-  cleanupExpiredBindSessions();
-
-  const record = providerBindSessions.get(sessionToken);
+export async function getProviderBindSessionView(sessionToken: string): Promise<ProviderBindSessionView | null> {
+  const record = await sharedStateStore.get<ProviderBindSessionRecord>(sessionKey(sessionToken));
   if (!record || record.expiresAt <= Date.now()) {
-    providerBindSessions.delete(sessionToken);
+    await sharedStateStore.delete(sessionKey(sessionToken));
     return null;
   }
 
@@ -186,86 +170,88 @@ export async function confirmProviderBindSession(params: {
   method?: string;
   requestId?: string;
 }): Promise<ProviderBindConfirmResult> {
-  cleanupExpiredBindSessions();
-
-  if (!params.acceptedTerms) {
-    throw new Error("请先同意服务条款、使用政策、服务专项条款和支持地区说明");
-  }
-
-  const record = providerBindSessions.get(params.sessionToken);
-  if (!record || record.expiresAt <= Date.now()) {
-    providerBindSessions.delete(params.sessionToken);
-    throw new Error("第三方登录绑定会话已过期，请返回登录页重试");
-  }
-
-  const identifier = typeof params.identifier === "string" ? params.identifier.trim() : "";
-  if (!identifier || !params.password) {
-    throw new Error("请输入已有账号和密码");
-  }
-
-  const user = await UserStorage.authenticateUser(identifier, params.password);
-  if (!user) {
-    record.failedAttempts = (record.failedAttempts || 0) + 1;
-    const remaining = MAX_BIND_PASSWORD_ATTEMPTS - record.failedAttempts;
-    if (remaining <= 0) {
-      providerBindSessions.delete(params.sessionToken);
-      throw new Error("密码尝试次数过多，请返回登录页重新发起第三方登录");
+  return sharedStateStore.withLock(`${sessionKey(params.sessionToken)}:lock`, 60_000, async () => {
+    if (!params.acceptedTerms) {
+      throw new Error("请先同意服务条款、使用政策、服务专项条款和支持地区说明");
     }
-    throw new Error(`用户名/邮箱或密码错误，还可尝试 ${remaining} 次`);
-  }
-  if ((user as any).accountStatus === "suspended") {
-    throw new AccountSuspendedError();
-  }
 
-  const bindResult = await bindProviderIdentityToUser({
-    targetUser: user,
-    profile: record.profile,
-    syncProfile: params.syncProfile,
-    actor: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      ip: params.clientIp || "unknown",
-      userAgent: params.userAgent,
-      path: params.path,
-      method: params.method,
-      requestId: params.requestId,
-    },
-  });
+    const record = await sharedStateStore.get<ProviderBindSessionRecord>(sessionKey(params.sessionToken));
+    if (!record || record.expiresAt <= Date.now()) {
+      await sharedStateStore.delete(sessionKey(params.sessionToken));
+      throw new Error("第三方登录绑定会话已过期，请返回登录页重试");
+    }
 
-  if (bindResult.status === "conflict") {
-    logger.warn("[ProviderBind] 绑定目标账号已有同提供商身份", {
-      userId: user.id,
-      provider: record.profile.provider,
+    const identifier = typeof params.identifier === "string" ? params.identifier.trim() : "";
+    if (!identifier || !params.password) {
+      throw new Error("请输入已有账号和密码");
+    }
+
+    const user = await UserStorage.authenticateUser(identifier, params.password);
+    if (!user) {
+      record.failedAttempts = (record.failedAttempts || 0) + 1;
+      const remaining = MAX_BIND_PASSWORD_ATTEMPTS - record.failedAttempts;
+      if (remaining <= 0) {
+        await sharedStateStore.delete(sessionKey(params.sessionToken));
+        throw new Error("密码尝试次数过多，请返回登录页重新发起第三方登录");
+      }
+      await sharedStateStore.set(sessionKey(params.sessionToken), record, Math.max(1, record.expiresAt - Date.now()));
+      throw new Error(`用户名/邮箱或密码错误，还可尝试 ${remaining} 次`);
+    }
+    if ((user as any).accountStatus === "suspended") {
+      throw new AccountSuspendedError();
+    }
+
+    const bindResult = await bindProviderIdentityToUser({
+      targetUser: user,
+      profile: record.profile,
+      syncProfile: params.syncProfile,
+      actor: {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        ip: params.clientIp || "unknown",
+        userAgent: params.userAgent,
+        path: params.path,
+        method: params.method,
+        requestId: params.requestId,
+      },
     });
+
+    if (bindResult.status === "conflict") {
+      logger.warn("[ProviderBind] 绑定目标账号已有同提供商身份", {
+        userId: user.id,
+        provider: record.profile.provider,
+      });
+      return {
+        success: true,
+        status: bindResult.status,
+        provider: record.profile.provider,
+        conflictReason: bindResult.conflictReason,
+      };
+    }
+
+    const consumed = await sharedStateStore.consume<ProviderBindSessionRecord>(sessionKey(params.sessionToken));
+    if (!consumed) throw new Error("第三方登录绑定会话已过期，请返回登录页重试");
+    const refreshedUser = (await UserStorage.getUserById(user.id)) || user;
+    const loginPayload = await createProviderLoginPayloadForUser(
+      refreshedUser,
+      record.profile.provider,
+      params.clientIp,
+      {
+        ipAddress: params.clientIp,
+        userAgent: params.userAgent,
+      },
+    );
+
     return {
       success: true,
       status: bindResult.status,
-      provider: record.profile.provider,
-      conflictReason: bindResult.conflictReason,
+      account: bindResult.account,
+      mergeToken: bindResult.mergeToken,
+      mergePreview: bindResult.mergePreview,
+      ...loginPayload,
     };
-  }
-
-  providerBindSessions.delete(params.sessionToken);
-  const refreshedUser = (await UserStorage.getUserById(user.id)) || user;
-  const loginPayload = await createProviderLoginPayloadForUser(
-    refreshedUser,
-    record.profile.provider,
-    params.clientIp,
-    {
-      ipAddress: params.clientIp,
-      userAgent: params.userAgent,
-    },
-  );
-
-  return {
-    success: true,
-    status: bindResult.status,
-    account: bindResult.account,
-    mergeToken: bindResult.mergeToken,
-    mergePreview: bindResult.mergePreview,
-    ...loginPayload,
-  };
+  });
 }
 
 export function buildProviderBindPageRedirect(frontendCallbackUrl: string, sessionToken: string): string {
@@ -277,6 +263,6 @@ export function buildProviderBindPageRedirect(frontendCallbackUrl: string, sessi
   return url.toString();
 }
 
-export function resetProviderBindSessionsForTests(): void {
-  providerBindSessions.clear();
+export async function resetProviderBindSessionsForTests(): Promise<void> {
+  await sharedStateStore.deleteByPrefix(BIND_SESSION_PREFIX);
 }

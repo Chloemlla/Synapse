@@ -182,19 +182,27 @@ export async function verifyEmailLogin(
       // Accept dev code
     } else {
       // 递增尝试次数，超过上限则作废该请求，防止验证码被暴力枚举
-      const attempts = (pending.attempts || 0) + 1;
-      if (attempts >= MAX_VERIFY_ATTEMPTS) {
+      const failed = await PendingLogin.findOneAndUpdate(
+        { _id: requestId },
+        { $inc: { attempts: 1 } },
+        { new: true },
+      ).exec();
+      if (!failed || failed.attempts >= MAX_VERIFY_ATTEMPTS) {
         await PendingLogin.deleteOne({ _id: requestId }).exec();
         throw ApiError.forbidden("Too many failed attempts", "too_many_attempts");
       }
-      await PendingLogin.updateOne({ _id: requestId }, { $inc: { attempts: 1 } }).exec();
       throw ApiError.forbidden("Invalid code", "invalid_login_code");
     }
   }
 
-  // Consume the pending login.
-  if (typeof requestId !== "string") throw ApiError.badRequest("Invalid requestId");
-  await PendingLogin.deleteOne({ _id: requestId }).exec();
+  // Only the request that atomically claims the still-valid code may issue a session.
+  const consumed = await PendingLogin.findOneAndDelete({
+    _id: requestId,
+    code: pending.code,
+    expiresAt: { $gt: new Date() },
+    $or: [{ attempts: { $lt: MAX_VERIFY_ATTEMPTS } }, { attempts: { $exists: false } }],
+  }).exec();
+  if (!consumed) throw ApiError.forbidden("Login request already used or expired", "invalid_login_code");
 
   // Upsert user.
   const now = Date.now();
@@ -243,18 +251,14 @@ export async function refreshSession(
 ) {
   if (typeof refreshToken !== "string") throw ApiError.unauthorized("Invalid refresh token");
 
-  const oldSession = await Session.findOne({ refreshToken }).exec();
+  const oldSession = await Session.findOneAndDelete({ refreshToken }).exec();
   if (!oldSession) {
     throw ApiError.unauthorized("Refresh token not found");
   }
 
   if (oldSession.refreshExpiresAt <= new Date()) {
-    await Session.deleteOne({ _id: oldSession._id }).exec();
     throw ApiError.unauthorized("Refresh token expired");
   }
-
-  // Delete the old session.
-  await Session.deleteOne({ _id: oldSession._id }).exec();
 
   // Optionally update device installation ID.
   if (deviceInstallationId) {

@@ -199,7 +199,7 @@ const BilibiliSyncAdmin: React.FC = () => {
     const active = records.filter(r => r.credentialStatus === 'active').length;
     const bound = records.filter(r => r.bilibiliUid).length;
     const withRecords = records.filter(r => r.searchRecords.length > 0).length;
-    return { total, active, bound, withRecords };
+    return { total, pageTotal: records.length, active, bound, withRecords };
   }, [records, pagination.total]);
 
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
@@ -265,19 +265,19 @@ const BilibiliSyncAdmin: React.FC = () => {
             <InfoMetricCard
               label="凭据有效"
               value={stats.active}
-              detail={`${stats.total > 0 ? ((stats.active / stats.total) * 100).toFixed(0) : 0}% 有效率`}
+              detail={`${stats.pageTotal > 0 ? ((stats.active / stats.pageTotal) * 100).toFixed(0) : 0}% 本页有效率`}
               icon={FaShieldAlt}
             />
             <InfoMetricCard
               label="已绑定 UID"
               value={stats.bound}
-              detail={`${stats.total > 0 ? ((stats.bound / stats.total) * 100).toFixed(0) : 0}% 绑定率`}
+              detail={`${stats.pageTotal > 0 ? ((stats.bound / stats.pageTotal) * 100).toFixed(0) : 0}% 本页绑定率`}
               icon={FaUserTag}
             />
             <InfoMetricCard
               label="有搜索记录"
               value={stats.withRecords}
-              detail={`${stats.total > 0 ? ((stats.withRecords / stats.total) * 100).toFixed(0) : 0}% 有活跃数据`}
+              detail={`${stats.pageTotal > 0 ? ((stats.withRecords / stats.pageTotal) * 100).toFixed(0) : 0}% 本页有活跃数据`}
               icon={FaHistory}
             />
           </div>

@@ -26,44 +26,21 @@ import { SINGLE_PASSKEY_ERROR_MESSAGE } from "./passkeyService";
 import { sendProviderGeneratedPasswordEmail } from "./providerCredentialEmailService";
 import { sendEmail } from "./emailSender";
 import { generatePasswordResetLinkEmailHtml } from "../templates/emailTemplates";
+import { sharedStateStore } from "./sharedStateStore";
 
 export const NEXAI_PASSKEY_UNKNOWN_CREDENTIAL_CODE = "unknown_credential";
 
-/** In-memory discoverable (usernameless) challenge store with TTL. */
+/** 跨实例的一次性 discoverable challenge，TTL 由共享存储清理。 */
 const DISCOVERABLE_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-// G2-19: 容量上限，防内存无限增长。
-const MAX_DISCOVERABLE_CHALLENGES = 5000;
-const discoverableChallenges = new Map<string, number>();
+const DISCOVERABLE_CHALLENGE_PREFIX = "nexai:discoverable:";
 
-function pruneDiscoverableChallenges(now = Date.now()): void {
-  for (const [challenge, createdAt] of discoverableChallenges.entries()) {
-    if (now - createdAt > DISCOVERABLE_CHALLENGE_TTL_MS) {
-      discoverableChallenges.delete(challenge);
-    }
-  }
-  if (discoverableChallenges.size > MAX_DISCOVERABLE_CHALLENGES) {
-    const ordered = [...discoverableChallenges.entries()].sort((a, b) => a[1] - b[1]);
-    for (const [challenge] of ordered.slice(0, discoverableChallenges.size - MAX_DISCOVERABLE_CHALLENGES)) {
-      discoverableChallenges.delete(challenge);
-    }
-  }
+async function storeDiscoverableChallenge(challenge: string): Promise<void> {
+  await sharedStateStore.set(`${DISCOVERABLE_CHALLENGE_PREFIX}${challenge}`, Date.now(), DISCOVERABLE_CHALLENGE_TTL_MS);
 }
 
-function storeDiscoverableChallenge(challenge: string): void {
-  const now = Date.now();
-  pruneDiscoverableChallenges(now);
-  discoverableChallenges.set(challenge, now);
-}
-
-function consumeDiscoverableChallenge(challenge: string): boolean {
-  const now = Date.now();
-  pruneDiscoverableChallenges(now);
-  const createdAt = discoverableChallenges.get(challenge);
-  if (createdAt === undefined) {
-    return false;
-  }
-  discoverableChallenges.delete(challenge);
-  return now - createdAt <= DISCOVERABLE_CHALLENGE_TTL_MS;
+async function consumeDiscoverableChallenge(challenge: string): Promise<boolean> {
+  const createdAt = await sharedStateStore.consume<number>(`${DISCOVERABLE_CHALLENGE_PREFIX}${challenge}`);
+  return createdAt !== null && Date.now() - createdAt <= DISCOVERABLE_CHALLENGE_TTL_MS;
 }
 
 
@@ -470,7 +447,6 @@ export class NexaiAuthService {
       await sendProviderGeneratedPasswordEmail({
         email: user.email,
         username: user.username,
-        password: systemPassword,
         providerLabel: "Google",
       });
 
@@ -635,7 +611,6 @@ export class NexaiAuthService {
       await sendProviderGeneratedPasswordEmail({
         email: user.email,
         username: user.username,
-        password: systemPassword,
         providerLabel: "GitHub",
       });
 
@@ -826,7 +801,7 @@ export class NexaiAuthService {
       userVerification: "preferred",
     });
 
-    storeDiscoverableChallenge(options.challenge);
+    await storeDiscoverableChallenge(options.challenge);
     return options;
   }
 
@@ -925,7 +900,7 @@ export class NexaiAuthService {
     if (!challenge || typeof challenge !== "string") {
       throw Object.assign(new Error("缺少 challenge"), { statusCode: 400 });
     }
-    if (!consumeDiscoverableChallenge(challenge)) {
+    if (!(await consumeDiscoverableChallenge(challenge))) {
       throw Object.assign(new Error("挑战不存在或已过期，请重试"), { statusCode: 400 });
     }
 

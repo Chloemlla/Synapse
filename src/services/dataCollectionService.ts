@@ -1,3 +1,4 @@
+import { withOperationTimeout } from "./withOperationTimeout";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -290,12 +291,7 @@ class DataCollectionService {
       logger.debug(`[DataCollection] Processing batch of ${batch.length} items`);
 
       // 执行批量写入（带超时保护）
-      await Promise.race([
-        this.executeBulkWrite(batch),
-        new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Batch write timeout")), 30000), // 30秒超时
-        ),
-      ]);
+      await withOperationTimeout(this.executeBulkWrite(batch), 30000, "Batch write timeout");
 
       // 更新统计
       const writeTime = Date.now() - startTime;
@@ -1177,12 +1173,7 @@ class DataCollectionService {
       } as any;
 
       // 添加超时保护
-      const created = (await Promise.race([
-        DataCollectionModel.create(doc),
-        new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("MongoDB write timeout")), 10000), // 10秒超时
-        ),
-      ])) as any;
+      const created = (await withOperationTimeout(DataCollectionModel.create(doc), 10000, "MongoDB write timeout")) as any;
 
       // 更新性能统计
       const writeTime = Date.now() - startTime;
@@ -1270,10 +1261,7 @@ class DataCollectionService {
       this.validate(data);
 
       // 智能预处理与分析（带超时保护）
-      const prepared = (await Promise.race([
-        this.prepareRecord(data),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Data preparation timeout")), 5000)),
-      ])) as any;
+      const prepared = (await withOperationTimeout(this.prepareRecord(data), 5000, "Data preparation timeout")) as any;
 
       if (mode === "file") {
         await this.saveToFile(prepared);

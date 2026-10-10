@@ -8,7 +8,7 @@ export interface IEntitlement {
   userId: string;
   source: string;
   productId: string;
-  purchaseToken: string;
+  purchaseToken?: string;
   tier: EntitlementTier;
   status: EntitlementStatus;
   purchasedAt: number;

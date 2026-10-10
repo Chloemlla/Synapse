@@ -313,7 +313,7 @@ function parseCIDR(cidr: string): { network: string; prefixLength: number; isIPv
     return null;
   }
 
-  const network = normalizeIP(parts[0]);
+  const network = normalizeIP(parts[0].trim());
   const prefixLength = parseInt(parts[1], 10);
 
   const ipType = isIP(network);
@@ -404,7 +404,7 @@ function isIPInCIDR(ip: string, cidr: string): boolean {
     // IPv4 CIDR匹配
     const ipInt = ipv4ToInt(normalizedIP);
     const networkInt = ipv4ToInt(network);
-    const mask = (0xffffffff << (32 - prefixLength)) >>> 0;
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
 
     result = (ipInt & mask) === (networkInt & mask);
   }

@@ -537,8 +537,8 @@ export class ShortUrlService {
             iv: iv.toString("base64"),
           } as any;
         } catch (encErr) {
-          logger.error("导出内容加密失败，返回未加密内容", encErr);
-          return { content, count: index };
+          logger.error("导出内容加密失败，已取消导出", encErr);
+          throw new Error("导出加密失败，请稍后重试");
         }
       }
 

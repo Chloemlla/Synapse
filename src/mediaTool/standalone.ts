@@ -5,7 +5,7 @@
 // 环境变量:
 //   MEDIA_TOOL_PORT   默认 4007        MEDIA_TOOL_HOST  默认 127.0.0.1
 //   MEDIA_TOOL_KEY    设置后必须携带 X-Media-Tool-Key 请求头(否则本机直通)
-//   MEDIA_TOOL_CORS   允许的来源(逗号分隔;默认全部,本地工具场景)
+//   MEDIA_TOOL_CORS   允许的来源(逗号分隔;默认仅本实例同源)
 //   MEDIA_TOOL_DIR    状态/设置/上传根(默认 <cwd>/data/media-tool-standalone)
 import crypto from "node:crypto";
 import path from "node:path";
@@ -18,6 +18,7 @@ import { createJsonTranscriptStore } from "./jobs/transcriptStore";
 import { ensureDir, resolveRootDir } from "./runtime";
 import { createJsonMediaSettingsStore } from "./settingsStore";
 import { createFileMediaCookiesStore, restoreBiliCookies } from "./biliCookies";
+import { isAllowedMediaToolOrigin } from './standaloneAccess';
 
 const port = parseInt(process.env.MEDIA_TOOL_PORT || "4007", 10) || 4007;
 const host = process.env.MEDIA_TOOL_HOST || "127.0.0.1";
@@ -27,6 +28,11 @@ const corsOrigins = (process.env.MEDIA_TOOL_CORS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const ownHost = host.includes(':') ? `[${host}]` : host;
+const allowedOrigins = corsOrigins.length ? corsOrigins : [`http://${ownHost}:${port}`];
+if (!corsOrigins.length && ['127.0.0.1', '::1', 'localhost'].includes(host)) {
+  allowedOrigins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`, `http://[::1]:${port}`);
+}
 
 ensureDir(dataDir);
 
@@ -62,10 +68,17 @@ const keyGuard: RequestHandler = (req: Request, res, next) => {
 
 const app = express();
 app.disable("x-powered-by");
+app.use((req, res, next) => {
+  if (!isAllowedMediaToolOrigin(req.get('origin'), allowedOrigins)) {
+    res.status(403).json({ ok: false, error: '此来源未获准访问本地媒体工具' });
+    return;
+  }
+  next();
+});
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || corsOrigins.length === 0 || corsOrigins.includes("*") || corsOrigins.includes(origin)) {
+      if (isAllowedMediaToolOrigin(origin, allowedOrigins)) {
         cb(null, true);
         return;
       }

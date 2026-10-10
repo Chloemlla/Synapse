@@ -323,6 +323,11 @@ export class WorkspaceService {
       );
 
       if (Number(result.modifiedCount || 0) === 0) {
+        // 入组条件可能在前置读取后变化；未写入成员时恢复仍有效的邀请。
+        await InvitationModel.updateOne(
+          { id: invitationId, status: "accepted", expiresAt: { $gt: new Date() } },
+          { $set: { status: "pending" } },
+        );
         throw new WorkspaceError(
           "加入工作空间失败：已是成员或成员数已达上限",
           WorkspaceErrorCodes.MEMBER_LIMIT_REACHED,

@@ -8,6 +8,7 @@ import { assessClientRisk, recordVerificationOutcome } from "./risk";
 import { generateUniqueTraceId, persistTurnstileTrace } from "./trace";
 import type { CapVerifyResponse } from "./types";
 import { validateConfigValue, validateToken } from "./validators";
+import { writeCaptchaKey } from "./keyStorage";
 
 export type CapConfigKey = "CAP_SITE_KEY" | "CAP_SECRET_KEY" | "CAP_API_ENDPOINT";
 
@@ -82,11 +83,7 @@ export async function updateCapConfig(key: CapConfigKey, value: string): Promise
 
     const storedValue = key === "CAP_API_ENDPOINT" ? sanitizeCapEndpoint(validatedValue) : validatedValue;
 
-    await CapSettingModel.findOneAndUpdate(
-      { key },
-      { key, value: storedValue, updatedAt: new Date() },
-      { upsert: true, returnDocument: "after" },
-    );
+    await writeCaptchaKey(CapSettingModel, key, storedValue);
     invalidateCapKeyCache(key);
 
     logger.info(`Cap 配置更新成功: ${key}`);
@@ -109,7 +106,7 @@ export async function deleteCapConfig(key: CapConfigKey): Promise<boolean> {
       return false;
     }
 
-    await CapSettingModel.findOneAndDelete({ key });
+    await CapSettingModel.deleteMany({ key });
     invalidateCapKeyCache(key);
     logger.info(`Cap 配置删除成功: ${key}`);
     return true;

@@ -114,22 +114,18 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
   const [loading, setLoading] = useState(false);
   const [busyIp, setBusyIp] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const requestRef = useRef(0);
 
   // 关键词防抖：输入每个字符都打一次接口既浪费 adminLimiter 配额，也让列表闪。
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedKeyword(keyword.trim()), 350);
+    const timer = setTimeout(() => {
+      if (keyword.trim() !== debouncedKeyword) {
+        setPage(1); setSelected([]); setDebouncedKeyword(keyword.trim());
+      }
+    }, 350);
     return () => clearTimeout(timer);
-  }, [keyword]);
+  }, [keyword, debouncedKeyword]);
 
-  // 筛选条件变化时回到第 1 页，否则会停在一个空页上；首次挂载保留 URL 里的页码。
-  const filtersMountedRef = useRef(false);
-  useEffect(() => {
-    if (!filtersMountedRef.current) {
-      filtersMountedRef.current = true;
-      return;
-    }
-    setPage(1);
-  }, [debouncedKeyword, status, sort, order, pageSize]);
 
   // 筛选/页码写入 URL（F4-18）。
   useEffect(() => {
@@ -144,6 +140,9 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
   }, [debouncedKeyword, order, page, pageSize, setSearchParams, sort, status]);
 
   const load = useCallback(async () => {
+    const request = ++requestRef.current;
+    setSelected([]);
+    setBans([]);
     setLoading(true);
     try {
       const result = await turnstileApi.listIPBans({
@@ -154,24 +153,28 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
         sort,
         order,
       });
+      if (request !== requestRef.current) return;
       setBans(result.bans);
       setTotal(result.total);
       if (result.summary) onSummaryRef.current?.(result.summary);
       setSelected((prev) => prev.filter((ip) => result.bans.some((ban) => ban.ipAddress === ip)));
     } catch (error) {
+      if (request !== requestRef.current) return;
       setNotification({ type: 'error', message: getBackendErrorMessage(error, '获取封禁名单失败') });
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) setLoading(false);
     }
   }, [debouncedKeyword, order, page, pageSize, setNotification, sort, status]);
 
   useEffect(() => {
     void load();
+    return () => { ++requestRef.current; };
   }, [load, reloadToken]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const toggleSort = (field: SortField) => {
+    ++requestRef.current; setPage(1); setSelected([]);
     if (sort === field) {
       setOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
       return;
@@ -301,7 +304,7 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
           <span className="mb-1 block text-xs font-semibold text-slate-600">状态</span>
           <select
             value={status}
-            onChange={(event) => setStatus(event.target.value as StatusFilter)}
+            onChange={(event) => { setStatus(event.target.value as StatusFilter); setPage(1); setSelected([]); ++requestRef.current; }}
             className={studioFieldClassName}
           >
             <option value="all">全部</option>
@@ -314,7 +317,7 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
           <span className="mb-1 block text-xs font-semibold text-slate-600">每页条数</span>
           <select
             value={pageSize}
-            onChange={(event) => setPageSize(Number(event.target.value))}
+            onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); setSelected([]); ++requestRef.current; }}
             className={studioFieldClassName}
           >
             {PAGE_SIZE_OPTIONS.map((size) => (

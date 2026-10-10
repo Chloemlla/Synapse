@@ -1,3 +1,4 @@
+import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { requireAdmin, requireSuperAdmin } from "./_helpers";
 import { schedulerService } from "../../services/schedulerService";
@@ -35,7 +36,7 @@ export async function syncIpBans(req: Request, res: Response) {
       res.status(500).json({ success: false, error: result.error || "同步失败" });
     }
   } catch (error) {
-    console.error("手动同步失败:", error);
+    logger.error("手动同步失败:", error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : "同步失败" });
   }
 }
@@ -70,7 +71,7 @@ export async function getSyncStatus(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error("获取同步状态失败:", error);
+    logger.error("获取同步状态失败:", error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : "获取状态失败" });
   }
 }

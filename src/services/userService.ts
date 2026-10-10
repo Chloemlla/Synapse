@@ -623,28 +623,41 @@ export const verifyAndMigrateUserPassword = async (
   return { valid: false, migrated: false, user: null };
 };
 
+export function getUserUsageDay(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(date);
+}
+
 export const incrementUserDailyUsageAtomic = async (
   id: string,
   dailyLimit: number,
 ): Promise<{ success: boolean; user: UserType | null }> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = getUserUsageDay();
   const now = new Date().toISOString();
 
   // G2-29: 单条 findOneAndUpdate + 聚合管道，一次完成「跨日判断 + 增量/重置 + 管理员豁免」。
   // 管理员通过 role 条件排除在本次更新外；并发请求在同一时刻只有一个能匹配并更新。
-  const todayPrefix = new RegExp(`^${today}`);
+  // lastUsageDate 保留真实 UTC 时间戳；读写都按上海自然日归桶。
+  const sameDay = { $eq: [
+    { $dateToString: {
+      date: { $convert: { input: "$lastUsageDate", to: "date", onError: null, onNull: null } },
+      format: "%Y-%m-%d", timezone: "Asia/Shanghai", onNull: "",
+    } },
+    today,
+  ] };
   const updated = await UserModel.findOneAndUpdate(
     {
       id,
       role: { $nin: ["admin", "superadmin"] },
-      $or: [{ lastUsageDate: { $not: todayPrefix } }, { dailyUsage: { $lt: dailyLimit } }],
+      $or: [{ $expr: { $not: [sameDay] } }, { dailyUsage: { $lt: dailyLimit } }],
     },
     [
       {
         $set: {
           dailyUsage: {
             $cond: [
-              { $regexMatch: { input: { $ifNull: ["$lastUsageDate", ""] }, regex: todayPrefix } },
+              sameDay,
               { $add: [{ $ifNull: ["$dailyUsage", 0] }, 1] },
               1,
             ],

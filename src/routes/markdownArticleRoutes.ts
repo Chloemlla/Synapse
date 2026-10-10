@@ -5,10 +5,11 @@ import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { adminLimiter } from "../middleware/routeLimiters";
 import { MarkdownArticleService, createArticleSlug } from "../services/markdownArticleService";
+import logger from "../utils/logger";
 
 const router = express.Router();
-const adminGuards = [adminLimiter, authenticateToken, authenticateAdmin] as const;
-const superAdminGuards = [adminLimiter, authenticateToken, authenticateSuperAdmin] as const;
+const adminGuards = [adminLimiter, authenticateToken, authenticateAdmin, requireAdminScope] as const;
+const superAdminGuards = [adminLimiter, authenticateToken, authenticateSuperAdmin, requireAdminScope] as const;
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "请求处理失败";
@@ -23,7 +24,8 @@ router.get("/", async (_req, res) => {
     const articles = await MarkdownArticleService.listPublished();
     res.json({ success: true, articles });
   } catch (error) {
-    res.status(500).json({ success: false, message: getErrorMessage(error) });
+    logger.error("[MarkdownArticle] 获取公开文章失败", error);
+    res.status(500).json({ success: false, message: "获取文章失败" });
   }
 });
 
@@ -32,7 +34,8 @@ router.get("/admin/all", ...adminGuards, async (_req, res) => {
     const articles = await MarkdownArticleService.listAdmin();
     res.json({ success: true, articles });
   } catch (error) {
-    res.status(500).json({ success: false, message: getErrorMessage(error) });
+    logger.error("[MarkdownArticle] 获取管理文章列表失败", error);
+    res.status(500).json({ success: false, message: "获取文章失败" });
   }
 });
 
@@ -44,7 +47,8 @@ router.get("/admin/:id", ...adminGuards, async (req, res) => {
     }
     res.json({ success: true, article });
   } catch (error) {
-    res.status(500).json({ success: false, message: getErrorMessage(error) });
+    logger.error("[MarkdownArticle] 获取管理文章失败", error);
+    res.status(500).json({ success: false, message: "获取文章失败" });
   }
 });
 
@@ -119,7 +123,8 @@ router.delete(
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: getErrorMessage(error) });
+    logger.error("[MarkdownArticle] 删除文章失败", error);
+    res.status(500).json({ success: false, message: "删除文章失败" });
   }
 });
 

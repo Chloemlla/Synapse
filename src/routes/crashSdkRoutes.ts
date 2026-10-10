@@ -2,6 +2,7 @@ import { Router } from "express";
 import { crashSdkLimiter } from "../middleware/routeLimiters.js";
 import { ApiError } from "../services/lumen/errors.js";
 import { recordCrashReport } from "../services/lumen/index.js";
+import logger from "../utils/logger";
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.post("/v1/crash-report", crashSdkLimiter, async (req, res) => {
       return;
     }
     // Best-effort: never surface a 500 to the SDK; the client ignores failures.
+    logger.warn("[CrashSdk] 上报失败", error);
     res.status(200).json({ accepted: false });
   }
 });

@@ -388,7 +388,6 @@ export class PasskeyService {
     if (!verified || !registrationInfo) {
       throw new Error("注册验证失败");
     }
-    console.log("registrationInfo:", registrationInfo);
     const { credential } = registrationInfo as any;
     if (!credential?.id || !credential.publicKey) {
       logger.error("注册信息不完整:", registrationInfo);
@@ -563,7 +562,6 @@ export class PasskeyService {
           transports: cred.transports,
           fullId: cred.id,
         })),
-        fullAllowCredentials: JSON.stringify(allowCredentials, null, 2),
       });
 
       const options = await generateAuthenticationOptions({
@@ -578,7 +576,6 @@ export class PasskeyService {
         optionsKeys: Object.keys(options || {}),
         challenge: `${options?.challenge?.substring(0, 20)}...`,
         allowCredentialsCount: options?.allowCredentials?.length || 0,
-        fullOptions: JSON.stringify(options, null, 2),
       });
 
       // 存储挑战到用户记录（G2-11: 带过期时间）

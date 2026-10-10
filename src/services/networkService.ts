@@ -3,6 +3,19 @@ import axios from "axios";
 import { config } from "../config/config";
 import logger from "../utils/logger";
 
+/** 只记录 cause 的诊断类型/错误码，避免把上游请求配置与凭据整块写入日志。 */
+export function describeNetworkError(error: unknown): Record<string, unknown> {
+  const outer = error as { message?: unknown; cause?: unknown } | null;
+  const cause = outer?.cause as { name?: unknown; code?: unknown } | null;
+  return {
+    message: error instanceof Error ? error.message : "未知错误",
+    ...(cause && typeof cause === "object" ? {
+      causeName: typeof cause.name === "string" ? cause.name : undefined,
+      causeCode: typeof cause.code === "string" ? cause.code : undefined,
+    } : {}),
+  };
+}
+
 export interface NetworkTestResponse {
   success: boolean;
   data?: any;
@@ -35,7 +48,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("TCP连接检测失败", { address, port, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("TCP连接检测失败", { address, port, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -79,7 +92,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("Ping检测失败", { url, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("Ping检测失败", { url, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -123,7 +136,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("网站测速失败", { url, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("网站测速失败", { url, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -167,7 +180,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("端口扫描失败", { address, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("端口扫描失败", { address, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -207,7 +220,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("精准IP查询失败", { ip, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("精准IP查询失败", { ip, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -247,7 +260,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("随机一言古诗词获取失败", { type, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("随机一言古诗词获取失败", { type, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -286,7 +299,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("抖音热榜获取失败", { error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("抖音热榜获取失败", { error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -320,7 +333,10 @@ export class NetworkService {
 
       logger.info("开始字符串Hash加密", { type, textLength: text.length });
 
-      const validTypes = ["md4", "md5", "sha1", "sha256", "sha512"];
+      if (type === "md4") {
+        return { success: false, error: "当前运行环境不支持 MD4，请选择其他算法" };
+      }
+      const validTypes = ["md5", "sha1", "sha256", "sha512"];
       if (!validTypes.includes(type)) {
         return {
           success: false,
@@ -331,10 +347,6 @@ export class NetworkService {
       let hash: string;
 
       switch (type) {
-        case "md4":
-          hash = createHash("md5").update(text).digest("hex");
-          logger.warn("MD4算法不可用，使用MD5替代", { originalType: type });
-          break;
         case "md5":
           hash = createHash("md5").update(text).digest("hex");
           break;
@@ -590,7 +602,7 @@ export class NetworkService {
         data: response.data,
       };
     } catch (error) {
-      logger.error("随机驾考题目获取失败", { subject, error: error instanceof Error ? error.message : "未知错误" });
+      logger.error("随机驾考题目获取失败", { subject, error: describeNetworkError(error) });
 
       if (axios.isAxiosError(error)) {
         if (error.response) {

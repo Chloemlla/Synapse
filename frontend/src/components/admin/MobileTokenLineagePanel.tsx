@@ -417,7 +417,7 @@ const ReuseTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
   );
 };
 
-const LineageTab: React.FC = () => {
+const LineageTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
   const reportError = useErrorNotice();
   const [lineageDraft, setLineageDraft] = useState('');
   const [userDraft, setUserDraft] = useState('');
@@ -427,9 +427,9 @@ const LineageTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
 
-  const search = useCallback(async () => {
-    const lineageId = lineageDraft.trim();
-    const userId = userDraft.trim();
+  const search = useCallback(async (submitted?: { lineageId: string; userId: string }) => {
+    const lineageId = submitted?.lineageId ?? lineageDraft.trim();
+    const userId = submitted?.userId ?? userDraft.trim();
     if (!lineageId && !userId) {
       setError('先填一个血缘 ID 或用户 ID。');
       return;
@@ -454,6 +454,13 @@ const LineageTab: React.FC = () => {
       if (requestId === requestRef.current) setLoading(false);
     }
   }, [lineageDraft, reportError, userDraft]);
+
+  const refreshRef = useRef({ query, search });
+  refreshRef.current = { query, search };
+  useEffect(() => {
+    const current = refreshRef.current;
+    if (current.query) void current.search(current.query);
+  }, [refreshNonce]);
 
   return (
     <div className="space-y-4">
@@ -694,7 +701,7 @@ const MobileTokenLineagePanel: React.FC = () => {
           <OverviewTab overview={overview} loading={overviewLoading} error={overviewError} />
         ) : null}
         {tab === 'reuse' ? <ReuseTab refreshNonce={refreshNonce} /> : null}
-        {tab === 'lineage' ? <LineageTab /> : null}
+        {tab === 'lineage' ? <LineageTab refreshNonce={refreshNonce} /> : null}
       </div>
     </InfoQueryShell>
   );

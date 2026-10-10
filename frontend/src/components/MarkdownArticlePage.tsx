@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getReadingScrollContainer } from './policy/readingScrollContainer';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, Clock, Copy, FileText, Image as ImageIcon, Menu, Share2, X } from 'lucide-react';
 import { markdownArticleApi, type MarkdownArticle, type MarkdownArticleSummary } from '../api/markdownArticles';
@@ -38,6 +39,7 @@ const MarkdownArticlePage: React.FC = () => {
   const [article, setArticle] = useState<MarkdownArticle | null>(null);
   const [articles, setArticles] = useState<MarkdownArticleSummary[]>([]);
   const [error, setError] = useState('');
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [readingProgress, setReadingProgress] = useState(0);
   const [activeHeading, setActiveHeading] = useState('');
@@ -90,17 +92,19 @@ const MarkdownArticlePage: React.FC = () => {
     return () => {
       alive = false;
     };
-  }, [slug]);
+  }, [slug, reloadNonce]);
 
   useEffect(() => {
     if (!slug || !article) return undefined;
 
-    let ticking = false;
-    let lastScrollY = window.scrollY;
+    const pane = getReadingScrollContainer();
+    const scrollTarget = pane ?? window;
+    let frame = 0;
+    let lastScrollY = pane ? pane.scrollTop : window.scrollY;
     const updateReadingState = () => {
-      ticking = false;
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      frame = 0;
+      const scrollTop = pane ? pane.scrollTop : window.scrollY || document.documentElement.scrollTop;
+      const maxScroll = Math.max(1, pane ? pane.scrollHeight - pane.clientHeight : document.documentElement.scrollHeight - window.innerHeight);
       setReadingProgress(Math.min(100, Math.max(0, (scrollTop / maxScroll) * 100)));
       setIsHeaderHidden(scrollTop > 120 && scrollTop > lastScrollY + 6);
       lastScrollY = scrollTop;
@@ -108,7 +112,7 @@ const MarkdownArticlePage: React.FC = () => {
       let current = headings[0]?.anchor || '';
       for (const heading of headings) {
         const element = document.getElementById(heading.anchor);
-        if (element && element.getBoundingClientRect().top <= 128) {
+        if (element && element.getBoundingClientRect().top <= (pane?.getBoundingClientRect().top ?? 0) + 128) {
           current = heading.anchor;
         }
       }
@@ -116,18 +120,16 @@ const MarkdownArticlePage: React.FC = () => {
     };
 
     const onScroll = () => {
-      if (!ticking) {
-        ticking = true;
-        window.requestAnimationFrame(updateReadingState);
-      }
+      if (!frame) frame = window.requestAnimationFrame(updateReadingState);
     };
 
     updateReadingState();
-    window.addEventListener('scroll', onScroll, { passive: true });
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      scrollTarget.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, [article, headings, slug]);
 
@@ -236,7 +238,10 @@ const MarkdownArticlePage: React.FC = () => {
           <h1 className="mt-5 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">文章</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">这里展示已发布的 Markdown 文章。</p>
         </header>
-        {articles.length === 0 ? (
+        {error && <div role="alert" className="mb-4 rounded-2xl bg-rose-50 p-4 text-rose-700">
+          <p>{error}</p><button type="button" onClick={() => setReloadNonce((value) => value + 1)}>重试</button>
+        </div>}
+        {articles.length === 0 && !error ? (
           <div className="rounded-2xl border border-slate-200 bg-white/90 p-8 text-center text-sm text-slate-500 shadow-sm">
             暂无已发布文章。
           </div>

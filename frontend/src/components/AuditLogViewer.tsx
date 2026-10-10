@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -120,6 +120,8 @@ const FALLBACK_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTI
 
 const AuditLogViewer: React.FC = () => {
   const { setNotification } = useNotification();
+  const logsRequestRef = useRef(0);
+  const statsRequestRef = useRef(0);
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -148,30 +150,37 @@ const AuditLogViewer: React.FC = () => {
   );
 
   const fetchLogs = useCallback(async (query: AuditLogQuery, nextPage: number, nextPageSize: number) => {
+    const request = ++logsRequestRef.current;
     setLoading(true);
     setLoadError(null);
     try {
       const response = await auditLogApi.query({ ...query, page: nextPage, pageSize: nextPageSize });
+      if (request !== logsRequestRef.current) return;
       setLogs(response.logs);
       setTotal(response.total);
       setPage(response.page);
       setExpandedId((current) => (response.logs.some((log) => log._id === current) ? current : null));
     } catch (error) {
+      if (request !== logsRequestRef.current) return;
       setNotification({
         message: getBackendErrorMessage(error, '获取审计日志失败'),
         type: 'error',
       });
       setLoadError(getBackendErrorMessage(error, '获取审计日志失败'));
     } finally {
-      setLoading(false);
+      if (request === logsRequestRef.current) setLoading(false);
     }
   }, [setNotification]);
 
   const fetchStats = useCallback(async (query: AuditLogQuery) => {
+    const request = ++statsRequestRef.current;
+    setStats(null);
     try {
       const response = await auditLogApi.getStats(query);
+      if (request !== statsRequestRef.current) return;
       setStats(response);
     } catch (error) {
+      if (request !== statsRequestRef.current) return;
       setNotification({
         message: getBackendErrorMessage(error, '获取审计统计失败'),
         type: 'error',
@@ -185,10 +194,12 @@ const AuditLogViewer: React.FC = () => {
 
   useEffect(() => {
     void fetchLogs(appliedFilters, page, pageSize);
+    return () => { logsRequestRef.current++; };
   }, [appliedFilters, fetchLogs, page, pageSize, queryVersion]);
 
   useEffect(() => {
     void fetchStats(appliedFilters);
+    return () => { statsRequestRef.current++; };
   }, [appliedFilters, fetchStats, queryVersion]);
 
   // 已应用的筛选与页码写入 URL，便于刷新与分享（F4-18）。

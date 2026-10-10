@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { BCRYPT_SALT_ROUNDS } from '../config/passwordPolicy';
 import {
   buildRuntimeConfigDefaults,
   cloneRuntimeConfigDefaults,
@@ -2637,7 +2638,7 @@ export class RuntimeConfigService {
     ): Promise<{ plain: string; hash: string }> => {
       if (typeof incoming === "string" && incoming.trim().length > 0) {
         const value = incoming.trim().slice(0, 1024);
-        return { plain: "", hash: await bcrypt.hash(value, 10) };
+        return { plain: "", hash: await bcrypt.hash(value, BCRYPT_SALT_ROUNDS) };
       }
       return { plain: currentPlain, hash: currentHash ?? "" };
     };

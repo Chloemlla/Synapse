@@ -87,25 +87,16 @@ class ImageDataService {
       };
       // Use a fresh string for the query key to avoid taint propagation
       const queryImageId = String(safeData.imageId);
-      const existing = await ImageDataModel.findOne({ imageId: queryImageId });
-      if (existing) {
-        // 更新现有记录
-        const _result = await ImageDataModel.updateOne(
-          { imageId: queryImageId },
-          {
-            $set: {
-              ...safeData,
-              updatedAt: new Date(),
-            },
-          },
-        );
-        return { ...record, ...safeData };
-      } else {
-        // 插入新记录
-        const newRecord = new ImageDataModel(record);
-        await newRecord.save();
-        return record;
-      }
+      const { imageId: _imageId, ...fields } = safeData;
+      const saved = await ImageDataModel.findOneAndUpdate(
+        { imageId: queryImageId },
+        {
+          $set: { ...fields, updatedAt: record.updatedAt },
+          $setOnInsert: { createdAt: record.createdAt },
+        },
+        { upsert: true, returnDocument: "after", runValidators: true },
+      );
+      return toImageDataRecord(saved);
     } catch (error) {
       console.error("❌ 图片数据记录失败:", error);
       throw error;

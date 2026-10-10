@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import * as os from 'node:os';
 import logger from "../utils/logger";
 
 // 优先使用环境变量 MONGO_URI，其次兼容 MONGODB_URI；未指定 database 时使用 MONGO_DB。
@@ -98,6 +99,9 @@ export const connectMongo = async () => {
 
       // 代理支持
       const mongooseOptions: MongoConnectOptions = {
+        // Keep driver client metadata valid in Jest's CJS VM, where its default
+        // dynamic import('os') adapter is unavailable (same as replica integration).
+        runtimeAdapters: { os },
         serverSelectionTimeoutMS: 5000, // 5秒超时
         socketTimeoutMS: 45000, // 45秒超时
         // 连接池优化配置

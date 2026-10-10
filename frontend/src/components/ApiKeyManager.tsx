@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -119,6 +119,7 @@ interface EditForm {
   permissions: string[];
   rateLimit: number;
   expiresInDays: number | '';
+  expiryChanged: boolean;
   enabled: boolean;
   billingEnabled: boolean;
   billingMode: BillingMode;
@@ -229,6 +230,8 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   const [eventsKey, setEventsKey] = useState<ApiKeyItem | null>(null);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const eventsRequestRef = useRef(0);
+  const eventsKeyRef = useRef<string | null>(null);
   const [adjustCredits, setAdjustCredits] = useState<number | ''>('');
   const [adjustReason, setAdjustReason] = useState('');
   const [adjusting, setAdjusting] = useState(false);
@@ -431,6 +434,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
       permissions: key.permissions.length > 0 ? key.permissions : ['status'],
       rateLimit: key.rateLimit,
       expiresInDays: daysUntil(key.expiresAt),
+      expiryChanged: false,
       enabled: key.enabled,
       billingEnabled: key.billingEnabled !== false,
       billingMode: key.billingMode || 'metered',
@@ -462,7 +466,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
           permissions: editForm.permissions,
           rateLimit: clampNumber(Number(editForm.rateLimit) || 60, 1, 1000),
           enabled: editForm.enabled,
-          expiresInDays: editForm.expiresInDays === '' ? null : editForm.expiresInDays,
+          ...(editForm.expiryChanged ? { expiresInDays: editForm.expiresInDays === '' ? null : editForm.expiresInDays } : {}),
           billingEnabled: editForm.billingEnabled,
           billingMode: editForm.billingMode,
         }),
@@ -478,16 +482,21 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   };
 
   const fetchBillingEvents = useCallback(async (key: ApiKeyItem) => {
+    const request = ++eventsRequestRef.current;
+    eventsKeyRef.current = key.keyId;
     setEventsKey(key);
+    setBillingEvents([]);
     setEventsLoading(true);
     try {
       const data = await apiJson<never>(`/api/apikeys/${key.keyId}/billing/events?limit=50`);
+      if (request !== eventsRequestRef.current) return;
       setBillingEvents(data.events || []);
     } catch (err) {
+      if (request !== eventsRequestRef.current) return;
       setBillingEvents([]);
       setNotification({ message: err instanceof Error ? err.message : '获取计费流水失败', type: 'error' });
     } finally {
-      setEventsLoading(false);
+      if (request === eventsRequestRef.current) setEventsLoading(false);
     }
   }, [setNotification]);
 
@@ -503,7 +512,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
       setAdjustCredits('');
       setAdjustReason('');
       await fetchKeys();
-      await fetchBillingEvents(eventsKey);
+      if (eventsKeyRef.current === eventsKey.keyId) await fetchBillingEvents(eventsKey);
     } catch (err) {
       setNotification({ message: err instanceof Error ? err.message : '调整失败', type: 'error' });
     } finally {
@@ -986,7 +995,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                   <div className="text-sm font-semibold text-slate-800">{eventsKey.name} 计费流水</div>
                   <div className="mt-1 font-mono text-xs text-slate-400">{eventsKey.keyId}</div>
                 </div>
-                <button onClick={() => setEventsKey(null)} className="inline-flex items-center justify-center rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <button onClick={() => { eventsRequestRef.current++; eventsKeyRef.current = null; setEventsKey(null); }} className="inline-flex items-center justify-center rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                   <FaTimes />
                 </button>
               </div>
@@ -1137,10 +1146,13 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                       <input
                         type="number"
+                        aria-label="重新设置有效期（天）；不修改则保留原到期时间"
+                        title="修改后从保存时起计算有效期；清空后永不过期"
                         value={editForm.expiresInDays}
                         onChange={(event) => setEditForm({
                           ...editForm,
                           expiresInDays: event.target.value === '' ? '' : clampNumber(Number(event.target.value) || 1, 1, 365),
+                          expiryChanged: true,
                         })}
                         placeholder="永不过期"
                         className="rounded-2xl border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"

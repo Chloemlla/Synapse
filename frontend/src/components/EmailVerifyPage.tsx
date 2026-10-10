@@ -28,8 +28,10 @@ export const EmailVerifyPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [retryVersion, setRetryVersion] = useState(0);
 
     useEffect(() => {
+        // 请求按 token 共享；卸载只取消本消费者，避免 StrictMode 重挂载消费同一链接两次。
         let active = true;
         let redirectTimer: ReturnType<typeof setTimeout> | undefined;
         setLoading(true);
@@ -48,14 +50,16 @@ export const EmailVerifyPage: React.FC = () => {
                 if (data.success) {
                     setSuccess(true);
                     setNotification({ message: data.message || '邮箱验证成功！', type: 'success' });
-                    redirectTimer = setTimeout(() => navigate('/login'), 3000);
+                    redirectTimer = setTimeout(() => {
+                        if (active) navigate('/login');
+                    }, 3000);
                 } else {
                     setError(data.error || '验证失败，请重试');
                     setNotification({ message: data.error || '验证失败', type: 'error' });
                 }
             } catch (err) {
                 if (!active) return;
-                const message = getBackendErrorMessage(err, '验证暂时失败，请刷新页面重试');
+                const message = getBackendErrorMessage(err, '验证暂时失败，请重试');
                 setError(message);
                 setNotification({ message, type: 'error' });
             } finally {
@@ -68,7 +72,7 @@ export const EmailVerifyPage: React.FC = () => {
             active = false;
             if (redirectTimer !== undefined) clearTimeout(redirectTimer);
         };
-    }, [token, navigate, setNotification]);
+    }, [token, retryVersion, navigate, setNotification]);
 
     return (
         <div className={authPageShellClassName}>
@@ -152,6 +156,15 @@ export const EmailVerifyPage: React.FC = () => {
                             </div>
 
                             <div className="space-y-3">
+                                {token && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRetryVersion(version => version + 1)}
+                                        className={authPrimaryButtonClassName}
+                                    >
+                                        重新验证
+                                    </button>
+                                )}
                                 <Link
                                     to="/register"
                                     className={cn(authPrimaryButtonClassName, 'hover:scale-105')}

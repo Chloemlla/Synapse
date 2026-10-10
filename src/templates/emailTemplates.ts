@@ -242,14 +242,14 @@ function formatChangeValue(field: string, value: string): string {
  * @param changeTime    变更时间
  * @param adminUsername 执行操作的管理员用户名
  * @param changes       变更列表 [{ field, oldValue, newValue }]
- * @param newPassword   可选，如果密码被修改则传入明文新密码
+ * @param passwordChanged 是否已修改密码；通知中不包含密码
  */
 export function generateAdminUserUpdatedEmailHtml(
   username: string,
   changeTime: string,
   adminUsername: string,
   changes: Array<{ field: string; oldValue: string; newValue: string }>,
-  newPassword?: string,
+  passwordChanged = false,
 ): string {
   const nonPasswordChanges = changes.filter((c) => c.field !== "password");
   const changeRows = nonPasswordChanges
@@ -282,25 +282,21 @@ export function generateAdminUserUpdatedEmailHtml(
   }
 
   let credentialsBlockHtml = "";
-  if (newPassword) {
+  if (passwordChanged) {
     credentialsBlockHtml = `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
         style="width:100%;margin-top:16px;border-collapse:separate;background-color:#FCE8E6;border-radius:8px;">
         <tr>
           <td style="padding:14px 16px;">
-            <div style="font-size:14px;line-height:20px;font-weight:600;color:#B3261E;margin:0 0 12px 0;">你的密码已被重置，请使用以下新凭据登录：</div>
+            <div style="font-size:14px;line-height:20px;font-weight:600;color:#B3261E;margin:0 0 12px 0;">你的密码已被管理员重置。请通过登录页的“忘记密码”设置新密码，或联系管理员。</div>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
               style="width:100%;border-collapse:separate;border:1px solid #DADCE0;border-radius:8px;overflow:hidden;background-color:#FFFFFF;">
               <tr>
                 <td width="38%" style="padding:14px 16px;border-bottom:1px solid #DADCE0;font-size:14px;color:#5F6368;">用户名</td>
                 <td style="padding:14px 16px;border-bottom:1px solid #DADCE0;font-size:14px;font-weight:500;color:#1F1F1F;">${escapeHtml(username)}</td>
               </tr>
-              <tr>
-                <td width="38%" style="padding:14px 16px;font-size:14px;color:#5F6368;">新密码</td>
-                <td style="padding:14px 16px;font-size:14px;font-weight:700;color:#1F1F1F;font-family:Consolas,'Courier New',monospace;letter-spacing:0.5px;word-break:break-all;">${escapeHtml(newPassword)}</td>
-              </tr>
             </table>
-            <div style="font-size:13px;line-height:18px;color:#B3261E;margin:12px 0 0 0;">请在登录后立即修改密码，不要将此密码分享给任何人。</div>
+            <div style="font-size:13px;line-height:18px;color:#B3261E;margin:12px 0 0 0;">如果这不是你预期的操作，请立即联系管理员。</div>
           </td>
         </tr>
       </table>`;

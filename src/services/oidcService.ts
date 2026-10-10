@@ -13,6 +13,8 @@ const DEFAULT_SIGNING_KEY_PATH = "secrets/signing_key.pem";
 const RSA_MODULUS_LENGTH = 2048;
 const RSA_PUBLIC_EXPONENT = 0x10001;
 const SIGNING_ALGORITHM = "RS256";
+// 固定 _id 由 Mongo 的主键唯一约束保护，首次部署无需等待额外索引建立。
+const SIGNING_KEY_SINGLETON_ID = "000000000000000000000001";
 
 export interface OidcSigningKeyMaterial {
   kid: string;
@@ -100,7 +102,7 @@ async function loadSigningKeyFromFile(): Promise<OidcSigningKeyMaterial | null> 
 async function loadSigningKeyFromDatabase(): Promise<OidcSigningKeyMaterial | null> {
   const doc = await OidcSigningKeyModel.findOne({ active: true })
     .select("+privateKeyPem")
-    .sort({ updatedAt: -1 })
+    .sort({ updatedAt: -1, _id: -1 })
     .lean();
   if (!doc) return null;
 
@@ -115,25 +117,31 @@ async function loadSigningKeyFromDatabase(): Promise<OidcSigningKeyMaterial | nu
 }
 
 /**
- * 单例文档 upsert：过滤条件就是 active 标志本身，因此最多只会存在一条 active 记录，
- * 重新生成密钥时是替换而不是追加。
+ * 首次生成只插入；并发输家必须采用数据库胜出的密钥，不能缓存自己的候选密钥。
  */
-async function persistSigningKey(material: OidcSigningKeyMaterial): Promise<void> {
+async function persistSigningKey(material: OidcSigningKeyMaterial): Promise<OidcSigningKeyMaterial> {
   const now = new Date();
-  await OidcSigningKeyModel.findOneAndUpdate(
-    { active: true },
-    {
-      $set: {
-        kid: material.kid,
-        privateKeyPem: material.privateKeyPem,
-        publicJwk: material.publicJwk,
-        active: true,
-        updatedAt: now,
+  try {
+    await OidcSigningKeyModel.findOneAndUpdate(
+      { _id: SIGNING_KEY_SINGLETON_ID },
+      {
+        $setOnInsert: {
+          kid: material.kid,
+          privateKeyPem: material.privateKeyPem,
+          publicJwk: material.publicJwk,
+          active: true,
+          updatedAt: now,
+          createdAt: now,
+        },
       },
-      $setOnInsert: { createdAt: now },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  } catch (error) {
+    if ((error as { code?: number })?.code !== 11000) throw error;
+  }
+  const winner = await loadSigningKeyFromDatabase();
+  if (!winner) throw new Error("[OIDC] 无法读取已持久化的签名密钥");
+  return winner;
 }
 
 async function generateSigningKey(): Promise<OidcSigningKeyMaterial> {
@@ -145,9 +153,9 @@ async function generateSigningKey(): Promise<OidcSigningKeyMaterial> {
   });
 
   const material = buildSigningKeyMaterial(privateKey);
-  await persistSigningKey(material);
-  logger.info("[OIDC] 已生成并持久化新的 id_token 签名密钥", { kid: material.kid });
-  return material;
+  const persisted = await persistSigningKey(material);
+  logger.info("[OIDC] 已取得持久化的 id_token 签名密钥", { kid: persisted.kid });
+  return persisted;
 }
 
 async function resolveSigningKey(): Promise<OidcSigningKeyMaterial> {

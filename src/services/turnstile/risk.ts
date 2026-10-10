@@ -1,5 +1,6 @@
 import logger from "../../utils/logger";
 import type { RiskAssessmentDetail } from "./types";
+import { isLocalCaptchaIp } from "./localIp";
 
 export function assessClientRisk(ip: string, userAgent?: string, fingerprint?: string): RiskAssessmentDetail {
   const reasons: string[] = [];
@@ -14,13 +15,7 @@ export function assessClientRisk(ip: string, userAgent?: string, fingerprint?: s
     userAgentSkipped: false,
   };
 
-  if (
-    ip === "127.0.0.1" ||
-    ip === "::1" ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("10.") ||
-    ip.startsWith("172.")
-  ) {
+  if (isLocalCaptchaIp(ip)) {
     scoreBreakdown.ipScore = 0.05;
     scoreBreakdown.ipType = "local";
     score += 0.05;

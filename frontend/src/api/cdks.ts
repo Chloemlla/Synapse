@@ -101,7 +101,7 @@ export const cdksApi = {
   },
 
   // 更新CDK
-  updateCDK: async (id: string, cdk: Partial<CDK>): Promise<CDK> => {
+  updateCDK: async (id: string, cdk: Omit<Partial<CDK>, 'expiresAt'> & { expiresAt?: Date | null }): Promise<CDK> => {
     const response = await api.put(`${getApiBaseUrl()}/api/cdks/${id}`, cdk);
     return response.data;
   },
