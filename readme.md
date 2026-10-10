@@ -99,7 +99,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 人机验证 | 三家供应商（Turnstile / hCaptcha / trycap）统一下发链路，可按场景配置权重、优先级、粘性、灰度与月度额度，控件加载失败自动换家 | `ManagedCaptcha`, `CaptchaVerificationPage`, `HCaptchaWidget`, `TurnstileWidget`, `CapWidget` |
 | 安全会话 | 查看密钥 / 命令执行 / 双因素配置 / 第三方绑定共用一次强验证（密码 / TOTP / Passkey），TTL 内可复用 | `utils/securitySession.ts`, `EstablishSecuritySession` |
 | 主密钥派生 | 单一 `AES_KEY` 经 HKDF-SHA256 派生 JWT 签名、密码 KEK、令牌与内部签名密钥，旧 env 与存量密文双接受 | `config/keyDerivation.ts` |
-| 政策同意 | 登录/注册/TTS 逐项勾选，条文指纹留痕，用户端可查看与撤回，管理端只读审计 | `policyRoutes`, `PolicyConsentChecklist`, `PolicyConsentPanel` |
+| 政策同意 | 登录/注册/TTS 逐项勾选，条文指纹留痕，用户端可查看与撤回，管理端只读审计；**具体功能按用户自己的同意放行**（见下方「按同意开放功能」） | `policyRoutes`, `policyConsentChecklist`, `featureConsent` |
 | 首次访问检测 | 新设备/浏览器首次访问验证 | `FirstVisitVerification` |
 | IP 风险检测 | proxycheck.io IP 风险评分与自动阻断（出口探测 + HMAC 验签 + WebRTC 泄露自判） | `ip-risk` 服务、`IP 风险缓存页` |
 | 指纹采集 | 浏览器指纹识别与追踪 | `FingerprintManager`, `FingerprintRequestModal` |
@@ -229,7 +229,8 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 - **参考样式模板**：可上传自己的参考样式文档，也可在页面上一键生成默认模板；**表格框线与中文字体等样式由该参考样式文档统一决定**，改一处即可全量生效
 - **目录结构保留**：递归收集子目录，产物按相同的相对目录结构落盘
 - **结果可追溯**：成功 / 跳过 / 失败逐条明细，附一份可下载的转换报告
-- **打包下载**：一次把本次成功产物打包成 zip 取回
+- **打包下载**：一次把本次成功产物打包成 zip 取回；文件列表里已有的产物也能逐个下载或一次打包（不必为拿回旧文档重跑一次）
+- **默认参考样式**：仓库自带一份可用的参考样式文档（`src/assets/doc-tool/reference.docx`），用户不选模板时就用它——表格框线与中英文字体开箱即用，不用先理解 pandoc 的样式文档
 - **失败重试**：只重跑失败那几项，不必整批重来
 - **选项记忆**：上次用过的选项（策略 / 输出方式 / 是否递归 / 参考样式）下次打开自动带出
 - **产物自动过期**：过期产物按保留天数自动清理
@@ -242,6 +243,15 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 外部依赖 | 镜像内置 pandoc（见 `Dockerfile`）；pandoc 不可用时页面给出明确提示而非静默失败 |
 
 限额与目录由环境变量维护（详见 `.env.example` 的「Markdown → Word 批量转换（doc-tool）」一节）：`DOC_TOOL_WORK_DIR`、`DOC_TOOL_PANDOC_BIN`、`DOC_TOOL_MAX_UPLOAD_BYTES`、`DOC_TOOL_MAX_FILE_BYTES`、`DOC_TOOL_MAX_FILES_PER_JOB`、`DOC_TOOL_MAX_ACTIVE_JOBS`、`DOC_TOOL_RETENTION_DAYS`。
+
+#### 按同意开放功能（feature consent gate）
+
+需要处理用户内容或涉及账号/第三方处理的功能，**按用户自己勾选的政策文件放行**：没勾完就在页面上先同意再继续，后台对同一功能也会拒绝（前端拦不等于后端就不管）。
+
+- **按人不按设备**：同意记录绑到用户 id（不再只绑设备指纹）——同一台设备上换个账号不能蹭到上一位用户的同意；撤销同意后同一用户**立即**失去访问（门禁刻意不做进程缓存）。
+- **按义务挂文件，不是“一律四份”**：上传并服务端处理（文档转换、图片、音频转写）要 `usage` + `specific-terms`；对外发布（IPFS 图床、短链）要 `usage` + `specific-terms`；交第三方处理（TTS、翻译）同样两份；账号/凭据/开放接口与配额（API Key、OAuth、CDK）要 `terms` + `specific-terms`；采集上报个人数据（数据上报）要 `terms` + `specific-terms`。映射表与依据（含路由证据）在 `src/config/featureConsent.ts`，加新功能只需在那里加一行并在目标路由挂 `requireFeatureConsent("<key>")`。
+- **被拦时给得出路**：后端返回稳定 `code: POLICY_CONSENT_REQUIRED` 与缺失的条款清单，页面据此弹同意清单（复用登录/注册那套勾选组件），同意后自动放行，不必重进页面。
+- **不设门禁的功能就不加**：纯本地/无个人数据的工具（计算器、大小写转换等）不挂门禁——过度门禁会把「需要同意」这句话的意思稀释掉。
 
 #### 生活工具
 | 工具 | 说明 | 前端路由 |
@@ -1843,7 +1853,11 @@ docker-compose up -d
 - 修正合并后的引用与共享密码策略
 
 #### 10-10
+- 新增「按同意开放功能」（feature consent gate）：需要处理用户内容或涉及账号/第三方处理的功能，按**用户自己**勾选的政策文件放行；同意记录新增 `userId`，同一设备换账号不再能蹭到上一位用户的同意，撤销同意后立即收回访问（门禁不做缓存）
+- 功能与政策的对应关系按义务分五类落在 `src/config/featureConsent.ts`（上传处理 / 对外发布 / 交第三方 / 账号与开放接口 / 个人数据上报，共 10 个功能键，各带依据与路由证据），并加配置自检测试防映射静默漂移；被拦时返回稳定 `code: POLICY_CONSENT_REQUIRED` + 缺失条款清单，页面弹出同意清单，同意后自动放行；纯本地工具不挂门禁
 - 新增「Markdown → Word 批量转换」实用工具（`/doc-convert`，也可在 `/markdown-export` 页切「批量」模式）：一次上传多个 `.md`（或整个文件夹，保留子目录结构），服务端用 pandoc 批量转换，带逐文件进度、成功 / 跳过 / 失败统计、可下载的转换报告、成功产物打包 zip 下载与「只重试失败项」
+- 转换完成的文档可直接取回：结果列表逐条下载，文件列表里已有的产物也能逐个下载或一次打包（重命名模式下拿的是磁盘上现存那份，不必先重转）
+- 仓库自带默认参考样式文档（`src/assets/doc-tool/reference.docx`，随构建进 `dist/assets/`）：用户没选模板时用它，表格框线与中英文字体开箱即用；也可在页面上生成自己的模板或 `DOC_TOOL_DEFAULT_REFERENCE_DOC` 指定/关闭
 - 同名产物冲突三选一：跳过 / **自动另存为 `xxx (2).docx`（默认，旧文件一字不改）** / 覆盖；参考样式模板可一键生成，表格框线与中文字体由它一处统一；上传文件与产物按用户隔离，并按保留天数自动过期
 - 镜像内置 pandoc：与 yt-dlp 同思路取上游官方静态二进制（默认跟随上游最新 release，也可 `--build-arg PANDOC_VERSION=<x>` 钉版本；构建期 `pandoc --version` 自证），不走 `apk add pandoc`（仓库版本滞后且会拉入整套 GHC 依赖树）
 - 短链新增「近期热门查询」缓存：1 小时内查询超过 3 次的短链写进 Redis，后续跳转直接命中缓存、不再打库；删除短链（含管理端批量删除与清库）同步失效缓存；未配置 Redis 时自动退化为原行为
