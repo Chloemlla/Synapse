@@ -18,6 +18,11 @@ import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useNotification } from './Notification';
 import { PenaltyAppealActions } from './PenaltyAppealActions';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioPageFont,
+} from './studioTheme';
 
 const TurnstileWidget = lazy(() =>
   import('./TurnstileWidget').then((module) => ({ default: module.TurnstileWidget })),
@@ -78,7 +83,7 @@ const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
             <span
               aria-hidden="true"
               className={`absolute left-[13px] top-7 h-[calc(100%-1.25rem)] w-px ${
-                done ? 'bg-[#8fce9f]' : 'bg-[#e2e8f0]'
+                done ? 'bg-emerald-400' : 'bg-slate-200'
               }`}
             />
           )}
@@ -86,10 +91,10 @@ const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
             aria-hidden="true"
             className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] transition-colors ${
               done
-                ? 'border-[#bfe3cd] bg-[#eef9f1] text-[#2f7a4b]'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
                 : current
-                  ? 'border-[#ffd0b4] bg-[#fff4ef] text-[#f48120]'
-                  : 'border-[#e6ebf2] bg-white text-[#a7b2c0]'
+                  ? 'border-amber-200 bg-amber-50 text-amber-600'
+                  : 'border-slate-200 bg-white text-slate-400'
             }`}
           >
             {done ? <FaCheck /> : <Icon />}
@@ -97,12 +102,12 @@ const ReviewSteps: React.FC<{ activeIndex: number }> = ({ activeIndex }) => (
           <span
             aria-current={current ? 'step' : undefined}
             className={`pt-1 text-xs font-semibold tracking-[0.02em] ${
-              done ? 'text-[#2f7a4b]' : current ? 'text-[#1d2735]' : 'text-[#9aa5b1]'
+              done ? 'text-emerald-600' : current ? 'text-slate-900' : 'text-slate-400'
             }`}
           >
             {step.label}
-            {current && <span className="ml-2 font-medium text-[#f48120]">进行中</span>}
-            {done && <span className="ml-2 font-medium text-[#2f7a4b]">已完成</span>}
+            {current && <span className="ml-2 font-medium text-amber-600">进行中</span>}
+            {done && <span className="ml-2 font-medium text-emerald-600">已完成</span>}
           </span>
         </li>
       );
@@ -115,8 +120,8 @@ const MetaRow: React.FC<{ Icon: React.ComponentType<{ className?: string }>; lab
   label,
   children,
 }) => (
-  <div className="rounded-2xl border border-[#eaeef5] bg-white px-4 py-3">
-    <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b97a6]">
+  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+    <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
       <Icon className="h-3 w-3" />
       {label}
     </p>
@@ -424,7 +429,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   }, [fingerprint]);
 
   const shell = (children: React.ReactNode) => (
-    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[#f4f6fa]">
+    <div className={`fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-slate-50 ${studioPageFont}`}>
       {/* 均匀网格铺满整屏：不再用圆形遮罩，避免出现一圈巨大的"圆盘" */}
       <div
         className="pointer-events-none fixed inset-0 opacity-60"
@@ -434,11 +439,9 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           backgroundSize: '34px 34px',
         }}
       />
-      <div
-        className="pointer-events-none fixed inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(244,129,32,0.09),transparent)]"
-        aria-hidden="true"
-      />
-      <div className="pointer-events-none fixed inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(244,129,32,0.55),transparent)]" />
+      {/* RC-49：台上光源改成与首页同一组 studio 光斑（不再自造橙色渐变） */}
+      <div className={`${studioAccentBlobBlueClassName} -top-20 left-1/4`} aria-hidden="true" />
+      <div className={`${studioAccentBlobSkyClassName} -top-8 right-1/4`} aria-hidden="true" />
       <div className="relative flex min-h-full items-center justify-center px-4 py-10 sm:px-6 sm:py-14">
         {children}
       </div>
@@ -451,33 +454,33 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: 'easeOut' }}
-        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-[#e3e9f2] bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)]"
+        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)]"
       >
-        <div className="flex items-center gap-3 border-b border-[#eef2f7] bg-[#fff8f4] px-6 py-6 sm:px-8">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#ffd6c2] bg-white text-lg text-[#e0562b]">
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-6 py-6 sm:px-8">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white text-lg text-rose-600">
             <FaBan />
           </span>
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#e0562b]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-600">
               安全检查
             </p>
-            <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#1d2735] sm:text-2xl">
+            <h1 className="text-xl font-semibold tracking-[-0.02em] text-slate-900 sm:text-2xl">
               访问暂时受限
             </h1>
           </div>
         </div>
 
-        <div className="space-y-4 px-6 py-6 text-sm leading-6 text-[#526071] sm:px-8 sm:py-7">
+        <div className="space-y-4 px-6 py-6 text-sm leading-6 text-slate-600 sm:px-8 sm:py-7">
           <p>{banState.reason || '该 IP 因异常流量频繁触发限制，当前暂不可访问。'}</p>
           {banState.expiresAt && (
-            <div className="flex items-center gap-2.5 rounded-2xl border border-[#e7ecf3] bg-[#f8fafc] px-4 py-3 text-[#2c3948]">
-              <FaClock className="h-3.5 w-3.5 text-[#8b97a6]" />
+            <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-800">
+              <FaClock className="h-3.5 w-3.5 text-slate-500" />
               <span>{banState.expiresAt.toLocaleString()} 后可重试</span>
             </div>
           )}
           {clientIP && clientIP !== 'unknown' && (
             <MetaRow Icon={FaGlobe} label="IP 地址">
-              <p className="font-mono text-xs text-[#334155]">{clientIP}</p>
+              <p className="font-mono text-xs text-slate-700">{clientIP}</p>
             </MetaRow>
           )}
           {/* mailOnly：被拦截期间工单接口同样不可达，只给管理员支持邮箱（组件内带 mailto 预填）。 */}
@@ -494,44 +497,44 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   }
 
   const statusPill = isVerified
-    ? { className: 'border-[#bfe3cd] bg-[#eef9f1] text-[#2f7a4b]', label: '验证已通过' }
-    : { className: 'border-[#ffd9c8] bg-[#fff4ef] text-[#f48120]', label: '待验证' };
+    ? { className: 'border-emerald-200 bg-emerald-50 text-emerald-600', label: '验证已通过' }
+    : { className: 'border-amber-200 bg-amber-50 text-amber-600', label: '待验证' };
 
   return shell(
     <m.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.34, ease: 'easeOut' }}
-      className="relative w-full max-w-[880px] overflow-hidden rounded-3xl border border-[#e3e9f2] bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)] xl:max-w-[1000px]"
+      className="relative w-full max-w-[880px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)] xl:max-w-[1000px]"
     >
       <div className="grid md:grid-cols-[1.15fr_0.85fr]">
         <div className="px-5 py-7 sm:px-8 sm:py-9 md:px-10 md:py-11">
           <div className="flex items-center gap-3.5">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f48120] text-lg text-white shadow-[0_12px_24px_-10px_rgba(244,129,32,0.85)]">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-lg text-white shadow-sm">
               <FaShieldAlt />
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#f48120]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-600">
                 流量审查
               </p>
-              <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-[#1d2735] sm:text-[28px]">
+              <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[28px]">
                 正在检查您的浏览器
               </h1>
             </div>
           </div>
 
-          <p className="mt-5 text-sm leading-6 text-[#526071]">
+          <p className="mt-5 text-sm leading-6 text-slate-600">
             在继续访问前需要完成一次快速安全验证。完成下方的挑战后即可直接返回站点。
           </p>
 
-          <div className="mt-6 rounded-2xl border border-[#eceff4] bg-[#fbfcfe] px-5 py-5">
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5">
             <div className="flex items-center gap-3">
-              <Spinner className="h-5 w-5 text-[#f48120]" reducedMotion={reducedMotion} />
+              <Spinner className="h-5 w-5 text-amber-600" reducedMotion={reducedMotion} />
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#253140]">
+                <p className="text-sm font-semibold text-slate-800">
                   {isVerified ? '验证已通过' : '审查进行中'}
                 </p>
-                <p className="text-xs text-[#7b8796]">
+                <p className="text-xs text-slate-500">
                   一次性检查 · 已绑定当前浏览器与网络
                 </p>
               </div>
@@ -539,9 +542,9 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             <ReviewSteps activeIndex={reviewStepIndex} />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-[#eceff4] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[#253140]">完成安全验证</p>
+              <p className="text-sm font-semibold text-slate-800">完成安全验证</p>
               <AnimatePresence mode="wait" initial={false}>
                 <m.span
                   key={statusPill.label}
@@ -558,19 +561,19 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
             <div className="mt-4">
               {secureSelectionLoading ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-[#eceff4] bg-[#fbfcfe] px-5 py-6 text-sm text-[#637082]">
-                  <Spinner className="h-4 w-4 text-[#94a3b8]" reducedMotion={reducedMotion} />
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-6 text-sm text-slate-500">
+                  <Spinner className="h-4 w-4 text-slate-400" reducedMotion={reducedMotion} />
                   正在加载验证服务…
                 </div>
               ) : configError ? (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-[#f4d2c7] bg-[#fff5f1] px-4 py-4 text-sm text-[#a34516]">
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700">
                     {configError}
                   </div>
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-[#1d2735] px-4 py-3 text-sm font-semibold text-[#1d2735] transition hover:bg-[#1d2735] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-900 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
                   >
                     <FaRedo className="h-3.5 w-3.5" />
                     重新加载页面
@@ -579,17 +582,15 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
               ) : (
                 <>
                   <m.div
-                    animate={{
-                      borderColor: isVerified ? '#bfe3cd' : '#dfe5ee',
-                      backgroundColor: isVerified ? '#f5fbf7' : '#ffffff',
-                    }}
                     transition={{ duration: 0.25 }}
-                    className="flex min-h-[86px] items-center justify-center rounded-2xl border border-dashed px-4 py-4"
+                    className={`flex min-h-[86px] items-center justify-center rounded-2xl border border-dashed px-4 py-4 transition-colors duration-200 ${
+                      isVerified ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'
+                    }`}
                   >
                     <Suspense
                       fallback={
                         <div className="flex h-[78px] w-full items-center justify-center">
-                          <Spinner className="h-5 w-5 text-[#c3ccd8]" reducedMotion={reducedMotion} />
+                          <Spinner className="h-5 w-5 text-slate-400" reducedMotion={reducedMotion} />
                         </div>
                       }
                     >
@@ -639,7 +640,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                         className="overflow-hidden"
                         role="alert"
                       >
-                        <div className="mt-4 rounded-2xl border border-[#f4d2c7] bg-[#fff5f1] px-4 py-3 text-sm text-[#a34516]">
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                           {error}
                         </div>
                       </m.div>
@@ -652,10 +653,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                       onClick={handleVerify}
                       disabled={!isVerified || verifying}
                       whileTap={reducedMotion || !isVerified || verifying ? undefined : { scale: 0.985 }}
-                      className={`flex flex-1 items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f48120]/45 focus-visible:ring-offset-2 ${
+                      className={`flex flex-1 items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/45 focus-visible:ring-offset-2 ${
                         !isVerified || verifying
-                          ? 'cursor-not-allowed bg-[#e9edf3] text-[#9aa5b1]'
-                          : 'bg-[#f48120] text-white shadow-[0_18px_30px_-12px_rgba(244,129,32,0.75)] hover:bg-[#de6f12]'
+                          ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                          : 'bg-slate-900 text-white shadow-sm hover:bg-slate-800'
                       }`}
                       aria-busy={verifying}
                     >
@@ -679,7 +680,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                         resetChallenge();
                       }}
                       disabled={verifying}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7dde6] px-5 py-3.5 text-sm font-semibold text-[#253140] transition hover:border-[#bcc6d3] hover:bg-[#f6f8fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 px-5 py-3.5 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <FaRedo className="h-3.5 w-3.5" />
                       重新加载验证
@@ -691,43 +692,43 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           </div>
 
           {secureWidget.showProviderLabel && (
-            <p className="mt-5 text-xs text-[#8b97a6]">
+            <p className="mt-5 text-xs text-slate-500">
               由 {verificationMode ? serviceLabel : '站点验证服务'} 提供 · 验证令牌不会记录到日志或 URL 中。
             </p>
           )}
         </div>
 
-        <div className="border-t border-[#eef2f7] bg-[#fafbfe] px-5 py-7 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7f8a98]">
+        <div className="border-t border-slate-200 bg-white px-5 py-7 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
             会话信息
           </p>
 
           <div className="mt-4 space-y-3">
             <MetaRow Icon={FaFingerprint} label="浏览器指纹">
-              <p className="truncate font-mono text-xs text-[#334155]">{fingerprintPreview}</p>
+              <p className="truncate font-mono text-xs text-slate-700">{fingerprintPreview}</p>
             </MetaRow>
 
             <MetaRow Icon={FaGlobe} label="IP 地址">
-              <p className="truncate font-mono text-xs text-[#334155]">{clientIP || '正在检测…'}</p>
+              <p className="truncate font-mono text-xs text-slate-700">{clientIP || '正在检测…'}</p>
             </MetaRow>
 
             <MetaRow Icon={FaClock} label="令牌策略">
-              <p className="text-xs leading-5 text-[#526071]">
+              <p className="text-xs leading-5 text-slate-600">
                 通过检查后即可照常浏览。本次检查在您的整个会话内有效，刷新页面不会再次出现。
               </p>
             </MetaRow>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-[#eceff4] bg-white px-5 py-5">
-            <p className="text-sm font-semibold text-[#253140]">为什么会出现此页面</p>
-            <ul className="mt-3.5 space-y-3 text-xs leading-5 text-[#637082]">
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5">
+            <p className="text-sm font-semibold text-slate-800">为什么会出现此页面</p>
+            <ul className="mt-3.5 space-y-3 text-xs leading-5 text-slate-500">
               {[
                 '您的网络需要先完成一次快速的一次性验证。',
                 '整个过程只需几秒，有助于保障站点安全。',
                 '验证完成后即可照常继续浏览。',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
-                  <FaCheck className="mt-0.5 h-3 w-3 shrink-0 text-[#c9a48f]" aria-hidden="true" />
+                  <FaCheck className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" aria-hidden="true" />
                   <span>{item}</span>
                 </li>
               ))}
