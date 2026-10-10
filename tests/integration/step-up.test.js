@@ -7,6 +7,19 @@ jest.mock("../../src/utils/logger", () => ({
   __esModule: true,
   default: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
+// 不加载真实 config：它是 env 驱动的（lumen 布尔值等），CI 环境里一旦有脏值就在 import 阶段抛 ZodError，
+// 把“集成用例挂了”伪装成“配置坏了”。本套件只用到 step-up 的 TTL/次数上限与票据密钥。
+jest.mock("../../src/config/config", () => ({
+  config: {
+    jwtSecret: "integration-step-up-secret",
+    accountRisk: {
+      enabled: true,
+      stepUpChallengeTtlSeconds: 120,
+      stepUpGrantTtlSeconds: 30,
+      stepUpGrantMaxUses: 5,
+    },
+  },
+}));
 
 const {
   issueStepUpChallenge,
