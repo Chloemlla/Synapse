@@ -155,17 +155,19 @@ RUN set -eu; \
 # （--print-default-data-file reference.docx）因此可用。
 # 体积代价：保留的静态 bin/pandoc 约 158 MB；故只拷这一个文件、不留 tarball，
 # 也不拷 pandoc-lua / pandoc-server（用不到）。
-# 上游资产名带版本号（pandoc-<ver>-linux-<arch>.tar.gz），releases/latest/download 拿不到固定资产，
-# 所以必须钉版本。升级 = 改 ARG PANDOC_VERSION 并同步更新 PANDOC_SHA256，或用
-#   --build-arg PANDOC_VERSION=3.12.2 --build-arg PANDOC_SHA256=<new>
-# 上游不发 checksums 文件，故校验和由我们钉住；PANDOC_SHA256 留空则跳过校验并在构建日志打印提示。
+# 上游资产名带版本号（pandoc-<ver>-linux-<arch>.tar.gz），所以 releases/latest/download 拿不到固定资产。
+# 默认就跟随上游最新 release（与 yt-dlp 层同为滚动最新）：先请求 /releases/latest 从重定向里解析出
+# 当前版本号，再按版本号拼资产 URL。代价与 yt-dlp 层一致 —— 同一份 Dockerfile 在不同时间会构出不同镜像，
+# 且 Docker 按 URL 缓存层，要确保追新得 --no-cache 或换 ARCH。
+# 要可复现就显式钉版本（仅钉版本，不校校验和）：--build-arg PANDOC_VERSION=3.12.1
+# 不做 SHA256 钉住：上游不发 checksums 文件，自己钉的那份得人工跟着每次升级更新，
+# 一旦忘了就变成「新版镜像校验旧哈希」的假失败；层末 pandoc --version 已能挡住不能跑的产物。
 # 资产名按构建机架构选（本文件不固定 --platform）：x86_64 → linux-amd64，aarch64 → linux-arm64。
 # 落点 /usr/local/bin/pandoc 即在 PATH 上，与 yt-dlp 层同口径（设置侧「留空自动探测 PATH」）。
 # 层末 pandoc --version 自证：构建期失败优于运行时静默不可用。
 # curl 只在下载期用，装完即卸（本层单独装自己的 .pandoc-fetch；yt-dlp 层的 curl 已在它自己的 RUN 里删掉），
 # 避免把 curl 的 CVE 留在运行镜像里。
-ARG PANDOC_VERSION=3.12.1
-ARG PANDOC_SHA256=d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8
+ARG PANDOC_VERSION=latest
 RUN set -eu; \
     apk add --no-cache --virtual .pandoc-fetch curl; \
     case "$(uname -m)" in \
@@ -173,18 +175,19 @@ RUN set -eu; \
       aarch64) arch=arm64 ;; \
       *) echo "ERROR: 上游未提供该架构的 pandoc 二进制: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    asset="pandoc-${PANDOC_VERSION}-linux-${arch}.tar.gz"; \
-    curl -fsSL --retry 3 --retry-delay 2 \
-      "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/${asset}" -o "/tmp/$asset"; \
-    if [ -n "$PANDOC_SHA256" ]; then \
-      printf '%s  %s\n' "$PANDOC_SHA256" "/tmp/$asset" | sha256sum -c -; \
-    else \
-      echo "[pandoc] PANDOC_SHA256 为空，跳过校验（未验证下载产物完整性）" >&2; \
+    version="${PANDOC_VERSION}"; \
+    if [ "$version" = "latest" ]; then \
+      version="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/jgm/pandoc/releases/latest | sed 's#.*/tag/##')"; \
+      test -n "$version" || { echo "ERROR: 无法从 /releases/latest 解析出 pandoc 版本号" >&2; exit 1; }; \
     fi; \
-    tar -xzf "/tmp/$asset" -C /tmp "pandoc-${PANDOC_VERSION}/bin/pandoc"; \
-    cp "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc; \
+    echo "[pandoc] 安装版本 ${version}（架构 ${arch}）"; \
+    asset="pandoc-${version}-linux-${arch}.tar.gz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/jgm/pandoc/releases/download/${version}/${asset}" -o "/tmp/$asset"; \
+    tar -xzf "/tmp/$asset" -C /tmp "pandoc-${version}/bin/pandoc"; \
+    cp "/tmp/pandoc-${version}/bin/pandoc" /usr/local/bin/pandoc; \
     chmod 0755 /usr/local/bin/pandoc; \
-    rm -rf "/tmp/$asset" "/tmp/pandoc-${PANDOC_VERSION}"; \
+    rm -rf "/tmp/$asset" "/tmp/pandoc-${version}"; \
     apk del .pandoc-fetch; \
     pandoc --version
 

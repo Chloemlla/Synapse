@@ -36,15 +36,16 @@ Docker 里像 yt-dlp 一样内置**上游官方二进制**，不走 `apk add pan
 - 但该 tarball 里的 `bin/pandoc` 是 **完全静态 ELF**：`e_type=ET_EXEC`、**无 `PT_INTERP`**、
   无 `GLIBC_2.*` 符号版本引用、无 `DT_NEEDED`。→ 在 Alpine(musl) 上可直接运行，**不需要 gcompat**。
 - 二进制内嵌 data files（含 `reference.docx`）→ `--print-default-data-file reference.docx`「生成默认样式模板」可用。
-- tarball SHA256（本次实测）：`d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8`（3.12.1 / linux-amd64）。
 
 落地要点：
 
-- **必须钉版本**：上游资产名带版本号（`pandoc-<ver>-linux-amd64.tar.gz`），
-  所以不能用 `releases/latest/download/...`；`ARG PANDOC_VERSION=3.12.1` 是默认值，升级＝改一行或 `--build-arg`。
-- 顺带用 `ARG PANDOC_SHA256` 做校验（上游**不发** checksums 文件，所以校验和由我们钉住；留空则跳过校验并打印提示）。
+- **默认跟随最新 release**（与 yt-dlp 层的取舍一致）：上游资产名带版本号，所以不能直接用
+  `releases/latest/download/...`；改为先请求 `/releases/latest` 从 302 重定向里解析出当前版本号，
+  再按版本号拼资产 URL。要可复现就 `--build-arg PANDOC_VERSION=3.12.1` 钉版本。
+- **不做 SHA256 钉住**：上游不发 checksums 文件，自钉的那份得人工跟着每次升级同步，
+  忘了就变成「新版镜像校验旧哈希」的假失败；真正的兼容性判据由层末的 `pandoc --version` 承担。
+- 只拷 `bin/pandoc`（约 158 MB 静态二进制），不留 tarball、不拷 `pandoc-lua`/`pandoc-server`。
 - 落点 `/usr/local/bin/pandoc`（在 PATH 上，探测逻辑「留空即 PATH」与 yt-dlp 一致），层末 `pandoc --version` 兜住架构/兼容问题。
-- 只拷 `bin/pandoc`（157.8 MB 静态二进制），不留 tarball、不拷 `pandoc-lua`/`pandoc-server`。镜像体积代价记在此处备查。
 
 ## 4. 后端结构（新增子系统，与 `src/mediaTool/` 同构）
 
