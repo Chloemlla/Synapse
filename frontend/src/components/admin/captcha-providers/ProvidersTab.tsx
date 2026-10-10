@@ -121,7 +121,7 @@ export default function ProvidersTab(props: ProvidersTabProps) {
               weight: row.weight,
               priority: row.priority,
               monthlyQuota: row.quota?.limit ?? 0,
-              scenarioWeights: { default: '', first_visit: '', standalone: '' },
+              scenarioWeights: { default: '', first_visit: '', standalone: '', step_up: '' },
             } satisfies ProviderDraft);
           const status = statusPill(row, draft);
           const StatusIcon = status.Icon;

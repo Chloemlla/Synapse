@@ -8,6 +8,12 @@ import {
 import { canonicalizeBackendApiUrl } from '../utils/apiPath';
 import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
 import { notifyCaptchaFailure } from '../utils/captchaRecovery';
+import {
+    StepUpUnsupportedError,
+    isStepUpRequiredPayload,
+    requestStepUpGrant,
+    type StepUpRequiredDetail,
+} from '../utils/stepUp';
 
 
 // 获取API基础URL：生产环境固定指向 https://chloemlla.com，开发环境保留后端直连能力
@@ -166,6 +172,30 @@ api.interceptors.response.use(
         // 处理 401 错误（未授权）
         if (error.response?.status === 403) {
             maybeEmitPenaltyAppealFromError(error, 'api-interceptor');
+        }
+
+        // 账户逐步验证（RC-08）：命中闸门的 403 发生在业务 handler **之前**，
+        // 这次请求没有产生任何副作用，因此可以安全重放（含 POST/PATCH）——
+        // 重放的是“第一次执行”，不是“把已经成功的写再做一次”。
+        if (error.response?.status === 403 && isStepUpRequiredPayload(error.response.data)) {
+            const requestConfig = originalRequest as AxiosRequestConfig & { _stepUpRetried?: boolean };
+            if (requestConfig._stepUpRetried) {
+                return Promise.reject(error);
+            }
+            try {
+                const grant = await requestStepUpGrant(error.response.data as StepUpRequiredDetail);
+                const headers =
+                    requestConfig.headers instanceof AxiosHeaders
+                        ? requestConfig.headers
+                        : new AxiosHeaders(requestConfig.headers as Record<string, string>);
+                headers.set('X-Step-Up-Grant', grant.grantId);
+                return api({ ...requestConfig, headers, _stepUpRetried: true } as AxiosRequestConfig);
+            } catch (stepUpError) {
+                if (stepUpError instanceof StepUpUnsupportedError) {
+                    console.warn('[StepUp] 当前客户端无法完成交互式验证，已降级为只读');
+                }
+                return Promise.reject(error);
+            }
         }
 
         if (error.response?.status === 403 && error.response?.data?.errorCode === 'IP_VERIFICATION_REQUIRED') {

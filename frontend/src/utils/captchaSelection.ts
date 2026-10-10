@@ -186,9 +186,12 @@ export function getCaptchaDisplayName(type: CaptchaType): string {
  * 下发场景：与后端 `CaptchaScenario`（src/services/turnstile/types.ts）一一对应。
  * 场景决定用哪套权重与分配策略 —— 首访门禁与独立验证页可以分配给不同供应商。
  */
-export type CaptchaScenario = 'default' | 'first_visit' | 'standalone';
+export type CaptchaScenario = 'default' | 'first_visit' | 'standalone' | 'step_up';
 
-export const CAPTCHA_SCENARIOS: readonly CaptchaScenario[] = ['default', 'first_visit', 'standalone'];
+// 与后端 CAPTCHA_SCENARIOS 同一组（服务端枚举的唯一真相源在
+// src/services/turnstile/types.ts）。新增场景时两处必须同时改；
+// 漏改的表现是“后端返回 step_up、前端当未知场景丢掉”。
+export const CAPTCHA_SCENARIOS: readonly CaptchaScenario[] = ['default', 'first_visit', 'standalone', 'step_up'];
 
 export type CaptchaWidgetTheme = 'auto' | 'light' | 'dark';
 export type CaptchaWidgetSize = 'normal' | 'compact' | 'flexible';

@@ -18,6 +18,7 @@ import { useFingerprintRequest } from './hooks/useFingerprintRequest';
 import FingerprintRequestModal from './components/FingerprintRequestModal';
 import { setFirstVisitVerificationEnabled } from './utils/firstVisitVerificationConfig';
 import { onIpVerificationRequired } from './utils/ipVerification';
+import StepUpGate from './components/StepUpGate';
 import { recordRecentFeature } from './utils/recentFeature';
 import { reportFingerprintOnce } from './utils/fingerprint';
 import { fetchWithTimeout } from './utils/fetchWithTimeout';
@@ -1490,6 +1491,8 @@ const App: React.FC = () => {
       <BroadcastModalProvider>
         <WsConnector />
         <ClientOriginProbe />
+        {/* 被标记账户的逐步验证：全局单例，并发的写请求只弹一次（B5/RC-08） */}
+        <StepUpGate />
         <ArticleCommandPalette />
         <LazyMotion features={domAnimation}>
           {/* 公告弹窗 */}

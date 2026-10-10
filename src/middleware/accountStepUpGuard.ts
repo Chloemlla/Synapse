@@ -56,6 +56,25 @@ export function isInteractiveUnsupported(req: Request): boolean {
   return !req.headers.cookie || !/synapse_token=/.test(String(req.headers.cookie));
 }
 
+/**
+ * 请求体绑定（RC-03 的 `payloadHash`）。
+ *
+ * 只对 **JSON** 请求体做内容绑定：multipart 请求被重放时，multer 会重新解析出
+ * 内容相同但**临时路径/文件名不同**的 body（`req.body` 里没有文件内容），
+ * 遂字节摘要必然对不上 ⇒ 被标记账户的文件上传类写操作将永远过不了闸。
+ * 非 JSON 时改绑「方法 + 路径 + Content-Length」：仍然能防“拿同一枚 grant 重放同一请求”，
+ * 只是不能防“换一个等长 body”（对该类请求可接受，且上传本身还有大小/类型校验）。
+ */
+function stepUpPayloadHash(req: Request): string {
+  const contentType = String(req.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) return computePayloadHash(req.body);
+  return computePayloadHash({
+    method: req.method,
+    path: req.path,
+    length: req.get("content-length") || "",
+  });
+}
+
 export interface StepUpDecision {
   required: boolean;
   /** 为何不需要：便于排查“为什么没弹窗”。 */
@@ -94,7 +113,7 @@ export async function evaluateStepUpRequirement(
   }
 
   const routeKey = routeKeyFromRequest(req);
-  const payloadHash = computePayloadHash(req.body);
+  const payloadHash = stepUpPayloadHash(req);
   const grantId = req.get("x-step-up-grant");
   if (grantId && (await redeemStepUpGrant({ grantId, userId: user.id, routeKey, payloadHash }))) {
     return {
@@ -134,7 +153,7 @@ export async function enforceAccountStepUp(req: Request, res: Response): Promise
   const user = (req as AuthenticatedRequest).user as { id?: string; role?: string } | undefined;
   const userId = user?.id || "";
   const routeKey = routeKeyFromRequest(req);
-  const payloadHash = computePayloadHash(req.body);
+  const payloadHash = stepUpPayloadHash(req);
   const ip = getClientIP(req) || "unknown";
   const interactiveUnsupported = isInteractiveUnsupported(req);
 

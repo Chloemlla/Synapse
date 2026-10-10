@@ -94,6 +94,8 @@ export function savePolicy(policy: AllocationPolicy): Promise<ApiResult<{ policy
       rolloutControlProvider: policy.rolloutControlProvider,
       failoverMaxAttempts: policy.failoverMaxAttempts,
       scenarioStrategies: policy.scenarioStrategies,
+      // RC-24：白名单是硬约束，不随“场景权重”一起被面板丢掉。
+      scenarioProviderAllowlist: policy.scenarioProviderAllowlist ?? {},
     }),
   });
 }
@@ -167,6 +169,7 @@ export function toSimulationPolicy(policy: AllocationPolicy): Partial<Allocation
     rolloutControlProvider: policy.rolloutControlProvider,
     failoverMaxAttempts: policy.failoverMaxAttempts,
     scenarioStrategies: policy.scenarioStrategies,
+    scenarioProviderAllowlist: policy.scenarioProviderAllowlist ?? {},
   };
 }
 

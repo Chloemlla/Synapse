@@ -49,8 +49,9 @@ export interface ManagedCaptchaStatus {
 }
 
 export interface ManagedCaptchaProps {
-  /** 下发场景：内容页用默认 default；首访门禁 first_visit；独立验证页 standalone。 */
-  scenario?: 'default' | 'first_visit' | 'standalone';
+  /** 下发场景：内容页用默认 default；首访门禁 first_visit；独立验证页 standalone；
+   * 被标记账户的逐步验证 step_up（只走供应商白名单，默认 trycap / Turnstile）。 */
+  scenario?: 'default' | 'first_visit' | 'standalone' | 'step_up';
   /** 挑战解出：页面保存 `{ token, provider }` 并随自己的请求提交。 */
   onSolved?: (challenge: ManagedCaptchaChallenge) => void;
   /** 挑战过期/失败/被重置：页面应清掉已持有的令牌。 */

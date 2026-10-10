@@ -80,6 +80,8 @@ function buildProviderDrafts(rows: ProviderRow[]): Record<ProviderId, ProviderDr
         default: row.scenarioWeights.default ?? '',
         first_visit: row.scenarioWeights.first_visit ?? '',
         standalone: row.scenarioWeights.standalone ?? '',
+        // RC-24：step_up 必须一起回填，否则面板上改这个场景的权重不会进入草稿。
+        step_up: row.scenarioWeights.step_up ?? '',
       },
     };
   }
@@ -92,9 +94,9 @@ function canonicalProvider(draft: ProviderDraft): string {
     draft.weight,
     draft.priority,
     draft.monthlyQuota,
-    draft.scenarioWeights.default,
-    draft.scenarioWeights.first_visit,
-    draft.scenarioWeights.standalone,
+    (['default', 'first_visit', 'standalone', 'step_up'] as Scenario[]).map(
+      (scenario) => draft.scenarioWeights[scenario] ?? '',
+    ),
   ]);
 }
 
@@ -107,9 +109,11 @@ function canonicalPolicy(policy: AllocationPolicy): string {
     policy.rolloutPercent,
     policy.rolloutControlProvider,
     policy.failoverMaxAttempts,
-    (['default', 'first_visit', 'standalone'] as Scenario[]).map((scenario) => [
+    (['default', 'first_visit', 'standalone', 'step_up'] as Scenario[]).map((scenario) => [
       scenario,
       policy.scenarioStrategies[scenario] ?? null,
+      // 白名单也要进脏值比较：只改白名单而不改策略时，面板必须能看出“有未保存的改动”。
+      (policy.scenarioProviderAllowlist?.[scenario] ?? []).join(','),
     ]),
   ]);
 }

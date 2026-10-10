@@ -4,7 +4,7 @@
  */
 
 export type ProviderId = 'turnstile' | 'hcaptcha' | 'trycap';
-export type Scenario = 'default' | 'first_visit' | 'standalone';
+export type Scenario = 'default' | 'first_visit' | 'standalone' | 'step_up';
 export type Strategy = 'weighted' | 'round_robin' | 'failover';
 export type WidgetTheme = 'auto' | 'light' | 'dark';
 export type WidgetSize = 'normal' | 'compact' | 'flexible';
@@ -56,6 +56,11 @@ export interface AllocationPolicy {
   rolloutControlProvider: ProviderId;
   failoverMaxAttempts: number;
   scenarioStrategies: Partial<Record<Scenario, Strategy>>;
+  /**
+   * 每场景的供应商白名单（RC-24）。未设置的场景不受约束；
+   * step_up 默认 [trycap, turnstile] —— 白名单是硬约束，不是权重。
+   */
+  scenarioProviderAllowlist: Partial<Record<Scenario, ProviderId[]>>;
   updatedAt?: string;
 }
 
@@ -286,6 +291,12 @@ export const CAPTCHA_COVERAGE: readonly CoverageGroup[] = [
       { name: '人机验证页', path: '/captcha-verify' },
       { name: 'Cloudflare 挑战页', path: '/cdn-cgi' },
     ],
+  },
+  {
+    scenario: 'step_up',
+    label: '被标记账户逐步验证',
+    description: '账户风险档升到受限/危险后，每一次写操作都要过一遍（默认只走 trycap / Turnstile）',
+    pages: [{ name: '全局逐步验证弹窗', path: '' }],
   },
 ];
 
