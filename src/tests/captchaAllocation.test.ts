@@ -109,6 +109,22 @@ describe("分配策略归一化", () => {
     });
   });
 
+  it("读到的策略缺白名单字段时回落默认（否则「step_up 走 trycap/Turnstile」静默失效）", () => {
+    // 存量部署库里的 policy 文档没有该字段：必须补上默认，否则等于没有白名单。
+    expect(normalizeAllocationPolicy({ strategy: "weighted" } as never).scenarioProviderAllowlist).toEqual({
+      step_up: ["trycap", "turnstile"],
+    });
+    // 显式给名单 ⇒ 以显式值为准（管理员仍可改，例如给 step_up 加上 hCaptcha）。
+    expect(
+      normalizeAllocationPolicy({ scenarioProviderAllowlist: { step_up: ["turnstile", "hcaptcha"] } } as never)
+        .scenarioProviderAllowlist,
+    ).toEqual({ step_up: ["turnstile", "hcaptcha"] });
+    // 显式空数组 = 未设置 ⇒ 回落默认，而不是变成「零候选」。
+    expect(
+      normalizeAllocationPolicy({ scenarioProviderAllowlist: { step_up: [] } } as never).scenarioProviderAllowlist,
+    ).toEqual({ step_up: ["trycap", "turnstile"] });
+  });
+
   it("钳制函数自身边界正确", () => {
     expect(clampRotationSeconds("abc")).toBe(DEFAULT_ALLOCATION_POLICY.rotationSeconds);
     expect(clampStickyTtlMinutes(-5)).toBe(5);

@@ -273,6 +273,34 @@ export function resolveScenarioProviderAllowlist(
   return Array.isArray(list) && list.length > 0 ? list : null;
 }
 
+/**
+ * 带**默认白名单**的归一化。
+ *
+ * 为什么不能只调 normalizeScenarioProviderAllowlist：那个函数对缺失字段返回 `{}`，
+ * 而 `normalizeAllocationPolicy` 是「读库缺字段 ⇒ 用默认值」的语义（strategy / rotationSeconds … 都这么写）。
+ * 若这里不补默认，则（a）存量部署（库里的 policy 文档没有该字段）拿到空白名单，
+ * 需求要的「被标记账户一律走 trycap/Turnstile」静默失效；（b）管理员一保存策略，
+ * 白名单就被写成 `{}` —— 而这正是 RC-24 要堵的「权重/配置看着在、实际不生效」。
+ *
+ * 多例：某个场景显式给了合法名单 ⇒ 以显式值为准（管理员仍可改，比如把 hCaptcha 加进 step_up）；
+ * 显式空数组 ⇒ 视为未设置 ⇒ 回落默认（空数组不能等于“零候选”，否则一次误保存就锁死被标记账户）。
+ */
+function normalizeScenarioProviderAllowlistWithDefaults(
+  value: unknown,
+): Partial<Record<CaptchaScenario, CaptchaProviderId[]>> {
+  const merged: Partial<Record<CaptchaScenario, CaptchaProviderId[]>> = {
+    ...normalizeScenarioProviderAllowlist(value),
+  };
+  for (const scenario of CAPTCHA_SCENARIOS) {
+    const preset = DEFAULT_ALLOCATION_POLICY.scenarioProviderAllowlist[scenario];
+    if (preset && !merged[scenario]) {
+      // 复制数组：默认常量不能被调用方写回或改写。
+      merged[scenario] = [...preset];
+    }
+  }
+  return merged;
+}
+
 export function normalizeAllocationPolicy(raw: CaptchaAllocationPolicyInput | null | undefined): CaptchaAllocationPolicyView {
   const source = raw ?? {};
   return {
@@ -288,7 +316,7 @@ export function normalizeAllocationPolicy(raw: CaptchaAllocationPolicyInput | nu
         : DEFAULT_ALLOCATION_POLICY.rolloutControlProvider,
     failoverMaxAttempts: clampFailoverAttempts(source.failoverMaxAttempts),
     scenarioStrategies: normalizeScenarioStrategies(source.scenarioStrategies),
-    scenarioProviderAllowlist: normalizeScenarioProviderAllowlist(source.scenarioProviderAllowlist),
+    scenarioProviderAllowlist: normalizeScenarioProviderAllowlistWithDefaults(source.scenarioProviderAllowlist),
     updatedAt: toIsoOrUndefined(source.updatedAt),
   };
 }
