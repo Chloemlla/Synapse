@@ -9,6 +9,15 @@ export type PolicyAgreementKey = (typeof POLICY_AGREEMENT_KEYS)[number];
 
 export const POLICY_AGREEMENT_ANCHOR_PREFIX = 'policy-agreement-';
 
+/**
+ * 「这个请求因未同意而被拒」的窗口事件名。
+ *
+ * 为什么放在这里而不是定义在某个组件里：发出方是具体功能（如批量转换面板），
+ * 监听方是外层门禁 FeatureConsentGate。两者直接互相 import 会让门禁反依赖具体功能面板，
+ * 也会把那个功能的代码拖进其它使用门禁的页面；放到中立工具模块两边都只依赖它。
+ */
+export const POLICY_CONSENT_REQUIRED_EVENT = 'synapse:policy-consent-required';
+
 export const policyAgreementAnchor = (key: string): string => `${POLICY_AGREEMENT_ANCHOR_PREFIX}${key}`;
 
 export interface PolicyConsentItem {

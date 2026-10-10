@@ -3,6 +3,7 @@ import { requireAdminScope } from "../middleware/adminScope";
 import {
   cleanExpiredConsents,
   getCurrentPolicyVersion,
+  getFeatureConsentStatus,
   getPolicyDocument,
   getPolicyStats,
   recordPolicyConsent,
@@ -18,6 +19,7 @@ import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { createLimiter } from "../middleware/routeLimiters";
+import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
 
 const router = Router();
 
@@ -167,7 +169,8 @@ const adminRateLimit = createLimiter({
  *       客户端无法自行计算），调用方只需证明设备归属：本端点此前下发的凭据 cookie，或首访
  *       验证令牌（X-IP-Verification-Token）二者之一。成功后下发与指纹绑定的凭据 cookie，
  *       供 /api/policy/check 与 /api/policy/revoke 证明归属。注意：登录会话不是设备凭据——
- *       它只证明调用者是谁，不证明调用者是这台设备，因此不能用于证明归属。
+ *       它只证明调用者是谁，不证明调用者是这台设备，因此不能用于证明归属；但已登录时它会被读来
+ *       给这条记录标注归属（userId / username），功能门禁靠它按人判定。
  *     tags: [Policy]
  *     parameters:
  *       - in: header
@@ -246,7 +249,10 @@ const adminRateLimit = createLimiter({
  *       500:
  *         description: 服务器内部错误
  */
-router.post("/verify", policyRateLimit, recordPolicyConsent);
+// 这里挂 optionalAuthenticateToken（不阻断匿名调用，解析不到会话就当没登录）：
+// 已登录用户的同意记录要写下 userId，否则用户级门禁永远等不到一条属于自己的同意记录 ——
+// 匿名路径与设备归属校验（assertConsentWriteOwnership）都不受影响。
+router.post("/verify", optionalAuthenticateToken, policyRateLimit, recordPolicyConsent);
 
 /**
  * @swagger
@@ -541,6 +547,75 @@ router.get("/document", policyRateLimit, getPolicyDocument);
  *         description: 服务器内部错误
  */
 router.get("/history", policyRateLimit, getPolicyConsentHistory);
+
+/**
+ * @openapi
+ * /policy/feature-consent:
+ *   get:
+ *     summary: 获取各功能对当前用户的开放状态
+ *     description: |
+ *       返回该登录用户在每个受门禁功能上的状态（satisfied、还缺哪几份文件、到期时间与依据）。
+ *       判定只认该用户自己的有效同意记录（按账号，不看设备指纹），同设备换账号不会蹭到同意；
+ *       撤销同意后立即反映（服务端无缓存）。前端入口与页面门禁都读这个端点，再调同意端点补齐缺失项。
+ *     tags: [Policy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 各功能状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 policyVersion:
+ *                   type: string
+ *                   example: "2.2"
+ *                 features:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key:
+ *                         type: string
+ *                         example: "doc-tool"
+ *                       label:
+ *                         type: string
+ *                       category:
+ *                         type: string
+ *                       rationale:
+ *                         type: string
+ *                       message:
+ *                         type: string
+ *                       satisfied:
+ *                         type: boolean
+ *                       requiredAgreements:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       missingAgreements:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       policyVersion:
+ *                         type: string
+ *                       expiresAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *       401:
+ *         description: 未登录
+ *       429:
+ *         description: 请求过于频繁
+ *       500:
+ *         description: 服务器内部错误
+ */
+// 用户级接口：这里的每个功能都要求「该用户自己」同意过（与设备级的 /check、/status 不同，
+// 那两个端点的归属单位是本设备）；未登录返回 401，而不是把它当作「没同意」一样回空状态。
+router.get("/feature-consent", policyRateLimit, authenticateToken, getFeatureConsentStatus);
 
 /**
  * @swagger

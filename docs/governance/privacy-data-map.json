@@ -169,7 +169,7 @@
     {
       "id": "policy-consents",
       "collection": "policy_consents",
-      "fields": ["fingerprint", "ipAddress", "userAgent", "version", "checksum", "documentHash", "expiresAt", "source", "agreements", "revokedAt", "revokedIP", "revokedReason"],
+      "fields": ["fingerprint", "userId", "username", "ipAddress", "userAgent", "version", "checksum", "documentHash", "expiresAt", "source", "agreements", "revokedAt", "revokedIP", "revokedReason"],
       "purpose": "Proof of policy acceptance: the four agreements ticked at login/register, an explicit acceptance for gated features such as anonymous TTS, or a server-signed record refreshed at either point (source, agreements). documentHash pins which text revision was accepted; revokedAt/revokedIP record a withdrawal.",
       "legalBasis": "consent_record",
       "userFacing": {

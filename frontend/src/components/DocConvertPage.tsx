@@ -7,6 +7,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { FaFileWord } from 'react-icons/fa';
 import { studioEyebrowPillClassName } from './studioTheme';
+import FeatureConsentGate from './FeatureConsentGate';
 import DocBatchPanel from './docTool/DocBatchPanel';
 
 const DocConvertPage: React.FC = () => (
@@ -30,7 +31,10 @@ const DocConvertPage: React.FC = () => (
     </motion.div>
 
     <div className="mt-6">
-      <DocBatchPanel />
+      {/* 上传的文件会由服务端处理：未同意使用政策与服务专项条款时先给出同意清单，而不是功能面板 */}
+      <FeatureConsentGate feature="doc-tool">
+        <DocBatchPanel />
+      </FeatureConsentGate>
     </div>
   </section>
 );

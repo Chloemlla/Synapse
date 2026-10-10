@@ -1,4 +1,5 @@
-// 「Markdown → Word 批量转换」用户态路由（/api/doc-tool）：普通登录用户即可使用。
+// 「Markdown → Word 批量转换」用户态路由（/api/doc-tool）：普通登录用户即可使用，
+// 但需先在自己的账号下同意相关条款（见下方 requireFeatureConsent("doc-tool")）。
 // 与 src/docTool/serverRuntime.ts 共用同一份 store / settingsStore / runner 单例，
 // 保证同一进程只有一个串行队列；作用域由 http/docToolHttp.ts 锁死在 users/<uid>/ 内。
 //
@@ -15,6 +16,7 @@ import {
   getDocSettingsStore,
 } from "../docTool/serverRuntime";
 import { docLimitsFromEnv } from "../docTool/types";
+import { requireFeatureConsent } from "../middleware/featureConsent";
 import type { AuthenticatedRequest } from "../types/authRequest";
 
 const router = createDocToolRouter({
@@ -34,6 +36,13 @@ const router = createDocToolRouter({
 
 // 进程重启自恢复（整队列一次，幂等；见 serverRuntime.ensureDocJobRecovery）
 ensureDocJobRecovery();
+
+// 整棵 /api/doc-tool 都要求「用户自己同意过相关条款」——上传到服务端处理的文件由本服务端转换。
+// 判定按 userId（见 middleware/featureConsent），同设备换个账号不会蹭到上一位用户的同意。
+// 挂载层（routeModules/postTamperModules.ts）已挂 authenticateToken，中间件内仍自己判一次未登录，
+// 便于单测直挂 router（如 docToolHttp.test.ts 的挂法）时独立覆盖 401 / 403 两条分支。
+// 端点因此多一个响应：403 POLICY_CONSENT_REQUIRED（带缺失的条款清单，前端据此弹同意面板）。
+router.use(requireFeatureConsent("doc-tool"));
 
 /**
  * @openapi
@@ -134,6 +143,31 @@ ensureDocJobRecovery();
  *         description: 未登录
  *       404:
  *         description: 文件不存在
+ */
+/**
+ * @openapi
+ * /doc-tool/files/bundle:
+ *   post:
+ *     summary: 打包下载已转换好的文档
+ *     description: 按传入的相对路径把磁盘上已有的 .docx 打成 zip（不重新转换）；越界或不存在的条目静默跳过，全不可用时 400。
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               paths:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: zip 包
+ *       400:
+ *         description: 没有可打包的文件
+ *       401:
+ *         description: 未登录
  */
 /**
  * @openapi

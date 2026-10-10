@@ -6,6 +6,7 @@ import {
   CURRENT_POLICY_VERSION,
   POLICY_AGREEMENT_KEYS,
   describeFingerprintForLog,
+  resolveFeatureConsentViews,
   writePolicyConsent,
 } from "../services/policyConsentService";
 import {
@@ -17,6 +18,7 @@ import {
 import { parseFingerprint, parseVersionInput, readFingerprintFromRequest } from "../utils/policyRequest";
 import { getClientIP } from "../utils/ipUtils";
 import { policyArchiveFilename, renderPolicyDocumentMarkdown } from "../utils/policyDocumentMarkdown";
+import type { AuthenticatedRequest } from "../types/authRequest";
 import logger from "../utils/logger";
 
 // 本文件只保留「写」与「条文/统计」端点：同意记录的读取状态（check/status/history）与
@@ -71,12 +73,17 @@ export const recordPolicyConsent = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // 同一指纹+版本已有有效记录时原地续期，因此这里不必先查再分支
+    // 同一指纹+版本已有有效记录时原地续期，因此这里不必先查再分支。
+    // 已登录时一并写下 userId / username：功能门禁按人判定（见 middleware/featureConsent），
+    // 未登录则不传，写出的仍是设备级记录（匿名 TTS 门禁照旧）。
+    const actor = (req as AuthenticatedRequest).user;
     const written = await writePolicyConsent({
       fingerprint: sanitizedFingerprint,
       source: "feature",
       userAgent: typeof userAgent === "string" ? userAgent : undefined,
       ipAddress: clientIP,
+      userId: actor?.id ? String(actor.id) : undefined,
+      username: actor?.username ? String(actor.username) : undefined,
     });
 
     if (!written) {
@@ -361,6 +368,39 @@ export const getCurrentPolicyVersion = async (_req: Request, res: Response): Pro
     documentHash: POLICY_DOCUMENT_HASH,
     agreementKeys: [...POLICY_AGREEMENT_KEYS],
   });
+};
+
+// 每个功能对当前用户的开放状态（GET /api/policy/feature-consent，需登录）。
+// 前端入口与页面门禁都读这里：哪些功能可用、不能用的还缺哪几份文件，一次拿全；
+// 判定只认该用户自己的有效同意记录（不回落到设备指纹），所以同设备换账号不会蹭到同意。
+// no-store：撤销同意必须立即在下一个响应里体现，缓存住的「已同意」比不返回还糟。
+export const getFeatureConsentStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = String((req as AuthenticatedRequest).user?.id ?? "").trim();
+    if (!userId) {
+      // 路由已挂 authenticateToken；这里是直挂 / 单测时的复核，与功能门禁保持同一个 401 口径。
+      res.status(401).json({ success: false, error: "未登录", code: "UNAUTHENTICATED" });
+      return;
+    }
+
+    const features = await resolveFeatureConsentViews(userId, CURRENT_POLICY_VERSION);
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      policyVersion: CURRENT_POLICY_VERSION,
+      features,
+    });
+  } catch (error) {
+    logger.error("Error resolving feature consent status", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
 };
 
 // 获取完整政策条文（公开）

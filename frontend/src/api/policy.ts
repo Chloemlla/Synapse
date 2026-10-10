@@ -1,6 +1,10 @@
 import { api, apiWithRetry } from './api';
 import { getFingerprint } from '../utils/fingerprint';
-import { isPolicyAgreementSetComplete, missingPolicyAgreements } from '../utils/policyConsent';
+import {
+  isPolicyAgreementSetComplete,
+  missingPolicyAgreements,
+  type PolicyAgreementKey,
+} from '../utils/policyConsent';
 
 export interface RecordPolicyConsentResult {
   consentId: string;
@@ -235,6 +239,53 @@ export async function fetchPolicyVersion(): Promise<{ version: string; validityD
     throw new Error('无法获取当前政策版本，请稍后重试');
   }
   return { version, validityDays: data.validityDays, documentHash: data.documentHash };
+}
+
+/**
+ * 单个功能对当前登录用户的开放状态（GET /api/policy/feature-consent 的元素）。
+ *
+ * 字段名与后端 src/config/featureConsent.ts 的 FeatureConsentView 同源，不在这里改名：
+ * 两侧一旦各叫各的，跨端排查要来回翻两份定义才能对上。
+ */
+export interface FeatureConsentView {
+  key: string;
+  label: string;
+  /** 未开通时给用户看的一句说明（讲「要做什么 / 现在什么状态」） */
+  message: string;
+  satisfied: boolean;
+  /** 该功能要求勾选的政策文件 */
+  requiredAgreements: PolicyAgreementKey[];
+  /** 当前用户还缺哪些（未同意 / 已过期 / 已撤销 / 未勾满） */
+  missingAgreements: PolicyAgreementKey[];
+  policyVersion: string;
+  /** 有效同意记录的到期时间；没有有效记录时为 null */
+  expiresAt: string | null;
+  /** 门禁分类（服务端给的，用于「详情」展示；旧后端不回该字段时可选） */
+  category?: string;
+  /** 为什么这个功能要这几份文件（服务端给出的中文依据，含路由证据） */
+  rationale?: string;
+}
+
+interface FeatureConsentResponse {
+  success: boolean;
+  policyVersion?: string;
+  features?: FeatureConsentView[];
+}
+
+/**
+ * 查询当前登录用户各功能的开放状态（GET /api/policy/feature-consent）。
+ *
+ * 判定只认该用户自己的有效同意记录（按账号，不看设备指纹），服务端无缓存 ——
+ * 撤销同意后下一次请求就会反映。页面门禁读它决定「放行还是弹同意清单」。
+ * 响应缺 features 时回落成空数组：调用方拿不到对应功能的状态，按未开通处理（fail-closed），
+ * 而不是在这里编一个「已同意」的默认值。
+ */
+export async function fetchFeatureConsent(): Promise<{ policyVersion: string; features: FeatureConsentView[] }> {
+  const { data } = await api.get<FeatureConsentResponse>('/api/policy/feature-consent');
+  return {
+    policyVersion: data.policyVersion || '',
+    features: Array.isArray(data.features) ? data.features : [],
+  };
 }
 
 /**

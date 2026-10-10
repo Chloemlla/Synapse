@@ -10,6 +10,12 @@ export interface IPolicyConsent extends Document {
   checksum: string;
   userAgent?: string;
   ipAddress?: string;
+  // 这条同意归哪个账号。同意必须能回答「是谁勾的」：记录只按 fingerprint（设备身份）归属时，
+  // 同一台设备上换个账号就能蹭到上一位用户的同意 —— 功能门禁因此只认 userId 命中的记录
+  // （见 policyConsentService.hasValidUserConsent），而设备级记录（登录/注册/匿名 TTS 门禁）
+  // 早于本字段存在，所以保持可选。
+  userId?: string;
+  username?: string;
   recordedAt: Date;
   isValid: boolean;
   expiresAt: Date;
@@ -32,6 +38,7 @@ export interface IPolicyConsent extends Document {
 // 静态方法接口
 export interface IPolicyConsentModel extends Model<IPolicyConsent> {
   findValidConsent(fingerprint: string, version: string): Promise<IPolicyConsent | null>;
+  findValidConsentForUser(userId: string, version: string): Promise<IPolicyConsent | null>;
   findLatestConsent(fingerprint: string): Promise<IPolicyConsent | null>;
   findConsentHistory(fingerprint: string, limit?: number): Promise<IPolicyConsent[]>;
   cleanExpiredConsents(): Promise<{ deletedCount?: number }>;
@@ -72,6 +79,13 @@ const policyConsentSchema = new Schema<IPolicyConsent>(
     ipAddress: {
       type: String,
       index: true,
+    },
+    // 未登录的设备级同意没有这两个字段（可选，保持向后兼容）
+    userId: {
+      type: String,
+    },
+    username: {
+      type: String,
     },
     recordedAt: {
       type: Date,
@@ -117,6 +131,8 @@ const policyConsentSchema = new Schema<IPolicyConsent>(
 // 创建索引
 // timestamp 字段不需要单独索引，复合索引和字段级索引已足够
 policyConsentSchema.index({ fingerprint: 1, version: 1 });
+// 用户级门禁的查询形状：按 userId 命中 + 时间倒序取最新一条
+policyConsentSchema.index({ userId: 1, recordedAt: -1 });
 policyConsentSchema.index({ ipAddress: 1, recordedAt: -1 });
 // 管理端两大筛选维度（来源 + 时间倒序）与状态筛选的支撑
 policyConsentSchema.index({ source: 1, recordedAt: -1 });
@@ -136,6 +152,20 @@ policyConsentSchema.statics.findValidConsent = function (fingerprint: string, ve
     isValid: true,
     expiresAt: { $gt: new Date() },
   });
+};
+
+// 静态方法：查该用户自己的有效同意记录（用户级门禁的唯一判据）。
+// 与 findValidConsent 的差别只有归属维度：这里不看 fingerprint —— 同一个人换了设备、重新同意后，
+// 新设备上写的是一条新的 userId 记录，不该被旧设备指纹的有无左右。
+// 显式按 recordedAt 倒序：同一用户+版本可能留下多条（续期走原地改写，但过期后重新同意会新增），
+// 排序让「哪条算数」是确定的，而不是由存储顺序决定。
+policyConsentSchema.statics.findValidConsentForUser = function (userId: string, version: string) {
+  return this.findOne({
+    userId,
+    version,
+    isValid: true,
+    expiresAt: { $gt: new Date() },
+  }).sort({ recordedAt: -1 });
 };
 
 // 静态方法：取该指纹最近的一条记录（不分有效/无效）
