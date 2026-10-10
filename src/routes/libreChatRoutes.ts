@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { isAdminRole } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { libreChatService } from "../services/libreChatService";
+import { consumeLibreChatQuota } from "../services/libreChatQuotaService";
 import { toChatMessagesView } from "../services/librechat/diagnostics";
 import { type LibreChatIdentity, resolveLibreChatIdentity } from "./libreChatIdentity";
 import { registerLibreChatAdminRoutes } from "./libreChatRoutes.admin";
@@ -54,6 +55,29 @@ async function requireLibreChatIdentity(req: Request, res: Response): Promise<Li
     sendLibreChatError(res, 401, "AUTH_REQUIRED", "未认证：请先登录后再使用");
   }
   return null;
+}
+
+/**
+ * 配额闸门：只挂在「会产生一次生成」的端点上（/send、/retry）。被拒时按方案 §4 返回 403
+ * 与当前额度状态，并带上 Retry-After。
+ *
+ * 只读端点（history / export / clear / messages 删除 / sse）**故意不调它**：用户被封的是一天里
+ * 「跟模型对话」的权限，不是查看与整理自己历史记录的能力，所以那些端点封禁期间也照常放行。
+ */
+async function enforceLibreChatQuota(userId: string, res: Response): Promise<boolean> {
+  const decision = await consumeLibreChatQuota(userId);
+  if (decision.allowed) return true;
+
+  if (decision.retryAfterSeconds !== undefined) {
+    res.setHeader("Retry-After", String(decision.retryAfterSeconds));
+  }
+  res.status(403).json({
+    code: decision.code,
+    error: decision.message || "LibreChat 今日额度已用完",
+    quota: decision.view,
+    ...(decision.retryAfterSeconds !== undefined ? { retryAfterSeconds: decision.retryAfterSeconds } : {}),
+  });
+  return false;
 }
 
 /**
@@ -190,6 +214,10 @@ router.post("/send", async (req, res) => {
         maxLength: MAX_MESSAGE_LEN,
       });
     }
+
+    // 普通用户每天有限次生成：参数校验之后、真正生成之前闸门；被拒即 403 并带上额度状态。
+    // 放在参数校验之后，是为了不让空/超长消息白扣一次额度。
+    if (!(await enforceLibreChatQuota(identity.legacyOwnerId, res))) return;
 
     // 发送消息到LibreChat服务
     const response = await libreChatService.sendMessage(identity.ownerKey, message);
@@ -405,6 +433,9 @@ router.post("/retry", async (req, res) => {
     if (!messageId || typeof messageId !== "string") {
       return sendLibreChatError(res, 400, "MESSAGE_ID_REQUIRED", "缺少消息ID");
     }
+
+    // 重试同样会产生一次生成，因此与 /send 共用同一道额度闸门。
+    if (!(await enforceLibreChatQuota(identity.legacyOwnerId, res))) return;
 
     const response = await libreChatService.retryMessage(identity.ownerKey, messageId as string);
     return res.json({

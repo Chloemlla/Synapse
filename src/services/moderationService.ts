@@ -63,6 +63,12 @@ const ModerationLogSchema = new mongoose.Schema(
 
 const ModerationLogModel = mongoose.models.ModerationLog || mongoose.model("ModerationLog", ModerationLogSchema);
 
+// 工单封禁时长护栏：banFromTicket 由调用方指定时长，只接受 1 小时 ~ 1 年，
+// 免得误传负值/NaN/天文数字，也避免出现“事实上的永久封禁”。
+const TICKET_BAN_MIN_HOURS = 1;
+const TICKET_BAN_MAX_HOURS = 24 * 365;
+const TICKET_BAN_DEFAULT_HOURS = 24;
+
 export class ModerationService {
   /**
    * 记录审查事件到 MongoDB
@@ -308,6 +314,57 @@ ${delimiter}
     });
 
     return punishmentMsg;
+  }
+
+  /**
+   * 按调用方指定的时长封禁工单权限（供「某个具体权限被判定为滥用」的场景用）。
+   *
+   * 与 handleViolation 的分工：handleViolation 按 ticketViolationCount 梯度升级（历史行为，不改），
+   * 时长由历史累计次数决定；配额类滥用要的是「固定时长、不无限升格」，所以另开一个入口。
+   * 两者共用同一组字段与同一套写路径（incrementUserTicketViolationCount / updateUser），
+   * 管理面板与工单拦截仍只认 ticketViolationCount + ticketBannedUntil 一套事实。
+   */
+  public static async banFromTicket(
+    userId: string,
+    hours: number,
+    reason?: string,
+  ): Promise<{ bannedUntil: string }> {
+    const requested = Number(hours);
+    // 非法值回落默认时长，而不是抛错：调用方已经判定了「要封」，不该因为传参失误放行。
+    const effectiveHours = Number.isFinite(requested)
+      ? Math.min(Math.max(Math.floor(requested), TICKET_BAN_MIN_HOURS), TICKET_BAN_MAX_HOURS)
+      : TICKET_BAN_DEFAULT_HOURS;
+
+    // 先记违规次数（原子 $inc），再写到期时间：即使后者失败，违规事实也不会丢。
+    await userService.incrementUserTicketViolationCount(userId);
+
+    const bannedUntil = new Date(Date.now() + effectiveHours * 60 * 60 * 1000).toISOString();
+
+    // 单调护栏：只允许把封禁延长，不允许缩短已有封禁。
+    // 为什么必须挡：handleViolation 会按违规次数升级（最高 99 年），而 LibreChat 的自动封禁固定 24 小时；
+    // 若无条件写，一个已被长期封工单的用户只要刷爆一次额度，就能把长期封禁自助缩成一天 —— 处罚只进不退。
+    // 残留竞态：读→写之间若有更长的封禁写入，本方法可能覆盖它（窗口极小）。之所以不改直写 UserModel 消除它，
+    // 是因为直写会绕过 userService 的缓存与字段白名单纪律，那种不一致比这个窄窗口更值得避免。
+    const current = await userService.getUserById(userId);
+    const currentUntil = typeof current?.ticketBannedUntil === "string" ? current.ticketBannedUntil : "";
+    const stillBanned = currentUntil !== "" && currentUntil > new Date().toISOString();
+    const effectiveUntil = stillBanned && currentUntil > bannedUntil ? currentUntil : bannedUntil;
+    if (effectiveUntil === bannedUntil) {
+      await userService.updateUser(userId, { ticketBannedUntil: bannedUntil });
+    }
+
+    await ModerationService.logEvent({
+      userId,
+      isViolated: true,
+      reason: reason || "权限滥用，临时封禁工单访问",
+      type: "punishment",
+      punishment:
+        effectiveUntil === bannedUntil
+          ? `封禁工单权限 ${effectiveHours} 小时`
+          : `维持原有更长的工单封禁至 ${effectiveUntil}（本次不再缩短）`,
+    });
+
+    return { bannedUntil: effectiveUntil };
   }
 
   /**

@@ -84,6 +84,12 @@ const userSchema = new mongoose.Schema(
     // 工单违规处罚相关
     ticketViolationCount: { type: Number, default: 0 },
     ticketBannedUntil: { type: String }, // ISO 日期字符串
+    // LibreChat 每日额度与超额自动封禁（见 services/libreChatQuotaService）：与 TTS 的 dailyUsage
+    // 分账，避免两个功能互吃额度；这些字段必须登记进 schema，否则 strict 模式会静默丢弃写入。
+    libreChatDailyUsage: { type: Number, default: 0 },
+    libreChatUsageDay: { type: String }, // 上海自然日的天键（YYYY-MM-DD）
+    libreChatViolationCount: { type: Number, default: 0 },
+    libreChatBannedUntil: { type: String }, // ISO 日期字符串
     // 翻译权限与账户状态
     isTranslationEnabled: { type: Boolean, default: true },
     translationAccessUntil: { type: String },
@@ -99,11 +105,11 @@ const UserModel = mongoose.models.User || mongoose.model("User", userSchema);
 
 // G2-22: 默认公开投影不再带出 totpSecret / backupCodes 等离线 2FA 秘密。
 const PUBLIC_USER_SELECT =
-  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled passkeyCredentials pendingChallenge pendingChallengeExpiresAt currentChallenge passkeyVerified requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt fingerprints lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt token tokenExpiresAt lastTotpCounter";
+  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled passkeyCredentials pendingChallenge pendingChallengeExpiresAt currentChallenge passkeyVerified requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt fingerprints lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt token tokenExpiresAt lastTotpCounter";
 
 // 安全的公开用户字段选择（排除敏感认证凭据），用于 /api/user/me 等普通用户 API
 const PUBLIC_USER_SAFE_SELECT =
-  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt lastTotpCounter";
+  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt lastTotpCounter";
 
 // G2-22: 只有明确需要 2FA 秘密的调用方（totpController、passkeyService verify 等）才使用该投影。
 const USER_SECRETS_SELECT = `${PUBLIC_USER_SELECT} totpSecret backupCodes`;
@@ -131,6 +137,11 @@ const ADMIN_USER_LIST_PROJECT = {
   lastLoginAt: 1,
   ticketViolationCount: 1,
   ticketBannedUntil: 1,
+  // LibreChat 额度/封禁状态：管理端用户详情要能看到「为什么被限」，故随列表一起下推。
+  libreChatDailyUsage: 1,
+  libreChatUsageDay: 1,
+  libreChatViolationCount: 1,
+  libreChatBannedUntil: 1,
   isTranslationEnabled: 1,
   translationAccessUntil: 1,
   accountStatus: 1,
