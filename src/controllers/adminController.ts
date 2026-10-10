@@ -13,6 +13,7 @@ import { ProjectLumenConfigModel } from "../models/projectLumenConfigModel";
 import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protectedEnvKeys";
 import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
 import { clearAllProfileVerificationSessions } from "../services/profileUpdateVerificationService";
+import { applyAccountRiskAction } from "../services/accountRiskService";
 import { hasValidSecuritySession, requestVerificationToken } from "../utils/securitySession";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
@@ -1024,10 +1025,63 @@ export const adminController = {
         if (await isLastSuperadmin(targetUser)) {
           return res.status(409).json({ error: "无法封停最后一个超级管理员" });
         }
-        await UserStorage.updateUser(targetUser.id, {
-          accountStatus: "suspended",
+        // RC-07：封停必须走统一风险出口（写档位 + 落 security_events + 写审计 + 撤销存量会话），
+        // 不再直接 updateUser({accountStatus})——那样只改一个字段，事后无法回答
+        // 「谁、什么时候、因为什么封的」，且存量会话不会被踢掉。
+        const suspended = await applyAccountRiskAction({
+          userId: targetUser.id,
+          action: "suspend",
+          reason: typeof req.body?.reason === "string" && req.body.reason.trim()
+            ? req.body.reason.trim()
+            : "管理员封停账户",
+          operatorId: req.user?.id || "unknown-admin",
         });
+        if (!suspended.ok) {
+          return res.status(suspended.code === "TARGET_IS_SUPERADMIN" ? 403 : 400).json({
+            error: suspended.error,
+            code: suspended.code,
+          });
+        }
         return res.json({ success: true, message: "账户已封停" });
+      }
+
+      // RC-07 新增的中间态动作：标记观察 / 受限 / 强制逐步验证 / 解除 / 清旗标。
+      // 与封停共用同一个出口，因此都自带事件与审计；这里只负责参数校验与响应形状。
+      if (action === "MARK_WATCH" || action === "RESTRICT_ACCOUNT" || action === "REQUIRE_STEP_UP") {
+        const mapped = action === "MARK_WATCH"
+          ? "mark_watch"
+          : action === "RESTRICT_ACCOUNT"
+            ? "restrict"
+            : "require_step_up";
+        const durationHours = Number(req.body?.durationHours);
+        const result = await applyAccountRiskAction({
+          userId: targetUser.id,
+          action: mapped,
+          reason: typeof req.body?.reason === "string" && req.body.reason.trim()
+            ? req.body.reason.trim()
+            : "管理员标记账户风险",
+          operatorId: req.user?.id || "unknown-admin",
+          ...(Number.isFinite(durationHours) && durationHours > 0 ? { durationHours } : {}),
+        });
+        if (!result.ok) {
+          return res.status(400).json({ error: result.error, code: result.code });
+        }
+        return res.json({ success: true, message: "已更新账户风险档", risk: result });
+      }
+
+      if (action === "UNBAN_ACCOUNT" || action === "CLEAR_RISK_FLAGS") {
+        const result = await applyAccountRiskAction({
+          userId: targetUser.id,
+          action: action === "UNBAN_ACCOUNT" ? "unban" : "clear_flags",
+          reason: typeof req.body?.reason === "string" && req.body.reason.trim()
+            ? req.body.reason.trim()
+            : "管理员人工复核后解除",
+          operatorId: req.user?.id || "unknown-admin",
+        });
+        if (!result.ok) {
+          return res.status(400).json({ error: result.error, code: result.code });
+        }
+        return res.json({ success: true, message: "已解除风险处置", risk: result });
       }
 
       if (action === "DELETE_USER") {

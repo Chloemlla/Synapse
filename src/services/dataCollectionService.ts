@@ -5,6 +5,7 @@ import { join } from "node:path";
 import logger from "../utils/logger";
 import { mongoose } from "./mongoService";
 import { installShutdownHandlers, registerShutdownStep } from "./shutdown";
+import { SecurityEvent } from "../models/securityEventModel";
 import { registerBackgroundTaskStopper } from "../utils/backgroundTaskRegistry";
 
 // FilterQuery type definition for compatibility
@@ -1079,6 +1080,28 @@ class DataCollectionService {
         riskLevel: risk.riskLevel,
         reason: risk.reason,
       });
+
+      // RC-10：这个引擎以前只打一条 warn 日志，零强制力。这里把它接成**账户维度的信号**：
+      // 写 `ACCOUNT_ABUSE_*` 事件，由 `evaluateAccountRisk`（RC-06）聚合进 riskScore/riskTier。
+      //
+      // 为什么**不**在这里直接调用 applyAccountRiskAction 处罚：该上报链路是匿名可写的
+      //（`/api/data-collection` 且 userId 由客户端自报），直接处罚等于把
+      //「匿名自报头部 → 升级处罚」做成新攻击面 —— 与 `nexaiSecurityService.getPublicReportAction`
+      // 的既有原则一致。强制动作必须由账户聚合按阈值决定，或者由管理员人工确认。
+      recordAbuseSignal({
+        userId: typeof data.userId === "string" ? data.userId : "",
+        fingerprint: typeof (redacted as { fingerprint?: unknown })?.fingerprint === "string"
+          ? String((redacted as { fingerprint?: unknown }).fingerprint)
+          : "data-collection",
+        action: String(data.action || "unknown"),
+        riskScore: risk.riskScore,
+        riskLevel: risk.riskLevel,
+        reason: risk.reason,
+        flags: risk.flags,
+        ipAddress: typeof (redacted as { ip?: unknown })?.ip === "string"
+          ? String((redacted as { ip?: unknown }).ip)
+          : "",
+      });
     }
 
     const allTags = Array.from(
@@ -1743,3 +1766,44 @@ class DataCollectionService {
 }
 
 export const dataCollectionService = DataCollectionService.getInstance();
+
+/**
+ * 把「风控引擎判定拦截」写成账户维度的滥用信号（RC-10 / RC-20）。
+ *
+ * 事件类型固定 `ACCOUNT_ABUSE_*` 前缀 —— `evaluateAccountRisk` 的账户聚合正是按这个前缀计数
+ *（见 `accountRiskService.ACCOUNT_ABUSE_EVENT_PREFIX`），因此这里命名不能再自由发挥。
+ *
+ * 写失败只记日志：这是增强信号，不能因为它把上报链路打成 500。
+ */
+function recordAbuseSignal(params: {
+  userId: string;
+  fingerprint: string;
+  action: string;
+  riskScore: number;
+  riskLevel: string;
+  reason?: string;
+  flags?: string[];
+  ipAddress?: string;
+}): void {
+  if (mongoose.connection.readyState !== 1) return;
+  void SecurityEvent.create({
+    deviceFingerprint: params.fingerprint.slice(0, 256),
+    userId: params.userId || undefined,
+    eventType: "ACCOUNT_ABUSE_RISK_BLOCKED",
+    eventData: {
+      action: params.action,
+      riskLevel: params.riskLevel,
+      reason: params.reason,
+      flags: params.flags,
+    },
+    riskScore: Number.isFinite(params.riskScore) ? params.riskScore : 0,
+    ipAddress: params.ipAddress || "",
+    userAgent: "",
+    createdAt: new Date(),
+  }).catch((error) => {
+    logger.warn("[DataCollection] 滥用信号写入失败", {
+      userId: params.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}

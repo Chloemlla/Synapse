@@ -12,11 +12,12 @@ import {
 } from "../utils/accountRiskScoring";
 import logger from "../utils/logger";
 import type { User as UserType } from "../utils/userStorageTypes";
-import { getLatestAuthSessionIpLocation } from "./authSessionService";
+import { AuditLogService } from "./auditLogService";
+import { getLatestAuthSessionIpLocation, revokeAllAuthSessions } from "./authSessionService";
 import { getCachedIpRisk, getIpRisk, type IpRiskResult } from "./ipRiskService";
 import { mongoose } from "./mongoService";
 import { isRiskExempt } from "./riskExemption";
-import { getAccountRiskState, updateUser } from "./userService";
+import { getAccountRiskState, updateUser, UserModel } from "./userService";
 
 /**
  * 账户风险聚合与登录 IP 沉淀（RC-06 / RC-12 / §4.2）。
@@ -405,13 +406,16 @@ async function recordAccountRiskEvent(params: {
   assessment: AccountRiskAssessment;
   reason?: string;
   exempt: boolean;
+  /** 有值 = 这是一次人工/自动的明确动作；无值 = 聚合结果的自动升档。 */
+  action?: AccountRiskAction;
+  operatorId?: string;
 }): Promise<void> {
-  const { userId, fromTier, toTier, assessment, reason, exempt } = params;
+  const { userId, fromTier, toTier, assessment, reason, exempt, action, operatorId } = params;
   try {
     await SecurityEvent.create({
       deviceFingerprint: "account-risk",
       userId,
-      eventType: "ACCOUNT_RISK_TIER_CHANGED",
+      eventType: action ? "ACCOUNT_RISK_ACTION" : "ACCOUNT_RISK_TIER_CHANGED",
       eventData: {
         fromTier,
         toTier,
@@ -420,7 +424,8 @@ async function recordAccountRiskEvent(params: {
         reasons: assessment.reasons,
         reason,
         exempt,
-        source: "auto",
+        source: action ? "action" : "auto",
+        ...(action ? { action, operatorId } : {}),
       },
       riskScore: assessment.riskScore,
       ipAddress: "",
@@ -432,5 +437,235 @@ async function recordAccountRiskEvent(params: {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+/**
+ * 账户风险动作（RC-07）：**管理端与自动判定唯一的处罚出口**。
+ *
+ * 为什么不继续让各处直接 `updateUser({accountStatus})`：
+ * 1. 原实现只写 `accountStatus: "suspended"`，**不写原因、不写操作人、不撤存量会话、不写事件**——
+ *    事后无法回答「谁在什么时候因为什么封了他」，也无法申诉；
+ * 2. 只有「封停」与「正常」两档，没有「标记 / 观察 / 逐步验证」的中间态；
+ * 3. 各业务模块各自实现了自己的禁令（工单 `TICKET_PERMISSION_BANNED`、翻译
+ *    `translationAccessUntil`……），账户级与模块级两套体系没有共同的「风险档」概念。
+ *
+ * 本函数是这三件事的收口：**改档位 + 落事件 + 按需踢掉存量会话**，并保证：
+ * - 档位**单调**（除 `unban` / `clear_flags` 这两个显式的人工降级动作）；
+ * - `superadmin` 不能被本出口封停（封停超管必须走专用路径 + 安全会话，见 §3.2）；
+ * - 无论成功与否都写审计（处罚类动作没有审计就等于没有）。
+ */
+
+export type AccountRiskAction =
+  | "mark_watch"
+  | "restrict"
+  | "require_step_up"
+  | "suspend"
+  | "unban"
+  | "clear_flags";
+
+export interface ApplyAccountRiskActionInput {
+  userId: string;
+  action: AccountRiskAction;
+  /** 必填：写给用户看的理由与写给审计的依据都取它。 */
+  reason: string;
+  /** 操作人 id；自动判定传 "auto"。 */
+  operatorId: string;
+  /** 绝对到期时间（ms），与 durationHours 二选一。 */
+  until?: number;
+  /** 相对时长（小时），与 until 二选一。 */
+  durationHours?: number;
+  /** 逐步验证范围（仅 restrict / require_step_up 用）。 */
+  stepUpMode?: "sensitive" | "all-writes" | "all";
+}
+
+export type ApplyAccountRiskActionResult =
+  | { ok: true; action: AccountRiskAction; fromTier: AccountRiskTier; toTier: AccountRiskTier; stepUpUntil: number }
+  | { ok: false; error: string; code: string };
+
+function resolveUntil(input: ApplyAccountRiskActionInput, now: number): number {
+  if (typeof input.until === "number" && Number.isFinite(input.until) && input.until > now) return input.until;
+  if (typeof input.durationHours === "number" && Number.isFinite(input.durationHours) && input.durationHours > 0) {
+    return now + input.durationHours * 60 * 60 * 1000;
+  }
+  return computeStepUpUntil(config.accountRisk, now);
+}
+
+export async function applyAccountRiskAction(
+  input: ApplyAccountRiskActionInput,
+): Promise<ApplyAccountRiskActionResult> {
+  const now = Date.now();
+  const { userId, action, reason, operatorId } = input;
+
+  if (!userId) return { ok: false, error: "缺少用户 ID", code: "INVALID_TARGET" };
+  if (!reason || !reason.trim()) return { ok: false, error: "必须提供处罚理由", code: "REASON_REQUIRED" };
+
+  const state = await getAccountRiskState(userId);
+  if (!state) return { ok: false, error: "用户不存在", code: "TARGET_NOT_FOUND" };
+
+  const fromTier: AccountRiskTier = state.riskTier ?? "normal";
+  const patch: Partial<UserType> = {
+    flaggedBy: operatorId,
+    flagReason: reason.trim().slice(0, 512),
+    riskUpdatedAt: now,
+  };
+  let toTier: AccountRiskTier = fromTier;
+  let stepUpUntil = state.stepUpUntil ?? 0;
+  let revokeSessions = false;
+
+  switch (action) {
+    case "mark_watch": {
+      toTier = tierRank(fromTier) >= tierRank("watch") ? fromTier : "watch";
+      break;
+    }
+    case "restrict": {
+      toTier = tierRank(fromTier) >= tierRank("restricted") ? fromTier : "restricted";
+      stepUpUntil = resolveUntil(input, now);
+      patch.stepUpMode = input.stepUpMode ?? state.stepUpMode ?? config.accountRisk.stepUpMode;
+      break;
+    }
+    case "require_step_up": {
+      // 不动档位，只把「每次操作都要验」这个窗口签出来（可单独用于观察期）。
+      stepUpUntil = resolveUntil(input, now);
+      patch.stepUpMode = input.stepUpMode ?? state.stepUpMode ?? config.accountRisk.stepUpMode;
+      break;
+    }
+    case "suspend": {
+      if (state.role === "superadmin") {
+        // 封停超管必须走专用路径（安全会话 + 双人确认），否则本出口就是一条提权捷径。
+        return { ok: false, error: "不允许通过风险出口封停超级管理员", code: "TARGET_IS_SUPERADMIN" };
+      }
+      if (state.accountStatus === "suspended") {
+        return { ok: false, error: "账户已经是封停状态", code: "ALREADY_SUSPENDED" };
+      }
+      patch.accountStatus = "suspended";
+      // 封停后 step-up 窗口无意义：会话都撤了，留下它只会让后续判定自相矛盾。
+      patch.stepUpUntil = 0;
+      stepUpUntil = 0;
+      revokeSessions = true;
+      break;
+    }
+    case "unban": {
+      patch.accountStatus = "active";
+      patch.riskTier = "normal";
+      patch.riskFlags = [];
+      patch.riskScore = 0;
+      patch.stepUpUntil = 0;
+      toTier = "normal";
+      stepUpUntil = 0;
+      break;
+    }
+    case "clear_flags": {
+      patch.riskFlags = [];
+      patch.riskScore = 0;
+      patch.stepUpUntil = 0;
+      stepUpUntil = 0;
+      break;
+    }
+    default:
+      return { ok: false, error: "不支持的风险动作", code: "UNSUPPORTED_ACTION" };
+  }
+
+  if (action !== "unban" && action !== "clear_flags" && toTier !== fromTier) {
+    patch.riskTier = toTier;
+  }
+  if (action === "restrict" || action === "require_step_up") {
+    patch.stepUpUntil = stepUpUntil;
+  }
+
+  try {
+    await updateUser(userId, patch);
+  } catch (error) {
+    logger.error("[AccountRisk] 风险动作写回失败", {
+      userId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, error: "写入失败", code: "WRITE_FAILED" };
+  }
+
+  if (revokeSessions) {
+    try {
+      await revokeAllAuthSessions(userId);
+    } catch (error) {
+      // 会话撤销失败不能把已落库的封停回滚：漏撤的会话会由 assertActiveAuthSession 的
+      // 账户状态检查拦下，但必须告警（否则没人知道有残留会话）。
+      logger.error("[AccountRisk] 封停后撤销存量会话失败，需人工核查", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await recordAccountRiskEvent({
+    userId,
+    fromTier,
+    toTier,
+    assessment: {
+      riskScore: typeof patch.riskScore === "number" ? patch.riskScore : state.riskScore ?? 0,
+      riskTier: toTier,
+      cappedTier: toTier,
+      flags: patch.riskFlags ?? state.riskFlags ?? [],
+      reasons: [reason.trim()],
+    },
+    reason,
+    exempt: false,
+    action,
+    operatorId,
+  });
+
+  await writeRiskActionAudit({ userId, action, reason, operatorId, fromTier, toTier, stepUpUntil });
+
+  logger.info("[AccountRisk] 风险动作已执行", { userId, action, operatorId, fromTier, toTier, stepUpUntil });
+  return { ok: true, action, fromTier, toTier, stepUpUntil };
+}
+
+async function writeRiskActionAudit(params: {
+  userId: string;
+  action: AccountRiskAction;
+  reason: string;
+  operatorId: string;
+  fromTier: AccountRiskTier;
+  toTier: AccountRiskTier;
+  stepUpUntil: number;
+}): Promise<void> {
+  const isAuto = params.operatorId === "auto";
+  try {
+    await AuditLogService.log({
+      userId: isAuto ? "system" : params.operatorId,
+      username: isAuto ? "system" : params.operatorId,
+      role: isAuto ? "system" : "admin",
+      action: `security.account-risk.${params.action}`,
+      module: "security",
+      targetId: params.userId,
+      result: "success",
+      detail: {
+        fromTier: params.fromTier,
+        toTier: params.toTier,
+        stepUpUntil: params.stepUpUntil,
+        reason: params.reason,
+        source: isAuto ? "auto" : "admin",
+      },
+      ip: "",
+    });
+  } catch (error) {
+    logger.warn("[AccountRisk] 风险动作审计写入失败", {
+      userId: params.userId,
+      action: params.action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** 供管理端确认「是否最后一个超管」等前置检查使用（与 adminController.isLastSuperadmin 同源事实）。 */
+export async function countSuperadmins(): Promise<number> {
+  if (!mongoReady()) return 0;
+  try {
+    return await UserModel.countDocuments({ role: "superadmin" }).exec();
+  } catch (error) {
+    logger.warn("[AccountRisk] 超管数量查询失败", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
   }
 }
