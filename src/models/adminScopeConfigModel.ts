@@ -23,7 +23,8 @@ const AdminScopeConfigSchema = new mongoose.Schema(
   { collection: "admin_scope_configs", minimize: false },
 );
 
-AdminScopeConfigSchema.index({ scopeKey: 1 }, { unique: true });
+// 唯一性由上方字段声明的 unique: true 提供。不要再加显式 index({scopeKey:1},{unique:true})：
+// mongoose 会报 'Duplicate schema index'，且重复定义的选项不会被应用。
 
 export interface AdminScopeConfigDoc {
   scopeKey: string;

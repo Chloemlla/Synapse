@@ -34,7 +34,15 @@ const SyncChangeSchema = new mongoose.Schema<ISyncChange>(
           deviceInstallationId: { type: String },
           updatedAt: { type: Number },
         },
-        { _id: false },
+        {
+          _id: false,
+          // `collection` 是 mongoose 的保留字段名（与 Schema#collection 访问器同名），
+          // 默认会打 "`collection` is a reserved schema pathname" 警告。这里刻意保留该字段名：
+          // 它是已落库的数据形状（描述“这条变更属于哪个集合”），改名要么写迁移、要么破坏
+          // lumen 客户端协议；而它只出现在**子文档** schema 里（没有自己的 collection 概念），
+          // 遮蔽风险最小，因此显式抑制警告而不是改名。
+          suppressReservedKeysWarning: true,
+        },
       ),
     },
     ttlExpireAt: { type: Date },

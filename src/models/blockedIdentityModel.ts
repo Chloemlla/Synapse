@@ -40,7 +40,8 @@ export interface BlockedIdentityDoc {
 
 const BlockedIdentitySchema = new mongoose.Schema<BlockedIdentityDoc>(
   {
-    emailCanonical: { type: String, required: true, unique: true, index: true },
+    // unique 本身即建索引；再写 index: true 是冗余的（且容易与下方复合索引混成重复声明）。
+    emailCanonical: { type: String, required: true, unique: true },
     email: { type: String, required: true },
     username: { type: String, required: true, index: true },
     userId: { type: String, required: true, index: true },

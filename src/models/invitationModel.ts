@@ -28,7 +28,8 @@ const InvitationSchema = new Schema<IInvitation>(
 );
 
 // 索引
-InvitationSchema.index({ id: 1 }, { unique: true });
+// 唯一性由上方字段声明的 unique: true 提供；显式重复声明会触发
+// mongoose 'Duplicate schema index' 警告（启动日志里那条 Invitation 警告就是这里）。
 InvitationSchema.index({ workspaceId: 1 });
 InvitationSchema.index({ inviteeEmail: 1 });
 InvitationSchema.index({ status: 1 });

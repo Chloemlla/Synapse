@@ -65,7 +65,8 @@ const VoiceProjectSchema = new Schema<IVoiceProject>(
 );
 
 // 索引
-VoiceProjectSchema.index({ id: 1 }, { unique: true });
+// 唯一性由上方字段声明的 unique: true 提供；显式重复声明会触发
+// mongoose 'Duplicate schema index' 警告，且重复定义的选项不会被应用。
 VoiceProjectSchema.index({ ownerId: 1 });
 VoiceProjectSchema.index({ workspaceId: 1 });
 VoiceProjectSchema.index({ "sharing.sharedWith": 1 });

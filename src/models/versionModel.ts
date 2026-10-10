@@ -51,7 +51,8 @@ const VersionSchema = new Schema<IVersion>(
 );
 
 // 索引
-VersionSchema.index({ id: 1 }, { unique: true });
+// 唯一性由上方字段声明的 unique: true 提供；显式重复声明会触发
+// mongoose 'Duplicate schema index' 警告，且重复定义的选项不会被应用。
 VersionSchema.index({ projectId: 1, versionNumber: -1 });
 VersionSchema.index({ projectId: 1, createdAt: -1 });
 VersionSchema.index({ authorId: 1 });
