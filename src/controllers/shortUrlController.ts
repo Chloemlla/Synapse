@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { ShortUrlService } from "../services/shortUrlService";
+import { shortUrlHotQueryService } from "../services/shortUrlHotQueryService";
 import logger from "../utils/logger";
 
 // 允许的 URL 协议白名单
@@ -38,11 +39,19 @@ export class ShortUrlController {
 
       logger.info("收到短链访问请求", { code: trimmedCode, ip: req.ip });
 
-      const shortUrl = await ShortUrlService.getShortUrlByCode(trimmedCode);
+      // 热点缓存优先：最近 1 小时内被查询超过阈值（默认 3 次）的短链已迁入 Redis，
+      // 命中就不用打 Mongo。Redis 不可用时 getHotTarget 恒为 null，行为与以前一致。
+      const hotTarget = await shortUrlHotQueryService.getHotTarget(trimmedCode);
+      const shortUrl = hotTarget
+        ? { code: trimmedCode, target: hotTarget }
+        : await ShortUrlService.getShortUrlByCode(trimmedCode);
       if (!shortUrl) {
         logger.warn("短链不存在", { code: trimmedCode });
         return res.status(404).json({ error: "短链不存在" });
       }
+
+      // 计数与晋升不阻塞重定向：等它就等于把 Redis 的延迟加到了每一次跳转上。
+      void shortUrlHotQueryService.recordQuery(trimmedCode, shortUrl.target);
 
       logger.info("短链重定向成功", { code: trimmedCode, target: shortUrl.target });
 

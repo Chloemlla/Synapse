@@ -1,6 +1,8 @@
 import ShortUrlModel, { type IShortUrl } from "../models/shortUrlModel";
 import logger from "../utils/logger";
 import { createUrlSafeRandomId } from "../utils/randomId";
+import { redisService } from "./redisService";
+import { shortUrlHotQueryService } from "./shortUrlHotQueryService";
 import { TransactionService } from "./transactionService";
 import { shortUrlMigrationService } from "./shortUrlMigrationService";
 
@@ -314,6 +316,9 @@ export class ShortUrlService {
         return false;
       }
 
+      // 删库前先失效热点缓存：不然被删的短链还能从 Redis 里继续跳转
+      await shortUrlHotQueryService.invalidate(trimmedCode);
+
       logger.info("删除短链成功", { code: trimmedCode, userId });
       return true;
     } catch (error) {
@@ -431,6 +436,9 @@ export class ShortUrlService {
         writeConcern: { w: 1 }, // 降低写入关注级别
       });
 
+      // 删完后失效热点缓存：否则被删的短链还能从 Redis 继续跳转
+      await shortUrlHotQueryService.invalidateMany(validCodes);
+
       logger.info("批量删除短链成功", {
         codes: validCodes,
         userId: trimmedUserId,
@@ -547,6 +555,10 @@ export class ShortUrlService {
   static async deleteAllShortUrls() {
     try {
       const result = await ShortUrlModel.deleteMany({});
+
+      // 清空缓存中的全部计数与热点：库里没有了，缓存里不能还留着（deleteByPrefix 连计数一起扫掉）
+      await redisService.deleteByPrefix("shorturl:hot:");
+      await redisService.deleteByPrefix("shorturl:hits:");
 
       logger.info("删除所有短链数据成功", { deletedCount: result.deletedCount });
 

@@ -6,6 +6,7 @@ import { isAdminRole, isSuperAdmin } from "../../middleware/auth";
 import { authenticateToken } from "../../middleware/authenticateToken";
 import { replayProtection } from "../../middleware/replayProtection";
 import { escapeRegexLiteral } from "../../utils/regexEscape";
+import { shortUrlHotQueryService } from "../../services/shortUrlHotQueryService";
 import { shortUrlMigrationService } from "../../services/shortUrlMigrationService";
 import logger from "../../utils/logger";
 import { createUrlSafeRandomId } from "../../utils/randomId";
@@ -116,6 +117,9 @@ router.delete("/shortlinks/:id", authenticateToken, auditLog({ module: "shorturl
     }
 
     await ShortUrlModel.findByIdAndDelete(id);
+    // 管理端是直接删库（不经 ShortUrlService），所以这里也得失效一次热点缓存：
+    // 不然被删的短链会继续从 Redis 跳转，直到 10 分钟的条目 TTL 到期。
+    await shortUrlHotQueryService.invalidate(String(link?.code ?? ""));
     logger.info("[ShortLink] 管理员删除短链", {
       admin: req.user?.username || req.user?.id,
       code: link?.code,
@@ -169,6 +173,9 @@ router.post("/shortlinks/batch-delete", authenticateToken, auditLog({ module: "s
 
     // 执行批量删除
     const deleteResult = await ShortUrlModel.deleteMany({ _id: { $in: validIds } });
+
+    // 同样要清缓存（管理端绕过服务直接删库）
+    await shortUrlHotQueryService.invalidateMany(links.map((link: any) => String(link.code)));
 
     logger.info("[ShortLink] 管理员批量删除短链", {
       admin: req.user?.username || req.user?.id,
