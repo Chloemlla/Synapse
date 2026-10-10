@@ -242,9 +242,9 @@ export async function validateApiKey(plainKey: string): Promise<ApiKeyDoc | null
     return null;
   }
 
-  // codeql[js/insufficient-password-hash] 这是**缓存查找键**（sha256 仅用于在进程内 Map 里定位条目），
-  // 不是凭据存储/比对。真正的密钥比对在下方 hashKey()（scrypt N=16384，静态盐另记）+ timingSafeHashEqual。
-  // 输入是服务端生成的高熵密钥（ak_ 前缀 + 随机段），不是用户弱口令。
+  // 这是**缓存查找键**：sha256 仅用于在进程内 Map 里定位条目，不是凭据存储/比对。
+  // 真正的密钥比对在下方 hashKey()（scrypt N=16384）+ timingSafeHashEqual，输入是服务端生成的高熵密钥。
+  // codeql[js/insufficient-password-hash] 缓存查找键，非口令哈希；凭据比对用 scrypt + timingSafeHashEqual
   const cacheKey = crypto.createHash("sha256").update(key).digest("hex");
   const cached = validateCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {

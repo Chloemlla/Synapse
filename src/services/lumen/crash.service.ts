@@ -137,9 +137,9 @@ export async function recordCrashReport(
     ttlExpireAt: lumenTtlExpireAt("crashReport", now),
   }).catch(async (error: unknown) => {
     if ((error as { code?: number })?.code !== 11000) throw error;
-    // codeql[js/sql-injection] reportId 已在入口按 `typeof !== "string"` 强制为字符串
-    // （见本文件上的输入校验）， 对象形态（如 {$ne: null}）在到达此处前已 400；
-    // 仍额外限定 userId，因此不可能用操作符注入跨用户取文档。
+    // reportId 已在入口按 `typeof !== "string"` 强制为字符串（见本文件上的输入校验），
+    // 对象形态（如 {$ne: null}）在到达此处前已 400；仍额外限定 userId，不可能跨用户取文档。
+    // codeql[js/sql-injection] reportId 已在入口收窄为字符串，且查询额外限定 userId
     const winner = await CrashReport.findOne({ userId, reportId: request.reportId })
       .select({ receivedAt: 1 }).lean().exec();
     if (!winner) throw error;

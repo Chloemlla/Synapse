@@ -112,8 +112,9 @@ export async function buildAdminOverview(): Promise<AdminOverviewSnapshot> {
   if (apiKeysResult.status === "fulfilled") {
     apiKeys = apiKeysResult.value;
   } else {
-    // codeql[js/clear-text-logging] 记的是**拒绝原因**（经 sanitizeErrorForLog 截断的错误文本），
-    // 不是 apiKeysResult 的完成值——该 promise 只在 fulfilled 分支被赋给 apiKeys，失败分支拿不到密钥。
+    // 记的是**拒绝原因**（经 sanitizeErrorForLog 截断的错误文本），不是 apiKeysResult 的完成值
+    // ——该 promise 只在 fulfilled 分支被赋给 apiKeys，失败分支拿不到密钥。
+    // codeql[js/clear-text-logging] 记录的是拒绝原因，不是 apiKeys 完成值
     logger.warn("[AdminOverview] API Key 统计失败", sanitizeErrorForLog(apiKeysResult.reason));
     warnings.push("API Key 统计不可用");
   }
