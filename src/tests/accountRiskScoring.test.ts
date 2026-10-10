@@ -30,6 +30,10 @@ const baseConfig: AccountRiskRuntimeConfig = {
   newAccountWatchDays: 7,
   stepUpTtlSeconds: 3600,
   stepUpMode: "sensitive",
+  stepUpEnabled: true,
+  stepUpChallengeTtlSeconds: 120,
+  stepUpGrantTtlSeconds: 30,
+  stepUpGrantMaxUses: 5,
 };
 
 const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);

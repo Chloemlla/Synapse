@@ -8,6 +8,7 @@ import { UserStorage } from "../utils/userStorage";
 import { assertActiveAuthSession, hashAuthCredential, touchAuthSession } from "../services/authSessionService";
 import { USER_DELETED_FIELD, isSoftDeleted } from "../utils/softDeleteState";
 import { getClientIP } from "../utils/ipUtils";
+import { enforceAccountStepUp } from "./accountStepUpGuard";
 
 type JwtUserPayload = {
   userId?: string;
@@ -67,6 +68,12 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     );
     authedReq.user = user;
     authedReq.auth = { kind: "session", user };
+    // RC-02 / RC-45：账户逐步验证闸门。为什么在这里而不是 assembly.ts ——
+    // 本仓的 authenticateToken 是**路由级**中间件（没有全局认证层），
+    // 挂在更前面的全局中间件拿不到 req.user。这里正好是「认证已完成、业务之前」，
+    // 与审计 §4.4 的意图一致，且 routeKey 用的是 req.baseUrl + req.path（禁用 req.route）。
+    // 默认关闭（accountRisk.stepUpEnabled=false）时这是一次布尔判断，无额外 I/O。
+    if (await enforceAccountStepUp(req, res)) return;
     next();
   } catch (error) {
     if (error instanceof Error && (error.name === "AuthSessionError" || error.message.includes("会话不存在或已撤销"))) {

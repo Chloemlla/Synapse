@@ -1,6 +1,7 @@
 import logger from "../../utils/logger";
 import { isConnected, mongoose } from "../mongoService";
 import { readCaptchaKey } from "./keyStorage";
+import { CAPTCHA_SCENARIOS } from "./types";
 import type {
   CapSettingDoc,
   CaptchaAllocationPolicyDoc,

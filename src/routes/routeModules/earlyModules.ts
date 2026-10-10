@@ -4,9 +4,28 @@ import emailRoutes from "../emailRoutes";
 import invitationRoutes from "../invitationRoutes";
 import outemailRoutes from "../outemailRoutes";
 import recommendationRoutes from "../recommendationRoutes";
+import stepUpRoutes from "../stepUpRoutes";
 import workspaceRoutes from "../workspaceRoutes";
 
 export const earlyRouteModules: RouteModule[] = [
+  {
+    name: "step-up-routes",
+    path: "/api/step-up",
+    router: stepUpRoutes,
+    requiresAuth: true,
+    rateLimited: true,
+    isPublic: false,
+    authPolicy: {
+      mode: "route",
+      handlers: ["authenticateToken"],
+      note: "两个端点都只服务已登录用户：票据兑换必须绑定 userId（票据里带 userId，且服务端校验一致）。",
+    },
+    rateLimitPolicy: {
+      mode: "route",
+      limiters: ["stepUpGrantLimiter", "stepUpDiscardLimiter"],
+      note: "stepUpRoutes.ts 自建限流器（grant 10/min、discard 30/min）：兑换口子必须紧，否则“无限弹窗”本身就是可用性攻击面。",
+    },
+  },
   {
     name: "analytics-routes",
     path: "/api/analytics",

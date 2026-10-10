@@ -20,6 +20,7 @@ import {
   type ResolvedWidgetSettings,
 } from "./allocation";
 import { sanitizeCapEndpoint } from "./capEndpoint";
+import logger from "../../utils/logger";
 import {
   getCapKey,
   getCaptchaAllocationPolicyDoc,

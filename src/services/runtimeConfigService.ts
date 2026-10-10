@@ -877,6 +877,15 @@ function normalizeStoredAccountRiskConfig(
     newAccountWatchDays: normalizeInteger(raw.newAccountWatchDays, defaults.newAccountWatchDays, 0, 365),
     stepUpTtlSeconds: normalizeInteger(raw.stepUpTtlSeconds, defaults.stepUpTtlSeconds, 60, 7 * 24 * 3600),
     stepUpMode,
+    stepUpEnabled: normalizeBoolean(raw.stepUpEnabled, defaults.stepUpEnabled),
+    stepUpChallengeTtlSeconds: normalizeInteger(
+      raw.stepUpChallengeTtlSeconds,
+      defaults.stepUpChallengeTtlSeconds,
+      30,
+      3600,
+    ),
+    stepUpGrantTtlSeconds: normalizeInteger(raw.stepUpGrantTtlSeconds, defaults.stepUpGrantTtlSeconds, 5, 600),
+    stepUpGrantMaxUses: normalizeInteger(raw.stepUpGrantMaxUses, defaults.stepUpGrantMaxUses, 1, 5),
   };
 }
 

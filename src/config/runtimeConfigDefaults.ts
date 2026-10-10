@@ -343,6 +343,19 @@ export interface AccountRiskRuntimeConfig {
   stepUpTtlSeconds: number;
   /** 升档时默认的逐步验证范围（§4.4 / RC-09）。 */
   stepUpMode: "sensitive" | "all-writes" | "all";
+  /**
+   * 逐步验证闸门总开关，**默认 false**。
+   *
+   * 审计 §5 B3 明确要求：全站写请求都会过这道闸，豁免漏一个就是断服，
+   * 因此必须先在运行时可配里默认关闭、再灰度打开（`true` 之前行为与改动前逐字节一致）。
+   */
+  stepUpEnabled: boolean;
+  /** 挑战令牌有效期（秒，RC-03 建议 120）：过期即需重新弹窗。 */
+  stepUpChallengeTtlSeconds: number;
+  /** step-up grant 有效期（秒，D22 = 30）：只服务“已排队的那批请求”，排空即废。 */
+  stepUpGrantTtlSeconds: number;
+  /** 一枚 grant 最多兑换几次（D22：严格等于被阻断的合法票据数，且上限 5）。 */
+  stepUpGrantMaxUses: number;
 }
 
 export interface RuntimeConfigDefaults {
@@ -583,6 +596,11 @@ export function buildRuntimeConfigDefaults(options: {
       newAccountWatchDays: 7,
       stepUpTtlSeconds: 3600,
       stepUpMode: "sensitive",
+      // 默认关闭：闸门全站生效，漏一个豁免就是断服（§5 B3），必须先灰度。
+      stepUpEnabled: false,
+      stepUpChallengeTtlSeconds: 120,
+      stepUpGrantTtlSeconds: 30,
+      stepUpGrantMaxUses: 5,
     },
     // 默认关：不配置就完全沿用 24 小时节奏，只有运维显式打开才会出现提级轮换。
     mobileTokenRotationRisk: {
