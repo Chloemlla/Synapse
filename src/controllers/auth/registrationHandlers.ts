@@ -22,6 +22,7 @@ import {
   generateWelcomeEmailHtml,
 } from "../../templates/emailTemplates";
 import { getClientIP } from "../../utils/ipUtils";
+import { isIdentityRetired } from "../../services/blockedIdentityService";
 import logger from "../../utils/logger";
 import { UserStorage } from "../../utils/userStorage";
 import {
@@ -97,6 +98,17 @@ export async function register(req: Request, res: Response) {
     const existEmail = await UserStorage.getUserByEmail(email);
     if (existUser || existEmail) {
       return res.status(400).json({ error: "用户名或邮箱已被使用" });
+    }
+
+    // RC-47：已退役身份不得直接重注（否则“注销 → 重注”可把 riskTier 归零）。
+    // 这里给可解释的拒绝；userRepository.createUser 里还有一层同样的阑门作为兵底。
+    if (await isIdentityRetired(email)) {
+      logger.warn("[注册] 拒绍已退役身份", { email, ip: ipAddress });
+      return res.status(400).json({
+        error: "该邮箱不可用于注册，请联系支持",
+        code: "IDENTITY_RETIRED",
+        supportEmail: "support@chloemlla.com",
+      });
     }
 
     const inviteValidation = await validateRegistrationInviteForRegistration(invitationCode);

@@ -7,6 +7,8 @@ import { runStartupDiagnostics } from "../config/startupDiagnostics";
 import { startApiKeyBillingReconciliation } from "../services/apiKeyBillingService";
 import { startMobileTokenIpRetention } from "../services/mobileTokenIpRetentionService";
 import { connectMongo } from "../services/mongoService";
+import { runSchemaMigrations } from "../services/migrationRunner";
+import { SCHEMA_MIGRATIONS } from "../services/migrations/rc47UserDataPartialUniqueIndexes";
 import { schedulerService } from "../services/schedulerService";
 import { serviceRegistry } from "../services/serviceRegistry";
 import { installShutdownHandlers, registerShutdownStep } from "../services/shutdown";
@@ -69,6 +71,27 @@ const initializeStorage = async () => {
   try {
     await connectMongo();
     logger.info("[启动] MongoDB 连接成功");
+
+    // RC-47：启动期自动迁移。已落库标记的迁移会在读一次标记后直接跳过，
+    // 不反复检查、不反复执行；未达标/半迁移/不安全状态才进入状态判定。
+    // 失败**不阻断启动**（多数失败需人工介入，全站不可用比特性缺失严重），
+    // 结果由 /health 与日志暴露。
+    try {
+      const migrationResults = await runSchemaMigrations({ migrations: SCHEMA_MIGRATIONS });
+      const actionable = migrationResults.filter(
+        (result) => result.outcome !== "already-marked" && result.outcome !== "skipped",
+      );
+      if (actionable.length > 0) {
+        logger.warn("[启动] 迁移存在需关注的结果", {
+          results: actionable.map((result) => `${result.id}:${result.outcome}:${result.state}`),
+        });
+      }
+    } catch (migrationError) {
+      logger.error("[启动] 迁移流程异常（服务继续启动）", {
+        error: migrationError instanceof Error ? migrationError.message : String(migrationError),
+      });
+    }
+
     const initResult = await UserStorage.initializeDatabase();
     if (initResult.initialized) {
       logger.info(`[启动] ${initResult.message}`);

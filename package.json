@@ -80,7 +80,8 @@
     "fix:dependabot-alerts": "node scripts/fix-dependabot-alerts.js --dependabot-only",
     "fix:codeql-alerts": "node scripts/fix-dependabot-alerts.js --codeql-only",
     "test:critical": "jest --runInBand --detectOpenHandles --testPathPatterns=\"healthRoutes|authTokenLogging|replayProtection|authRoutes|authenticateToken.integration|commandCrypto|authCookieSession\"",
-    "report:unused-dependencies": "node scripts/governance/report-unused-dependencies.js"
+    "report:unused-dependencies": "node scripts/governance/report-unused-dependencies.js",
+    "migrate:rc47-indexes": "ts-node --transpile-only scripts/migrations/rc47-user-datas-partial-unique-indexes.ts"
   },
   "keywords": [
     "happy",

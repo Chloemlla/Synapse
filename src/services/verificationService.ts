@@ -13,6 +13,7 @@ import {
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
 import { EmailService } from "./emailService";
+import { isIdentityRetired } from "./blockedIdentityService";
 import { sendEmail } from "./emailSender";
 import { completeAuthEmail, releaseAuthEmail, reserveAuthEmail, type AuthEmailReservation } from "./authEmailCooldownService";
 import { revokeAllAuthSessions } from "./authSessionService";
@@ -134,6 +135,12 @@ export async function verifyEmailLink(
     if (existUser || existEmail) {
       await verificationTokenStorage.deleteToken(token);
       return { success: false, error: "用户名或邮箱已被使用" };
+    }
+
+    // RC-47：已退役身份不得直接重注（邮箱链注册同样适用）。
+    if (await isIdentityRetired(email)) {
+      await verificationTokenStorage.deleteToken(token);
+      return { success: false, error: "该邮箱不可用于注册，请联系支持" };
     }
 
     const inviteValidation = await validateRegistrationInviteForRegistration(invitationCode);

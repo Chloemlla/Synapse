@@ -14,6 +14,7 @@ import {
 import { sendEmail } from "../services/emailSender";
 import { generateUsageAlertEmailHtml } from "../templates/emailTemplates";
 import { getUserStorageProvider } from "./userStorageProvider";
+import { isIdentityRetired } from "../services/blockedIdentityService";
 import type { User } from "./userStorageTypes";
 import { userValidationService } from "./userValidationService";
 
@@ -127,6 +128,16 @@ export const userRepository = {
     if (existUserByName || existUserByEmail) {
       return null;
     }
+
+    // RC-47：已退役身份不得再次用于注册 —— 防“注销再注册洗白风险档”的关键闸门。
+    // 放在这一层（而不是只在控制器）是因为所有建号路径都经过它：
+    // 本地注册、邮箱验证链接、Google/LinuxDo 首次登录建号。
+    // 失败语义 fail-closed：读墓碑出错就直接抛（不让上层当成“没墓碑”而放行）。
+    if (await isIdentityRetired(email)) {
+      logger.warn("[UserRepository] 拒绍已退役身份注册（RC-47）", { username });
+      return null;
+    }
+
     try {
       return await getUserStorageProvider().createUser(buildNewUser(username, email, password));
     } catch (error) {

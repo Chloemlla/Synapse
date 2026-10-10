@@ -3,6 +3,7 @@ import type { User as UserType } from "../utils/userStorageTypes";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
 import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
+import { retireIdentity } from "./blockedIdentityService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import {
   canDecryptPassword,
@@ -21,8 +22,11 @@ import {
 const userSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true },
-    username: { type: String, required: true, unique: true },
-    email: { type: String, required: true, unique: true },
+    // RC-47：username/email 的「唯一」不再用字段级 unique:true，而是下方显式的**部分唯一索引**
+    // （只约束活跃账号）。原因：软删除后要把邮箱释放给用户重新注册，
+    // 但是否真允许重注由 `blocked_identities` 墓碑裁决（可解释、可人工释放）。
+    username: { type: String, required: true },
+    email: { type: String, required: true },
     password: { type: String },
     passwordHash: { type: String },
     passwordCiphertext: { type: String },
@@ -129,6 +133,33 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ role: 1, createdAt: 1 });
+
+/**
+ * 「活跃账号」的部分索引过滤条件（RC-47）。
+ *
+ * 语义上等价于 `utils/softDeleteState.ts` 的 `activeUserFilter()`（`$in: [0, null]`），
+ * 但这里刻意改用 `$or` + 等值/`$exists` 这组**部分索引最保守的子集**：
+ * partialFilterExpression 只允许有限运算符，用最保守的写法能避开“表达式被拒 → 索引建不出来”
+ * 这类只在线上才会发作的故障。
+ *
+ * ⚠ 不能用 `{ deletedAt: { $eq: null } }`：本模型的 deletedAt 是**数字 0** 表示未删除，
+ * `$eq: null` 只匹配「缺失或 null」，**不会匹配 0** —— 那样索引会把全部存量活跃账号排除在外，
+ * 等于把邮箱唯一性直接取消（比它要解决的洗白问题更严重）。
+ */
+const ACTIVE_USER_PARTIAL_FILTER = {
+  $or: [{ deletedAt: 0 }, { deletedAt: { $exists: false } }],
+};
+
+// 唯一性只在活跃账号之间成立；已软删除的账号不再占着邮箱/用户名（否则无法重注）。
+// 是否允许重注由 blocked_identities 墓碑在应用层裁决。
+userSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER },
+);
+userSchema.index(
+  { username: 1 },
+  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER },
+);
 
 const UserModel = mongoose.models.User || mongoose.model("User", userSchema);
 
@@ -606,7 +637,17 @@ export const softDeleteUser = async (
       await db.collection("api_keys").updateMany({ userId: id }, { $set: { enabled: false } }, { session });
       await db.collection("oauth_tokens").updateMany({ userId: id }, { $set: { revokedAt: new Date() } }, { session });
 
-      // 3) 用户主档：清凭据 + 改占位名释放唯一索引 + 打软删除标记（原值另存供调查比对）。
+      // 2.5) RC-47：先写身份墓碑，再打软删除标记，**两者同一事务**。
+      // 不能出现“账号已软删除但没有墓碑”的窗口 —— 那个窗口就是“注销再注册洗白”的入口。
+      await retireIdentity(
+        { userId: id, username: record.username ?? "", email: record.email ?? "", reason },
+        session,
+      );
+
+      // 3) 用户主档：清凭据 + 打软删除标记。
+      // **刻意不改 username/email**：唯一索引本身就是“禁止直接重注”的硬兜底；
+      // 旧实现把它们改成 deleted_<id> 以“释放唯一索引”，等于给攻击者一条零成本洗白路径（RC-47）。
+      // 原值另存是为了调查比对与历史可读。
       await UserModel.updateOne(
         { id },
         {
@@ -616,8 +657,6 @@ export const softDeleteUser = async (
             deleteReason: reason,
             deletedOriginalUsername: record.username ?? "",
             deletedOriginalEmail: record.email ?? "",
-            username: `deleted_${id}`,
-            email: `deleted_${id}@deleted.invalid`,
             accountStatus: "suspended",
           },
           // 凭据必须清：不清就会变成「删了还能登」。
