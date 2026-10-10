@@ -780,6 +780,41 @@ export const getAccountSecurityFacts = async (id: string): Promise<AccountSecuri
   };
 };
 
+/**
+ * 账户风险聚合（RC-06）所需的最小读取面。
+ *
+ * 为什么不直接用 `getUserById`：它走 `PUBLIC_USER_SELECT`，而风控字段刻意**不进**公开投影
+ *（D2：风控分只在管理端可见）。这里用独立投影读，既拿得到聚合所需的档位/旗标，
+ * 又不会把 riskScore/riskFlags 泄进任何用户自助接口。
+ */
+export interface AccountRiskState {
+  id: string;
+  role: string;
+  createdAt?: string;
+  riskTier?: "normal" | "watch" | "restricted" | "danger";
+  riskScore?: number;
+  riskFlags?: string[];
+  riskUpdatedAt?: number;
+  flaggedBy?: string;
+  flagReason?: string;
+  stepUpUntil?: number;
+  stepUpMode?: "sensitive" | "all-writes" | "all";
+  totpEnabled?: boolean;
+  passkeyEnabled?: boolean;
+  accountStatus?: string;
+  deletedAt?: number;
+}
+
+export const getAccountRiskState = async (id: string): Promise<AccountRiskState | null> => {
+  if (typeof id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(id)) return null;
+  const doc = await UserModel.findOne({ id })
+    .select(
+      "id role createdAt riskTier riskScore riskFlags riskUpdatedAt flaggedBy flagReason stepUpUntil stepUpMode totpEnabled passkeyEnabled accountStatus deletedAt",
+    )
+    .lean();
+  return doc ? (doc as unknown as AccountRiskState) : null;
+};
+
 export const getUserAuthByUsername = async (username: string): Promise<UserType | null> => {
   if (typeof username !== "string" || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     throw new Error("非法的用户名");

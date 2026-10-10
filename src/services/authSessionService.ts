@@ -314,6 +314,20 @@ export async function getAuthSessionIpLocation(userId: string, clientTokenHash: 
   return session?.ipLocation || null;
 }
 
+/**
+ * 该账号**最近一条**会话的 IP 属地（不看凭据类型）。
+ *
+ * 登录成功后用它把属地补进账户 IP 信号：`createAuthSession` 刚刚已经查过并落库了一次，
+ * 这里只读结果，避免在登录路径上再跑一次属地查询（那份查询要打 ipTelemetry 上游）。
+ */
+export async function getLatestAuthSessionIpLocation(userId: string): Promise<string | null> {
+  const session = (await AuthSessionModel.findOne({ userId })
+    .sort({ createdAt: -1 })
+    .select("ipLocation")
+    .lean()) as { ipLocation?: string } | null;
+  return session?.ipLocation || null;
+}
+
 export async function assertActiveAuthSession(
   userId: string,
   credential: string,

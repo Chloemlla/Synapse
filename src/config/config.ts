@@ -20,6 +20,7 @@ import {
   type FirstVisitVerificationRuntimeConfig,
   type MobileTokenIntegrityRuntimeConfig,
   type MobileTokenRotationRiskRuntimeConfig,
+  type AccountRiskRuntimeConfig,
   type TtsRuntimeConfig,
 } from "./runtimeConfigDefaults";
 import type { TtsProviderRuntimeConfig } from "./ttsProviderConfig";
@@ -555,6 +556,9 @@ export const runtimeMutableConfig = {
   get mobileTokenRotationRisk(): MobileTokenRotationRiskRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().mobileTokenRotationRisk;
   },
+  get accountRisk(): AccountRiskRuntimeConfig {
+    return RuntimeConfigService.getCachedConfig().accountRisk;
+  },
   get linuxdo(): LinuxDoRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().linuxdo;
   },
@@ -644,6 +648,9 @@ export const config = {
   },
   get proxycheck() {
     return runtimeMutableConfig.proxycheck;
+  },
+  get accountRisk() {
+    return runtimeMutableConfig.accountRisk;
   },
   get linuxdo() {
     return runtimeMutableConfig.linuxdo;

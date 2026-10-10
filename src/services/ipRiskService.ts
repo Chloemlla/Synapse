@@ -752,6 +752,31 @@ export async function evaluateIpRisk(ip: string): Promise<IpRiskEvaluation> {
   };
 }
 
+/**
+ * 只读缓存的 IP 风险结论（RC-06.2）。
+ *
+ * 登录/令牌轮换等热路径只允许读缓存：`getIpRisk` 未命中缓存时会同步外呼上游、
+ * 受每日配额与超时约束，把它放进登录路径等于把登录耗时绑定上游可用性。
+ * 未命中返回 `null`——调用方应记为「暂无结论」而不是 0 分（0 分是「确认无风险」），
+ * 由后台异步补查后回填。
+ */
+export async function getCachedIpRisk(ip: string): Promise<IpRiskResult | null> {
+  const normalized = normalizeIp(ip);
+  if (!normalized) return null;
+  if (!config.proxycheck.enabled) return null;
+  if (isLocalIP(normalized)) return null;
+  if (!ensureMongoIfEnabled()) return null;
+  try {
+    return await readCachedRisk(normalized);
+  } catch (error) {
+    logger.warn("[IpRisk] 读取风险缓存失败（按未命中处理）", {
+      ip: normalized,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export function hashApiKeyForLog(apiKey: string): string {
   // 该哈希只用于给配额/日志打「这是哪把 key」的标识，不需要口令级 KDF。
   const secret = config.jwtSecret || process.env.JWT_SECRET || "proxycheck-test-secret";

@@ -504,6 +504,23 @@ router.delete(
   auditLog({ module: "security", action: "security.mobile-token-rotation-risk.delete" }),
   adminController.deleteMobileTokenRotationRiskSetting,
 );
+// 账户风险聚合与逐步验证（ACCOUNT_RISK / RC-06 / RC-12 / RC-02）。阈值配置、无机密字段，
+// 保存后立即生效（多实例 ≤ 10s 收敛）；重置回退到默认值。
+router.get("/account-risk/setting", adminController.getAccountRiskSetting);
+router.post(
+  "/account-risk/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.account-risk.set", captureBody: false }),
+  adminController.setAccountRiskSetting,
+);
+router.delete(
+  "/account-risk/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.account-risk.delete" }),
+  adminController.deleteAccountRiskSetting,
+);
 router.get("/cdict-signing/setting", adminController.getCdictSigningSetting);
 router.post(
   "/cdict-signing/setting",

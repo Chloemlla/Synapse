@@ -2328,6 +2328,46 @@ export const adminController = {
     }
   },
 
+  // 账户风险聚合与逐步验证（ACCOUNT_RISK）。纯阈值与开关，无机密字段；
+  // 读要管理员、写要超管，与设备证明/风险轮换那一组保持一致。
+  async getAccountRiskSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.getAccountRiskSetting();
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      logger.error("获取账户风险配置失败", { error });
+      return res.status(500).json({ success: false, error: "获取账户风险配置失败" });
+    }
+  },
+
+  async setAccountRiskSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.setAccountRiskSetting(req.body || {});
+      return res.json({ success: true, setting: result });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : "保存账户风险配置失败",
+      });
+    }
+  },
+
+  async deleteAccountRiskSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      await RuntimeConfigService.deleteAccountRiskSetting();
+      return res.json({ success: true });
+    } catch (_error) {
+      return res.status(500).json({ success: false, error: "重置账户风险配置失败" });
+    }
+  },
+
   async getCdictSigningSetting(req: Request, res: Response) {
     try {
       if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });

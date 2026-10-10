@@ -35,6 +35,12 @@ securityEventSchema.index({ eventType: 1, createdAt: -1 });
 // 单个高频设备累积大量事件时会撞 sort memory limit。补复合索引让过滤+排序都走索引。
 securityEventSchema.index({ deviceFingerprint: 1, createdAt: -1 });
 
+// RC-12: 账户维度聚合（evaluateAccountRisk 要取「该用户最近 N 天的事件」）走
+// `find({ userId }).sort({ createdAt: -1 })` / `countDocuments({ userId, createdAt: {$gte} })`。
+// 单列 userId 索引只能服务过滤，createdAt 排序与范围会落到内存；事件量大的账号会撞
+// sort memory limit，因此补与 (eventType, createdAt) 同口径的复合索引。
+securityEventSchema.index({ userId: 1, createdAt: -1 });
+
 export const SecurityEvent =
   (mongoose.models.SecurityEvent as mongoose.Model<ISecurityEvent>) ||
   mongoose.model<ISecurityEvent>("SecurityEvent", securityEventSchema);

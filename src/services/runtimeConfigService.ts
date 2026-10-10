@@ -4,6 +4,7 @@ import {
   buildRuntimeConfigDefaults,
   cloneRuntimeConfigDefaults,
   type AdminSecurityRuntimeConfig,
+  type AccountRiskRuntimeConfig,
   type CdictSigningRuntimeConfig,
   type DeepLXRuntimeConfig,
   type EmailRuntimeConfig,
@@ -487,6 +488,7 @@ const RUNTIME_CONFIG_KEY_TO_PROP: Partial<Record<RuntimeConfigKey, keyof Runtime
   FIRST_VISIT_VERIFICATION: "firstVisitVerification",
   MOBILE_TOKEN_INTEGRITY: "mobileTokenIntegrity",
   MOBILE_TOKEN_ROTATION_RISK: "mobileTokenRotationRisk",
+  ACCOUNT_RISK: "accountRisk",
   LUMEN: "lumen",
   NEXAI: "nexai",
 };
@@ -831,6 +833,53 @@ function normalizeStoredMobileTokenRotationRiskConfig(
   };
 }
 
+const ACCOUNT_RISK_AUTO_CAPS = ["watch", "restricted"] as const;
+const ACCOUNT_RISK_STEP_UP_MODES = ["sensitive", "all-writes", "all"] as const;
+
+function normalizeStoredAccountRiskConfig(
+  value: unknown,
+  defaults = runtimeConfigDefaults.accountRisk,
+): AccountRiskRuntimeConfig {
+  const raw = asObject(value);
+  const cap =
+    typeof raw.autoEscalationCap === "string" &&
+    (ACCOUNT_RISK_AUTO_CAPS as readonly string[]).includes(raw.autoEscalationCap.trim().toLowerCase())
+      ? (raw.autoEscalationCap.trim().toLowerCase() as AccountRiskRuntimeConfig["autoEscalationCap"])
+      : defaults.autoEscalationCap;
+  const stepUpMode =
+    typeof raw.stepUpMode === "string" &&
+    (ACCOUNT_RISK_STEP_UP_MODES as readonly string[]).includes(raw.stepUpMode.trim().toLowerCase())
+      ? (raw.stepUpMode.trim().toLowerCase() as AccountRiskRuntimeConfig["stepUpMode"])
+      : defaults.stepUpMode;
+
+  const watchScoreThreshold = normalizeInteger(raw.watchScoreThreshold, defaults.watchScoreThreshold, 0, 100);
+  const restrictedScoreThreshold = normalizeInteger(
+    raw.restrictedScoreThreshold,
+    defaults.restrictedScoreThreshold,
+    0,
+    100,
+  );
+  const dangerScoreThreshold = normalizeInteger(raw.dangerScoreThreshold, defaults.dangerScoreThreshold, 0, 100);
+
+  return {
+    enabled: normalizeBoolean(raw.enabled, defaults.enabled),
+    evaluateOnLogin: normalizeBoolean(raw.evaluateOnLogin, defaults.evaluateOnLogin),
+    windowDays: normalizeInteger(raw.windowDays, defaults.windowDays, 1, 365),
+    ipSignalRetentionDays: normalizeInteger(raw.ipSignalRetentionDays, defaults.ipSignalRetentionDays, 7, 3650),
+    highRiskIpScore: normalizeInteger(raw.highRiskIpScore, defaults.highRiskIpScore, 1, 100),
+    minDistinctHighRiskIps: normalizeInteger(raw.minDistinctHighRiskIps, defaults.minDistinctHighRiskIps, 1, 100),
+    // 单调性兜底：三个阈值必须非递减，否则“高分升低档”会出现不可解释的档位抖动。
+    // 不报错是因为这三个值常被一起保存，逐个拒绝会把“改到一半”的配置卡在半路。
+    watchScoreThreshold,
+    restrictedScoreThreshold: Math.max(restrictedScoreThreshold, watchScoreThreshold),
+    dangerScoreThreshold: Math.max(dangerScoreThreshold, restrictedScoreThreshold, watchScoreThreshold),
+    autoEscalationCap: cap,
+    newAccountWatchDays: normalizeInteger(raw.newAccountWatchDays, defaults.newAccountWatchDays, 0, 365),
+    stepUpTtlSeconds: normalizeInteger(raw.stepUpTtlSeconds, defaults.stepUpTtlSeconds, 60, 7 * 24 * 3600),
+    stepUpMode,
+  };
+}
+
 // G5-37: 纯函数——只写传入的 target 缓存，不在遍历中改在用的 runtimeConfigCache。
 function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, value: unknown): void {
   switch (key) {
@@ -885,6 +934,9 @@ function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, 
     case "MOBILE_TOKEN_ROTATION_RISK":
       target.mobileTokenRotationRisk = normalizeStoredMobileTokenRotationRiskConfig(value);
       return;
+    case "ACCOUNT_RISK":
+      target.accountRisk = normalizeStoredAccountRiskConfig(value);
+      return;
     case "LUMEN": {
       const config = normalizeStoredLumenConfig(value, target.lumen);
       target.lumen = config;
@@ -921,6 +973,7 @@ const RUNTIME_CONFIG_KEYS: readonly RuntimeConfigKey[] = [
   "FIRST_VISIT_VERIFICATION",
   "MOBILE_TOKEN_INTEGRITY",
   "MOBILE_TOKEN_ROTATION_RISK",
+  "ACCOUNT_RISK",
 ];
 
 // G5-03: 周期刷新定时器——多实例部署下每个实例每 ~10s 重载一次 DB 配置，
@@ -1001,6 +1054,9 @@ export class RuntimeConfigService {
     }
     if (!loadedKeys.has("MOBILE_TOKEN_ROTATION_RISK")) {
       runtimeConfigCache.mobileTokenRotationRisk = cloneRuntimeConfigDefaults(defaults).mobileTokenRotationRisk;
+    }
+    if (!loadedKeys.has("ACCOUNT_RISK")) {
+      runtimeConfigCache.accountRisk = cloneRuntimeConfigDefaults(defaults).accountRisk;
     }
     if (!loadedKeys.has("LUMEN")) {
       runtimeConfigCache.lumen = cloneRuntimeConfigDefaults(defaults).lumen;
@@ -1986,6 +2042,61 @@ export class RuntimeConfigService {
     ).mobileTokenRotationRisk;
     loadedKeys.delete("MOBILE_TOKEN_ROTATION_RISK");
     invalidateHotCache("MOBILE_TOKEN_ROTATION_RISK");
+  }
+
+  // 账户风险聚合与逐步验证（ACCOUNT_RISK / RC-06 / RC-12 / RC-02）。纯阈值与开关，
+  // 没有机密字段（与 signing 类不同），因此读也要管理员、写要超管。
+  static async getAccountRiskSetting(): Promise<{
+    setting: {
+      config: AccountRiskRuntimeConfig;
+      updatedAt?: string;
+    };
+  }> {
+    const doc = await readRuntimeConfigDoc("ACCOUNT_RISK");
+    const config = doc ? normalizeStoredAccountRiskConfig(doc.value) : runtimeConfigDefaults.accountRisk;
+    runtimeConfigCache.accountRisk = config;
+
+    return {
+      setting: {
+        config: { ...config },
+        updatedAt: doc?.updatedAt?.toISOString(),
+      },
+    };
+  }
+
+  static async setAccountRiskSetting(
+    input: Partial<AccountRiskRuntimeConfig> | Record<string, unknown>,
+  ): Promise<{ updatedAt: string }> {
+    const currentDoc = await readRuntimeConfigDoc("ACCOUNT_RISK");
+    const current = currentDoc ? normalizeStoredAccountRiskConfig(currentDoc.value) : runtimeConfigCache.accountRisk;
+    const raw = asObject(input);
+
+    const nextConfig = normalizeStoredAccountRiskConfig(raw, current);
+
+    if (nextConfig.enabled && nextConfig.autoEscalationCap === "restricted" && nextConfig.windowDays < 7) {
+      // 7 天是信息论下限：窗口比新号观察期还短时，“多次命中”根本来不及累积。
+      throw new Error("窗口小于 7 天不能开启 restricted 级自动升档：观察样本不足，必然误报");
+    }
+
+    const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
+      "ACCOUNT_RISK",
+      nextConfig as unknown as Record<string, unknown>,
+      currentDoc?.updatedAt,
+    );
+
+    runtimeConfigCache.accountRisk = nextConfig;
+    loadedKeys.add("ACCOUNT_RISK");
+    invalidateHotCache("ACCOUNT_RISK");
+    initialized = true;
+
+    return { updatedAt: persistedAt.toISOString() };
+  }
+
+  static async deleteAccountRiskSetting(): Promise<void> {
+    await RuntimeConfigModel.deleteOne({ key: "ACCOUNT_RISK" }).exec();
+    runtimeConfigCache.accountRisk = cloneRuntimeConfigDefaults(runtimeConfigDefaults).accountRisk;
+    loadedKeys.delete("ACCOUNT_RISK");
+    invalidateHotCache("ACCOUNT_RISK");
   }
 
   static async getCdictSigningSetting(): Promise<{

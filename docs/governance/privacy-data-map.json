@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-03",
+  "updatedAt": "2026-10-10",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
@@ -9,7 +9,8 @@
     "policy_consents gained documentHash (which text revision was accepted) plus revokedAt/revokedIP/revokedReason (withdrawal audit trail) on 2026-09-30, and an owner-initiated hard delete via POST /api/policy/revoke {purge:true}. A superadmin CSV export (/api/admin/policy-consents/export) is the only bulk surface; it is audited and row-capped.",
     "2026-10-03: audit_logs TTL narrowed 90d -> 60d (AUDIT_LOG_RETENTION_DAYS in src/models/auditLogModel.ts). Existing deployments must run `ts-node src/scripts/applyAuditLogTtl.ts` to change the live index in place \u2014 editing the schema alone does not update an existing TTL index.",
     "2026-10-03: every dataset now carries a userFacing block (Chinese label / category / what / why / retention + the policy section that explains it). The privacy policy page renders that block through src/generated/privacyDataMap.ts, so the page cannot drift from this contract; `pnpm run check:privacy-data-map` enforces the generated file in CI.",
-    "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations)."
+    "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations).",
+    "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead."
   ],
   "datasets": [
     {
@@ -318,6 +319,34 @@
         "reason": "Security telemetry; export only via admin investigation tooling"
       },
       "evidence": ["src/models/deviceTrackingModel.ts"]
+    },
+    {
+      "id": "account-ip-signals",
+      "collection": "account_ip_signals",
+      "fields": ["userId", "ipAddress", "ipLocation", "firstSeenAt", "lastSeenAt", "loginCount", "riskScore", "riskLevel", "flags", "networkType", "asn", "organisation", "isDatacenter", "source", "riskCheckedAt"],
+      "purpose": "Per-account login IP history with the risk score observed at that time (account risk aggregation, RC-06)",
+      "legalBasis": "security_and_abuse_prevention",
+      "userFacing": {
+      "label": "账户登录 IP 风险记录",
+      "category": "安全与风控",
+      "what": "用户 ID、登录 IP、IP 属地、首次与最近登录时间、登录次数，以及该 IP 的风险分与判定旗标（含机房/IDC 判据）。",
+      "why": "把「历来登录 IP 的风险」沉淀到账户维度，用于识别多账号注册、盗号与自动化滥用；风险分本身来自第三方 IP 风险库。",
+      "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
+      "policySection": "data-use"
+      },
+      "retention": {
+        "type": "account_linked",
+        "description": "No TTL by design: risk evidence must survive account deletion (RC-22 legal hold); active-use window is 180 days per runtime config accountRisk.ipSignalRetentionDays"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "retained as risk evidence; removed only after the retention window and a legal-hold check"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Security telemetry; export only via admin forensic tooling"
+      },
+      "evidence": ["src/models/accountIpSignalModel.ts"]
     },
     {
       "id": "ipqs-lookup-logs",

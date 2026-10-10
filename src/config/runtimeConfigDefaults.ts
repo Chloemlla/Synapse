@@ -310,6 +310,41 @@ export interface MobileTokenRotationRiskRuntimeConfig {
   carryOverVerificationPending: boolean;
 }
 
+/**
+ * 账户风险聚合与逐步验证（RC-06 / RC-12 / RC-02 / RC-03）。
+ *
+ * 阈值全部运行时可调：风控分档一旦写死，调一次阈值就得发版，而误报率必须在真实流量下反复校准
+ * （方法论 §五-42 同族：先观察再收紧）。`enabled=false` 时聚合与升档都不发生，只保留字段。
+ */
+export interface AccountRiskRuntimeConfig {
+  /** 总开关。关掉后 `evaluateAccountRisk` 直接返回、不写库、不升档（用于故障注入与观察期）。 */
+  enabled: boolean;
+  /** 是否在登录成功路径上顺带聚合一次（热路径只读缓存，不外呼上游）。 */
+  evaluateOnLogin: boolean;
+  /** 聚合窗口（天）：只统计该窗口内见过的登录 IP 信号。 */
+  windowDays: number;
+  /** `account_ip_signals` 的保留期（天）。取证保留语义，不用 Mongo TTL，由应用层清理任务执行。 */
+  ipSignalRetentionDays: number;
+  /** 单个登录 IP 的风险分达到该值即计为「高危 IP」。默认与 proxycheck 挑战阈值同口径。 */
+  highRiskIpScore: number;
+  /** 不同高危 IP 达到该数量才允许升档（单条高危 IP 可能是误报，不做单点判定）。 */
+  minDistinctHighRiskIps: number;
+  /** 风险分 ≥ 该值升 `watch`。 */
+  watchScoreThreshold: number;
+  /** 风险分 ≥ 该值升 `restricted`。 */
+  restrictedScoreThreshold: number;
+  /** 风险分 ≥ 该值建议 `danger`（自动升档不会真的升到 danger，见 `autoEscalationCap`）。 */
+  dangerScoreThreshold: number;
+  /** 自动升档上限：`watch` | `restricted`。`danger`/`banned` 必须人工确认（§3 升降级规则）。 */
+  autoEscalationCap: "watch" | "restricted";
+  /** 注册不足该天数的新号至少进 `watch`（§3 触发条件）。 */
+  newAccountWatchDays: number;
+  /** 升档时签发的 `stepUpUntil` 时长（秒）：到期未续期即退出逐步验证，避免永久卡死用户。 */
+  stepUpTtlSeconds: number;
+  /** 升档时默认的逐步验证范围（§4.4 / RC-09）。 */
+  stepUpMode: "sensitive" | "all-writes" | "all";
+}
+
 export interface RuntimeConfigDefaults {
   ipqs: IpqsRuntimeConfig;
   linuxdo: LinuxDoRuntimeConfig;
@@ -330,6 +365,7 @@ export interface RuntimeConfigDefaults {
   firstVisitVerification: FirstVisitVerificationRuntimeConfig;
   mobileTokenIntegrity: MobileTokenIntegrityRuntimeConfig;
   mobileTokenRotationRisk: MobileTokenRotationRiskRuntimeConfig;
+  accountRisk: AccountRiskRuntimeConfig;
   lumen: LumenRuntimeConfig;
 }
 
@@ -531,6 +567,23 @@ export function buildRuntimeConfigDefaults(options: {
       downgradedTtlHours: 24,
       maxTokenAgeSeconds: 600,
     },
+    // 默认开启聚合（配置阈值本身就等于“已打开”的现状），但自动升档的上限默认封在 watch：
+    // 先观察真实误报率，再由运维显式放宽到 restricted（§5 B7 的 Shadow Mode 要求）。
+    accountRisk: {
+      enabled: true,
+      evaluateOnLogin: true,
+      windowDays: 30,
+      ipSignalRetentionDays: 180,
+      highRiskIpScore: 66,
+      minDistinctHighRiskIps: 2,
+      watchScoreThreshold: 50,
+      restrictedScoreThreshold: 80,
+      dangerScoreThreshold: 90,
+      autoEscalationCap: "watch",
+      newAccountWatchDays: 7,
+      stepUpTtlSeconds: 3600,
+      stepUpMode: "sensitive",
+    },
     // 默认关：不配置就完全沿用 24 小时节奏，只有运维显式打开才会出现提级轮换。
     mobileTokenRotationRisk: {
       enabled: false,
@@ -655,6 +708,9 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     },
     mobileTokenRotationRisk: {
       ...config.mobileTokenRotationRisk,
+    },
+    accountRisk: {
+      ...config.accountRisk,
     },
     lumen: {
       ...config.lumen,
