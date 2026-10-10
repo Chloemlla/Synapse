@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
   downloadReport: vi.fn(),
   downloadBundle: vi.fn(),
   downloadFile: vi.fn(),
+  downloadExistingBundle: vi.fn(),
   createTemplate: vi.fn(),
 }));
 
@@ -54,7 +55,16 @@ const FILES: DocFileEntry[] = [
     status: 'stale',
     willRename: false,
   },
-  { rel: 'c.md', sizeBytes: 512, mtime: 1_700_000_200_000, destRel: 'out/c (2).docx', status: 'new', willRename: true },
+  {
+    rel: 'c.md',
+    sizeBytes: 512,
+    mtime: 1_700_000_200_000,
+    destRel: 'out/c (2).docx',
+    status: 'new',
+    willRename: true,
+    // 磁盘上已有产物（旧名字）：重命名模式下 destRel 指向新名字，existingRel 才是能直接下载的那份
+    existingRel: 'out/c.docx',
+  },
   {
     rel: 'done.md',
     sizeBytes: 300,

@@ -158,6 +158,8 @@ const DocFileList: React.FC<DocFileListProps> = ({
                     onClick={() => onDownload(entry.existingRel as string)}
                     className={`${SELECT_BUTTON_CLASS} shrink-0`}
                     title={`下载 ${baseName(entry.existingRel)}`}
+                    // 多行都是「下载」，可访问名必须带上文件名，屏幕阅读器与测试才能区分
+                    aria-label={`下载 ${baseName(entry.existingRel)}`}
                   >
                     下载
                   </button>
