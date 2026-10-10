@@ -66,7 +66,7 @@ function buildProviderDrafts(rows: ProviderRow[]): Record<ProviderId, ProviderDr
       weight: 0,
       priority: 50,
       monthlyQuota: 0,
-      scenarioWeights: { default: '', first_visit: '', standalone: '' },
+      scenarioWeights: { default: '', first_visit: '', standalone: '', step_up: '' },
     };
   }
   for (const row of rows) {
