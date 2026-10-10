@@ -134,7 +134,10 @@ export async function verifyEmailLink(
     // 再次检查用户名/邮箱是否被注册（防止并发）
     const existUser = await UserStorage.getUserByUsername(username);
     const existEmail = await UserStorage.getUserByEmail(email);
-    if (existUser || existEmail) {
+    // RC-05：规范化邮箱同样查一遍（+tag / gmail 点号变体不得重复注册）。
+    const canonicalEmail = normalizeEmailCanonical(email || "");
+    const existCanonical = canonicalEmail ? await UserStorage.getUserByEmailCanonical(canonicalEmail) : null;
+    if (existUser || existEmail || existCanonical) {
       await verificationTokenStorage.deleteToken(token);
       return { success: false, error: "用户名或邮箱已被使用" };
     }
@@ -153,6 +156,28 @@ export async function verifyEmailLink(
 
     const inputErrors = UserStorage.validateUserInput(username, password, email, true);
     if (inputErrors.length > 0) return { success: false, error: inputErrors[0].message };
+
+    // RC-05：完成阶段再判一次三维注册配额（与验证码链路同口径），然后才消费令牌并建号。
+    const riskDecision = await evaluateRegistrationRisk({
+      ipAddress,
+      fingerprint,
+      email,
+      hasInvite: Boolean(inviteValidation.code),
+    });
+    if (!riskDecision.allowed) {
+      await verificationTokenStorage.deleteToken(token);
+      await recordRegistrationAttempt({
+        ipAddress,
+        fingerprint,
+        email,
+        inviteCode: inviteValidation.code || "",
+        outcome: "blocked",
+        ipRiskScore: riskDecision.ipRiskScore,
+        blockCode: riskDecision.code || "",
+      });
+      return { success: false, error: riskDecision.reason || "注册请求被拦截，请联系支持" };
+    }
+
     const consumed = await verificationTokenStorage.verifyAndUseToken(token, fingerprint, ipAddress, VerificationTokenType.EMAIL_REGISTRATION);
     if (!consumed.success) return { success: false, error: consumed.error };
 
@@ -166,6 +191,8 @@ export async function verifyEmailLink(
       id: user.id,
       username: user.username,
       email: user.email,
+      ipAddress,
+      fingerprint,
     });
     if (!consumeResult.ok) {
       // RC-01: 注册回滚必须用物理删除 —— 账号从未真正成立，软删除会留下占着邮箱的幽灵账号。
