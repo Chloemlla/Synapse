@@ -403,7 +403,14 @@ async function recordAccountRiskEvent(params: {
   userId: string;
   fromTier: AccountRiskTier;
   toTier: AccountRiskTier;
-  assessment: AccountRiskAssessment;
+  /** 只取事件需要的字段：聚合结果（AccountRiskAssessment）与人工动作构造的快照都能直接传。 */
+  assessment: {
+    riskScore: number;
+    riskTier: AccountRiskTier;
+    cappedTier: AccountRiskTier;
+    flags: readonly string[];
+    reasons: readonly string[];
+  };
   reason?: string;
   exempt: boolean;
   /** 有值 = 这是一次人工/自动的明确动作；无值 = 聚合结果的自动升档。 */
