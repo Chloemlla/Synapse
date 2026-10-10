@@ -143,6 +143,8 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: '公共短链',
             url: '/public-shortlink',
             icon: FaLink as IconType,
+            // 只给管理员用：普通用户不显示入口，后端 /api/shorturl 的公共创建端点也会拒（见 shortUrlRoutes）
+            requiredRole: 'admin',
           },
           {
             title: '大小写转换',
@@ -163,21 +165,25 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: 'v-t 图比例',
             url: '/vt-ratios',
             icon: FaChartLine as IconType,
+            requiredRole: 'admin',
           },
           {
             title: 'MD 导出',
             url: '/markdown-export',
             icon: FaFileAlt as IconType,
+            requiredRole: 'admin',
           },
           {
             title: 'MD 转 Word',
             url: '/doc-convert',
             icon: FaFileWord as IconType,
+            requiredRole: 'admin',
           },
           {
             title: 'GitHub 账单',
             url: '/github-billing',
             icon: FaDollarSign as IconType,
+            requiredRole: 'admin',
           },
           {
             title: '模组列表',
@@ -239,6 +245,7 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: '校园紧急',
             url: '/campus-emergency',
             icon: FaExclamationTriangle as IconType,
+            requiredRole: 'admin',
           },
           { title: 'API 文档', url: '/api-docs', icon: FaBook as IconType, requiredRole: 'admin' },
           { title: '服务条款与隐私政策', url: '/policy', icon: FaGavel as IconType },

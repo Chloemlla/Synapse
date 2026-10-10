@@ -49,6 +49,41 @@ export const optionalAdminAuth = async (req: Request, res: Response, next: NextF
 };
 
 /**
+ * 「管理员或匿名」闸门：用在共享口令守着、但**不允许已登录普通用户**使用的公开端点上。
+ *
+ * 为什么不能直接用 optionalAdminAuth 代替：它在识别出非管理员时会**清掉身份**（这是匿名口令流程
+ * 能跑的前提），于是到了 handler 里，已登录的普通用户与真实访客长得一模一样 ——
+ * 结果是普通用户只要知道共享口令就能用这个端点。
+ *
+ * 因此这里把两者区分开：拿到存活会话且角色不是管理员 → 403；其余（真匿名 / 管理员）放行。
+ * 身份解析与 optionalAdminAuth 同源（optionalAuthenticateToken + 会话存活校验），
+ * 只多一个判断，不再另写一套认证。
+ */
+export const requireAdminOrAnonymous = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authedReq = asAuthenticatedRequest(req);
+    if (!authedReq.user) {
+      // 只解析、不报错：解析不出身份就走匿名路径
+      await optionalAuthenticateToken(req, res, () => undefined);
+    }
+
+    const user = authedReq.user as (User & { disabled?: boolean }) | undefined;
+    if (!user) return next();
+    if (isAdminRole(user.role)) return next();
+
+    // 已登录的普通用户：直接拒绝，连口令都不必比
+    res.status(403).json({
+      error: "该功能仅限管理员使用",
+      code: "ADMIN_ONLY_FEATURE",
+    });
+    return undefined;
+  } catch {
+    // 解析异常按匿名处理，口令闸门仍会拦（fail-closed）
+    return next();
+  }
+};
+
+/**
  * 清掉本次解析出来的身份，避免后续 handler 把「非管理员」误当成「已确认的管理员」
  * （apiKey / oauth 身份不由本中间件负责，保留原样）。
  */

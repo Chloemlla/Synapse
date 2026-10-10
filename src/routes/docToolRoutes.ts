@@ -7,6 +7,7 @@
 // （scripts/generate-openapi.js 的 apis glob），`check:openapi-drift` 也只从那里对账注释路径 ——
 // 注释放错目录，端点就会从 openapi.json 里静默消失，构建仍然绿。
 import type { Request } from "express";
+import { authenticateAdmin } from "../middleware/auth";
 import { createDocToolRouter } from "../docTool/http/docToolHttp";
 import { resolveDocToolRoot, resolvePandocBin } from "../docTool/runtime";
 import {
@@ -37,11 +38,15 @@ const router = createDocToolRouter({
 // 进程重启自恢复（整队列一次，幂等；见 serverRuntime.ensureDocJobRecovery）
 ensureDocJobRecovery();
 
-// 整棵 /api/doc-tool 都要求「用户自己同意过相关条款」——上传到服务端处理的文件由本服务端转换。
+// 整棵 /api/doc-tool 只给管理员：本功能会把用户文件上传到服务端并用服务端进程转换，
+// 属于运维/管理侧能力（普通用户在前端也看不到入口：App.tsx 用 renderAdminRoute、
+// navConfig 那条带 requiredRole: 'admin'）。
+//
+// 为什么还叠一层「按用户同意」的闸门：管理员也是自然人，涉及把文件交给服务端处理的动作
+// 仍应先勾选相关政策；这一层是加在管理员门之后的第二道，不代替角色校验。
 // 判定按 userId（见 middleware/featureConsent），同设备换个账号不会蹭到上一位用户的同意。
-// 挂载层（routeModules/postTamperModules.ts）已挂 authenticateToken，中间件内仍自己判一次未登录，
-// 便于单测直挂 router（如 docToolHttp.test.ts 的挂法）时独立覆盖 401 / 403 两条分支。
-// 端点因此多一个响应：403 POLICY_CONSENT_REQUIRED（带缺失的条款清单，前端据此弹同意面板）。
+// 端点因此可能多一个响应：403 POLICY_CONSENT_REQUIRED（带缺失的条款清单，前端据此弹同意面板）。
+router.use(authenticateAdmin);
 router.use(requireFeatureConsent("doc-tool"));
 
 /**

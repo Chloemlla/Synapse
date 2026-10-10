@@ -663,7 +663,7 @@ export const postTamperRouteModules: RouteModule[] = [
     authPolicy: {
       mode: "mount",
       handlers: ["authenticateToken"],
-      note: "Markdown 批量转换用户页:整棵 /api/doc-tool 先过 authenticateToken,router 内再按 req.user 复核任务归属与用户目录作用域;普通登录用户可用,不要求管理员角色。",
+      note: "Markdown 批量转换：挂载层只做登录校验，router 内再叠 authenticateAdmin（普通用户一律 403，前端入口也对普通用户隐藏）与 requireFeatureConsent('doc-tool')（管理员仍需先勾选相关政策）。",
     },
     rateLimitPolicy: {
       mode: "route-module",

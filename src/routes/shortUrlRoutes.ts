@@ -4,7 +4,7 @@ import { ShortUrlController } from "../controllers/shortUrlController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { adminAuthMiddleware, authenticateSuperAdmin, authMiddlewareV2 as authMiddleware } from "../middleware/auth";
-import { optionalAdminAuth, sessionAdmin } from "../middleware/optionalAdminAuth";
+import { optionalAdminAuth, requireAdminOrAnonymous, sessionAdmin } from "../middleware/optionalAdminAuth";
 import { createLimiter } from "../middleware/routeLimiters";
 import { replayProtection } from "../middleware/replayProtection";
 import { mongoose } from "../services/mongoService";
@@ -198,7 +198,7 @@ router.delete(
 );
 
 // 匿名公共创建短链（显式启用、独立口令、严格限流）；已登录管理员免填口令
-router.post("/public/create", publicCreateLimiter, optionalAdminAuth, async (req: any, res: any) => {
+router.post("/public/create", publicCreateLimiter, requireAdminOrAnonymous, optionalAdminAuth, async (req: any, res: any) => {
   try {
     const { target, customCode, password } = req.body || {};
 

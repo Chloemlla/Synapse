@@ -733,7 +733,7 @@ const App: React.FC = () => {
         <Route path="/case-converter" element={renderAnimatedRoute(<CaseConverter />)} />
         <Route path="/word-count" element={renderAnimatedRoute(<WordCountPageSimple />)} />
         <Route path="/age-calculator" element={renderAnimatedRoute(<AgeCalculatorPage />)} />
-        <Route path="/vt-ratios" element={renderAnimatedRoute(<VtRatioExplorer />)} />
+        <Route path="/vt-ratios" element={renderAdminRoute(<VtRatioExplorer />)} />
         <Route path="/email-sender" element={renderAdminRoute(<SuperAdminGuard><EmailSender /></SuperAdminGuard>)} />
         <Route path="/profile" element={renderProtectedRoute(<UserProfile onOpenSecuritySettings={openTOTPManager} />)} />
         <Route path="/outemail" element={renderAdminRoute(<OutEmail />)} />
@@ -753,12 +753,12 @@ const App: React.FC = () => {
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
         <Route path="/tiger-adventure" element={renderProtectedRoute(<TigerAdventure />)} />
         <Route path="/coin-flip" element={renderProtectedRoute(<CoinFlip />)} />
-        <Route path="/markdown-export" element={renderAnimatedRoute(<MarkdownExportPage />)} />
+        <Route path="/markdown-export" element={renderAdminRoute(<MarkdownExportPage />)} />
         {/* 批量转换需要登录（后端 /api/doc-tool 全部要求用户态鉴权）；单文档导出仍允许访客。 */}
-        <Route path="/doc-convert" element={renderProtectedRoute(<DocConvertPage />)} />
+        <Route path="/doc-convert" element={renderAdminRoute(<DocConvertPage />)} />
         <Route path="/articles" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
         <Route path="/articles/:slug" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
-        <Route path="/campus-emergency" element={renderProtectedRoute(<CampusEmergencyPage />)} />
+        <Route path="/campus-emergency" element={renderAdminRoute(<CampusEmergencyPage />)} />
         <Route path="/tamper-detection-demo" element={renderAdminRoute(<TamperDetectionDemo />)} />
         {/* 演示中心仅对管理员开放（G9-04：navConfig 里位于 isAdmin 分支，路由表统一守卫） */}
         <Route path="/demo" element={renderAdminRoute(<DemoHub />)} />
@@ -768,7 +768,7 @@ const App: React.FC = () => {
         <Route path="/demo/finance" element={renderAdminRoute(<FinanceAppDemo />)} />
         <Route path="/store" element={renderProtectedRoute(<ResourceStoreList />)} />
         <Route path="/store/resources/:id" element={renderProtectedRoute(<ResourceStoreDetail />)} />
-        <Route path="/public-shortlink" element={renderAnimatedRoute(<PublicShortLinkCreator />)} />
+        <Route path="/public-shortlink" element={renderAdminRoute(<PublicShortLinkCreator />)} />
         <Route path="*" element={renderAnimatedRoute(<NotFoundPage path={location.pathname} />)} />
       </>
     ),
