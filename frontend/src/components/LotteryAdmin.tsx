@@ -5,63 +5,21 @@ import { isSuperAdmin } from '../utils/rbac';
 import { useLottery } from '../hooks/useLottery';
 import { LotteryPrize, LotteryRound } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
-import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { AnimatePresence } from 'framer-motion';
 import { deleteAllRounds } from '../api/lottery';
-import CryptoJS from 'crypto-js';
 import {
   FaBullseye,
   FaChartBar,
   FaDice,
-  FaEdit,
-  FaExclamationTriangle,
   FaList,
   FaLock,
-  FaPause,
-  FaPlay,
-  FaRedo,
-  FaTrash,
-  FaTrophy
 } from 'react-icons/fa';
 import { studioPanelClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
-// AES-256解密函数
-function decryptAES256(encryptedData: string, iv: string, key: string): string {
-  try {
-    console.log('   开始AES-256解密...');
-    console.log('   密钥长度:', key.length);
-    console.log('   加密数据长度:', encryptedData.length);
-    console.log('   IV长度:', iv.length);
-    
-    const keyBytes = CryptoJS.SHA256(key);
-    const ivBytes = CryptoJS.enc.Hex.parse(iv);
-    const encryptedBytes = CryptoJS.enc.Hex.parse(encryptedData);
-    
-    console.log('   密钥哈希完成，开始解密...');
-    
-    const decrypted = CryptoJS.AES.decrypt(
-      { ciphertext: encryptedBytes },
-      keyBytes,
-      {
-        iv: ivBytes,
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7
-      }
-    );
-    
-    const result = decrypted.toString(CryptoJS.enc.Utf8);
-    console.log('   解密完成，结果长度:', result.length);
-    
-    return result;
-  } catch (error) {
-    console.error(' AES-256解密失败:', error);
-    throw new Error('解密失败');
-  }
-}
 
 // 创建轮次表单组件
 const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
@@ -118,10 +76,10 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
 
     setLoading(true);
     try {
-      const resp = await lotteryApi.createLotteryRound(formData);
+      const result = await lotteryApi.createLotteryRound(formData);
       setNotification({ message: '抽奖轮次创建成功', type: 'success' });
-      if (resp && (resp as any).warning) {
-        setNotification({ message: `后端已自动修正部分数据：${(resp as any).warning}`, type: 'warning' });
+      if (result.warning) {
+        setNotification({ message: `后端已自动修正部分数据：${result.warning}`, type: 'warning' });
       }
       // 创建成功后询问是否保留表单（保留 / 清空是两个动作，不是「是/否」）。
       const keepForm = await confirm({

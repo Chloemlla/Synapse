@@ -54,6 +54,14 @@ export async function getUserRecord(userId: string) {
   return doc ? doc.data : null;
 }
 
+/** 批量读取：排行榜/统计一次查询取代逐个 findOne（N 个用户 N 次往返）。 */
+export async function getUserRecordsByIds(userIds: string[]) {
+  const safeIds = userIds.map(sanitizeString).filter(Boolean);
+  if (safeIds.length === 0) return [];
+  const docs = await UserModel.find({ userId: { $in: safeIds } }).lean();
+  return docs.map((d: any) => d.data);
+}
+
 export async function updateUserRecord(userId: string, data: any) {
   const safeUserId = sanitizeString(userId);
   if (!safeUserId) throw new Error("用户ID非法");
@@ -69,4 +77,9 @@ export async function updateUserRecord(userId: string, data: any) {
 
 export async function deleteAllRounds() {
   await RoundModel.deleteMany({});
+}
+
+/** 清空用户记录：与 deleteAllRounds 配套，避免轮次删光后仍能查到旧的中奖历史。 */
+export async function deleteAllUserRecords() {
+  await UserModel.deleteMany({});
 }

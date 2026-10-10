@@ -64,6 +64,19 @@ export async function deleteAllRounds() {
   await writer.write(ROUNDS_FILE, {});
 }
 
+/** 清空用户记录：与 deleteAllRounds 配套，避免轮次删光后仍能查到旧的中奖历史。 */
+export async function deleteAllUserRecords() {
+  ensureDir();
+  await writer.write(USERS_FILE, {});
+}
+
+/** 批量读取：一次读文件取代逐用户读文件。 */
+export async function getUserRecordsByIds(userIds: string[]) {
+  ensureDir();
+  const users = readJson(USERS_FILE);
+  return userIds.map((id) => users[sanitizeString(id)]).filter(Boolean);
+}
+
 export async function getUserRecord(userId: string) {
   ensureDir();
   const safeUserId = sanitizeString(userId);

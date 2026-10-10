@@ -1,6 +1,7 @@
+import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
-import { type LotteryPrize, lotteryService } from "../services/lotteryService";
+import { type LotteryPrize, type LotteryRound, lotteryService } from "../services/lotteryService";
 import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
 
@@ -36,6 +37,31 @@ function isUserFacingLotteryError(message: string): boolean {
   return LOTTERY_USER_FACING_ERRORS.some((fragment) => message.includes(fragment));
 }
 
+const PRIZE_CATEGORIES = new Set(["common", "rare", "epic", "legendary"]);
+const MAX_PRIZES_PER_ROUND = 50;
+const MAX_PRIZE_QUANTITY = 1_000_000;
+
+/**
+ * 普通用户看到的轮次：不回参与者的内部用户 id（隐私），改回「本人是否已参与」与计数，
+ * 中奖记录也去掉 userId。管理员拿完整数据（管理面板要按 id 排查异常）。
+ */
+function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string | undefined, isAdmin: boolean): T {
+  if (isAdmin) return round;
+  const { participants, winners, ...rest } = round;
+  return {
+    ...rest,
+    participants: [],
+    hasParticipated: Boolean(userId) && participants.includes(userId as string),
+    participantCount: participants.length,
+    winnerCount: winners.length,
+    winners: winners.map(({ userId: _ignored, ...winner }) => winner),
+  } as unknown as T;
+}
+
+function viewerIsAdmin(req: Request): boolean {
+  return Boolean(req.user && isAdminRole(req.user.role));
+}
+
 export class LotteryController {
   // 获取区块链数据
   public async getBlockchainData(_req: Request, res: Response): Promise<void> {
@@ -68,31 +94,74 @@ export class LotteryController {
         res.status(400).json({ success: false, error: "参数非法" });
         return;
       }
+      // 时间必须是可解析的真实时刻：NaN 一旦落库，轮次永远不会出现在「活跃」里。
+      const startsAt = new Date(startTime).getTime();
+      const endsAt = new Date(endTime).getTime();
+      if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) {
+        res.status(400).json({ success: false, error: "开始/结束时间格式非法" });
+        return;
+      }
       if (!Array.isArray(prizes) || prizes.length === 0) {
         res.status(400).json({ success: false, error: "奖品列表不能为空" });
         return;
       }
+      if (prizes.length > MAX_PRIZES_PER_ROUND) {
+        res.status(400).json({ success: false, error: `奖品数量不能超过 ${MAX_PRIZES_PER_ROUND} 个` });
+        return;
+      }
+
+      const warnings: string[] = [];
+      const normalizedPrizes: LotteryPrize[] = [];
+      const seenPrizeIds = new Set<string>();
       for (const p of prizes) {
-        if (!wafCheck(p.name, 64) || !wafCheck(p.description, 128)) {
+        if (!wafCheck(p?.name, 64) || !wafCheck(p?.description, 128)) {
           res.status(400).json({ success: false, error: "奖品参数非法" });
           return;
         }
-        if (typeof p.value !== "number" || typeof p.probability !== "number" || typeof p.quantity !== "number") {
-          res.status(400).json({ success: false, error: "奖品数值参数非法" });
+        const value = Number(p.value);
+        const probability = Number(p.probability);
+        const quantity = Number(p.quantity);
+        if (!Number.isFinite(value) || value < 0) {
+          res.status(400).json({ success: false, error: "奖品价值必须是非负数字" });
           return;
         }
+        if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+          res.status(400).json({ success: false, error: "奖品概率必须在 0 到 1 之间" });
+          return;
+        }
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_PRIZE_QUANTITY) {
+          res.status(400).json({ success: false, error: `奖品数量必须是不小于 1 的整数（上限 ${MAX_PRIZE_QUANTITY}）` });
+          return;
+        }
+        // 客户端传的 id/remaining 不采信：库存由服务端按数量初始化，id 缺失或重复就补一个。
+        let prizeId = typeof p.id === "string" && p.id.trim() ? p.id.trim() : "";
+        if (!prizeId || seenPrizeIds.has(prizeId)) prizeId = crypto.randomUUID();
+        seenPrizeIds.add(prizeId);
+        normalizedPrizes.push({
+          id: prizeId,
+          name: p.name,
+          description: p.description,
+          value,
+          probability,
+          quantity,
+          remaining: quantity,
+          category: typeof p.category === "string" && PRIZE_CATEGORIES.has(p.category) ? p.category : "common",
+          ...(typeof p.image === "string" && p.image ? { image: p.image } : {}),
+        });
       }
-      let warning = "";
+
       // 强制修正：开始时间不能晚于结束时间
-      if (new Date(startTime).getTime() > new Date(endTime).getTime()) {
+      if (startsAt > endsAt) {
         [startTime, endTime] = [endTime, startTime];
-        warning += "开始时间和结束时间已自动调整。";
+        warnings.push("开始时间和结束时间已自动调整。");
       }
-      // 强制修正：奖品概率和不能大于1
-      const totalProb = prizes.reduce((sum: number, p: any) => sum + Number(p.probability), 0);
+      // 强制修正：奖品总概率不能大于 1（小于 1 的剩余部分是「未中奖」概率，不会被补贴给某个奖品）
+      const totalProb = normalizedPrizes.reduce((sum, p) => sum + p.probability, 0);
       if (totalProb > 1) {
-        prizes = prizes.map((p: any) => ({ ...p, probability: Number(p.probability) / totalProb }));
-        warning += "奖品概率已自动归一化。";
+        for (const prize of normalizedPrizes) {
+          prize.probability = Number((prize.probability / totalProb).toFixed(6));
+        }
+        warnings.push("奖品概率已自动归一化。");
       }
       const roundData = {
         name,
@@ -100,13 +169,13 @@ export class LotteryController {
         startTime: new Date(startTime).getTime(),
         endTime: new Date(endTime).getTime(),
         isActive: true,
-        prizes: prizes as LotteryPrize[],
+        prizes: normalizedPrizes,
       };
       const round = await lotteryService.createLotteryRound(roundData);
       res.json({
         success: true,
         data: round,
-        ...(warning ? { warning } : {}),
+        ...(warnings.length ? { warning: warnings.join(" ") } : {}),
       });
     } catch (error) {
       logger.error("创建抽奖轮次失败:", error);
@@ -130,23 +199,10 @@ export class LotteryController {
       const rounds = await lotteryService.getLotteryRounds();
       logger.debug("[Lottery] 获取到抽奖轮次数量", { count: rounds.length });
 
-      // 检查是否为管理员用户
-      if (req.user && isAdminRole(req.user.role)) {
-        // Cookie 会话认证：管理员直接返回明文数据
-        // 前端已移除 AES 解密逻辑，不再依赖 Bearer token 作为加密密钥
-        logger.debug("[Lottery] 管理员用户，返回明文数据");
-        res.json({
-          success: true,
-          data: rounds,
-        });
-      } else {
-        // 普通用户或未登录用户，返回未加密数据
-        logger.debug("[Lottery] 普通用户，返回未加密数据");
-        res.json({
-          success: true,
-          data: rounds,
-        });
-      }
+      // 内部 userId 只留给管理员：普通用户拿到的是「本人是否已参与 + 计数」的视图。
+      const isAdmin = viewerIsAdmin(req);
+      const data = rounds.map((round) => sanitizeRoundForViewer(round, req.user?.id, isAdmin));
+      res.json({ success: true, data });
     } catch (error) {
       logger.error("获取抽奖轮次失败:", error);
       res.status(500).json({
@@ -157,12 +213,13 @@ export class LotteryController {
   }
 
   // 获取活跃的抽奖轮次
-  public async getActiveRounds(_req: Request, res: Response): Promise<void> {
+  public async getActiveRounds(req: Request, res: Response): Promise<void> {
     try {
       const rounds = await lotteryService.getActiveRounds();
+      const isAdmin = viewerIsAdmin(req);
       res.json({
         success: true,
-        data: rounds,
+        data: rounds.map((round) => sanitizeRoundForViewer(round, req.user?.id, isAdmin)),
       });
     } catch (error) {
       logger.error("获取活跃抽奖轮次失败:", error);
@@ -256,7 +313,7 @@ export class LotteryController {
 
       res.json({
         success: true,
-        data: round,
+        data: sanitizeRoundForViewer(round, req.user?.id, viewerIsAdmin(req)),
       });
     } catch (error) {
       logger.error("获取轮次详情失败:", error);

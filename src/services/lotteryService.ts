@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { isAdminRole } from "../middleware/auth";
 import { logger } from "./logger";
-import { addRound, getAllRounds, getUserRecord, updateRound, updateUserRecord, deleteAllRounds } from "./lotteryStorage";
+import { addRound, getAllRounds, getUserRecord, getUserRecordsByIds, updateRound, updateUserRecord, deleteAllRounds, deleteAllUserRecords } from "./lotteryStorage";
 import { TurnstileService } from "./turnstileService";
 import { readCaptchaChallenge } from "./turnstile/challenge";
 import { sharedStateStore } from "./sharedStateStore";
@@ -65,6 +65,32 @@ export interface BlockchainData {
   timestamp: number;
 }
 
+/**
+ * 按配置概率抽奖（纯函数，便于单测）。
+ *
+ * 语义：`probability` 是 0-1 的绝对概率。只有「有库存且概率 > 0」的奖品参与抽取：
+ * - 概率和 > 1：按相对权重归一化后必中（管理端已归一化，这里兜底）；
+ * - 概率和 ≤ 1：随机值落在总和之外就是「未中奖」（返回 null）。旧实现把这段差额全部
+ *   补贴给第一个可用奖品，导致第一个奖品的实际概率被严重放大、且结果由列表顺序决定。
+ * - 没有可用库存 / 概率全为 0：也返回 null（调用方要先区分「已抽完」与「未中奖」）。
+ */
+export function pickPrize(prizes: LotteryPrize[], randomValue: number): LotteryPrize | null {
+  const available = prizes.filter((prize) => prize.remaining > 0 && prize.probability > 0);
+  if (available.length === 0) return null;
+  const total = available.reduce((sum, prize) => sum + prize.probability, 0);
+  if (!Number.isFinite(total) || total <= 0) return null;
+
+  const target = total > 1 ? randomValue * total : randomValue;
+  let cumulative = 0;
+  for (const prize of available) {
+    cumulative += prize.probability;
+    if (target < cumulative) return prize;
+  }
+
+  // total > 1 时因浮点误差可能刚好走完，兜底给最后一项（相对权重下的合法结果）。
+  return total > 1 ? available[available.length - 1] : null;
+}
+
 class LotteryService {
   private dataDir: string;
   private roundsFile: string;
@@ -80,23 +106,6 @@ class LotteryService {
     // 替换原有本地读写/Map操作，全部通过lotteryStorage接口实现
   }
 
-  // 获取区块链高度作为随机种子
-  private async getBlockchainHeight(): Promise<number> {
-    try {
-      // 模拟获取区块链高度，实际项目中可以调用真实的区块链API
-      const response = await fetch("https://api.blockcypher.com/v1/btc/main", { signal: AbortSignal.timeout(5000) });
-      if (response.ok) {
-        const data = await response.json();
-        return data.height;
-      }
-    } catch (error) {
-      logger.warn("获取区块链高度失败，使用时间戳作为备选:", error);
-    }
-
-    // 备选方案：使用当前时间戳
-    return Math.floor(Date.now() / 1000);
-  }
-
   // 获取区块链数据
   // G7-09: 区块链高度只作为展示用的信息源，不再参与开奖随机数。此前把公开的
   // 区块高度 + sha256(高度) + 客户端 userId + 请求时间戳拼成种子，全部成分攻击者
@@ -110,30 +119,25 @@ class LotteryService {
       return this.blockchainCache;
     }
 
+    // 一次请求同时取高度与哈希（旧实现每次刷新打两次同一个端点）。
+    // 取不到就回落时间戳/空哈希：这是展示信息，不该因为第三方接口抖动而让参与抽奖失败。
+    let height = Math.floor(now / 1000);
+    let hash = "";
     try {
-      const height = await this.getBlockchainHeight();
-      // 尽力取真实区块哈希；blockcypher /v1/btc/main 通常返回 hash 字段。
-      let hash = "";
-      try {
-        const response = await fetch("https://api.blockcypher.com/v1/btc/main", { signal: AbortSignal.timeout(5000) });
-        if (response.ok) {
-          const data = await response.json();
-          if (typeof data.hash === "string" && data.hash) hash = data.hash;
-        }
-      } catch {
-        // 保持回退行为
+      const response = await fetch("https://api.blockcypher.com/v1/btc/main", {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data?.height === "number" && Number.isFinite(data.height)) height = data.height;
+        if (typeof data?.hash === "string" && data.hash) hash = data.hash;
       }
-
-      this.blockchainCache = {
-        height,
-        hash,
-        timestamp: now,
-      };
-      return this.blockchainCache;
     } catch (error) {
-      logger.error("获取区块链数据失败:", error);
-      throw new Error("无法获取区块链数据");
+      logger.warn("获取区块链数据失败，使用时间戳作为备选:", error);
     }
+
+    this.blockchainCache = { height, hash, timestamp: now };
+    return this.blockchainCache;
   }
 
   // 创建抽奖轮次
@@ -265,83 +269,68 @@ class LotteryService {
     // 拼种子（那些成分攻击者全部已知或可枚举）。这里直接 crypto.randomInt。
     const randomValue = crypto.randomInt(0, 0xffffffff) / 0xffffffff;
 
-    // 获取最新的区块链数据（仅作展示信息）
-    const blockchainData = await this.getBlockchainData();
-
-    // 选择奖品
-    const prize = this.selectPrize(round.prizes, randomValue);
-    if (!prize) {
+    // 锁只覆盖本实例的并发：跨实例/锁降级时，前面读到的快照可能已经过期。落库前再读一次，
+    // 以最新事实判定「已结束 / 重复参与 / 库存已空」，并在这份最新数据上扣减，避免把旧快照写回去。
+    const latest = (await this.getRoundDetails(roundId)) ?? round;
+    if (!latest.isActive) {
+      throw new Error("抽奖轮次已结束");
+    }
+    const drawNow = Date.now();
+    if (drawNow < latest.startTime || drawNow > latest.endTime) {
+      throw new Error("抽奖时间未到或已结束");
+    }
+    if (latest.participants.includes(userId)) {
+      throw new Error("您已经参与过此轮抽奖");
+    }
+    // 「没库存」与「未中奖」必须分开：前者是运营/配置问题（明确报错），后者是正常结果。
+    const hasStock = latest.prizes.some((item) => item.remaining > 0 && item.probability > 0);
+    if (!hasStock) {
       throw new Error("没有可用的奖品");
     }
 
-    // 更新奖品数量
-    prize.remaining--;
+    // 概率和 < 1 时剩余区间表示「未中奖」：参与照样计数，只是不进 winners。
+    const prize = pickPrize(latest.prizes, randomValue);
 
-    // 创建中奖记录
-    const winner: LotteryWinner = {
-      userId,
-      username,
-      prizeId: prize.id,
-      prizeName: prize.name,
-      drawTime: now,
-      // G7-09: 本地抽奖标识，不是链上交易哈希。字段名保留以兼容旧契约，但值只是随机 ID。
-      transactionHash: `local-${crypto.randomUUID()}`,
-    };
+    // 获取最新的区块链数据（仅作展示信息）
+    const blockchainData = await this.getBlockchainData();
 
-    // 更新轮次数据
-    round.participants.push(userId);
-    round.winners.push(winner);
-    round.blockchainHeight = blockchainData.height;
-    round.seed = blockchainData.hash;
+    const winner: LotteryWinner | null = prize
+      ? {
+          userId,
+          username,
+          prizeId: prize.id,
+          prizeName: prize.name,
+          drawTime: drawNow,
+          // G7-09: 本地抽奖标识，不是链上交易哈希。字段名保留以兼容旧契约，但值只是随机 ID。
+          transactionHash: `local-${crypto.randomUUID()}`,
+        }
+      : null;
+
+    const nextPrizes = prize
+      ? latest.prizes.map((item) => (item.id === prize.id ? { ...item, remaining: item.remaining - 1 } : item))
+      : latest.prizes;
+    const nextParticipants = [...latest.participants, userId];
+    const nextWinners = winner ? [...latest.winners, winner] : latest.winners;
 
     // G7-08: 把本次抽奖的所有状态变更真正落库。此前这里只改内存对象，请求一结束
     // 全部丢弃，导致可无限抽奖、库存永不扣减、中奖记录不存在。
-    // 落库前再读一次：锁只覆盖本实例的并发，跨实例/锁降级时仍需挡住「同一用户重复参与」
-    // 与「奖品已被抢空」这两种可判定状态，避免把过期快照写回去。
-    const fresh = await this.getRoundDetails(roundId);
-    if (fresh) {
-      if (!fresh.isActive || fresh.participants.includes(userId)) {
-        throw new Error("您已经参与过此轮抽奖");
-      }
-      const freshPrize = fresh.prizes.find((item) => item.id === prize.id);
-      if (freshPrize && freshPrize.remaining <= 0) {
-        throw new Error("没有可用的奖品");
-      }
-    }
-
     await updateRound(roundId, {
-      prizes: round.prizes,
-      participants: round.participants,
-      winners: round.winners,
-      blockchainHeight: round.blockchainHeight,
-      seed: round.seed,
+      prizes: nextPrizes,
+      participants: nextParticipants,
+      winners: nextWinners,
+      blockchainHeight: blockchainData.height,
+      seed: blockchainData.hash,
     });
 
-    // 更新用户记录
-    await this.updateUserRecord(userId, username, winner, prize, roundId);
+    // 无论中没中奖都记一次参与：记录里的 participationCount 才能反映真实参与次数。
+    await this.updateUserRecord(userId, username, { winner, prize, roundId, drawTime: drawNow });
 
-    logger.info(`用户 ${username} 在轮次 ${roundId} 中获得了 ${prize.name}`);
+    if (winner) {
+      logger.info(`用户 ${username} 在轮次 ${roundId} 中获得了 ${winner.prizeName}`);
+    } else {
+      logger.info(`用户 ${username} 参与轮次 ${roundId} 未中奖`);
+    }
     return winner;
-  }
-
-  // 选择奖品
-  private selectPrize(prizes: LotteryPrize[], randomValue: number): LotteryPrize | null {
-    const availablePrizes = prizes.filter((prize) => prize.remaining > 0);
-    if (availablePrizes.length === 0) {
-      return null;
-    }
-
-    // 按概率选择奖品
-    let cumulativeProbability = 0;
-    for (const prize of availablePrizes) {
-      cumulativeProbability += prize.probability;
-      if (randomValue <= cumulativeProbability) {
-        return prize;
-      }
-    }
-
-    // 如果没有按概率选中，返回第一个可用奖品
-    return availablePrizes[0];
   }
 
   // 更新用户记录
@@ -349,28 +338,27 @@ class LotteryService {
   private async updateUserRecord(
     userId: string,
     username: string,
-    winner: LotteryWinner,
-    prize: LotteryPrize,
-    roundId: string,
+    outcome: { winner: LotteryWinner | null; prize: LotteryPrize | null; roundId: string; drawTime: number },
   ): Promise<void> {
     const record = await getUserRecord(userId);
+    const history = [...(record?.history || [])];
+    if (outcome.winner && outcome.prize) {
+      history.push({
+        roundId: outcome.roundId,
+        prizeId: outcome.winner.prizeId,
+        prizeName: outcome.winner.prizeName,
+        drawTime: outcome.drawTime,
+        value: outcome.prize.value,
+      });
+    }
     await updateUserRecord(userId, {
       userId,
       username: username || record?.username || "",
       participationCount: (record?.participationCount || 0) + 1,
-      winCount: (record?.winCount || 0) + 1,
-      lastDrawTime: winner.drawTime,
-      totalValue: (record?.totalValue || 0) + prize.value,
-      history: [
-        ...(record?.history || []),
-        {
-          roundId,
-          prizeId: winner.prizeId,
-          prizeName: winner.prizeName,
-          drawTime: winner.drawTime,
-          value: prize.value,
-        },
-      ],
+      winCount: (record?.winCount || 0) + (outcome.winner ? 1 : 0),
+      lastDrawTime: outcome.drawTime,
+      totalValue: (record?.totalValue || 0) + (outcome.prize?.value || 0),
+      history,
     });
   }
 
@@ -439,17 +427,19 @@ class LotteryService {
     totalWinners: number;
     totalValue: number;
   }> {
-    const totalRounds = (await this.getLotteryRounds()).length;
-    const activeRounds = (await this.getActiveRounds()).length;
-    const totalParticipants = (await this.getLotteryRounds()).reduce(
-      (sum, round) => sum + round.participants.length,
-      0,
-    );
-    const totalWinners = (await this.getLotteryRounds()).reduce((sum, round) => sum + round.winners.length, 0);
-    const totalValue = (await this.getAllUserRecords()).reduce((sum, record) => sum + record.totalValue, 0);
+    // 只读一次轮次：旧实现对同一份数据读了三次（总轮次/参与/中奖各一次），
+    // 每次都是一趟存储往返。
+    const rounds = await this.getLotteryRounds();
+    const now = Date.now();
+    const activeRounds = rounds.filter(
+      (round) => round.isActive && round.startTime <= now && round.endTime >= now,
+    ).length;
+    const totalParticipants = rounds.reduce((sum, round) => sum + round.participants.length, 0);
+    const totalWinners = rounds.reduce((sum, round) => sum + round.winners.length, 0);
+    const totalValue = (await this.getAllUserRecords(rounds)).reduce((sum, record) => sum + record.totalValue, 0);
 
     return {
-      totalRounds,
+      totalRounds: rounds.length,
       activeRounds,
       totalParticipants,
       totalWinners,
@@ -458,17 +448,13 @@ class LotteryService {
   }
 
   // 新增方法：获取所有用户记录
-  private async getAllUserRecords(): Promise<UserLotteryRecord[]> {
-    const rounds = await this.getLotteryRounds();
-    const userIds = Array.from(new Set(rounds.flatMap((round) => round.participants)));
-    const userRecords: UserLotteryRecord[] = [];
-    for (const userId of userIds) {
-      const record = await getUserRecord(userId);
-      if (record) {
-        userRecords.push(record);
-      }
-    }
-    return userRecords;
+  private async getAllUserRecords(rounds?: LotteryRound[]): Promise<UserLotteryRecord[]> {
+    const source = rounds ?? (await this.getLotteryRounds());
+    const userIds = Array.from(new Set(source.flatMap((round) => round.participants)));
+    if (userIds.length === 0) return [];
+    // 批量读（$in / IN / 一次读文件）：旧实现按用户逐个查，参与者越多往返越多。
+    const records = await getUserRecordsByIds(userIds);
+    return (records || []).filter((record): record is UserLotteryRecord => Boolean(record));
   }
 
   // 删除所有抽奖轮次
@@ -476,6 +462,8 @@ class LotteryService {
     // G7-08: 之前用 global 变量 + require 动态查找当逃生舱，混淆构建下脆弱。
     // 改为顶部静态 import。
     await deleteAllRounds();
+    // 轮次与用户记录一起清：只删轮次会留下「查得到、却找不到对应轮次」的旧中奖历史。
+    await deleteAllUserRecords();
   }
 }
 

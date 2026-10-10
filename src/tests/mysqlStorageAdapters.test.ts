@@ -306,6 +306,25 @@ describe("lotteryStorage/mysql", () => {
     expect(h.dml().map((c) => c.sql)).toEqual(["DELETE FROM lottery_rounds"]);
   });
 
+  it("deleteAllUserRecords 清空用户表", async () => {
+    const h = loadLottery(() => []);
+    await h.mod.deleteAllUserRecords();
+    expect(h.dml().map((c) => c.sql)).toEqual(["DELETE FROM lottery_users"]);
+  });
+
+  it("getUserRecordsByIds 用一次 IN 查询批量读取", async () => {
+    const h = loadLottery(onDml(() => [{ userId: "u1", data: { score: 1 } }, { userId: "u2", data: { score: 2 } }]));
+    await expect(h.mod.getUserRecordsByIds(["u1", "u2"])).resolves.toEqual([{ score: 1 }, { score: 2 }]);
+    const select = h.dml().find((c) => c.sql.includes("WHERE userId IN"));
+    expect(select?.params).toEqual(["u1", "u2"]);
+  });
+
+  it("getUserRecordsByIds 传入空数组时不查库", async () => {
+    const h = loadLottery(() => []);
+    await expect(h.mod.getUserRecordsByIds([])).resolves.toEqual([]);
+    expect(h.dml()).toEqual([]);
+  });
+
   it("getUserRecord 无记录返回 null，有记录返回解析后的数据", async () => {
     const empty = loadLottery(() => []);
     await expect(empty.mod.getUserRecord("u1")).resolves.toBeNull();

@@ -31,5 +31,7 @@ export const getAllRounds = impl.getAllRounds;
 export const addRound = impl.addRound;
 export const updateRound = impl.updateRound;
 export const getUserRecord = impl.getUserRecord;
+export const getUserRecordsByIds = impl.getUserRecordsByIds;
 export const updateUserRecord = impl.updateUserRecord;
 export const deleteAllRounds = impl.deleteAllRounds;
+export const deleteAllUserRecords = impl.deleteAllUserRecords;

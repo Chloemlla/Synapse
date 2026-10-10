@@ -3,7 +3,8 @@ export interface BlockchainData {
   height: number;
   hash: string;
   timestamp: number;
-  difficulty: number;
+  /** 已废弃：后端不再返回编造的难度字段；保留可选仅为兼容旧响应。 */
+  difficulty?: number;
 }
 
 // 奖品类型
@@ -28,10 +29,20 @@ export interface LotteryRound {
   endTime: number;
   isActive: boolean;
   prizes: LotteryPrize[];
+  /**
+   * 参与者。普通用户拿到的视图里是空数组（不回内部用户 id），
+   * 请改用 hasParticipated / participantCount。管理员拿完整数据。
+   */
   participants: string[];
   winners: LotteryWinner[];
   blockchainHeight: number;
   seed: string;
+  /** 服务端按请求者算好的「本人是否已参与」（普通用户视图专用）。 */
+  hasParticipated?: boolean;
+  /** 参与人数（普通用户视图用，避免依赖 participants 数组）。 */
+  participantCount?: number;
+  /** 中奖人数（普通用户视图用）。 */
+  winnerCount?: number;
 }
 
 // 中奖者类型
@@ -76,4 +87,6 @@ export interface LotteryApiResponse<T> {
   data?: T;
   error?: string;
   message?: string;
+  /** 后端对入参的自动修正说明（如概率归一化、时间顺序调整）。 */
+  warning?: string;
 } 

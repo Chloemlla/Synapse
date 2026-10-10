@@ -7,7 +7,6 @@ import {
 } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { useAuth } from './useAuth';
-import getApiBaseUrl from '../api';
 
 
 export function useLottery() {
@@ -38,27 +37,10 @@ export function useLottery() {
   const fetchAllRounds = useCallback(async () => {
     try {
       setError(null);
-
-      // 直接调用API并处理响应
-      const response = await fetch(getApiBaseUrl() + '/api/lottery/rounds', {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // 兼容未加密格式（普通用户或未登录用户）
-      if (Array.isArray(data.data)) {
-        setAllRounds(data.data);
-      } else {
-        console.error(' 响应数据格式错误，期望数组格式');
-        setError('响应数据格式错误');
-      }
+      // 走统一 API 层（会带 credentials:'include'）：旧实现自己 fetch，跨域开发环境不带 cookie，
+      // 而且与 api/lottery.ts 的错误/超时处理两套逻辑。
+      const rounds = await lotteryApi.getLotteryRounds();
+      setAllRounds(rounds);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取所有轮次失败');
     }
@@ -102,15 +84,14 @@ export function useLottery() {
     }
   }, []);
 
-  // 参与抽奖
-  const participateInLottery = useCallback(async (roundId: string, cfToken?: string, captchaProvider?: string): Promise<LotteryWinner> => {
+  // 参与抽奖。返回 null = 未中奖（概率和 < 1 的剩余区间），不是失败。
+  const participateInLottery = useCallback(async (roundId: string, cfToken?: string, captchaProvider?: string): Promise<LotteryWinner | null> => {
     if (!user) {
       throw new Error('请先登录');
     }
 
     setParticipating(true);
     setParticipatingRoundId(roundId);
-    setError(null);
 
     try {
       const winner = await lotteryApi.participateInLottery(roundId, cfToken, captchaProvider);
@@ -124,10 +105,6 @@ export function useLottery() {
       ]);
 
       return winner;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '参与抽奖失败';
-      setError(errorMessage);
-      throw err;
     } finally {
       setParticipating(false);
       setParticipatingRoundId(null);

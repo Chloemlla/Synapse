@@ -13,8 +13,8 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 // 修正API_BASE，确保所有请求都指向 /api/lottery
 const API_BASE = getApiBaseUrl() + '/api/lottery';
 
-// 通用API请求函数
-async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+// 通用API请求函数（返回完整信封，供需要 warning 等附加字段的调用方使用）
+async function apiRequestEnvelope<T>(endpoint: string, options?: RequestInit): Promise<LotteryApiResponse<T>> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options?.headers,
@@ -50,7 +50,13 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
     throw new Error(data.error || '请求失败');
   }
 
-  return data.data as T;
+  return data;
+}
+
+// 通用API请求函数
+async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const envelope = await apiRequestEnvelope<T>(endpoint, options);
+  return envelope.data as T;
 }
 
 // 获取区块链数据
@@ -73,12 +79,12 @@ export async function getRoundDetails(roundId: string): Promise<LotteryRound> {
   return apiRequest<LotteryRound>(`/rounds/${roundId}`);
 }
 
-// 参与抽奖
+// 参与抽奖：未中奖时后端返回 data=null（概率和 < 1 的剩余区间）。
 export async function participateInLottery(
   roundId: string,
   cfToken?: string,
   captchaProvider?: string,
-): Promise<LotteryWinner> {
+): Promise<LotteryWinner | null> {
   const body: any = {};
 
   if (cfToken) {
@@ -88,7 +94,7 @@ export async function participateInLottery(
     if (captchaProvider) body.captchaProvider = captchaProvider;
   }
 
-  return apiRequest<LotteryWinner>(`/rounds/${roundId}/participate`, {
+  return apiRequest<LotteryWinner | null>(`/rounds/${roundId}/participate`, {
     method: 'POST',
     body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
   });
@@ -109,19 +115,22 @@ export async function getStatistics(): Promise<LotteryStatistics> {
   return apiRequest<LotteryStatistics>('/statistics');
 }
 
-// 创建抽奖轮次（管理员）
+// 创建抽奖轮次（管理员）。返回后端的自动修正说明（warning）供界面提示。
 export async function createLotteryRound(roundData: {
   name: string;
   description: string;
   startTime: string;
   endTime: string;
   prizes: any[];
-}): Promise<LotteryRound> {
-  console.log('收到创建轮次请求', roundData);
-  return apiRequest<LotteryRound>('/rounds', {
+}): Promise<{ round: LotteryRound; warning?: string }> {
+  const envelope = await apiRequestEnvelope<LotteryRound>('/rounds', {
     method: 'POST',
     body: JSON.stringify(roundData),
   });
+  return {
+    round: envelope.data as LotteryRound,
+    ...(typeof envelope.warning === 'string' && envelope.warning ? { warning: envelope.warning } : {}),
+  };
 }
 
 // 更新轮次状态（管理员）

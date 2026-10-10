@@ -7,7 +7,6 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useNotification } from './Notification';
 import { isAdminRole } from '../utils/rbac';
-import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
 import ManagedCaptcha, {
   type ManagedCaptchaChallenge,
   type ManagedCaptchaRef,
@@ -98,7 +97,18 @@ export const LotteryRoundCard: React.FC<{
   const onCaptchaSolved = useCallback((challenge: ManagedCaptchaChallenge) => setCaptcha(challenge), []);
   const onCaptchaCleared = useCallback(() => setCaptcha(null), []);
   const onCaptchaStatus = useCallback((status: ManagedCaptchaStatus) => setCaptchaStatus(status), []);
-  const hasParticipated = round.participants.includes(user?.id || '');
+  // 服务端按请求者算好 hasParticipated（普通用户视图不回参与者 id）；
+  // 兼容旧响应：没有该字段时才回退到 participants 数组。
+  const hasParticipated = round.hasParticipated ?? (user?.id ? round.participants.includes(user.id) : false);
+  const participantCount = round.participantCount ?? round.participants.length;
+  const winnerCount = round.winnerCount ?? round.winners.length;
+  // 有库存且有概率的奖品才真正参与抽取；概率和 < 100% 时剩余部分是未中奖概率。
+  const totalWinProbability = Math.min(
+    1,
+    round.prizes
+      .filter((item) => item.remaining > 0 && item.probability > 0)
+      .reduce((sum, item) => sum + item.probability, 0),
+  );
   const isActive = round.isActive && Date.now() >= round.startTime && Date.now() <= round.endTime;
   const captchaUnavailable = !isAdmin && (captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token));
   const handleParticipate = async () => {
@@ -141,13 +151,18 @@ export const LotteryRoundCard: React.FC<{
           <div>结束时间: {new Date(round.endTime).toLocaleString()}</div>
         </div>
         <div className={`${lotteryTileClass} p-3 text-sm leading-6 text-slate-600`}>
-          <div>参与人数: {round.participants.length}</div>
-          <div>中奖人数: {round.winners.length}</div>
+          <div>参与人数: {participantCount}</div>
+          <div>中奖人数: {winnerCount}</div>
         </div>
       </div>
 
       <div className="mb-4">
-        <h4 className="mb-2 text-sm font-semibold text-slate-700">奖品列表</h4>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-slate-700">奖品列表</h4>
+          <span className="text-xs text-slate-500">
+            本轮中奖概率：{(totalWinProbability * 100).toFixed(2)}%
+          </span>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {round.prizes.slice(0, 6).map((prize) => (
             <PrizeDisplay key={prize.id} prize={prize} />
@@ -421,8 +436,13 @@ const LotteryPage: React.FC = () => {
     submittingRef.current = true;
     try {
       const result = await participateInLottery(roundId, challenge?.token, challenge?.provider);
-      setWinner(result);
-      setNotification({ message: `恭喜获得 ${result.prizeName}！`, type: 'success' });
+      if (result) {
+        setWinner(result);
+        setNotification({ message: `恭喜获得 ${result.prizeName}！`, type: 'success' });
+      } else {
+        // 概率和 < 1 时会有「未中奖」：这是正常结果，不是失败。
+        setNotification({ message: '本轮未中奖，谢谢参与！', type: 'info' });
+      }
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : '参与抽奖失败';

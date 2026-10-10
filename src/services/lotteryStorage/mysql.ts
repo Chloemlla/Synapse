@@ -90,6 +90,23 @@ export async function deleteAllRounds() {
   await conn.query(`DELETE FROM ${ROUNDS_TABLE}`);
 }
 
+/** 清空用户记录：与 deleteAllRounds 配套，避免轮次删光后仍能查到旧的中奖历史。 */
+export async function deleteAllUserRecords() {
+  const conn = getPool();
+  await ensureTables();
+  await conn.query(`DELETE FROM ${USERS_TABLE}`);
+}
+
+/** 批量读取：排行榜/统计一次 IN 查询取代逐用户 SELECT。 */
+export async function getUserRecordsByIds(userIds: string[]) {
+  if (userIds.length === 0) return [];
+  const conn = getPool();
+  await ensureTables();
+  const placeholders = userIds.map(() => "?").join(",");
+  const [rows] = await conn.query(`SELECT * FROM ${USERS_TABLE} WHERE userId IN (${placeholders})`, userIds);
+  return (rows as any[]).map((r) => parseData(r.data));
+}
+
 export async function getUserRecord(userId: string) {
   const conn = getPool();
   await ensureTables();
