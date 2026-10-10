@@ -88,15 +88,22 @@ export type CaptchaProviderId = "turnstile" | "hcaptcha" | "trycap";
 /** 三家供应商的固定顺序（下发顺序、管理端展示顺序都以它为准）。 */
 export const CAPTCHA_PROVIDER_IDS: readonly CaptchaProviderId[] = ["turnstile", "hcaptcha", "trycap"];
 
-/** 下发场景：default 是其余调用点（旧行为），first_visit / standalone 是两条前端入口。 */
-export type CaptchaScenario = "default" | "first_visit" | "standalone";
+/** 下发场景：default 是其余调用点（旧行为），first_visit / standalone 是两条前端入口，
+ * step_up 是「被标记账户的逐步验证」（RC-02/RC-24）——它是唯一带**供应商白名单**的场景。 */
+export type CaptchaScenario = "default" | "first_visit" | "standalone" | "step_up";
 
-export const CAPTCHA_SCENARIOS: readonly CaptchaScenario[] = ["default", "first_visit", "standalone"];
+export const CAPTCHA_SCENARIOS: readonly CaptchaScenario[] = [
+  "default",
+  "first_visit",
+  "standalone",
+  "step_up",
+];
 
 export const CAPTCHA_SCENARIO_LABELS: Record<CaptchaScenario, string> = {
   default: "默认（其它调用点）",
   first_visit: "首访门禁",
   standalone: "独立验证页",
+  step_up: "被标记账户逐步验证",
 };
 
 /** 分配策略：加权随机 / 按时间轮换 / 优先级故障转移。 */
@@ -148,6 +155,15 @@ export interface CaptchaAllocationPolicyDoc {
   /** 前端控件失败后最多换几家（含首次）。 */
   failoverMaxAttempts: number;
   scenarioStrategies: Partial<Record<CaptchaScenario, CaptchaAllocationStrategy>>;
+  /**
+   * 每场景的供应商白名单（RC-24）。
+   *
+   * 为什么不能用「权重 0」表达排除：`pickWeightedProvider` 在总权重为 0 时**退化为等概率**，
+   * 而 `failover` / `round_robin` 策略根本不算权重 —— 所以“权重 0”既不确定、也不生效。
+   * 白名单是硬约束：候选集恒等于白名单交集（空交集 → fail_closed，不回落其它供应商）。
+   * 未设置的场景行为与历史逐字节一致（向后兼容）。
+   */
+  scenarioProviderAllowlist: Partial<Record<CaptchaScenario, CaptchaProviderId[]>>;
   updatedAt?: Date;
 }
 

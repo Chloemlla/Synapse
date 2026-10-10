@@ -164,6 +164,58 @@ describe("isCaptchaProviderId", () => {
   });
 });
 
+describe("step_up 场景的供应商白名单（RC-24）", () => {
+  it("被标记账户的按步验证只会在 trycap / turnstile 之间选，hCaptcha 不出现在候选集", async () => {
+    setProviderConfig({
+      keys: ALL_KEYS,
+      settings: [
+        { provider: "hcaptcha", enabled: true, weight: 100 },
+        { provider: "turnstile", enabled: true, weight: 10 },
+        { provider: "trycap", enabled: true, weight: 10 },
+      ],
+    });
+
+    const { providers, candidates, allowlistExhausted } = await collectCaptchaProviders({ scenario: "step_up" });
+
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(["turnstile", "trycap"]);
+    expect(allowlistExhausted).toBe(false);
+    // 管理端要能看出「这家在本场景被排除」：effective 仍为 true，但 allowedForScenario 为 false。
+    const hcaptcha = providers.find((provider) => provider.provider === "hcaptcha");
+    expect(hcaptcha?.effective).toBe(true);
+    expect(hcaptcha?.allowedForScenario).toBe(false);
+  });
+
+  it("三个场景（default / first_visit / standalone）不受白名单影响", async () => {
+    setProviderConfig({
+      keys: ALL_KEYS,
+      settings: [{ provider: "hcaptcha", enabled: true, weight: 100 }],
+    });
+
+    for (const scenario of ["default", "first_visit", "standalone"] as const) {
+      const { candidates, allowlistExhausted } = await collectCaptchaProviders({ scenario });
+      expect(candidates.map((candidate) => candidate.provider)).toEqual(["turnstile", "hcaptcha", "trycap"]);
+      expect(allowlistExhausted).toBe(false);
+    }
+  });
+
+  it("白名单两家都不可用时 fail_closed：step_up 零候选且标记 allowlistExhausted，其它场景不受影响", async () => {
+    // 只留 hCaptcha 凭据：trycap / turnstile 都 credentials_missing ⇒ 白名单交集为空。
+    setProviderConfig({
+      keys: { HCAPTCHA_SITE_KEY: "hc-site", HCAPTCHA_SECRET_KEY: "hc-secret" },
+      settings: [{ provider: "hcaptcha", enabled: true, weight: 100 }],
+    });
+
+    const stepUp = await collectCaptchaProviders({ scenario: "step_up" });
+    expect(stepUp.allowlistExhausted).toBe(true);
+    expect(stepUp.candidates).toHaveLength(0);
+
+    // 关键：失败关闭**只作用于 step_up**，不能把全站可用性绑到 trycap/Turnstile 上。
+    const fallback = await collectCaptchaProviders({ scenario: "default" });
+    expect(fallback.allowlistExhausted).toBe(false);
+    expect(fallback.candidates.map((candidate) => candidate.provider)).toEqual(["hcaptcha"]);
+  });
+});
+
 describe("collectCaptchaProviders", () => {
   it("凭据齐全且未下线时进入候选，并给出归一化概率", async () => {
     setProviderConfig({

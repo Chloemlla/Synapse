@@ -13,6 +13,7 @@ import {
   normalizeWidgetSettings,
   pickWeightedProvider,
   resolveScenarioStrategy,
+  resolveScenarioProviderAllowlist,
   resolveWidgetSettings,
   type CaptchaAllocationPolicyView,
   type CaptchaWidgetSettingsView,
@@ -92,6 +93,11 @@ export interface CaptchaProviderSnapshot {
   credentialsConfigured: boolean;
   /** 真正会参与下发的判定（上线 && 凭据齐全 && 有 siteKey && 本月额度未用尽）。 */
   effective: boolean;
+  /**
+   * 该家在本场景是否被白名单允许（RC-24）。
+   * `false` = 即使 effective=true 也不会被选中；未设白名单的场景恒为 true（历史行为）。
+   */
+  allowedForScenario: boolean;
   reason: ProviderSkipReason;
   /** 本月额度：limit <= 0 表示不限额，remaining 为 -1。 */
   quota: CaptchaQuotaSnapshot;
@@ -241,6 +247,10 @@ export async function collectCaptchaProviders(options: { scenario?: CaptchaScena
   policy: CaptchaAllocationPolicyView;
   widgets: CaptchaWidgetSettingsView;
   scenario: CaptchaScenario;
+  /** 该场景设了白名单但交集为空（fail_closed）：调用方必须拒绝而非静默放行（RC-24.6）。 */
+  allowlistExhausted: boolean;
+  /** 该场景生效的白名单；null = 不受白名单约束。 */
+  allowlist: readonly CaptchaProviderId[] | null;
 }> {
   const scenario = options.scenario ?? "default";
 
@@ -299,11 +309,31 @@ export async function collectCaptchaProviders(options: { scenario?: CaptchaScena
   });
 
   const effectiveRows = rows.filter((row) => row.effective);
-  const effectiveWeights = effectiveRows.map((row) => row.effectiveScenarioWeights[scenario]);
+
+  // RC-24：场景白名单是**硬约束** —— 候选集恒等于（effective ∩ 白名单）。
+  // 之所以不能用「权重 0」表达排除：pickWeightedProvider 在总权重为 0 时退化为等概率，
+  // 而 failover / round_robin 根本不算权重。未设白名单的场景 allowlist === null，
+  // 下面的过滤与百分比计算与改动前逐字段一致（向后兼容）。
+  const allowlist = resolveScenarioProviderAllowlist(policy, scenario);
+  const allowlistedRows = allowlist
+    ? effectiveRows.filter((row) => allowlist.includes(row.provider))
+    : effectiveRows;
+  const allowlistExhausted = allowlist !== null && allowlistedRows.length === 0;
+
+  if (allowlistExhausted) {
+    // fail_closed（D11/D12）：不回落全局 enabled 列表、不回落 default 场景、不发绕过令牌。
+    // 必须 error 级 + 可告警，否则“验证服务抖一下”会变成“用户莫名其妙什么都发不出去”。
+    logger.error(
+      "[Captcha] 场景白名单已耗尽：该场景的写操作将失败关闭（被标记账户降为只读），需修凭据/配额或调整白名单",
+      { scenario, allowlist: [...(allowlist ?? [])] },
+    );
+  }
+
+  const effectiveWeights = allowlistedRows.map((row) => row.effectiveScenarioWeights[scenario]);
   const percentages = normalizeWeightPercentages(effectiveWeights);
 
   const providers: CaptchaProviderSnapshot[] = rows.map((row) => {
-    const index = effectiveRows.indexOf(row);
+    const index = allowlistedRows.indexOf(row);
     return {
       provider: row.provider,
       label: CAPTCHA_PROVIDER_LABELS[row.provider],
@@ -317,13 +347,14 @@ export async function collectCaptchaProviders(options: { scenario?: CaptchaScena
       secretConfigured: row.credential.secretConfigured,
       credentialsConfigured: !!row.credential.siteKey && row.credential.secretConfigured,
       effective: row.effective,
+      allowedForScenario: allowlist ? allowlist.includes(row.provider) : true,
       reason: row.reason,
       quota: row.quota,
       updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : undefined,
     };
   });
 
-  const candidates: CaptchaProviderCandidate[] = effectiveRows.map((row) => ({
+  const candidates: CaptchaProviderCandidate[] = allowlistedRows.map((row) => ({
     provider: row.provider,
     siteKey: row.credential.siteKey as string,
     weight: row.effectiveScenarioWeights[scenario],
@@ -331,7 +362,7 @@ export async function collectCaptchaProviders(options: { scenario?: CaptchaScena
     apiEndpoint: row.credential.apiEndpoint,
   }));
 
-  return { providers, candidates, policy, widgets, scenario };
+  return { providers, candidates, policy, widgets, scenario, allowlistExhausted, allowlist };
 }
 
 export interface CaptchaProviderDraftInput {

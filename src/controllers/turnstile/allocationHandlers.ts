@@ -9,6 +9,7 @@ import {
   clampStickyTtlMinutes,
   normalizeAllocationPolicy,
   normalizeScenarioStrategies,
+  normalizeScenarioProviderAllowlist,
   normalizeScenarioWeights,
   isCaptchaAllocationStrategy,
   isCaptchaScenario,
@@ -125,6 +126,11 @@ function buildPolicyPatch(body: unknown): { patch: Partial<CaptchaAllocationPoli
   }
   if (source.scenarioStrategies !== undefined) {
     patch.scenarioStrategies = normalizeScenarioStrategies(source.scenarioStrategies);
+  }
+  if (source.scenarioProviderAllowlist !== undefined) {
+    // RC-24：白名单是硬约束（不是权重），因此必须过归一化：去重、剔除非法 provider、
+    // 空数组视为「未设置」（空数组会让该场景零候选，等于配置错误锁死被标记账户）。
+    patch.scenarioProviderAllowlist = normalizeScenarioProviderAllowlist(source.scenarioProviderAllowlist);
   }
 
   return { patch };

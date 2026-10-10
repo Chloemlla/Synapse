@@ -85,6 +85,7 @@ const CaptchaAllocationPolicySchema = new mongoose.Schema<CaptchaAllocationPolic
     rolloutControlProvider: { type: String, default: "turnstile" },
     failoverMaxAttempts: { type: Number, default: 2 },
     scenarioStrategies: { type: mongoose.Schema.Types.Mixed, default: {} },
+    scenarioProviderAllowlist: { type: mongoose.Schema.Types.Mixed, default: {} },
     updatedAt: { type: Date, default: Date.now },
   },
   { collection: "captcha_allocation_policy" },
@@ -199,7 +200,9 @@ function normalizeStoredScenarioWeights(value: unknown): Partial<Record<CaptchaS
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
   const result: Partial<Record<CaptchaScenario, number>> = {};
-  for (const scenario of ["default", "first_visit", "standalone"] as const) {
+  // RC-24 事实 5：这里原先手写三个场景的数组，新增场景会被**静默丢弃**
+  //（存了也读不回来）。改为遍历 CAPTCHA_SCENARIOS，下次加场景不会再踩同一个坑。
+  for (const scenario of CAPTCHA_SCENARIOS) {
     const entry = source[scenario];
     if (typeof entry === "number" && Number.isFinite(entry) && entry >= 0) result[scenario] = entry;
   }
@@ -275,6 +278,7 @@ export async function getCaptchaAllocationPolicyDoc(): Promise<CaptchaAllocation
           rolloutControlProvider: doc.rolloutControlProvider as CaptchaAllocationPolicyDoc["rolloutControlProvider"],
           failoverMaxAttempts: doc.failoverMaxAttempts,
           scenarioStrategies: (doc.scenarioStrategies ?? {}) as CaptchaAllocationPolicyDoc["scenarioStrategies"],
+          scenarioProviderAllowlist: (doc.scenarioProviderAllowlist ?? {}) as CaptchaAllocationPolicyDoc["scenarioProviderAllowlist"],
           updatedAt: doc.updatedAt,
         };
       }

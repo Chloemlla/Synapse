@@ -46,6 +46,8 @@ export interface CaptchaAllocationPolicyView {
   rolloutControlProvider: CaptchaProviderId;
   failoverMaxAttempts: number;
   scenarioStrategies: Partial<Record<CaptchaScenario, CaptchaAllocationStrategy>>;
+  /** 每场景的供应商白名单（RC-24）。未设置的场景不受约束。 */
+  scenarioProviderAllowlist: Partial<Record<CaptchaScenario, CaptchaProviderId[]>>;
   updatedAt?: string;
 }
 
@@ -93,6 +95,9 @@ export const DEFAULT_ALLOCATION_POLICY: CaptchaAllocationPolicyView = {
   rolloutControlProvider: "turnstile",
   failoverMaxAttempts: 2,
   scenarioStrategies: {},
+  // RC-24 / D12：被标记账户的逐步验证**恒等于**这两家（自托管 Cap + Turnstile），
+  // 不允许 hCaptcha 后备 —— 白名单外零候选（耗尽时 fail_closed，见 providers.ts）。
+  scenarioProviderAllowlist: { step_up: ["trycap", "turnstile"] },
 };
 
 export const DEFAULT_WIDGET_SETTINGS: CaptchaWidgetSettingsView = {
@@ -230,6 +235,44 @@ export function normalizeWidgetOverrides(
   return result;
 }
 
+/**
+ * 场景供应商白名单归一化（RC-24.2）。
+ *
+ * 规则：只保留已知场景；每项去重、剔除非法 provider；**空数组视为“未设置”**
+ * —— 否则一次误保存的空数组会把该场景变成“零候选”，把所有被标记账户直接锁死。
+ * （真要“锁死”应该靠 fail_closed 的显式告警路径，而不是一个看起来像配置错误的状态。）
+ */
+export function normalizeScenarioProviderAllowlist(
+  value: unknown,
+): Partial<Record<CaptchaScenario, CaptchaProviderId[]>> {
+  const result: Partial<Record<CaptchaScenario, CaptchaProviderId[]>> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  const source = value as Record<string, unknown>;
+  for (const scenario of CAPTCHA_SCENARIOS) {
+    const entry = source[scenario];
+    if (!Array.isArray(entry)) continue;
+    const providers = Array.from(
+      new Set(
+        entry.filter(
+          (item): item is CaptchaProviderId =>
+            typeof item === "string" && (CAPTCHA_PROVIDER_IDS as readonly string[]).includes(item),
+        ),
+      ),
+    );
+    if (providers.length > 0) result[scenario] = providers;
+  }
+  return result;
+}
+
+/** 取某场景生效的白名单；`null` = 该场景不受白名单约束（历史行为）。 */
+export function resolveScenarioProviderAllowlist(
+  policy: CaptchaAllocationPolicyView,
+  scenario: CaptchaScenario,
+): readonly CaptchaProviderId[] | null {
+  const list = policy.scenarioProviderAllowlist?.[scenario];
+  return Array.isArray(list) && list.length > 0 ? list : null;
+}
+
 export function normalizeAllocationPolicy(raw: CaptchaAllocationPolicyInput | null | undefined): CaptchaAllocationPolicyView {
   const source = raw ?? {};
   return {
@@ -245,6 +288,7 @@ export function normalizeAllocationPolicy(raw: CaptchaAllocationPolicyInput | nu
         : DEFAULT_ALLOCATION_POLICY.rolloutControlProvider,
     failoverMaxAttempts: clampFailoverAttempts(source.failoverMaxAttempts),
     scenarioStrategies: normalizeScenarioStrategies(source.scenarioStrategies),
+    scenarioProviderAllowlist: normalizeScenarioProviderAllowlist(source.scenarioProviderAllowlist),
     updatedAt: toIsoOrUndefined(source.updatedAt),
   };
 }

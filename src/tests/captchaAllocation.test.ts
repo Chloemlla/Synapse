@@ -11,6 +11,7 @@ import {
   isCaptchaAllocationStrategy,
   isCaptchaScenario,
   normalizeAllocationPolicy,
+  normalizeScenarioProviderAllowlist,
   normalizeScenarioWeights,
   normalizeWidgetLanguage,
   normalizeWidgetOverrides,
@@ -19,6 +20,7 @@ import {
   pickRoundRobinProvider,
   pickWeightedProviderByUnit,
   resolveScenarioStrategy,
+  resolveScenarioProviderAllowlist,
   resolveWidgetSettings,
   simulateAllocation,
   type CaptchaAllocationPolicyView,
@@ -41,6 +43,40 @@ const candidates: SimulationCandidate[] = [
 function policyWith(overrides: Partial<CaptchaAllocationPolicyView>): CaptchaAllocationPolicyView {
   return { ...DEFAULT_ALLOCATION_POLICY, ...overrides };
 }
+
+describe("场景供应商白名单（RC-24）", () => {
+  it("默认策略里 step_up 恒等于 [trycap, turnstile]（不允许 hCaptcha 后备）", () => {
+    expect(DEFAULT_ALLOCATION_POLICY.scenarioProviderAllowlist).toEqual({ step_up: ["trycap", "turnstile"] });
+    expect(resolveScenarioProviderAllowlist(DEFAULT_ALLOCATION_POLICY, "step_up")).toEqual(["trycap", "turnstile"]);
+  });
+
+  it("未设白名单的场景不受约束（向后兼容）", () => {
+    expect(resolveScenarioProviderAllowlist(DEFAULT_ALLOCATION_POLICY, "default")).toBeNull();
+    expect(resolveScenarioProviderAllowlist(DEFAULT_ALLOCATION_POLICY, "first_visit")).toBeNull();
+    expect(resolveScenarioProviderAllowlist(DEFAULT_ALLOCATION_POLICY, "standalone")).toBeNull();
+  });
+
+  it("归一化：去重、剔除非法 provider、未知场景丢弃", () => {
+    const normalized = normalizeScenarioProviderAllowlist({
+      step_up: ["trycap", "trycap", "recaptcha", "turnstile"],
+      nope: ["turnstile"],
+      default: "turnstile",
+    });
+    expect(normalized).toEqual({ step_up: ["trycap", "turnstile"] });
+  });
+
+  it("空数组视为「未设置」，而不是「零候选」（否则一次误保存就锁死被标记账户）", () => {
+    expect(normalizeScenarioProviderAllowlist({ step_up: [] })).toEqual({});
+    expect(resolveScenarioProviderAllowlist(policyWith({ scenarioProviderAllowlist: {} }), "step_up")).toBeNull();
+  });
+
+  it("normalizeAllocationPolicy 会带上白名单（落库往返不被丢弃）", () => {
+    const policy = normalizeAllocationPolicy({
+      scenarioProviderAllowlist: { step_up: ["turnstile"] } as never,
+    });
+    expect(policy.scenarioProviderAllowlist).toEqual({ step_up: ["turnstile"] });
+  });
+});
 
 describe("分配策略归一化", () => {
   it("非法取值回落默认，数值字段被钳制到合法区间", () => {
