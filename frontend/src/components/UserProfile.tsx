@@ -74,6 +74,12 @@ import SecurityScorecardPanel, { type SecurityCheckActionTarget } from './user-p
 import { ProfileSidebarSummary } from './user-profile/ProfileSidebarSummary';
 import EstablishSecuritySession from './EstablishSecuritySession';
 import { useSecuritySession } from '../hooks/useSecuritySession';
+import ManagedCaptcha, {
+  type ManagedCaptchaChallenge,
+  type ManagedCaptchaRef,
+  type ManagedCaptchaStatus,
+} from './ManagedCaptcha';
+import { isAdminRole } from '../utils/rbac';
 declare global {
   interface Window {
     google?: {
@@ -97,6 +103,10 @@ export interface UserProfileProps {
 
 const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => {
   const { setNotification } = useNotification();
+
+  // 头像上传的人机验证对普通用户强制，管理员直接跳过（与图床 / FBI / 抽奖同一豁免口径）。
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
 
   // Core state
   const [profile, setProfile] = useState<UserProfileData | null>(null);
@@ -157,6 +167,30 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
   const [avatarImg, setAvatarImg] = useState<string | undefined>(undefined);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const avatarObjectUrlRef = useRef<string | undefined>(undefined);
+
+  // 头像上传的人机验证：三家供应商由 /admin/captcha-providers 统一调控。
+  // ManagedCaptcha 必须无条件挂载（只控外壳显隐），否则状态回报会把控件自己卸载掉。
+  const [avatarCaptcha, setAvatarCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
+  const [avatarCaptchaStatus, setAvatarCaptchaStatus] = useState<ManagedCaptchaStatus>({
+    required: false,
+    loading: true,
+    error: null,
+    provider: null,
+    solved: false,
+  });
+  const avatarCaptchaRef = useRef<ManagedCaptchaRef | null>(null);
+  const avatarCaptchaSectionVisible =
+    avatarCaptchaStatus.required || avatarCaptchaStatus.loading || Boolean(avatarCaptchaStatus.error);
+
+  const handleAvatarCaptchaSolved = useCallback(
+    (challenge: ManagedCaptchaChallenge) => setAvatarCaptcha(challenge),
+    [],
+  );
+  const handleAvatarCaptchaCleared = useCallback(() => setAvatarCaptcha(null), []);
+  const handleAvatarCaptchaStatus = useCallback(
+    (status: ManagedCaptchaStatus) => setAvatarCaptchaStatus(status),
+    [],
+  );
 
   // Max file size and allowed types
   const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
@@ -545,6 +579,19 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
 
     const formData = new FormData();
     formData.append('avatar', file);
+
+    // 普通人上传头像必须先解出人机验证；管理员豁免（与后端 shouldSkipTurnstile 同一口径）。
+    if (!isAdmin && avatarCaptchaStatus.required && !avatarCaptcha?.token) {
+      setNotification({ message: '请先完成人机验证', type: 'warning' });
+      input.value = '';
+      return;
+    }
+    if (!isAdmin && avatarCaptcha?.token) {
+      // cfToken 为历史字段名；三家共用一套下发链路，带上供应商说明这次是谁签发的。
+      formData.append('cfToken', avatarCaptcha.token);
+      formData.append('captchaToken', avatarCaptcha.token);
+      formData.append('captchaProvider', avatarCaptcha.provider);
+    }
     setSubmitting(true);
     setAvatarLoading(true);
 
@@ -594,8 +641,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
       input.value = '';
       setSubmitting(false);
       setAvatarLoading(false);
+      // 挑战令牌一次性有效：无论成败都换一张，否则下次上传会带着已消费的令牌被拒。
+      if (!isAdmin && avatarCaptcha?.token) {
+        avatarCaptchaRef.current?.reset(avatarCaptcha.token);
+      }
     }
-  }, [setNotification, loadProfile]);
+  }, [setNotification, loadProfile, isAdmin, avatarCaptcha, avatarCaptchaStatus.required]);
 
   // Avatar component
   const Avatar = useMemo(() => {
@@ -1313,6 +1364,21 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
                   disabled={submitting || avatarLoading}
                 />
               </label>
+
+              {/* 人机验证：由 /admin/captcha-providers 统一调控；管理员直接跳过。
+                  ManagedCaptcha 始终挂载，没有可见内容时只隐藏外壳（理由见上面的注释）。 */}
+              {!isAdmin && (
+                <div className={cn('mt-4 w-full max-w-sm', !avatarCaptchaSectionVisible && 'hidden')}>
+                  <div className="mb-2 text-center text-xs text-slate-500">更换头像前请完成人机验证</div>
+                  <ManagedCaptcha
+                    ref={avatarCaptchaRef}
+                    compact
+                    onSolved={handleAvatarCaptchaSolved}
+                    onCleared={handleAvatarCaptchaCleared}
+                    onStatusChange={handleAvatarCaptchaStatus}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Email field */}

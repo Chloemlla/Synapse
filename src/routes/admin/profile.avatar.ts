@@ -2,6 +2,7 @@ import type { Router } from "express";
 import multer from "multer";
 import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middleware/auth";
 import { IPFSService } from "../../services/ipfsService";
+import { readCaptchaChallenge } from "../../services/turnstile/challenge";
 import { getClientIP } from "../../utils/ipUtils";
 import { UserStorage } from "../../utils/userStorage";
 
@@ -50,16 +51,22 @@ export function registerProfileAvatarRoutes(router: Router): void {
       try {
         console.log(`[avatar upload] 开始上传头像: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
         const clientIp = getClientIP(req);
+        // 人机验证令牌与供应商从 multipart 字段读取（三家共用一套下发链路，cfToken 为历史字段名）。
+        // 缺失时留给 IPFSService 报「请先完成人机验证」——普通用户必须先在页面上解出挑战。
+        const captchaChallenge = readCaptchaChallenge(req.body);
+        const captchaProvider = req.body?.captchaProvider ?? req.body?.captchaType;
         result = await IPFSService.uploadFile(
           req.file.buffer,
           req.file.originalname,
           req.file.mimetype,
           undefined,
-          undefined,
+          captchaChallenge.token,
           {
             clientIp,
             isAdmin: isAdminRole((req as any).user?.role),
             shouldSkipTurnstile: isAdminRole((req as any).user?.role),
+            userAgent: req.headers["user-agent"] || "",
+            captchaProvider,
           },
         );
         if (!result?.web2url) {
@@ -83,6 +90,9 @@ export function registerProfileAvatarRoutes(router: Router): void {
             errorMessage = "上传超时，请检查网络连接后重试";
           } else if (ipfsErr.message.includes("网络") || ipfsErr.message.includes("network")) {
             errorMessage = "网络连接异常，请检查网络后重试";
+          } else if (ipfsErr.message.includes("人机验证")) {
+            // 缺少/失效的挑战令牌要原样告诉用户「去完成验证」，不能被通用文案吞掉。
+            return res.status(403).json({ error: ipfsErr.message });
           }
         }
 
