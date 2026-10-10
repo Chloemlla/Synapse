@@ -22,7 +22,12 @@ import {
   generateWelcomeEmailHtml,
 } from "../../templates/emailTemplates";
 import { getClientIP } from "../../utils/ipUtils";
-import { isIdentityRetired } from "../../services/blockedIdentityService";
+import { isIdentityRetired, normalizeEmailCanonical } from "../../services/blockedIdentityService";
+import {
+  evaluateRegistrationRisk,
+  recordRegistrationAttempt,
+} from "../../services/registrationRiskService";
+import { evaluateAccountRisk } from "../../services/accountRiskService";
 import logger from "../../utils/logger";
 import { UserStorage } from "../../utils/userStorage";
 import {
@@ -96,7 +101,11 @@ export async function register(req: Request, res: Response) {
     // 检查用户名或邮箱是否已注册
     const existUser = await UserStorage.getUserByUsername(username);
     const existEmail = await UserStorage.getUserByEmail(email);
-    if (existUser || existEmail) {
+    // RC-05：规范化邮箱（小写 + 去 +tag + gmail 去点）也要查 —— 只查原值会被
+    // `user+1@gmail.com` / `u.s.e.r@gmail.com` 这类变体绕过（同一个信箱可重复注册）。
+    const canonicalEmail = normalizeEmailCanonical(email);
+    const existCanonical = canonicalEmail ? await UserStorage.getUserByEmailCanonical(canonicalEmail) : null;
+    if (existUser || existEmail || existCanonical) {
       return res.status(400).json({ error: "用户名或邮箱已被使用" });
     }
 
@@ -114,6 +123,36 @@ export async function register(req: Request, res: Response) {
     const inviteValidation = await validateRegistrationInviteForRegistration(invitationCode);
     if (!inviteValidation.ok) {
       return res.status(400).json({ error: inviteValidation.error || "邀请码无效" });
+    }
+
+    // RC-05：三维注册配额（同 IP / 同指纹 / 同来源的邮箱变体）。放在发验证邮件**之前**，
+    // 否则滥用者可以靠“只请求不完成”把验证邮件配额与邮箱冷却当成免费资源。
+    const riskDecision = await evaluateRegistrationRisk({
+      ipAddress,
+      fingerprint,
+      email,
+      hasInvite: Boolean(inviteValidation.code),
+    });
+    if (!riskDecision.allowed) {
+      await recordRegistrationAttempt({
+        ipAddress,
+        fingerprint,
+        email,
+        inviteCode: inviteValidation.code || "",
+        outcome: "blocked",
+        ipRiskScore: riskDecision.ipRiskScore,
+        blockCode: riskDecision.code || "",
+      });
+      logger.warn("[注册] 注册风控拦截", {
+        ip: ipAddress,
+        code: riskDecision.code,
+        riskScore: riskDecision.ipRiskScore,
+      });
+      return res.status(403).json({
+        error: riskDecision.reason || "注册请求被拦截，请联系支持",
+        code: riskDecision.code,
+        supportEmail: "support@chloemlla.com",
+      });
     }
 
     const reserved = await reserveAuthEmail(email, "registration");
@@ -161,6 +200,16 @@ export async function register(req: Request, res: Response) {
     if (result.success) {
       delivered = true;
       await completeAuthEmail(reservation);
+      // RC-05：记“已发起注册”（**不计入配额** —— 配额只统计 succeeded，
+      // 否则网络抖动/验证码输错一次就会把正常用户自己挡在门外）。
+      void recordRegistrationAttempt({
+        ipAddress,
+        fingerprint,
+        email,
+        inviteCode: inviteValidation.code || "",
+        outcome: "requested",
+        ipRiskScore: riskDecision.ipRiskScore,
+      });
       res.json({
         needVerify: true,
         message: "验证链接已发送到邮箱，请查收",
@@ -248,7 +297,9 @@ export async function verifyEmail(req: Request, res: Response) {
     // 再次检查用户名/邮箱是否被注册（防止并发）
     const existUser = await UserStorage.getUserByUsername(regInfo.username);
     const existEmail = await UserStorage.getUserByEmail(regInfo.email);
-    if (existUser || existEmail) {
+    const canonicalEmail = normalizeEmailCanonical(regInfo.email || "");
+    const existCanonical = canonicalEmail ? await UserStorage.getUserByEmailCanonical(canonicalEmail) : null;
+    if (existUser || existEmail || existCanonical) {
       emailCodeMap.delete(email);
       return res.status(400).json({ error: "用户名或邮箱已被使用" });
     }
@@ -256,6 +307,31 @@ export async function verifyEmail(req: Request, res: Response) {
     if (!inviteValidation.ok) {
       emailCodeMap.delete(email);
       return res.status(400).json({ error: inviteValidation.error || "邀请码无效" });
+    }
+    // RC-05：完成阶段再判一次（发验证码与真建号之间可能有时间差，配额在看这两步之间变化）。
+    const completionIp = getClientIP(req);
+    const completionRisk = await evaluateRegistrationRisk({
+      ipAddress: completionIp,
+      fingerprint: "",
+      email: regInfo.email,
+      hasInvite: Boolean(inviteValidation.code),
+    });
+    if (!completionRisk.allowed) {
+      emailCodeMap.delete(email);
+      await recordRegistrationAttempt({
+        ipAddress: completionIp,
+        fingerprint: "",
+        email: regInfo.email,
+        inviteCode: inviteValidation.code || "",
+        outcome: "blocked",
+        ipRiskScore: completionRisk.ipRiskScore,
+        blockCode: completionRisk.code || "",
+      });
+      return res.status(403).json({
+        error: completionRisk.reason || "注册请求被拦截，请联系支持",
+        code: completionRisk.code,
+        supportEmail: "support@chloemlla.com",
+      });
     }
     const user = await UserStorage.createUser(regInfo.username, regInfo.email, regInfo.password);
     if (!user) {
@@ -266,6 +342,7 @@ export async function verifyEmail(req: Request, res: Response) {
       id: user.id,
       username: user.username,
       email: user.email,
+      ipAddress: completionIp,
     });
     if (!consumeResult.ok) {
       // RC-01: 注册回滚必须用物理删除 —— 账号从未真正成立，软删除会留下占着邮箱的幽灵账号。
@@ -274,6 +351,17 @@ export async function verifyEmail(req: Request, res: Response) {
       return res.status(400).json({ error: consumeResult.error || "邀请码无效" });
     }
     emailCodeMap.delete(email);
+    // RC-05：注册成功即建初始风险档（新号 → watch），不再拖到下一次登录才评估。
+    // 成功台账同时是三维配额的计数来源。
+    void recordRegistrationAttempt({
+      ipAddress: completionIp,
+      fingerprint: "",
+      email: regInfo.email,
+      inviteCode: inviteValidation.code || "",
+      outcome: "succeeded",
+      ipRiskScore: completionRisk.ipRiskScore,
+    });
+    void evaluateAccountRisk(user.id, { reason: "registration" });
     // 发送欢迎邮件（不影响主流程）
     const welcomeHtml = generateWelcomeEmailHtml(regInfo.username);
     sendEmail({

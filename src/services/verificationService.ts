@@ -13,7 +13,9 @@ import {
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
 import { EmailService } from "./emailService";
-import { isIdentityRetired } from "./blockedIdentityService";
+import { isIdentityRetired, normalizeEmailCanonical } from "./blockedIdentityService";
+import { evaluateRegistrationRisk, recordRegistrationAttempt } from "./registrationRiskService";
+import { evaluateAccountRisk } from "./accountRiskService";
 import { sendEmail } from "./emailSender";
 import { completeAuthEmail, releaseAuthEmail, reserveAuthEmail, type AuthEmailReservation } from "./authEmailCooldownService";
 import { revokeAllAuthSessions } from "./authSessionService";
@@ -172,6 +174,18 @@ export async function verifyEmailLink(
       return { success: false, error: consumeResult.error || "邀请码无效" };
     }
     await verificationTokenStorage.deleteToken(token);
+
+    // RC-05：成功台账（三维窗口计数的来源）+ 初始风险档（新号 → watch）。
+    // 两者都是增强动作，失败不能把已完成的注册变成失败。
+    void recordRegistrationAttempt({
+      ipAddress,
+      fingerprint,
+      email,
+      inviteCode: invitationCode || "",
+      outcome: "succeeded",
+      ipRiskScore: riskDecision.ipRiskScore,
+    });
+    void evaluateAccountRisk(user.id, { reason: "registration" });
 
     // 发送欢迎邮件（不影响主流程）
     try {

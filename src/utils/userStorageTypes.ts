@@ -61,6 +61,8 @@ export interface User {
   } | null;
   lastLoginIp?: string;
   lastLoginAt?: string;
+  /** RC-05：邮箱规范化键（小写 + 去 +tag + gmail 去点），注册查重与批量注册判定用。 */
+  emailCanonical?: string;
   ticketViolationCount?: number;
   ticketBannedUntil?: string;
   isTranslationEnabled?: boolean;

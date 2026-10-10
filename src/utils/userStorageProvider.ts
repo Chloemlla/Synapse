@@ -23,6 +23,8 @@ export interface UserStorageProvider {
   consumePendingChallenge?(id: string, expectedChallenge: string): Promise<User | null>;
   getUserByEmail(email: string): Promise<User | null>;
   getUserByEmailCaseInsensitive(email: string): Promise<User | null>;
+  /** RC-05：按规范化邮箱查活跃账号（可选：旧替身未实现时视为“查不到”）。 */
+  getUserByEmailCanonical?(canonical: string): Promise<User | null>;
   getUserByUsername(username: string): Promise<User | null>;
   getUserByToken(token: string): Promise<User | null>;
   getUserByLinuxDoId(linuxdoId: string): Promise<User | null>;

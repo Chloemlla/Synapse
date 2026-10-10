@@ -8,6 +8,11 @@ jest.mock("../services/authEmailCooldownService", () => ({ reserveAuthEmail: jes
 jest.mock("../services/authSessionService", () => ({ revokeAllAuthSessions: jest.fn() }));
 jest.mock("../services/verificationService", () => ({ verifyEmailLink: jest.fn(), verifyPasswordResetLink: jest.fn() }));
 jest.mock("../services/registrationInviteService", () => ({ validateRegistrationInviteForRegistration: jest.fn(), consumeRegistrationInvite: jest.fn() }));
+// RC-05 新增依赖：注册闸门与台账。本套件只测“邮件链路是不是事务”，所以闸门一律放行、台账不打库。
+jest.mock("../services/registrationRiskService", () => ({
+  evaluateRegistrationRisk: jest.fn(async () => ({ allowed: true, ipRiskScore: null })),
+  recordRegistrationAttempt: jest.fn(async () => undefined),
+}));
 jest.mock("../services/policyConsentService", () => ({
   POLICY_AGREEMENT_KEYS: [], POLICY_CONSENT_REQUIRED_MESSAGE: "Consent required",
   normalizeAuthPolicyConsent: jest.fn(() => ({})), shouldRequireAuthPolicyConsent: jest.fn(() => false),
@@ -20,6 +25,8 @@ jest.mock("../templates/emailTemplates", () => ({
 }));
 jest.mock("../utils/userStorage", () => ({ UserStorage: {
   getUserByEmail: jest.fn(), getUserByUsername: jest.fn(), getUserById: jest.fn(),
+  // RC-05：规范化邮箱查重也必须给替身，否则调用点会拿到 undefined 而抛 TypeError（伪装成业务坏了）。
+  getUserByEmailCanonical: jest.fn(),
   createUser: jest.fn(), deleteUser: jest.fn(), hardDeleteUser: jest.fn(), updateUser: jest.fn(), validateUserInput: jest.fn(),
 } }));
 jest.mock("../utils/ipUtils", () => ({ getClientIP: jest.fn(() => "192.0.2.1") }));
@@ -54,6 +61,7 @@ beforeEach(() => {
   jest.mocked(releaseAuthEmail).mockResolvedValue(undefined);
   jest.mocked(sendEmail).mockReset().mockResolvedValue({ success: true });
   jest.mocked(UserStorage.getUserByEmail).mockResolvedValue(null);
+  jest.mocked(UserStorage.getUserByEmailCanonical).mockResolvedValue(null);
   jest.mocked(UserStorage.getUserByUsername).mockResolvedValue(null);
   jest.mocked(UserStorage.validateUserInput).mockReturnValue([]);
   jest.mocked(UserStorage.getUserById).mockResolvedValue(user);

@@ -16,7 +16,7 @@
     {
       "id": "user-fingerprints",
       "collection": "user_datas",
-      "fields": ["fingerprints.id", "fingerprints.ts", "fingerprints.ua", "fingerprints.ip", "fingerprints.deviceInfo", "lastLoginIp", "lastLoginAt", "requireFingerprint", "requireFingerprintAt", "fingerprintRequestDismissedOnce", "fingerprintRequestDismissedAt"],
+      "fields": ["fingerprints.id", "fingerprints.ts", "fingerprints.ua", "fingerprints.ip", "fingerprints.deviceInfo", "lastLoginIp", "lastLoginAt", "emailCanonical", "requireFingerprint", "requireFingerprintAt", "fingerprintRequestDismissedOnce", "fingerprintRequestDismissedAt"],
       "purpose": "Account risk control, fingerprint request UX, and abnormal login review",
       "legalBasis": "security_and_service_integrity",
       "userFacing": {
@@ -347,6 +347,64 @@
         "reason": "Security telemetry; export only via admin forensic tooling"
       },
       "evidence": ["src/models/accountIpSignalModel.ts"]
+    },
+    {
+      "id": "registration-attempts",
+      "collection": "registration_attempts",
+      "fields": ["ipAddress", "fingerprint", "emailCanonical", "emailRaw", "inviteCode", "outcome", "ipRiskScore", "blockCode", "createdAt"],
+      "purpose": "Per-attempt registration ledger used to enforce the IP/device/email-variant quotas (RC-05)",
+      "legalBasis": "security_and_abuse_prevention",
+      "userFacing": {
+      "label": "注册尝试台账",
+      "category": "安全与风控",
+      "what": "注册时提交的 IP、设备指纹、邮箱（含折叠后的规范化值）、使用的邀请码、结果，以及当时的 IP 风险分。",
+      "why": "限制同一网络/设备/身份来源批量注册：同 IP、同设备、同一来源的多个邮箱变体各自有频次上限。",
+      "retention": "180 天后自动清理（仅用于计数，不作为长期证据；需要取证时看账户登录 IP 记录与安全事件）。",
+      "policySection": "data-use"
+      },
+      "retention": {
+        "type": "ttl",
+        "expireAfterSeconds": 15552000,
+        "ttlField": "createdAt",
+        "description": "TTL 180d: operational counting data, not evidence"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "kept for the counting window; the entry is keyed by canonical email + IP, not by an account row"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Security telemetry; export only via admin investigation tooling"
+      },
+      "evidence": ["src/models/registrationAttemptModel.ts"]
+    },
+    {
+      "id": "blocked-identities",
+      "collection": "blocked_identities",
+      "fields": ["emailCanonical", "username", "userId", "reason", "blockedAt", "releasedBy"],
+      "purpose": "Retired-identity tombstones that block re-registration with the same email (RC-47)",
+      "legalBasis": "security_and_abuse_prevention",
+      "userFacing": {
+      "label": "已注销身份登记",
+      "category": "安全与风控",
+      "what": "被注销账号的邮箱与用户名（已规范化）、注销原因与时间、人工释放人与时间（如有）。",
+      "why": "防止“注销 → 用同一邮箱重新注册 → 风险档归零”的洗白路径；同一个身份一旦退役，未经人工核实不得再次注册。",
+      "retention": "长期保留（不设自动过期）；人工释放后仅保留释放记录。",
+      "policySection": "enforcement"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "No TTL: the tombstone is the whole point (it must outlive the deleted account)"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "created by account deletion; released only by an audited admin action"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Security telemetry; export only via admin investigation tooling"
+      },
+      "evidence": ["src/models/blockedIdentityModel.ts"]
     },
     {
       "id": "ipqs-lookup-logs",

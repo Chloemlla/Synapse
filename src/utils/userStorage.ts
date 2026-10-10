@@ -116,6 +116,11 @@ export class UserStorage {
     return userRepository.getUserByEmail(email);
   }
 
+  /** RC-05：按规范化邮箱查活跃账号（注册查重用）。 */
+  public static async getUserByEmailCanonical(canonical: string): Promise<User | null> {
+    return userRepository.getUserByEmailCanonical(canonical);
+  }
+
   public static async getUserByEmailCaseInsensitive(email: string): Promise<User | null> {
     return userRepository.getUserByEmailCaseInsensitive(email);
   }

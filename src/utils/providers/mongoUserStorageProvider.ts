@@ -51,6 +51,10 @@ export const mongoUserStorageProvider: UserStorageProvider = {
     return removeAvatarBase64(await userService.getUserByEmailCaseInsensitive(email));
   },
 
+  async getUserByEmailCanonical(canonical: string) {
+    return removeAvatarBase64(await userService.getUserByEmailCanonical(canonical));
+  },
+
   async getUserByUsername(username: string) {
     return removeAvatarBase64(await userService.getUserByUsername(username));
   },

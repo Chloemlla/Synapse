@@ -36,6 +36,9 @@ export interface ConsumeInviteUser {
   id: string;
   username: string;
   email: string;
+  /** RC-05：消耗来源（可选，旧调用方不传时为空白）。 */
+  ipAddress?: string;
+  fingerprint?: string;
 }
 
 export function normalizeInviteCode(input: unknown): string {
@@ -362,6 +365,8 @@ export async function consumeRegistrationInvite(
           username: user.username,
           email: user.email,
           usedAt: now,
+          ipAddress: String(user.ipAddress || "").slice(0, 128),
+          fingerprint: String(user.fingerprint || "").slice(0, 512),
         },
       },
     },

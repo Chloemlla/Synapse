@@ -14,7 +14,7 @@ import {
 import { sendEmail } from "../services/emailSender";
 import { generateUsageAlertEmailHtml } from "../templates/emailTemplates";
 import { getUserStorageProvider } from "./userStorageProvider";
-import { isIdentityRetired } from "../services/blockedIdentityService";
+import { isIdentityRetired, normalizeEmailCanonical } from "../services/blockedIdentityService";
 import type { User } from "./userStorageTypes";
 import { userValidationService } from "./userValidationService";
 
@@ -24,6 +24,8 @@ const buildNewUser = (username: string, email: string, password: string): User =
   id: Date.now().toString(),
   username,
   email,
+  // RC-05：注册查重要按规范化邮箱做，创建时就把键写下来（否则下次注册无法命中）。
+  emailCanonical: normalizeEmailCanonical(email),
   password,
   role: "user",
   dailyUsage: 0,
@@ -36,6 +38,12 @@ const buildNewUser = (username: string, email: string, password: string): User =
 
 const getUserById = async (userId: string): Promise<User | null> => getUserStorageProvider().getUserById(userId);
 const getUserByEmail = async (email: string): Promise<User | null> => getUserStorageProvider().getUserByEmail(email);
+const getUserByEmailCanonical = async (canonical: string): Promise<User | null> => {
+  const provider = getUserStorageProvider();
+  // 声明为可选：旧替身/自定义 provider 可能没实现；缺失时按“查不到”处理（新键的兼容路径）。
+  if (typeof provider.getUserByEmailCanonical !== "function") return null;
+  return provider.getUserByEmailCanonical(canonical);
+};
 const getUserByUsername = async (username: string): Promise<User | null> =>
   getUserStorageProvider().getUserByUsername(username);
 const updateUser = async (userId: string, updates: Partial<User>): Promise<User | null> =>
@@ -125,7 +133,9 @@ export const userRepository = {
   async createUser(username: string, email: string, password: string): Promise<User | null> {
     const existUserByName = await getUserByUsername(username);
     const existUserByEmail = await getUserByEmail(email);
-    if (existUserByName || existUserByEmail) {
+    // RC-05：规范化邮箱也查一遍 —— 只查原值会被 `+tag` / gmail 点号变体绕过（同一信箱可重复注册）。
+    const existUserByCanonical = await getUserByEmailCanonical(normalizeEmailCanonical(email));
+    if (existUserByName || existUserByEmail || existUserByCanonical) {
       return null;
     }
 
@@ -212,6 +222,10 @@ export const userRepository = {
 
   async getUserByEmail(email: string): Promise<User | null> {
     return getUserByEmail(email);
+  },
+
+  async getUserByEmailCanonical(canonical: string): Promise<User | null> {
+    return getUserByEmailCanonical(canonical);
   },
 
   async getUserByEmailCaseInsensitive(email: string): Promise<User | null> {

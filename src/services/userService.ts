@@ -3,7 +3,7 @@ import type { User as UserType } from "../utils/userStorageTypes";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
 import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
-import { retireIdentity } from "./blockedIdentityService";
+import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import {
   canDecryptPassword,
@@ -27,6 +27,12 @@ const userSchema = new mongoose.Schema(
     // 但是否真允许重注由 `blocked_identities` 墓碑裁决（可解释、可人工释放）。
     username: { type: String, required: true },
     email: { type: String, required: true },
+    // RC-05：邮箱的**规范化键**（小写 + 去 +tag + gmail 去点）。
+    // 为什么不能只靠 email 查重：`User@Gmail.com` / `u.s.e.r@gmail.com` / `user+1@gmail.com`
+    // 在 email 上是三个不同字符串，但对邮箱服务商是同一个信箱 —— 这就是最廉价的批量注册途径。
+    // 只建普通索引不建唯一索引：存量数据里可能已有规范化后相同的账号（历史上允许），
+    // 直接加唯一索引会在启动时建索引失败；闸门改在**注册时**拦（见 registrationRiskService）。
+    emailCanonical: { type: String, index: true },
     password: { type: String },
     passwordHash: { type: String },
     passwordCiphertext: { type: String },
@@ -423,6 +429,17 @@ export const getUserByEmail = async (email: string): Promise<UserType | null> =>
   return removeAvatarBase64(doc) as unknown as UserType;
 };
 
+export const getUserByEmailCanonical = async (canonical: string): Promise<UserType | null> => {
+  if (typeof canonical !== "string") return null;
+  const safe = canonical.trim().toLowerCase();
+  if (!safe) return null;
+  const doc = await UserModel.findOne({ emailCanonical: safe, ...ACTIVE_USER_FILTER })
+    .select(PUBLIC_USER_SELECT)
+    .lean();
+  if (!doc) return null;
+  return removeAvatarBase64(doc) as unknown as UserType;
+};
+
 export const getUserByEmailCaseInsensitive = async (email: string): Promise<UserType | null> => {
   // 防注入：只允许字符串类型且为合法邮箱
   if (typeof email !== "string") return null;
@@ -477,6 +494,9 @@ export const createUser = async (user: UserType): Promise<UserType> => {
   const protectedPassword = await protectPassword(user.id, password || "");
   const doc = await UserModel.create({
     ...rest,
+    // RC-05：规范化邮箱键在**创建时刻**补上 —— 不能依赖调用方（注册、第三方登录、
+    // 管理员建号）都记得传，否则闸门的规范化查重只对一半入口生效。
+    emailCanonical: rest.emailCanonical ?? normalizeEmailCanonical(String(rest.email || "")),
     ...protectedPassword,
     password: undefined,
   });

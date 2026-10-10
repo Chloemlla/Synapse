@@ -5,6 +5,9 @@ export interface RegistrationInviteUse {
   username: string;
   email: string;
   usedAt: Date;
+  /** RC-05：消耗时的来源（便于看出“一个邀请码裂变成多号”的规律）。 */
+  ipAddress?: string;
+  fingerprint?: string;
 }
 
 export interface RegistrationInviteDoc {
@@ -27,6 +30,9 @@ const RegistrationInviteUseSchema = new mongoose.Schema<RegistrationInviteUse>(
     username: { type: String, required: true },
     email: { type: String, required: true },
     usedAt: { type: Date, default: Date.now },
+    // RC-05：邀请码使用记录必须带来源，否则一致码裂变多号时看不出规律。
+    ipAddress: { type: String, default: "" },
+    fingerprint: { type: String, default: "" },
   },
   { _id: false },
 );
