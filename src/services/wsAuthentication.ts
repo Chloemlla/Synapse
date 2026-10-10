@@ -6,6 +6,7 @@ import { AUTH_COOKIE_NAME, parseCookieHeader } from "../utils/authCookie";
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
 import { assertActiveAuthSession } from "./authSessionService";
+import { USER_DELETED_FIELD, isSoftDeleted } from "../utils/softDeleteState";
 
 export interface WebSocketIdentity {
   userId: string | null;
@@ -54,7 +55,12 @@ export async function resolveWebSocketIdentity(req: IncomingMessage): Promise<We
     if (!claimedId) return null;
     const user = await UserStorage.getUserById(claimedId);
 
-    if (!user || (user as typeof user & { disabled?: boolean }).disabled || user.accountStatus === "suspended") {
+    if (
+      !user ||
+      isSoftDeleted(user, USER_DELETED_FIELD) ||
+      (user as typeof user & { disabled?: boolean }).disabled ||
+      user.accountStatus === "suspended"
+    ) {
       logger.warn("[WS] 拒绝无效或已停用的认证主体", { credentialSource });
       return null;
     }

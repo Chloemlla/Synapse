@@ -5,6 +5,7 @@ import logger, { safeLog } from "../utils/logger";
 import { getTokenFromRequest } from "../utils/authCookie";
 import { UserStorage } from "../utils/userStorage";
 import { assertActiveAuthSession, hashAuthCredential, touchAuthSession } from "../services/authSessionService";
+import { USER_DELETED_FIELD, isSoftDeleted } from "../utils/softDeleteState";
 import { getClientIP } from "../utils/ipUtils";
 
 // 管理员角色集合：admin（只读业务）与 superadmin（系统级写操作）均视为管理员
@@ -144,6 +145,10 @@ export const authMiddlewareV2 = async (req: Request, res: Response, next: NextFu
       return res.status(401).json({ error: "用户不存在" });
     }
 
+    // RC-01: 软删除账号不得通过认证（与 authenticateToken / wsAuthentication 对齐）。
+    if (isSoftDeleted(user, USER_DELETED_FIELD)) {
+      return res.status(403).json({ error: "账户已注销", code: "ACCOUNT_DELETED", supportEmail: "support@chloemlla.com" });
+    }
     // 检查用户状态
     if ((user as any).disabled) {
       return res.status(403).json({ error: "账户已被禁用" });

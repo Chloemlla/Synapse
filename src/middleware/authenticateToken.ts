@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from "../types/authRequest";
 import { getTokenFromRequest } from "../utils/authCookie";
 import { UserStorage } from "../utils/userStorage";
 import { assertActiveAuthSession, hashAuthCredential, touchAuthSession } from "../services/authSessionService";
+import { USER_DELETED_FIELD, isSoftDeleted } from "../utils/softDeleteState";
 import { getClientIP } from "../utils/ipUtils";
 
 type JwtUserPayload = {
@@ -38,6 +39,10 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     const user = await UserStorage.getUserById(userId);
     if (!user) {
       return res.status(403).json({ error: "无效的Token" });
+    }
+    // RC-01: 软删除账号与不存在同等对待 —— 不得凭存量 JWT 继续访问（否则「删了还能登」）。
+    if (isSoftDeleted(user, USER_DELETED_FIELD)) {
+      return res.status(403).json({ error: "账户已注销", code: "ACCOUNT_DELETED", supportEmail: "support@chloemlla.com" });
     }
     if ((user as any).disabled) {
       // SYN-02: 与 authMiddlewareV2 / wsAuthentication 对齐，被禁用账户不得通过认证。

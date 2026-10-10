@@ -2,6 +2,7 @@ import validator from "validator";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
+import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import {
   canDecryptPassword,
@@ -95,6 +96,34 @@ const userSchema = new mongoose.Schema(
     translationAccessUntil: { type: String },
     accountStatus: { type: String, enum: ["active", "suspended"], default: "active" },
     disabled: { type: Boolean, default: false },
+
+    // ── 软删除账号（RC-01 / RC-11 / RC-21）──────────────────────────────────
+    // 0 / 缺省 = 未删除；> 0 = 被软删除的时间戳。删号不再物理删除文档：
+    // 设备、行为、IP、邀请码使用链路等风控证据因此得以保留（RC-22 取证保留）。
+    deletedAt: { type: Number, default: 0, index: true },
+    deletedBy: { type: String },
+    deleteReason: { type: String },
+    // 软删除时把 username/email 换成占位值以释放唯一索引；原值另存，供调查比对。
+    deletedOriginalUsername: { type: String },
+    deletedOriginalEmail: { type: String },
+
+    // ── 账户风险（RC-04）────────────────────────────────────────────────
+    // riskTier 单调升级、可人工降级；缺省 normal，存量文档无需回填。
+    riskTier: {
+      type: String,
+      enum: ["normal", "watch", "restricted", "danger"],
+      default: "normal",
+      index: true,
+    },
+    // 0-100，越高越危险。注意与 accountSecuritySummary 的「越高越安全」方向相反，勿混用。
+    riskScore: { type: Number, default: 0 },
+    riskFlags: { type: [String], default: [] },
+    riskUpdatedAt: { type: Number, default: 0 },
+    flaggedBy: { type: String },
+    flagReason: { type: String },
+    // 逐步验证（RC-02/RC-03）：0 = 不强制；> now 表示该时刻前每次操作都要验。
+    stepUpUntil: { type: Number, default: 0 },
+    stepUpMode: { type: String, enum: ["sensitive", "all-writes", "all"], default: "sensitive" },
   },
   { collection: "user_datas" },
 );
@@ -103,9 +132,19 @@ userSchema.index({ role: 1, createdAt: 1 });
 
 const UserModel = mongoose.models.User || mongoose.model("User", userSchema);
 
+/**
+ * 「未软删除」判据（RC-01）。字段名与 `$in: [0, null]` 的理由见 `utils/softDeleteState.ts`；
+ * 用户/管理端的列举与查重都要带上它；
+ * **只有鉴权路径例外** —— 鉴权要「看得到已删除用户」才能回准确的 403。
+ */
+const ACTIVE_USER_FILTER = activeUserFilter();
+
+/** 该用户是否已被软删除。兼容 mongoose 文档与 lean 普通对象。 */
+export const isUserSoftDeleted = (user: unknown): boolean => isSoftDeleted(user, USER_DELETED_FIELD);
+
 // G2-22: 默认公开投影不再带出 totpSecret / backupCodes 等离线 2FA 秘密。
 const PUBLIC_USER_SELECT =
-  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled passkeyCredentials pendingChallenge pendingChallengeExpiresAt currentChallenge passkeyVerified requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt fingerprints lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt token tokenExpiresAt lastTotpCounter";
+  "id username email role avatarUrl authProvider linuxdoId linuxdoUsername linuxdoAvatarUrl totpEnabled passkeyEnabled passkeyCredentials pendingChallenge pendingChallengeExpiresAt currentChallenge passkeyVerified requireFingerprint requireFingerprintAt fingerprintRequestDismissedOnce fingerprintRequestDismissedAt fingerprints lastLoginIp lastLoginAt ticketViolationCount ticketBannedUntil libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil isTranslationEnabled translationAccessUntil accountStatus dailyUsage lastUsageDate createdAt token tokenExpiresAt lastTotpCounter deletedAt";
 
 // 安全的公开用户字段选择（排除敏感认证凭据），用于 /api/user/me 等普通用户 API
 const PUBLIC_USER_SAFE_SELECT =
@@ -148,6 +187,19 @@ const ADMIN_USER_LIST_PROJECT = {
   dailyUsage: 1,
   lastUsageDate: 1,
   createdAt: 1,
+  // RC-01 / RC-04：管理端是唯一能看到「已删除账号 + 风险档」的地方。
+  // 默认列表会按 deletedAt 过滤，这些字段是给管理员专页（默认隐藏后手动切换）用的。
+  deletedAt: 1,
+  deletedBy: 1,
+  deleteReason: 1,
+  riskTier: 1,
+  riskScore: 1,
+  riskFlags: 1,
+  riskUpdatedAt: 1,
+  flaggedBy: 1,
+  flagReason: 1,
+  stepUpUntil: 1,
+  stepUpMode: 1,
   fingerprintCount: { $size: { $ifNull: ["$fingerprints", []] } },
   latestFingerprint: {
     $let: {
@@ -220,7 +272,8 @@ function invalidateCachedUserById(id: string): void {
 
 export const getAllUsers = async (): Promise<UserType[]> => {
   // G2-22: 默认取安全投影，不携带 totpSecret/backupCodes。
-  const docs = await UserModel.find().select(PUBLIC_USER_SELECT).lean();
+  // RC-01: 已软删除账号不进用户列表（含 lastSuperadmin 判定）。
+  const docs = await UserModel.find(ACTIVE_USER_FILTER).select(PUBLIC_USER_SELECT).lean();
   return docs.map(removeAvatarBase64) as unknown as UserType[];
 };
 
@@ -229,7 +282,7 @@ export const getAdminUserList = async (opts: { includeFingerprints?: boolean } =
     return getAllUsers();
   }
 
-  const docs = await UserModel.aggregate([{ $project: ADMIN_USER_LIST_PROJECT }]);
+  const docs = await UserModel.aggregate([{ $match: ACTIVE_USER_FILTER }, { $project: ADMIN_USER_LIST_PROJECT }]);
   return docs.map(removeAvatarBase64) as unknown as UserType[];
 };
 
@@ -243,7 +296,8 @@ export const getAdminUserListPage = async (
   includeFingerprints: boolean,
 ): Promise<AdminUserListPageResult> => {
   const nowIso = new Date().toISOString();
-  const match = buildAdminUserMatchStage(query);
+  // RC-01：已软删除账号默认不进管理端列表，也不进全量统计（否则列表页总数会对不上）。
+  const match = { $and: [buildAdminUserMatchStage(query), ACTIVE_USER_FILTER] };
   const sortField = getAdminUserSortField(query);
   const sortDir = query.sortOrder === "asc" ? 1 : -1;
   const project = includeFingerprints ? { ...ADMIN_USER_LIST_PROJECT, fingerprints: 1 } : ADMIN_USER_LIST_PROJECT;
@@ -269,14 +323,17 @@ export const getAdminUserListPage = async (
   const filteredStats = normalizeAdminUserStats((facet as any).filteredStats?.[0]);
   const users = ((facet as any).data || []).map(removeAvatarBase64) as unknown as UserType[];
 
-  const allStatsResults = await UserModel.aggregate([{ $group: buildAdminUserStatsGroup(nowIso) }]);
+  const allStatsResults = await UserModel.aggregate([
+    { $match: ACTIVE_USER_FILTER },
+    { $group: buildAdminUserStatsGroup(nowIso) },
+  ]);
   const stats = normalizeAdminUserStats(allStatsResults[0]);
 
   return { users, total, stats, filteredStats };
 };
 
 export const getAllUsersAuth = async (): Promise<UserType[]> => {
-  const docs = await UserModel.find().select(AUTH_USER_SELECT).lean();
+  const docs = await UserModel.find(ACTIVE_USER_FILTER).select(AUTH_USER_SELECT).lean();
   return docs.map(removeAvatarBase64) as unknown as UserType[];
 };
 
@@ -301,7 +358,7 @@ export const getUserByUsername = async (username: string): Promise<UserType | nu
   if (typeof username !== "string" || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     throw new Error("非法的用户名");
   }
-  const doc = await UserModel.findOne({ username })
+  const doc = await UserModel.findOne({ username, ...ACTIVE_USER_FILTER })
     .select(PUBLIC_USER_SELECT)
     .lean();
 
@@ -327,7 +384,7 @@ export const getUserByEmail = async (email: string): Promise<UserType | null> =>
   if (typeof email !== "string") return null;
   const safeEmail = email.trim();
   if (!validator.isEmail(safeEmail)) return null;
-  const doc = await UserModel.findOne({ email: safeEmail })
+  const doc = await UserModel.findOne({ email: safeEmail, ...ACTIVE_USER_FILTER })
     .select(PUBLIC_USER_SELECT)
     .lean();
 
@@ -342,13 +399,13 @@ export const getUserByEmailCaseInsensitive = async (email: string): Promise<User
   if (!safeEmail || !validator.isEmail(safeEmail)) return null;
 
   // 精确匹配走 email 唯一索引；只有大小写不一致的历史数据才落到不可走索引的正则查询
-  const exact = await UserModel.findOne({ email: safeEmail })
+  const exact = await UserModel.findOne({ email: safeEmail, ...ACTIVE_USER_FILTER })
     .select(PUBLIC_USER_SELECT)
     .lean();
   if (exact) return removeAvatarBase64(exact) as unknown as UserType;
 
   const escaped = safeEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, (ch) => `\\${ch}`);
-  const doc = await UserModel.findOne({ email: new RegExp(`^${escaped}$`, "i") })
+  const doc = await UserModel.findOne({ email: new RegExp(`^${escaped}$`, "i"), ...ACTIVE_USER_FILTER })
     .select(PUBLIC_USER_SELECT)
     .lean();
 
@@ -448,42 +505,163 @@ export const incrementUserTicketViolationCount = async (id: string): Promise<num
   return Number((doc as { ticketViolationCount?: number } | null)?.ticketViolationCount ?? 1);
 };
 
-export const deleteUser = async (id: string): Promise<void> => {
+// RC-01 / RC-21：账号被软删除时要一起打标记的从属集合。
+// G2-30: 级联集合及其归属字段名（逐集合修正，避免统一用 userId 导致静默失效）。
+// audit_logs 不在其中 —— 删号本就不该动审计日志。
+//
+// 已知遗留：`access_tokens` 的真实文档里**没有 userId**（只有 token/fingerprint/ipAddress，
+// 见 models/accessTokenModel.ts），所以这一条是死条件。保留在此不删，以免误以为已经覆盖；
+// 该集合带 5 分钟 TTL，随指纹失效即可。真正需要失效的会话在 auth_sessions。
+const USER_CASCADE_COLLECTIONS: ReadonlyArray<{ collection: string; field: string }> = [
+  { collection: "access_tokens", field: "userId" },
+  { collection: "auth_sessions", field: "userId" },
+  { collection: "verification_tokens", field: "userId" },
+  { collection: "api_keys", field: "userId" },
+  { collection: "api_key_billing_events", field: "userId" },
+  { collection: "bilibili_account_bindings", field: "userId" },
+  { collection: "bilibili_sync", field: "userId" },
+  { collection: "nexai_sync", field: "userId" },
+  { collection: "nexai_sync_v2_records", field: "userId" },
+  { collection: "collaboration_sessions", field: "userId" },
+  { collection: "invitations", field: "userId" },
+  { collection: "workspaces", field: "creatorId" },
+  { collection: "voice_projects", field: "ownerId" },
+  { collection: "linuxdo_credit_orders", field: "userId" },
+  { collection: "device_trackings", field: "userId" },
+  { collection: "tickets", field: "userId" },
+  { collection: "translation_logs", field: "userId" },
+  { collection: "user_preferences", field: "userId" },
+  { collection: "recommendation_history", field: "userId" },
+  { collection: "security_events", field: "userId" },
+  { collection: "oauth_clients", field: "ownerUserId" },
+  { collection: "oauth_grants", field: "userId" },
+  { collection: "oauth_tokens", field: "userId" },
+  { collection: "oauth_authorization_codes", field: "userId" },
+  { collection: "account_identities", field: "userId" },
+  { collection: "artifacts", field: "userId" },
+  { collection: "cdks", field: "userId" },
+  { collection: "registration_invites", field: "userId" },
+  { collection: "short_urls", field: "userId" },
+];
+
+/**
+ * 软删除账号（RC-01 / RC-11 / RC-21）。
+ *
+ * 与旧的 deleteUser 的差别：不再物理删除用户文档与从属集合，只打标记，
+ * 并让凭据**功能性失效**（会话撤销、API Key 禁用、主档密码材料清空）。
+ * 依据：owner 决策 —— 前端/法务文案保持「不可恢复」，但底层数据要留给调查取证（RC-22）。
+ *
+ * 幂等：已软删除的账号重复调用直接返回 true。
+ */
+export const softDeleteUser = async (
+  id: string,
+  options: { by?: string; reason?: string } = {},
+): Promise<boolean> => {
+  if (typeof id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new Error("非法的用户ID");
+  }
   invalidateCachedUserById(id);
 
-  // G2-30: 级联集合及其归属字段名（逐集合修正，避免统一用 userId 导致静默失效）。
-  // audit_logs 已从级联删除中移除——删号应脱敏保留审计日志，保证可追溯。
-  const cascadeCollections: Array<{ collection: string; field: string }> = [
-    { collection: "access_tokens", field: "userId" },
-    { collection: "auth_sessions", field: "userId" },
-    { collection: "verification_tokens", field: "userId" },
-    { collection: "api_keys", field: "userId" },
-    { collection: "api_key_billing_events", field: "userId" },
-    { collection: "bilibili_account_bindings", field: "userId" },
-    { collection: "bilibili_sync", field: "userId" },
-    { collection: "nexai_sync", field: "userId" },
-    { collection: "nexai_sync_v2_records", field: "userId" },
-    { collection: "collaboration_sessions", field: "userId" },
-    { collection: "invitations", field: "userId" },
-    { collection: "workspaces", field: "creatorId" },
-    { collection: "voice_projects", field: "ownerId" },
-    { collection: "linuxdo_credit_orders", field: "userId" },
-    { collection: "device_trackings", field: "userId" },
-    { collection: "tickets", field: "userId" },
-    { collection: "translation_logs", field: "userId" },
-    { collection: "user_preferences", field: "userId" },
-    { collection: "recommendation_history", field: "userId" },
-    { collection: "security_events", field: "userId" },
-    { collection: "oauth_clients", field: "ownerUserId" },
-    { collection: "oauth_grants", field: "userId" },
-    { collection: "oauth_tokens", field: "userId" },
-    { collection: "oauth_authorization_codes", field: "userId" },
-    { collection: "account_identities", field: "userId" },
-    { collection: "artifacts", field: "userId" },
-    { collection: "cdks", field: "userId" },
-    { collection: "registration_invites", field: "userId" },
-    { collection: "short_urls", field: "userId" },
-  ];
+  const existing = await UserModel.findOne({ id }).select("id username email deletedAt").lean();
+  if (!existing) return false;
+  if (isUserSoftDeleted(existing)) return true;
+
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error("数据库连接不可用");
+  }
+
+  const now = Date.now();
+  const by = options.by ?? "auto";
+  const reason = options.reason ?? "account_deleted";
+  const record = existing as { username?: string; email?: string };
+  // 从属集合用统一字段名（见 softDeleteService 的字段约定）；用户主档用自己的 deletedAt。
+  const cascadeMark = {
+    $set: { subjectDeletedAt: now, deletedBy: by, deleteReason: reason },
+  };
+  const cascadeFilter = (field: string) => ({
+    $and: [{ [field]: id }, { subjectDeletedAt: { $in: [0, null] } }],
+  });
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // 1) 从属集合一律只标记，不物理删除：设备/行为/IP/邀请码使用链路是风控证据。
+      const results = await Promise.all(
+        USER_CASCADE_COLLECTIONS.map(({ collection, field }) =>
+          db.collection(collection).updateMany(cascadeFilter(field), cascadeMark, { session }),
+        ),
+      );
+      const unacknowledged = results.filter((result) => result.acknowledged === false);
+      if (unacknowledged.length > 0) {
+        throw new Error(`级联标记失败: ${unacknowledged.length} 个集合未被确认`);
+      }
+
+      // 2) 凭据功能性失效：只打标记不够，未过期的会话与 Key 必须真的用不了。
+      await db.collection("auth_sessions").updateMany(
+        { userId: id, revokedAt: null },
+        { $set: { revokedAt: new Date(), updatedAt: new Date() } },
+        { session },
+      );
+      await db.collection("api_keys").updateMany({ userId: id }, { $set: { enabled: false } }, { session });
+      await db.collection("oauth_tokens").updateMany({ userId: id }, { $set: { revokedAt: new Date() } }, { session });
+
+      // 3) 用户主档：清凭据 + 改占位名释放唯一索引 + 打软删除标记（原值另存供调查比对）。
+      await UserModel.updateOne(
+        { id },
+        {
+          $set: {
+            deletedAt: now,
+            deletedBy: by,
+            deleteReason: reason,
+            deletedOriginalUsername: record.username ?? "",
+            deletedOriginalEmail: record.email ?? "",
+            username: `deleted_${id}`,
+            email: `deleted_${id}@deleted.invalid`,
+            accountStatus: "suspended",
+          },
+          // 凭据必须清：不清就会变成「删了还能登」。
+          // linuxdoId 是 unique+sparse，不 unset 会让同一 Linux.do 账号无法重新注册。
+          // 字面量内联而不是抽常量：让 TS 直接校验键名与 schema 对齐。
+          $unset: {
+            password: "",
+            passwordHash: "",
+            passwordCiphertext: "",
+            passwordIv: "",
+            passwordTag: "",
+            passwordWrappedDek: "",
+            passwordDekId: "",
+            totpSecret: "",
+            totpEnabled: "",
+            backupCodes: "",
+            passkeyEnabled: "",
+            passkeyCredentials: "",
+            pendingChallenge: "",
+            pendingChallengeExpiresAt: "",
+            currentChallenge: "",
+            passkeyVerified: "",
+            token: "",
+            tokenExpiresAt: "",
+            linuxdoId: "",
+          },
+        },
+      ).session(session);
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  logger.info("[UserService] 账号已软删除", { id, by, reason });
+  return true;
+};
+
+/**
+ * 物理删除账号：**仅限注册流程回滚**（邀请码消费失败、邮箱验证落库失败等）。
+ * 那种场景下账号从未真正存在过，软删除反而会留下占着邮箱的幽灵账号。
+ * 用户/管理员的删号一律走 softDeleteUser（RC-01）。
+ */
+export const hardDeleteUser = async (id: string): Promise<void> => {
+  invalidateCachedUserById(id);
 
   const db = mongoose.connection.db;
   if (!db) {
@@ -494,7 +672,7 @@ export const deleteUser = async (id: string): Promise<void> => {
   try {
     await session.withTransaction(async () => {
       const results = await Promise.all(
-        cascadeCollections.map(({ collection, field }) =>
+        USER_CASCADE_COLLECTIONS.map(({ collection, field }) =>
           db.collection(collection).deleteMany({ [field]: id }, { session }),
         ),
       );
@@ -507,6 +685,16 @@ export const deleteUser = async (id: string): Promise<void> => {
   } finally {
     await session.endSession();
   }
+};
+
+/**
+ * @deprecated 语义已改为**软删除**（RC-01）。
+ * 保留同名导出是为了不一次性改动所有管理员调用点；新代码请显式用
+ * `softDeleteUser`（用户/管理员删号）或 `hardDeleteUser`（仅注册回滚）。
+ * 注意：可直接调用，参数与旧签名兼容；但**不再接收** `string` 之外的旧用法。
+ */
+export const deleteUser = async (id: string, options: { by?: string; reason?: string } = {}): Promise<void> => {
+  await softDeleteUser(id, options);
 };
 
 export const getUserAuthById = async (id: string): Promise<UserType | null> => {

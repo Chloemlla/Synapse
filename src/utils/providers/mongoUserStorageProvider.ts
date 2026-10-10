@@ -79,12 +79,27 @@ export const mongoUserStorageProvider: UserStorageProvider = {
     return removeAvatarBase64(await userService.updateUser(userId, updates));
   },
 
-  async deleteUser(userId: string) {
+  async deleteUser(userId: string, options: { by?: string; reason?: string } = {}) {
     try {
-      await userService.deleteUser(userId);
+      // RC-01: 语义已改为软删除（打 deletedAt 标记 + 凭据失效），不再物理删除。
+      await userService.softDeleteUser(userId, options);
       return true;
     } catch (error) {
       logger.error("[UserStorage] MongoDB deleteUser 失败", { error, userId });
+      return false;
+    }
+  },
+
+  /**
+   * 物理删除：**仅限注册流程回滚**（账号从未真正存在过）。
+   * 用户/管理员删号必须走 deleteUser（软删除）。
+   */
+  async hardDeleteUser(userId: string) {
+    try {
+      await userService.hardDeleteUser(userId);
+      return true;
+    } catch (error) {
+      logger.error("[UserStorage] MongoDB hardDeleteUser 失败", { error, userId });
       return false;
     }
   },

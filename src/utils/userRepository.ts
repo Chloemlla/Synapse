@@ -262,8 +262,20 @@ export const userRepository = {
     return getUserStorageProvider().updateUser(userId, updates);
   },
 
-  async deleteUser(userId: string): Promise<boolean> {
-    return getUserStorageProvider().deleteUser(userId);
+  async deleteUser(userId: string, options: { by?: string; reason?: string } = {}): Promise<boolean> {
+    return getUserStorageProvider().deleteUser(userId, options);
+  },
+
+  /**
+   * 物理删除：仅限注册流程回滚。provider 未实现时 fail-closed 抛错，
+   * 不能静默回退到软删除（那会留下占着邮箱的幽灵账号）。
+   */
+  async hardDeleteUser(userId: string): Promise<boolean> {
+    const provider = getUserStorageProvider();
+    if (typeof provider.hardDeleteUser !== "function") {
+      throw new Error("当前存储后端不支持 hardDeleteUser");
+    }
+    return provider.hardDeleteUser(userId);
   },
 
   async getRemainingUsage(userId: string): Promise<number> {

@@ -30,7 +30,15 @@ export interface UserStorageProvider {
   createUser(user: User): Promise<User>;
   updateUser(userId: string, updates: Partial<User>): Promise<User | null>;
   bulkUpdateUsers?(ops: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }>): Promise<void>;
-  deleteUser(userId: string): Promise<boolean>;
+  /**
+   * 软删除用户（RC-01）。`options` 记录操作者与原因，供取证调取时解释留存依据。
+   */
+  deleteUser(userId: string, options?: { by?: string; reason?: string }): Promise<boolean>;
+  /**
+   * 物理删除用户。**仅限注册流程回滚**（邀请码消费失败等账号从未成立的场景）——
+   * 那种情况软删除会留下占着邮箱的幽灵账号。用户/管理员删号一律走 deleteUser（软删除，RC-01）。
+   */
+  hardDeleteUser?(userId: string): Promise<boolean>;
 }
 
 export const getCurrentUserStorageMode = (): UserStorageMode => "mongo";

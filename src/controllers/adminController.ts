@@ -913,7 +913,8 @@ export const adminController = {
         }
       }
 
-      await UserStorage.deleteUser(user.id);
+      // RC-01: 软删除（打 deletedAt 标记 + 凭据失效），并记下操作者，供后续调查调取。
+      await UserStorage.deleteUser(user.id, { by: req.user?.id, reason: "admin_delete_single" });
 
       // 发送账号删除通知
       if (user.email) {
@@ -1036,7 +1037,7 @@ export const adminController = {
         if (await isLastSuperadmin(targetUser)) {
           return res.status(409).json({ error: "无法删除最后一个超级管理员" });
         }
-        await UserStorage.deleteUser(targetUser.id);
+        await UserStorage.deleteUser(targetUser.id, { by: req.user?.id, reason: "admin_delete_batch" });
         return res.json({ success: true, message: "用户已删除" });
       }
 

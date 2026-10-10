@@ -172,6 +172,13 @@ const mockUserService = {
     return mockCloneUser(updated);
   }),
   deleteUser: jest.fn(async (id: string) => {
+    // RC-01: 与生产语义对齐 —— 软删除只打标记，替身也保留记录并标记。
+    const existing = mockUsers.get(id);
+    if (existing) {
+      mockUsers.set(id, { ...existing, deletedAt: Date.now(), accountStatus: "suspended" });
+    }
+  }),
+  hardDeleteUser: jest.fn(async (id: string) => {
     mockUsers.delete(id);
   }),
   verifyAndMigrateUserPassword: jest.fn(async (user: MockUser, password: string) => ({

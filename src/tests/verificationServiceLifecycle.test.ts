@@ -10,7 +10,7 @@ jest.mock("../services/registrationInviteService", () => ({ validateRegistration
 jest.mock("../templates/emailTemplates", () => ({ generateWelcomeEmailHtml: jest.fn(() => "welcome") }));
 jest.mock("../utils/userStorage", () => ({ UserStorage: {
   getUserById: jest.fn(), getUserByEmail: jest.fn(), getUserByUsername: jest.fn(),
-  updateUser: jest.fn(), createUser: jest.fn(), deleteUser: jest.fn(), validateUserInput: jest.fn(),
+  updateUser: jest.fn(), createUser: jest.fn(), deleteUser: jest.fn(), hardDeleteUser: jest.fn(), validateUserInput: jest.fn(),
 } }));
 jest.mock("../utils/logger", () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 

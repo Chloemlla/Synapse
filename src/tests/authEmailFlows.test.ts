@@ -20,7 +20,7 @@ jest.mock("../templates/emailTemplates", () => ({
 }));
 jest.mock("../utils/userStorage", () => ({ UserStorage: {
   getUserByEmail: jest.fn(), getUserByUsername: jest.fn(), getUserById: jest.fn(),
-  createUser: jest.fn(), deleteUser: jest.fn(), updateUser: jest.fn(), validateUserInput: jest.fn(),
+  createUser: jest.fn(), deleteUser: jest.fn(), hardDeleteUser: jest.fn(), updateUser: jest.fn(), validateUserInput: jest.fn(),
 } }));
 jest.mock("../utils/ipUtils", () => ({ getClientIP: jest.fn(() => "192.0.2.1") }));
 jest.mock("../utils/logger", () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));

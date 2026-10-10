@@ -159,7 +159,8 @@ export async function verifyEmailLink(
       email: user.email,
     });
     if (!consumeResult.ok) {
-      await UserStorage.deleteUser(user.id);
+      // RC-01: 注册回滚必须用物理删除 —— 账号从未真正成立，软删除会留下占着邮箱的幽灵账号。
+      await UserStorage.hardDeleteUser(user.id);
       await verificationTokenStorage.deleteToken(token);
       return { success: false, error: consumeResult.error || "邀请码无效" };
     }

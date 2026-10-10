@@ -66,4 +66,22 @@ export interface User {
   isTranslationEnabled?: boolean;
   translationAccessUntil?: string;
   accountStatus?: "active" | "suspended";
+  // ── 软删除账号（RC-01）────────────────────────────────────────────────
+  // 0 / 缺省 = 未删除；> 0 = 被软删除的时间戳。
+  deletedAt?: number;
+  deletedBy?: string;
+  deleteReason?: string;
+  deletedOriginalUsername?: string;
+  deletedOriginalEmail?: string;
+  // ── 账户风险（RC-04）──────────────────────────────────────────────────
+  riskTier?: "normal" | "watch" | "restricted" | "danger";
+  /** 0-100，越高越危险（与 accountSecuritySummary 的「越高越安全」方向相反）。 */
+  riskScore?: number;
+  riskFlags?: string[];
+  riskUpdatedAt?: number;
+  flaggedBy?: string;
+  flagReason?: string;
+  /** 逐步验证到期时间：0 = 不强制；> now = 该时刻前每次操作都要验（RC-02/RC-03）。 */
+  stepUpUntil?: number;
+  stepUpMode?: "sensitive" | "all-writes" | "all";
 }

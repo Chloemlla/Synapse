@@ -151,8 +151,25 @@ export class UserStorage {
     return updated;
   }
 
-  public static async deleteUser(userId: string): Promise<boolean> {
-    const deleted = await userRepository.deleteUser(userId);
+  public static async deleteUser(
+    userId: string,
+    options: { by?: string; reason?: string } = {},
+  ): Promise<boolean> {
+    // RC-01: 语义已改为软删除（打标记 + 凭据失效），仍会广播权限变更事件，
+    // 使下游缓存（权限、名额）立刻失效。
+    const deleted = await userRepository.deleteUser(userId, options);
+    if (deleted) {
+      emitUserAuthorityChanged(userId, "deleted");
+    }
+    return deleted;
+  }
+
+  /**
+   * 物理删除用户：**仅限注册流程回滚**（邀请码消费失败、邮箱验证落库失败等）。
+   * 不要用它处理用户/管理员删号 —— 那会破坏 RC-21/RC-22 要求的取证保留。
+   */
+  public static async hardDeleteUser(userId: string): Promise<boolean> {
+    const deleted = await userRepository.hardDeleteUser(userId);
     if (deleted) {
       emitUserAuthorityChanged(userId, "deleted");
     }
