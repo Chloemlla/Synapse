@@ -29,6 +29,7 @@ import { getTokenFromRequest } from "../../utils/authCookie";
 import crypto from "node:crypto";
 import { getUserAuthById } from "../../services/userService";
 import { TOTPService } from "../../services/totpService";
+import { verifyAndConsumeTotpCode } from "../../services/totpVerificationService";
 import { PasskeyService } from "../../services/passkeyService";
 import {
   checkVerificationAttempts,
@@ -312,11 +313,30 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
           return res.status(400).json({ error: "请输入 6 位 TOTP 验证码或 8 位恢复码" });
         }
 
-        // G2-13: 带 counter 重放防护（原子消费）
-        const totpCheck = TOTPService.verifyTokenWithCounter(verificationCode, dbUser.totpSecret);
-        let isValid = totpCheck.valid;
-        if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
-          isValid = await UserStorage.consumeTotpCounter(dbUser.id, totpCheck.counter);
+        // G2-13: 带 counter 重放防护（原子消费）；收口到 verifyAndConsumeTotpCode。
+        const totpOutcome = await verifyAndConsumeTotpCode({
+          userId: dbUser.id,
+          token: verificationCode,
+          secret: dbUser.totpSecret,
+          ipAddress: getClientIP(req),
+          userAgent: req.headers["user-agent"] || "",
+        });
+        const isValid = totpOutcome.ok;
+
+        if (!totpOutcome.ok && totpOutcome.reason === "unavailable") {
+          return res.status(503).json({
+            error: "验证服务暂时不可用，请稍后重试",
+            code: "TOTP_REPLAY_PROTECTION_UNAVAILABLE",
+          });
+        }
+
+        if (!totpOutcome.ok && totpOutcome.reason === "reused") {
+          // 不记失败次数：同一枚码第二次提交不是猜错，多半是重复提交。
+          return res.status(409).json({
+            error: "该验证码已被使用，请等待验证器显示新的验证码",
+            code: "TOTP_CODE_REUSED",
+            retryAfterSeconds: 30,
+          });
         }
 
         if (!isValid) {

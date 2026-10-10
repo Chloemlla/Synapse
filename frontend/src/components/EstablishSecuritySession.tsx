@@ -118,7 +118,18 @@ export default function EstablishSecuritySession({
       try {
         applySuccess(await fn(), kind);
       } catch (error) {
-        setVerifyError({ kind, message: getBackendErrorMessage(error, fallbackMsg) });
+        const backendCode = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+        if (backendCode === 'TOTP_CODE_REUSED') {
+          // 单次凭据已被消费：清掉输入，避免用户再提交同一枚码。
+          setTotpCode('');
+          setBackupCode('');
+          setVerifyError({
+            kind,
+            message: '该验证码已被使用，请等待验证器显示新的验证码（约 30 秒）后重试',
+          });
+        } else {
+          setVerifyError({ kind, message: getBackendErrorMessage(error, fallbackMsg) });
+        }
       } finally {
         setSubmitting(null);
       }

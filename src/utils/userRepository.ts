@@ -192,10 +192,14 @@ export const userRepository = {
 
   async consumeTotpCounter(id: string, counter: number): Promise<boolean> {
     const provider = getUserStorageProvider();
-    if (typeof provider.consumeTotpCounter === "function") {
-      return provider.consumeTotpCounter(id, counter);
+    // G2-13 / TOTP 重放：**必须 fail-closed**。
+    // 原先这里缺方法时 `return true` —— 那等于「存储层不支持重放防护 ⇒ 所有验证码都能重复用」，
+    // 而且没有任何日志能看出这件事发生了。改为抛错，由调用方（totpVerificationService）
+    // 明确回 503 + 稳定 code，既不放行也可诊断。
+    if (typeof provider.consumeTotpCounter !== "function") {
+      throw new Error("用户存储未实现 consumeTotpCounter：拒绝 TOTP 验证以避免验证码可重复使用");
     }
-    return true;
+    return provider.consumeTotpCounter(id, counter);
   },
 
   async consumePendingChallenge(id: string, expectedChallenge: string): Promise<User | null> {

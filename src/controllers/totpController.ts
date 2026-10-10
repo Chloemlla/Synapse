@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { config } from "../config/config";
 import { sendEmail } from "../services/emailSender";
 import { TOTPService } from "../services/totpService";
+import { verifyAndConsumeTotpCode } from "../services/totpVerificationService";
 import {
   generateBackupCodeUsedEmailHtml,
   generateLoginIpChangedEmailHtml,
@@ -191,15 +192,37 @@ export class TOTPController {
       }
 
       // 验证令牌（G2-13：带 counter 重放防护，原子消费）
-      const totpCheck = TOTPService.verifyTokenWithCounter(token, currentUser.totpSecret || "");
-      let isValid = totpCheck.valid;
-      if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
-        isValid = await UserStorage.consumeTotpCounter(userId, totpCheck.counter);
-        if (!isValid) {
-          logger.warn("verifyAndEnable: TOTP 重放被拒绝", { userId });
-        }
+      // 收口到 verifyAndConsumeTotpCode：旧写法在 counter 缺失时会**静默跳过**消费，
+      // 等于同一枚码可重复使用；新实现改为 fail-closed 并把 reused 与 invalid 分开。
+      const totpOutcome = await verifyAndConsumeTotpCode({
+        userId,
+        token,
+        secret: currentUser.totpSecret,
+        ipAddress: getClientIP(req),
+        userAgent: req.headers["user-agent"] || "",
+      });
+      const isValid = totpOutcome.ok;
+      if (totpOutcome.ok === false && totpOutcome.reason === "unavailable") {
+        logger.error("verifyAndEnable: 重放防护不可用，拒绝验证", { userId });
+        return res.status(503).json({
+          error: "验证服务暂时不可用，请稍后重试",
+          code: "TOTP_REPLAY_PROTECTION_UNAVAILABLE",
+        });
       }
-      logger.info("verifyAndEnable: 验证TOTP令牌", { userId, username: currentUser.username, isValid });
+      if (totpOutcome.ok === false && totpOutcome.reason === "reused") {
+        // 与 verifyToken 同口径：重放不计入猜错次数，前端提示等新码。
+        return res.status(409).json({
+          error: "该验证码已被使用，请等待验证器显示新的验证码",
+          code: "TOTP_CODE_REUSED",
+          retryAfterSeconds: 30,
+        });
+      }
+      logger.info("verifyAndEnable: 验证TOTP令牌", {
+        userId,
+        username: currentUser.username,
+        isValid,
+        reason: totpOutcome.ok ? undefined : totpOutcome.reason,
+      });
 
       // 记录验证尝试
       await TOTPController.recordTOTPAttempt(userId, isValid);
@@ -312,13 +335,32 @@ export class TOTPController {
 
       if (token) {
         // 验证TOTP令牌（G2-13：带 counter 重放防护，原子消费）
-        const totpCheck = TOTPService.verifyTokenWithCounter(token, user.totpSecret || "");
-        isValid = totpCheck.valid;
-        if (isValid && typeof totpCheck.counter === "number" && Number.isFinite(totpCheck.counter)) {
-          isValid = await UserStorage.consumeTotpCounter(user.id, totpCheck.counter);
-          if (!isValid) {
-            logger.warn("verifyToken: TOTP 重放被拒绝", { userId });
-          }
+        // 同 verifyAndEnable：重放与「验证码错误」必须分开，且重放不得被当成猜错次数累计，
+        // 否则用户双击一次提交就会白扣一次试错额度。
+        const totpOutcome = await verifyAndConsumeTotpCode({
+          userId: user.id,
+          token,
+          secret: user.totpSecret,
+          ipAddress: getClientIP(req),
+          userAgent: req.headers["user-agent"] || "",
+        });
+        isValid = totpOutcome.ok;
+
+        if (!totpOutcome.ok && totpOutcome.reason === "unavailable") {
+          logger.error("verifyToken: 重放防护不可用，拒绝验证", { userId: user.id });
+          return res.status(503).json({
+            error: "验证服务暂时不可用，请稍后重试",
+            code: "TOTP_REPLAY_PROTECTION_UNAVAILABLE",
+          });
+        }
+
+        if (!totpOutcome.ok && totpOutcome.reason === "reused") {
+          // 不计入失败次数：这是「同一枚码用过两次」，不是猜错。
+          return res.status(409).json({
+            error: "该验证码已被使用，请等待验证器显示新的验证码",
+            code: "TOTP_CODE_REUSED",
+            retryAfterSeconds: 30,
+          });
         }
 
         // 记录验证尝试

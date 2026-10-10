@@ -36,6 +36,8 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
   const [loading, setLoading] = useState(false);
 
   const handleVerify = async () => {
+    // 防双击/回车连发：TOTP 是单次凭据，同一枚码第二次提交会命中重放防护（TOTP_CODE_REUSED）。
+    if (loading) return;
     // 输入验证
     if (!useBackupCode) {
       if (!verificationCode.trim()) {
@@ -69,6 +71,9 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
       });
 
       if (response.data.verified) {
+        // 单次凭据：成功后立即清掉输入，避免下一次弹窗里残留已消费的码。
+        setVerificationCode('');
+        setBackupCode('');
         // TOTP验证成功，调用成功回调
         onSuccess();
       } else {
@@ -77,7 +82,12 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
     } catch (error: any) {
       const errorData = error.response?.data;
 
-      if (error.response?.status === 429) {
+      if (errorData?.code === 'TOTP_CODE_REUSED') {
+        // 该 counter 已被消费（多半是重复提交）：清掉输入，等验证器轮换到新的码再试。
+        setVerificationCode('');
+        setBackupCode('');
+        setError('该验证码已被使用，请等待验证器显示新的验证码（约 30 秒）后重试');
+      } else if (error.response?.status === 429) {
         // 验证尝试次数过多
         const remainingTime = Math.ceil((errorData.lockedUntil - Date.now()) / 1000 / 60);
         setError(`验证尝试次数过多，请${remainingTime}分钟后再试`);

@@ -306,8 +306,13 @@ export const useAuth = () => {
             throw new Error('TOTP验证失败');
         } catch (error: any) {
             if (!isCurrentAuthRequest(generation)) throw new Error('登录操作已取消');
-            setPendingTOTP(null);
             const errorData = error.response?.data;
+            if (errorData?.code === 'TOTP_CODE_REUSED') {
+                // 单次凭据被重复提交：保守住 pendingTOTP，用户等验证器轮换后直接用新码重试，
+                // 不必重新输密码（该临时令牌仍在 5 分钟有效期内）。
+                throw new Error('该验证码已被使用，请等待验证器显示新的验证码（约 30 秒）后重试');
+            }
+            setPendingTOTP(null);
             if (error.response?.status === 429) {
                 const remainingTime = Math.ceil((errorData.lockedUntil - Date.now()) / 1000 / 60);
                 throw new Error(`验证尝试次数过多，请${remainingTime}分钟后再试`);
