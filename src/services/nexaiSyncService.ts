@@ -478,10 +478,14 @@ export class NexaiSyncService {
           safeResponse.savedPasswords.length +
           safeResponse.shortUrls.length;
 
-        logger.info(
-          `[NexAI Sync] mergeIncremental OK for user ${userId}, ` +
-            `incoming=${totalIncoming}, serverChanges=${totalServerChanges}`,
-        );
+        // codeql[js/clear-text-logging] 只记录**条数**（数字），从不记录密码/凭据本体；
+        // 计数器由上面的 `.length` 求和得到，与 savedPasswords 的内容无关。
+        // 顺带改成结构化字段（不再拼字符串），让日志可解析且不在同一表达式里引用敏感字段名。
+        logger.info("[NexAI Sync] mergeIncremental OK", {
+          userId,
+          incomingCount: totalIncoming,
+          serverChangeCount: totalServerChanges,
+        });
 
         return safeResponse;
       }

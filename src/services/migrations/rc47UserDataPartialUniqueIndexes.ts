@@ -1,5 +1,5 @@
-import type { Db, Document, IndexDescriptionInfo } from "mongodb";
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
+import { mongoose } from "../mongoService";
 import { normalizeEmailCanonical } from "../blockedIdentityService";
 import type { MigrationPlan, SchemaMigration } from "../migrationRunner";
 
@@ -19,7 +19,21 @@ import type { MigrationPlan, SchemaMigration } from "../migrationRunner";
  *   - `partial_incomplete` 旧索引已删、部分索引缺一条 → 补齐
  *   - `duplicates_active`  活跃账号存在重复 email/username → **blocked**（绝不先删）
  *   - `foreign_unique`     同 key spec 但名字/选项非预期 → 规范化（drop + create）
+ *
+ * 类型约定：**不从 "mongodb" 导类型**。镜像里同时存在 mongodb@7.6.0 与 7.7.0，
+ * 导入的 Db/IndexDescriptionInfo 与 `mongoose.connection.db` 的实际类型不是同一份，会报 TS2345。
+ * 这里用从 mongoose 派生的 Db + 结构性最小类型。
  */
+
+type Db = NonNullable<typeof mongoose.connection.db>;
+
+/** `db.collection(...).indexes()` 返回项里本模块用到的字段（结构性子集）。 */
+interface RawIndexDescription {
+  name?: string;
+  key: Record<string, unknown>;
+  unique?: boolean;
+  partialFilterExpression?: unknown;
+}
 
 const USERS = "user_datas";
 const TOMBSTONES = "blocked_identities";
@@ -37,13 +51,13 @@ export const ACTIVE_USER_PARTIAL_FILTER = {
   $or: [{ deletedAt: 0 }, { deletedAt: { $exists: false } }],
 } as const;
 
-function indexKeyEquals(index: IndexDescriptionInfo, field: string): boolean {
-  const key = index.key as Record<string, unknown>;
+function indexKeyEquals(index: RawIndexDescription, field: string): boolean {
+  const key = index.key;
   const keys = Object.keys(key);
   return keys.length === 1 && keys[0] === field && key[field] === 1;
 }
 
-function isTargetPartialUnique(index: IndexDescriptionInfo): boolean {
+function isTargetPartialUnique(index: RawIndexDescription): boolean {
   return index.unique === true && index.partialFilterExpression !== undefined;
 }
 
@@ -112,8 +126,8 @@ async function backfillTombstones(db: Db): Promise<number> {
 async function planMigration(ctx: { db: Db }): Promise<MigrationPlan> {
   const { db } = ctx;
   const collection = db.collection(USERS);
-  // mongodb@7 的类型叫 IndexDescriptionInfo（IndexDescription 少了 key/version），不要写错。
-  const existing: IndexDescriptionInfo[] = await collection.indexes();
+  // 只用结构性子集，不绑驱动类型（两份 mongodb 的 Db 名义类型不同）。
+  const existing = (await collection.indexes()) as unknown as RawIndexDescription[];
 
   const fields = ["email", "username"] as const;
   const missingTarget: string[] = [];
@@ -191,7 +205,7 @@ async function planMigration(ctx: { db: Db }): Promise<MigrationPlan> {
           {
             unique: true,
             name: `${field}_1`,
-            partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER as unknown as Document,
+            partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER,
           },
         );
         logger.info("[RC-47] 已创建部分唯一索引", { index: `${field}_1` });

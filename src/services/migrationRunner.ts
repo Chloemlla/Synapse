@@ -1,4 +1,3 @@
-import type { Db } from "mongodb";
 import { isConnected, mongoose } from "./mongoService";
 import logger from "../utils/logger";
 
@@ -35,6 +34,15 @@ import logger from "../utils/logger";
 
 const LEDGER_COLLECTION = "schema_migrations";
 const LOCK_ID = "migration-runner-lock";
+
+/**
+ * 从 mongoose 派生 Db 类型，**不要** `import type { Db } from "mongodb"`。
+ *
+ * 原因为镜像构建实测（run 38061691390）：pnpm 里同时存在 `mongodb@7.6.0` 与 `mongodb@7.7.0`
+ * （mongoose 自己钉了一份），从 "mongodb" 导入拿到的那份与 `mongoose.connection.db` 返回的
+ * 不是同一个名义类型，TS 会报一串 TS2345“Db 不可赋值给 Db”。从 mongoose 派生就永远同一份。
+ */
+type Db = NonNullable<typeof mongoose.connection.db>;
 
 export interface MigrationContext {
   db: Db;
@@ -94,7 +102,7 @@ async function claimLock(db: Db, ttlMs: number): Promise<string | null> {
   try {
     // 条件更新 + upsert：文档存在但条件不满足时会走 insert，撞 _id 主键即代表锁已被持有。
     await db.collection(LEDGER_COLLECTION).findOneAndUpdate(
-      { _id: LOCK_ID as unknown as never, lockedUntil: { $lt: now } },
+      { _id: LOCK_ID, lockedUntil: { $lt: now } },
       { $set: { owner, lockedUntil: now + ttlMs } },
       { upsert: true },
     );
@@ -110,12 +118,14 @@ async function claimLock(db: Db, ttlMs: number): Promise<string | null> {
 async function releaseLock(db: Db, owner: string): Promise<void> {
   await db
     .collection(LEDGER_COLLECTION)
-    .updateOne({ _id: LOCK_ID as unknown as never, owner }, { $set: { lockedUntil: 0, owner: "" } });
+    .updateOne({ _id: LOCK_ID, owner }, { $set: { lockedUntil: 0, owner: "" } });
 }
 
 async function readLedger(db: Db, id: string): Promise<LedgerDoc | null> {
-  const doc = await db.collection<LedgerDoc>(LEDGER_COLLECTION).findOne({ _id: id as unknown as never });
-  return doc ?? null;
+  // 不写 collection<LedgerDoc> 泛型：裸驱动的 schema 约束要求 extends Document，
+  // 用普通形态最稳（与 userService 的裸集合调用保持一致）。
+  const doc = await db.collection(LEDGER_COLLECTION).findOne({ _id: id });
+  return (doc as LedgerDoc | null) ?? null;
 }
 
 async function writeLedger(
@@ -124,7 +134,7 @@ async function writeLedger(
   patch: { status: "applied" | "blocked" | "failed"; state: string; actions: string[]; error?: string },
 ): Promise<void> {
   await db.collection(LEDGER_COLLECTION).updateOne(
-    { _id: id as unknown as never },
+    { _id: id },
     {
       $set: {
         ...patch,

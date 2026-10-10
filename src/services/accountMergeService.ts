@@ -363,6 +363,8 @@ export async function createMergePreviewSession(params: {
   const preview = await buildAccountMergePreview({ ...params, expiresAt });
 
   const pendingKey = pendingSessionKey(params.targetUserId, params.provider);
+  // codeql[js/insufficient-password-hash] 哈希输入只有**标识符**（userId / provider / providerUserId），
+  // 不含任何口令/凭据；sha256 在这里只用于把四个标识折叠成稳定且不泄露原文的 shared-state 键。
   const pairKey = `account-merge:pair:${crypto.createHash("sha256")
     .update(JSON.stringify([params.targetUserId, params.provider, params.sourceUserId, params.providerUserId]))
     .digest("hex")}`;
