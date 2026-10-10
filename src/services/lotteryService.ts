@@ -3,6 +3,7 @@ import path from "node:path";
 import { isAdminRole } from "../middleware/auth";
 import { logger } from "./logger";
 import { addRound, getAllRounds, getUserRecord, getUserRecordsByIds, updateRound, updateUserRecord, deleteAllRounds, deleteAllUserRecords } from "./lotteryStorage";
+import { AuditLogService, type AuditEntry } from "./auditLogService";
 import { TurnstileService } from "./turnstileService";
 import { readCaptchaChallenge } from "./turnstile/challenge";
 import { sharedStateStore } from "./sharedStateStore";
@@ -64,6 +65,26 @@ export interface BlockchainData {
   hash: string;
   timestamp: number;
 }
+
+/** 一次抽奖的调用上下文（幂等与审计用；不进业务判定）。 */
+export interface LotteryDrawContext {
+  /** 客户端全局唯一请求 id：同一 id 的重放直接返回上次结果，不再抽一次。 */
+  requestId?: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+/** 抽取过程产出的完整事实，供审计留痕（随机数快照 / 落点 / 结果）。 */
+interface LotteryDrawOutcome {
+  winner: LotteryWinner | null;
+  prize: LotteryPrize | null;
+  randomValue: number;
+  drawTime: number;
+  round: LotteryRound;
+}
+
+/** 幂等结果保留 10 分钟：足够覆盖客户端/代理的重复投递与短时重试。 */
+const LOTTERY_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 
 /**
  * 按配置概率抽奖（纯函数，便于单测）。
@@ -201,12 +222,17 @@ class LotteryService {
     cfToken?: string,
     userRole?: string,
     captchaProvider?: unknown,
+    context: LotteryDrawContext = {},
   ): Promise<LotteryWinner | null> {
     return sharedStateStore.withLock(`lottery:participate:${roundId}`, 15000, () =>
-      this.participateInLotteryInternal(roundId, userId, username, cfToken, userRole, captchaProvider),
+      this.participateInLotteryInternal(roundId, userId, username, cfToken, userRole, captchaProvider, context),
     );
   }
 
+  /**
+   * 幂等 + 审计包装：同一 requestId 的重放直接返回上次结果，不产生第二次抽奖/扣库存。
+   * 业务拒绝会释放幂等键（此时未写入任何状态），同一 requestId 可安全重试。
+   */
   private async participateInLotteryInternal(
     roundId: string,
     userId: string,
@@ -214,7 +240,46 @@ class LotteryService {
     cfToken?: string,
     userRole?: string,
     captchaProvider?: unknown,
+    context: LotteryDrawContext = {},
   ): Promise<LotteryWinner | null> {
+    const idempotencyKey = context.requestId ? `lottery:idem:${userId}:${context.requestId}` : null;
+    if (idempotencyKey) {
+      const claimed = await sharedStateStore.claim(idempotencyKey, LOTTERY_IDEMPOTENCY_TTL_MS, "pending");
+      if (!claimed) {
+        const stored = await sharedStateStore.get<{ roundId?: string; winner?: LotteryWinner | null } | string>(
+          idempotencyKey,
+        );
+        if (stored && typeof stored === "object" && stored.roundId === roundId) {
+          return stored.winner ?? null;
+        }
+        // 仍是 pending（并发同 id）或换了轮次复用同一 id：不给新抽，让调用方稍后重试。
+        throw new Error("抽奖请求正在处理中，请稍后重试");
+      }
+    }
+
+    try {
+      const outcome = await this.runLotteryDraw(roundId, userId, username, cfToken, userRole, captchaProvider);
+      if (idempotencyKey) {
+        await sharedStateStore.set(idempotencyKey, { roundId, winner: outcome.winner }, LOTTERY_IDEMPOTENCY_TTL_MS);
+      }
+      this.recordDrawAudit(outcome, { userId, username, userRole, context });
+      return outcome.winner;
+    } catch (error) {
+      if (idempotencyKey) {
+        await sharedStateStore.delete(idempotencyKey).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  private async runLotteryDraw(
+    roundId: string,
+    userId: string,
+    username: string,
+    cfToken?: string,
+    userRole?: string,
+    captchaProvider?: unknown,
+  ): Promise<LotteryDrawOutcome> {
     const round = await this.getRoundDetails(roundId); // 使用新的getRoundDetails
     if (!round) {
       throw new Error("抽奖轮次不存在");
@@ -330,7 +395,47 @@ class LotteryService {
     } else {
       logger.info(`用户 ${username} 参与轮次 ${roundId} 未中奖`);
     }
-    return winner;
+    return { winner, prize, randomValue, drawTime: drawNow, round: latest };
+  }
+
+  /**
+   * 审计留痕（PRD §4）：记录随机数快照、落点与扣减结果。
+   * 走既有 `audit_logs`（60 天 TTL + 批量落盘兜底 + 管理端按 `lottery` 模块筛选），不另造流水表。
+   * 写入失败不让抽奖失败：履约事实以轮次/用户记录为准，审计是留痕不是账本。
+   */
+  private recordDrawAudit(
+    outcome: LotteryDrawOutcome,
+    meta: { userId: string; username: string; userRole?: string; context: LotteryDrawContext },
+  ): void {
+    const remainingAfter = outcome.prize
+      ? (outcome.round.prizes.find((item) => item.id === outcome.prize?.id)?.remaining ?? null)
+      : null;
+    const entry: AuditEntry = {
+      requestId: meta.context.requestId,
+      userId: meta.userId,
+      username: meta.username,
+      role: meta.userRole || "user",
+      action: "lottery.draw",
+      module: "lottery",
+      targetId: outcome.round.id,
+      targetName: outcome.round.name,
+      result: "success",
+      detail: {
+        roundId: outcome.round.id,
+        outcome: outcome.winner ? "win" : "no_win",
+        randomValue: Number(outcome.randomValue.toFixed(8)),
+        prizeId: outcome.winner?.prizeId ?? null,
+        prizeName: outcome.winner?.prizeName ?? null,
+        remainingAfter,
+        requestId: meta.context.requestId ?? null,
+        drawTime: outcome.drawTime,
+      },
+      ip: meta.context.ip || "",
+      userAgent: meta.context.userAgent,
+      path: "/api/lottery/rounds/:roundId/participate",
+      method: "POST",
+    };
+    void AuditLogService.log(entry).catch(() => undefined);
   }
 
   // 更新用户记录

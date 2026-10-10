@@ -12,6 +12,11 @@ const mockDeleteAllRounds = jest.fn();
 const mockDeleteAllUserRecords = jest.fn();
 const mockGetCaptchaRequestPolicy = jest.fn();
 const mockVerifyCaptchaChallenge = jest.fn();
+const mockStateClaim = jest.fn();
+const mockStateGet = jest.fn();
+const mockStateSet = jest.fn();
+const mockStateDelete = jest.fn();
+const mockAuditLog = jest.fn();
 
 jest.mock("../middleware/auth", () => ({
   isAdminRole: (role: unknown) => role === "admin" || role === "superadmin",
@@ -39,9 +44,17 @@ jest.mock("../services/turnstileService", () => ({
   },
 }));
 
+jest.mock("../services/auditLogService", () => ({
+  AuditLogService: { log: (...a: unknown[]) => mockAuditLog(...a) },
+}));
+
 jest.mock("../services/sharedStateStore", () => ({
   sharedStateStore: {
     withLock: (_key: string, _ttlMs: number, criticalSection: () => unknown) => criticalSection(),
+    claim: (...a: unknown[]) => mockStateClaim(...a),
+    get: (...a: unknown[]) => mockStateGet(...a),
+    set: (...a: unknown[]) => mockStateSet(...a),
+    delete: (...a: unknown[]) => mockStateDelete(...a),
   },
 }));
 
@@ -89,6 +102,12 @@ beforeEach(() => {
   mockGetUserRecordsByIds.mockResolvedValue([]);
   mockUpdateRound.mockImplementation(async (id: string, data: Record<string, unknown>) => ({ id, ...data }));
   mockUpdateUserRecord.mockResolvedValue(undefined);
+  // 默认：幂等键能抢到、审计写入成功（各用例按需覆盖）。
+  mockStateClaim.mockResolvedValue(true);
+  mockStateGet.mockResolvedValue(null);
+  mockStateSet.mockResolvedValue(true);
+  mockStateDelete.mockResolvedValue(true);
+  mockAuditLog.mockResolvedValue(undefined);
 });
 
 describe("pickPrize 概率语义", () => {
@@ -202,6 +221,92 @@ describe("participateInLottery", () => {
     const winner = await lotteryService.participateInLottery(round.id, "admin1", "root", undefined, "admin");
     expect(winner).toMatchObject({ prizeId: "p1" });
     expect(mockVerifyCaptchaChallenge).not.toHaveBeenCalled();
+  });
+});
+
+describe("幂等与审计（PRD §4）", () => {
+  it("同一 requestId 的重放直接返回上次结果，不产生第二次抽奖", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1, quantity: 2, remaining: 2 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+    const context = { requestId: "rid-1" };
+
+    const first = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, context);
+    expect(first).toMatchObject({ prizeId: "p1" });
+    expect(mockUpdateRound).toHaveBeenCalledTimes(1);
+    expect(mockStateSet).toHaveBeenCalledWith(
+      "lottery:idem:u1:rid-1",
+      { roundId: round.id, winner: first },
+      expect.any(Number),
+    );
+
+    // 重放：幂等键已被上次占用，读到上次结果
+    mockStateClaim.mockResolvedValueOnce(false);
+    mockStateGet.mockResolvedValueOnce({ roundId: round.id, winner: first });
+    const replay = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, context);
+
+    expect(replay).toEqual(first);
+    expect(mockUpdateRound).toHaveBeenCalledTimes(1);
+  });
+
+  it("同一 requestId 仍在处理中时拒绝重抽，同一 id 换轮次也被拒", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+    mockStateClaim.mockResolvedValueOnce(false);
+    mockStateGet.mockResolvedValueOnce("pending");
+
+    await expect(
+      lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, { requestId: "rid-1" }),
+    ).rejects.toThrow("正在处理中");
+    expect(mockUpdateRound).not.toHaveBeenCalled();
+  });
+
+  it("业务拒绝会释放幂等键，同一 requestId 可安全重试", async () => {
+    const round = makeRound({ participants: ["u1"], prizes: [prize({ id: "p1", probability: 1 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    await expect(
+      lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, { requestId: "rid-1" }),
+    ).rejects.toThrow("已经参与过");
+
+    expect(mockStateDelete).toHaveBeenCalledWith("lottery:idem:u1:rid-1");
+  });
+
+  it("每次抽奖都留一条 lottery.draw 审计：含随机数快照与落点", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1, quantity: 2, remaining: 2 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, {
+      requestId: "rid-1",
+      ip: "1.2.3.4",
+    });
+
+    expect(mockAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "lottery.draw",
+        module: "lottery",
+        userId: "u1",
+        targetId: round.id,
+        ip: "1.2.3.4",
+        detail: expect.objectContaining({
+          roundId: round.id,
+          outcome: "win",
+          prizeId: "p1",
+          remainingAfter: 1,
+          requestId: "rid-1",
+        }),
+      }),
+    );
+  });
+
+  it("未中奖也留审计，outcome 为 no_win", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1e-9, quantity: 2, remaining: 2 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+
+    expect(mockAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: expect.objectContaining({ outcome: "no_win", prizeId: null }) }),
+    );
   });
 });
 

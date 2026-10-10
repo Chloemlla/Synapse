@@ -94,7 +94,12 @@ export function useLottery() {
     setParticipatingRoundId(roundId);
 
     try {
-      const winner = await lotteryApi.participateInLottery(roundId, cfToken, captchaProvider);
+      // 幂等键：同一次用户动作的重复投递（代理重发 / 手动重试）由后端吸收，不会重复抽奖。
+      const requestId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `draw-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const winner = await lotteryApi.participateInLottery(roundId, cfToken, captchaProvider, requestId);
 
       // 更新相关数据
       await Promise.all([

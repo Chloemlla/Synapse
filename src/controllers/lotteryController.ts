@@ -237,6 +237,8 @@ export class LotteryController {
       const { cfToken } = req.body;
       // 三家供应商共用同一套下发链路：客户端带什么供应商就验哪家。
       const captchaProvider = req.body.captchaProvider ?? req.body.captchaType;
+      // 全链路幂等（PRD §4）：客户端全局唯一请求 id，同一 id 的重放不再抽一次。
+      const requestId = typeof req.body?.requestId === "string" ? req.body.requestId.trim().slice(0, 64) : "";
       const userId = req.user?.id;
 
       if (!roundId) {
@@ -265,6 +267,7 @@ export class LotteryController {
         cfToken,
         req.user?.role,
         captchaProvider,
+        { requestId: requestId || undefined, ip: req.ip, userAgent: req.headers["user-agent"] || "" },
       );
 
       res.json({

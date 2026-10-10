@@ -1871,7 +1871,10 @@ docker-compose up -d
 - 抽奖隐私：普通用户拿到的轮次视图不再包含参与者的内部用户 id（改回 `hasParticipated` + `participantCount` / `winnerCount`），中奖记录去掉 `userId`；管理员仍拿完整数据
 - 抽奖管理端入参硬化：时间必须是可解析时刻、概率限 0-1、数量为正整数、库存在服务端按数量初始化、奖品 id 缺失或重复自动补；概率和 > 1 自动归一化——自动修正项会回传并在界面提示
 - 抽奖存储：`deleteAllRounds` 同时清空用户记录（不再残留孤儿中奖历史）；排行榜/统计改批量读取（`$in` / `IN` / 一次读文件），统计只读一遍轮次；区块高度与哈希合并为一次外呼
+- 抽奖请求幂等（PRD §4）：`POST /rounds/:id/participate` 接受 `requestId`，同一 id 的重放直接返回上次结果、不再抽一次也不重复扣库存（`sharedStateStore` 幂等键，业务拒绝自动释放可重试）；前端每次参与携带 `crypto.randomUUID()`
+- 抽奖审计流水：每次抽奖往既有 `audit_logs` 写 `lottery.draw`（`module: lottery`），detail 含随机数快照、落点奖品与扣减后库存，可在管理端审计查看器按模块筛选（复用 60 天保留与不可变存储，不另造流水表）
 - 抽奖管理页清掉不再使用的 AES 解密死代码与无用导入
+- 抽奖中台 PRD 的分阶段落地方案落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（机会/保底、Pacing + Redis Lua、实时风控、履约中心后续阶段）
 
 ---
 

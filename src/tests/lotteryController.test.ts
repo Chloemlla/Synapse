@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockCreateRound = jest.fn();
 const mockGetRounds = jest.fn();
+const mockParticipate = jest.fn();
 
 jest.mock("../middleware/auth", () => ({
   isAdminRole: (role: unknown) => role === "admin" || role === "superadmin",
@@ -26,7 +27,7 @@ jest.mock("../services/lotteryService", () => ({
     resetRound: jest.fn(),
     deleteAllRounds: jest.fn(),
     getBlockchainData: jest.fn(),
-    participateInLottery: jest.fn(),
+    participateInLottery: (...a: unknown[]) => mockParticipate(...a),
   },
 }));
 
@@ -71,6 +72,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockCreateRound.mockResolvedValue({ id: "r1" });
   mockGetRounds.mockResolvedValue([]);
+  mockParticipate.mockResolvedValue(null);
 });
 
 describe("createLotteryRound 入参硬化", () => {
@@ -173,5 +175,41 @@ describe("轮次视图隐私", () => {
 
     expect(res.body.data[0].participants).toEqual(["u1", "u2"]);
     expect(res.body.data[0].winners[0]).toHaveProperty("userId", "u1");
+  });
+});
+
+describe("参与抽奖的幂等入参", () => {
+  it("把 requestId 与请求元信息透传给服务层（PRD §4）", async () => {
+    const res = createRes();
+    await lotteryController.participateInLottery(
+      {
+        user: { id: "u1", username: "alice", role: "user" },
+        params: { roundId: "r1" },
+        body: { requestId: "rid-1" },
+        ip: "1.2.3.4",
+        headers: { "user-agent": "ua-1" },
+      } as any,
+      res as any,
+    );
+
+    expect(mockParticipate).toHaveBeenCalledWith(
+      "r1",
+      "u1",
+      "alice",
+      undefined,
+      "user",
+      undefined,
+      { requestId: "rid-1", ip: "1.2.3.4", userAgent: "ua-1" },
+    );
+  });
+
+  it("缺失 requestId 时传 undefined（幂等为可选能力）", async () => {
+    const res = createRes();
+    await lotteryController.participateInLottery(
+      { user: { id: "u1", username: "alice", role: "user" }, params: { roundId: "r1" }, body: {}, ip: "1.2.3.4", headers: {} } as any,
+      res as any,
+    );
+
+    expect(mockParticipate.mock.calls[0][6]).toMatchObject({ requestId: undefined, ip: "1.2.3.4" });
   });
 });

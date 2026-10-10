@@ -80,10 +80,12 @@ export async function getRoundDetails(roundId: string): Promise<LotteryRound> {
 }
 
 // 参与抽奖：未中奖时后端返回 data=null（概率和 < 1 的剩余区间）。
+// requestId 为幂等键（PRD §4）：同一 id 的重放直接返回上次结果，不再抽一次。
 export async function participateInLottery(
   roundId: string,
   cfToken?: string,
   captchaProvider?: string,
+  requestId?: string,
 ): Promise<LotteryWinner | null> {
   const body: any = {};
 
@@ -93,6 +95,7 @@ export async function participateInLottery(
     body.captchaToken = cfToken;
     if (captchaProvider) body.captchaProvider = captchaProvider;
   }
+  if (requestId) body.requestId = requestId;
 
   return apiRequest<LotteryWinner | null>(`/rounds/${roundId}/participate`, {
     method: 'POST',
