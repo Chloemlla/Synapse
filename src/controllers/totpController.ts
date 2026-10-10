@@ -10,6 +10,7 @@ import {
   generateTOTPEnabledEmailHtml,
 } from "../templates/emailTemplates";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../services/authSessionService";
+import { scheduleLoginRiskSignals } from "../services/accountRiskService";
 import {
   TWO_FACTOR_ATTEMPT_POLICY,
   checkVerificationAttempts,
@@ -470,6 +471,9 @@ export class TOTPController {
 
       // 生成JWT token
       const jwtToken = await issueTrackedLoginToken(user, getAuthSessionMetadata(req, { ipAddress: ip }));
+
+      // RC-06：TOTP 完成二次验证后才是真正的登录成功，在这里沉淀 IP 信号并聚合风险。
+      scheduleLoginRiskSignals(user.id, ip);
 
       logger.info("TOTP验证成功，生成JWT token", {
         userId: user.id,

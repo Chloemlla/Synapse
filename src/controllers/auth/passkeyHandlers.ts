@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../../services/authSessionService";
+import { scheduleLoginRiskSignals } from "../../services/accountRiskService";
 import { sendEmail } from "../../services/emailSender";
 import { generateLoginIpChangedEmailHtml } from "../../templates/emailTemplates";
 import { setAuthSessionCookie } from "../../utils/authCookie";
@@ -80,6 +81,9 @@ export async function passkeyVerify(req: Request, res: Response) {
       // 生成JWT token
       const ip = getClientIP(req);
       const token = await issueTrackedLoginToken(user, getAuthSessionMetadata(req, { ipAddress: ip }));
+
+      // RC-06：Passkey 路径同样是登录成功点，沉淀 IP 信号并聚合账户风险。
+      scheduleLoginRiskSignals(user.id, ip);
 
       logger.info("[AuthController] Passkey验证成功，生成JWT token", {
         userId: user.id,

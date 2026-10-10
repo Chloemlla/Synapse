@@ -7,6 +7,7 @@ import { type User, UserStorage } from "../utils/userStorage";
 import { findUserByProviderIdentity, upsertIdentityForUser } from "./accountIdentityService";
 import { completeProviderLoginForBoundIdentity, issueProviderBindSession } from "./providerBindSessionService";
 import { sendProviderGeneratedPasswordEmail } from "./providerCredentialEmailService";
+import { scheduleLoginRiskSignals } from "./accountRiskService";
 import { AccountSuspendedError } from "./providerAuthErrors";
 
 export interface GoogleAuthConfigSummary {
@@ -296,6 +297,11 @@ export async function authenticateGoogleUser(params: {
 
   const payload = toAuthPayload(finalizedUser, isNewUser);
   payload.token = await issueTrackedLoginToken(finalizedUser, params.sessionMetadata || { ipAddress: params.clientIp });
+  // RC-06：第三方登录也是登录成功点，同样沉淀 IP 信号（附异步聚合，不进响应路径）。
+  scheduleLoginRiskSignals(
+    finalizedUser.id,
+    params.sessionMetadata?.ipAddress || params.clientIp || "",
+  );
   return payload;
 }
 

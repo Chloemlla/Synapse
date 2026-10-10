@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuthSessionMetadata, issueTrackedLoginToken } from "../../services/authSessionService";
+import { scheduleLoginRiskSignals } from "../../services/accountRiskService";
 import { sendEmail } from "../../services/emailSender";
 import { sendThrottledAuthNotification } from "../../services/authEmailNotificationService";
 import {
@@ -284,6 +285,9 @@ export async function login(req: Request, res: Response) {
     });
     // 生成JWT token
     const token = await issueTrackedLoginToken(user, getAuthSessionMetadata(req, { ipAddress: ip }));
+
+    // RC-06：把这次登录的 IP 沉淀到账户维度并聚合一次风险（后台异步，不进登录响应路径）。
+    scheduleLoginRiskSignals(user.id, ip);
 
     // 异地登录检测：比较当前IP与上次登录IP
     const lastIp = user.lastLoginIp;
