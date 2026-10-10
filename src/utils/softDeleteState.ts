@@ -18,6 +18,12 @@ export const USER_DELETED_FIELD = "deletedAt";
 /** 从属集合的统一软删除时间戳字段。 */
 export const SUBJECT_DELETED_FIELD = "subjectDeletedAt";
 
+/** 触发删除的操作者（用户 id / "auto" / 管理员 id）。 */
+export const DELETED_BY_FIELD = "deletedBy";
+
+/** 可读删除原因，调查调取与申诉处理都要靠它解释留存依据。 */
+export const DELETE_REASON_FIELD = "deleteReason";
+
 /**
  * 「未软删除」判据。
  *
