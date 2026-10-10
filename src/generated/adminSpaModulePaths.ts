@@ -81,6 +81,7 @@ export const FRONTEND_SPA_ROUTE_PATHS = [
   "/demo/meditation",
   "/demo/music",
   "/demo/xiaohongshu",
+  "/doc-convert",
   "/email-sender",
   "/fbi-wanted",
   "/forgot-password",

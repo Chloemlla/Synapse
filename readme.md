@@ -220,6 +220,29 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | Markdown 导出 | Markdown 渲染与导出为 PDF/DOCX | `/markdown-export` |
 | Markdown 预览 | 实时 Markdown 渲染预览（支持 KaTeX 数学公式、Mermaid 图表） | 内嵌组件 |
 
+#### Markdown → Word 批量转换（doc-tool）
+
+把 Markdown 批量转成高保真的 Word 文档：入口在 `/doc-convert`，也可在 `/markdown-export` 页顶部切到「批量」模式。须登录，上传的文件与产物按用户隔离。
+
+- **批量转换**：一次上传多个 `.md`，服务端依次排队转换，逐文件显示进度与结果
+- **冲突策略三选一**：目标已存在时「跳过 / 自动另存为 `xxx (2).docx` / 覆盖」，默认不覆盖
+- **参考样式模板**：可上传自己的参考样式文档，也可在页面上一键生成默认模板；**表格框线与中文字体等样式由该参考样式文档统一决定**，改一处即可全量生效
+- **目录结构保留**：递归收集子目录，产物按相同的相对目录结构落盘
+- **结果可追溯**：成功 / 跳过 / 失败逐条明细，附一份可下载的转换报告
+- **打包下载**：一次把本次成功产物打包成 zip 取回
+- **失败重试**：只重跑失败那几项，不必整批重来
+- **选项记忆**：上次用过的选项（策略 / 输出方式 / 是否递归 / 参考样式）下次打开自动带出
+- **产物自动过期**：过期产物按保留天数自动清理
+
+| 模块 | 说明 |
+|------|------|
+| 后端路由 | `docToolRoutes.ts`（`/api/doc-tool`，登录用户） |
+| 转换与队列 | `src/docTool/`（pandoc 转换引擎 + 任务队列） |
+| 前端页面 | `DocConvertPage.tsx`（独立页 `/doc-convert`）、`MarkdownExportPage.tsx` 的「批量」模式 |
+| 外部依赖 | 镜像内置 pandoc（见 `Dockerfile`）；pandoc 不可用时页面给出明确提示而非静默失败 |
+
+限额与目录由环境变量维护（详见 `.env.example` 的「Markdown → Word 批量转换（doc-tool）」一节）：`DOC_TOOL_WORK_DIR`、`DOC_TOOL_PANDOC_BIN`、`DOC_TOOL_MAX_UPLOAD_BYTES`、`DOC_TOOL_MAX_FILE_BYTES`、`DOC_TOOL_MAX_FILES_PER_JOB`、`DOC_TOOL_MAX_ACTIVE_JOBS`、`DOC_TOOL_RETENTION_DAYS`。
+
 #### 生活工具
 | 工具 | 说明 | 前端路由 |
 |------|------|---------|
@@ -728,6 +751,20 @@ OPENAPI_JSON_PATH=                 # OpenAPI JSON 输出路径（默认 openapi.
 VITE_API_URL=                      # 前端 API 地址（BASE_URL 未设置时作为后备）
 PUBLIC_SHORT_URL_ENABLED=          # 启用公共短链接（true/false）
 PUBLIC_SHORT_URL_PASSWORD=         # 公共短链接创建密码
+
+# ==================== 文档转换（doc-tool·可选） ====================
+DOC_TOOL_WORK_DIR=                 # 工作目录（默认 data/doc-tool；收件箱 / 产物 / 参考样式模板都在它下面）
+DOC_TOOL_PANDOC_BIN=               # pandoc 路径（留空自动探测 /usr/local/bin/pandoc → PATH）
+DOC_TOOL_MAX_UPLOAD_BYTES=67108864 # 单次上传 .md 总大小上限（字节，默认 64 MB）
+DOC_TOOL_MAX_FILE_BYTES=8388608    # 单个 .md 大小上限（字节，默认 8 MB）
+DOC_TOOL_MAX_FILES_PER_JOB=300     # 单任务最多处理文件数（默认 300）
+DOC_TOOL_MAX_ACTIVE_JOBS=3         # 每个用户同时在排队 / 运行的任务上限（默认 3）
+DOC_TOOL_RETENTION_DAYS=7          # 产物保留天数（默认 7，与 Mongo TTL 一致）
+
+# ==================== 短链热门查询缓存（可选·未配 Redis 时自动关闭） ====================
+SHORT_URL_HOT_QUERY_THRESHOLD=3    # 计数窗口内查询次数超过该值才写进 Redis（默认 3）
+SHORT_URL_HOT_WINDOW_MS=3600000    # 计数窗口（毫秒，默认 1 小时）
+SHORT_URL_HOT_TTL_MS=600000        # 热点条目存活时长（毫秒，默认 10 分钟，命中即续期）
 
 # ==================== Project Lumen GitHub Secret Sync（可选） ====================
 # env-manager 的「Project Lumen 配置」区可将 13 个密钥/配置项同步到
@@ -1777,6 +1814,12 @@ docker-compose up -d
 - 移除前后端 31 项无用依赖并新增无用依赖静态审查脚本；全量升级 npm 依赖
 - TypeScript 单文件体量上限由 800 放宽到 1500；修 CodeQL `js/request-forgery`（Cap 端点 SSRF）与 `js/identity-replacement`；密码重置链接邮件不再受邮件共享日配额限制
 
+#### 10-10
+- 新增「Markdown → Word 批量转换」实用工具（`/doc-convert`，也可在 `/markdown-export` 页切「批量」模式）：一次上传多个 `.md`（或整个文件夹，保留子目录结构），服务端用 pandoc 批量转换，带逐文件进度、成功 / 跳过 / 失败统计、可下载的转换报告、成功产物打包 zip 下载与「只重试失败项」
+- 同名产物冲突三选一：跳过 / **自动另存为 `xxx (2).docx`（默认，旧文件一字不改）** / 覆盖；参考样式模板可一键生成，表格框线与中文字体由它一处统一；上传文件与产物按用户隔离，并按保留天数自动过期
+- 镜像内置 pandoc：与 yt-dlp 同思路取上游官方静态二进制（钉版本 + SHA256 校验 + 构建期 `pandoc --version` 自证），不走 `apk add pandoc`（仓库版本滞后且会拉入整套 GHC 依赖树）
+- 短链新增「近期热门查询」缓存：1 小时内查询超过 3 次的短链写进 Redis，后续跳转直接命中缓存、不再打库；删除短链（含管理端批量删除与清库）同步失效缓存；未配置 Redis 时自动退化为原行为
+
 ---
 
 ## 📝 许可证
@@ -1799,4 +1842,4 @@ docker-compose up -d
 
 ---
 
-**版本**: 2026-10-01
+**版本**: 2026-10-10

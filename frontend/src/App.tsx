@@ -84,6 +84,7 @@ const ImageUploadPage = React.lazy(() => import('./components/ImageUploadPage'))
 const TigerAdventure = React.lazy(() => import('./components/TigerAdventure'));
 const CoinFlip = React.lazy(() => import('./components/CoinFlip'));
 const MarkdownExportPage = React.lazy(() => import('./components/MarkdownExportPage'));
+const DocConvertPage = React.lazy(() => import('./components/DocConvertPage'));
 const MarkdownArticlePage = React.lazy(() => import('./components/MarkdownArticlePage'));
 const TOTPManager = React.lazy(() => import('./components/TOTPManager'));
 const AnnouncementModal = React.lazy(() => import('./components/AnnouncementModal'));
@@ -753,6 +754,8 @@ const App: React.FC = () => {
         <Route path="/tiger-adventure" element={renderProtectedRoute(<TigerAdventure />)} />
         <Route path="/coin-flip" element={renderProtectedRoute(<CoinFlip />)} />
         <Route path="/markdown-export" element={renderAnimatedRoute(<MarkdownExportPage />)} />
+        {/* 批量转换需要登录（后端 /api/doc-tool 全部要求用户态鉴权）；单文档导出仍允许访客。 */}
+        <Route path="/doc-convert" element={renderProtectedRoute(<DocConvertPage />)} />
         <Route path="/articles" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
         <Route path="/articles/:slug" element={renderAnimatedRoute(<MarkdownArticlePage />)} />
         <Route path="/campus-emergency" element={renderProtectedRoute(<CampusEmergencyPage />)} />
@@ -816,6 +819,7 @@ const App: React.FC = () => {
       '/tiger-adventure': 'Synapse - 老虎冒险',
       '/coin-flip': 'Synapse - 硬币翻转',
       '/markdown-export': 'Synapse - Markdown导出',
+      '/doc-convert': 'Synapse - Markdown 转 Word',
       '/articles': 'Synapse - Markdown 文章',
       '/campus-emergency': 'Synapse - 校园紧急情况',
       '/tamper-detection-demo': 'Synapse - 篡改检测演示',

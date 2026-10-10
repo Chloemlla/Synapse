@@ -16,6 +16,7 @@ import {
   FaExclamationTriangle,
   FaFileAlt,
   FaFileSignature,
+  FaFileWord,
   FaFlask,
   FaFont,
   FaGamepad,
@@ -167,6 +168,11 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             title: 'MD 导出',
             url: '/markdown-export',
             icon: FaFileAlt as IconType,
+          },
+          {
+            title: 'MD 转 Word',
+            url: '/doc-convert',
+            icon: FaFileWord as IconType,
           },
           {
             title: 'GitHub 账单',

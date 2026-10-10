@@ -145,6 +145,49 @@ RUN set -eu; \
     apk del .yt-dlp-fetch; \
     yt-dlp --version
 
+# doc-tool 的外部依赖：Markdown → Word 批量转换走 pandoc。
+# 不装 apk add pandoc：Alpine 仓库里的 pandoc 版本常年滞后，而且它会拉入整套 GHC 运行时
+# 依赖树（数百 MB），而我们只用它的转换能力，不值得为此背上那份依赖面。
+# 改为直接取 jgm/pandoc 官方 release 的静态二进制。已取证（本机只读检查上游产物）：
+# tarball 里的 bin/pandoc 是完全静态 ELF —— e_type=ET_EXEC、无 PT_INTERP、无 GLIBC_2.*
+# 符号版本引用、无 DT_NEEDED，因此在 Alpine(musl) 上可直接运行，不需要 gcompat。
+# 二进制内嵌 data files（含 reference.docx），doc-tool 的「生成默认样式模板」
+# （--print-default-data-file reference.docx）因此可用。
+# 体积代价：保留的静态 bin/pandoc 约 158 MB；故只拷这一个文件、不留 tarball，
+# 也不拷 pandoc-lua / pandoc-server（用不到）。
+# 上游资产名带版本号（pandoc-<ver>-linux-<arch>.tar.gz），releases/latest/download 拿不到固定资产，
+# 所以必须钉版本。升级 = 改 ARG PANDOC_VERSION 并同步更新 PANDOC_SHA256，或用
+#   --build-arg PANDOC_VERSION=3.12.2 --build-arg PANDOC_SHA256=<new>
+# 上游不发 checksums 文件，故校验和由我们钉住；PANDOC_SHA256 留空则跳过校验并在构建日志打印提示。
+# 资产名按构建机架构选（本文件不固定 --platform）：x86_64 → linux-amd64，aarch64 → linux-arm64。
+# 落点 /usr/local/bin/pandoc 即在 PATH 上，与 yt-dlp 层同口径（设置侧「留空自动探测 PATH」）。
+# 层末 pandoc --version 自证：构建期失败优于运行时静默不可用。
+# curl 只在下载期用，装完即卸（本层单独装自己的 .pandoc-fetch；yt-dlp 层的 curl 已在它自己的 RUN 里删掉），
+# 避免把 curl 的 CVE 留在运行镜像里。
+ARG PANDOC_VERSION=3.12.1
+ARG PANDOC_SHA256=d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8
+RUN set -eu; \
+    apk add --no-cache --virtual .pandoc-fetch curl; \
+    case "$(uname -m)" in \
+      x86_64) arch=amd64 ;; \
+      aarch64) arch=arm64 ;; \
+      *) echo "ERROR: 上游未提供该架构的 pandoc 二进制: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    asset="pandoc-${PANDOC_VERSION}-linux-${arch}.tar.gz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/${asset}" -o "/tmp/$asset"; \
+    if [ -n "$PANDOC_SHA256" ]; then \
+      printf '%s  %s\n' "$PANDOC_SHA256" "/tmp/$asset" | sha256sum -c -; \
+    else \
+      echo "[pandoc] PANDOC_SHA256 为空，跳过校验（未验证下载产物完整性）" >&2; \
+    fi; \
+    tar -xzf "/tmp/$asset" -C /tmp "pandoc-${PANDOC_VERSION}/bin/pandoc"; \
+    cp "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc; \
+    chmod 0755 /usr/local/bin/pandoc; \
+    rm -rf "/tmp/$asset" "/tmp/pandoc-${PANDOC_VERSION}"; \
+    apk del .pandoc-fetch; \
+    pandoc --version
+
 ENV TZ=Asia/Shanghai \
     NODE_ENV=production \
     NODE_OPTIONS="--max-old-space-size=2048" \

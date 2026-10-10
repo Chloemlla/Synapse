@@ -15,6 +15,15 @@ import { exportToPdf as exportPdfUtil } from './MarkdownExportPage/pdfExport';
 import { studioEyebrowPillClassName } from './studioTheme';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 
+// 批量面板只在切到「批量转换」时才下载；本页本身已经是懒加载，这里再懒一层是为了
+// 单文档模式下完全不加载服务端转换相关的代码。
+const DocBatchPanel = React.lazy(() => import('./docTool/DocBatchPanel'));
+
+const MODE_CHOICES: Array<{ value: 'single' | 'batch'; label: string }> = [
+  { value: 'single', label: '单文档' },
+  { value: 'batch', label: '批量转换' },
+];
+
 const DEFAULT_MARKDOWN = `# 示例文档
 
 ## 介绍
@@ -104,6 +113,7 @@ function topLevelText(element: Element): string {
 
 const MarkdownExportPage: React.FC = () => {
   const confirm = useConfirm();
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [isExporting, setIsExporting] = useState(false);
   const [markdownContent, setMarkdownContent] = useState(DEFAULT_MARKDOWN);
   const [docxSourceMarkdown, setDocxSourceMarkdown] = useState('');
@@ -373,9 +383,35 @@ const MarkdownExportPage: React.FC = () => {
             Markdown 导出工具
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            使用统一的 Markdown 渲染链路进行预览、导出和复制，支持 GFM、KaTeX 与 Mermaid。
+            {mode === 'single'
+              ? '使用统一的 Markdown 渲染链路进行预览、导出和复制，支持 GFM、KaTeX 与 Mermaid。'
+              : '上传多个 Markdown 文件，由服务端统一转换成 Word，可批量处理、保留子目录结构，并只重试失败项。'}
           </p>
 
+          <div
+            className="mt-6 inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1"
+            role="group"
+            aria-label="导出模式"
+          >
+            {MODE_CHOICES.map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                aria-pressed={mode === choice.value}
+                onClick={() => setMode(choice.value)}
+                className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                  mode === choice.value
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 单文档模式整块保持挂载：切回单文档时草稿还在，不必重新输入。 */}
+          <div className={mode === 'single' ? undefined : 'hidden'}>
           <div className="mt-7 flex flex-wrap gap-3">
             <motion.button
               onClick={exportToDocx}
@@ -466,11 +502,14 @@ const MarkdownExportPage: React.FC = () => {
               </div>
             </div>
           </div>
+          </div>
         </div>
       </motion.div>
 
       <motion.div
-        className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8"
+        className={`mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8 ${
+          mode === 'single' ? '' : 'hidden'
+        }`}
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.15 }}
@@ -501,6 +540,20 @@ const MarkdownExportPage: React.FC = () => {
           </div>
         </div>
       </motion.div>
+
+      {mode === 'batch' ? (
+        <React.Suspense
+          fallback={
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white/88 px-4 py-10 text-center text-sm text-slate-400 backdrop-blur-xl">
+              正在加载批量转换面板…
+            </div>
+          }
+        >
+          <div className="mt-6">
+            <DocBatchPanel />
+          </div>
+        </React.Suspense>
+      ) : null}
 
       <div className="hidden" aria-hidden="true">
         <div ref={docxPreviewRef}>

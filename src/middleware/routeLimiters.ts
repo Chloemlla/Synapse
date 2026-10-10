@@ -12,6 +12,7 @@ type LimiterCategory =
   | "tts-history"
   | "tts-jobs"
   | "transcribe"
+  | "docTool"
   | "admin"
   | "verification"
   | "command"
@@ -337,6 +338,15 @@ const LIMITER_DEFINITIONS = {
     category: "transcribe",
     max: 240,
     message: "语音转文本请求过于频繁，请稍后再试",
+  },
+  // 文档转换(用户态):上传/建任务/轮询进度/下载产物共用一个 per-user 桶。
+  // 轮询是「任务在跑就每秒一次」的高频轻请求,而上传/建任务是低频重操作 ——
+  // 两者共桶意味着长任务会把配额花在轮询上,所以这一档刻意给得比 transcribe 紧。
+  docTool: {
+    profile: "authRead",
+    category: "docTool",
+    max: 120,
+    message: "文档转换请求过于频繁，请稍后再试",
   },
   admin: {
     profile: "admin",
@@ -674,6 +684,7 @@ export const ttsLimiter = limiterFromDefinition("ttsGenerate");
 export const historyLimiter = limiterFromDefinition("ttsHistory");
 export const jobsLimiter = limiterFromDefinition("ttsJobs");
 export const transcribeLimiter = limiterFromDefinition("transcribe");
+export const docToolLimiter = limiterFromDefinition("docTool");
 export const adminLimiter = limiterFromDefinition("admin");
 export const frontendLimiter = limiterFromDefinition("frontend");
 export const totpLimiter = limiterFromDefinition("totp");

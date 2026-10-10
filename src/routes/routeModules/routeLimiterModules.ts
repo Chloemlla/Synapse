@@ -12,6 +12,7 @@ import {
   dataProcessLimiter,
   deeplxLimiter,
   deeplxPublicLimiter,
+  docToolLimiter,
   historyLimiter,
   ipfsLimiter,
   jobsLimiter,
@@ -251,5 +252,13 @@ export const routeLimiterModules: RouteModule[] = [
     requiresAuth: "mixed",
     rateLimited: true,
     isPublic: "mixed",
+  },
+  {
+    name: "doc-tool-limiter",
+    path: "/api/doc-tool",
+    router: docToolLimiter,
+    requiresAuth: true,
+    rateLimited: true,
+    isPublic: false,
   },
 ];

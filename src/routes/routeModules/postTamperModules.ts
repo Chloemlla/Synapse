@@ -27,6 +27,7 @@ import dataProcessRoutes from "../dataProcessRoutes";
 import deeplxPublicRoutes from "../deeplxPublicRoutes";
 import deeplxRoutes from "../deeplxRoutes";
 import diagnosticsRoutes from "../diagnosticsRoutes";
+import docToolRoutes from "../docToolRoutes";
 import ecoEnchantsRoutes from "../ecoEnchantsRoutes";
 import fbiWantedRoutes from "../fbiWantedRoutes";
 import githubBillingRoutes from "../githubBillingRoutes";
@@ -644,6 +645,25 @@ export const postTamperRouteModules: RouteModule[] = [
       mode: "mount",
       limiters: ["transcribeLimiter"],
       note: "用户态转写专用 limiter(authRead 档,240/5min),与管理端 adminLimiter 分桶。",
+    },
+  },
+  {
+    name: "doc-tool-routes",
+    path: "/api/doc-tool",
+    router: docToolRoutes,
+    middlewares: [authenticateToken],
+    requiresAuth: true,
+    rateLimited: true,
+    isPublic: false,
+    authPolicy: {
+      mode: "mount",
+      handlers: ["authenticateToken"],
+      note: "Markdown 批量转换用户页:整棵 /api/doc-tool 先过 authenticateToken,router 内再按 req.user 复核任务归属与用户目录作用域;普通登录用户可用,不要求管理员角色。",
+    },
+    rateLimitPolicy: {
+      mode: "route-module",
+      limiters: ["doc-tool-limiter"],
+      note: "限流由更早注册的限流模块 doc-tool-limiter 承担(同为 /api/doc-tool,authRead 档 120/5min);本模块刻意不再挂一遍,避免同一实例被计两次、把配额分走一半。",
     },
   },
   {
