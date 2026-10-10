@@ -178,6 +178,11 @@ step `outcome`。
   加新功能只需在登记表里加一条，授权由超管在线调整。
 - 密码一律 bcrypt 哈希；日志与接口响应里绝不出现密码、令牌、密钥。
 - IP 封禁是最外层守卫（支持单 IP 与 CIDR，存 Redis（若有）或 Mongo）。
+- **Redis 在库数据浏览器是只读的**（`/admin/system` → 「Redis 在库数据」，后端 `src/routes/admin/system.ts`）：
+  超管 + 安全会话两层缺一不可，列表走 SCAN（禁用 `KEYS`），快照导出走 `DUMP`+`PTTL`（NDJSON，base64）。
+  与其它 1Panel 应用共享 Redis 时，用 `ADMIN_REDIS_KEY_PREFIXES`（逗号分隔）把范围收窄到本服务命名空间；
+  不配就是整个当前 DB。真 RDB 只能在宿主机用 `deploy/openresty/backup-redis.sh` 导出；
+  拿回快照用 `node scripts/redis-restore-snapshot.js --file <ndjson> [--apply --replace]`（默认 dry-run）。
 - 新增路由必须配限流器；不要在子路由重复挂同一个限流器实例（会让一次请求过两遍、额度减半）。
 
 ---

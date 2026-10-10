@@ -353,6 +353,21 @@ const LIMITER_DEFINITIONS = {
     category: "admin",
     message: "管理员操作过于频繁，请稍后再试",
   },
+  // 管理端 Redis 浏览：SCAN 是有成本的读命令，额度过得比普通管理读更严。
+  adminRedis: {
+    profile: "admin",
+    category: "admin",
+    max: 40,
+    message: "Redis 数据浏览请求过于频繁，请稍后再试",
+  },
+  // 全库快照导出：每次都是长时间扫描 + 大响应，单独一档低频额度。
+  adminRedisExport: {
+    profile: "sensitive",
+    category: "admin",
+    windowMs: 10 * 60_000,
+    max: 3,
+    message: "快照导出过于频繁，请稍后再试",
+  },
   frontend: {
     profile: "static",
     category: "static",
@@ -686,6 +701,8 @@ export const jobsLimiter = limiterFromDefinition("ttsJobs");
 export const transcribeLimiter = limiterFromDefinition("transcribe");
 export const docToolLimiter = limiterFromDefinition("docTool");
 export const adminLimiter = limiterFromDefinition("admin");
+export const adminRedisLimiter = limiterFromDefinition("adminRedis");
+export const adminRedisExportLimiter = limiterFromDefinition("adminRedisExport");
 export const frontendLimiter = limiterFromDefinition("frontend");
 export const totpLimiter = limiterFromDefinition("totp");
 export const passkeyLimiter = limiterFromDefinition("passkey");

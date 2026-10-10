@@ -164,6 +164,11 @@ frontend/src/
 
 - **唯一真相源是 MongoDB**（`src/services/mongoService.ts`，连接由 `startup.ts` 建立，
   不要在别处新建连接）。Redis 可选，用于 IP 封禁与限流加速，缺失时安全降级。
+- **管理端只读浏览 Redis**：`/admin/system` 的「Redis 在库数据」面板取
+  `src/routes/admin/system.ts` + `services/redisAdminService.ts`。列表一律 SCAN 分页（**禁用 `KEYS`**），
+  快照导出走 `DUMP`+`PTTL`（NDJSON，base64 承载，必须字节精确）。写回用
+  `scripts/redis-restore-snapshot.js`（默认 dry-run，`--apply` 才写、`--replace` 才覆盖）。
+  Redis 与其它应用共享时用 `ADMIN_REDIS_KEY_PREFIXES` 把范围收窄到本服务命名空间。
 - 模型在 `src/models/`，索引与 TTL 就近声明。已经具备的代表性约束：
   审计日志 90 天 TTL + `requestId`/`createdAt`/`module`/`userId`/`action` 索引；
   会话表按 `userId` 前缀建索引；`credentialHash` 唯一索引；IP 封禁表 TTL + `ipAddress`/`fingerprint` 索引。
@@ -298,6 +303,12 @@ frontend/src/
 
 - **管理端接口**：必须同时满足有效会话 + `admin`/`superadmin` 角色 + 更严格的限流。
   绝不允许绕过管理员校验或范围守卫。
+- **Redis 在库数据浏览器**（`/admin/system`，只读）是**三层保护**：挂载级管理员范围守卫 →
+  超管硬校（`isSuperAdmin`）→ 全站统一安全会话（`hasValidSecuritySession`，10 分钟 TTL）。
+  它逐请求写审计，且**只记键名与规模，不把键值写进审计/日志**（通用 `auditLog` 中间件会把响应体
+  抄进审计库，所以这里用 `AuditLogService.log` 手写）。改这个面板时别把 `captureBody` 类中间件加回去。
+- **RDB 导出只能在宿主机做**：应用进程看不到 Redis 数据目录，node-redis 也不支持 PSYNC；
+  面板的 `format=rdb` 会明确 501 并指向 `deploy/openresty/backup-redis.sh`，不要为此去猜实现。
 - **密码与令牌**：bcrypt（12 轮）哈希；日志、审计、接口响应里不出现密码/令牌/密钥/密文；
   Mongoose 敏感字段用 `select: false`。
 - **IP 封禁**：最外层守卫，支持单 IP 与 CIDR，存 Redis（若有）或 Mongo；

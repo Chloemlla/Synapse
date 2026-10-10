@@ -1,4 +1,4 @@
-import { createClient, type RedisClientType } from "redis";
+import { createClient, RESP_TYPES, type RedisClientType } from "redis";
 import logger from "../utils/logger";
 
 /**
@@ -14,6 +14,57 @@ export interface RedisServiceStatus {
   ready: boolean;
   available: boolean;
 }
+
+/** 管理端只读浏览：SCAN 单页结果。cursor 为 "0" 表示遍历结束。 */
+export interface RedisScanPage {
+  cursor: string;
+  keys: string[];
+}
+
+/** 管理端只读浏览：单键条目（含义随类型变化，见 readKeyContent）。 */
+export interface RedisKeyEntry {
+  /** hash 字段 / stream 记录 ID；list、set、zset 为空（用数组下标表达位置）。 */
+  field?: string;
+  /** 值本体：hash 值、list 元素、set 成员、zset 成员。 */
+  value: string;
+  /** zset 分数（字符串形式，避免浮点舍入）。 */
+  score?: string;
+}
+
+/** 管理端只读浏览的单键快照。所有字段都有界：内容按上限截断并置 truncated。 */
+export interface RedisKeyContent {
+  /** string | list | set | zset | hash | none | 模块自定义类型（如 ReJSON-RL）。 */
+  type: string;
+  /** PTTL：-1 永不过期，-2 键不存在。 */
+  ttlMs: number;
+  encoding: string | null;
+  sizeBytes: number | null;
+  /** string 的字符长度（STRLEN）；集合类型为 null。 */
+  stringLength: number | null;
+  /** string 值（可能被截断）。 */
+  value: string | null;
+  /** 集合类条目（可能被截断）；string 与不支持的类型为 null。 */
+  entries: RedisKeyEntry[] | null;
+  /** 集合类总条目数（HLEN / LLEN / SCARD / ZCARD）；其余为 null。 */
+  totalEntries: number | null;
+  /** 是否因上限而截断了内容。 */
+  truncated: boolean;
+}
+
+/**
+ * 管理端快照导出：单键 DUMP 的结果。
+ * `missing` = 键已不存在（快照期间过期）；`unavailable` = Redis 不可用；
+ * `dump-failed` = 服务端禁用/改了 DUMP；`binary-unsafe` = 类型映射未生效（拒绝出快照）。
+ */
+export type RedisDumpOutcome =
+  | { ok: true; dumpBase64: string; ttlMs: number }
+  | { ok: false; reason: "missing" | "unavailable" | "dump-failed" | "binary-unsafe" };
+
+const ADMIN_READ_MAX_VALUE_CHARS = 4_000;
+const ADMIN_READ_MAX_ENTRIES = 200;
+const ADMIN_READ_VALUE_HARD_CAP = 20_000;
+const ADMIN_READ_ENTRY_HARD_CAP = 1_000;
+const ADMIN_SCAN_COUNT_CAP = 1_000;
 
 class RedisService {
   private client: RedisClientType | null = null;
@@ -247,6 +298,191 @@ class RedisService {
       logger.warn("⚠️ [Redis] info(memory) 失败:", error);
     }
     return { dbsize, usedMemoryBytes };
+  }
+
+  // ==================== 管理端只读浏览原语 ====================
+  // 说明：这两个方法只执行读命令（SCAN/TYPE/PTTL/STRLEN/GETRANGE/HSCAN/LRANGE/SSCAN/ZRANGE*），
+  // 且返回值一律有界；客户端是私有成员，故意不对外暴露 connection，避免浏览功能被复用成写通道。
+
+  /** SCAN 单页；不可用或命令失败返回 null（调用方按「浏览器不可用」处理）。 */
+  public async scanKeysPage(cursor: string, match: string | undefined, count: number): Promise<RedisScanPage | null> {
+    if (!this.isAvailable()) return null;
+    const client = this.client;
+    if (!client) return null;
+    try {
+      const result = await client.scan(cursor || "0", {
+        COUNT: Math.max(1, Math.min(count, ADMIN_SCAN_COUNT_CAP)),
+        ...(match ? { MATCH: match } : {}),
+      });
+      return { cursor: String(result.cursor ?? "0"), keys: (result.keys ?? []) as string[] };
+    } catch (error) {
+      logger.warn("⚠️ [Redis] SCAN 失败:", error);
+      return null;
+    }
+  }
+
+  /** 只读键的类型与 TTL（列表分页用，不读内容）；失败或不可用返回 null。 */
+  public async readKeyMeta(key: string): Promise<{ type: string; ttlMs: number } | null> {
+    if (!this.isAvailable()) return null;
+    const client = this.client;
+    if (!client) return null;
+    try {
+      const [type, ttlRaw] = await Promise.all([client.type(key), client.pTTL(key)]);
+      return { type, ttlMs: typeof ttlRaw === "number" ? ttlRaw : -1 };
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 读取键元信息失败:", error);
+      return null;
+    }
+  }
+
+  /**
+   * 读取单键的类型/元信息/有界内容。键不存在时返回 type="none"（不是 null）；
+   * Redis 不可用或命令失败返回 null。集合类条目按上限截断，并在 truncated 里标注。
+   */
+  public async readKeyContent(
+    key: string,
+    limits: { maxValueChars?: number; maxEntries?: number } = {},
+  ): Promise<RedisKeyContent | null> {
+    if (!this.isAvailable()) return null;
+    const client = this.client;
+    if (!client) return null;
+
+    const maxValueChars = Math.max(
+      1,
+      Math.min(limits.maxValueChars ?? ADMIN_READ_MAX_VALUE_CHARS, ADMIN_READ_VALUE_HARD_CAP),
+    );
+    const maxEntries = Math.max(1, Math.min(limits.maxEntries ?? ADMIN_READ_MAX_ENTRIES, ADMIN_READ_ENTRY_HARD_CAP));
+
+    try {
+      const type = await client.type(key);
+      if (type === "none") {
+        return {
+          type,
+          ttlMs: -2,
+          encoding: null,
+          sizeBytes: null,
+          stringLength: null,
+          value: null,
+          entries: null,
+          totalEntries: null,
+          truncated: false,
+        };
+      }
+
+      const [ttlRaw, encoding, sizeBytes] = await Promise.all([
+        client.pTTL(key),
+        // MEMORY USAGE / OBJECT ENCODING 在部分托管 Redis 上被禁用；拿不到不影响查看内容。
+        client.objectEncoding(key).catch(() => null),
+        client.memoryUsage(key).catch(() => null),
+      ]);
+
+      const base: RedisKeyContent = {
+        type,
+        ttlMs: typeof ttlRaw === "number" ? ttlRaw : -1,
+        encoding,
+        sizeBytes,
+        stringLength: null,
+        value: null,
+        entries: null,
+        totalEntries: null,
+        truncated: false,
+      };
+
+      if (type === "string") {
+        const length = await client.strLen(key);
+        base.stringLength = length;
+        if (length > maxValueChars) {
+          // GETRANGE 的 end 是闭区间，取 maxValueChars 个字符即 maxValueChars - 1。
+          base.value = (await client.getRange(key, 0, maxValueChars - 1)) ?? "";
+          base.truncated = true;
+        } else {
+          base.value = (await client.get(key)) ?? "";
+        }
+        return base;
+      }
+
+      if (type === "hash") {
+        const total = await client.hLen(key);
+        const page = await client.hScan(key, "0", { COUNT: maxEntries });
+        const entries: RedisKeyEntry[] = (page.entries ?? []).slice(0, maxEntries).map((entry) => ({
+          field: entry.field,
+          value: entry.value,
+        }));
+        base.entries = entries;
+        base.totalEntries = total;
+        base.truncated = total > entries.length;
+        return base;
+      }
+
+      if (type === "list") {
+        const total = await client.lLen(key);
+        const items = await client.lRange(key, 0, maxEntries - 1);
+        const entries: RedisKeyEntry[] = items.map((value) => ({ value }));
+        base.entries = entries;
+        base.totalEntries = total;
+        base.truncated = total > entries.length;
+        return base;
+      }
+
+      if (type === "set") {
+        const total = await client.sCard(key);
+        const page = await client.sScan(key, "0", { COUNT: maxEntries });
+        const subset = (page.members ?? []).slice(0, maxEntries);
+        const entries: RedisKeyEntry[] = subset.map((value) => ({ value }));
+        base.entries = entries;
+        base.totalEntries = total;
+        base.truncated = total > entries.length;
+        return base;
+      }
+
+      if (type === "zset") {
+        const total = await client.zCard(key);
+        const items = await client.zRangeWithScores(key, 0, maxEntries - 1);
+        const entries: RedisKeyEntry[] = items
+          .slice(0, maxEntries)
+          .map((item) => ({ value: item.value, score: String(item.score) }));
+        base.entries = entries;
+        base.totalEntries = total;
+        base.truncated = total > entries.length;
+        return base;
+      }
+
+      // 其余类型（stream、模块自定义类型）：只回类型与元信息，不猜编码、不读内容。
+      return base;
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 读取键内容失败:", error);
+      return null;
+    }
+  }
+
+  /**
+   * 快照导出：`DUMP` 单键的序列化内容（与 RDB 单键编码一致）+ PTTL，base64 承载以便文本传输。
+   *
+   * 二进制必须字节精确：node-redis 默认把 RESP bulk string 按 UTF-8 解码，用于 DUMP 会静默损坏；
+   * 所以这里用类型映射把 BLOB_STRING 改成 Buffer，并在拿到的不是 Buffer 时**拒绝出快照**
+   * （宁可不导，也不能导出一份恢复不了的“看起来像快照”的文件）。
+   */
+  public async dumpKeyForExport(key: string): Promise<RedisDumpOutcome> {
+    if (!this.isAvailable()) return { ok: false, reason: "unavailable" };
+    const client = this.client;
+    if (!client) return { ok: false, reason: "unavailable" };
+    try {
+      const mapped = client.withTypeMapping({ [RESP_TYPES.BLOB_STRING]: Buffer });
+      const [raw, ttlRaw] = await Promise.all([mapped.dump(key), client.pTTL(key)]);
+      if (raw === null || raw === undefined) return { ok: false, reason: "missing" };
+      if (!Buffer.isBuffer(raw)) {
+        logger.error("❌ [Redis] DUMP 未返回二进制内容，已拒绝生成快照");
+        return { ok: false, reason: "binary-unsafe" };
+      }
+      return {
+        ok: true,
+        dumpBase64: raw.toString("base64"),
+        ttlMs: typeof ttlRaw === "number" ? ttlRaw : -1,
+      };
+    } catch (error) {
+      logger.warn("⚠️ [Redis] DUMP 导出失败:", error);
+      return { ok: false, reason: "dump-failed" };
+    }
   }
 
   /**

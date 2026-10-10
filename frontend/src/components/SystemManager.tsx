@@ -22,6 +22,7 @@ import {
   studioSecondaryButtonClassName,
 } from './studioTheme';
 import { csvFileStamp } from '../utils/csv';
+import RedisDataBrowser from './admin/RedisDataBrowser';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '暂无';
@@ -336,7 +337,7 @@ export default function SystemManager() {
         <InfoSectionTitle
           eyebrow="Runtime Operations"
           title="系统管理"
-          description="管理系统调度器、定时清理和 Redis/MongoDB 数据同步，集中查看运行状态与最近执行结果。"
+          description="管理系统调度器、定时清理和 Redis/MongoDB 数据同步，集中查看运行状态、最近执行结果与 Redis 在库数据。"
           icon={FaCog}
           action={
             <Link to="/admin" className={studioSecondaryButtonClassName}>
@@ -665,6 +666,9 @@ export default function SystemManager() {
           </div>
         </InfoPanel>
       ) : null}
+
+      {/* Redis 在库数据（只读浏览 + 快照导出，超管 + 安全会话） */}
+      <RedisDataBrowser />
 
       {/* 系统信息 */}
       <InfoPanel>

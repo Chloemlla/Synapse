@@ -22,6 +22,7 @@ import profileRouter from "./profile";
 import qqGuardRouter from "./qqGuard";
 import registrationInvitesRouter from "./registrationInvites";
 import shortlinksRouter from "./shortlinks";
+import systemRouter from "./system";
 import usersRouter from "./users";
 
 const router = express.Router();
@@ -91,6 +92,8 @@ router.use(mobileTokensRouter);
 // 管理总览的系统级汇总（跨集合计数；默认仅超管，页面授权里可单独放开）。
 router.use(overviewRouter);
 router.use(policyConsentsRouter);
+// 系统级只读运维：Redis 在库数据浏览/快照（超管 + 安全会话，见 routes/admin/system.ts）。
+router.use("/system", systemRouter);
 
 // Bilibili Sync 管理（PiliPlus 配置数据）
 router.get("/bilibili-sync", (req, res) => adminController.getBilibiliSyncRecords(req, res));
