@@ -44,6 +44,33 @@ const LOCK_ID = "migration-runner-lock";
  */
 type Db = NonNullable<typeof mongoose.connection.db>;
 
+/**
+ * 台账集合的**字符串 _id** 形状。
+ *
+ * 为什么不能直接用 `db.collection(LEDGER_COLLECTION)`：`Db` 是从 mongoose 派生的（见上），
+ * 其 collection 默认 schema 的 `_id` 是 `ObjectId`，而本模块的 `_id` 是字符串
+ * （锁定键与迁移 id）。直接传 `{ _id: "..." }` 会被驱动泛型判成
+ * `Condition<ObjectId>` 不兼容（TS2322 / TS2769）。
+ *
+ * 用 `type` 而不是 `interface` 是有意的：驱动要求 `TSchema extends Document`
+ *（即 `{ [key: string]: any }`），只有类型别名的字面量类型才有隐式索引签名。
+ */
+type LedgerSchema = {
+  _id: string;
+  owner?: string;
+  lockedUntil?: number;
+  status?: "applied" | "blocked" | "failed";
+  state?: string;
+  actions?: string[];
+  appliedAt?: Date;
+  updatedAt?: Date;
+  error?: string;
+};
+
+function ledgerCollection(db: Db) {
+  return db.collection<LedgerSchema>(LEDGER_COLLECTION);
+}
+
 export interface MigrationContext {
   db: Db;
 }
@@ -82,6 +109,9 @@ interface LedgerDoc {
   status?: "applied" | "blocked" | "failed";
   state?: string;
   appliedAt?: Date;
+  actions?: string[];
+  error?: string;
+  updatedAt?: Date;
 }
 
 let lastReport: { ranAt: string; results: MigrationResult[] } | null = null;
@@ -101,7 +131,7 @@ async function claimLock(db: Db, ttlMs: number): Promise<string | null> {
   const now = Date.now();
   try {
     // 条件更新 + upsert：文档存在但条件不满足时会走 insert，撞 _id 主键即代表锁已被持有。
-    await db.collection(LEDGER_COLLECTION).findOneAndUpdate(
+    await ledgerCollection(db).findOneAndUpdate(
       { _id: LOCK_ID, lockedUntil: { $lt: now } },
       { $set: { owner, lockedUntil: now + ttlMs } },
       { upsert: true },
@@ -116,15 +146,13 @@ async function claimLock(db: Db, ttlMs: number): Promise<string | null> {
 }
 
 async function releaseLock(db: Db, owner: string): Promise<void> {
-  await db
-    .collection(LEDGER_COLLECTION)
-    .updateOne({ _id: LOCK_ID, owner }, { $set: { lockedUntil: 0, owner: "" } });
+  await ledgerCollection(db).updateOne({ _id: LOCK_ID, owner }, { $set: { lockedUntil: 0, owner: "" } });
 }
 
 async function readLedger(db: Db, id: string): Promise<LedgerDoc | null> {
   // 不写 collection<LedgerDoc> 泛型：裸驱动的 schema 约束要求 extends Document，
   // 用普通形态最稳（与 userService 的裸集合调用保持一致）。
-  const doc = await db.collection(LEDGER_COLLECTION).findOne({ _id: id });
+  const doc = await ledgerCollection(db).findOne({ _id: id });
   return (doc as LedgerDoc | null) ?? null;
 }
 
@@ -133,7 +161,7 @@ async function writeLedger(
   id: string,
   patch: { status: "applied" | "blocked" | "failed"; state: string; actions: string[]; error?: string },
 ): Promise<void> {
-  await db.collection(LEDGER_COLLECTION).updateOne(
+  await ledgerCollection(db).updateOne(
     { _id: id },
     {
       $set: {
