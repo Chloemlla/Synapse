@@ -4,10 +4,20 @@ const mockUsers = new Map<string, MockUser>();
 let mockUserSequence = 10;
 
 const mockCloneUser = (user: MockUser | null | undefined): MockUser | null => (user ? { ...user } : null);
+
+/**
+ * RC-01：与生产语义对齐 —— 已软删除账号不参与查重/查库。
+ * 生产侧 `getUserByUsername`/`getUserByEmail` 都带 `ACTIVE_USER_FILTER`（deletedAt 为 0 或缺失）；
+ * 替身若不跳过已删账号，会出现“deleteUser 后无法用同一用户名重新建号”的假回归
+ * （passkey-token-validation / totp-authentication-fix 两个套件的 beforeEach 正是“先删后建”）。
+ */
+const isMockSoftDeleted = (user: MockUser): boolean =>
+  typeof user.deletedAt === "number" && user.deletedAt > 0;
+
 const mockFindByUsername = (username: string): MockUser | null =>
-  Array.from(mockUsers.values()).find((user) => user.username === username) || null;
+  Array.from(mockUsers.values()).find((user) => user.username === username && !isMockSoftDeleted(user)) || null;
 const mockFindByEmail = (email: string): MockUser | null =>
-  Array.from(mockUsers.values()).find((user) => user.email === email) || null;
+  Array.from(mockUsers.values()).find((user) => user.email === email && !isMockSoftDeleted(user)) || null;
 
 const mockSeedUser = (user: MockUser): void => {
   mockUsers.set(user.id, { ...user });
