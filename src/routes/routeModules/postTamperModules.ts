@@ -487,14 +487,15 @@ export const postTamperRouteModules: RouteModule[] = [
     name: "fbi-wanted-routes",
     path: "/api/fbi-wanted",
     router: fbiWantedRoutes,
-    requiresAuth: true,
+    requiresAuth: "mixed",
     rateLimited: true,
-    isPublic: false,
+    isPublic: "mixed",
     authPolicy: {
       mode: "mixed",
       handlers: ["authenticateToken", "authenticateAdmin", "authenticateSuperAdmin"],
-      note: "G10 最小公开面：/public 读接口也要登录（页面 /fbi-wanted 已改为登录可见）；管理端读需管理员，CRUD/照片写入限超管。",
+      note: "owner 2026-10-11：/public/* 三个读接口改为**未登录可访**（FBI 通缉信息本身是公开数据，公开信息页不应设注册墙）；管理端读需管理员，CRUD/照片写入限超管（均仍挂 authenticateToken）。未登录可访端点已登记到 publicEndpoints，供治理检查核对。",
     },
+    publicEndpoints: ["/public/list", "/public/statistics", "/public/:id"],
     rateLimitPolicy: {
       mode: "route",
       limiters: ["publicLimiter", "adminLimiter", "uploadPhotoLimiter"],

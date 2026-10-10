@@ -94,9 +94,16 @@ export const fbiWantedController = {
       const limitNum = Math.max(1, Math.min(100, Number(limit) || 20));
       const skip = (pageNum - 1) * limitNum;
 
+      // 带搜索词时**不能**再 hint 复合索引：`$text` 查询的 hint 必须包含它实际使用的文本索引，
+      // 否则 MongoDB 直接报错（表现为“一搜索就 500”）。这条在公开面（未登录可访）尤其重要，
+      // 因此这里把 hint 限定在非文本查询上，搜索交给规划器选文本索引。
+      const baseQuery = FBIWantedModel.find(query);
+      const listQuery = query.$text
+        ? baseQuery
+        : baseQuery.hint({ isActive: 1, status: 1, dateAdded: -1 }); // 使用复合索引
+
       const [wanted, total] = await Promise.all([
-        FBIWantedModel.find(query)
-          .hint({ isActive: 1, status: 1, dateAdded: -1 }) // 使用复合索引
+        listQuery
           .sort({ dateAdded: -1 })
           .skip(skip)
           .limit(limitNum)
@@ -120,6 +127,31 @@ export const fbiWantedController = {
         success: false,
         message: "获取通缉犯列表失败",
       });
+    }
+  },
+
+  // 获取单个通缉犯详情（**公开版**，RC/owner 2026-10-11：fbi-wanted 支持未登录访问）。
+  //
+  // 与管理员版的区别只有一处、但必须有：只返回 `isActive: true` 的记录。
+  // 未登录访客不应看到已被下架的数据 —— 那不是权限问题，而是“公开面与后台面”的边界。
+  async getPublicWantedById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      if (!isValidObjectId(id)) {
+        return res.status(400).json({ success: false, message: "无效的ID" });
+      }
+
+      const wanted = await FBIWantedModel.findOne({ _id: id, isActive: true })
+        .select("-isActive -__v")
+        .lean();
+      if (!wanted) {
+        return res.status(404).json({ success: false, message: "未找到该通缉犯记录" });
+      }
+
+      return res.json({ success: true, data: wanted });
+    } catch (error) {
+      logger.error("获取通缉犯详情失败（公开）:", error);
+      return res.status(500).json({ success: false, message: "获取通缉犯详情失败" });
     }
   },
 

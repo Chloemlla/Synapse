@@ -700,7 +700,7 @@ const App: React.FC = () => {
         <Route path="/legacy-api-choice" element={renderProtectedRoute(<LegacyApiChoicePage />)} />
         <Route path="/api-docs" element={renderAdminRoute(<ApiDocs />)} />
         <Route path="/policy" element={renderAnimatedRoute(<PolicyPage />)} />
-        <Route path="/fbi-wanted" element={renderProtectedRoute(<FBIWantedPublic />)} />
+        <Route path="/fbi-wanted" element={renderAnimatedRoute(<FBIWantedPublic />)} />
         <Route path="/welcome" element={renderAnimatedRoute(<WelcomePage />)} />
         <Route path="/login" element={renderAnimatedRoute(<LoginPage />)} />
         <Route path="/register" element={renderAnimatedRoute(<RegisterPage />)} />

@@ -23,7 +23,11 @@ const upload = multer({
   },
 });
 
-// ===== 公开路由（无需认证） =====
+// ===== 公开路由（**无需登录**，owner 2026-10-11 要求） =====
+// 为什么不再挂 authenticateToken（G10 曾经挂过）：FBI 通缉信息本身是公开数据，
+// 要求登录才能看只会把一个公开信息页变成“注册墙”，而它并没有任何用户私有内容。
+// 保留的约束：独立的公开限流器（60/min）+ WAF + IP 封禁仍在；
+// 写操作（下文 admin 路由）完全不变，仍要管理员/超管。
 const publicLimiter = createLimiter({
   windowMs: 60 * 1000,
   max: 60,
@@ -32,9 +36,10 @@ const publicLimiter = createLimiter({
 });
 
 // 公开API - 使用 /public 前缀明确区分
-router.get("/public/list", publicLimiter, authenticateToken, fbiWantedController.getAllWanted);
-router.get("/public/statistics", publicLimiter, authenticateToken, fbiWantedController.getStatistics);
-router.get("/public/:id", publicLimiter, authenticateToken, fbiWantedController.getWantedById);
+router.get("/public/list", publicLimiter, fbiWantedController.getAllWanted);
+router.get("/public/statistics", publicLimiter, fbiWantedController.getStatistics);
+// 详情用公开版本：只返回 isActive 的记录，不把“已下架”的记录通过公开面泄出去。
+router.get("/public/:id", publicLimiter, fbiWantedController.getPublicWantedById);
 
 // ===== 管理员路由（需要认证+管理员权限） =====
 
