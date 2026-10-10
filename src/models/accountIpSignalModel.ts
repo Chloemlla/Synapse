@@ -1,4 +1,8 @@
-import mongoose, { type Document, Schema } from "mongoose";
+import type { Document } from "mongoose";
+// 从 mongoService 取 mongoose 实例（不是直接从 "mongoose" 包）：
+// 集成测试用 jest.mock 替换 mongoService 的连接实例，模型必须绑定到同一个实例，
+// 否则模型挂在未连接的默认连接上（新模型一律沿用 authEmailCooldownModel 的写法）。
+import { mongoose } from "../services/mongoService";
 
 /**
  * 账户 × 登录 IP 的事实表（RC-06「历来登录 IP 的 risk score」）。
@@ -34,7 +38,7 @@ export interface IAccountIpSignal extends Document {
   updatedAt: Date;
 }
 
-const accountIpSignalSchema = new Schema<IAccountIpSignal>(
+const accountIpSignalSchema = new mongoose.Schema<IAccountIpSignal>(
   {
     userId: { type: String, required: true, index: true },
     ipAddress: { type: String, required: true },

@@ -1,4 +1,5 @@
-import mongoose, { type Document, Schema } from "mongoose";
+import type { Document } from "mongoose";
+import { mongoose } from "../services/mongoService";
 
 /**
  * step-up 单次挑战（RC-03 / RC-45 / RC-46）。
@@ -33,7 +34,7 @@ export interface IStepUpChallenge extends Document {
   consumedAt: Date | null;
 }
 
-const stepUpChallengeSchema = new Schema<IStepUpChallenge>(
+const stepUpChallengeSchema = new mongoose.Schema<IStepUpChallenge>(
   {
     challengeId: { type: String, required: true, unique: true },
     userId: { type: String, required: true, index: true },

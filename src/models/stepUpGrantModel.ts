@@ -1,4 +1,5 @@
-import mongoose, { type Document, Schema } from "mongoose";
+import type { Document } from "mongoose";
+import { mongoose } from "../services/mongoService";
 
 /**
  * step-up grant（RC-46 / D22）。
@@ -27,7 +28,7 @@ export interface IStepUpGrant extends Document {
   expiresAt: Date;
 }
 
-const stepUpGrantSchema = new Schema<IStepUpGrant>(
+const stepUpGrantSchema = new mongoose.Schema<IStepUpGrant>(
   {
     grantId: { type: String, required: true, unique: true },
     userId: { type: String, required: true, index: true },
