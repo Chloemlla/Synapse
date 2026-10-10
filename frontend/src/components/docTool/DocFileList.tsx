@@ -29,6 +29,12 @@ export interface DocFileListProps {
   onSelectAll: () => void;
   onSelectNone: () => void;
   onSelectNeeded: () => void;
+  /** 下载单个已存在的产物（不传则不显示下载按钮）。 */
+  onDownload?: (rel: string) => void;
+  /** 打包下载全部已存在的产物（不传则不显示该按钮）。 */
+  onDownloadAll?: (paths: string[]) => void;
+  /** 打包下载进行中（防重复点击）。 */
+  downloading?: boolean;
 }
 
 const DocFileList: React.FC<DocFileListProps> = ({
@@ -39,6 +45,9 @@ const DocFileList: React.FC<DocFileListProps> = ({
   onSelectAll,
   onSelectNone,
   onSelectNeeded,
+  onDownload,
+  onDownloadAll,
+  downloading = false,
 }) => {
   const [query, setQuery] = useState('');
 
@@ -47,6 +56,12 @@ const DocFileList: React.FC<DocFileListProps> = ({
     if (!keyword) return files;
     return files.filter((entry) => entry.rel.toLowerCase().includes(keyword));
   }, [files, query]);
+
+  /** 磁盘上已经有产物的那些条目（与筛选无关：打包该按全部已有产物算）。 */
+  const readyRels = useMemo(
+    () => files.map((entry) => entry.existingRel).filter((rel): rel is string => Boolean(rel)),
+    [files],
+  );
 
   return (
     <section className={`${studioSurfaceClassName} overflow-hidden`}>
@@ -78,6 +93,17 @@ const DocFileList: React.FC<DocFileListProps> = ({
           <button type="button" onClick={onSelectNeeded} className={SELECT_BUTTON_CLASS} disabled={files.length === 0}>
             只选需要生成的
           </button>
+          {onDownloadAll ? (
+            <button
+              type="button"
+              onClick={() => onDownloadAll(readyRels)}
+              className={SELECT_BUTTON_CLASS}
+              disabled={downloading || readyRels.length === 0}
+              title="把列表里已经转换好的文档打包下载（不重新转换）"
+            >
+              {readyRels.length > 0 ? `下载已转换的（${readyRels.length}）` : '下载已转换的'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -91,39 +117,52 @@ const DocFileList: React.FC<DocFileListProps> = ({
         ) : (
           visible.map((entry) => {
             const badge = FRESHNESS_VIEW[entry.status] ?? { label: entry.status, tone: 'slate' as const };
+            // 行容器用 div、勾选区用 label：整行包 label 的话，点「下载」会连带把勾选翻一下。
             return (
-              <label
+              <div
                 key={entry.rel}
-                className="flex cursor-pointer items-start gap-3 border-b border-slate-50 px-4 py-2.5 last:border-b-0 hover:bg-slate-50/60"
+                className="flex items-start gap-3 border-b border-slate-50 px-4 py-2.5 last:border-b-0 hover:bg-slate-50/60"
               >
-                <input
-                  type="checkbox"
-                  aria-label={entry.rel}
-                  className="mt-1 size-4 shrink-0"
-                  checked={selected.includes(entry.rel)}
-                  onChange={() => onToggle(entry.rel)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-mono text-xs text-slate-700" title={entry.rel}>
-                      {entry.rel}
-                    </span>
-                    <span className={studioBadgeClassName(badge.tone)}>{badge.label}</span>
-                    {entry.willRename ? (
-                      <span className={studioBadgeClassName('violet')}>
-                        {`会另存为 ${baseName(entry.destRel)}`}
+                <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    aria-label={entry.rel}
+                    className="mt-1 size-4 shrink-0"
+                    checked={selected.includes(entry.rel)}
+                    onChange={() => onToggle(entry.rel)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-mono text-xs text-slate-700" title={entry.rel}>
+                        {entry.rel}
                       </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-                    <span>{fmtBytes(entry.sizeBytes)}</span>
-                    <span>{fmtTime(entry.mtime)}</span>
-                    <span className="truncate" title={entry.destRel}>
-                      {`输出：${entry.destRel}`}
+                      <span className={studioBadgeClassName(badge.tone)}>{badge.label}</span>
+                      {entry.willRename ? (
+                        <span className={studioBadgeClassName('violet')}>
+                          {`会另存为 ${baseName(entry.destRel)}`}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                      <span>{fmtBytes(entry.sizeBytes)}</span>
+                      <span>{fmtTime(entry.mtime)}</span>
+                      <span className="truncate" title={entry.destRel}>
+                        {`输出：${entry.destRel}`}
+                      </span>
                     </span>
                   </span>
-                </span>
-              </label>
+                </label>
+                {onDownload && entry.existingRel ? (
+                  <button
+                    type="button"
+                    onClick={() => onDownload(entry.existingRel as string)}
+                    className={`${SELECT_BUTTON_CLASS} shrink-0`}
+                    title={`下载 ${baseName(entry.existingRel)}`}
+                  >
+                    下载
+                  </button>
+                ) : null}
+              </div>
             );
           })
         )}

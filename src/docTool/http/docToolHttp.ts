@@ -21,6 +21,7 @@ import type { DocJobRunner } from "../jobs/docJobRunner";
 import type { DocJobStore } from "../jobs/docJobStore";
 import {
   collectMarkdown,
+  describeDefaultReferenceDoc,
   ensureDir,
   isMarkdownFile,
   probePandoc,
@@ -140,6 +141,8 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
     if (rel === null || rel === "") return null;
     const dest = destForFile({ userRoot: c.userRoot, rel, outMode: prefs.outMode, outDir: prefs.outDir });
     const described = describeFile({ src: abs, dest, conflict });
+    // 「现在磁盘上那份」是 rename 之前的候选名：用户点「下载」想要的是它，不是将来会写出的新名字。
+    const existingRel = statOrNull(dest)?.isFile() ? relInside(c.userRoot, dest) ?? undefined : undefined;
     return {
       rel,
       sizeBytes: described.sizeBytes,
@@ -147,6 +150,7 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       destRel: relInside(c.userRoot, described.dest) ?? "",
       status: described.status,
       willRename: described.willRename,
+      ...(existingRel ? { existingRel } : {}),
     };
   };
 
@@ -182,6 +186,8 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         pandoc,
         workDir: deps.workRoot,
         limits: deps.limits,
+        // 服务端自带的默认参考样式（用户没选自己的模板时用它）——只回文件名，不铺容器路径
+        defaultReference: describeDefaultReferenceDoc(),
         // 限额的唯一来源是环境变量（docLimitsFromEnv）：保留该字段是为了前端能说明「来自部署配置」
         limitsSource: "env",
       });
@@ -201,6 +207,8 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         limits: deps.limits,
         prefs: await settingsStore.get(c.user.id),
         templates: listTemplates(c.userRoot),
+        // 用户 prefs.referenceDoc 为空时，转换会落到这份默认样式上，界面必须能说清「不填会用什么」
+        defaultReference: describeDefaultReferenceDoc(),
       });
     } catch (e) {
       res.status(500).json({ ok: false, error: errMessage(e) });
@@ -584,6 +592,38 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       const zip = createZipBuffer(entries);
       res.setHeader("Content-Type", "application/zip");
       res.setHeader("Content-Disposition", `attachment; filename="${job.id}.zip"`);
+      res.send(zip.buffer);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: errMessage(e) });
+    }
+  });
+
+  // ---- 打包下载「已经转换好的文档」 ----
+  // 与 /jobs/:id/bundle 的分工：那个按任务打包本次产物；这个按当前列表里**磁盘上已有**的 .docx 打包，
+  // 用户不必为了拿回旧产物而重跑一次转换。用 POST + JSON body：300 个文件的相对路径塞进 query
+  // 会超出 URL 长度上限，而这里的入参天然是数组。
+  // codeql[js/missing-rate-limiting] 同上
+  router.post("/files/bundle", async (req: Request, res: Response) => {
+    try {
+      const c = ctx(req, res);
+      if (!c) return;
+      const raw = Array.isArray(req.body?.paths) ? (req.body.paths as unknown[]) : [];
+      const entries: Array<{ name: string; sourcePath: string }> = [];
+      for (const item of raw) {
+        if (entries.length >= deps.limits.maxFilesPerJob) break;
+        const rel = sanitizeRelPath(String(item ?? ""));
+        if (!rel) continue;
+        const abs = c.resolveUserPath(rel);
+        if (!abs || !statOrNull(abs)?.isFile()) continue;
+        entries.push({ name: rel, sourcePath: abs });
+      }
+      if (!entries.length) {
+        res.status(400).json({ ok: false, error: "没有可打包的文件" });
+        return;
+      }
+      const zip = createZipBuffer(entries);
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="doc-tool-files.zip"`);
       res.send(zip.buffer);
     } catch (e) {
       res.status(500).json({ ok: false, error: errMessage(e) });

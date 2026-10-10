@@ -146,22 +146,44 @@ describe('DocBatchPanel', () => {
   it('reloads the file list with the chosen conflict strategy', async () => {
     render(<DocBatchPanel />);
     await flush();
-    expect(api.listFiles).toHaveBeenCalledWith({ recursive: true, conflict: 'rename' });
+    // 用 objectContaining：列文件的入参还包括 outMode/outDir（两者都会改变 destRel 预告），
+    // 写死整对象会让每次加入参都变成一次用例返修。
+    expect(api.listFiles).toHaveBeenCalledWith(expect.objectContaining({ recursive: true, conflict: 'rename' }));
 
     api.listFiles.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '覆盖' }));
     await flush();
-    expect(api.listFiles).toHaveBeenCalledWith({ recursive: true, conflict: 'overwrite' });
+    expect(api.listFiles).toHaveBeenCalledWith(expect.objectContaining({ recursive: true, conflict: 'overwrite' }));
 
     api.listFiles.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '跳过' }));
     await flush();
-    expect(api.listFiles).toHaveBeenCalledWith({ recursive: true, conflict: 'skip' });
+    expect(api.listFiles).toHaveBeenCalledWith(expect.objectContaining({ recursive: true, conflict: 'skip' }));
 
     api.listFiles.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '自动重命名' }));
     await flush();
-    expect(api.listFiles).toHaveBeenCalledWith({ recursive: true, conflict: 'rename' });
+    expect(api.listFiles).toHaveBeenCalledWith(expect.objectContaining({ recursive: true, conflict: 'rename' }));
+  });
+
+  it('downloads an existing converted document straight from the list', async () => {
+    render(<DocBatchPanel />);
+    await flush();
+
+    // 「已是最新」那条在磁盘上有产物（existingRel）—— 应该能直接下载，不必再转一次
+    fireEvent.click(screen.getByRole('button', { name: '下载 c.docx' }));
+    expect(api.downloadFile).toHaveBeenCalledWith('out/c.docx');
+
+    // 「待生成」那条没有产物，因此不给下载按钮
+    expect(screen.queryByRole('button', { name: '下载 b.docx' })).not.toBeInTheDocument();
+  });
+
+  it('bundles every existing output in one click', async () => {
+    render(<DocBatchPanel />);
+    await flush();
+
+    fireEvent.click(screen.getByRole('button', { name: '下载已转换的（1）' }));
+    expect(api.downloadExistingBundle).toHaveBeenCalledWith(['out/c.docx']);
   });
 
   it('polls the job to a terminal state and shows statistics with failure details', async () => {

@@ -59,6 +59,13 @@ export interface DocFileEntry {
   mtime: number;
   /** 本次会写出的 .docx 相对路径（rename 模式下已是「会另存为」的名字） */
   destRel: string;
+  /**
+   * 已经存在于磁盘上的 .docx 相对路径（没有则不返回）。
+   * 为什么单独给一个字段而不是复用 destRel：rename 模式下 destRel 是「将来会写出的新名字」，
+   * 而用户想要的「直接下载已转换好的文档」指的是**现在磁盘上那份**（旧名字）。
+   * 两者同名时它就是 destRel，不同名时前端靠它才能下载到旧产物而不必先重转一次。
+   */
+  existingRel?: string;
   status: DocFileFreshness;
   /** true = 目标已存在、本次会另存为新名（界面显示「会另存为 xxx (2).docx」） */
   willRename: boolean;

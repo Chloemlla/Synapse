@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   collectMarkdown,
+  describeDefaultReferenceDoc,
   probePandoc,
   relInside,
+  resolveDefaultReferenceDoc,
   resolveDocToolRoot,
   resolveUserRoot,
   runPandoc,
@@ -107,6 +109,36 @@ describe("doc-tool 冲突命名", () => {
     const cn = path.join(dir, "笔记.docx");
     fs.writeFileSync(cn, "c");
     expect(path.basename(uniqueDestPath(cn))).toBe("笔记 (2).docx");
+  });
+});
+
+describe("doc-tool 默认参考样式文档", () => {
+  it("能从 src/assets 找到仓库自带的那份，并识别为 docx", () => {
+    const abs = resolveDefaultReferenceDoc({});
+    expect(abs).toBeTruthy();
+    expect(path.basename(abs as string)).toBe("reference.docx");
+    const head = fs.readFileSync(abs as string).subarray(0, 2).toString("latin1");
+    expect(head).toBe("PK");
+  });
+
+  it("显式环境变量优先；off/none 能关掉默认样式", () => {
+    const dir = makeTmp("doc-tool-ref-");
+    const custom = path.join(dir, "my.docx");
+    fs.writeFileSync(custom, "PK\u0003\u0004fake");
+    expect(resolveDefaultReferenceDoc({ DOC_TOOL_DEFAULT_REFERENCE_DOC: custom })).toBe(custom);
+    expect(resolveDefaultReferenceDoc({ DOC_TOOL_DEFAULT_REFERENCE_DOC: "off" })).toBeNull();
+    expect(resolveDefaultReferenceDoc({ DOC_TOOL_DEFAULT_REFERENCE_DOC: "none" })).toBeNull();
+  });
+
+  it("指向不存在的文件时返回 null（而不是把坏路径透给 pandoc）", () => {
+    expect(resolveDefaultReferenceDoc({ DOC_TOOL_DEFAULT_REFERENCE_DOC: path.join(os.tmpdir(), "nope-xyz.docx") })).toBeNull();
+  });
+
+  it("describeDefaultReferenceDoc 只回文件名与可用性", () => {
+    const info = describeDefaultReferenceDoc({});
+    expect(info.available).toBe(true);
+    expect(info.name).toBe("reference.docx");
+    expect(describeDefaultReferenceDoc({ DOC_TOOL_DEFAULT_REFERENCE_DOC: "off" })).toEqual({ available: false, name: "" });
   });
 });
 

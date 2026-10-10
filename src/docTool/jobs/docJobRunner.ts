@@ -9,7 +9,13 @@
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { convertOne, destForFile } from "../converter";
-import { relInside, resolveDocToolRoot, resolvePandocBin, resolveUserRoot } from "../runtime";
+import {
+  relInside,
+  resolveDefaultReferenceDoc,
+  resolveDocToolRoot,
+  resolvePandocBin,
+  resolveUserRoot,
+} from "../runtime";
 import {
   docLimitsFromEnv,
   type DocJobItem,
@@ -33,6 +39,11 @@ export interface DocJobRunnerDeps {
   pandocBin?: string;
   /** 覆盖默认 converter（单测注入假实现；生产不传，保证默认实现只有 converter.ts 一处）。 */
   convert?: typeof convertOne;
+  /**
+   * 服务端默认参考样式文档（绝对路径）。默认由 resolveDefaultReferenceDoc() 解析；
+   * 传 null 表示本次显式不要默认样式（单测也靠它验两条分支）。
+   */
+  defaultReferenceDoc?: string | null;
 }
 
 /** 把失败项拼成一行摘要（列表页的 error 字段）。 */
@@ -58,6 +69,8 @@ export class DocJobRunner {
   private limits: DocLimits;
   private pandocBin: string;
   private convert: typeof convertOne;
+  /** 服务端默认参考样式文档的绝对路径；null = 不用默认样式。 */
+  private defaultReferenceDoc: string | null;
 
   constructor(
     private deps: DocJobRunnerDeps,
@@ -67,6 +80,8 @@ export class DocJobRunner {
     this.limits = deps.limits ?? docLimitsFromEnv();
     this.pandocBin = deps.pandocBin ?? resolvePandocBin();
     this.convert = deps.convert ?? convertOne;
+    // 显式传 null 表示「本次不要默认样式」（单测验两条分支用），没传才去探测。
+    this.defaultReferenceDoc = deps.defaultReferenceDoc === undefined ? resolveDefaultReferenceDoc() : deps.defaultReferenceDoc;
   }
 
   /** 幂等入队：HTTP 的创建与重启恢复可能各入队一次，重复入队会让同一个任务跑两遍（产物互相覆盖）。 */
@@ -174,9 +189,11 @@ export class DocJobRunner {
     if (relInside(userRoot, dest) === null) {
       return { rel, destRel: "", status: "failed", error: "输出路径越界（outDir 非法？）" };
     }
-    // 参考样式模板同样只能来自该用户自己的目录：越界就当作没设置，而不是把路径透给 pandoc
+    // 参考样式文档：用户自己的模板优先（且必须在自己目录内），没选就用服务端自带的默认一份。
+    // 默认那份是仓库里的二进制资源（不属任何用户目录），所以绕开 relInside 判定。
     const referenceAbs = input.referenceDoc ? path.resolve(userRoot, input.referenceDoc) : "";
-    const referenceDoc = referenceAbs && relInside(userRoot, referenceAbs) !== null ? referenceAbs : undefined;
+    const userReference = referenceAbs && relInside(userRoot, referenceAbs) !== null ? referenceAbs : undefined;
+    const referenceDoc = userReference ?? this.defaultReferenceDoc ?? undefined;
 
     const outcome = await this.convert({
       pandoc: this.pandocBin,

@@ -148,6 +148,57 @@ async function runScenario(
   return { store, final: await waitTerminal(store, record.id), converted };
 }
 
+describe("DocJobRunner 参考样式默认值", () => {
+  /** 造一个带指定默认样式的 runner，返回它实际传给 converter 的 referenceDoc。 */
+  const referenceUsed = async (
+    userReference: string,
+    defaultReferenceDoc: string | null,
+  ): Promise<string | undefined> => {
+    const store = createFakeStore();
+    const record = makeRecord(`job-ref-${++seq}`, ["inbox/a.md"]);
+    record.input = { ...record.input, referenceDoc: userReference };
+    await store.create(record);
+    let seen: string | undefined;
+    const runner = new DocJobRunner({
+      store,
+      workRoot,
+      limits: TEST_LIMITS,
+      pandocBin: "pandoc-test",
+      defaultReferenceDoc,
+      convert: async (opts: ConvertOpts): Promise<ConvertResult> => {
+        seen = opts.referenceDoc;
+        return { status: "ok", dest: opts.dest, ms: 1 };
+      },
+    });
+    runner.enqueue(record.id);
+    await waitTerminal(store, record.id);
+    return seen;
+  };
+
+  it("用户没选模板时用服务端默认的那份", async () => {
+    const used = await referenceUsed("", "/srv/defaults/reference.docx");
+    expect(used).toBe("/srv/defaults/reference.docx");
+  });
+
+  it("用户选了自己的模板时以用户为准", async () => {
+    const userRoot = resolveUserRoot("user-1", workRoot);
+    fs.mkdirSync(path.join(userRoot, "templates"), { recursive: true });
+    fs.writeFileSync(path.join(userRoot, "templates", "mine.docx"), "PK\u0003\u0004mine");
+    const used = await referenceUsed("templates/mine.docx", "/srv/defaults/reference.docx");
+    expect(used).toBe(path.join(userRoot, "templates", "mine.docx"));
+  });
+
+  it("用户给的模板越界时回落默认样式（不把越界路径透给 pandoc）", async () => {
+    const used = await referenceUsed("../../etc/passwd", "/srv/defaults/reference.docx");
+    expect(used).toBe("/srv/defaults/reference.docx");
+  });
+
+  it("默认样式被显式关掉时不再传 referenceDoc", async () => {
+    const used = await referenceUsed("", null);
+    expect(used).toBeUndefined();
+  });
+});
+
 describe("DocJobRunner", () => {
   it("逐文件落库 items 与 progress：全成功判 succeeded", async () => {
     const { store, final, converted } = await runScenario(

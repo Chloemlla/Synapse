@@ -162,6 +162,13 @@ function buildApp(overrides: Partial<DocToolRouterDeps> = {}) {
 
 const asUser = (test: request.Test, userId = "user-1"): request.Test => test.set("x-test-user", userId);
 
+/**
+ * 二进制响应体的容错取法：superagent 对未知类型走 binary parser（res.body 是 Buffer），
+ * 对个别类型则只给 res.text。两种都归一成 Buffer，免得用例因为解析器选择而假红。
+ */
+const bodyBuffer = (res: { body?: unknown; text?: string }): Buffer =>
+  Buffer.isBuffer(res.body) ? res.body : Buffer.from(res.text ?? "", "binary");
+
 describe("doc-tool HTTP 鉴权", () => {
   it("未登录时读接口一律 401", async () => {
     const app = buildApp();
@@ -183,6 +190,91 @@ describe("doc-tool HTTP 鉴权", () => {
     expect(res.status).toBe(401);
     expect(fakeStore.records.size).toBe(0);
     expect(fakeRunner.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("doc-tool HTTP 已转换产物的直接下载", () => {
+  it("列表里已存在的 .docx 会给出 existingRel（供界面直接下载）", async () => {
+    write("user-1", "inbox/a.md");
+    write("user-1", "out/a.docx", "docx-bytes");
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/files?conflict=skip&outMode=custom&outDir=out"));
+    expect(res.status).toBe(200);
+    const entry = res.body.files.find((f: { rel: string }) => f.rel === "inbox/a.md");
+    expect(entry.existingRel).toBe("out/a.docx");
+    expect(entry.status).toBe("fresh");
+  });
+
+  it("rename 模式下 existingRel 仍是磁盘上那份（不是将来会写出的新名字）", async () => {
+    write("user-1", "inbox/a.md");
+    write("user-1", "out/a.docx", "old");
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/files?conflict=rename&outMode=custom&outDir=out"));
+    expect(res.status).toBe(200);
+    const entry = res.body.files.find((f: { rel: string }) => f.rel === "inbox/a.md");
+    // destRel 会被写成「a (2).docx」（预告新名），而 existingRel 指向现存的那份 —— 两者必须分开
+    expect(entry.destRel).toBe("out/a (2).docx");
+    expect(entry.existingRel).toBe("out/a.docx");
+  });
+
+  it("没有产物时不返回 existingRel", async () => {
+    write("user-1", "inbox/a.md");
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/files?conflict=rename&outMode=custom&outDir=out"));
+    expect(res.status).toBe(200);
+    expect(res.body.files[0].existingRel).toBeUndefined();
+  });
+
+  it("单个产物下载返回文件内容，Content-Disposition 只带 basename", async () => {
+    write("user-1", "out/a.docx", "docx-bytes");
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/files/download?path=out/a.docx"));
+    expect(res.status).toBe(200);
+    expect(bodyBuffer(res).toString("utf8")).toBe("docx-bytes");
+    expect(String(res.headers["content-disposition"])).toContain("a.docx");
+  });
+
+  it("产物不存在时 404（不是 500）", async () => {
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/files/download?path=out/nope.docx"));
+    expect(res.status).toBe(404);
+  });
+
+  it("打包下载已存在的产物：返回 zip 且含各条目", async () => {
+    write("user-1", "out/a.docx", "AAA");
+    write("user-1", "out/sub/b.docx", "BBB");
+    const res = await asUser(
+      request(buildApp())
+        .post("/api/doc-tool/files/bundle")
+        .send({ paths: ["out/a.docx", "out/sub/b.docx"] }),
+    );
+    expect(res.status).toBe(200);
+    expect(String(res.headers["content-type"])).toContain("zip");
+    const body = bodyBuffer(res);
+    expect(body.subarray(0, 4).toString("latin1")).toBe("PK\u0003\u0004");
+    expect(body.includes(Buffer.from("out/a.docx"))).toBe(true);
+  });
+
+  it("打包时越界路径静默跳过；全不可用则 400", async () => {
+    const outOfBounds = await asUser(
+      request(buildApp())
+        .post("/api/doc-tool/files/bundle")
+        .send({ paths: ["../../etc/passwd"] }),
+    );
+    expect(outOfBounds.status).toBe(400);
+
+    write("user-1", "out/a.docx", "AAA");
+    const filtered = await asUser(
+      request(buildApp())
+        .post("/api/doc-tool/files/bundle")
+        .send({ paths: ["../../etc/passwd", "out/a.docx"] }),
+    );
+    expect(filtered.status).toBe(200);
+    expect(bodyBuffer(filtered).includes(Buffer.from("out/a.docx"))).toBe(true);
+  });
+
+  it("别人的产物不能下载（目录隔离）", async () => {
+    write("user-1", "out/a.docx", "docx-bytes");
+    const res = await asUser(
+      request(buildApp()).get("/api/doc-tool/files/download?path=out/a.docx"),
+      "user-2",
+    );
+    expect(res.status).toBe(404);
   });
 });
 

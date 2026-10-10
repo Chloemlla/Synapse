@@ -45,6 +45,8 @@ export interface DocFileEntry {
   mtime: number;
   /** 本次会写出的 .docx 相对路径（rename 模式下已是「会另存为」的名字） */
   destRel: string;
+  /** 磁盘上已存在的 .docx 相对路径（没有则不返回）——列表里「下载」直接拿它 */
+  existingRel?: string;
   status: DocFileFreshness;
   /** true = 目标已存在、本次会另存为新名（界面显示「会另存为 xxx (2).docx」） */
   willRename: boolean;
@@ -130,12 +132,27 @@ export interface ReferenceTemplate {
   mtime: number;
 }
 
+export interface ReferenceTemplate {
+  name: string;
+  rel: string;
+  sizeBytes: number;
+  mtime: number;
+}
+
+/** 服务端自带的默认参考样式（用户没选自己的模板时用它）。只回文件名，不含容器路径。 */
+export interface DefaultReferenceInfo {
+  available: boolean;
+  name: string;
+}
+
 export interface DocSettingsView {
   pandoc: PandocStatus;
   limits: DocLimits;
   prefs: DocPrefs;
   /** 用户工作目录内的模板清单（生成过的 reference.docx） */
   templates: ReferenceTemplate[];
+  /** 不填参考样式时实际会用的那份（服务端内置） */
+  defaultReference?: DefaultReferenceInfo;
 }
 
 export interface DocUploadRejected {
@@ -297,6 +314,12 @@ export const docToolApi = {
   downloadFile: async (rel: string): Promise<void> => {
     const res = await api.get(`${BASE}/files/download${toQuery({ path: rel })}`, { responseType: 'blob' });
     saveBlob(res.data as Blob, fileNameOf(rel));
+  },
+
+  /** 打包下载列表里**已经存在**的产物（不重新转换）。paths 为空时后端会拒。 */
+  downloadExistingBundle: async (paths: string[]): Promise<void> => {
+    const res = await api.post(`${BASE}/files/bundle`, { paths }, { responseType: 'blob' });
+    saveBlob(res.data as Blob, 'doc-tool-已转换.zip');
   },
 
   /** 用 pandoc 内置的 reference.docx 生成一份默认样式模板，之后可在 Word 里改字体/标题样式。 */

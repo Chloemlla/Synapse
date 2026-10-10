@@ -17,6 +17,19 @@ import type { PandocStatus } from "./types";
 const DEFAULT_ROOT_DIR = path.join("data", "doc-tool");
 /** pandoc 在镜像里的固定落点（Dockerfile 的 pandoc 层），也是「留空即自动探测」的第一顺位。 */
 const IMAGE_PANDOC_PATH = "/usr/local/bin/pandoc";
+/**
+ * 服务端自带的默认参考样式文档（用户没选自己的模板时用它）。
+ * 放在 src/assets/ 下：`scripts/copy-templates.js` 会搬进 dist，
+ * `scripts/copy-obfuscated-payload.js` 再把非 JS 资源同步进 dist-obfuscated（生产跑的那份）。
+ * 解析顺序照 cdictDonationService 的既有做法：__dirname 相对（dist 与 dist-obfuscated 都算）
+ * → cwd/src/assets（ts-node 本地跑）→ cwd/dist/assets。
+ */
+const DEFAULT_REFERENCE_REL = path.join("assets", "doc-tool", "reference.docx");
+const DEFAULT_REFERENCE_CANDIDATES = [
+  path.join(__dirname, "..", DEFAULT_REFERENCE_REL),
+  path.join(process.cwd(), "src", DEFAULT_REFERENCE_REL),
+  path.join(process.cwd(), "dist", DEFAULT_REFERENCE_REL),
+];
 /** pandoc 单次调用的兜底超时：串行队列里一个挂死的进程会挡住后面所有任务，宁可判失败。 */
 const DEFAULT_PANDOC_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -141,6 +154,35 @@ export function sanitizeRelPath(input: string): string | null {
   if (segments.some((segment) => segment === "..")) return null;
   const normalized = segments.join("/");
   return normalized.length > 512 ? null : normalized;
+}
+
+/**
+ * 解析服务端默认参考样式文档：
+ *   1) `DOC_TOOL_DEFAULT_REFERENCE_DOC` 显式指定（绝对路径；置为 `off`/`none` 可关闭默认样式）；
+ *   2) 上述候选路径里第一个真实存在的文件；
+ *   3) 都没有 → 返回 null（等价于只带 pandoc 内嵌样式）。
+ * 返回的是**绝对路径**，它不属于任何用户目录，因此不能走 relInside 守界（那个是给用户目录用的）。
+ */
+export function resolveDefaultReferenceDoc(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = (env.DOC_TOOL_DEFAULT_REFERENCE_DOC || "").trim();
+  if (/^(off|none|false|0)$/i.test(configured)) return null;
+  if (configured) {
+    const abs = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    return statOrNull(abs)?.isFile() ? abs : null;
+  }
+  for (const candidate of DEFAULT_REFERENCE_CANDIDATES) {
+    if (statOrNull(candidate)?.isFile()) return candidate;
+  }
+  return null;
+}
+
+/** 给界面看的默认参考样式信息：只回文件名（容器绝对路径没必要铺给用户）。 */
+export function describeDefaultReferenceDoc(env: NodeJS.ProcessEnv = process.env): {
+  available: boolean;
+  name: string;
+} {
+  const abs = resolveDefaultReferenceDoc(env);
+  return { available: Boolean(abs), name: abs ? path.basename(abs) : "" };
 }
 
 /** 单个文件名的清洗：去路径分隔、控制字符与 Windows 保留字符，限长，拒绝 "."/".."。 */

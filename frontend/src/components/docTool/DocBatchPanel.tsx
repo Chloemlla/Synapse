@@ -33,6 +33,7 @@ import {
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../studioTheme';
+import { POLICY_CONSENT_REQUIRED_EVENT } from '../../utils/policyConsent';
 import DocFileList from './DocFileList';
 import DocJobProgress from './DocJobProgress';
 
@@ -65,7 +66,23 @@ const relativePathOf = (file: File): string => {
   return relative && relative.trim() ? relative : file.name;
 };
 
+/**
+ * 页面级门禁在 DocConvertPage 里包住本面板，但用户可能在页面已开着的时候被撑销同意
+ * （或在另一个标签页里撑销），此时接口会回 403 + POLICY_CONSENT_REQUIRED。
+ * 面板自己没法把外面的门禁换回同意清单，所以发一个窗口事件让门禁重查：
+ * 比在面板里再实现一份同意清单少一大块重复代码。
+ * 靠稳定 code 识别（不靠文案匹配）。
+ */
+const isConsentRequired = (err: unknown): boolean => {
+  const response = (err as { response?: { status?: number; data?: { code?: string } } } | undefined)?.response;
+  return response?.status === 403 && response?.data?.code === 'POLICY_CONSENT_REQUIRED';
+};
+
 const describeError = (err: unknown, fallback: string): string => {
+  if (isConsentRequired(err)) {
+    window.dispatchEvent(new CustomEvent(POLICY_CONSENT_REQUIRED_EVENT));
+    return '该功能需要先同意相关条款，已为你打开同意清单。';
+  }
   const status = (err as { response?: { status?: number } } | undefined)?.response?.status;
   if (status === 401) return '请先登录后再使用批量转换。';
   if (status === 413) return '文件超过上传大小上限，请分批上传。';
@@ -92,6 +109,8 @@ const DocBatchPanel: React.FC = () => {
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<DocJobRecord | null>(null);
   const [visibilityTick, setVisibilityTick] = useState(0);
+  /** 列表侧打包下载进行中：防重复点击，也让按钮能显示忙碌态。 */
+  const [downloadingExisting, setDownloadingExisting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
@@ -194,8 +213,31 @@ const DocBatchPanel: React.FC = () => {
     void loadFiles(conflict, recursive, 'needed');
   }, [job, jobId, conflict, recursive, loadFiles]);
 
-  const changeConflict = (mode: ConflictMode) => {
-    if (mode === conflict) return;
+  /** 列表里单个已存在的产物：直接下载，不重新转换。 */
+  const handleDownloadExisting = (rel: string) => {
+    void docToolApi
+      .downloadFile(rel)
+      .catch((err) => {
+        setError(describeError(err, '下载失败，请稍后重试。'));
+        console.error('doc-tool 下载产物失败:', err);
+      });
+  };
+
+  /** 列表里全部已存在的产物：后端打包成 zip（避免为拿回旧产物再转一次）。 */
+  const handleDownloadAllExisting = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    setDownloadingExisting(true);
+    try {
+      await docToolApi.downloadExistingBundle(paths);
+    } catch (err) {
+      setError(describeError(err, '打包下载失败，请稍后重试。'));
+      console.error('doc-tool 打包下载已转换文件失败:', err);
+    } finally {
+      setDownloadingExisting(false);
+    }
+  };
+
+  const changeConflict = (mode: ConflictMode) => {    if (mode === conflict) return;
     setConflict(mode);
     // destRel / willRename 都随策略变化，必须带着新 conflict 重新列一次。
     void loadFiles(mode, recursive, 'all');
@@ -337,6 +379,7 @@ const DocBatchPanel: React.FC = () => {
   const pandoc = settings?.pandoc;
   const limits = settings?.limits;
   const templates = settings?.templates ?? [];
+  const serverDefaultReference = settings?.defaultReference;
   const engineUnavailable = pandoc ? !pandoc.available : false;
   const pandocLabel = pandoc
     ? pandoc.available
@@ -457,6 +500,9 @@ const DocBatchPanel: React.FC = () => {
         onSelectAll={() => setSelected(files.map((entry) => entry.rel))}
         onSelectNone={() => setSelected([])}
         onSelectNeeded={() => setSelected(files.filter((entry) => entry.status !== 'fresh').map((entry) => entry.rel))}
+        onDownload={handleDownloadExisting}
+        onDownloadAll={handleDownloadAllExisting}
+        downloading={downloadingExisting}
       />
 
       <section className={`${studioSurfaceClassName} space-y-4 p-4 sm:p-5`}>
@@ -537,7 +583,9 @@ const DocBatchPanel: React.FC = () => {
               onChange={(event) => setReferenceDoc(event.target.value)}
               aria-label="参考样式文档"
             >
-              <option value="">不使用（用 pandoc 默认样式）</option>
+              <option value="">
+                {serverDefaultReference?.available ? `服务器默认样式（${serverDefaultReference.name}）` : '不使用（用 pandoc 默认样式）'}
+              </option>
               {templates.map((template) => (
                 <option key={template.rel} value={template.rel}>
                   {template.name}
@@ -556,7 +604,7 @@ const DocBatchPanel: React.FC = () => {
           </button>
         </div>
         <p className="text-[11px] leading-5 text-slate-400">
-          参考样式决定正文中英文字体与标题层级样式；生成后可在 Word 里改好再替换。
+          参考样式决定正文中英文字体与标题层级样式；不选就用服务器自带的那份，也可以自己生成一份在 Word 里改好再替换。
         </p>
       </section>
 
