@@ -30,6 +30,10 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     description: '',
     startTime: '',
     endTime: '',
+    maxDrawsPerUser: 1,
+    chanceCost: 0,
+    guaranteeEveryDraws: 0,
+    guaranteeCategory: 'epic' as 'common' | 'rare' | 'epic' | 'legendary',
     prizes: [] as LotteryPrize[]
   });
   const [loading, setLoading] = useState(false);
@@ -76,7 +80,19 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
 
     setLoading(true);
     try {
-      const result = await lotteryApi.createLotteryRound(formData);
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        maxDrawsPerUser: formData.maxDrawsPerUser,
+        chanceCost: formData.chanceCost,
+        ...(formData.guaranteeEveryDraws >= 1
+          ? { guarantee: { everyDraws: formData.guaranteeEveryDraws, category: formData.guaranteeCategory } }
+          : {}),
+        prizes: formData.prizes,
+      };
+      const result = await lotteryApi.createLotteryRound(payload);
       setNotification({ message: '抽奖轮次创建成功', type: 'success' });
       if (result.warning) {
         setNotification({ message: `后端已自动修正部分数据：${result.warning}`, type: 'warning' });
@@ -94,6 +110,10 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
           description: '',
           startTime: '',
           endTime: '',
+          maxDrawsPerUser: 1,
+          chanceCost: 0,
+          guaranteeEveryDraws: 0,
+          guaranteeCategory: 'epic',
           prizes: []
         });
       }
@@ -168,6 +188,59 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
               required
             />
+          </div>
+        </div>
+
+        {/* 多次抽奖 / 机会成本 / 硬保底 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">每人可抽次数</label>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={formData.maxDrawsPerUser}
+              onChange={(e) => setFormData(prev => ({ ...prev, maxDrawsPerUser: Math.max(1, parseInt(e.target.value) || 1) }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            />
+            <p className="mt-1 text-xs text-slate-500">默认 1 次；大于 1 后可多次抽取（受库存与机会限制）。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">每次消耗机会</label>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={formData.chanceCost}
+              onChange={(e) => setFormData(prev => ({ ...prev, chanceCost: Math.max(0, parseInt(e.target.value) || 0) }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            />
+            <p className="mt-1 text-xs text-slate-500">0 = 免费抽（不检查机会余额）。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">硬保底（每 N 抽必出）</label>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={formData.guaranteeEveryDraws}
+              onChange={(e) => setFormData(prev => ({ ...prev, guaranteeEveryDraws: Math.max(0, parseInt(e.target.value) || 0) }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            />
+            <p className="mt-1 text-xs text-slate-500">0 = 不启用；否则每抽满 N 次至少出右侧稀有度。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">保底稀有度</label>
+            <select
+              value={formData.guaranteeCategory}
+              onChange={(e) => setFormData(prev => ({ ...prev, guaranteeCategory: e.target.value as typeof prev.guaranteeCategory }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            >
+              <option value="common">普通</option>
+              <option value="rare">稀有</option>
+              <option value="epic">史诗</option>
+              <option value="legendary">传说</option>
+            </select>
           </div>
         </div>
 

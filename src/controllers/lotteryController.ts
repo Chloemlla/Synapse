@@ -47,13 +47,19 @@ const MAX_PRIZE_QUANTITY = 1_000_000;
  */
 function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string | undefined, isAdmin: boolean): T {
   if (isAdmin) return round;
-  const { participants, winners, ...rest } = round;
+  const { participants, winners, drawCounts, ...rest } = round;
+  const drawsUsed = userId ? Math.max(0, Math.floor(drawCounts?.[userId] ?? 0)) : 0;
+  const maxDraws = Math.max(1, Math.floor(round.maxDrawsPerUser || 1));
   return {
     ...rest,
     participants: [],
     hasParticipated: Boolean(userId) && participants.includes(userId as string),
     participantCount: participants.length,
     winnerCount: winners.length,
+    maxDrawsPerUser: maxDraws,
+    chanceCost: Math.max(0, Math.floor(round.chanceCost || 0)),
+    drawsUsed,
+    remainingDraws: Math.max(0, maxDraws - drawsUsed),
     winners: winners.map(({ userId: _ignored, ...winner }) => winner),
   } as unknown as T;
 }
@@ -163,6 +169,25 @@ export class LotteryController {
         }
         warnings.push("奖品概率已自动归一化。");
       }
+      // 抽奖机会与多次抽奖（可选，默认保持历史「每人免费抽一次」行为）
+      const maxDrawsPerUser = boundedInt(req.body?.maxDrawsPerUser, { min: 1, max: 1000, fallback: 1 });
+      const chanceCost = boundedInt(req.body?.chanceCost, { min: 0, max: 100000, fallback: 0 });
+      // 硬保底（可选）：每 everyDraws 抽至少出 category 及以上稀有度
+      let guarantee: { everyDraws: number; category: LotteryPrize["category"] } | undefined;
+      const rawGuarantee = req.body?.guarantee;
+      if (rawGuarantee && typeof rawGuarantee === "object") {
+        const everyDraws = boundedInt((rawGuarantee as Record<string, unknown>).everyDraws, {
+          min: 1,
+          max: 100000,
+          fallback: 0,
+        });
+        const category = (rawGuarantee as Record<string, unknown>).category;
+        if (everyDraws < 1 || typeof category !== "string" || !PRIZE_CATEGORIES.has(category)) {
+          res.status(400).json({ success: false, error: "保底配置非法（需要 everyDraws ≥ 1 与合法稀有度）" });
+          return;
+        }
+        guarantee = { everyDraws, category: category as LotteryPrize["category"] };
+      }
       const roundData = {
         name,
         description,
@@ -170,6 +195,9 @@ export class LotteryController {
         endTime: new Date(endTime).getTime(),
         isActive: true,
         prizes: normalizedPrizes,
+        maxDrawsPerUser,
+        chanceCost,
+        ...(guarantee ? { guarantee } : {}),
       };
       const round = await lotteryService.createLotteryRound(roundData);
       res.json({
@@ -350,6 +378,48 @@ export class LotteryController {
         success: false,
         error: SERVER_ERROR_MESSAGE,
       });
+    }
+  }
+
+  // 获取抽奖机会余额（懒发放当天免费机会）
+  public async getChances(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      const chances = await lotteryService.getChances(userId);
+      res.json({ success: true, data: chances });
+    } catch (error) {
+      logger.error("获取抽奖机会失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 发放抽奖机会（仅超管）
+  public async grantChances(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const targetUserId = firstString(req.body?.userId);
+      const amount = boundedInt(req.body?.amount, { min: 1, max: 100000, fallback: 0 });
+      if (!targetUserId || amount < 1) {
+        res.status(400).json({ success: false, error: "参数非法（需要 userId 与正整数 amount）" });
+        return;
+      }
+      const balance = await lotteryService.grantChances(targetUserId, amount, {
+        userId: req.user?.id || "",
+        username: req.user?.username || "",
+        role: req.user?.role || "",
+        ip: req.ip,
+      });
+      res.json({ success: true, data: { userId: targetUserId, balance }, message: "抽奖机会已发放" });
+    } catch (error) {
+      logger.error("发放抽奖机会失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
     }
   }
 

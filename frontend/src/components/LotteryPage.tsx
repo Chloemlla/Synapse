@@ -102,6 +102,12 @@ export const LotteryRoundCard: React.FC<{
   const hasParticipated = round.hasParticipated ?? (user?.id ? round.participants.includes(user.id) : false);
   const participantCount = round.participantCount ?? round.participants.length;
   const winnerCount = round.winnerCount ?? round.winners.length;
+  // 剩余可抽次数：优先用服务端算好的（多人多次轮次），旧响应回落「参与过=0，否则 1」。
+  const maxDraws = Math.max(1, Math.floor(round.maxDrawsPerUser ?? 1));
+  const drawsUsed = Math.max(0, Math.floor(round.drawsUsed ?? (hasParticipated ? 1 : 0)));
+  const remainingDraws = Math.max(0, Math.floor(round.remainingDraws ?? (hasParticipated ? 0 : 1)));
+  const drawsExhausted = remainingDraws <= 0;
+  const chanceCost = Math.max(0, Math.floor(round.chanceCost ?? 0));
   // 有库存且有概率的奖品才真正参与抽取；概率和 < 100% 时剩余部分是未中奖概率。
   const totalWinProbability = Math.min(
     1,
@@ -112,7 +118,7 @@ export const LotteryRoundCard: React.FC<{
   const isActive = round.isActive && Date.now() >= round.startTime && Date.now() <= round.endTime;
   const captchaUnavailable = !isAdmin && (captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token));
   const handleParticipate = async () => {
-    if (submittingRef.current || loading || !isActive || hasParticipated) return;
+    if (submittingRef.current || loading || !isActive || drawsExhausted) return;
     if (captchaUnavailable) return;
     submittingRef.current = true;
     let requestSent = true;
@@ -153,6 +159,8 @@ export const LotteryRoundCard: React.FC<{
         <div className={`${lotteryTileClass} p-3 text-sm leading-6 text-slate-600`}>
           <div>参与人数: {participantCount}</div>
           <div>中奖人数: {winnerCount}</div>
+          {maxDraws > 1 && <div>每人可抽: {maxDraws} 次（已抽 {drawsUsed} 次）</div>}
+          {chanceCost > 0 && <div>每次消耗: {chanceCost} 次机会</div>}
         </div>
       </div>
 
@@ -178,15 +186,25 @@ export const LotteryRoundCard: React.FC<{
           <div className="flex flex-col gap-2">
             <motion.button
               onClick={() => { void handleParticipate(); }}
-              disabled={!isActive || hasParticipated || loading || captchaUnavailable}
+              disabled={!isActive || drawsExhausted || loading || captchaUnavailable}
               className={`${
-                !isActive || hasParticipated || loading || captchaUnavailable
+                !isActive || drawsExhausted || loading || captchaUnavailable
                   ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500'
                   : studioPrimaryButtonClassName
               }`}
               whileTap={{ scale: 0.95 }}
             >
-              {isParticipatingRound ? '抽奖中...' : hasParticipated ? '已参与' : '立即参与'}
+              {isParticipatingRound
+                ? '抽奖中...'
+                : !isActive
+                  ? '已结束'
+                  : drawsExhausted
+                    ? maxDraws > 1
+                      ? '次数已用完'
+                      : '已参与'
+                    : maxDraws > 1
+                      ? `立即参与（剩 ${remainingDraws} 次）`
+                      : '立即参与'}
             </motion.button>
 
             {/* 人机验证组件（非管理员用户）：三家供应商由 /admin/captcha-providers 统一调控 */}
@@ -413,6 +431,7 @@ const LotteryPage: React.FC = () => {
     userRecord,
     leaderboard,
     statistics,
+    chances,
     loading,
     participating,
     participatingRoundId,
@@ -497,6 +516,7 @@ const LotteryPage: React.FC = () => {
                 <InfoBadge tone="sky">公平公正</InfoBadge>
                 <InfoBadge tone="emerald">实时轮次</InfoBadge>
                 <InfoBadge tone="amber">透明记录</InfoBadge>
+                {user && chances && <InfoBadge tone="violet">抽奖机会 {chances.balance} 次</InfoBadge>}
               </>
             }
           />

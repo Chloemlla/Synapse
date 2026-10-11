@@ -50,6 +50,10 @@ router.get("/statistics", lotteryLimiter, authenticateToken, lotteryController.g
 // 需要认证的接口（已限流）
 // 涉及数据库读取：用户抽奖记录
 router.get("/user/record", authenticateToken, lotteryLimiter, lotteryController.getUserRecord.bind(lotteryController));
+// 涉及数据库读取/写入：抽奖机会余额（懒发放当日免费额度）
+router.get("/chances", authenticateToken, lotteryLimiter, lotteryController.getChances.bind(lotteryController));
+// 发放抽奖机会（仅超管）
+router.post("/chances/grant", authenticateToken, lotteryLimiter, lotteryController.grantChances.bind(lotteryController));
 // 涉及数据库写入：参与抽奖（更新用户、轮次等）
 router.post(
   "/rounds/:roundId/participate",

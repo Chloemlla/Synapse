@@ -183,7 +183,7 @@ describe("participateInLottery", () => {
   });
 
   it("重复参与被拒，不写库", async () => {
-    const round = makeRound({ participants: ["u1"], prizes: [prize({ id: "p1", probability: 1 })] });
+    const round = makeRound({ drawCounts: { u1: 1 }, prizes: [prize({ id: "p1", probability: 1 })] });
     mockGetAllRounds.mockResolvedValue([round]);
 
     await expect(lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user")).rejects.toThrow(
@@ -261,7 +261,7 @@ describe("幂等与审计（PRD §4）", () => {
   });
 
   it("业务拒绝会释放幂等键，同一 requestId 可安全重试", async () => {
-    const round = makeRound({ participants: ["u1"], prizes: [prize({ id: "p1", probability: 1 })] });
+    const round = makeRound({ drawCounts: { u1: 1 }, prizes: [prize({ id: "p1", probability: 1 })] });
     mockGetAllRounds.mockResolvedValue([round]);
 
     await expect(
@@ -307,6 +307,99 @@ describe("幂等与审计（PRD §4）", () => {
     expect(mockAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ detail: expect.objectContaining({ outcome: "no_win", prizeId: null }) }),
     );
+  });
+});
+
+describe("多次抽奖 / 保底 / 机会", () => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+
+  it("maxDrawsPerUser 允许多次抽取，次数用尽后拒绝", async () => {
+    const round = makeRound({
+      maxDrawsPerUser: 2,
+      prizes: [prize({ id: "p1", probability: 1, quantity: 5, remaining: 5 })],
+    });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const first = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+    expect(first).toMatchObject({ prizeId: "p1" });
+    const patch = mockUpdateRound.mock.calls[0][1] as Record<string, any>;
+    expect(patch.drawCounts).toEqual({ u1: 1 });
+    expect(patch.participants).toEqual(["u1"]);
+
+    // 第二次：把最新轮次换成已抽 2 次，验证上限
+    mockGetAllRounds.mockResolvedValue([
+      makeRound({ maxDrawsPerUser: 2, drawCounts: { u1: 2 }, prizes: [prize({ id: "p1", probability: 1 })] }),
+    ]);
+    await expect(lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user")).rejects.toThrow(
+      "您已经参与过此轮抽奖",
+    );
+  });
+
+  it("多抽时 participants 去重（仍是“参与过的用户”列表）", async () => {
+    const round = makeRound({
+      maxDrawsPerUser: 3,
+      drawCounts: { u1: 1 },
+      participants: ["u1"],
+      prizes: [prize({ id: "p1", probability: 1, quantity: 5, remaining: 5 })],
+    });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+
+    const patch = mockUpdateRound.mock.calls[0][1] as Record<string, any>;
+    expect(patch.participants).toEqual(["u1"]);
+    expect(patch.drawCounts).toEqual({ u1: 2 });
+  });
+
+  it("保底：到指定抽数时至少出该稀有度（没有符合条件的有库存奖品则回落普通抽取）", async () => {
+    const common = prize({ id: "common", probability: 0.99, category: "common", quantity: 5, remaining: 5 });
+    const epic = prize({ id: "epic", probability: 0.0001, category: "epic", quantity: 5, remaining: 5 });
+    const round = makeRound({ guarantee: { everyDraws: 2, category: "epic" }, drawCounts: { u1: 1 }, prizes: [common, epic] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+    expect(winner).toMatchObject({ prizeId: "epic" });
+  });
+
+  it("机会不足时拒绝抽取，不写库", async () => {
+    const round = makeRound({ chanceCost: 1, prizes: [prize({ id: "p1", probability: 1 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+    mockGetUserRecord.mockResolvedValue({ chanceBalance: 0, chanceDay: today, history: [] });
+
+    await expect(lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user")).rejects.toThrow(
+      "抽奖机会不足",
+    );
+    expect(mockUpdateRound).not.toHaveBeenCalled();
+  });
+
+  it("消耗机会后抽取成功（余额按 cost 扣减）", async () => {
+    const round = makeRound({ chanceCost: 2, prizes: [prize({ id: "p1", probability: 1 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+    mockGetUserRecord.mockResolvedValue({ chanceBalance: 5, chanceDay: today, history: [] });
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+    expect(winner).toMatchObject({ prizeId: "p1" });
+    expect(mockUpdateUserRecord).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ chanceBalance: 3, chanceDay: today }),
+    );
+  });
+
+  it("当天首次读机会时发放每日免费额度并落天键", async () => {
+    mockGetUserRecord.mockResolvedValue({ history: [] });
+    const result = await lotteryService.getChances("u1");
+
+    expect(result).toEqual({ balance: 0, dailyFree: 0 });
+    expect(mockUpdateUserRecord).toHaveBeenCalledWith("u1", expect.objectContaining({ chanceDay: today, chanceBalance: 0 }));
+  });
+
+  it("超管发放机会：余额累加并写审计", async () => {
+    mockGetUserRecord.mockResolvedValue({ chanceBalance: 2, chanceDay: today, history: [] });
+    const balance = await lotteryService.grantChances("u1", 3, { userId: "admin", username: "root", role: "superadmin" });
+
+    expect(balance).toBe(5);
+    expect(mockUpdateUserRecord).toHaveBeenCalledWith("u1", expect.objectContaining({ chanceBalance: 5 }));
+    expect(mockAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "lottery.chances_grant", module: "lottery" }));
   });
 });
 

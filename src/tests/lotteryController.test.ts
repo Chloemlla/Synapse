@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 const mockCreateRound = jest.fn();
 const mockGetRounds = jest.fn();
 const mockParticipate = jest.fn();
+const mockGetChances = jest.fn();
+const mockGrantChances = jest.fn();
 
 jest.mock("../middleware/auth", () => ({
   isAdminRole: (role: unknown) => role === "admin" || role === "superadmin",
@@ -28,6 +30,8 @@ jest.mock("../services/lotteryService", () => ({
     deleteAllRounds: jest.fn(),
     getBlockchainData: jest.fn(),
     participateInLottery: (...a: unknown[]) => mockParticipate(...a),
+    getChances: (...a: unknown[]) => mockGetChances(...a),
+    grantChances: (...a: unknown[]) => mockGrantChances(...a),
   },
 }));
 
@@ -73,6 +77,8 @@ beforeEach(() => {
   mockCreateRound.mockResolvedValue({ id: "r1" });
   mockGetRounds.mockResolvedValue([]);
   mockParticipate.mockResolvedValue(null);
+  mockGetChances.mockResolvedValue({ balance: 3, dailyFree: 1 });
+  mockGrantChances.mockResolvedValue(5);
 });
 
 describe("createLotteryRound 入参硬化", () => {
@@ -83,6 +89,32 @@ describe("createLotteryRound 入参硬化", () => {
     expect(res.body.success).toBe(true);
     const arg = mockCreateRound.mock.calls[0][0] as any;
     expect(arg.prizes[0]).toMatchObject({ remaining: 2, quantity: 2, probability: 0.5 });
+    expect(arg.maxDrawsPerUser).toBe(1);
+    expect(arg.chanceCost).toBe(0);
+  });
+
+  it("接受多次抽奖 / 机会成本 / 硬保底配置", async () => {
+    const res = createRes();
+    await lotteryController.createLotteryRound(
+      superadminReq(validBody({ maxDrawsPerUser: 5, chanceCost: 2, guarantee: { everyDraws: 10, category: "epic" } })),
+      res as any,
+    );
+
+    const arg = mockCreateRound.mock.calls[0][0] as any;
+    expect(arg.maxDrawsPerUser).toBe(5);
+    expect(arg.chanceCost).toBe(2);
+    expect(arg.guarantee).toEqual({ everyDraws: 10, category: "epic" });
+  });
+
+  it("保底配置非法时拒绝", async () => {
+    const res = createRes();
+    await lotteryController.createLotteryRound(
+      superadminReq(validBody({ guarantee: { everyDraws: 0, category: "epic" } })),
+      res as any,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(mockCreateRound).not.toHaveBeenCalled();
   });
 
   it("概率和 > 1 时归一化并回传 warning", async () => {
@@ -211,5 +243,45 @@ describe("参与抽奖的幂等入参", () => {
     );
 
     expect(mockParticipate.mock.calls[0][6]).toMatchObject({ requestId: undefined, ip: "1.2.3.4" });
+  });
+});
+
+describe("抽奖机会", () => {
+  it("查余额：未登录 401，登录后回余额", async () => {
+    const anon = createRes();
+    await lotteryController.getChances({ user: undefined } as any, anon as any);
+    expect(anon.statusCode).toBe(401);
+
+    const res = createRes();
+    await lotteryController.getChances({ user: { id: "u1" } } as any, res as any);
+    expect(res.body).toEqual({ success: true, data: { balance: 3, dailyFree: 1 } });
+  });
+
+  it("发放：非超管 403，超管调用服务并带回操作者信息", async () => {
+    const denied = createRes();
+    await lotteryController.grantChances(
+      { user: { id: "u1", role: "user" }, body: { userId: "u2", amount: 5 } } as any,
+      denied as any,
+    );
+    expect(denied.statusCode).toBe(403);
+    expect(mockGrantChances).not.toHaveBeenCalled();
+
+    const res = createRes();
+    await lotteryController.grantChances(
+      { user: { id: "a1", username: "root", role: "superadmin" }, body: { userId: "u2", amount: 5 }, ip: "1.2.3.4" } as any,
+      res as any,
+    );
+    expect(mockGrantChances).toHaveBeenCalledWith("u2", 5, expect.objectContaining({ userId: "a1", role: "superadmin" }));
+    expect(res.body).toMatchObject({ success: true, data: { userId: "u2", balance: 5 } });
+  });
+
+  it("发放：参数非法时 400", async () => {
+    const res = createRes();
+    await lotteryController.grantChances(
+      { user: { id: "a1", role: "superadmin" }, body: { userId: "", amount: 0 } } as any,
+      res as any,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(mockGrantChances).not.toHaveBeenCalled();
   });
 });

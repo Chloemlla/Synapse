@@ -1874,6 +1874,8 @@ docker-compose up -d
 - 抽奖请求幂等（PRD §4）：`POST /rounds/:id/participate` 接受 `requestId`，同一 id 的重放直接返回上次结果、不再抽一次也不重复扣库存（`sharedStateStore` 幂等键，业务拒绝自动释放可重试）；前端每次参与携带 `crypto.randomUUID()`
 - 抽奖审计流水：每次抽奖往既有 `audit_logs` 写 `lottery.draw`（`module: lottery`），detail 含随机数快照、落点奖品与扣减后库存，可在管理端审计查看器按模块筛选（复用 60 天保留与不可变存储，不另造流水表）
 - 抽奖管理页清掉不再使用的 AES 解密死代码与无用导入
+- 抽奖机会与多抽：轮次可配 `maxDrawsPerUser`（默认 1）与 `chanceCost`（默认 0 = 免费抽）；抽奖机会账本支持每日免费（`LOTTERY_DAILY_FREE_CHANCES`，自然日懒发放）、超管发放（`POST /api/lottery/chances/grant`，写 `lottery.chances_grant` 审计）与原子扣减 + 落库失败自动退机会（`GET /api/lottery/chances` 查余额）
+- 抽奖硬保底：轮次可配 `guarantee = { everyDraws, category }`，按本轮个人次数每 N 抽必出指定稀有度及以上（无符合条件的有库存奖品时回落普通抽取）；页面显示剩余可抽次数与每次消耗，管理端创建轮次可配次数/机会/保底
 - 抽奖中台 PRD 与实施清单落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（产品蓝图 + 看门狗设计 + 分阶段勾选清单）
 - 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
 - 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`

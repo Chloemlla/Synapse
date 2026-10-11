@@ -7,6 +7,9 @@ export interface BlockchainData {
   difficulty?: number;
 }
 
+// 奖品稀有度
+export type LotteryPrizeCategory = 'common' | 'rare' | 'epic' | 'legendary';
+
 // 奖品类型
 export interface LotteryPrize {
   id: string;
@@ -17,7 +20,13 @@ export interface LotteryPrize {
   quantity: number;
   remaining: number;
   image?: string;
-  category: 'common' | 'rare' | 'epic' | 'legendary';
+  category: LotteryPrizeCategory;
+}
+
+/** 硬保底：本轮个人每抽到 everyDraws 的整数倍时，至少出 category 及以上稀有度。 */
+export interface LotteryGuarantee {
+  everyDraws: number;
+  category: LotteryPrizeCategory;
 }
 
 // 抽奖轮次类型
@@ -43,6 +52,16 @@ export interface LotteryRound {
   participantCount?: number;
   /** 中奖人数（普通用户视图用）。 */
   winnerCount?: number;
+  /** 每人本轮最大抽奖次数（默认 1）。 */
+  maxDrawsPerUser?: number;
+  /** 每次抽奖消耗的抽奖机会数（0 = 不消耗）。 */
+  chanceCost?: number;
+  /** 硬保底配置。 */
+  guarantee?: LotteryGuarantee;
+  /** 本人在本轮已抽次数（普通用户视图用）。 */
+  drawsUsed?: number;
+  /** 本人本轮剩余可抽次数（普通用户视图用）。 */
+  remainingDraws?: number;
 }
 
 // 中奖者类型
@@ -63,6 +82,8 @@ export interface UserLotteryRecord {
   winCount: number;
   lastDrawTime: number;
   totalValue: number;
+  /** 抽奖机会余额（自然日重置）。 */
+  chanceBalance?: number;
   history: {
     roundId: string;
     prizeId: string;
@@ -70,6 +91,12 @@ export interface UserLotteryRecord {
     drawTime: number;
     value: number;
   }[];
+}
+
+// 抽奖机会余额
+export interface LotteryChances {
+  balance: number;
+  dailyFree: number;
 }
 
 // 统计信息类型

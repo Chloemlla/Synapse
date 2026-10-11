@@ -4,6 +4,7 @@ import {
   LotteryWinner, 
   UserLotteryRecord, 
   LotteryStatistics,
+  LotteryChances,
   LotteryApiResponse 
 } from '../types/lottery';
 import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
@@ -108,6 +109,19 @@ export async function getUserRecord(): Promise<UserLotteryRecord | null> {
   return apiRequest<UserLotteryRecord | null>('/user/record');
 }
 
+// 抽奖机会余额（后端会懒发放当日免费额度）
+export async function getChances(): Promise<LotteryChances> {
+  return apiRequest<LotteryChances>('/chances');
+}
+
+// 发放抽奖机会（超管）
+export async function grantChances(userId: string, amount: number): Promise<{ userId: string; balance: number }> {
+  return apiRequest<{ userId: string; balance: number }>('/chances/grant', {
+    method: 'POST',
+    body: JSON.stringify({ userId, amount }),
+  });
+}
+
 // 获取排行榜
 export async function getLeaderboard(limit: number = 10): Promise<UserLotteryRecord[]> {
   return apiRequest<UserLotteryRecord[]>(`/leaderboard?limit=${limit}`);
@@ -125,6 +139,9 @@ export async function createLotteryRound(roundData: {
   startTime: string;
   endTime: string;
   prizes: any[];
+  maxDrawsPerUser?: number;
+  chanceCost?: number;
+  guarantee?: { everyDraws: number; category: string };
 }): Promise<{ round: LotteryRound; warning?: string }> {
   const envelope = await apiRequestEnvelope<LotteryRound>('/rounds', {
     method: 'POST',

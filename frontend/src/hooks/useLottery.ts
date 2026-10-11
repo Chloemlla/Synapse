@@ -3,7 +3,8 @@ import {
   LotteryRound,
   LotteryWinner,
   UserLotteryRecord,
-  LotteryStatistics
+  LotteryStatistics,
+  LotteryChances
 } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { useAuth } from './useAuth';
@@ -16,6 +17,7 @@ export function useLottery() {
   const [userRecord, setUserRecord] = useState<UserLotteryRecord | null>(null);
   const [leaderboard, setLeaderboard] = useState<UserLotteryRecord[]>([]);
   const [statistics, setStatistics] = useState<LotteryStatistics | null>(null);
+  const [chances, setChances] = useState<LotteryChances | null>(null);
   const [loading, setLoading] = useState(false);
   // F5-37：参与抽奖不应把整份轮次列表换成整页 spinner，单独用一个状态表示「正在参与」
   const [participating, setParticipating] = useState(false);
@@ -84,6 +86,19 @@ export function useLottery() {
     }
   }, []);
 
+  // 抽奖机会余额（后端会懒发放当日免费额度）。失败不阻塞抽奖，仅展示为空。
+  const fetchChances = useCallback(async () => {
+    if (!user) {
+      setChances(null);
+      return;
+    }
+    try {
+      setChances(await lotteryApi.getChances());
+    } catch {
+      setChances(null);
+    }
+  }, [user]);
+
   // 参与抽奖。返回 null = 未中奖（概率和 < 1 的剩余区间），不是失败。
   const participateInLottery = useCallback(async (roundId: string, cfToken?: string, captchaProvider?: string): Promise<LotteryWinner | null> => {
     if (!user) {
@@ -106,7 +121,8 @@ export function useLottery() {
         fetchActiveRounds(),
         fetchUserRecord(),
         fetchLeaderboard(),
-        fetchStatistics()
+        fetchStatistics(),
+        fetchChances()
       ]);
 
       return winner;
@@ -114,7 +130,7 @@ export function useLottery() {
       setParticipating(false);
       setParticipatingRoundId(null);
     }
-  }, [user, fetchActiveRounds, fetchUserRecord, fetchLeaderboard, fetchStatistics]);
+  }, [user, fetchActiveRounds, fetchUserRecord, fetchLeaderboard, fetchStatistics, fetchChances]);
 
   // 获取轮次详情
   const getRoundDetails = useCallback(async (roundId: string): Promise<LotteryRound> => {
@@ -136,7 +152,8 @@ export function useLottery() {
           fetchActiveRounds(),
           fetchAllRounds(),
           fetchLeaderboard(),
-          fetchStatistics()
+          fetchStatistics(),
+          fetchChances()
         ]);
       } catch (err) {
         console.error('初始化抽奖数据失败:', err);
@@ -146,12 +163,13 @@ export function useLottery() {
     };
 
     initializeData();
-  }, [fetchActiveRounds, fetchAllRounds, fetchLeaderboard, fetchStatistics]);
+  }, [fetchActiveRounds, fetchAllRounds, fetchLeaderboard, fetchStatistics, fetchChances]);
 
-  // 当用户登录状态改变时，获取用户记录
+  // 当用户登录状态改变时，获取用户记录与机会余额
   useEffect(() => {
     fetchUserRecord();
-  }, [fetchUserRecord]);
+    fetchChances();
+  }, [fetchUserRecord, fetchChances]);
 
   return {
     // 数据
@@ -160,6 +178,7 @@ export function useLottery() {
     userRecord,
     leaderboard,
     statistics,
+    chances,
     loading,
     participating,
     participatingRoundId,
@@ -169,6 +188,7 @@ export function useLottery() {
     fetchActiveRounds,
     fetchAllRounds,
     fetchUserRecord,
+    fetchChances,
     fetchLeaderboard,
     fetchStatistics,
     participateInLottery,

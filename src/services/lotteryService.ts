@@ -9,6 +9,8 @@ import { readCaptchaChallenge } from "./turnstile/challenge";
 import { sharedStateStore } from "./sharedStateStore";
 
 // 抽奖相关类型定义
+export type LotteryPrizeCategory = "common" | "rare" | "epic" | "legendary";
+
 export interface LotteryPrize {
   id: string;
   name: string;
@@ -18,7 +20,13 @@ export interface LotteryPrize {
   quantity: number; // 奖品数量
   remaining: number; // 剩余数量
   image?: string;
-  category: "common" | "rare" | "epic" | "legendary";
+  category: LotteryPrizeCategory;
+}
+
+/** 保底规则：本轮个人每抽到 everyDraws 的整数倍时，至少出 category 及以上稀有度的奖品。 */
+export interface LotteryGuarantee {
+  everyDraws: number;
+  category: LotteryPrizeCategory;
 }
 
 export interface LotteryRound {
@@ -33,6 +41,14 @@ export interface LotteryRound {
   winners: LotteryWinner[];
   blockchainHeight: number;
   seed: string;
+  /** 每人本轮最大抽奖次数（默认 1 = 历史行为）。 */
+  maxDrawsPerUser?: number;
+  /** 每次抽奖消耗的抽奖机会数（默认 0 = 不消耗，保持历史「免费抽」行为）。 */
+  chanceCost?: number;
+  /** 硬保底配置（可选）。 */
+  guarantee?: LotteryGuarantee;
+  /** 每个用户本轮已抽次数（保底与次数上限的依据；普通用户视图不回传）。 */
+  drawCounts?: Record<string, number>;
 }
 
 export interface LotteryWinner {
@@ -51,6 +67,10 @@ export interface UserLotteryRecord {
   winCount: number;
   lastDrawTime: number;
   totalValue: number;
+  /** 抽奖机会余额（自然日按 LOTTERY_DAILY_FREE_CHANCES 重置）。 */
+  chanceBalance?: number;
+  /** 上次发放每日免费机会的上海天键（YYYY-MM-DD）。 */
+  chanceDay?: string;
   history: {
     roundId: string;
     prizeId: string;
@@ -85,6 +105,30 @@ interface LotteryDrawOutcome {
 
 /** 幂等结果保留 10 分钟：足够覆盖客户端/代理的重复投递与短时重试。 */
 const LOTTERY_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+/** 抽奖机会账本的锁 TTL（与轮次锁分开：同用户跨轮次抽奖也要串行化机会扣减）。 */
+const LOTTERY_CHANCE_LOCK_TTL_MS = 10 * 1000;
+
+/** 稀有度排序（保底「至少该等级」的判据）。 */
+const PRIZE_CATEGORY_RANK: Record<LotteryPrizeCategory, number> = {
+  common: 0,
+  rare: 1,
+  epic: 2,
+  legendary: 3,
+};
+
+function readNonNegativeIntEnv(name: string, fallback: number, max: number): number {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed) || Math.floor(parsed) < 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+/** 每日免费抽奖机会（env 可配，默认 0 = 不发放，保持历史免费抽行为）。 */
+export const LOTTERY_DAILY_FREE_CHANCES = readNonNegativeIntEnv("LOTTERY_DAILY_FREE_CHANCES", 0, 1000);
+
+/** 上海自然日天键（与 userService 的用量归日同口径），机会按此天级别重置。 */
+function shanghaiDayKey(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(now);
+}
 
 /**
  * 按配置概率抽奖（纯函数，便于单测）。
@@ -110,6 +154,33 @@ export function pickPrize(prizes: LotteryPrize[], randomValue: number): LotteryP
 
   // total > 1 时因浮点误差可能刚好走完，兜底给最后一项（相对权重下的合法结果）。
   return total > 1 ? available[available.length - 1] : null;
+}
+
+/**
+ * 保底抽取：只从「稀有度 >= minCategory 且有库存」的奖品里选，且**必中**其中一项
+ * （按相对权重归一，不受各自绝对概率和为 1 的约束——否则概率很低的稀有奖会抽不中，"保底"名不副实）。
+ * 没有符合条件的奖品时返回 null（调用方回落普通抽取，不能让保底把活动抽死）。
+ */
+export function pickGuaranteedPrize(
+  prizes: LotteryPrize[],
+  minCategory: LotteryPrizeCategory,
+  randomValue: number,
+): LotteryPrize | null {
+  const minRank = PRIZE_CATEGORY_RANK[minCategory] ?? 0;
+  const eligible = prizes.filter(
+    (prize) => prize.remaining > 0 && prize.probability > 0 && (PRIZE_CATEGORY_RANK[prize.category] ?? 0) >= minRank,
+  );
+  if (eligible.length === 0) return null;
+  const total = eligible.reduce((sum, prize) => sum + prize.probability, 0);
+  if (!Number.isFinite(total) || total <= 0) return null;
+
+  const target = randomValue * total;
+  let cumulative = 0;
+  for (const prize of eligible) {
+    cumulative += prize.probability;
+    if (target < cumulative) return prize;
+  }
+  return eligible[eligible.length - 1];
 }
 
 class LotteryService {
@@ -171,6 +242,7 @@ class LotteryService {
       id: crypto.randomUUID(),
       participants: [],
       winners: [],
+      drawCounts: {},
       blockchainHeight: blockchainData.height,
       seed: blockchainData.hash,
     };
@@ -294,7 +366,7 @@ class LotteryService {
       throw new Error("抽奖时间未到或已结束");
     }
 
-    if (round.participants.includes(userId)) {
+    if (Math.max(0, Math.floor(round.drawCounts?.[userId] ?? 0)) >= Math.max(1, Math.floor(round.maxDrawsPerUser || 1))) {
       throw new Error("您已经参与过此轮抽奖");
     }
 
@@ -344,7 +416,9 @@ class LotteryService {
     if (drawNow < latest.startTime || drawNow > latest.endTime) {
       throw new Error("抽奖时间未到或已结束");
     }
-    if (latest.participants.includes(userId)) {
+    const latestMaxDraws = Math.max(1, Math.floor(latest.maxDrawsPerUser || 1));
+    const drawsSoFar = Math.max(0, Math.floor(latest.drawCounts?.[userId] ?? 0));
+    if (drawsSoFar >= latestMaxDraws) {
       throw new Error("您已经参与过此轮抽奖");
     }
     // 「没库存」与「未中奖」必须分开：前者是运营/配置问题（明确报错），后者是正常结果。
@@ -353,8 +427,27 @@ class LotteryService {
       throw new Error("没有可用的奖品");
     }
 
+    // 保底：每抽到 guarantee.everyDraws 的整数倍（按本轮个人次数）至少出指定稀有度；
+    // 没有符合条件的有库存奖品时回落普通抽取，不让保底把活动抽死。
+    const drawIndex = drawsSoFar + 1;
+    const guarantee = latest.guarantee;
+    const guaranteedPrize =
+      guarantee && guarantee.everyDraws > 0 && drawIndex % guarantee.everyDraws === 0
+        ? pickGuaranteedPrize(latest.prizes, guarantee.category, randomValue)
+        : null;
     // 概率和 < 1 时剩余区间表示「未中奖」：参与照样计数，只是不进 winners。
-    const prize = pickPrize(latest.prizes, randomValue);
+    const prize = guaranteedPrize ?? pickPrize(latest.prizes, randomValue);
+
+    // 抽奖机会：chanceCost > 0 的轮次按次原子消耗；管理员豁免（与其它豁免同一口径）。
+    let chanceConsumed = 0;
+    const chanceCost = Math.max(0, Math.floor(latest.chanceCost || 0));
+    if (!isAdmin && chanceCost > 0) {
+      const consumed = await this.consumeChances(userId, chanceCost);
+      if (!consumed.ok) {
+        throw new Error(`抽奖机会不足（需要 ${chanceCost} 次，当前 ${consumed.balance} 次）`);
+      }
+      chanceConsumed = chanceCost;
+    }
 
     // 获取最新的区块链数据（仅作展示信息）
     const blockchainData = await this.getBlockchainData();
@@ -374,21 +467,34 @@ class LotteryService {
     const nextPrizes = prize
       ? latest.prizes.map((item) => (item.id === prize.id ? { ...item, remaining: item.remaining - 1 } : item))
       : latest.prizes;
-    const nextParticipants = [...latest.participants, userId];
+    // participants 是「本轮参与过的用户」去重列表；drawCounts 才是每人次数。
+    const nextParticipants = latest.participants.includes(userId)
+      ? latest.participants
+      : [...latest.participants, userId];
     const nextWinners = winner ? [...latest.winners, winner] : latest.winners;
+    const nextDrawCounts = { ...(latest.drawCounts || {}), [userId]: drawIndex };
 
     // G7-08: 把本次抽奖的所有状态变更真正落库。此前这里只改内存对象，请求一结束
     // 全部丢弃，导致可无限抽奖、库存永不扣减、中奖记录不存在。
-    await updateRound(roundId, {
-      prizes: nextPrizes,
-      participants: nextParticipants,
-      winners: nextWinners,
-      blockchainHeight: blockchainData.height,
-      seed: blockchainData.hash,
-    });
+    try {
+      await updateRound(roundId, {
+        prizes: nextPrizes,
+        participants: nextParticipants,
+        winners: nextWinners,
+        drawCounts: nextDrawCounts,
+        blockchainHeight: blockchainData.height,
+        seed: blockchainData.hash,
+      });
 
-    // 无论中没中奖都记一次参与：记录里的 participationCount 才能反映真实参与次数。
-    await this.updateUserRecord(userId, username, { winner, prize, roundId, drawTime: drawNow });
+      // 无论中没中奖都记一次参与：记录里的 participationCount 才能反映真实参与次数。
+      await this.updateUserRecord(userId, username, { winner, prize, roundId, drawTime: drawNow });
+    } catch (error) {
+      // 扣了机会但状态没落库：把机会退回去，不出现「扣了机会没抽成」。
+      if (chanceConsumed > 0) {
+        await this.refundChances(userId, chanceConsumed).catch(() => undefined);
+      }
+      throw error;
+    }
 
     if (winner) {
       logger.info(`用户 ${username} 在轮次 ${roundId} 中获得了 ${winner.prizeName}`);
@@ -472,6 +578,86 @@ class LotteryService {
     return getUserRecord(userId);
   }
 
+  /** 读取机会余额（会懒发放当天的免费机会）。 */
+  public async getChances(userId: string): Promise<{ balance: number; dailyFree: number }> {
+    const balance = await this.ensureDailyChances(userId);
+    return { balance, dailyFree: LOTTERY_DAILY_FREE_CHANCES };
+  }
+
+  /** 管理员给用户发抽奖机会；返回发放后余额，并写一条审计。 */
+  public async grantChances(
+    userId: string,
+    amount: number,
+    operator?: { userId: string; username: string; role: string; ip?: string },
+  ): Promise<number> {
+    const delta = Math.max(1, Math.floor(amount));
+    const balance = await sharedStateStore.withLock(
+      `lottery:chances:${userId}`,
+      LOTTERY_CHANCE_LOCK_TTL_MS,
+      async () => {
+        const record = await getUserRecord(userId);
+        const next = Math.max(0, Math.floor(record?.chanceBalance ?? 0)) + delta;
+        await updateUserRecord(userId, { userId, chanceBalance: next });
+        return next;
+      },
+    );
+    if (operator) {
+      void AuditLogService.log({
+        userId: operator.userId,
+        username: operator.username,
+        role: operator.role,
+        action: "lottery.chances_grant",
+        module: "lottery",
+        targetId: userId,
+        targetName: userId,
+        result: "success",
+        detail: { amount: delta, balance },
+        ip: operator.ip || "",
+        method: "POST",
+      }).catch(() => undefined);
+    }
+    return balance;
+  }
+
+  /** 懒发放每日免费机会：同一天不重复发放。 */
+  private async ensureDailyChances(userId: string): Promise<number> {
+    return sharedStateStore.withLock(`lottery:chances:${userId}`, LOTTERY_CHANCE_LOCK_TTL_MS, async () => {
+      const record = await getUserRecord(userId);
+      const day = shanghaiDayKey();
+      if (record?.chanceDay === day) return Math.max(0, Math.floor(record?.chanceBalance ?? 0));
+      const balance = LOTTERY_DAILY_FREE_CHANCES;
+      await updateUserRecord(userId, { userId, chanceDay: day, chanceBalance: balance });
+      return balance;
+    });
+  }
+
+  /** 原子扣减机会（跨轮次也在同一把用户锁内串行）。 */
+  private async consumeChances(userId: string, cost: number): Promise<{ ok: boolean; balance: number }> {
+    return sharedStateStore.withLock(`lottery:chances:${userId}`, LOTTERY_CHANCE_LOCK_TTL_MS, async () => {
+      const record = await getUserRecord(userId);
+      const day = shanghaiDayKey();
+      const sameDay = record?.chanceDay === day;
+      const balance = sameDay ? Math.max(0, Math.floor(record?.chanceBalance ?? 0)) : LOTTERY_DAILY_FREE_CHANCES;
+      if (balance < cost) {
+        // 跨日先归零/发免费额度再回拒因，余额展示才是当日的。
+        if (!sameDay) await updateUserRecord(userId, { userId, chanceDay: day, chanceBalance: balance });
+        return { ok: false, balance };
+      }
+      const next = balance - cost;
+      await updateUserRecord(userId, { userId, chanceDay: day, chanceBalance: next });
+      return { ok: true, balance: next };
+    });
+  }
+
+  /** 抽奖落库失败时把已扣的机会退回。 */
+  private async refundChances(userId: string, cost: number): Promise<void> {
+    await sharedStateStore.withLock(`lottery:chances:${userId}`, LOTTERY_CHANCE_LOCK_TTL_MS, async () => {
+      const record = await getUserRecord(userId);
+      const next = Math.max(0, Math.floor(record?.chanceBalance ?? 0)) + cost;
+      await updateUserRecord(userId, { userId, chanceBalance: next });
+    });
+  }
+
   // 获取轮次详情
   public async getRoundDetails(roundId: string): Promise<LotteryRound | null> {
     const rounds = await this.getLotteryRounds();
@@ -499,6 +685,7 @@ class LotteryService {
     // 清空参与者和获奖者
     round.participants = [];
     round.winners = [];
+    round.drawCounts = {};
 
     // 替换原有本地读写/Map操作，全部通过lotteryStorage接口实现
     // await this.saveData(); // 移除此行，因为不再直接保存
@@ -506,6 +693,7 @@ class LotteryService {
       prizes: round.prizes,
       participants: round.participants,
       winners: round.winners,
+      drawCounts: round.drawCounts,
     });
     logger.info(`重置抽奖轮次: ${roundId}`);
   }
