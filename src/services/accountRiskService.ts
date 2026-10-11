@@ -676,3 +676,55 @@ export async function countSuperadmins(): Promise<number> {
     return 0;
   }
 }
+
+/**
+ * 账户级滥用信号的**唯一写入入口**（RC-10 / RC-20）。
+ *
+ * 为什么要收成一个函数：账户聚合（`evaluateAccountRisk`）按 `ACCOUNT_ABUSE_*` **前缀**计数，
+ * 前缀是唯一契约 —— 让各调用点各自拼 eventType，早晚会出现 `ABUSE_ACCOUNT_*`、
+ * `ACCOUNT_BLOCKED` 这类拼法，聚合就会静默漏掉它们（表现为“拦了但风险分不动”）。
+ *
+ * 写入失败只记日志：滥用信号是增强信息，不能因为审计表写不进去把已决定的拒绝变成 500。
+ */
+export interface AccountAbuseSignalInput {
+  userId?: string;
+  /** 必须带 `ACCOUNT_ABUSE_` 前缀；未传时用 `ACCOUNT_ABUSE_UNSPECIFIED`。 */
+  eventType?: string;
+  /** 设备指纹（实例化时若没有，用调用点标识，如 "step-up"）。 */
+  fingerprint?: string;
+  action?: string;
+  reason?: string;
+  riskScore?: number;
+  flags?: readonly string[];
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export function recordAccountAbuseSignal(input: AccountAbuseSignalInput): void {
+  if (!mongoReady()) return;
+  const eventType =
+    typeof input.eventType === "string" && input.eventType.startsWith(ACCOUNT_ABUSE_EVENT_PREFIX)
+      ? input.eventType
+      : `${ACCOUNT_ABUSE_EVENT_PREFIX}_UNSPECIFIED`;
+
+  void SecurityEvent.create({
+    deviceFingerprint: String(input.fingerprint || "account-abuse").slice(0, 256),
+    userId: input.userId || undefined,
+    eventType,
+    eventData: {
+      action: input.action,
+      reason: input.reason,
+      flags: Array.isArray(input.flags) ? input.flags.slice(0, 32) : undefined,
+    },
+    riskScore: typeof input.riskScore === "number" && Number.isFinite(input.riskScore) ? input.riskScore : 0,
+    ipAddress: input.ipAddress || "",
+    userAgent: String(input.userAgent || "").slice(0, 512),
+    createdAt: new Date(),
+  }).catch((error) => {
+    logger.warn("[AccountRisk] 账户滥用信号写入失败", {
+      userId: input.userId,
+      eventType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}

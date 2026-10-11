@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { TurnstileService } from "../services/turnstileService";
 import { readCaptchaChallenge } from "../services/turnstile/challenge";
 import { createStepUpGrant, discardStepUpGrant } from "../services/stepUpService";
+import { recordAccountAbuseSignal } from "../services/accountRiskService";
 import { getAccountRiskState } from "../services/userService";
 import type { AuthenticatedRequest } from "../types/authRequest";
 import { getClientIP } from "../utils/ipUtils";
@@ -64,6 +65,18 @@ export async function createStepUpGrantHandler(req: Request, res: Response) {
       remoteIp: getClientIP(req) || undefined,
     });
     if (!verified) {
+      // RC-20：违规拦截必须按**账户**沉淀（IP 维度的计数换 IP 就重置），
+      // 账户聚合（RC-06）正是按 `ACCOUNT_ABUSE_*` 前缀计数的 —— 这里天然带 userId。
+      recordAccountAbuseSignal({
+        userId,
+        eventType: "ACCOUNT_ABUSE_STEP_UP_CAPTCHA_FAILED",
+        fingerprint: String(req.get("x-device-id") || "step-up"),
+        action: "step_up_grant",
+        reason: "人机验证未通过",
+        riskScore: 30,
+        ipAddress: getClientIP(req) || "",
+        userAgent: String(req.headers["user-agent"] || ""),
+      });
       return res.status(403).json({
         success: false,
         error: "人机验证未通过，请重试",
@@ -81,6 +94,16 @@ export async function createStepUpGrantHandler(req: Request, res: Response) {
   });
 
   if ("error" in result) {
+    recordAccountAbuseSignal({
+      userId,
+      eventType: "ACCOUNT_ABUSE_STEP_UP_TICKET_INVALID",
+      fingerprint: String(req.get("x-device-id") || "step-up"),
+      action: "step_up_grant",
+      reason: result.error,
+      riskScore: 30,
+      ipAddress: getClientIP(req) || "",
+      userAgent: String(req.headers["user-agent"] || ""),
+    });
     return res.status(400).json({ success: false, error: result.error, code: "STEP_UP_TICKET_INVALID" });
   }
 

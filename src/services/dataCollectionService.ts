@@ -6,6 +6,7 @@ import logger from "../utils/logger";
 import { mongoose } from "./mongoService";
 import { installShutdownHandlers, registerShutdownStep } from "./shutdown";
 import { SecurityEvent } from "../models/securityEventModel";
+import { recordAccountAbuseSignal } from "./accountRiskService";
 import { registerBackgroundTaskStopper } from "../utils/backgroundTaskRegistry";
 
 // FilterQuery type definition for compatibility
@@ -1785,25 +1786,16 @@ function recordAbuseSignal(params: {
   flags?: string[];
   ipAddress?: string;
 }): void {
-  if (mongoose.connection.readyState !== 1) return;
-  void SecurityEvent.create({
-    deviceFingerprint: params.fingerprint.slice(0, 256),
-    userId: params.userId || undefined,
+  // 事件名前缀由 accountRiskService 统一维护（ACCOUNT_ABUSE_*）—— 各调用点自己拼随时会漂，
+  // 而账户聚合正是按该前缀计数（漂一个字母就变成“拦了但风险分不动”）。
+  recordAccountAbuseSignal({
+    userId: params.userId,
     eventType: "ACCOUNT_ABUSE_RISK_BLOCKED",
-    eventData: {
-      action: params.action,
-      riskLevel: params.riskLevel,
-      reason: params.reason,
-      flags: params.flags,
-    },
-    riskScore: Number.isFinite(params.riskScore) ? params.riskScore : 0,
-    ipAddress: params.ipAddress || "",
-    userAgent: "",
-    createdAt: new Date(),
-  }).catch((error) => {
-    logger.warn("[DataCollection] 滥用信号写入失败", {
-      userId: params.userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    fingerprint: params.fingerprint,
+    action: params.action,
+    reason: params.reason,
+    riskScore: params.riskScore,
+    flags: params.flags,
+    ipAddress: params.ipAddress,
   });
 }
