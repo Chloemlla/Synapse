@@ -25,6 +25,8 @@ import {
   buildT1Report,
 } from "./lottery/reconciliation";
 import { evaluateLotteryRisk } from "./lottery/risk";
+import { type LotteryAbTest, applyVariantWeights, assignVariant, buildAbStats, type LotteryAbVariantStats } from "./lottery/abTest";
+import type { LotteryPresentation } from "./lottery/presentation";
 import { lotteryFulfillmentService } from "./lotteryFulfillmentService";
 import { type LotteryBudget, awardedValueOf, evaluateBudget } from "./lottery/budget";
 import {
@@ -107,6 +109,12 @@ export interface LotteryRound {
   pityCounters?: Record<string, number>;
   /** 预算熔断配置（可选）。 */
   budget?: LotteryBudget;
+  /** 表现层配置（无代码区块）；后端不感知具体皮肤。 */
+  presentation?: LotteryPresentation;
+  /** AB 测试配置。 */
+  abTest?: LotteryAbTest;
+  /** 各变体已抽次数（AB 统计用）。 */
+  drawCountsByVariant?: Record<string, number>;
 }
 
 export interface LotteryWinner {
@@ -116,6 +124,8 @@ export interface LotteryWinner {
   prizeName: string;
   drawTime: number;
   transactionHash?: string;
+  /** 命中 AB 变体（未启用 AB 时缺省）。 */
+  variantKey?: string;
 }
 
 export interface UserLotteryRecord {
@@ -177,6 +187,8 @@ interface LotteryDrawOutcome {
   downgraded?: boolean;
   /** 是否因预算熔断而降级。 */
   budgetPaused?: boolean;
+  /** 命中的 AB 变体。 */
+  variantKey?: string;
 }
 
 /** 幂等结果保留 10 分钟：足够覆盖客户端/代理的重复投递与短时重试。 */
@@ -577,8 +589,11 @@ class LotteryService {
     if (drawsSoFar >= latestMaxDraws) {
       throw new Error("您已经参与过此轮抽奖");
     }
-    // Pacing：窗口未到/用尽的贵重奖品权重归 0；可用池 = 未超窗配额 + 有库存 + 有概率。
-    const availablePrizes = applyPacing(latest.prizes, latest.startTime, drawNow);
+    // Pacing：窗口未到/用尽的贵重奖品权重归0；可用池 = 未超窗配额 + 有库存 + 有概率。
+    // AB：先按命中变体的权重乘数调整奖品概率，再做 Pacing 过滤。
+    const variant = latest.abTest ? assignVariant(latest.abTest, latest.id, userId) : null;
+    const variantPrizes = applyVariantWeights(latest.prizes, variant);
+    const availablePrizes = applyPacing(variantPrizes, latest.startTime, drawNow);
     // 「没库存」与「未中奖」必须分开：前者是运营/配置问题（明确报错），后者是正常结果。
     const hasStock = availablePrizes.some((item) => item.remaining > 0 && item.probability > 0);
     if (!hasStock) {
@@ -639,8 +654,9 @@ class LotteryService {
     }
 
     // 抽奖机会：chanceCost > 0 的轮次按次原子消耗；管理员豁免（与其它豁免同一口径）。
+    // AB 变体可覆盖单次消耗（数值型参数，不影响发奖正确性）。
     let chanceConsumed = 0;
-    const chanceCost = Math.max(0, Math.floor(latest.chanceCost || 0));
+    const chanceCost = Math.max(0, Math.floor(variant?.chanceCost ?? latest.chanceCost ?? 0));
     if (!isAdmin && chanceCost > 0) {
       const consumed = await this.consumeChances(userId, chanceCost);
       if (!consumed.ok) {
@@ -676,6 +692,7 @@ class LotteryService {
           drawTime: drawNow,
           // G7-09: 本地抽奖标识，不是链上交易哈希。字段名保留以兼容旧契约，但值只是随机 ID。
           transactionHash: `local-${crypto.randomUUID()}`,
+          ...(variant ? { variantKey: variant.key } : {}),
         }
       : null;
 
@@ -699,6 +716,9 @@ class LotteryService {
       : [...latest.participants, userId];
     const nextWinners = winner ? [...latest.winners, winner] : latest.winners;
     const nextDrawCounts = { ...(latest.drawCounts || {}), [userId]: drawIndex };
+    const nextVariantDraws = variant
+      ? { ...(latest.drawCountsByVariant || {}), [variant.key]: (latest.drawCountsByVariant?.[variant.key] ?? 0) + 1 }
+      : latest.drawCountsByVariant;
     // 未命中累加补偿计数，命中即重置。
     const nextPityCounters = pseudo
       ? { ...(latest.pityCounters || {}), [userId]: prize ? 0 : pityCounter + 1 }
@@ -712,6 +732,7 @@ class LotteryService {
         participants: nextParticipants,
         winners: nextWinners,
         drawCounts: nextDrawCounts,
+        ...(nextVariantDraws ? { drawCountsByVariant: nextVariantDraws } : {}),
         ...(nextPityCounters ? { pityCounters: nextPityCounters } : {}),
         ...(budgetPaused ? { isActive: false } : {}),
         blockchainHeight: blockchainData.height,
@@ -752,6 +773,7 @@ class LotteryService {
       riskScore: matches.score,
       downgraded: riskDowngraded,
       budgetPaused,
+      variantKey: variant?.key,
     };
   }
 
@@ -790,6 +812,7 @@ class LotteryService {
         riskScore: outcome.riskScore ?? 0,
         downgraded: Boolean(outcome.downgraded),
         budgetPaused: Boolean(outcome.budgetPaused),
+        variant: outcome.variantKey ?? null,
       },
       ip: meta.context.ip || "",
       userAgent: meta.context.userAgent,
@@ -1099,6 +1122,26 @@ class LotteryService {
   public async getRoundDetails(roundId: string): Promise<LotteryRound | null> {
     const rounds = await this.getLotteryRounds();
     return rounds.find((round) => round.id === roundId) || null;
+  }
+
+  /** 更新表现层配置（无代码区块编辑器保存）。 */
+  public async updateRoundPresentation(roundId: string, presentation: LotteryPresentation): Promise<LotteryRound> {
+    const round = await this.getRoundDetails(roundId);
+    if (!round) {
+      throw new Error("抽奖轮次不存在");
+    }
+    const updated = (await updateRound(roundId, { presentation })) as LotteryRound;
+    logger.info(`更新抽奖轮次表现层: ${roundId}, blocks=${presentation.blocks.length}`);
+    return updated;
+  }
+
+  /** AB 变体统计。 */
+  public async getAbStats(roundId: string): Promise<LotteryAbVariantStats[]> {
+    const round = await this.getRoundDetails(roundId);
+    if (!round) {
+      throw new Error("抽奖轮次不存在");
+    }
+    return buildAbStats(round);
   }
 
   // 获取排行榜

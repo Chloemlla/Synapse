@@ -1,9 +1,18 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useLottery } from '../hooks/useLottery';
-import { LotteryPrize, LotteryRound, LotteryT0Report, LotteryT1Report } from '../types/lottery';
+import {
+  LotteryPrize,
+  LotteryRound,
+  LotteryT0Report,
+  LotteryT1Report,
+  LotteryPresentationBlock,
+  LotteryPresentationBlockType,
+  LotteryAbVariantStats,
+  LotteryRiskMetrics,
+} from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -27,6 +36,15 @@ const PRIZE_CATEGORY_LABELS: Record<string, string> = {
   legendary: '传说',
 };
 
+const PRESENTATION_BLOCK_LABELS: Record<LotteryPresentationBlockType, string> = {
+  text: '文案',
+  image: '图片',
+  button: '按钮',
+  countdown: '倒计时',
+  prizeGrid: '奖品格',
+  spacer: '间隔',
+};
+
 
 // 创建轮次表单组件
 const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
@@ -48,6 +66,8 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     pityMaxBonus: 0,
     budgetMaxTotalValue: 0,
     budgetWarningRatio: 0.8,
+    abEnabled: false,
+    abVariants: [{ key: 'A', weight: 1, chanceCost: 0 }] as Array<{ key: string; weight: number; chanceCost: number }>,
     prizes: [] as LotteryPrize[]
   });
   const [loading, setLoading] = useState(false);
@@ -119,6 +139,18 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
         ...(formData.budgetMaxTotalValue > 0
           ? { budget: { maxTotalValue: formData.budgetMaxTotalValue, warningRatio: formData.budgetWarningRatio } }
           : {}),
+        ...(formData.abEnabled && formData.abVariants.length > 0
+          ? {
+              abTest: {
+                enabled: true,
+                variants: formData.abVariants.map((variant) => ({
+                  key: variant.key,
+                  weight: variant.weight,
+                  ...(variant.chanceCost > 0 ? { chanceCost: variant.chanceCost } : {}),
+                })),
+              },
+            }
+          : {}),
         prizes: formData.prizes,
       };
       const result = await lotteryApi.createLotteryRound(payload);
@@ -150,6 +182,8 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
           pityMaxBonus: 0,
           budgetMaxTotalValue: 0,
           budgetWarningRatio: 0.8,
+          abEnabled: false,
+          abVariants: [{ key: 'A', weight: 1, chanceCost: 0 }],
           prizes: []
         });
       }
@@ -367,6 +401,62 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
           </div>
         </div>
 
+        {/* AB 测试变体（可选） */}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={formData.abEnabled}
+              onChange={(e) => setFormData(prev => ({ ...prev, abEnabled: e.target.checked }))}
+            />
+            启用 AB 测试（按用户哈希稳定分配变体）
+          </label>
+          {formData.abEnabled && (
+            <div className="mt-3 space-y-2">
+              {formData.abVariants.map((variant, index) => (
+                <div key={index} className="flex flex-wrap items-center gap-2">
+                  <input
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    placeholder="变体 key"
+                    value={variant.key}
+                    onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, key: e.target.value } : item) }))}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    placeholder="权重"
+                    value={variant.weight}
+                    onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, weight: Math.max(1, parseInt(e.target.value) || 1) } : item) }))}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    placeholder="机会成本覆盖"
+                    value={variant.chanceCost}
+                    onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, chanceCost: Math.max(0, parseInt(e.target.value) || 0) } : item) }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.filter((_, i) => i !== index) }))}
+                    className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                  >
+                    删除
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, abVariants: [...prev.abVariants, { key: String.fromCharCode(65 + prev.abVariants.length), weight: 1, chanceCost: 0 }] }))}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+              >
+                + 添加变体
+              </button>
+            </div>
+          )}
+        </div>
+
         <div>
           <div className="flex justify-between items-center mb-3">
             <label className="block text-sm font-semibold text-slate-700">
@@ -540,6 +630,51 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
   const { setNotification } = useNotification();
   const confirm = useConfirm();
   const [loading, setLoading] = useState<string | null>(null);
+  const [editingPresentationId, setEditingPresentationId] = useState<string | null>(null);
+  const [blocks, setBlocks] = useState<LotteryPresentationBlock[]>([]);
+  const [savingPresentation, setSavingPresentation] = useState(false);
+  const [abStats, setAbStats] = useState<Record<string, LotteryAbVariantStats[]>>({});
+
+  const openPresentationEditor = (round: LotteryRound) => {
+    setEditingPresentationId(round.id);
+    setBlocks((round.presentation?.blocks ?? []).map((block) => ({ ...block, props: { ...(block.props ?? {}) } })));
+  };
+  const addBlock = (type: LotteryPresentationBlockType) =>
+    setBlocks((prev) => [...prev, { id: `blk_${Date.now()}_${prev.length}`, type }]);
+  const patchBlock = (id: string, patch: Record<string, unknown>) =>
+    setBlocks((prev) => prev.map((block) => (block.id === id ? { ...block, props: { ...(block.props ?? {}), ...patch } } : block)));
+  const moveBlock = (index: number, delta: number) =>
+    setBlocks((prev) => {
+      const next = [...prev];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  const removeBlock = (id: string) => setBlocks((prev) => prev.filter((block) => block.id !== id));
+
+  const savePresentation = async (roundId: string) => {
+    setSavingPresentation(true);
+    try {
+      await lotteryApi.updateRoundPresentation(roundId, { blocks });
+      setNotification({ message: '活动页面配置已保存', type: 'success' });
+      setEditingPresentationId(null);
+      onRefresh();
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '保存失败'), type: 'error' });
+    } finally {
+      setSavingPresentation(false);
+    }
+  };
+
+  const loadAbStats = async (roundId: string) => {
+    try {
+      const stats = await lotteryApi.getAbStats(roundId);
+      setAbStats((prev) => ({ ...prev, [roundId]: stats }));
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '获取 AB 统计失败'), type: 'error' });
+    }
+  };
 
   // 防御性处理，确保 rounds 一定为数组
   const safeRounds = Array.isArray(rounds) ? rounds : [];
@@ -641,7 +776,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               )}
             </div>
             
-            <div className="flex space-x-2">
+            <div className="flex flex-wrap gap-2">
               <motion.button
                 onClick={() => handleToggleStatus(round.id, round.isActive)}
                 disabled={loading === round.id}
@@ -658,7 +793,97 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               >
                 {loading === round.id ? '处理中...' : '重置'}
               </motion.button>
+              <motion.button
+                onClick={() => (editingPresentationId === round.id ? setEditingPresentationId(null) : openPresentationEditor(round))}
+                className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                whileTap={{ scale: 0.95 }}
+              >
+                {editingPresentationId === round.id ? '收起编辑器' : '编辑页面'}
+              </motion.button>
+              <motion.button
+                onClick={() => { void loadAbStats(round.id); }}
+                className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                whileTap={{ scale: 0.95 }}
+              >
+                AB 统计
+              </motion.button>
             </div>
+
+            {abStats[round.id] && abStats[round.id].length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                {abStats[round.id].map((stat) => (
+                  <span key={stat.key} className="rounded-full border border-slate-200 bg-white/70 px-2 py-0.5">
+                    {stat.key}：抽 {stat.draws} / 中 {stat.wins}（{(stat.winRate * 100).toFixed(1)}%），价值 {stat.value}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {editingPresentationId === round.id && (
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-white/70 p-3">
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {(Object.keys(PRESENTATION_BLOCK_LABELS) as LotteryPresentationBlockType[]).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => addBlock(type)}
+                      className="rounded-xl border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      + {PRESENTATION_BLOCK_LABELS[type]}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {blocks.length === 0 && <div className="text-xs text-slate-400">还没有区块，点上面的按钮添加。</div>}
+                  {blocks.map((block, index) => (
+                    <div key={block.id} className="rounded-xl border border-slate-200 bg-white p-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                        <span className="font-semibold">{PRESENTATION_BLOCK_LABELS[block.type] ?? block.type}</span>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => moveBlock(index, -1)} className="rounded border border-slate-300 px-1.5 py-0.5">↑</button>
+                          <button type="button" onClick={() => moveBlock(index, 1)} className="rounded border border-slate-300 px-1.5 py-0.5">↓</button>
+                          <button type="button" onClick={() => removeBlock(block.id)} className="rounded border border-rose-200 px-1.5 py-0.5 text-rose-700">删除</button>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(block.type === 'text' || block.type === 'button' || block.type === 'countdown') && (
+                          <input
+                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            placeholder="文案"
+                            value={String(block.props?.text ?? block.props?.label ?? '')}
+                            onChange={(e) => patchBlock(block.id, block.type === 'text' ? { text: e.target.value } : { label: e.target.value })}
+                          />
+                        )}
+                        {(block.type === 'image' || block.type === 'button') && (
+                          <input
+                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            placeholder={block.type === 'image' ? '图片地址' : '跳转地址（可选）'}
+                            value={String(block.type === 'image' ? block.props?.src ?? '' : block.props?.href ?? '')}
+                            onChange={(e) => patchBlock(block.id, block.type === 'image' ? { src: e.target.value } : { href: e.target.value })}
+                          />
+                        )}
+                        {block.type === 'countdown' && (
+                          <input
+                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            placeholder="截止时间（ISO，如 2026-11-01T00:00:00Z）"
+                            value={String(block.props?.target ?? '')}
+                            onChange={(e) => patchBlock(block.id, { target: e.target.value })}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void savePresentation(round.id); }}
+                  disabled={savingPresentation}
+                  className="mt-3 rounded-2xl bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:bg-slate-400"
+                >
+                  {savingPresentation ? '保存中...' : '保存页面配置'}
+                </button>
+              </div>
+            )}
           </motion.div>
         ))}
         
@@ -671,6 +896,79 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
           </div>
         )}
       </div>
+    </motion.div>
+  );
+};
+
+// 实时风控大盘（仅超管）
+const RiskDashboardPanel: React.FC = () => {
+  const [metrics, setMetrics] = useState<LotteryRiskMetrics | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setMetrics(await lotteryApi.getRiskDashboard());
+    } catch {
+      // 大盘拉取失败不打扰运营；下次轮询会重试。
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => { void load(); }, 10_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  return (
+    <motion.div
+      className={cn(studioPanelClassName, 'p-4')}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+    >
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-800">
+        <FaChartBar className="text-lg text-slate-500" />
+        实时风控大盘
+      </h3>
+      {!metrics ? (
+        <div className="text-sm text-slate-500">加载中...</div>
+      ) : (
+        <div className="space-y-3 text-sm text-slate-700">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
+              <div className="text-xl font-semibold">{metrics.decisions.allow}</div>
+              <div className="text-xs text-slate-500">放行</div>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <div className="text-xl font-semibold text-amber-700">{metrics.decisions.soft}</div>
+              <div className="text-xs text-amber-700">静默降级</div>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+              <div className="text-xl font-semibold text-rose-700">{metrics.decisions.block}</div>
+              <div className="text-xs text-rose-700">硬拦截</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
+              <div className="text-xl font-semibold">{metrics.windows.users}</div>
+              <div className="text-xs text-slate-500">活跃用户窗口</div>
+            </div>
+          </div>
+          <div className="text-xs text-slate-500">
+            阈值：软 {metrics.thresholds.soft} / 硬 {metrics.thresholds.block}；风控{metrics.enabled ? '已启用' : '已关闭'}
+            ；指纹窗口 {metrics.windows.fingerprints}，IP 窗口 {metrics.windows.ips}
+          </div>
+          {metrics.recent.length > 0 && (
+            <ul className="max-h-40 space-y-1 overflow-auto pr-1 text-xs text-slate-600">
+              {metrics.recent.slice(0, 20).map((event, index) => (
+                <li key={`${event.at}-${index}`} className="flex items-center justify-between gap-2 rounded-xl bg-white/70 px-2 py-1">
+                  <span className="truncate">
+                    {new Date(event.at).toLocaleTimeString()} · {event.reasons.join('，') || '命中阈值'}
+                  </span>
+                  <span className={event.level === 'block' ? 'text-rose-700' : 'text-amber-700'}>{event.score}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };
@@ -1039,6 +1337,7 @@ const LotteryAdmin: React.FC = () => {
       </motion.div>
 
       <GrantChancesPanel />
+      <RiskDashboardPanel />
       <ReconciliationPanel />
     </motion.div>
   );

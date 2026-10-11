@@ -3,6 +3,9 @@ import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { type LotteryPrize, type LotteryRound, lotteryService } from "../services/lotteryService";
 import { lotteryFulfillmentService } from "../services/lotteryFulfillmentService";
+import { normalizePresentation } from "../services/lottery/presentation";
+import { type LotteryAbTest, assignVariant } from "../services/lottery/abTest";
+import { getRiskMetrics } from "../services/lottery/risk";
 import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
 
@@ -97,9 +100,10 @@ function parsePseudoRandom(raw: unknown): { value?: PseudoRandomConfig; error?: 
  */
 function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string | undefined, isAdmin: boolean): T {
   if (isAdmin) return round;
-  const { participants, winners, drawCounts, pityCounters, ...rest } = round;
+  const { participants, winners, drawCounts, pityCounters, drawCountsByVariant, ...rest } = round;
   const drawsUsed = userId ? Math.max(0, Math.floor(drawCounts?.[userId] ?? 0)) : 0;
   const maxDraws = Math.max(1, Math.floor(round.maxDrawsPerUser || 1));
+  const assignedVariant = userId ? assignVariant(round.abTest, round.id, userId) : null;
   return {
     ...rest,
     participants: [],
@@ -107,9 +111,11 @@ function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string
     participantCount: participants.length,
     winnerCount: winners.length,
     maxDrawsPerUser: maxDraws,
-    chanceCost: Math.max(0, Math.floor(round.chanceCost || 0)),
+    chanceCost: Math.max(0, Math.floor(assignedVariant?.chanceCost ?? round.chanceCost ?? 0)),
     drawsUsed,
     remainingDraws: Math.max(0, maxDraws - drawsUsed),
+    // 只回本人的 AB 变体 key（用于前端展示），不回全员分配与内部计数器。
+    ...(assignedVariant ? { assignedVariant: assignedVariant.key } : {}),
     // 不回内部计数器（pacingAwards 会泄露贵重奖的出奖节奏）。
     prizes: round.prizes.map(({ pacingAwards: _pacingAwards, ...prize }) => prize),
     winners: winners.map(({ userId: _ignored, ...winner }) => winner),
@@ -321,6 +327,56 @@ export class LotteryController {
         }
         budget = { maxTotalValue, warningRatio };
       }
+      // 表现层（无代码区块编辑器，可选）
+      let presentation: ReturnType<typeof normalizePresentation> | undefined;
+      if (req.body?.presentation !== undefined) {
+        presentation = normalizePresentation(req.body.presentation);
+        if (!presentation) {
+          res.status(400).json({ success: false, error: "表现层配置非法（blocks 类型/数量不合法）" });
+          return;
+        }
+      }
+      // AB 测试（可选）
+      let abTest: LotteryAbTest | undefined;
+      const rawAbTest = req.body?.abTest;
+      if (rawAbTest && typeof rawAbTest === "object") {
+        const variantsRaw = (rawAbTest as Record<string, unknown>).variants;
+        if (!Array.isArray(variantsRaw) || variantsRaw.length === 0 || variantsRaw.length > 10) {
+          res.status(400).json({ success: false, error: "AB 变体配置非法（1-10 个变体）" });
+          return;
+        }
+        const variants: LotteryAbTest["variants"] = [];
+        for (const variantRaw of variantsRaw) {
+          const variant = (variantRaw ?? {}) as Record<string, unknown>;
+          const key = typeof variant.key === "string" && variant.key.trim() ? variant.key.trim().slice(0, 32) : "";
+          const weight = Number(variant.weight);
+          if (!key || !Number.isFinite(weight) || weight <= 0) {
+            res.status(400).json({ success: false, error: "AB 变体需要合法 key 与正权重" });
+            return;
+          }
+          const chanceCostOverride =
+            variant.chanceCost === undefined ? undefined : boundedInt(variant.chanceCost, { min: 0, max: 100000, fallback: 0 });
+          let prizeWeightOverrides: Record<string, number> | undefined;
+          if (variant.prizeWeightOverrides && typeof variant.prizeWeightOverrides === "object") {
+            prizeWeightOverrides = {};
+            for (const [prizeId, multiplierRaw] of Object.entries(variant.prizeWeightOverrides as Record<string, unknown>)) {
+              const multiplier = Number(multiplierRaw);
+              if (!Number.isFinite(multiplier) || multiplier < 0 || multiplier > 1000) {
+                res.status(400).json({ success: false, error: "AB 权重乘数非法（0-1000）" });
+                return;
+              }
+              prizeWeightOverrides[prizeId] = multiplier;
+            }
+          }
+          variants.push({
+            key,
+            weight,
+            ...(chanceCostOverride !== undefined ? { chanceCost: chanceCostOverride } : {}),
+            ...(prizeWeightOverrides ? { prizeWeightOverrides } : {}),
+          });
+        }
+        abTest = { enabled: (rawAbTest as Record<string, unknown>).enabled !== false, variants };
+      }
       const roundData = {
         name,
         description,
@@ -334,6 +390,8 @@ export class LotteryController {
         ...(softParsed.value ? { softGuarantee: softParsed.value } : {}),
         ...(pseudoParsed.value ? { pseudoRandom: pseudoParsed.value } : {}),
         ...(budget ? { budget } : {}),
+        ...(presentation ? { presentation } : {}),
+        ...(abTest ? { abTest } : {}),
       };
       const round = await lotteryService.createLotteryRound(roundData);
       res.json({
@@ -784,6 +842,69 @@ export class LotteryController {
         res.status(400).json({ success: false, error: error.message });
         return;
       }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 保存表现层配置（仅超管）
+  public async updateRoundPresentation(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const roundId = firstString(req.params.roundId);
+      const presentation = normalizePresentation(req.body?.presentation ?? req.body);
+      if (!roundId || !presentation) {
+        res.status(400).json({ success: false, error: "表现层配置非法" });
+        return;
+      }
+      const round = await lotteryService.updateRoundPresentation(roundId, presentation);
+      res.json({ success: true, data: round, message: "页面配置已保存" });
+    } catch (error) {
+      logger.error("保存活动页面配置失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // AB 变体统计（仅超管）
+  public async getAbStats(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const roundId = firstString(req.params.roundId);
+      if (!roundId) {
+        res.status(400).json({ success: false, error: "无效的轮次ID" });
+        return;
+      }
+      const stats = await lotteryService.getAbStats(roundId);
+      res.json({ success: true, data: stats });
+    } catch (error) {
+      logger.error("获取 AB 统计失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 实时风控大盘（仅超管）
+  public async getRiskDashboard(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      res.json({ success: true, data: getRiskMetrics() });
+    } catch (error) {
+      logger.error("获取风控大盘失败:", error);
       res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
     }
   }

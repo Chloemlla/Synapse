@@ -90,6 +90,59 @@ export interface LotteryPseudoRandom {
   maxBonus: number;
 }
 
+/** 表现层区块（无代码活动编辑器）。 */
+export type LotteryPresentationBlockType = 'text' | 'image' | 'button' | 'countdown' | 'prizeGrid' | 'spacer';
+
+export interface LotteryPresentationBlock {
+  id: string;
+  type: LotteryPresentationBlockType;
+  props?: Record<string, unknown>;
+}
+
+export interface LotteryPresentation {
+  theme?: string;
+  blocks: LotteryPresentationBlock[];
+  rules?: string;
+}
+
+/** AB 变体。 */
+export interface LotteryAbVariant {
+  key: string;
+  weight: number;
+  chanceCost?: number;
+  prizeWeightOverrides?: Record<string, number>;
+}
+
+export interface LotteryAbTest {
+  enabled: boolean;
+  variants: LotteryAbVariant[];
+}
+
+export interface LotteryAbVariantStats {
+  key: string;
+  draws: number;
+  wins: number;
+  value: number;
+  winRate: number;
+}
+
+/** 实时风控大盘。 */
+export interface LotteryRiskEvent {
+  at: number;
+  userId: string;
+  level: 'allow' | 'soft' | 'block';
+  score: number;
+  reasons: string[];
+}
+
+export interface LotteryRiskMetrics {
+  enabled: boolean;
+  thresholds: { soft: number; block: number };
+  decisions: { allow: number; soft: number; block: number };
+  recent: LotteryRiskEvent[];
+  windows: { users: number; fingerprints: number; ips: number };
+}
+
 /** 预算熔断（可选）。 */
 export interface LotteryBudget {
   maxTotalValue: number;
@@ -131,6 +184,12 @@ export interface LotteryRound {
   pseudoRandom?: LotteryPseudoRandom;
   /** 预算熔断配置。 */
   budget?: LotteryBudget;
+  /** 表现层配置（无代码区块）。 */
+  presentation?: LotteryPresentation;
+  /** AB 测试配置。 */
+  abTest?: LotteryAbTest;
+  /** 本人被分配的 AB 变体（普通用户视图）。 */
+  assignedVariant?: string;
   /** 本人在本轮已抽次数（普通用户视图用）。 */
   drawsUsed?: number;
   /** 本人本轮剩余可抽次数（普通用户视图用）。 */

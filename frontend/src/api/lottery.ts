@@ -7,6 +7,9 @@ import {
   LotteryChances,
   LotteryTask,
   LotteryFulfillment,
+  LotteryAbVariantStats,
+  LotteryRiskMetrics,
+  LotteryPresentation,
   LotteryT0Report,
   LotteryT1Report,
   LotteryApiResponse 
@@ -191,6 +194,22 @@ export async function redeemFulfillment(id: string): Promise<{ value: number; ba
   });
 }
 
+// 表现层 / AB / 风控大盘（仅超管）
+export async function updateRoundPresentation(roundId: string, presentation: LotteryPresentation): Promise<LotteryRound> {
+  return apiRequest<LotteryRound>(`/rounds/${encodeURIComponent(roundId)}/presentation`, {
+    method: 'PUT',
+    body: JSON.stringify({ presentation }),
+  });
+}
+
+export async function getAbStats(roundId: string): Promise<LotteryAbVariantStats[]> {
+  return apiRequest<LotteryAbVariantStats[]>(`/rounds/${encodeURIComponent(roundId)}/ab-stats`);
+}
+
+export async function getRiskDashboard(): Promise<LotteryRiskMetrics> {
+  return apiRequest<LotteryRiskMetrics>('/risk/dashboard');
+}
+
 // 获取排行榜
 export async function getLeaderboard(limit: number = 10): Promise<UserLotteryRecord[]> {
   return apiRequest<UserLotteryRecord[]>(`/leaderboard?limit=${limit}`);
@@ -214,6 +233,8 @@ export async function createLotteryRound(roundData: {
   softGuarantee?: { startsAfterDraws: number; category: string; step: number; baseChance?: number };
   pseudoRandom?: { increment: number; maxBonus: number };
   budget?: { maxTotalValue: number; warningRatio?: number };
+  presentation?: LotteryPresentation;
+  abTest?: { enabled: boolean; variants: Array<{ key: string; weight: number; chanceCost?: number; prizeWeightOverrides?: Record<string, number> }> };
 }): Promise<{ round: LotteryRound; warning?: string }> {
   const envelope = await apiRequestEnvelope<LotteryRound>('/rounds', {
     method: 'POST',

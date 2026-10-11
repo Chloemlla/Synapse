@@ -69,6 +69,10 @@ router.get("/fulfillments/me", authenticateToken, lotteryLimiter, lotteryControl
 router.post("/fulfillments/:id/address", authenticateToken, lotteryLimiter, lotteryController.submitFulfillmentAddress.bind(lotteryController));
 router.post("/fulfillments/:id/transfer", authenticateToken, lotteryLimiter, lotteryController.transferFulfillment.bind(lotteryController));
 router.post("/fulfillments/:id/redeem", authenticateToken, lotteryLimiter, lotteryController.redeemFulfillment.bind(lotteryController));
+// 表现层 / AB / 风控大盘（仅超管）
+router.put("/rounds/:roundId/presentation", authenticateToken, lotteryLimiter, lotteryController.updateRoundPresentation.bind(lotteryController));
+router.get("/rounds/:roundId/ab-stats", authenticateToken, lotteryLimiter, lotteryController.getAbStats.bind(lotteryController));
+router.get("/risk/dashboard", authenticateToken, lotteryLimiter, lotteryController.getRiskDashboard.bind(lotteryController));
 // 涉及数据库写入：参与抽奖（更新用户、轮次等）
 router.post(
   "/rounds/:roundId/participate",

@@ -111,6 +111,61 @@ interface WindowEntry {
 
 const windows = new Map<string, WindowEntry>();
 
+// ── 大盘指标（进程内累计，进程重启归零；跨实例聚合由指标系统/审计补足） ──
+
+export interface LotteryRiskEvent {
+  at: number;
+  userId: string;
+  level: LotteryRiskLevel;
+  score: number;
+  reasons: string[];
+}
+
+export interface LotteryRiskMetrics {
+  enabled: boolean;
+  thresholds: { soft: number; block: number };
+  decisions: { allow: number; soft: number; block: number };
+  recent: LotteryRiskEvent[];
+  windows: { users: number; fingerprints: number; ips: number };
+}
+
+const decisions = { allow: 0, soft: 0, block: 0 };
+const recentEvents: LotteryRiskEvent[] = [];
+const RECENT_MAX = 50;
+
+/** 记录一次风控判定（大盘用）。 */
+export function recordRiskDecision(userId: string, decision: LotteryRiskDecision): void {
+  decisions[decision.level] += 1;
+  if (decision.level === "allow") return;
+  recentEvents.unshift({ at: Date.now(), userId, level: decision.level, score: decision.score, reasons: decision.reasons });
+  if (recentEvents.length > RECENT_MAX) recentEvents.length = RECENT_MAX;
+}
+
+/** 实时风控大盘指标快照。 */
+export function getRiskMetrics(): LotteryRiskMetrics {
+  const countByDimension = (dimension: string) =>
+    [...windows.keys()].filter((key) => key.startsWith(`lottery:risk:${dimension}:`)).length;
+  return {
+    enabled: LOTTERY_RISK_DEFAULTS.enabled,
+    thresholds: { soft: LOTTERY_RISK_DEFAULTS.softThreshold, block: LOTTERY_RISK_DEFAULTS.blockThreshold },
+    decisions: { ...decisions },
+    recent: [...recentEvents],
+    windows: {
+      users: countByDimension("user"),
+      fingerprints: countByDimension("fingerprint"),
+      ips: countByDimension("ip"),
+    },
+  };
+}
+
+/** 测试用：清空大盘指标。 */
+export function resetRiskMetrics(): void {
+  decisions.allow = 0;
+  decisions.soft = 0;
+  decisions.block = 0;
+  recentEvents.length = 0;
+}
+
 function hit(key: string, now: number, windowMs: number): number {
   const entry = windows.get(key) ?? { hits: [] };
   const cutoff = now - windowMs;
@@ -171,6 +226,7 @@ export function evaluateLotteryRisk(params: {
     return { score: 0, level: "allow", reasons: [] };
   }
   const decision = scoreLotteryRisk(collectRiskSignals(params));
+  recordRiskDecision(params.userId, decision);
   if (decision.level !== "allow") {
     logger.warn("[LotteryRisk] 命中风控", {
       userId: params.userId,

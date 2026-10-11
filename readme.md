@@ -1887,6 +1887,9 @@ docker-compose up -d
 - 抽奖预算熔断：轮次 `budget = { maxTotalValue, warningRatio }`，跨预警线告警、会超预算的本次出奖降级、到上限自动停用轮次
 - 抽奖履约中心：奖品级 `fulfillment = { type: virtual|code|physical, provider?, redeemValue? }`；中奖落 `lottery_fulfillments` 记录，走租约队列 + 看门狗（超时原子回收、超限死信邮件/webhook 告警、owner 条件写防重叠）；虚拟/卡密 POST 到 `LOTTERY_FULFILLMENT_{VIRTUAL,CODE}_URL`，未配通道落 `ready` 待人工
 - 抽奖转赠与折现：`GET /api/lottery/fulfillments/me`、`POST /fulfillments/:id/{address,transfer,redeem}`（实物填地址、未核销可转赠、可折成抽奖积分）；页面「我的奖品」面板提供入口
+- 活动玩法解耦：轮次 `presentation = { theme, rules, blocks[] }` 无代码区块编辑器（文案/图片/按钮/倒计时/奖品格/间隔，增删排序 + `PUT /rounds/:id/presentation`），前端按区块渲染；管理端轮次管理内编辑
+- AB 测试：`abTest = { enabled, variants[{ key, weight, chanceCost?, prizeWeightOverrides? }] }`，按 `hash(roundId:userId)` 稳定分配（同一用户固定变体），变体只覆盖参数不改发奖正确性；`GET /rounds/:id/ab-stats` 逐变体抽数/中奖/价值/胜率
+- 实时风控大盘：`GET /risk/dashboard` 返回放行/静默/拦截计数、最近命中事件与窗口规模，管理端面板 10s 自刷
 - 抽奖中台 PRD 与实施清单落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（产品蓝图 + 看门狗设计 + 分阶段勾选清单）
 - 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
 - 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`

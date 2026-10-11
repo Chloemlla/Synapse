@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
-import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask, LotteryFulfillment } from '../types/lottery';
+import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask, LotteryFulfillment, LotteryPresentation } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { formatDistanceToNow } from 'date-fns';
@@ -180,6 +180,8 @@ export const LotteryRoundCard: React.FC<{
           {isActive ? '进行中' : '已结束'}
         </div>
       </div>
+
+      <RoundPresentationView presentation={round.presentation} />
 
       <div className="my-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className={`${lotteryTileClass} p-3 text-sm leading-6 text-slate-600`}>
@@ -754,6 +756,71 @@ const LotteryWalletPanel: React.FC<{
         )}
       </div>
     </motion.div>
+  );
+};
+
+// 无代码表现层区块渲染（运营在管理端配置）
+const RoundPresentationView: React.FC<{ presentation?: LotteryPresentation }> = ({ presentation }) => {
+  const blocks = presentation?.blocks ?? [];
+  if (blocks.length === 0) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      {blocks.map((block) => {
+        switch (block.type) {
+          case 'text':
+            return (
+              <p key={block.id} className="text-sm leading-6 text-slate-600">
+                {String(block.props?.text ?? '')}
+              </p>
+            );
+          case 'image': {
+            const src = typeof block.props?.src === 'string' ? block.props.src : '';
+            return src && /^https?:\/\//i.test(src) ? (
+              <img key={block.id} src={src} alt="" loading="lazy" className="max-h-40 rounded-2xl object-contain" />
+            ) : null;
+          }
+          case 'button': {
+            const label = String(block.props?.label ?? '立即参与');
+            const href = typeof block.props?.href === 'string' ? block.props.href : '';
+            return (
+              <div key={block.id}>
+                {href ? (
+                  <a
+                    href={href}
+                    className="inline-flex items-center rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                  >
+                    {label}
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700">
+                    {label}
+                  </span>
+                )}
+              </div>
+            );
+          }
+          case 'countdown': {
+            const label = String(block.props?.text ?? block.props?.label ?? '活动倒计时');
+            const targetRaw = typeof block.props?.target === 'string' ? block.props.target : '';
+            const target = targetRaw ? new Date(targetRaw) : null;
+            const remainingMs = target && !Number.isNaN(target.getTime()) ? Math.max(0, target.getTime() - Date.now()) : null;
+            const hours = remainingMs === null ? null : Math.floor(remainingMs / 3_600_000);
+            return (
+              <div key={block.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {label}
+                {hours !== null ? `：约 ${hours} 小时后结束` : ''}
+              </div>
+            );
+          }
+          case 'spacer':
+            return <div key={block.id} className="h-3" />;
+          case 'prizeGrid':
+            return null;
+          default:
+            return null;
+        }
+      })}
+    </div>
   );
 };
 
