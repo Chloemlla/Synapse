@@ -23,6 +23,7 @@ import {
   validateEmailChangeChallenge,
   validateProfileVerificationSession,
 } from "../services/profileUpdateVerificationService";
+import { config } from "../config/config";
 import { sharedStateStore } from "../services/sharedStateStore";
 
 const USER_ID = "u-shared-session";
@@ -85,10 +86,13 @@ describe("安全会话：自包含令牌 + 共享撤销水位", () => {
     const clock = mockClock(1_700_000_000_000);
     const session = createProfileVerificationSession(USER_ID, "password");
 
-    clock.advance(9 * 60 * 1000);
+    // TTL 由运行时可配（RC-40，默认 5 分钟）—— 用例必须跟着配置走，
+    // 写死「9 分钟未过期」在默认值改成 300s 后就成了必然失败的陈旧断言。
+    const ttlMs = Math.min(Math.max(config.securitySession?.ttlSeconds ?? 300, 60), 3600) * 1000;
+    clock.advance(ttlMs - 1_000);
     expect(validateProfileVerificationSession(USER_ID, session.token)).not.toBeNull();
 
-    clock.advance(2 * 60 * 1000);
+    clock.advance(2_000);
     expect(validateProfileVerificationSession(USER_ID, session.token)).toBeNull();
   });
 

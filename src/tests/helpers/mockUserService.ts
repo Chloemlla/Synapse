@@ -223,4 +223,19 @@ jest.mock("../../services/userService", () => ({
   ...mockUserService,
 }));
 
+/**
+ * RC-47 的墓碑查询（`isIdentityRetired`）在无库单测里 `readyState !== 1` 会 fail-closed 抛错，
+ * 而使用本替身的套件验的是用户/会话流程（passkey token / TOTP / logRoutes），不是注销洗白。
+ * 这里统一按「无墓碑」处理，避免 createUser 被一条与用例无关的 DB 可用性检查阻断；
+ * 要验墓碑语义的套件（authEmailFlows）自己接管该模块。
+ */
+jest.mock("../../services/blockedIdentityService", () => {
+  const actual = jest.requireActual("../../services/blockedIdentityService");
+  return {
+    ...actual,
+    isIdentityRetired: jest.fn(async () => false),
+    findRetiredIdentity: jest.fn(async () => ({ retired: false })),
+  };
+});
+
 export { mockUserService };

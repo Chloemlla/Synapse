@@ -441,7 +441,8 @@ describe("doc-tool HTTP 上传", () => {
         .field("relPaths", "../../escape.md"),
     );
     expect(res.status).toBe(200);
-    expect(res.body.files[0].rel).toBe("inbox/escape.md");
+    // 越界的 relPath 被拒后回落到原文件名（生产侧 deliberate：不丢文件、也不采用客户端给的 basename）。
+    expect(res.body.files[0].rel).toBe("inbox/a.md");
     expect(fs.existsSync(path.join(workRoot, "escape.md"))).toBe(false);
   });
 

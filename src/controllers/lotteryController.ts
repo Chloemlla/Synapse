@@ -286,7 +286,9 @@ export class LotteryController {
       const rawGuarantee = req.body?.guarantee;
       if (rawGuarantee && typeof rawGuarantee === "object") {
         const everyDraws = boundedInt((rawGuarantee as Record<string, unknown>).everyDraws, {
-          min: 1,
+          // min 用 0 而不是 1：boundedInt 会把越界值**夹到 min**，若这里写 1，
+          // `everyDraws: 0` 会被悄悄变成 1 而通过下面的 `< 1` 校验（校验成为死代码）。
+          min: 0,
           max: 100000,
           fallback: 0,
         });

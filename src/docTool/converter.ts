@@ -46,12 +46,16 @@ export function destForFile(opts: {
   outDir: string;
 }): string {
   const posixRel = String(opts.rel).replace(/\\/g, "/");
-  const dir = path.posix.dirname(posixRel);
   const docxName = docxNameFor(posixRel);
   if (opts.outMode === "alongside") {
-    return path.resolve(opts.userRoot, dir, docxName);
+    return path.resolve(opts.userRoot, path.posix.dirname(posixRel), docxName);
   }
   const outDir = opts.outDir?.trim() || "out";
+  // 上传的源文件都在 `inbox/` 下，而产物目录镜像的是「inbox 内的相对结构」：
+  // `inbox/sub/a.md` → `<outDir>/sub/a.docx`（不再多套一层 `inbox/`）。
+  // 两种模式必须用同一口径分别处理：alongside 要落在源文件旁边，不能剥掉 inbox。
+  const relative = posixRel.startsWith("inbox/") ? posixRel.slice("inbox/".length) : posixRel;
+  const dir = path.posix.dirname(relative);
   return path.resolve(opts.userRoot, outDir, dir === "." ? docxName : `${dir}/${docxName}`);
 }
 

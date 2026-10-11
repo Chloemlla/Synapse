@@ -32,6 +32,11 @@ const XSS_PATTERN =
 const COMMAND_INJECTION_PATTERN =
   /(?:(?:;|\||&&)\s*|\n[^\S\n]*)(?:rm|wget|curl|nc|bash|sh|powershell|cmd|python|perl|node|sudo|kill|mkfs|dd|chmod|chown)\b/i;
 const PATH_TRAVERSAL_PATTERN = /\.\.(?:\/|\\)/i;
+// SQL 注入载荷常常完全不含 `<>{}\`;\\`` 这类危险字符（`admin' OR 1=1 --`），
+// 而 isSafeValue 的「危险字符 -> 再跑 SQLi/XSS」快速路径会把它直接放行。
+// 这里用一个便宜的引号/注释提示先筛：只有同时出现提示与 SQL 结构才判定为注入，
+// 既堵住无危险字符的注入，又不会因为自然语言里出现 "select ... from" 而误拦（无引号/注释不触发）。
+const SQLI_HINT_PATTERN = /['"`]|--|\/\*/;
 // URL 编码检测：只在包含 % 时才做 decode，避免无意义的 decode 开销
 const HAS_PERCENT = /%/;
 
@@ -168,6 +173,8 @@ function isSafeValue(raw: string): boolean {
   const val = deepDecode(raw);
   // G1-19: 命令注入 / 路径穿越是廉价线性正则，不依赖危险字符门槛，先跑。
   if (COMMAND_INJECTION_PATTERN.test(val) || PATH_TRAVERSAL_PATTERN.test(val)) return false;
+  // 无危险字符的 SQL 注入（如 `' OR 1=1 --`）在这里拦下；自然语言无引号/注释不触发。
+  if (SQLI_HINT_PATTERN.test(val) && SQL_INJECTION_PATTERN.test(val)) return false;
   // 快速路径：先检查最廉价的危险字符，大部分正常值在这里就通过了
   if (!DANGEROUS_CHARS.test(val)) return true;
   // 有危险字符才做更昂贵的 SQLi/XSS 匹配

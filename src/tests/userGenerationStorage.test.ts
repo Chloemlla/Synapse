@@ -42,9 +42,19 @@ jest.mock("node:fs", () => ({
   default: { existsSync: jest.fn(), readFileSync: jest.fn(), writeFileSync: jest.fn() },
 }));
 
+/** 由 `mockConn` 注入的连接池实现；工厂在执行时才读它（模块导入阶段不会触及）。 */
+let mockMysqlCreatePoolImpl: ((...args: unknown[]) => unknown) | null = null;
+
 jest.mock("mysql2/promise", () => ({
   __esModule: true,
-  default: { createPool: jest.fn() },
+  default: {
+    // 每个隔离注册表重跑本工厂会得到一个新的 jest.fn，但都转发到同一个持有变量，
+    // 因此 `mockConn` 无需依赖 `jest.doMock` 在 isolateModules 内的行为。
+    createPool: jest.fn((...args: unknown[]) => {
+      if (!mockMysqlCreatePoolImpl) throw new Error("测试未配置 mysql createPool 替身");
+      return mockMysqlCreatePoolImpl(...args);
+    }),
+  },
 }));
 
 const generationModel = (jest.requireMock("../services/mongoService") as any).mongoose.__mockModel as {
@@ -257,8 +267,9 @@ describe("userGenerationStorage/mysql", () => {
   function mockConn(rows: unknown[] = []) {
     const conn = { execute: jest.fn().mockResolvedValue([rows]), end: jest.fn().mockResolvedValue(undefined) };
     createPool = jest.fn(() => conn);
+    mockMysqlCreatePoolImpl = createPool;
+    // 隔离子注册表重跑模块（清掉上一用例残留的 pool/tableReady），拿到同一持有变量上的替身。
     jest.isolateModules(() => {
-      jest.doMock("mysql2/promise", () => ({ __esModule: true, default: { createPool } }));
       isolatedMysql = require("../services/userGenerationStorage/mysql");
     });
     return conn;

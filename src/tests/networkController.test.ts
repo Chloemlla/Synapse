@@ -93,7 +93,8 @@ describe("NetworkController", () => {
       expect(mockStatus).toHaveBeenCalledWith(500);
       expect(mockJson).toHaveBeenCalledWith({
         success: false,
-        error: "服务暂时不可用",
+        error: "服务暂时不可用，请稍后重试",
+        details: { reason: "service_unavailable", retryable: true },
       });
     });
 
@@ -106,7 +107,8 @@ describe("NetworkController", () => {
       expect(mockStatus).toHaveBeenCalledWith(500);
       expect(mockJson).toHaveBeenCalledWith({
         success: false,
-        error: "测试异常",
+        error: "服务暂时不可用，请稍后重试",
+        details: { reason: "service_unavailable", retryable: true },
       });
     });
   });
@@ -172,7 +174,8 @@ describe("NetworkController", () => {
       expect(mockStatus).toHaveBeenCalledWith(500);
       expect(mockJson).toHaveBeenCalledWith({
         success: false,
-        error: "Rust network-tools TCP连接检测失败: network-tools down",
+        error: "服务暂时不可用，请稍后重试",
+        details: { reason: "service_unavailable", retryable: true },
       });
     });
   });

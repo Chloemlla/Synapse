@@ -16,8 +16,10 @@ const mockGetCachedIpRisk = jest.fn();
 
 jest.mock("../models/registrationAttemptModel", () => ({
   RegistrationAttempt: {
-    countDocuments: (...args: unknown[]) => mockCount(...(args as [])),
-    distinct: (...args: unknown[]) => mockDistinct(...(args as [])),
+    // 生产侧调用 `.exec()`（真实 Mongoose Query 契约），替身必须提供同名方法，
+    // 否则一套业务用例会以「countDocuments(...).exec is not a function」集体失败。
+    countDocuments: (...args: unknown[]) => ({ exec: () => mockCount(...(args as [])) }),
+    distinct: (...args: unknown[]) => ({ exec: () => mockDistinct(...(args as [])) }),
     create: (doc: Record<string, unknown>) => mockCreate(doc),
   },
 }));

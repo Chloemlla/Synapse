@@ -5,6 +5,19 @@ import request from "supertest";
 import app from "../app";
 import { createProfileVerificationSession } from "../services/profileUpdateVerificationService";
 
+/**
+ * 人机验证策略在无库单测里会走 RuntimeConfigService/供应商台账的 Mongo 读取
+ * （单次 buffering 10s、批量重试），把「完整流程」的登录与注册各顶到 30s 超时。
+ * 本套件验的是 TOTP 流程，不需要真实供应商策略：固定返回「不需要验证」。
+ */
+jest.mock("../services/turnstile/providers", () => {
+  const actual = jest.requireActual("../services/turnstile/providers");
+  return {
+    ...actual,
+    getCaptchaRequestPolicy: jest.fn(async () => ({ required: false, enabledProviders: [] })),
+  };
+});
+
 describe("TOTP 登录流程", () => {
   const TEST_USER = {
     username: "testuser",

@@ -17,6 +17,13 @@ const mockConsume = jest.fn(async (_keyId: string, limit: number) => ({
 const mockSetApiKeyPenalty = jest.fn(async () => ({ modified: 1, matched: 1 }));
 
 jest.mock("../services/apiKeyService", () => ({
+  // 这两个常量被 oauthService 在模块级读取（`API_KEY_PERMISSION_DEFINITIONS.filter(...)`）；
+  // 替身漏掉它们 ⇒ apiKeyAuth → oauthTokenAuth → oauthService 在 import 阶段就抛
+  // "Cannot read properties of undefined (reading 'filter')"，整个套件跑不起来。
+  ADMIN_PERMISSION: "*",
+  API_KEY_PERMISSION_DEFINITIONS: [
+    { key: "*", label: "管理员", description: "全部权限", category: "utility", endpoints: [] },
+  ],
   validateApiKey: (...args: unknown[]) => mockValidateApiKey(...(args as [string])),
   recordUsage: (...args: unknown[]) => mockRecordUsage(...(args as [string, string])),
   setApiKeyPenalty: (...args: unknown[]) => mockSetApiKeyPenalty(...(args as [])),

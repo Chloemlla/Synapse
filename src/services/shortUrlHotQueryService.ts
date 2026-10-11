@@ -113,9 +113,11 @@ class ShortUrlHotQueryService {
       }
       const entry = JSON.parse(raw) as Partial<HotEntry>;
       if (!entry || typeof entry.target !== "string" || entry.target.length === 0) {
-        // 值损坏：当成未命中，顺手清掉，避免每次访问都要解析失败一次
+        // 值损坏：当成未命中，顺手清掉，避免每次访问都要解析失败一次。
+        // 必须 await：调用方拿到 null 后往往会立刻回源重写热点，若清脏值还在飞，
+        // 会出现「刚写回的新值又被这条过期删除指令删掉」的竞态。
         this.misses += 1;
-        void this.invalidate(trimmed);
+        await this.invalidate(trimmed);
         return null;
       }
       this.hits += 1;

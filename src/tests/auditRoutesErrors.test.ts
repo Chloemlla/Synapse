@@ -33,14 +33,16 @@ describe("public route error boundaries", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it.each([
-    ["/quota", "getOutEmailQuota", "无法获取配额信息"],
-    ["/records", "getOutEmailRecords", "查询失败"],
-    ["/records/item", "getOutEmailRecordById", "查询失败"],
-  ] as const)("does not expose errors from GET %s", async (path, method, error) => {
+    ["/quota", "getOutEmailQuota", 503, { success: false, code: "EMAIL_SERVICE_UNAVAILABLE", error: "邮件额度暂时无法查询，请稍后重试" }],
+    ["/records", "getOutEmailRecords", 500, { success: false, error: "查询失败" }],
+    ["/records/item", "getOutEmailRecordById", 500, { success: false, error: "查询失败" }],
+  ] as const)("does not expose errors from GET %s", async (path, method, expectedStatus, expectedBody) => {
     (emailService[method] as jest.Mock).mockRejectedValue(failure);
     const response = await request(app).get(`/email${path}`);
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ success: false, error });
+    expect(response.status).toBe(expectedStatus);
+    expect(response.body).toEqual(expectedBody);
+    // 核心不变式：上游报错原文（含内网主机名/凭据）绝不外泄。
+    expect(JSON.stringify(response.body)).not.toContain(failure.message);
   });
 
   it("preserves a missing-record 404 separately from a database failure", async () => {
@@ -49,13 +51,15 @@ describe("public route error boundaries", () => {
   });
 
   it.each([
-    ["/send", "sendOutEmail", { to: "receiver@example.com", subject: "subject", content: "body" }, "发送失败"],
-    ["/batch-send", "sendOutEmailBatch", { messages: [{ to: "receiver@example.com", subject: "subject", content: "body" }] }, "批量发送失败"],
-  ] as const)("does not expose errors from POST %s", async (path, method, body, error) => {
+    ["/send", "sendOutEmail", { to: "receiver@example.com", subject: "subject", content: "body" }],
+    ["/batch-send", "sendOutEmailBatch", { messages: [{ to: "receiver@example.com", subject: "subject", content: "body" }] }],
+  ] as const)("does not expose errors from POST %s", async (path, method, body) => {
     (emailService[method] as jest.Mock).mockRejectedValue(failure);
     const response = await request(app).post(`/email${path}`).send(body);
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ error });
+    // 发送类失败统一 503 + 稳定 code（邮件服务不可用是“稍后重试”，不是服务端 bug）。
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ success: false, code: "EMAIL_SERVICE_UNAVAILABLE", error: "邮件服务暂时不可用，请稍后重试" });
+    expect(JSON.stringify(response.body)).not.toContain(failure.message);
   });
 
   it.each([

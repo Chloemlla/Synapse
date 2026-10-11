@@ -645,8 +645,11 @@ export class NexaiAuthController {
     } catch (error: any) {
       const status = errorStatus(error);
       logger.warn("[NexAI] Passkey login verification failed", { error });
+      // 保留服务层给的状态码与稳定 code（未知凭据 = 400 + unknown_credential），
+      // 否则前端拿不到「去注册通行密钥」的分支依据；仅有「用户不存在」这类 401 不带 code。
+      const code = typeof error?.code === "string" && error.code ? error.code : undefined;
       if ([400, 401, 404].includes(status)) {
-        return res.status(401).json({ success: false, error: "Passkey 登录失败" });
+        return res.status(status).json({ success: false, error: "Passkey 登录失败", ...(code ? { code } : {}) });
       }
       return res.status(status).json({
         success: false,

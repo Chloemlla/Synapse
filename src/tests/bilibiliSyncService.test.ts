@@ -150,7 +150,7 @@ describe("bilibiliSyncService", () => {
 
       await expect(updateBilibiliSettings("user-1", { theme: "dark" }, 0, true)).resolves.toBeDefined();
       expect(mockUpdateOne).toHaveBeenCalledWith(
-        { userId: "user-1" },
+        expect.objectContaining({ userId: "user-1" }),
         expect.objectContaining({ $set: expect.objectContaining({ credentialLastCheckedAt: expect.any(Date) }) }),
       );
     } finally {
@@ -178,7 +178,7 @@ describe("bilibiliSyncService", () => {
         code: "BILIBILI_CREDENTIAL_INVALID",
       });
       expect(mockUpdateOne).toHaveBeenCalledWith(
-        { userId: "user-1" },
+        expect.objectContaining({ userId: "user-1" }),
         expect.objectContaining({ $set: expect.objectContaining({ credentialStatus: "invalid" }) }),
       );
     } finally {

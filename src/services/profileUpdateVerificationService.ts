@@ -192,6 +192,10 @@ function openToken(token: string): TokenPayload | null {
       iat: parsed.iat,
       exp: parsed.exp,
       j: typeof parsed.j === "string" ? parsed.j : "",
+      // RC-41 裁决二：`ua`/`ip` 必须从密文里还原出来，否则 validate 里的 UA 绑定与
+      // 异地判定永远看不到它们（写入时存了、读取时丢掉 = 绑定形同虚设）。
+      ua: typeof parsed.ua === "string" && parsed.ua ? parsed.ua : undefined,
+      ip: typeof parsed.ip === "string" && parsed.ip ? parsed.ip : undefined,
     };
   } catch {
     return null;

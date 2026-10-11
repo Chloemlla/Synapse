@@ -768,7 +768,9 @@ class LotteryService {
       prize,
       randomValue,
       drawTime: drawNow,
-      round: latest,
+      // 审计里的 remainingAfter 要的是**扣减后**的库存：latest 是抽奖前的快照，
+      // 直接拿它会把「还剩几个」写成旧值（与 winners/库存扣减不一致）。
+      round: { ...latest, prizes: nextPrizes },
       riskLevel: matches.level,
       riskScore: matches.score,
       downgraded: riskDowngraded,

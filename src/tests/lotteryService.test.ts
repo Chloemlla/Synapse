@@ -376,7 +376,7 @@ describe("多次抽奖 / 保底 / 机会", () => {
   it("保底：到指定抽数时至少出该稀有度（没有符合条件的有库存奖品则回落普通抽取）", async () => {
     const common = prize({ id: "common", probability: 0.99, category: "common", quantity: 5, remaining: 5 });
     const epic = prize({ id: "epic", probability: 0.0001, category: "epic", quantity: 5, remaining: 5 });
-    const round = makeRound({ guarantee: { everyDraws: 2, category: "epic" }, drawCounts: { u1: 1 }, prizes: [common, epic] });
+    const round = makeRound({ maxDrawsPerUser: 2, guarantee: { everyDraws: 2, category: "epic" }, drawCounts: { u1: 1 }, prizes: [common, epic] });
     mockGetAllRounds.mockResolvedValue([round]);
 
     const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");

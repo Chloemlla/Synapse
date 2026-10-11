@@ -15,8 +15,12 @@ import { resolveUserRoot } from "../docTool/runtime";
 import type { DocItemStatus, DocJobRecord, DocLimits } from "../docTool/types";
 
 // runner 的默认实现是真实 converter（会 spawn pandoc）：这条用例只用注入的假实现，
-// 把模块换成空壳，避免它的模块级依赖渗进单测。
-jest.mock("../docTool/converter", () => ({ convertOne: jest.fn() }));
+// 把 convertOne 换成空壳，避免它的模块级依赖渗进单测；但 `destForFile` 是纯函数、
+// 且 runner 用它计算落点，必须提供一个真实现（漏掉它每个任务都会 TypeError 成 failed）。
+jest.mock("../docTool/converter", () => ({
+  convertOne: jest.fn(),
+  destForFile: jest.requireActual("../docTool/converter").destForFile,
+}));
 
 type ConvertOpts = Parameters<typeof convertOne>[0];
 type ConvertResult = Awaited<ReturnType<typeof convertOne>>;
