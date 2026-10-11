@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { config } from "../config/config";
+import { getOrCreateRequestRiskContext } from "../utils/requestRiskContext";
 import { shouldExemptFromRiskControl } from "../services/riskExemption";
 import { getCachedIpRisk } from "../services/ipRiskService";
 import { recordAccountAbuseSignal } from "../services/accountRiskService";
@@ -174,8 +175,15 @@ export async function evaluateStepUpRequirement(
     return { required: false, reason: "exempt" };
   }
 
-  const state = await getAccountRiskState(user.id);
-  if (!state || state.deletedAt) return { required: false, reason: "anonymous" };
+  // RC-55：把「这一次请求的风控上下文」收成一个请求期对象。
+  // **同请求内只读一次**账户状态 —— 下面所有分支都复用上下文，不再各自查库（新增闸门不再新增查询）。
+  const context = await getOrCreateRequestRiskContext(req, async (userId) => getAccountRiskState(userId));
+  if (!context || context.accountDeleted) return { required: false, reason: "anonymous" };
+  const state = {
+    riskTier: context.riskTier,
+    stepUpMode: context.stepUp.mode,
+    stepUpUntil: context.stepUp.until,
+  };
 
   let needsVerification =
     cfg.stepUpEnabled &&

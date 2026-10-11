@@ -366,6 +366,20 @@ export default function CaptchaProviderAdmin() {
     });
   }, []);
 
+  /**
+   * RC-24：场景供应商白名单。空数组 = 不受约束（不写空数组，直接删键 ——
+   * 后端把空数组视作“未设置”，但前端也不该把一个无意义的空值留在脏值比较里）。
+   */
+  const updateScenarioAllowlist = useCallback((scenario: Scenario, providers: ProviderId[]) => {
+    setPolicy((prev) => {
+      if (!prev) return prev;
+      const scenarioProviderAllowlist = { ...(prev.scenarioProviderAllowlist ?? {}) };
+      if (providers.length === 0) delete scenarioProviderAllowlist[scenario];
+      else scenarioProviderAllowlist[scenario] = providers;
+      return { ...prev, scenarioProviderAllowlist };
+    });
+  }, []);
+
   const updateWidgets = useCallback((patch: Partial<WidgetSettings>) => {
     setWidgets((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
@@ -617,6 +631,7 @@ export default function CaptchaProviderAdmin() {
           dirty={policyDirty}
           onChange={updatePolicy}
           onScenarioStrategyChange={updateScenarioStrategy}
+          onScenarioAllowlistChange={updateScenarioAllowlist}
           onReset={() => setPolicy(overview.policy)}
           onSimulate={runSimulate}
           onPreview={runPreview}

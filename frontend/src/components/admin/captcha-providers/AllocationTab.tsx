@@ -41,6 +41,8 @@ export interface AllocationTabProps extends TabActions {
   dirty: boolean;
   onChange: (patch: Partial<AllocationPolicy>) => void;
   onScenarioStrategyChange: (scenario: Scenario, strategy: Strategy | '') => void;
+  /** RC-24：场景供应商白名单（硬约束）。空数组 = 不受白名单约束。 */
+  onScenarioAllowlistChange: (scenario: Scenario, providers: ProviderId[]) => void;
   onReset: () => void;
   onSimulate: (payload: SimulatePayload) => Promise<ApiResult<SimulationResult>>;
   onPreview: (query: SelectionQuery) => Promise<ApiResult<SelectionPreview>>;
@@ -82,6 +84,7 @@ export default function AllocationTab(props: AllocationTabProps) {
     dirty,
     onChange,
     onScenarioStrategyChange,
+    onScenarioAllowlistChange,
     onReset,
     onSimulate,
     onPreview,
@@ -324,6 +327,52 @@ export default function AllocationTab(props: AllocationTabProps) {
                   </label>
                 );
               })}
+            </div>
+
+            {/* RC-24：场景白名单是**硬约束**，不是权重。
+                只要某场景设了白名单，候选集就恒等于它的交集（权重 0 在 weighted 下会退化为等概率、
+                在 failover/round_robin 下根本不生效，所以排除供应商必须用白名单表达）。 */}
+            <div className="mt-4">
+              <p className="text-xs font-medium text-slate-600">场景供应商白名单（硬性排除）</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                全部不勾 = 该场景不受白名单约束；只要勾了至少一家，该场景的候选集就只会在勾选范围内。
+                被标记账户的逐步验证默认只走自托管 Cap（trycap）与 Turnstile。
+              </p>
+              <div className="mt-2 space-y-2">
+                {scenarios.map((scenario) => {
+                  const key = scenario.value as Scenario;
+                  const list = policy.scenarioProviderAllowlist?.[key] ?? [];
+                  const unrestricted = list.length === 0;
+                  return (
+                    <div key={scenario.value} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-3 py-2">
+                      <span className="min-w-[9rem] text-[11px] font-medium text-slate-600">{scenario.label}</span>
+                      {providerOptions.map((option) => {
+                        const checked = list.includes(option.value as ProviderId);
+                        return (
+                          <label key={option.value} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5"
+                              checked={checked}
+                              disabled={!canWrite}
+                              onChange={(event) => {
+                                const next = new Set(list);
+                                if (event.target.checked) next.add(option.value as ProviderId);
+                                else next.delete(option.value as ProviderId);
+                                onScenarioAllowlistChange(key, [...next] as ProviderId[]);
+                              }}
+                            />
+                            {option.label}
+                          </label>
+                        );
+                      })}
+                      <span className={`text-[11px] ${unrestricted ? 'text-slate-400' : 'text-amber-600'}`}>
+                        {unrestricted ? '不限制' : '仅勾选范围'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
