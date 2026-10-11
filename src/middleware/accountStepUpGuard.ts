@@ -92,9 +92,11 @@ async function recheckLoggedInIpRisk(params: {
   const challengeThreshold = Number(config.proxycheck.challengeRiskScore) || 66;
   if (cached.risk >= blockThreshold) {
     // RC-26：高风险→切断连接（并写封禁，让后续请求在 ipBanCheck 就被拦下）。
-    await manualBanIp(params.ipAddress, 24, "账号风险档受限期间出现高风险出口（自动阻断）", "auto").catch(
-      () => undefined,
-    );
+    // 高风险出口自动封 24 小时（与 ipVerificationService 的高风险自动封禁同口径）；
+    // source=auto 让后台封禁名单把它归到「自动触发」而不是「手工封禁」。
+    await manualBanIp(params.ipAddress, "账号风险档受限期间出现高风险出口（自动阻断）", 24 * 60, {
+      source: "auto",
+    }).catch(() => undefined);
     return "block";
   }
   if (cached.risk >= challengeThreshold || cached.flags?.some((flag) => flag === "vpn" || flag === "proxy" || flag === "tor")) {

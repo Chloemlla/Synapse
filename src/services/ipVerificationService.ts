@@ -623,7 +623,7 @@ export class IpVerificationService {
       // 这里只需把结果告诉前端，让它渲染阻断页与申诉入口。
       if (proxycheckRisk.shouldBlock) {
         const banReason = `高风险 IP 自动拦截：proxycheck 风险分 ${proxycheckRisk.risk}（${proxycheckRisk.level}）`;
-        const banResult = await manualBanIp(ipAddress, banReason, 24 * 60);
+        const banResult = await manualBanIp(ipAddress, banReason, 24 * 60, { source: "auto" });
 
         if (banResult.success) {
           return {

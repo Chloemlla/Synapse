@@ -285,13 +285,24 @@ export async function getIpBanStats(): Promise<{ total: number; active: number; 
   }
 }
 
+/**
+ * 封禁的触发方：`manual` = 管理员手工封（默认）；`auto` = 风控自动判定。
+ * 名单接口 `IpBanListEntry.source` 与后台「来源构成（手工封禁 / 自动触发）」直接读它，
+ * 自动判定路径漏传就会被算进「管理员干的」，事后无法归因。
+ */
+export interface ManualBanIpOptions {
+  source?: "manual" | "auto";
+  fingerprint?: string;
+  userAgent?: string;
+}
+
 export async function manualBanIp(
   ipAddress: string,
   reason: string,
   durationMinutes: number = 60,
-  fingerprint?: string,
-  userAgent?: string,
+  options: ManualBanIpOptions = {},
 ): Promise<{ success: boolean; error?: string; expiresAt?: Date; bannedAt?: Date }> {
+  const { source = "manual", fingerprint, userAgent } = options;
   try {
     const validatedIp = validateIpAddress(ipAddress);
     if (!validatedIp) {
@@ -334,7 +345,7 @@ export async function manualBanIp(
       existingBan.violationCount = MAX_VIOLATIONS;
       // 名单里要把「管理员干的」和「违规计数自动触发的」分开，否则两者都是
       // violationCount >= MAX_VIOLATIONS，事后无法归因。
-      existingBan.source = "manual";
+      existingBan.source = source;
 
       if (fingerprint) {
         const sanitizedFingerprint = sanitizeString(fingerprint, 200);
@@ -359,7 +370,7 @@ export async function manualBanIp(
         violationCount: MAX_VIOLATIONS,
         bannedAt: now,
         expiresAt,
-        source: "manual",
+        source,
         fingerprint: fingerprint ? sanitizeString(fingerprint, 200) : undefined,
         userAgent: userAgent ? sanitizeString(userAgent, 500) : undefined,
       });

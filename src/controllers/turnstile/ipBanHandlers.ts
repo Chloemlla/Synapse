@@ -30,7 +30,7 @@ export async function banIp(req: Request, res: Response) {
     }
     const banDuration = durationResult.value;
 
-    const banResult = await TurnstileService.manualBanIp(ipAddress, reason, banDuration, fingerprint, userAgent);
+    const banResult = await TurnstileService.manualBanIp(ipAddress, reason, banDuration, { fingerprint, userAgent });
 
     if (banResult.success) {
       res.json({

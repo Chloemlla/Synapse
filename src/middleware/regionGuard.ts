@@ -74,7 +74,8 @@ export async function regionGuard(req: Request, res: Response, next: NextFunctio
     logger.warn("[RegionGuard] 地区限制命中", { ip, country: cached?.isocode || cached?.country, reason: verdict.reason });
 
     if (policy.mode === "block") {
-      await manualBanIp(ip, 24, `地区限制（${verdict.reason}）`, "auto").catch(() => undefined);
+      // 自动封 24 小时（与 ipVerificationService 的高风险自动封禁同口径）；source=auto 供后台归因。
+      await manualBanIp(ip, `地区限制（${verdict.reason}）`, 24 * 60, { source: "auto" }).catch(() => undefined);
     }
 
     res.status(403).json({
