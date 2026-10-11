@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
-import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask } from '../types/lottery';
+import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask, LotteryFulfillment } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { formatDistanceToNow } from 'date-fns';
@@ -46,6 +46,22 @@ const PRIZE_CATEGORY_LABELS: Record<string, string> = {
   rare: '稀有',
   epic: '史诗',
   legendary: '传说',
+};
+
+const FULFILLMENT_TYPE_LABELS: Record<string, string> = {
+  virtual: '虚拟直充',
+  code: '卡密',
+  physical: '实物邮寄',
+};
+
+const FULFILLMENT_STATUS_LABELS: Record<string, string> = {
+  pending: '待发放',
+  processing: '发放中',
+  awaiting_address: '待填地址',
+  ready: '待发货',
+  completed: '已发放',
+  failed: '发放失败',
+  redeemed: '已折现',
 };
 
 // 奖品展示组件
@@ -448,6 +464,12 @@ const LotteryWalletPanel: React.FC<{
   const [claiming, setClaiming] = useState<string | null>(null);
   const [exchangeTimes, setExchangeTimes] = useState(1);
   const [exchanging, setExchanging] = useState(false);
+  const [fulfillments, setFulfillments] = useState<LotteryFulfillment[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [addressForId, setAddressForId] = useState<string | null>(null);
+  const [addressForm, setAddressForm] = useState({ name: '', phone: '', detail: '' });
+  const [transferForId, setTransferForId] = useState<string | null>(null);
+  const [transferTarget, setTransferTarget] = useState('');
 
   const loadTasks = useCallback(async () => {
     try {
@@ -460,6 +482,61 @@ const LotteryWalletPanel: React.FC<{
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
+
+  const loadFulfillments = useCallback(async () => {
+    try {
+      setFulfillments(await lotteryApi.getMyFulfillments());
+    } catch {
+      // 未登录/接口暂不可用：不阻塞页面。
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFulfillments();
+  }, [loadFulfillments]);
+
+  const handleSubmitAddress = async (id: string) => {
+    setBusyId(id);
+    try {
+      await lotteryApi.submitFulfillmentAddress(id, addressForm);
+      setNotification({ message: '收件地址已提交，等待发货', type: 'success' });
+      setAddressForId(null);
+      setAddressForm({ name: '', phone: '', detail: '' });
+      await loadFulfillments();
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '提交地址失败'), type: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleTransfer = async (id: string) => {
+    setBusyId(id);
+    try {
+      await lotteryApi.transferFulfillment(id, transferTarget.trim());
+      setNotification({ message: '已转赠给好友', type: 'success' });
+      setTransferForId(null);
+      setTransferTarget('');
+      await loadFulfillments();
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '转赠失败'), type: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRedeem = async (id: string) => {
+    setBusyId(id);
+    try {
+      const result = await lotteryApi.redeemFulfillment(id);
+      setNotification({ message: `已折现为 ${result.value} 抽奖积分`, type: 'success' });
+      await Promise.all([onRefresh(), loadFulfillments()]);
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '折现失败'), type: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const handleClaim = async (taskKey: string) => {
     setClaiming(taskKey);
@@ -570,6 +647,111 @@ const LotteryWalletPanel: React.FC<{
           </div>
         ))}
         {tasks.length === 0 && <div className="py-4 text-center text-sm text-slate-400">暂无任务</div>}
+      </div>
+
+      <div className="mt-6">
+        <h4 className="mb-2 text-sm font-semibold text-slate-700">我的奖品</h4>
+        {fulfillments.length === 0 ? (
+          <div className="py-2 text-sm text-slate-400">暂无奖品记录</div>
+        ) : (
+          <div className="space-y-2">
+            {fulfillments.map((record) => (
+              <div key={record.id} className="rounded-2xl border border-slate-200 bg-white/70 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-800">{record.prizeName}</div>
+                    <div className="text-xs text-slate-500">
+                      {FULFILLMENT_TYPE_LABELS[record.type] ?? record.type} · {FULFILLMENT_STATUS_LABELS[record.status] ?? record.status}
+                    </div>
+                    {record.code && <div className="text-xs text-emerald-700">卡密：{record.code}</div>}
+                    {record.address && (
+                      <div className="text-xs text-slate-400">收件：{record.address.name} {record.address.phone}</div>
+                    )}
+                    {record.error && <div className="text-xs text-rose-600">{record.error}</div>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {record.type === 'physical' && (record.status === 'awaiting_address' || record.status === 'pending') && (
+                      <button
+                        type="button"
+                        onClick={() => setAddressForId(addressForId === record.id ? null : record.id)}
+                        className={studioSecondaryButtonClassName}
+                      >
+                        填写地址
+                      </button>
+                    )}
+                    {['pending', 'awaiting_address', 'ready'].includes(record.status) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setTransferForId(transferForId === record.id ? null : record.id)}
+                          className={studioSecondaryButtonClassName}
+                        >
+                          转赠
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void handleRedeem(record.id); }}
+                          disabled={busyId === record.id}
+                          className={`${studioSecondaryButtonClassName} disabled:opacity-50`}
+                        >
+                          折现
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {addressForId === record.id && (
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <input
+                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      placeholder="收件人"
+                      value={addressForm.name}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, name: e.target.value }))}
+                    />
+                    <input
+                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      placeholder="手机号"
+                      value={addressForm.phone}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    />
+                    <input
+                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      placeholder="详细地址"
+                      value={addressForm.detail}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, detail: e.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { void handleSubmitAddress(record.id); }}
+                      disabled={busyId === record.id}
+                      className={`${studioPrimaryButtonClassName} disabled:opacity-50`}
+                    >
+                      提交地址
+                    </button>
+                  </div>
+                )}
+                {transferForId === record.id && (
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      className="w-full rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      placeholder="受赠人用户 ID"
+                      value={transferTarget}
+                      onChange={(e) => setTransferTarget(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { void handleTransfer(record.id); }}
+                      disabled={busyId === record.id || !transferTarget.trim()}
+                      className={`${studioPrimaryButtonClassName} disabled:opacity-50`}
+                    >
+                      确认转赠
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   );

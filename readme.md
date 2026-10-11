@@ -1885,6 +1885,8 @@ docker-compose up -d
 - 抽奖对账：T+0（DB 剩余 vs 中奖推算 vs Redis 计数，5 分钟定时 + 超管端点）与 T+1（用户价值 vs 中奖价值）报表，管理端可一键运行；T+1 支持外部财务流水全链路核对（`LOTTERY_FINANCE_SOURCE_URL`，未配置时明确标注无基线）
 - 抽奖风控：`services/lottery/risk.ts` 分级（上游风控分 + 同用户/同指纹/同 IP 短窗频次 + 同设备多账号）；`soft` 静默降级为暗池空奖（照常记参与与审计、不扣库存、不报错），`block` 硬拦截
 - 抽奖预算熔断：轮次 `budget = { maxTotalValue, warningRatio }`，跨预警线告警、会超预算的本次出奖降级、到上限自动停用轮次
+- 抽奖履约中心：奖品级 `fulfillment = { type: virtual|code|physical, provider?, redeemValue? }`；中奖落 `lottery_fulfillments` 记录，走租约队列 + 看门狗（超时原子回收、超限死信邮件/webhook 告警、owner 条件写防重叠）；虚拟/卡密 POST 到 `LOTTERY_FULFILLMENT_{VIRTUAL,CODE}_URL`，未配通道落 `ready` 待人工
+- 抽奖转赠与折现：`GET /api/lottery/fulfillments/me`、`POST /fulfillments/:id/{address,transfer,redeem}`（实物填地址、未核销可转赠、可折成抽奖积分）；页面「我的奖品」面板提供入口
 - 抽奖中台 PRD 与实施清单落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（产品蓝图 + 看门狗设计 + 分阶段勾选清单）
 - 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
 - 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`

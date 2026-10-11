@@ -114,10 +114,10 @@
 
 | 奖品类型 | 发放方式 | 履约流程 | 状态 |
 | --- | --- | --- | --- |
-| 自营虚拟资产 | 内部 RPC 同步 | 积分/成长值/优惠券直充 | `[ ]` |
-| 三方权益卡密 | 卡密池异步提取 | 动态加解密、防碰撞、核销/过期 | `[ ]` |
-| 实体商品 | 异步履约队列 | 地址收集（时效倒计时）、修改审核、对接 ERP/WMS、物流追踪 | `[ ]` |
-| 转赠与置换 | 未核销凭证转赠、一键折现/折积分 | 合规校验 + 流水 | `[ ]` |
+| 自营虚拟资产 | 内部 RPC 同步 | 积分/成长值/优惠券直充 | `[x]` 履约队列（HTTP 通道，未配置时落 ready 待人工） |
+| 三方权益卡密 | 卡密池异步提取 | 动态加解密、防碰撞、核销/过期 | `[x]` 卡密下发 + 本人可见 |
+| 实物商品 | 异步履约队列 | 地址收集（时效倒计时）、修改审核、对接 ERP/WMS、物流追踪 | `[x]` 地址收集 + 转 ready（对接 ERP/WMS/物流待接） |
+| 转赠与置换 | 未核销凭证转赠、一键折现/折积分 | 合规校验 + 流水 | `[x]` 转赠 + 折现为抽奖积分 |
 
 ### 3.6 运营中台与审计看板
 
@@ -279,9 +279,14 @@ Express + MongoDB 轻量级任务队列（当前为 TTS 生成队列 `src/tts/tt
 - [x] 静默降级到暗池空奖：soft 风险照常记录参与与审计，但不出奖、不扣库存、不报错
 - [x] 预算熔断器：轮次 `budget = { maxTotalValue, warningRatio }`，会超预算的本次出奖降级、
   到上限自动停用轮次、跨预警线记告警
-- [ ] 奖品履约中心（虚拟直充 / 卡密池 / 实物） `[决策：奖品类型与对接方]`
-- [ ] 异步履约队列（复用 §4.4 租约看门狗）
-- [ ] 转赠与折现置换
+- [x] 奖品履约中心：奖品级 `fulfillment = { type: virtual|code|physical, provider?, params?, redeemValue? }`；
+  中奖落 `lottery_fulfillments` 记录（pending / awaiting_address / processing / ready / completed / failed / redeemed）
+- [x] 异步履约队列：复用租约看门狗（认领租约 + `attempts` + 超时原子回收 + 死信邮件/webhook 告警 +
+  `processingOwner` 条件写防重叠）；虚拟/卡密 POST 到 `LOTTERY_FULFILLMENT_{VIRTUAL,CODE}_URL`，
+  未配通道落 ready 待人工（不误判失败）
+- [x] 转赠与折现置换：`GET /fulfillments/me`、`POST /fulfillments/:id/{address,transfer,redeem}`；
+  未核销/未发货可转赠、可折成抽奖积分（`redeemValue` 或 价值 × 比例）
+- [ ] 对接 ERP/WMS 打单与物流轨迹 `[决策：仓储/快递服务方]`
 - [ ] 画布式活动编辑器 / AB 测试 / 实时风控大盘
 
 ---

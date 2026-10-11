@@ -25,6 +25,7 @@ import {
   buildT1Report,
 } from "./lottery/reconciliation";
 import { evaluateLotteryRisk } from "./lottery/risk";
+import { lotteryFulfillmentService } from "./lotteryFulfillmentService";
 import { type LotteryBudget, awardedValueOf, evaluateBudget } from "./lottery/budget";
 import {
   type LotteryFinanceEntry,
@@ -49,6 +50,13 @@ export interface LotteryPrize {
   pacing?: LotteryPacing;
   /** 各时间窗已发放数（窗序号 -> 数量）。 */
   pacingAwards?: Record<string, number>;
+  /** 履约配置（可选）：不配则不落履约记录。 */
+  fulfillment?: {
+    type: "virtual" | "code" | "physical";
+    provider?: string;
+    params?: Record<string, unknown>;
+    redeemValue?: number;
+  };
 }
 
 /** 保底规则：本轮个人每抽到 everyDraws 的整数倍时，至少出 category 及以上稀有度的奖品。 */
@@ -712,6 +720,11 @@ class LotteryService {
 
       // 无论中没中奖都记一次参与：记录里的 participationCount 才能反映真实参与次数。
       await this.updateUserRecord(userId, username, { winner, prize, roundId, drawTime: drawNow });
+
+      // 履约：中奖后落一条履约记录（异步队列处理），失败不影响抽奖结果。
+      if (winner && prize) {
+        await lotteryFulfillmentService.enqueue({ roundId, userId, username, prize }).catch(() => undefined);
+      }
     } catch (error) {
       // 扣了机会但状态没落库：把机会退回去，不出现「扣了机会没抽成」。
       if (chanceConsumed > 0) {

@@ -473,6 +473,49 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
                       <option value="legendary">传说</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">履约方式</label>
+                    <select
+                      value={prize.fulfillment?.type ?? ''}
+                      onChange={(e) => {
+                        const type = e.target.value;
+                        updatePrize(index, 'fulfillment', type ? { ...(prize.fulfillment ?? {}), type } : undefined);
+                      }}
+                      className="w-full px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                    >
+                      <option value="">不发奖 / 不履约</option>
+                      <option value="virtual">虚拟直充</option>
+                      <option value="code">卡密</option>
+                      <option value="physical">实物邮寄</option>
+                    </select>
+                  </div>
+                  {prize.fulfillment && (
+                    <div>
+                      <label className="block text-sm text-slate-600 mb-1">履约渠道 / 折现价值</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={prize.fulfillment.provider ?? ''}
+                          onChange={(e) => updatePrize(index, 'fulfillment', { ...prize.fulfillment, provider: e.target.value })}
+                          placeholder="provider"
+                          className="w-full px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={prize.fulfillment.redeemValue ?? ''}
+                          onChange={(e) =>
+                            updatePrize(index, 'fulfillment', {
+                              ...prize.fulfillment,
+                              redeemValue: e.target.value === '' ? undefined : Number(e.target.value),
+                            })
+                          }
+                          placeholder="折现"
+                          className="w-24 px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))}

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { type LotteryPrize, type LotteryRound, lotteryService } from "../services/lotteryService";
+import { lotteryFulfillmentService } from "../services/lotteryFulfillmentService";
 import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
 
@@ -34,6 +35,9 @@ const LOTTERY_USER_FACING_ERRORS = [
   "积分不足",
   "已领取完毕",
   "需由业务系统",
+  "履约记录",
+  "受赠人",
+  "该奖品",
 ] as const;
 
 function isUserFacingLotteryError(message: string): boolean {
@@ -210,6 +214,36 @@ export class LotteryController {
           }
           pacing = { periodMs, quotaPerWindow };
         }
+        // 履约配置（可选）：virtual=虚拟直充 / code=卡密 / physical=实物
+        let fulfillment: LotteryPrize["fulfillment"] | undefined;
+        if (p.fulfillment && typeof p.fulfillment === "object") {
+          const rawFulfillment = p.fulfillment as Record<string, unknown>;
+          const type = rawFulfillment.type;
+          if (type !== "virtual" && type !== "code" && type !== "physical") {
+            res.status(400).json({ success: false, error: "奖品履约类型非法（virtual / code / physical）" });
+            return;
+          }
+          const provider =
+            typeof rawFulfillment.provider === "string" && rawFulfillment.provider.trim()
+              ? rawFulfillment.provider.trim().slice(0, 64)
+              : undefined;
+          const redeemValue =
+            rawFulfillment.redeemValue === undefined ? undefined : readInRange(rawFulfillment.redeemValue, 0, 1_000_000_000);
+          if (redeemValue === null) {
+            res.status(400).json({ success: false, error: "奖品折现价值非法" });
+            return;
+          }
+          const params =
+            rawFulfillment.params && typeof rawFulfillment.params === "object"
+              ? (rawFulfillment.params as Record<string, unknown>)
+              : undefined;
+          fulfillment = {
+            type,
+            ...(provider ? { provider } : {}),
+            ...(params ? { params } : {}),
+            ...(redeemValue !== undefined ? { redeemValue } : {}),
+          };
+        }
         normalizedPrizes.push({
           id: prizeId,
           name: p.name,
@@ -220,6 +254,7 @@ export class LotteryController {
           remaining: quantity,
           category: typeof p.category === "string" && PRIZE_CATEGORIES.has(p.category) ? p.category : "common",
           ...(pacing ? { pacing } : {}),
+          ...(fulfillment ? { fulfillment } : {}),
           ...(typeof p.image === "string" && p.image ? { image: p.image } : {}),
         });
       }
@@ -650,6 +685,105 @@ export class LotteryController {
       res.json({ success: true, data: report });
     } catch (error) {
       logger.error("T+1 对账失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 我的奖品（履约记录）
+  public async getMyFulfillments(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      const records = await lotteryFulfillmentService.listForUser(userId);
+      res.json({ success: true, data: records });
+    } catch (error) {
+      logger.error("获取我的奖品失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 实物奖品：提交收件地址
+  public async submitFulfillmentAddress(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const fulfillmentId = firstString(req.params.id);
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      if (!fulfillmentId) {
+        res.status(400).json({ success: false, error: "无效的履约记录ID" });
+        return;
+      }
+      const name = (firstString(req.body?.name) || "").trim();
+      const phone = (firstString(req.body?.phone) || "").trim();
+      const detail = (firstString(req.body?.detail) || "").trim();
+      if (!wafCheck(name, 64) || !/^[0-9+\- ]{5,20}$/.test(phone) || !detail || detail.length > 200 || /[<>]/.test(detail)) {
+        res.status(400).json({ success: false, error: "地址参数非法" });
+        return;
+      }
+      const record = await lotteryFulfillmentService.submitAddress(fulfillmentId, userId, { name, phone, detail });
+      res.json({ success: true, data: record, message: "收件地址已提交" });
+    } catch (error) {
+      logger.error("提交收件地址失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 转赠未核销的奖品
+  public async transferFulfillment(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const fulfillmentId = firstString(req.params.id);
+      const targetUserId = (firstString(req.body?.targetUserId) || "").trim();
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      if (!fulfillmentId || !targetUserId || targetUserId.length > 128) {
+        res.status(400).json({ success: false, error: "参数非法（需要履约记录 ID 与受赠人 ID）" });
+        return;
+      }
+      const record = await lotteryFulfillmentService.transfer(fulfillmentId, userId, targetUserId);
+      res.json({ success: true, data: record, message: "已转赠" });
+    } catch (error) {
+      logger.error("转赠奖品失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 折现/折积分为抽奖积分
+  public async redeemFulfillment(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const fulfillmentId = firstString(req.params.id);
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      if (!fulfillmentId) {
+        res.status(400).json({ success: false, error: "无效的履约记录ID" });
+        return;
+      }
+      const result = await lotteryFulfillmentService.redeem(fulfillmentId, userId);
+      res.json({ success: true, data: result, message: `已折现为 ${result.value} 抽奖积分` });
+    } catch (error) {
+      logger.error("折现奖品失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
       res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
     }
   }

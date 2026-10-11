@@ -6,6 +6,7 @@ import {
   LotteryStatistics,
   LotteryChances,
   LotteryTask,
+  LotteryFulfillment,
   LotteryT0Report,
   LotteryT1Report,
   LotteryApiResponse 
@@ -160,6 +161,34 @@ export async function getT0Reconciliation(): Promise<LotteryT0Report[]> {
 
 export async function getT1Reconciliation(): Promise<LotteryT1Report> {
   return apiRequest<LotteryT1Report>('/reconciliation/t1');
+}
+
+// 履约（我的奖品 / 地址 / 转赠 / 折现）
+export async function getMyFulfillments(): Promise<LotteryFulfillment[]> {
+  return apiRequest<LotteryFulfillment[]>('/fulfillments/me');
+}
+
+export async function submitFulfillmentAddress(
+  id: string,
+  address: { name: string; phone: string; detail: string },
+): Promise<LotteryFulfillment> {
+  return apiRequest<LotteryFulfillment>(`/fulfillments/${encodeURIComponent(id)}/address`, {
+    method: 'POST',
+    body: JSON.stringify(address),
+  });
+}
+
+export async function transferFulfillment(id: string, targetUserId: string): Promise<LotteryFulfillment> {
+  return apiRequest<LotteryFulfillment>(`/fulfillments/${encodeURIComponent(id)}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ targetUserId }),
+  });
+}
+
+export async function redeemFulfillment(id: string): Promise<{ value: number; balance: number }> {
+  return apiRequest<{ value: number; balance: number }>(`/fulfillments/${encodeURIComponent(id)}/redeem`, {
+    method: 'POST',
+  });
 }
 
 // 获取排行榜

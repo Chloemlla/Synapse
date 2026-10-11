@@ -10,6 +10,46 @@ export interface BlockchainData {
 // 奖品稀有度
 export type LotteryPrizeCategory = 'common' | 'rare' | 'epic' | 'legendary';
 
+/** 履约方式：虚拟直充 / 卡密 / 实物。 */
+export type LotteryFulfillmentType = 'virtual' | 'code' | 'physical';
+
+export type LotteryFulfillmentStatus =
+  | 'pending'
+  | 'processing'
+  | 'awaiting_address'
+  | 'ready'
+  | 'completed'
+  | 'failed'
+  | 'redeemed';
+
+export interface LotteryFulfillmentAddress {
+  name: string;
+  phone: string;
+  detail: string;
+  submittedAt: string;
+}
+
+/** 履约记录（我的奖品）。 */
+export interface LotteryFulfillment {
+  id: string;
+  roundId: string;
+  userId: string;
+  originalUserId: string;
+  username: string;
+  prizeId: string;
+  prizeName: string;
+  prizeValue: number;
+  type: LotteryFulfillmentType;
+  provider?: string;
+  status: LotteryFulfillmentStatus;
+  attempts: number;
+  code?: string;
+  address?: LotteryFulfillmentAddress;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // 奖品类型
 export interface LotteryPrize {
   id: string;
@@ -21,6 +61,13 @@ export interface LotteryPrize {
   remaining: number;
   image?: string;
   category: LotteryPrizeCategory;
+  /** 履约配置（可选）：不配则不落履约记录。 */
+  fulfillment?: {
+    type: LotteryFulfillmentType;
+    provider?: string;
+    params?: Record<string, unknown>;
+    redeemValue?: number;
+  };
 }
 
 /** 硬保底：本轮个人每抽到 everyDraws 的整数倍时，至少出 category 及以上稀有度。 */

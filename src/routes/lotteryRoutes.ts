@@ -64,6 +64,11 @@ router.post("/tasks/:taskKey/claim", authenticateToken, lotteryLimiter, lotteryC
 // 对账（仅超管）
 router.get("/reconciliation/t0", authenticateToken, lotteryLimiter, lotteryController.getT0Reconciliation.bind(lotteryController));
 router.get("/reconciliation/t1", authenticateToken, lotteryLimiter, lotteryController.getT1Reconciliation.bind(lotteryController));
+// 履约（我的奖品 / 地址 / 转赠 / 折现）
+router.get("/fulfillments/me", authenticateToken, lotteryLimiter, lotteryController.getMyFulfillments.bind(lotteryController));
+router.post("/fulfillments/:id/address", authenticateToken, lotteryLimiter, lotteryController.submitFulfillmentAddress.bind(lotteryController));
+router.post("/fulfillments/:id/transfer", authenticateToken, lotteryLimiter, lotteryController.transferFulfillment.bind(lotteryController));
+router.post("/fulfillments/:id/redeem", authenticateToken, lotteryLimiter, lotteryController.redeemFulfillment.bind(lotteryController));
 // 涉及数据库写入：参与抽奖（更新用户、轮次等）
 router.post(
   "/rounds/:roundId/participate",
