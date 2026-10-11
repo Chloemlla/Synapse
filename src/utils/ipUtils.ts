@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import { isIP } from "node:net";
+import { isTrustedProxyPeer } from "./trustProxy";
 
 /**
  * IP地址验证函数
@@ -36,9 +37,11 @@ export function extractRealIP(req: Request): string | undefined {
   // 仅在 req.ip 不可用时，检查受信任的反向代理头部（Cloudflare 等）。
   // SYN-03: CF-Connecting-IP 由客户端可自带，只有请求确经 Cloudflare 边缘时才可信。此前无条件采信，
   // 在"未走 CF 的部署"或"trust proxy 配置使 req.ip 失效"时可被伪造，影响封禁/限流/用量统计。
-  // 通过 TRUST_CLOUDFLARE 显式开启（默认关闭），不让客户端可写的头参与真实 IP 判定。
+  // RC-25 收紧：除显式 `TRUST_CLOUDFLARE=true` 外，**还要求 TCP 对端本身是可信代理**
+  // （由 TRUST_PROXY 声明的网段/跳数判定）。未配置 TRUST_PROXY 时永不读该头 ——
+  // 一个开关就能让直连请求冒充任意 IP 的局面必须堵上。
   const trustCloudflare = /^(1|true|yes|on)$/i.test((process.env.TRUST_CLOUDFLARE || "").trim());
-  if (trustCloudflare) {
+  if (trustCloudflare && isTrustedProxyPeer(req.socket?.remoteAddress)) {
     const cfConnectingIP = req.headers["cf-connecting-ip"];
     if (cfConnectingIP && typeof cfConnectingIP === "string" && isValidIP(cfConnectingIP)) {
       return cfConnectingIP.replace(/^::ffff:/i, "");

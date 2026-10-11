@@ -106,3 +106,22 @@ export function resolveUpgradeClientIp(req: IncomingMessage): string {
   // 与 HTTP 侧同一口径：优先 req.ip（上面已写回），其次 cf-connecting-ip，最后 socket。
   return extractRealIP(req as Request) ?? "unknown";
 }
+
+/**
+ * RC-25：TCP 对端是否是一个**可信代理**。
+ *
+ * 用途：`extractRealIP` 的头部回退分支（`CF-Connecting-IP`）只应在“请求确实经过我们声明的代理”时才采信。
+ * 之前只看 `TRUST_CLOUDFLARE=true` 这个开关：开关一开，**直连**本服务的请求也能自带
+ * `CF-Connecting-IP` 冒充任意地址（封禁/限流/用量统计全部被骗）。
+ * 判定与 Express 侧共用同一份 `TRUST_PROXY`：未配置（默认不信任任何代理）时，永远不读该头。
+ */
+export function isTrustedProxyPeer(peerAddress: string | undefined | null): boolean {
+  if (!peerAddress || !isValidIP(peerAddress)) return false;
+  const normalized = peerAddress.replace(/^::ffff:/i, "");
+  try {
+    // index=0：只问“最靠近本机的这一跳是否可信”，与 Express 的语义一致。
+    return currentTrustFunction()(normalized, 0) === true;
+  } catch {
+    return false;
+  }
+}

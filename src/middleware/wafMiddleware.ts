@@ -83,7 +83,11 @@ for (const rule of securityBypassPolicy.waf) {
 }
 
 /** 判断请求路径是否绕过 WAF 检查（预计算 Map + 静态策略兜底）。 */
-function isWafBypassPath(pathname: string): boolean {
+/**
+ * 该路径是否命中 WAF 绕过表。导出是为了让它可被治理/回归用例核对（RC-48）——
+ * “邮件路径没有前缀豁免”这类约定必须能用用例钉住，而不是靠人看代码。
+ */
+export function isWafBypassPath(pathname: string): boolean {
   let scope = pathname.replace(/\/+$/, "");
   while (scope) {
     const flag = wafModuleBypassMap.get(scope);
