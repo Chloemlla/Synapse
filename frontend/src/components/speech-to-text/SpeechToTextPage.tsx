@@ -529,10 +529,6 @@ export const SpeechToTextPage: React.FC = () => {
             </div>
           )}
         </InfoPanel>
-
-        <p className="text-[11px] leading-5 text-slate-400">
-          说明：识别链路的接口参数、并发与限额均由管理员在后台维护，本页只负责你自己的文件与任务。
-        </p>
       </div>
     </InfoQueryShell>
   );
