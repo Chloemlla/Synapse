@@ -101,6 +101,9 @@ const userSchema = new mongoose.Schema(
     libreChatUsageDay: { type: String }, // 上海自然日的天键（YYYY-MM-DD）
     libreChatViolationCount: { type: Number, default: 0 },
     libreChatBannedUntil: { type: String }, // ISO 日期字符串
+    // RC-37：累计封禁次数（跨自然日**不**清零）——封禁时长按它升级（24h → 7d → 30d）。
+    // 不能用 libreChatViolationCount：那个按上海自然日归零（用量语义），拿它升级永远不会出现“第二次”。
+    libreChatBanCount: { type: Number, default: 0 },
     // 翻译权限与账户状态
     isTranslationEnabled: { type: Boolean, default: true },
     translationAccessUntil: { type: String },

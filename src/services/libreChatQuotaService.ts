@@ -39,7 +39,7 @@ export interface LibreChatQuotaDecision {
   retryAfterSeconds?: number;
 }
 
-/** 限额与阈值来源（env，带默认值）：LIBRECHAT_DAILY_LIMIT=5 / LIBRECHAT_MAX_WARNINGS=3 / LIBRECHAT_BAN_HOURS=24 */
+/** 限额与阈值来源（env，带默认值）：LIBRECHAT_DAILY_LIMIT=5 / LIBRECHAT_MAX_WARNINGS=3 / LIBRECHAT_BAN_HOURS_TABLE=24,168,720 */
 export const LIBRECHAT_QUOTA_DEFAULTS: { dailyLimit: number; maxWarnings: number; banHours: number } = {
   dailyLimit: 5,
   maxWarnings: 3,
@@ -50,7 +50,7 @@ export const LIBRECHAT_QUOTA_DEFAULTS: { dailyLimit: number; maxWarnings: number
 const ADMIN_ROLES = ["admin", "superadmin"];
 
 const QUOTA_SELECT =
-  "id role libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil";
+  "id role libreChatDailyUsage libreChatUsageDay libreChatViolationCount libreChatBannedUntil libreChatBanCount";
 
 /** 本模块读写的那几个用户字段。 */
 interface LibreChatQuotaDocument {
@@ -60,6 +60,8 @@ interface LibreChatQuotaDocument {
   libreChatUsageDay?: string;
   libreChatViolationCount?: number;
   libreChatBannedUntil?: string;
+  /** RC-37：累计被自动封禁的次数（跨自然日不清零），用于升级封禁时长。 */
+  libreChatBanCount?: number;
 }
 
 // env 在模块加载时读一次：额度属于运营参数，改它随重启生效（与本仓库其它 env 开关一致）。
@@ -88,6 +90,32 @@ const LIBRECHAT_BAN_HOURS = readPositiveIntEnv(
   LIBRECHAT_QUOTA_DEFAULTS.banHours,
   24 * 365,
 );
+
+/**
+ * RC-37：封禁时长按**累计封禁次数**递增（而不是写死一个常量）。
+ *
+ * 为什么用“封禁次数”而不是“警告次数”：警告按上海自然日归零（那是用量语义），
+ * 拿它当升级依据的话“第二次违规”永远不会发生。封禁次数是跨日累计的事实。
+ * 表长之外一律用最后一档（默认第三档起 30 天）。env `LIBRECHAT_BAN_HOURS_TABLE` 可覆盖。
+ */
+function readBanHoursTable(): number[] {
+  const raw = (process.env.LIBRECHAT_BAN_HOURS_TABLE || "").trim();
+  if (!raw) return [LIBRECHAT_BAN_HOURS, 24 * 7, 24 * 30];
+  const parsed = raw
+    .split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((hours) => Number.isFinite(hours) && hours >= 1)
+    .map((hours) => Math.min(Math.floor(hours), 24 * 365));
+  return parsed.length > 0 ? parsed : [LIBRECHAT_BAN_HOURS, 24 * 7, 24 * 30];
+}
+
+const LIBRECHAT_BAN_HOURS_TABLE = readBanHoursTable();
+
+/** 第 n 次封禁（1 起）对应的小时数；超出表长用最后一档。 */
+export function banHoursForOffense(offenseIndex: number): number {
+  const index = Math.max(0, Math.floor(offenseIndex) - 1);
+  return LIBRECHAT_BAN_HOURS_TABLE[Math.min(index, LIBRECHAT_BAN_HOURS_TABLE.length - 1)];
+}
 
 /**
  * 「同一天」的判据：字段里直接存上海天键（getUserUsageDay），管道里 $eq 即可，
@@ -283,11 +311,14 @@ export async function consumeLibreChatQuota(userId: string): Promise<LibreChatQu
   }
 
   // 警告到阈值：LibreChat 权限停用 banHours 小时，并同时停用工单权限（方案 §2.3）。
-  const bannedUntilAt = new Date(now.getTime() + LIBRECHAT_BAN_HOURS * 60 * 60 * 1000);
+  const currentBanCount = Math.max(0, Math.floor(Number(warned.libreChatBanCount) || 0));
+  // RC-37：本次是第 currentBanCount + 1 次封禁 → 查表得到时长（默认 24h → 7d → 30d）。
+  const banHours = banHoursForOffense(currentBanCount + 1);
+  const bannedUntilAt = new Date(now.getTime() + banHours * 60 * 60 * 1000);
   const bannedUntilIso = bannedUntilAt.toISOString();
   const banned = (await UserModel.findOneAndUpdate(
     { id: userId, role: { $nin: ADMIN_ROLES } },
-    { $set: { libreChatBannedUntil: bannedUntilIso } },
+    { $set: { libreChatBannedUntil: bannedUntilIso }, $inc: { libreChatBanCount: 1 } },
     { returnDocument: "after" },
   )
     .select(QUOTA_SELECT)
@@ -299,7 +330,7 @@ export async function consumeLibreChatQuota(userId: string): Promise<LibreChatQu
   try {
     await ModerationService.banTicketsBySpillover(
       userId,
-      LIBRECHAT_BAN_HOURS,
+      banHours,
       "LibreChat 每日额度内多次警告后继续使用",
       "librechat-quota",
     );

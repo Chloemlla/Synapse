@@ -47,6 +47,7 @@ jest.mock("../services/libreChatService", () => ({
 import {
   clearLibreChatBan,
   consumeLibreChatQuota,
+  banHoursForOffense,
   LIBRECHAT_QUOTA_DEFAULTS,
   readLibreChatQuota,
 } from "../services/libreChatQuotaService";
@@ -284,6 +285,45 @@ describe("LibreChat 每日额度", () => {
       (call) => (call as [string, { ticketBannedUntil?: string }])[1]?.ticketBannedUntil,
     );
     expect(written).toContain(new Date(NOW.getTime() + DAY_MS).toISOString());
+  });
+
+  it("RC-37：封禁时长按累计封禁次数升级（24h → 7d → 30d），而不是写死一个常量", () => {
+    expect(banHoursForOffense(1)).toBe(24);
+    expect(banHoursForOffense(2)).toBe(24 * 7);
+    expect(banHoursForOffense(3)).toBe(24 * 30);
+    // 超出表长一律用最后一档（不会因为次数继续涨而出现“事实上的永久封禁”）。
+    expect(banHoursForOffense(9)).toBe(24 * 30);
+  });
+
+  it("RC-37：第二次封禁直接到 7 天（累计计数跨日不清零）", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+    const spilloverSpy = jest.spyOn(ModerationService, "banTicketsBySpillover");
+
+    mockFindOne.mockImplementationOnce(() =>
+      queryResult(userDoc({ libreChatDailyUsage: 5, libreChatViolationCount: 2, libreChatBanCount: 1 })),
+    );
+    mockFindOneAndUpdate
+      .mockImplementationOnce(() => queryResult(null))
+      .mockImplementationOnce(() =>
+        queryResult(userDoc({ libreChatDailyUsage: 5, libreChatViolationCount: 3, libreChatBanCount: 1 })),
+      )
+      .mockImplementationOnce(() =>
+        queryResult(
+          userDoc({
+            libreChatDailyUsage: 5,
+            libreChatViolationCount: 3,
+            libreChatBanCount: 2,
+            libreChatBannedUntil: new Date(NOW.getTime() + 7 * DAY_MS).toISOString(),
+          }),
+        ),
+      );
+
+    const decision = await consumeLibreChatQuota("u1");
+
+    expect(decision.code).toBe("LIBRECHAT_BANNED");
+    expect(decision.retryAfterSeconds).toBe(7 * 24 * 60 * 60);
+    expect(spilloverSpy).toHaveBeenCalledWith("u1", 24 * 7, expect.stringContaining("LibreChat"), "librechat-quota");
   });
 
   it("警告累计到第 3 次 → 自动封禁：LibreChat 侧 24 小时 + 工单侧走连坐入口", async () => {
