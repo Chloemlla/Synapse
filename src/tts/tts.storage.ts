@@ -293,23 +293,46 @@ class MongoTtsJobStore implements TtsJobStore {
       .exec()) as TtsJobRecord | null;
   }
 
-  public async recoverStaleJobs(staleBefore: number) {
-    const staleFilter = {
-      status: "processing",
-      leaseExpiresAt: { $lte: new Date(staleBefore).toISOString() },
-    };
-
-    // 超过最大尝试次数的任务进入死信（failed），不再无限重试；调用方据此释放额度预留。
-    const overLimit = (await TtsJobModel.find({
-      ...staleFilter,
-      attempts: { $gte: TTS_MAX_ATTEMPTS },
-    })
+  /**
+   * 续租（心跳）：只有仍由 `expectedOwner` 持有、且尚未进入终态的 processing 任务才延长租约。
+   * 返回 null 说明任务已被看门狗回收 / 转交（或已完成），原 Worker 必须放弃后续提交。
+   */
+  public async renewJobLease(taskId: string, expectedOwner: string, leaseMs: number) {
+    return (await TtsJobModel.findOneAndUpdate(
+      { taskId, status: "processing", processingOwner: expectedOwner },
+      {
+        $set: {
+          leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { returnDocument: "after" },
+    )
       .lean()
-      .exec()) as TtsJobRecord[];
+      .exec()) as TtsJobRecord | null;
+  }
 
-    if (overLimit.length > 0) {
-      await TtsJobModel.updateMany(
-        { taskId: { $in: overLimit.map((job) => job.taskId) } },
+  /**
+   * 看门狗回收：把「超时未续租」的 processing 任务退回 queued，超过重试上限的进 failed（死信）。
+   *
+   * 并发安全：多实例可能同时跑看门狗，因此**不再 find 后 updateMany（条件与更新之间会被续租/完成
+   * 抢先）**，而是逐条 `findOneAndUpdate`，把「仍处于超时状态」写进更新条件本身；只对真正改到的
+   * 那条返回现场，调用方据此释放额度预留。
+   */
+  public async recoverStaleJobs(staleBefore: number) {
+    const staleIso = new Date(staleBefore).toISOString();
+    const staleFilter = { status: "processing", leaseExpiresAt: { $lte: staleIso } };
+
+    // 超限候选（先只取 taskId）：真正死信化时逐条做原子条件更新。
+    const overLimitCandidates = (await TtsJobModel.find({ ...staleFilter, attempts: { $gte: TTS_MAX_ATTEMPTS } })
+      .select("taskId")
+      .lean()
+      .exec()) as Array<{ taskId: string }>;
+
+    const failed: TtsJobRecord[] = [];
+    for (const candidate of overLimitCandidates) {
+      const doc = (await TtsJobModel.findOneAndUpdate(
+        { taskId: candidate.taskId, ...staleFilter, attempts: { $gte: TTS_MAX_ATTEMPTS } },
         {
           $set: {
             status: "failed",
@@ -320,10 +343,14 @@ class MongoTtsJobStore implements TtsJobStore {
             updatedAt: new Date().toISOString(),
           },
         },
-      ).exec();
+        { returnDocument: "after" },
+      )
+        .lean()
+        .exec()) as TtsJobRecord | null;
+      if (doc) failed.push(doc);
     }
 
-    // 未超限的恢复到 queued 继续重试。
+    // 未超限的原子回队：条件同样写进更新，避免把刚续租 / 刚完成的任务误捉回。
     const result = await TtsJobModel.updateMany(
       { ...staleFilter, attempts: { $lt: TTS_MAX_ATTEMPTS } },
       {
@@ -337,7 +364,7 @@ class MongoTtsJobStore implements TtsJobStore {
       },
     ).exec();
 
-    return { recovered: result.modifiedCount, failed: overLimit };
+    return { recovered: result.modifiedCount, failed };
   }
 }
 

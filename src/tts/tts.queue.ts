@@ -16,10 +16,15 @@ interface QueueCallbacks {
   buildNextAction: (type: string, label: string, message: string) => TtsNextAction;
 }
 
-const PROCESSING_LEASE_MS = 15 * 60 * 1000;
+export const TTS_PROCESSING_LEASE_MS = 15 * 60 * 1000;
 const MAX_QUEUE_CONCURRENCY = 5;
 /** 过期任务周期性回收间隔：没有新任务入队时，僵死任务也能被回收。 */
-const STALE_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
+export const TTS_STALE_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
+/**
+ * 长耗时任务续租间隔：取租约的 1/3，给「两次续租之间进程卡顿」留两次余量。
+ * 低于 10s 会变成无意义的高频写。
+ */
+export const TTS_LEASE_HEARTBEAT_MS = Math.max(10_000, Math.floor(TTS_PROCESSING_LEASE_MS / 3));
 
 function resolveQueueConcurrency(): number {
   const raw = Number(process.env.TTS_QUEUE_CONCURRENCY || "2");
@@ -57,7 +62,7 @@ export class TtsQueue {
   private startStaleRecoveryTimer(): void {
     const timer = setInterval(() => {
       void this.recoverStaleJobsAndReleaseQuota();
-    }, STALE_RECOVERY_INTERVAL_MS);
+    }, TTS_STALE_RECOVERY_INTERVAL_MS);
     timer.unref?.();
   }
 
@@ -79,11 +84,34 @@ export class TtsQueue {
           });
         }
       }
+      // 死信=需要人工介入：一轮回收合并成一封告警（邮件 + 可选 webhook），不逐条轰炸。
+      if (failed.length > 0) {
+        void this.alertDeadLetterJobs(failed);
+      }
       // A failed claim can leave queued jobs without creating a stale lease.
       // Always restart scheduling after a successful recovery pass.
       void this.drain();
     } catch (error) {
       logger.error("TTS 过期任务回收失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** 死信告警：走邮件（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL`，无钉钉/企业微信。 */
+  private async alertDeadLetterJobs(failed: TtsJobRecord[]): Promise<void> {
+    try {
+      const { sendAdminAlert } = await import("../services/adminAlertService");
+      await sendAdminAlert({
+        level: "critical",
+        subject: `${failed.length} 个 TTS 任务重试超限进入死信`,
+        text: failed
+          .map((job) => `taskId=${job.taskId} attempts=${job.attempts ?? "?"} 原因=${job.error || job.message}`)
+          .join("\n"),
+        detail: { count: failed.length, taskIds: failed.map((job) => job.taskId) },
+      });
+    } catch (error) {
+      logger.error("TTS 死信告警投递失败", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -103,7 +131,7 @@ export class TtsQueue {
 
       while (true) {
         while (active.size < this.concurrency) {
-          const nextJob = await ttsStorage.claimNextQueuedJob(this.workerId, PROCESSING_LEASE_MS);
+          const nextJob = await ttsStorage.claimNextQueuedJob(this.workerId, TTS_PROCESSING_LEASE_MS);
           if (!nextJob) {
             break;
           }
@@ -150,6 +178,9 @@ export class TtsQueue {
         message: "正在生成语音...",
       });
     }
+
+    // 长耗时任务在后台持续续租：一旦 Worker 卡死/崩溃，心跳中断，租约自然过期被看门狗回收。
+    const lease = this.startLeaseHeartbeat(job.taskId);
 
     try {
       const providerExecution = await this.ttsService.resolveProviderExecution(
@@ -221,7 +252,7 @@ export class TtsQueue {
         },
       });
 
-      await ttsStorage.completeJob(
+      const completed = await ttsStorage.completeJob(
         job.taskId,
         {
           text: job.request.text,
@@ -255,6 +286,16 @@ export class TtsQueue {
         this.workerId,
       );
 
+      // owner 条件写返回 null = 任务已被看门狗回收并可能转交他人：本 Worker 必须放弃终态与通知，
+      // 否则同一条任务会出现两份成功（重叠消费）。
+      if (!completed) {
+        logger.warn("TTS 任务完成时租约已失效（已被回收/转交），放弃终态提交与通知", {
+          taskId: job.taskId,
+          owner: this.workerId,
+        });
+        return;
+      }
+
       if (job.userId) {
         wsService.notifyTtsComplete(job.userId, {
           taskId: job.taskId,
@@ -265,6 +306,15 @@ export class TtsQueue {
     } catch (error) {
       logger.error("TTS 队列处理失败", error);
       const message = error instanceof Error ? error.message : "生成语音失败";
+
+      // 心跳已确认租约失效：本 Worker 不再是任务所有者，额度预留留给新 Owner 处理。
+      if (lease.isLost()) {
+        logger.warn("TTS 任务处理中租约已失效，放弃失败态写入与额度释放", {
+          taskId: job.taskId,
+          owner: this.workerId,
+        });
+        return;
+      }
 
       let usage = job.usage;
       if (job.userId && !job.isAdmin) {
@@ -281,7 +331,16 @@ export class TtsQueue {
           text: redactTtsTextForStorage(job.request.text),
         },
       });
-      await ttsStorage.failJob(job.taskId, message, usage ?? undefined, nextAction, this.workerId);
+      const failed = await ttsStorage.failJob(job.taskId, message, usage ?? undefined, nextAction, this.workerId);
+
+      // 同完成路径：owner 不匹配说明任务已被回收/转交，跳过错误通知，让新 Owner 报结果。
+      if (!failed) {
+        logger.warn("TTS 任务失败态写入被拒（租约已失效），跳过错误通知", {
+          taskId: job.taskId,
+          owner: this.workerId,
+        });
+        return;
+      }
 
       if (job.userId) {
         wsService.notifyTtsError(job.userId, {
@@ -289,6 +348,38 @@ export class TtsQueue {
           error: message,
         });
       }
+    } finally {
+      // 无论成功、失败还是提前放弃，都停掉心跳（否则定时器会跟着 Worker 活到进程结束）。
+      lease.stop();
     }
+  }
+
+  /**
+   * 租约心跳：周期续租，避免「慢任务被看门狗误判为僵死」；续租失败即标记租约丢失，
+   * 供 processJob 放弃终态提交（防重叠消费）。
+   */
+  private startLeaseHeartbeat(taskId: string): { stop: () => void; isLost: () => boolean } {
+    let lost = false;
+    const timer = setInterval(() => {
+      void ttsStorage
+        .renewJobLease(taskId, this.workerId, TTS_PROCESSING_LEASE_MS)
+        .then((renewed) => {
+          if (!renewed && !lost) {
+            lost = true;
+            logger.warn("TTS 任务租约续期失败：任务已被看门狗回收/转交，本 Worker 将放弃终态提交", {
+              taskId,
+              owner: this.workerId,
+            });
+          }
+        })
+        .catch((error) => {
+          logger.error("TTS 任务租约续期异常", {
+            taskId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }, TTS_LEASE_HEARTBEAT_MS);
+    timer.unref?.();
+    return { stop: () => clearInterval(timer), isLost: () => lost };
   }
 }

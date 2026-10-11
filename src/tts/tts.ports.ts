@@ -161,6 +161,11 @@ export interface TtsJobStore {
   ): Promise<TtsJobRecord | null>;
   getQueuePosition(taskId: string): Promise<number>;
   claimNextQueuedJob(workerId: string, leaseMs: number): Promise<TtsJobRecord | null>;
+  /**
+   * 续租：只有仍由 `expectedOwner` 持有租约时才延长 `leaseExpiresAt`。
+   * 返回 null 说明任务已被看门狗回收或转交（调用方应放弃终态提交）。
+   */
+  renewJobLease(taskId: string, expectedOwner: string, leaseMs: number): Promise<TtsJobRecord | null>;
   recoverStaleJobs(
     staleBefore: number,
   ): Promise<{ recovered: number; failed: TtsJobRecord[] }>;

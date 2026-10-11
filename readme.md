@@ -1874,7 +1874,9 @@ docker-compose up -d
 - 抽奖请求幂等（PRD §4）：`POST /rounds/:id/participate` 接受 `requestId`，同一 id 的重放直接返回上次结果、不再抽一次也不重复扣库存（`sharedStateStore` 幂等键，业务拒绝自动释放可重试）；前端每次参与携带 `crypto.randomUUID()`
 - 抽奖审计流水：每次抽奖往既有 `audit_logs` 写 `lottery.draw`（`module: lottery`），detail 含随机数快照、落点奖品与扣减后库存，可在管理端审计查看器按模块筛选（复用 60 天保留与不可变存储，不另造流水表）
 - 抽奖管理页清掉不再使用的 AES 解密死代码与无用导入
-- 抽奖中台 PRD 的分阶段落地方案落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（机会/保底、Pacing + Redis Lua、实时风控、履约中心后续阶段）
+- 抽奖中台 PRD 与实施清单落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（产品蓝图 + 看门狗设计 + 分阶段勾选清单）
+- 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
+- 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`
 
 ---
 
