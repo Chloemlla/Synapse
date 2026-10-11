@@ -20,6 +20,13 @@ import {
 import { studioPanelClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
+const PRIZE_CATEGORY_LABELS: Record<string, string> = {
+  common: '普通',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
 
 // 创建轮次表单组件
 const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
@@ -539,6 +546,27 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               <div>中奖: {round.winners.length}</div>
               <div>奖品: {round.prizes.length}</div>
               <div>区块: {round.blockchainHeight}</div>
+            </div>
+
+            {/* 抽奖规则摘要（管理端拿完整数据） */}
+            <div className="mb-3 flex flex-wrap gap-2 text-xs text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white/70 px-2 py-0.5">每人 {round.maxDrawsPerUser ?? 1} 次</span>
+              <span className="rounded-full border border-slate-200 bg-white/70 px-2 py-0.5">每次消耗 {round.chanceCost ?? 0} 次机会</span>
+              {round.guarantee && (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                  硬保底 每 {round.guarantee.everyDraws} 抽出{PRIZE_CATEGORY_LABELS[round.guarantee.category] ?? round.guarantee.category}及以上
+                </span>
+              )}
+              {round.softGuarantee && (
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">
+                  软保底 第 {round.softGuarantee.startsAfterDraws} 抽后每抽 +{Math.round((round.softGuarantee.step ?? 0) * 100)}%
+                </span>
+              )}
+              {round.pseudoRandom && (
+                <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-700">
+                  平滑补偿 +{Math.round((round.pseudoRandom.increment ?? 0) * 100)}%/未命中，上限 {Math.round((round.pseudoRandom.maxBonus ?? 0) * 100)}%
+                </span>
+              )}
             </div>
             
             <div className="flex space-x-2">

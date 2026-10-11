@@ -38,6 +38,13 @@ import {
 const lotteryPanelClass = studioSurfaceClassName;
 const lotteryTileClass = studioTileClassName;
 
+const PRIZE_CATEGORY_LABELS: Record<string, string> = {
+  common: '普通',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
 // 奖品展示组件
 const PrizeDisplay: React.FC<{ prize: any }> = ({ prize }) => {
   const getCategoryColor = (category: string) => {
@@ -79,12 +86,15 @@ export const LotteryRoundCard: React.FC<{
   /** 是否是「当前这一轮」正在参与（F5-37：只有被点击的轮次显示抽奖中） */
   isParticipatingRound?: boolean;
   isAdmin?: boolean;
+  /** 当前用户抽奖机会余额（chanceCost > 0 时用于判断是否够抽）。 */
+  chanceBalance?: number | null;
 }> = ({
   round,
   onParticipate,
   loading,
   isParticipatingRound = false,
   isAdmin = false,
+  chanceBalance = null,
 }) => {
   const { user } = useAuth();
   // 每轮拥有独立的挑战，不能让另一张卡片的回调或 ref 消费本轮令牌。
@@ -108,6 +118,7 @@ export const LotteryRoundCard: React.FC<{
   const remainingDraws = Math.max(0, Math.floor(round.remainingDraws ?? (hasParticipated ? 0 : 1)));
   const drawsExhausted = remainingDraws <= 0;
   const chanceCost = Math.max(0, Math.floor(round.chanceCost ?? 0));
+  const chanceShortage = chanceCost > 0 && (chanceBalance ?? 0) < chanceCost;
   // 有库存且有概率的奖品才真正参与抽取；概率和 < 100% 时剩余部分是未中奖概率。
   const totalWinProbability = Math.min(
     1,
@@ -118,7 +129,7 @@ export const LotteryRoundCard: React.FC<{
   const isActive = round.isActive && Date.now() >= round.startTime && Date.now() <= round.endTime;
   const captchaUnavailable = !isAdmin && (captchaStatus.loading || Boolean(captchaStatus.error) || (captchaStatus.required && !captcha?.token));
   const handleParticipate = async () => {
-    if (submittingRef.current || loading || !isActive || drawsExhausted) return;
+    if (submittingRef.current || loading || !isActive || drawsExhausted || chanceShortage) return;
     if (captchaUnavailable) return;
     submittingRef.current = true;
     let requestSent = true;
@@ -171,12 +182,45 @@ export const LotteryRoundCard: React.FC<{
             本轮中奖概率：{(totalWinProbability * 100).toFixed(2)}%
           </span>
         </div>
+        {(chanceCost > 0 || round.guarantee || round.softGuarantee) && (
+          <div className={`${lotteryTileClass} mb-3 p-3 text-xs leading-6 text-slate-600`}>
+            {chanceCost > 0 && <div>每次消耗抽奖机会：{chanceCost} 次</div>}
+            {round.guarantee && (
+              <div>
+                硬保底：每 {round.guarantee.everyDraws} 抽必出 {PRIZE_CATEGORY_LABELS[round.guarantee.category] ?? round.guarantee.category} 及以上
+              </div>
+            )}
+            {round.softGuarantee && (
+              <div>
+                软保底：第 {round.softGuarantee.startsAfterDraws} 抽后，{PRIZE_CATEGORY_LABELS[round.softGuarantee.category] ?? round.softGuarantee.category} 触发概率每抽 +
+                {Math.round((round.softGuarantee.step ?? 0) * 100)}%
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {round.prizes.slice(0, 6).map((prize) => (
             <PrizeDisplay key={prize.id} prize={prize} />
           ))}
         </div>
       </div>
+
+      {round.winners.length > 0 && (
+        <div className="mb-4">
+          <h4 className="mb-2 text-sm font-semibold text-slate-700">最近中奖</h4>
+          <div className="space-y-1">
+            {[...round.winners].slice(-5).reverse().map((winner, index) => (
+              <div
+                key={`${winner.prizeId}-${winner.drawTime}-${index}`}
+                className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-1.5 text-xs text-slate-600"
+              >
+                <span className="truncate">{winner.username || '匿名用户'}</span>
+                <span className="ml-2 shrink-0 font-medium text-emerald-700">{winner.prizeName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="text-sm text-slate-500">
@@ -186,9 +230,9 @@ export const LotteryRoundCard: React.FC<{
           <div className="flex flex-col gap-2">
             <motion.button
               onClick={() => { void handleParticipate(); }}
-              disabled={!isActive || drawsExhausted || loading || captchaUnavailable}
+              disabled={!isActive || drawsExhausted || loading || captchaUnavailable || chanceShortage}
               className={`${
-                !isActive || drawsExhausted || loading || captchaUnavailable
+                !isActive || drawsExhausted || loading || captchaUnavailable || chanceShortage
                   ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500'
                   : studioPrimaryButtonClassName
               }`}
@@ -202,9 +246,11 @@ export const LotteryRoundCard: React.FC<{
                     ? maxDraws > 1
                       ? '次数已用完'
                       : '已参与'
-                    : maxDraws > 1
-                      ? `立即参与（剩 ${remainingDraws} 次）`
-                      : '立即参与'}
+                    : chanceShortage
+                      ? '抽奖机会不足'
+                      : maxDraws > 1
+                        ? `立即参与（剩 ${remainingDraws} 次）`
+                        : '立即参与'}
             </motion.button>
 
             {/* 人机验证组件（非管理员用户）：三家供应商由 /admin/captcha-providers 统一调控 */}
@@ -575,6 +621,7 @@ const LotteryPage: React.FC = () => {
                   loading={participating}
                   isParticipatingRound={participatingRoundId === round.id}
                   isAdmin={isAdmin}
+                  chanceBalance={chances?.balance ?? null}
                 />
               ))}
             </div>
