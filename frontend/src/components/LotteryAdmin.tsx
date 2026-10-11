@@ -34,6 +34,11 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     chanceCost: 0,
     guaranteeEveryDraws: 0,
     guaranteeCategory: 'epic' as 'common' | 'rare' | 'epic' | 'legendary',
+    softStartsAfterDraws: 0,
+    softStep: 0.05,
+    softCategory: 'epic' as 'common' | 'rare' | 'epic' | 'legendary',
+    pityIncrement: 0,
+    pityMaxBonus: 0,
     prizes: [] as LotteryPrize[]
   });
   const [loading, setLoading] = useState(false);
@@ -90,6 +95,18 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
         ...(formData.guaranteeEveryDraws >= 1
           ? { guarantee: { everyDraws: formData.guaranteeEveryDraws, category: formData.guaranteeCategory } }
           : {}),
+        ...(formData.softStep > 0
+          ? {
+              softGuarantee: {
+                startsAfterDraws: formData.softStartsAfterDraws,
+                step: formData.softStep,
+                category: formData.softCategory,
+              },
+            }
+          : {}),
+        ...(formData.pityIncrement > 0
+          ? { pseudoRandom: { increment: formData.pityIncrement, maxBonus: formData.pityMaxBonus } }
+          : {}),
         prizes: formData.prizes,
       };
       const result = await lotteryApi.createLotteryRound(payload);
@@ -114,6 +131,11 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
           chanceCost: 0,
           guaranteeEveryDraws: 0,
           guaranteeCategory: 'epic',
+          softStartsAfterDraws: 0,
+          softStep: 0.05,
+          softCategory: 'epic',
+          pityIncrement: 0,
+          pityMaxBonus: 0,
           prizes: []
         });
       }
@@ -241,6 +263,71 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               <option value="epic">史诗</option>
               <option value="legendary">传说</option>
             </select>
+          </div>
+        </div>
+
+        {/* 软保底 / 伪随机平滑补偿 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">软保底：第几抽后开始</label>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={formData.softStartsAfterDraws}
+              onChange={(e) => setFormData(prev => ({ ...prev, softStartsAfterDraws: Math.max(0, parseInt(e.target.value) || 0) }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            />
+            <p className="mt-1 text-xs text-slate-500">软保底步长 &gt; 0 时才生效。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">软保底：每抽概率增量</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={formData.softStep}
+              onChange={(e) => setFormData(prev => ({ ...prev, softStep: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)) }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">软保底稀有度</label>
+            <select
+              value={formData.softCategory}
+              onChange={(e) => setFormData(prev => ({ ...prev, softCategory: e.target.value as typeof prev.softCategory }))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+            >
+              <option value="common">普通</option>
+              <option value="rare">稀有</option>
+              <option value="epic">史诗</option>
+              <option value="legendary">传说</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">平滑补偿：未命中增量 / 上限</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={formData.pityIncrement}
+                onChange={(e) => setFormData(prev => ({ ...prev, pityIncrement: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)) }))}
+                className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+              />
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={formData.pityMaxBonus}
+                onChange={(e) => setFormData(prev => ({ ...prev, pityMaxBonus: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)) }))}
+                className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">未命中累加、命中重置（增量 &gt; 0 时启用）。</p>
           </div>
         </div>
 
@@ -488,6 +575,77 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
   );
 };
 
+// 发放抽奖机会（仅超管；接口与审计已在后端就绪）
+const GrantChancesPanel: React.FC = () => {
+  const { setNotification } = useNotification();
+  const [targetUserId, setTargetUserId] = useState('');
+  const [amount, setAmount] = useState(1);
+  const [granting, setGranting] = useState(false);
+
+  const handleGrant = async () => {
+    const trimmed = targetUserId.trim();
+    if (!trimmed || amount < 1) {
+      setNotification({ message: '请填写用户 ID 与正整数数量', type: 'warning' });
+      return;
+    }
+    setGranting(true);
+    try {
+      const result = await lotteryApi.grantChances(trimmed, amount);
+      setNotification({ message: `已发放 ${amount} 次机会，当前余额 ${result.balance} 次`, type: 'success' });
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '发放失败'), type: 'error' });
+    } finally {
+      setGranting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      className={cn(studioPanelClassName, 'p-4')}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+    >
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-800">
+        <FaDice className="text-lg text-slate-500" />
+        发放抽奖机会
+      </h3>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <label className="mb-2 block text-sm font-semibold text-slate-700">用户 ID</label>
+          <input
+            type="text"
+            value={targetUserId}
+            onChange={(e) => setTargetUserId(e.target.value)}
+            placeholder="填写要发放机会的用户 ID"
+            className="w-full rounded-2xl border-2 border-slate-200 px-3 py-2 transition-all focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">数量</label>
+          <input
+            type="number"
+            min={1}
+            max={100000}
+            value={amount}
+            onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-full rounded-2xl border-2 border-slate-200 px-3 py-2 transition-all focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+        </div>
+      </div>
+      <motion.button
+        type="button"
+        onClick={() => { void handleGrant(); }}
+        disabled={granting}
+        className="mt-4 rounded-2xl bg-slate-900 px-4 py-2 font-medium text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+        whileTap={{ scale: 0.95 }}
+      >
+        {granting ? '发放中...' : '发放机会'}
+      </motion.button>
+    </motion.div>
+  );
+};
+
 // 主管理员组件
 const LotteryAdmin: React.FC = () => {
   const { user } = useAuth();
@@ -654,6 +812,8 @@ const LotteryAdmin: React.FC = () => {
           )}
         </AnimatePresence>
       </motion.div>
+
+      <GrantChancesPanel />
     </motion.div>
   );
 }; 

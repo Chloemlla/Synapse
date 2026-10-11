@@ -29,6 +29,20 @@ export interface LotteryGuarantee {
   category: LotteryPrizeCategory;
 }
 
+/** 软保底：超过 startsAfterDraws 抽后，每多一抽把「至少出该稀有度」的触发概率抬高 step。 */
+export interface LotterySoftGuarantee {
+  startsAfterDraws: number;
+  category: LotteryPrizeCategory;
+  step: number;
+  baseChance?: number;
+}
+
+/** 伪随机平滑补偿（暴击机制）：连续未命中累积概率加成，命中后重置。 */
+export interface LotteryPseudoRandom {
+  increment: number;
+  maxBonus: number;
+}
+
 // 抽奖轮次类型
 export interface LotteryRound {
   id: string;
@@ -58,6 +72,10 @@ export interface LotteryRound {
   chanceCost?: number;
   /** 硬保底配置。 */
   guarantee?: LotteryGuarantee;
+  /** 软保底配置。 */
+  softGuarantee?: LotterySoftGuarantee;
+  /** 伪随机平滑补偿配置。 */
+  pseudoRandom?: LotteryPseudoRandom;
   /** 本人在本轮已抽次数（普通用户视图用）。 */
   drawsUsed?: number;
   /** 本人本轮剩余可抽次数（普通用户视图用）。 */

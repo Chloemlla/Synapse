@@ -29,6 +29,20 @@ export interface LotteryGuarantee {
   category: LotteryPrizeCategory;
 }
 
+/** 软保底：超过 startsAfterDraws 抽后，每次额外抽奖按 step 线性抬高「至少出该稀有度」的概率。 */
+export interface LotterySoftGuarantee {
+  startsAfterDraws: number;
+  category: LotteryPrizeCategory;
+  step: number;
+  baseChance?: number;
+}
+
+/** 伪随机平滑补偿（暴击机制）：未命中累积概率加成，命中后重置。 */
+export interface LotteryPseudoRandom {
+  increment: number;
+  maxBonus: number;
+}
+
 export interface LotteryRound {
   id: string;
   name: string;
@@ -47,8 +61,14 @@ export interface LotteryRound {
   chanceCost?: number;
   /** 硬保底配置（可选）。 */
   guarantee?: LotteryGuarantee;
+  /** 软保底配置（可选）。 */
+  softGuarantee?: LotterySoftGuarantee;
+  /** 伪随机平滑补偿配置（可选）。 */
+  pseudoRandom?: LotteryPseudoRandom;
   /** 每个用户本轮已抽次数（保底与次数上限的依据；普通用户视图不回传）。 */
   drawCounts?: Record<string, number>;
+  /** 每个用户本轮连续未命中次数（伪随机补偿依据；普通用户视图不回传）。 */
+  pityCounters?: Record<string, number>;
 }
 
 export interface LotteryWinner {
@@ -181,6 +201,35 @@ export function pickGuaranteedPrize(
     if (target < cumulative) return prize;
   }
   return eligible[eligible.length - 1];
+}
+
+/**
+ * 软保底触发概率：抽数越界越多，线性趋近 1（封顶 1）。
+ * `drawIndex` 是本轮个人第几抽（从 1 起）；未到 startsAfterDraws 返回 0。
+ */
+export function softGuaranteeChance(drawIndex: number, config: LotterySoftGuarantee): number {
+  if (drawIndex <= config.startsAfterDraws) return 0;
+  const extra = drawIndex - config.startsAfterDraws;
+  const chance = Math.max(0, config.baseChance ?? 0) + Math.max(0, config.step) * extra;
+  return Math.min(1, Math.max(0, chance));
+}
+
+/**
+ * 伪随机平滑补偿：把随机值向 0 压（等价于放大命中区间），补偿倍率 = increment × 未命中次数，封顶 maxBonus。
+ * 未命中次数为 0 或倍率为 0 时原样返回。
+ */
+export function applyPityBoost(
+  randomValue: number,
+  pityCounter: number,
+  config: LotteryPseudoRandom,
+): number {
+  const bonus = Math.min(
+    Math.max(0, config.maxBonus),
+    Math.max(0, config.increment) * Math.max(0, Math.floor(pityCounter)),
+  );
+  if (bonus <= 0) return randomValue;
+  const boosted = randomValue * (1 - Math.min(1, bonus));
+  return Math.min(1, Math.max(0, boosted));
 }
 
 class LotteryService {
@@ -427,7 +476,7 @@ class LotteryService {
       throw new Error("没有可用的奖品");
     }
 
-    // 保底：每抽到 guarantee.everyDraws 的整数倍（按本轮个人次数）至少出指定稀有度；
+    // 硬保底：每抽到 guarantee.everyDraws 的整数倍（按本轮个人次数）至少出指定稀有度；
     // 没有符合条件的有库存奖品时回落普通抽取，不让保底把活动抽死。
     const drawIndex = drawsSoFar + 1;
     const guarantee = latest.guarantee;
@@ -435,8 +484,24 @@ class LotteryService {
       guarantee && guarantee.everyDraws > 0 && drawIndex % guarantee.everyDraws === 0
         ? pickGuaranteedPrize(latest.prizes, guarantee.category, randomValue)
         : null;
+
+    // 伪随机平滑补偿：连续未命中累积的概率加成（命中后重置），在普通抽取前把随机值向命中区压。
+    const pseudo = latest.pseudoRandom;
+    const pityCounter = Math.max(0, Math.floor(latest.pityCounters?.[userId] ?? 0));
+
+    let prize: LotteryPrize | null = guaranteedPrize;
+    // 软保底：超出手数越多，触发「至少出该稀有度」的概率越高（必中该档，纯权重归一）。
+    if (!prize && latest.softGuarantee) {
+      const softChance = softGuaranteeChance(drawIndex, latest.softGuarantee);
+      if (softChance > 0 && randomValue < softChance) {
+        prize = pickGuaranteedPrize(latest.prizes, latest.softGuarantee.category, randomValue);
+      }
+    }
     // 概率和 < 1 时剩余区间表示「未中奖」：参与照样计数，只是不进 winners。
-    const prize = guaranteedPrize ?? pickPrize(latest.prizes, randomValue);
+    if (!prize) {
+      const effectiveRandom = pseudo ? applyPityBoost(randomValue, pityCounter, pseudo) : randomValue;
+      prize = pickPrize(latest.prizes, effectiveRandom);
+    }
 
     // 抽奖机会：chanceCost > 0 的轮次按次原子消耗；管理员豁免（与其它豁免同一口径）。
     let chanceConsumed = 0;
@@ -473,6 +538,10 @@ class LotteryService {
       : [...latest.participants, userId];
     const nextWinners = winner ? [...latest.winners, winner] : latest.winners;
     const nextDrawCounts = { ...(latest.drawCounts || {}), [userId]: drawIndex };
+    // 未命中累加补偿计数，命中即重置。
+    const nextPityCounters = pseudo
+      ? { ...(latest.pityCounters || {}), [userId]: prize ? 0 : pityCounter + 1 }
+      : latest.pityCounters;
 
     // G7-08: 把本次抽奖的所有状态变更真正落库。此前这里只改内存对象，请求一结束
     // 全部丢弃，导致可无限抽奖、库存永不扣减、中奖记录不存在。
@@ -482,6 +551,7 @@ class LotteryService {
         participants: nextParticipants,
         winners: nextWinners,
         drawCounts: nextDrawCounts,
+        ...(nextPityCounters ? { pityCounters: nextPityCounters } : {}),
         blockchainHeight: blockchainData.height,
         seed: blockchainData.hash,
       });
@@ -686,6 +756,7 @@ class LotteryService {
     round.participants = [];
     round.winners = [];
     round.drawCounts = {};
+    round.pityCounters = {};
 
     // 替换原有本地读写/Map操作，全部通过lotteryStorage接口实现
     // await this.saveData(); // 移除此行，因为不再直接保存
@@ -694,6 +765,7 @@ class LotteryService {
       participants: round.participants,
       winners: round.winners,
       drawCounts: round.drawCounts,
+      pityCounters: round.pityCounters,
     });
     logger.info(`重置抽奖轮次: ${roundId}`);
   }

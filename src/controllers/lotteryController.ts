@@ -41,13 +41,56 @@ const PRIZE_CATEGORIES = new Set(["common", "rare", "epic", "legendary"]);
 const MAX_PRIZES_PER_ROUND = 50;
 const MAX_PRIZE_QUANTITY = 1_000_000;
 
+function readInRange(value: unknown, min: number, max: number): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+  return parsed;
+}
+
+interface SoftGuaranteeConfig {
+  startsAfterDraws: number;
+  category: LotteryPrize["category"];
+  step: number;
+  baseChance?: number;
+}
+
+interface PseudoRandomConfig {
+  increment: number;
+  maxBonus: number;
+}
+
+/** 解析软保底配置；字段缺失视为不启用，给非法值报错（不静默降级）。 */
+function parseSoftGuarantee(raw: unknown): { value?: SoftGuaranteeConfig; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object") return { error: "软保底配置非法" };
+  const record = raw as Record<string, unknown>;
+  const startsAfterDraws = readInRange(record.startsAfterDraws, 0, 100000);
+  const step = readInRange(record.step, 0, 1);
+  const baseChance = record.baseChance === undefined ? 0 : readInRange(record.baseChance, 0, 1);
+  const category = record.category;
+  if (startsAfterDraws === null || step === null || baseChance === null) return { error: "软保底数值非法" };
+  if (typeof category !== "string" || !PRIZE_CATEGORIES.has(category)) return { error: "软保底稀有度非法" };
+  return { value: { startsAfterDraws, step, baseChance, category: category as LotteryPrize["category"] } };
+}
+
+/** 解析伪随机平滑补偿配置。 */
+function parsePseudoRandom(raw: unknown): { value?: PseudoRandomConfig; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object") return { error: "平滑补偿配置非法" };
+  const record = raw as Record<string, unknown>;
+  const increment = readInRange(record.increment, 0, 1);
+  const maxBonus = readInRange(record.maxBonus, 0, 1);
+  if (increment === null || maxBonus === null) return { error: "平滑补偿数值非法" };
+  return { value: { increment, maxBonus } };
+}
+
 /**
  * 普通用户看到的轮次：不回参与者的内部用户 id（隐私），改回「本人是否已参与」与计数，
  * 中奖记录也去掉 userId。管理员拿完整数据（管理面板要按 id 排查异常）。
  */
 function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string | undefined, isAdmin: boolean): T {
   if (isAdmin) return round;
-  const { participants, winners, drawCounts, ...rest } = round;
+  const { participants, winners, drawCounts, pityCounters, ...rest } = round;
   const drawsUsed = userId ? Math.max(0, Math.floor(drawCounts?.[userId] ?? 0)) : 0;
   const maxDraws = Math.max(1, Math.floor(round.maxDrawsPerUser || 1));
   return {
@@ -188,6 +231,17 @@ export class LotteryController {
         }
         guarantee = { everyDraws, category: category as LotteryPrize["category"] };
       }
+      // 软保底 / 伪随机平滑补偿（可选）
+      const softParsed = parseSoftGuarantee(req.body?.softGuarantee);
+      if (softParsed.error) {
+        res.status(400).json({ success: false, error: `保底配置非法：${softParsed.error}` });
+        return;
+      }
+      const pseudoParsed = parsePseudoRandom(req.body?.pseudoRandom);
+      if (pseudoParsed.error) {
+        res.status(400).json({ success: false, error: `补偿配置非法：${pseudoParsed.error}` });
+        return;
+      }
       const roundData = {
         name,
         description,
@@ -198,6 +252,8 @@ export class LotteryController {
         maxDrawsPerUser,
         chanceCost,
         ...(guarantee ? { guarantee } : {}),
+        ...(softParsed.value ? { softGuarantee: softParsed.value } : {}),
+        ...(pseudoParsed.value ? { pseudoRandom: pseudoParsed.value } : {}),
       };
       const round = await lotteryService.createLotteryRound(roundData);
       res.json({

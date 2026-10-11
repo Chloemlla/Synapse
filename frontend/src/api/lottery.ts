@@ -142,6 +142,8 @@ export async function createLotteryRound(roundData: {
   maxDrawsPerUser?: number;
   chanceCost?: number;
   guarantee?: { everyDraws: number; category: string };
+  softGuarantee?: { startsAfterDraws: number; category: string; step: number; baseChance?: number };
+  pseudoRandom?: { increment: number; maxBonus: number };
 }): Promise<{ round: LotteryRound; warning?: string }> {
   const envelope = await apiRequestEnvelope<LotteryRound>('/rounds', {
     method: 'POST',

@@ -58,7 +58,7 @@ jest.mock("../services/sharedStateStore", () => ({
   },
 }));
 
-import { type LotteryPrize, type LotteryRound, lotteryService, pickPrize } from "../services/lotteryService";
+import { type LotteryPrize, type LotteryRound, lotteryService, pickPrize, applyPityBoost, softGuaranteeChance } from "../services/lotteryService";
 
 function prize(overrides: Partial<LotteryPrize> & { id: string }): LotteryPrize {
   return {
@@ -310,6 +310,24 @@ describe("幂等与审计（PRD §4）", () => {
   });
 });
 
+describe("软保底 / 平滑补偿（纯函数）", () => {
+  it("softGuaranteeChance：未到阈值返回 0，越界线性增长并封顶 1", () => {
+    const config = { startsAfterDraws: 2, category: "epic" as const, step: 0.5 };
+    expect(softGuaranteeChance(1, config)).toBe(0);
+    expect(softGuaranteeChance(2, config)).toBe(0);
+    expect(softGuaranteeChance(3, config)).toBe(0.5);
+    expect(softGuaranteeChance(4, config)).toBe(1);
+    expect(softGuaranteeChance(10, config)).toBe(1);
+  });
+
+  it("applyPityBoost：按未命中次数线性压随机值，封顶 maxBonus", () => {
+    const config = { increment: 0.1, maxBonus: 0.5 };
+    expect(applyPityBoost(0.8, 0, config)).toBeCloseTo(0.8, 5);
+    expect(applyPityBoost(0.8, 3, config)).toBeCloseTo(0.56, 5);
+    expect(applyPityBoost(0.8, 100, config)).toBeCloseTo(0.4, 5);
+  });
+});
+
 describe("多次抽奖 / 保底 / 机会", () => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
 
@@ -359,6 +377,36 @@ describe("多次抽奖 / 保底 / 机会", () => {
 
     const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
     expect(winner).toMatchObject({ prizeId: "epic" });
+  });
+
+  it("软保底：到达阈值后必出指定稀有度", async () => {
+    const common = prize({ id: "common", probability: 0.99, category: "common", quantity: 5, remaining: 5 });
+    const epic = prize({ id: "epic", probability: 0.01, category: "epic", quantity: 5, remaining: 5 });
+    const round = makeRound({ softGuarantee: { startsAfterDraws: 0, step: 1, category: "epic" }, prizes: [common, epic] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+    expect(winner).toMatchObject({ prizeId: "epic" });
+  });
+
+  it("平滑补偿：未命中累加计数，命中后重置", async () => {
+    const missRound = makeRound({
+      pseudoRandom: { increment: 0.1, maxBonus: 0.5 },
+      prizes: [prize({ id: "p", probability: 1e-9, remaining: 5, quantity: 5 })],
+    });
+    mockGetAllRounds.mockResolvedValue([missRound]);
+    await lotteryService.participateInLottery(missRound.id, "u1", "alice", undefined, "user");
+    expect((mockUpdateRound.mock.calls[0][1] as Record<string, any>).pityCounters).toEqual({ u1: 1 });
+
+    mockUpdateRound.mockClear();
+    const winRound = makeRound({
+      pseudoRandom: { increment: 0.1, maxBonus: 0.5 },
+      pityCounters: { u1: 4 },
+      prizes: [prize({ id: "p", probability: 1, remaining: 5, quantity: 5 })],
+    });
+    mockGetAllRounds.mockResolvedValue([winRound]);
+    await lotteryService.participateInLottery(winRound.id, "u1", "alice", undefined, "user");
+    expect((mockUpdateRound.mock.calls[0][1] as Record<string, any>).pityCounters).toEqual({ u1: 0 });
   });
 
   it("机会不足时拒绝抽取，不写库", async () => {
