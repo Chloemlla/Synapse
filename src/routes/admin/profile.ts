@@ -384,7 +384,11 @@ router.post("/user/profile/verify", authMiddleware, async (req, res) => {
       }
     }
 
-    const session = createProfileVerificationSession(dbUser.id, method as "password" | "totp" | "passkey");
+    const session = createProfileVerificationSession(dbUser.id, method as "password" | "totp" | "passkey", {
+      // RC-41：签发时记下 IP 与 UA 摘要（写在签名 payload 里，不需要额外存储）。
+      ipAddress: getClientIP(req),
+      userAgent: req.headers["user-agent"],
+    });
 
     return res.json({
       success: true,

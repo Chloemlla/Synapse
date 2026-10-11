@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
  *
  * 与个人资料页（UserProfile）同一套：先通过 /api/admin/user/profile/verify 验证一次身份
  * （密码 / TOTP / passkey）拿到 verificationToken，邮箱、密码、第三方账号绑定、查看密钥、
- * 命令执行、双因素配置等敏感操作复用同一枚 token（后端按 req.user.id + token 校验，10 分钟 TTL）。
+ * 命令执行、双因素配置等敏感操作复用同一枚 token（后端按 req.user.id + token 校验，TTL 由后台的安全会话策略决定）。
  *
  * 用模块级单例 + useSyncExternalStore，使不同页面/组件树（UserProfile、env-manager、TOTPManager）
  * 能共享同一会话，无需 Provider。

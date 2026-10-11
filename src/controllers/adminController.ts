@@ -2422,6 +2422,45 @@ export const adminController = {
     }
   },
 
+  // 安全会话（SECURITY_SESSION / RC-40 / RC-41）。TTL 与绑定开关，无机密字段。
+  async getSecuritySessionSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.getSecuritySessionSetting();
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      logger.error("获取安全会话配置失败", { error });
+      return res.status(500).json({ success: false, error: "获取安全会话配置失败" });
+    }
+  },
+
+  async setSecuritySessionSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.setSecuritySessionSetting(req.body || {});
+      return res.json({ success: true, setting: result });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : "保存安全会话配置失败",
+      });
+    }
+  },
+
+  async deleteSecuritySessionSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      await RuntimeConfigService.deleteSecuritySessionSetting();
+      return res.json({ success: true });
+    } catch (_error) {
+      return res.status(500).json({ success: false, error: "重置安全会话配置失败" });
+    }
+  },
+
   async getCdictSigningSetting(req: Request, res: Response) {
     try {
       if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });

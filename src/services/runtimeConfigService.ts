@@ -5,6 +5,7 @@ import {
   cloneRuntimeConfigDefaults,
   type AdminSecurityRuntimeConfig,
   type AccountRiskRuntimeConfig,
+  type SecuritySessionRuntimeConfig,
   type CdictSigningRuntimeConfig,
   type DeepLXRuntimeConfig,
   type EmailRuntimeConfig,
@@ -489,6 +490,7 @@ const RUNTIME_CONFIG_KEY_TO_PROP: Partial<Record<RuntimeConfigKey, keyof Runtime
   MOBILE_TOKEN_INTEGRITY: "mobileTokenIntegrity",
   MOBILE_TOKEN_ROTATION_RISK: "mobileTokenRotationRisk",
   ACCOUNT_RISK: "accountRisk",
+  SECURITY_SESSION: "securitySession",
   LUMEN: "lumen",
   NEXAI: "nexai",
 };
@@ -889,6 +891,19 @@ function normalizeStoredAccountRiskConfig(
   };
 }
 
+function normalizeStoredSecuritySessionConfig(
+  value: unknown,
+  defaults = runtimeConfigDefaults.securitySession,
+): SecuritySessionRuntimeConfig {
+  const raw = asObject(value);
+  return {
+    // 3～5 分钟是审计给的区间；下限 60s 只是因为运维可能为了排障临时压得更短。
+    ttlSeconds: normalizeInteger(raw.ttlSeconds, defaults.ttlSeconds, 60, 3600),
+    bindUserAgent: normalizeBoolean(raw.bindUserAgent, defaults.bindUserAgent),
+    revokeOnGeoJump: normalizeBoolean(raw.revokeOnGeoJump, defaults.revokeOnGeoJump),
+  };
+}
+
 // G5-37: 纯函数——只写传入的 target 缓存，不在遍历中改在用的 runtimeConfigCache。
 function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, value: unknown): void {
   switch (key) {
@@ -946,6 +961,9 @@ function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, 
     case "ACCOUNT_RISK":
       target.accountRisk = normalizeStoredAccountRiskConfig(value);
       return;
+    case "SECURITY_SESSION":
+      target.securitySession = normalizeStoredSecuritySessionConfig(value);
+      return;
     case "LUMEN": {
       const config = normalizeStoredLumenConfig(value, target.lumen);
       target.lumen = config;
@@ -983,6 +1001,7 @@ const RUNTIME_CONFIG_KEYS: readonly RuntimeConfigKey[] = [
   "MOBILE_TOKEN_INTEGRITY",
   "MOBILE_TOKEN_ROTATION_RISK",
   "ACCOUNT_RISK",
+  "SECURITY_SESSION",
 ];
 
 // G5-03: 周期刷新定时器——多实例部署下每个实例每 ~10s 重载一次 DB 配置，
@@ -1066,6 +1085,9 @@ export class RuntimeConfigService {
     }
     if (!loadedKeys.has("ACCOUNT_RISK")) {
       runtimeConfigCache.accountRisk = cloneRuntimeConfigDefaults(defaults).accountRisk;
+    }
+    if (!loadedKeys.has("SECURITY_SESSION")) {
+      runtimeConfigCache.securitySession = cloneRuntimeConfigDefaults(defaults).securitySession;
     }
     if (!loadedKeys.has("LUMEN")) {
       runtimeConfigCache.lumen = cloneRuntimeConfigDefaults(defaults).lumen;
@@ -2106,6 +2128,45 @@ export class RuntimeConfigService {
     runtimeConfigCache.accountRisk = cloneRuntimeConfigDefaults(runtimeConfigDefaults).accountRisk;
     loadedKeys.delete("ACCOUNT_RISK");
     invalidateHotCache("ACCOUNT_RISK");
+  }
+
+  // 安全会话（SECURITY_SESSION / RC-40 / RC-41）。纯阈值与开关，读要管理员、写要超管。
+  static async getSecuritySessionSetting(): Promise<{
+    setting: { config: SecuritySessionRuntimeConfig; updatedAt?: string };
+  }> {
+    const doc = await readRuntimeConfigDoc("SECURITY_SESSION");
+    const config = doc ? normalizeStoredSecuritySessionConfig(doc.value) : runtimeConfigDefaults.securitySession;
+    runtimeConfigCache.securitySession = config;
+    return { setting: { config: { ...config }, updatedAt: doc?.updatedAt?.toISOString() } };
+  }
+
+  static async setSecuritySessionSetting(
+    input: Partial<SecuritySessionRuntimeConfig> | Record<string, unknown>,
+  ): Promise<{ updatedAt: string }> {
+    const currentDoc = await readRuntimeConfigDoc("SECURITY_SESSION");
+    const current = currentDoc
+      ? normalizeStoredSecuritySessionConfig(currentDoc.value)
+      : runtimeConfigCache.securitySession;
+    const nextConfig = normalizeStoredSecuritySessionConfig(asObject(input), current);
+
+    const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
+      "SECURITY_SESSION",
+      nextConfig as unknown as Record<string, unknown>,
+      currentDoc?.updatedAt,
+    );
+
+    runtimeConfigCache.securitySession = nextConfig;
+    loadedKeys.add("SECURITY_SESSION");
+    invalidateHotCache("SECURITY_SESSION");
+    initialized = true;
+    return { updatedAt: persistedAt.toISOString() };
+  }
+
+  static async deleteSecuritySessionSetting(): Promise<void> {
+    await RuntimeConfigModel.deleteOne({ key: "SECURITY_SESSION" }).exec();
+    runtimeConfigCache.securitySession = cloneRuntimeConfigDefaults(runtimeConfigDefaults).securitySession;
+    loadedKeys.delete("SECURITY_SESSION");
+    invalidateHotCache("SECURITY_SESSION");
   }
 
   static async getCdictSigningSetting(): Promise<{

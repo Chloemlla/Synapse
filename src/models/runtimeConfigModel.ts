@@ -22,6 +22,7 @@ export const RUNTIME_CONFIG_KEYS = [
   "MOBILE_TOKEN_INTEGRITY",
   "MOBILE_TOKEN_ROTATION_RISK",
   "ACCOUNT_RISK",
+  "SECURITY_SESSION",
 ] as const;
 
 export type RuntimeConfigKey = (typeof RUNTIME_CONFIG_KEYS)[number];

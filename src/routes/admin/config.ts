@@ -521,6 +521,22 @@ router.delete(
   auditLog({ module: "security", action: "security.account-risk.delete" }),
   adminController.deleteAccountRiskSetting,
 );
+// 安全会话（SECURITY_SESSION / RC-40 / RC-41）：TTL 与绑定开关，保存后立即生效。
+router.get("/security-session/setting", adminController.getSecuritySessionSetting);
+router.post(
+  "/security-session/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.security-session.set", captureBody: false }),
+  adminController.setSecuritySessionSetting,
+);
+router.delete(
+  "/security-session/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.security-session.delete" }),
+  adminController.deleteSecuritySessionSetting,
+);
 router.get("/cdict-signing/setting", adminController.getCdictSigningSetting);
 router.post(
   "/cdict-signing/setting",

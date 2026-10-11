@@ -358,6 +358,23 @@ export interface AccountRiskRuntimeConfig {
   stepUpGrantMaxUses: number;
 }
 
+/**
+ * 安全会话（RC-40 / RC-41 / D18）。
+ *
+ * 审计要求把原来的 10 分钟 TTL 压到 3～5 分钟、并且**运行时可调**：
+ * 管理员做一串敏感操作时会被更频繁地要求重新验证，这个频率必须能在线调，而不是发版。
+ * 同时把「会话绑定什么」也做成可配：UA 严格绑定是防令牌被拿到另一环境重放的硬手段，
+ * 但极端情况下（企业代理改 UA）可能需要关掉，必须留一个可审计的开关。
+ */
+export interface SecuritySessionRuntimeConfig {
+  /** 安全会话 TTL（秒）。默认 300（5 分钟）；审计要求 3～5 分钟。 */
+  ttlSeconds: number;
+  /** UA 严格绑定（RC-41 裁决二）：不匹配立即失效，不允许在另一环境重放。 */
+  bindUserAgent: boolean;
+  /** IP 跨国家/省时是否终止会话（同城异网只记信号，见裁决二）。 */
+  revokeOnGeoJump: boolean;
+}
+
 export interface RuntimeConfigDefaults {
   ipqs: IpqsRuntimeConfig;
   linuxdo: LinuxDoRuntimeConfig;
@@ -379,6 +396,7 @@ export interface RuntimeConfigDefaults {
   mobileTokenIntegrity: MobileTokenIntegrityRuntimeConfig;
   mobileTokenRotationRisk: MobileTokenRotationRiskRuntimeConfig;
   accountRisk: AccountRiskRuntimeConfig;
+  securitySession: SecuritySessionRuntimeConfig;
   lumen: LumenRuntimeConfig;
 }
 
@@ -602,6 +620,12 @@ export function buildRuntimeConfigDefaults(options: {
       stepUpGrantTtlSeconds: 30,
       stepUpGrantMaxUses: 5,
     },
+    // RC-40：从 10 分钟压到 5 分钟（审计要求 3～5 分钟）；UA 严格绑定默认开。
+    securitySession: {
+      ttlSeconds: 300,
+      bindUserAgent: true,
+      revokeOnGeoJump: true,
+    },
     // 默认关：不配置就完全沿用 24 小时节奏，只有运维显式打开才会出现提级轮换。
     mobileTokenRotationRisk: {
       enabled: false,
@@ -729,6 +753,9 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     },
     accountRisk: {
       ...config.accountRisk,
+    },
+    securitySession: {
+      ...config.securitySession,
     },
     lumen: {
       ...config.lumen,

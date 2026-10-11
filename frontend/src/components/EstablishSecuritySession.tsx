@@ -25,7 +25,7 @@ type VerifyResult = { success?: boolean; verificationToken?: string; expiresAt?:
 
 /**
  * 全站统一的「建立安全会话」组件：验证一次身份后，账号修改、第三方绑定、查看密钥、命令执行、
- * 双因素配置等敏感操作复用同一枚 verificationToken（10 分钟 TTL）。按已配置的因素展示三种方式：
+ * 双因素配置等敏感操作复用同一枚 verificationToken（默认 5 分钟，可在后台调整）：按已配置的因素展示三种方式：
  * 当前密码（requireTwoFactor 为 false 时）、TOTP（开启后）、Passkey（注册后）。
  */
 export default function EstablishSecuritySession({
@@ -205,7 +205,7 @@ export default function EstablishSecuritySession({
         <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
         <div className="text-xs text-slate-500">
           {requireTwoFactor
-            ? '配置双因素验证需用动态验证码或通行密钥建立 10 分钟安全会话，不能使用登录密码。'
+            ? '配置双因素验证需用动态验证码或通行密钥建立安全会话（几分钟内有效，过期后重新验证即可），不能使用登录密码。'
             : '验证一次后，账号修改和第三方绑定会复用该会话。'}
         </div>
       </div>
@@ -214,7 +214,7 @@ export default function EstablishSecuritySession({
       {requireTwoFactor ? null : (
         <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
           <label htmlFor="ess-password" className="text-sm font-medium text-slate-700">当前密码</label>
-          <div className="mb-2 text-xs text-slate-500">使用登录密码建立 10 分钟安全会话</div>
+          <div className="mb-2 text-xs text-slate-500">使用登录密码建立安全会话（几分钟内有效，过期后重新验证即可）</div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               id="ess-password"

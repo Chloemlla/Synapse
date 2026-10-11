@@ -4,7 +4,7 @@ import { auditLog } from "../middleware/auditLog";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { commandLimiter } from "../middleware/routeLimiters";
 import { commandService } from "../services/commandService";
-import { hasValidSecuritySession } from "../utils/securitySession";
+import { hasValidSecuritySession, assertSecuritySessionBinding } from "../utils/securitySession";
 import { encryptCommandPayload } from "../utils/commandCrypto";
 import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
@@ -214,6 +214,16 @@ router.post(
       if (!hasValidSecuritySession(req)) {
         logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/execute" });
         return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+      }
+
+      // RC-41 / 裁决二：命令执行是最高危的控制面操作，额外做**异步**绑定检查
+      // （UA 已在同步路径上强绑；这里管“IP 跨国家/省”那种异地重放：只跨城不踢人）。
+      if (!(await assertSecuritySessionBinding(req))) {
+        logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/execute" });
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: "SECURITY_SESSION_BINDING_CHANGED",
+        });
       }
 
       // 真正的命令白名单/黑名单判定在 commandService.validateCommand，路由层不再维护子串黑名单

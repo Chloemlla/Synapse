@@ -5,12 +5,22 @@ import { SharedStateLockedError, sharedStateStore } from "./sharedStateStore";
 
 export type ProfileVerificationMethod = "password" | "totp" | "passkey";
 
+export interface ProfileVerificationBinding {
+  /** 签发时/使用时看到的客户端 IP（用于同会话异地重放的判定）。 */
+  ipAddress?: string;
+  /** 签发时/使用时看到的 UA 原文（内部会摘要后写入令牌）。 */
+  userAgent?: string;
+}
+
 export interface ProfileVerificationSession {
   token: string;
   userId: string;
   method: ProfileVerificationMethod;
   createdAt: number;
   expiresAt: number;
+  /** 签发时的 UA 摘要与 IP（仅供守卫层做绑定比对与异地判定）。 */
+  userAgentHash?: string;
+  issuedIp?: string;
 }
 
 interface PendingEmailChangeChallenge {
@@ -24,8 +34,9 @@ interface PendingEmailChangeChallenge {
   attempts: number;
 }
 
-// 与前端「使用登录密码建立 10 分钟安全会话」的文案保持一致。
-const PROFILE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+// 安全会话 TTL 不再写死：由运行时可配 `securitySession.ttlSeconds` 决定（RC-40：3～5 分钟）。
+// 保留一个默认值供配置不可用时使用（与 runtimeConfigDefaults 一致）。
+const DEFAULT_PROFILE_VERIFICATION_TTL_MS = 300 * 1000;
 const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CHANGE_RESEND_INTERVAL_MS = 60 * 1000;
 const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
@@ -70,6 +81,13 @@ interface TokenPayload {
   iat: number;
   exp: number;
   j: string;
+  /**
+   * RC-41（裁决二）：UA 摘要与签发 IP。写在**签过名的 payload** 里 ⇒ 不需要额外存储，
+   * 且跨实例/重启都成立（本令牌本来就是自包含设计）。
+   * `ua` 用 sha256 前后 32 位十六进制（不存明文 UA，避免多一份可关联的指纹）。
+   */
+  ua?: string;
+  ip?: string;
 }
 
 /** 验证方式 ↔ 令牌内数字编码，只在这一层做映射。 */
@@ -245,9 +263,25 @@ function setWatermark(cacheKey: string, watermark: number): void {
     );
 }
 
+function securitySessionTtlMs(): number {
+  const configured = config.securitySession?.ttlSeconds;
+  if (typeof configured === "number" && Number.isFinite(configured) && configured >= 60) {
+    return Math.min(configured, 3600) * 1000;
+  }
+  return DEFAULT_PROFILE_VERIFICATION_TTL_MS;
+}
+
+/** UA 摘要：只存 32 位十六进制摘要，不存明文（不新增一份可关联的指纹）。 */
+export function userAgentDigest(userAgent: string | undefined | null): string | undefined {
+  const value = typeof userAgent === "string" ? userAgent.trim() : "";
+  if (!value) return undefined;
+  return crypto.createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+
 export function createProfileVerificationSession(
   userId: string,
   method: ProfileVerificationMethod,
+  binding: ProfileVerificationBinding = {},
 ): ProfileVerificationSession {
   const perUserKey = `${REVOCATION_KEY_PREFIX}${userId}`;
   const now = Date.now();
@@ -255,13 +289,25 @@ export function createProfileVerificationSession(
   // 「已知水位 + 1ms」，保证新令牌在任何实例上都严格新于现有水位，不会被自己人的缓存误杀。
   const watermark = Math.max(cachedWatermark(perUserKey), cachedWatermark(GLOBAL_REVOCATION_KEY));
   const issuedAt = Math.max(now, watermark + 1);
-  const expiresAt = issuedAt + PROFILE_VERIFICATION_TTL_MS;
+  const expiresAt = issuedAt + securitySessionTtlMs();
+  const userAgentHash = userAgentDigest(binding.userAgent);
+  const issuedIp = typeof binding.ipAddress === "string" ? binding.ipAddress.trim().slice(0, 128) : undefined;
   const session: ProfileVerificationSession = {
-    token: sealToken({ u: userId, m: METHOD_CODES[method], iat: issuedAt, exp: expiresAt, j: crypto.randomUUID() }),
+    token: sealToken({
+      u: userId,
+      m: METHOD_CODES[method],
+      iat: issuedAt,
+      exp: expiresAt,
+      j: crypto.randomUUID(),
+      ua: userAgentHash,
+      ip: issuedIp,
+    }),
     userId,
     method,
     createdAt: issuedAt,
     expiresAt,
+    userAgentHash,
+    issuedIp,
   };
 
   // 「同一用户只保留最新一枚会话」：把该用户的水位推到签发时刻，旧令牌（iat 更早）立即失效。
@@ -269,11 +315,22 @@ export function createProfileVerificationSession(
   return session;
 }
 
-export function validateProfileVerificationSession(userId: string, token: string): ProfileVerificationSession | null {
+export function validateProfileVerificationSession(
+  userId: string,
+  token: string,
+  binding: ProfileVerificationBinding = {},
+): ProfileVerificationSession | null {
   const payload = openToken(token);
   if (!payload) return null;
   if (payload.u !== userId) return null;
   if (payload.exp <= Date.now()) return null;
+
+  // RC-41 裁决二：**UA 不匹配立即失效**（不参数可配）。防的是令牌被拿到另一环境重放；
+  // 只有签发时记了 UA 摘要、且本次请求带了 UA 时才比 —— 老令牌（无 ua 字段）按历史行为放行。
+  if (payload.ua && (config.securitySession?.bindUserAgent ?? true)) {
+    const current = userAgentDigest(binding.userAgent);
+    if (current && current !== payload.ua) return null;
+  }
 
   // 水位严格大于签发时间才算被撤销，因此「刚签发的那一枚」不会被自己写下的水位误杀。
   if (payload.iat < cachedWatermark(`${REVOCATION_KEY_PREFIX}${userId}`)) return null;
@@ -285,6 +342,8 @@ export function validateProfileVerificationSession(userId: string, token: string
     method: METHOD_BY_CODE[payload.m] as ProfileVerificationMethod,
     createdAt: payload.iat,
     expiresAt: payload.exp,
+    userAgentHash: payload.ua,
+    issuedIp: payload.ip,
   };
 }
 

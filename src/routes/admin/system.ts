@@ -18,7 +18,7 @@ import { hasValidSecuritySession } from "../../utils/securitySession";
  *   1. 挂载级认证 + 管理员范围守卫（`/api/admin` 的 adminLimiter + adminAuthMiddleware）：
  *      普通管理员在 `adminPages.ts` 里没有 `/api/admin/system` 的页面范围，必然 403；
  *   2. 本文件内 `isSuperAdmin`：即使将来有人给普通管理员放开了页面，这里仍然只认超管；
- *   3. 全站统一的安全会话（`hasValidSecuritySession`，10 分钟 TTL）：明文数据必须先二次验证身份。
+ *   3. 全站统一的安全会话（`hasValidSecuritySession`，TTL 由 securitySession.ttlSeconds 运行时决定）：明文数据必须先二次验证身份。
  *
  * 能力是**纯只读**：没有删除、写入、flush 入口。审计由本文件显式写（`auditRedisAdmin`），
  * 因为通用 `auditLog` 中间件会把响应体写进审计 —— 那等于把在库明文再抄一份进审计库。
