@@ -356,6 +356,13 @@ export interface AccountRiskRuntimeConfig {
   stepUpGrantTtlSeconds: number;
   /** 一枚 grant 最多兑换几次（D22：严格等于被阻断的合法票据数，且上限 5）。 */
   stepUpGrantMaxUses: number;
+  /**
+   * RC-26 / RC-56：已登录请求的 IP 风险中阶复查开关（默认 false）。
+   *
+   * 默认关是有意的：它会把“登录后出口风险”接成闸门判定（中风险弹验证、高风险封 IP），
+   * 属行为变更，必须先按 §5 B7 的观察期跑一遍再打开。
+   */
+  ipRecheckEnabled: boolean;
 }
 
 /**
@@ -619,6 +626,8 @@ export function buildRuntimeConfigDefaults(options: {
       stepUpChallengeTtlSeconds: 120,
       stepUpGrantTtlSeconds: 30,
       stepUpGrantMaxUses: 5,
+      // 默认关：登录后 IP 复查会把行为变更带上生产，先观察再开（§5 B7）。
+      ipRecheckEnabled: false,
     },
     // RC-40：从 10 分钟压到 5 分钟（审计要求 3～5 分钟）；UA 严格绑定默认开。
     securitySession: {

@@ -3,6 +3,23 @@ import { getApiBaseUrl } from "../api/api";
 import { signedFetch } from "./requestSigner";
 import { createClientIntegrityCheck } from "./integrityDiagnostics";
 
+/**
+ * RC-34：警告浮层里的**插值**一律转义。
+ *
+ * 为什么需要：这些 innerHTML 模板里掺了 `element.id` / `event.elementId` / `event.eventType`；
+ * 它们理论上来自身份不明的 DOM（篡改检测本身就是在“页面已被改动”的假设下工作），
+ * 直接拼进 innerHTML 等于把“检测到篡改”变成“用篡改内容执行一次 HTML 注入”。
+ * 纯静态文案的模板不需要过它，但只要掺了变量就一律过。
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 interface IntegrityData {
   content: string;
   hash: string;
@@ -1541,7 +1558,7 @@ class IntegrityChecker {
     warning.innerHTML = `
       <div>警告：检测到页面内容被篡改！</div>
       <div style="font-size: 0.8em; margin-top: 5px;">
-        ${event.eventType ? `类型: ${event.eventType}` : ""} ${event.elementId ? `| 元素: ${event.elementId}` : ""} | 
+        ${event.eventType ? `类型: ${escapeHtml(event.eventType)}` : ""} ${event.elementId ? `| 元素: ${escapeHtml(event.elementId)}` : ""} | 
         时间: ${new Date(event.timestamp).toLocaleTimeString()} | 
         尝试次数: ${event.attempts || 0}/${this.MAX_ATTEMPTS}
       </div>
@@ -2439,7 +2456,7 @@ class IntegrityChecker {
       <div style="font-size: 3em; margin-bottom: 20px;"></div>
       <h1 style="font-size: 2em; margin-bottom: 10px;">严重安全警告</h1>
       <p style="font-size: 1.2em; margin-bottom: 20px;">检测到品牌标识被恶意篡改！</p>
-      <p style="font-size: 1em; opacity: 0.9;">元素ID: ${elementId}</p>
+      <p style="font-size: 1em; opacity: 0.9;">元素ID: ${escapeHtml(elementId)}</p>
       <p style="font-size: 1em; opacity: 0.9;">系统已自动恢复并记录此事件</p>
       <div style="margin-top: 30px; font-size: 0.9em;">
         页面将在 <span id="brand-countdown">10</span> 秒后自动关闭

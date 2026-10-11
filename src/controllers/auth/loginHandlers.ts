@@ -29,6 +29,12 @@ import {
   loginAttempts,
   verifyRequiredCaptcha,
 } from "./_state";
+import {
+  clearLoginFailures,
+  readLoginBackoffState,
+  recordLoginFailure,
+  LOGIN_BACKOFF_THRESHOLD,
+} from "../../services/loginBackoffService";
 
 function summarizeAuthBody(body: any) {
   const challenge = readCaptchaChallenge(body);
@@ -115,19 +121,25 @@ export async function login(req: Request, res: Response) {
     // 检查登录尝试限制（按 IP+用户名 键控，防止攻击者锁定任意已知用户）
     const attemptKey = `${ip}:${identifier.toLowerCase()}`;
     const attempts = loginAttempts.get(attemptKey) || { count: 0, lastAttempt: 0 };
-    if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
+    // RC-27 / D14(a)：锁定状态以**共享存储**为准（多实例下进程内存 Map 不同步，
+    // 攻击者把失败次数均摊到各实例就能避开阈值）。内存 Map 仍保留作为快速路径与库不可用时的兜底。
+    const sharedBackoff = await readLoginBackoffState(attemptKey);
+    const sharedLockedUntil = sharedBackoff?.lockedUntil ?? 0;
+    const effectiveLockedUntil = Math.max(attempts.lockedUntil ?? 0, sharedLockedUntil);
+    if (effectiveLockedUntil && Date.now() >= effectiveLockedUntil) {
       attempts.count = 0;
       attempts.lockedUntil = undefined;
+      void clearLoginFailures(attemptKey);
     }
-    if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
-      const remainingMinutes = Math.ceil((attempts.lockedUntil - Date.now()) / 60000);
+    if (effectiveLockedUntil && Date.now() < effectiveLockedUntil) {
+      const remainingMinutes = Math.ceil((effectiveLockedUntil - Date.now()) / 60000);
       return res.status(429).json({
         error: `尝试次数过多，请在 ${remainingMinutes} 分钟后重试`,
         code: "LOGIN_LOCKED",
         remainingAttempts: 0,
         attemptLimit: LOGIN_ATTEMPT_LIMIT,
-        lockedUntil: attempts.lockedUntil,
-        retryAfterSeconds: getLoginRetrySeconds(attempts.lockedUntil),
+        lockedUntil: effectiveLockedUntil,
+        retryAfterSeconds: getLoginRetrySeconds(effectiveLockedUntil),
       });
     }
 
@@ -135,9 +147,12 @@ export async function login(req: Request, res: Response) {
     const user = await UserStorage.authenticateUser(identifier, password);
 
     if (!user) {
-      // 记录失败尝试
+      // 记录失败尝试（共享存储 + 内存两份：前者定阈值，后者保证库不可用时不会完全失去限制）
       attempts.count += 1;
       attempts.lastAttempt = Date.now();
+      const sharedAfter = await recordLoginFailure(attemptKey);
+      const sharedCount = sharedAfter?.count ?? 0;
+      const effectiveCount = Math.max(attempts.count, sharedCount);
 
       // 多次登录失败预警：达到预警阈值时发送提醒邮件（每个锁定窗口仅在 count 恰为阈值时触发一次，且不与锁定邮件同时发送）
       if (attempts.count === LOGIN_FAILURE_ALERT_THRESHOLD) {
@@ -176,16 +191,19 @@ export async function login(req: Request, res: Response) {
         }
       }
 
-      if (attempts.count >= LOGIN_ATTEMPT_LIMIT) {
-        attempts.lockedUntil = Date.now() + LOGIN_LOCKOUT_DURATION;
+      if (effectiveCount >= LOGIN_BACKOFF_THRESHOLD) {
+        // 指数退避：第 N 次触发锁定时，时长 = 15 分钟 × 2^(N-5)，上限由服务层封顶（24h）。
+        const sharedLockedUntil = sharedAfter?.lockedUntil ?? 0;
+        attempts.lockedUntil = Math.max(sharedLockedUntil, Date.now() + LOGIN_LOCKOUT_DURATION);
         loginAttempts.set(attemptKey, attempts);
+        const lockMinutes = Math.max(1, Math.ceil((attempts.lockedUntil - Date.now()) / 60000));
 
         // 发送锁定通知邮件
         const targetUser = await resolveNotifyTarget(identifier);
         if (targetUser?.email) {
           try {
             const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-            const lockEmailHtml = generateAccountLockedEmailHtml(targetUser.username, time, ip, userAgent, "15 分钟");
+            const lockEmailHtml = generateAccountLockedEmailHtml(targetUser.username, time, ip, userAgent, `${lockMinutes} 分钟`);
             sendThrottledAuthNotification({
               to: targetUser.email,
               subject: "Synapse 账号登录安全警报",
@@ -209,7 +227,7 @@ export async function login(req: Request, res: Response) {
         }
 
         return res.status(429).json({
-          error: "尝试次数过多，账号已锁定 15 分钟",
+          error: `尝试次数过多，账号已锁定 ${Math.max(1, Math.ceil((attempts.lockedUntil - Date.now()) / 60000))} 分钟`,
           code: "LOGIN_LOCKED",
           remainingAttempts: 0,
           attemptLimit: LOGIN_ATTEMPT_LIMIT,
@@ -232,8 +250,9 @@ export async function login(req: Request, res: Response) {
       return res.status(403).json({ error: "账户已被封停", code: "ACCOUNT_SUSPENDED", supportEmail: "support@chloemlla.com" });
     }
 
-    // 登录成功，重置尝试次数
+    // 登录成功，重置尝试次数（内存 + 共享存储都清）
     loginAttempts.delete(attemptKey);
+    void clearLoginFailures(attemptKey);
 
     // 认证通过后落同意记录（客户端提交了载荷才写；指纹缺失时只记日志，见服务实现）。
     // 记录失败不影响登录本身：同意记录是留档，不是放行条件。

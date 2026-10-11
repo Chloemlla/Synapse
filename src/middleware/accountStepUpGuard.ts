@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import { config } from "../config/config";
 import { shouldExemptFromRiskControl } from "../services/riskExemption";
+import { getCachedIpRisk } from "../services/ipRiskService";
+import { recordAccountAbuseSignal } from "../services/accountRiskService";
+import { manualBanIp } from "../services/turnstile/ipBan";
 import {
   computePayloadHash,
   issueStepUpChallenge,
@@ -30,7 +33,9 @@ import { routeKeyFromRequest } from "../utils/routeKey";
  *   客户端据此降级为只读，而不是卡在一个永远弹不出的弹窗上（RC-09）。
  */
 
-/** 只对写方法设闸：GET 类读**永不**逐请求验（轮询/SSE/WS 会被废掉，§4.6）。 */
+/**
+ * 只对写方法设闸：GET 类读**永不**逐请求验（轮询/SSE/WS 会被废掉，§4.6）。
+ */
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
@@ -47,6 +52,64 @@ export function isStepUpBypassPath(path: string): boolean {
 /** 写方法一律需要；读方法一律不需要（RC-09：读走限流收紧 + 只读降级，不做逐请求 captcha）。 */
 export function stepUpRequiredForMethod(method: unknown): boolean {
   return WRITE_METHODS.has(String(method || "").toUpperCase());
+}
+
+/**
+ * RC-26 / RC-56：**已登录**请求的 IP 风险中阶复查。
+ *
+ * 首访闸门只管住第一次进入；登录后换到境外 IDC 出口就没人管了。这里做的是：
+ * - 只读**缓存**（不外呼上游，否则每个请求都变慢且烧配额）；
+ * - 按用户做频率限制（默认 5 分钟一次），否则变成“每请求一次风险查询”；
+ * - 中风险 → 返回 `challenge`（由调用方升级为逐步验证）；高风险 → 写 IP 封禁 + `block`。
+ *
+ * 只对 watch 及以上档位生效：正常用户不因此被频繁打扰（误报成本远高于漏报成本）。
+ */
+const IP_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
+const lastIpRecheckAt = new Map<string, number>();
+const IP_RECHECK_MAX_ENTRIES = 10_000;
+
+type IpRecheckVerdict = "skip" | "allow" | "challenge" | "block";
+
+async function recheckLoggedInIpRisk(params: {
+  userId: string;
+  ipAddress: string;
+  riskTier?: string;
+}): Promise<IpRecheckVerdict> {
+  const tier = params.riskTier ?? "normal";
+  if (tier !== "watch" && tier !== "restricted" && tier !== "danger") return "skip";
+  if (!params.ipAddress || params.ipAddress === "unknown") return "skip";
+
+  const last = lastIpRecheckAt.get(params.userId) ?? 0;
+  if (Date.now() - last < IP_RECHECK_INTERVAL_MS) return "skip";
+  if (lastIpRecheckAt.size >= IP_RECHECK_MAX_ENTRIES) lastIpRecheckAt.clear();
+  lastIpRecheckAt.set(params.userId, Date.now());
+
+  const cached = await getCachedIpRisk(params.ipAddress).catch(() => null);
+  if (!cached) return "skip";
+
+  const blockThreshold = Number(config.proxycheck.blockRiskScore) || 90;
+  const challengeThreshold = Number(config.proxycheck.challengeRiskScore) || 66;
+  if (cached.risk >= blockThreshold) {
+    // RC-26：高风险→切断连接（并写封禁，让后续请求在 ipBanCheck 就被拦下）。
+    await manualBanIp(params.ipAddress, 24, "账号风险档受限期间出现高风险出口（自动阻断）", "auto").catch(
+      () => undefined,
+    );
+    return "block";
+  }
+  if (cached.risk >= challengeThreshold || cached.flags?.some((flag) => flag === "vpn" || flag === "proxy" || flag === "tor")) {
+    recordAccountAbuseSignal({
+      userId: params.userId,
+      eventType: "ACCOUNT_ABUSE_MID_RISK_IP",
+      fingerprint: "ip-recheck",
+      action: "logged_in_ip_recheck",
+      reason: `登录后出口风险分 ${cached.risk}`,
+      riskScore: cached.risk,
+      flags: cached.flags,
+      ipAddress: params.ipAddress,
+    });
+    return "challenge";
+  }
+  return "allow";
 }
 
 /** 只带 Bearer、没有会话 Cookie ⇒ 原生客户端：它弹不出人机验证（RC-09）。 */
@@ -78,7 +141,18 @@ function stepUpPayloadHash(req: Request): string {
 export interface StepUpDecision {
   required: boolean;
   /** 为何不需要：便于排查“为什么没弹窗”。 */
-  reason: "disabled" | "bypass" | "read-method" | "anonymous" | "exempt" | "tier-normal" | "grant-accepted" | "required";
+  reason:
+    | "disabled"
+    | "bypass"
+    | "read-method"
+    | "anonymous"
+    | "exempt"
+    | "tier-normal"
+    | "grant-accepted"
+    | "required"
+    | "ip-risk-blocked";
+  /** RC-26：高风险出口 → 直接阻断（不再给验证机会，由调用方回一个带 code 的 403）。 */
+  block?: boolean;
   state?: { riskTier?: string; stepUpMode?: string; stepUpUntil?: number };
 }
 
@@ -89,7 +163,8 @@ export async function evaluateStepUpRequirement(
   req: Request,
 ): Promise<StepUpDecision> {
   const cfg = config.accountRisk;
-  if (!cfg.stepUpEnabled) return { required: false, reason: "disabled" };
+  // 闸门与 IP 复查各自可关：默认都关 —— 两个都是行为变更，必须先观察期（§5 B7/B9）。
+  if (!cfg.stepUpEnabled && !cfg.ipRecheckEnabled) return { required: false, reason: "disabled" };
   if (isStepUpBypassPath(req.path || req.url || "")) return { required: false, reason: "bypass" };
   if (!stepUpRequiredForMethod(req.method)) return { required: false, reason: "read-method" };
 
@@ -102,8 +177,29 @@ export async function evaluateStepUpRequirement(
   const state = await getAccountRiskState(user.id);
   if (!state || state.deletedAt) return { required: false, reason: "anonymous" };
 
-  const needsVerification =
-    (state.riskTier === "restricted" || state.riskTier === "danger") && (state.stepUpUntil ?? 0) > Date.now();
+  let needsVerification =
+    cfg.stepUpEnabled &&
+    (state.riskTier === "restricted" || state.riskTier === "danger") &&
+    (state.stepUpUntil ?? 0) > Date.now();
+
+  // RC-26 / RC-56：即使档位不强制 step-up，也要（按频率）复查一次登录后的出口风险。
+  if (!needsVerification && cfg.ipRecheckEnabled) {
+    const verdict = await recheckLoggedInIpRisk({
+      userId: user.id,
+      ipAddress: getClientIP(req) || "",
+      riskTier: state.riskTier,
+    });
+    if (verdict === "block") {
+      return {
+        required: false,
+        reason: "ip-risk-blocked",
+        block: true,
+        state: { riskTier: state.riskTier, stepUpMode: state.stepUpMode, stepUpUntil: state.stepUpUntil },
+      };
+    }
+    if (verdict === "challenge") needsVerification = true;
+  }
+
   if (!needsVerification) {
     return {
       required: false,
@@ -148,7 +244,18 @@ export async function enforceAccountStepUp(req: Request, res: Response): Promise
     return false;
   }
 
-  if (!decision.required) return false;
+  if (!decision.required) {
+    if (decision.block) {
+      res.status(403).json({
+        success: false,
+        error: "当前网络环境被判定为高风险，已暂时限制访问",
+        code: "IP_RISK_BLOCKED",
+        supportEmail: "support@chloemella.com",
+      });
+      return true;
+    }
+    return false;
+  }
 
   const user = (req as AuthenticatedRequest).user as { id?: string; role?: string } | undefined;
   const userId = user?.id || "";

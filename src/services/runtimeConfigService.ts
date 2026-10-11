@@ -888,6 +888,7 @@ function normalizeStoredAccountRiskConfig(
     ),
     stepUpGrantTtlSeconds: normalizeInteger(raw.stepUpGrantTtlSeconds, defaults.stepUpGrantTtlSeconds, 5, 600),
     stepUpGrantMaxUses: normalizeInteger(raw.stepUpGrantMaxUses, defaults.stepUpGrantMaxUses, 1, 5),
+    ipRecheckEnabled: normalizeBoolean(raw.ipRecheckEnabled, defaults.ipRecheckEnabled),
   };
 }
 

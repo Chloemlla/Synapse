@@ -273,6 +273,8 @@ const ACCOUNT_RISK_FIELDS: FieldSpec[] = [
   { key: 'stepUpChallengeTtlSeconds', label: '挑战票据有效期（秒）', type: 'number', min: 30, max: 3600 },
   { key: 'stepUpGrantTtlSeconds', label: 'Grant 有效期（秒）', type: 'number', min: 5, max: 600 },
   { key: 'stepUpGrantMaxUses', label: 'Grant 最大兑换次数', type: 'number', min: 1, max: 5 },
+  // RC-26 / RC-56：登录后出口风险复查（默认关，先观察期）。
+  { key: 'ipRecheckEnabled', label: '登录后复查出口风险', type: 'boolean', hint: '中风险弹验证、高风险封 IP（仅对观察及以上档位、每用户 5 分钟一次；默认关闭）' },
 ];
 
 const SECURITY_SESSION_FIELDS: FieldSpec[] = [

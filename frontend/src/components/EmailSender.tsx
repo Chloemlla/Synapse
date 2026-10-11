@@ -1130,11 +1130,16 @@ const EmailSender: React.FC = () => {
                   </h3>
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     {emailMode === "html" && showPreview && (
-                      <div
-                        className="prose prose-sm max-w-none overflow-x-auto"
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(form.html),
-                        }}
+                      // RC-34 / D15(a)：邮件预览用 **sandbox iframe + srcdoc** 隔离，不再用 DOMPurify。
+                      // 原因：DOMPurify 会把合法邮件的内联样式/表格属性洗掉（预览就不能代表实际邮件），
+                      // 而 iframe 给定 `sandbox`（**不给 allow-scripts**）后，邮件 HTML 里的脚本根本执行不了，
+                      // 比“先洗再插入同源 DOM”更接近“这就是收件人看到的东西”。
+                      <iframe
+                        title="邮件 HTML 预览"
+                        className="prose prose-sm h-[420px] w-full max-w-none overflow-x-auto rounded-xl border-0 bg-white"
+                        sandbox=""
+                        referrerPolicy="no-referrer"
+                        srcDoc={form.html}
                       />
                     )}
                     {emailMode === "simple" && (
@@ -1520,11 +1525,13 @@ const EmailSender: React.FC = () => {
                           插入到发信台
                         </button>
                       </div>
-                      <div
-                        className="prose prose-sm mt-4 max-w-none overflow-hidden rounded-2xl bg-white p-4"
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(template.code),
-                        }}
+                      {/* 模板预览同样走 sandbox iframe：与实时预览同一待遇，避免两处口径不一致 */}
+                      <iframe
+                        title={`模板预览：${template.name || template.code}`}
+                        className="prose prose-sm mt-4 h-[360px] w-full max-w-none overflow-hidden rounded-2xl border-0 bg-white"
+                        sandbox=""
+                        referrerPolicy="no-referrer"
+                        srcDoc={template.code}
                       />
                     </div>
                   ))}

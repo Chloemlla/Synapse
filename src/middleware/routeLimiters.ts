@@ -243,6 +243,20 @@ function getRouteHotspotKey(req: Request): string {
   return `${req.method} ${path}`;
 }
 
+/**
+ * RC-27：昂贵端点的**双键**限流（User ID + IP）。
+ *
+ * 为什么不能只用单键：
+ * - 只按 IP：NAT/校园网后面的一群正常用户会被当成一个滥用者（误伤）；
+ * - 只按账号：同一账号换 IP 就能把并发刷满（算力被一个人吃光）。
+ * 两键组合（未登录时才降到纯 IP）才能同时挡住这两种绕法。
+ */
+function userIpDualKey(req: Request): string {
+  const ip = getClientIp(req);
+  const userId = (req as Request & { user?: { id?: string } }).user?.id;
+  return userId ? `u:${userId}|${ip}` : `ip:${ip}`;
+}
+
 function buildDefaultHandler(name: string, category: LimiterCategory, message: string) {
   return (req: Request, res: Response) => {
     const ip = getClientIp(req);
@@ -319,6 +333,8 @@ const LIMITER_DEFINITIONS = {
   ttsGenerate: {
     profile: "ttsGenerate",
     category: "tts",
+    // RC-27：算力类端点用双键，避免“换 IP 并行刷”与“NAT 误伤”两类问题。
+    keyGenerator: userIpDualKey,
     message: "请求过于频繁，请稍后再试",
   },
   ttsHistory: {
@@ -337,6 +353,8 @@ const LIMITER_DEFINITIONS = {
     profile: "authRead",
     category: "transcribe",
     max: 240,
+    // RC-27：转写同样是重算力，双键（否则换 IP 即可并行刷）。
+    keyGenerator: userIpDualKey,
     message: "语音转文本请求过于频繁，请稍后再试",
   },
   // 文档转换(用户态):上传/建任务/轮询进度/下载产物共用一个 per-user 桶。
