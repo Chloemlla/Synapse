@@ -656,6 +656,9 @@ export const config = {
   get accountRisk() {
     return runtimeMutableConfig.accountRisk;
   },
+  get mobileTokenRotationRisk() {
+    return runtimeMutableConfig.mobileTokenRotationRisk;
+  },
   get securitySession() {
     return runtimeMutableConfig.securitySession;
   },
