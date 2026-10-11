@@ -71,6 +71,32 @@ export function apiKeyAuth(requiredPermission: string, opts: { required?: boolea
         return res.status(403).json({ error: "API Key 所属账户不可用" });
       }
 
+      // RC-19：三态分派。先判 suspended（带稳定 code，否则前端/客户端只能靠文案猜），
+      // 再看 throttled（额度打到 10% 并带 Retry-After）——处罚归因一并回传，便于用户申诉与排查。
+      const keyStatus = doc.status ?? "active";
+      const penaltyExpired =
+        doc.penaltyUntil instanceof Date ? doc.penaltyUntil.getTime() <= Date.now() : doc.penaltyUntil == null;
+
+      if (keyStatus === "suspended" && !penaltyExpired) {
+        const retryAfterSeconds = doc.penaltyUntil
+          ? Math.max(1, Math.ceil((doc.penaltyUntil.getTime() - Date.now()) / 1000))
+          : undefined;
+        if (retryAfterSeconds !== undefined) res.setHeader("Retry-After", String(retryAfterSeconds));
+        return res.status(403).json({
+          error: "此 API Key 已被暂停使用",
+          code: "API_KEY_SUSPENDED",
+          ...(doc.penaltyReason ? { reason: doc.penaltyReason } : {}),
+          ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+        });
+      }
+
+      // 过期的处罚自动失效（不写库，避免每次请求都产生一次写）：按正常状态继续。
+      const throttled = keyStatus === "throttled" && !penaltyExpired;
+      const baseLimit = Math.max(1, Number(doc.rateLimit) || 60);
+      const effectiveLimit = throttled
+        ? Math.max(1, Math.floor(Number(doc.effectiveRateLimit) || baseLimit * 0.1))
+        : baseLimit;
+
       // 权限检查
       if (!doc.permissions.includes(requiredPermission) && !doc.permissions.includes("*")) {
         return res.status(403).json({ error: `此 API Key 无 "${requiredPermission}" 权限` });
@@ -78,8 +104,15 @@ export function apiKeyAuth(requiredPermission: string, opts: { required?: boolea
 
       // 使用 Redis/MongoDB 共享计数器，确保多实例对同一 API Key 的动态限额一致。
       // 共享后端均不可用时 fail closed，避免每个进程各自放宽限额。
-      const rateLimit = await apiKeyRateLimiter.consume(doc.keyId, doc.rateLimit);
+      const rateLimit = await apiKeyRateLimiter.consume(doc.keyId, effectiveLimit);
       res.setHeader("RateLimit-Limit", String(rateLimit.limit));
+      if (throttled) {
+        // 降速必须让客户端知道“多久之后可以再试”，否则它会立刻重试并把队列打满。
+        const retryAfterSeconds = doc.penaltyUntil
+          ? Math.max(1, Math.ceil((doc.penaltyUntil.getTime() - Date.now()) / 1000))
+          : 60;
+        res.setHeader("Retry-After", String(retryAfterSeconds));
+      }
       res.setHeader("RateLimit-Remaining", String(Math.max(0, rateLimit.limit - rateLimit.totalHits)));
       res.setHeader("RateLimit-Reset", String(Math.ceil(rateLimit.resetTime.getTime() / 1000)));
       if (!rateLimit.allowed) {

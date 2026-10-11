@@ -32,6 +32,12 @@ jest.mock("../services/auditLogService", () => ({
   AuditLogService: { log: (...args: unknown[]) => mockAuditLog(...args) },
 }));
 
+// RC-19.4：账户级处罚会联动 API Key。这里只关心“有没有按档位联动”，所以只给替身。
+const mockSetApiKeyPenalty = jest.fn(async (_input: Record<string, unknown>) => ({ modified: 1, matched: 1 }));
+jest.mock("../services/apiKeyService", () => ({
+  setApiKeyPenalty: (input: Record<string, unknown>) => mockSetApiKeyPenalty(input),
+}));
+
 jest.mock("../models/securityEventModel", () => ({
   SecurityEvent: { create: (doc: Record<string, unknown>) => mockCreate(doc) },
 }));
@@ -94,6 +100,7 @@ beforeEach(() => {
   mockUpdateUser.mockResolvedValue(baseState());
   mockRevokeAllAuthSessions.mockResolvedValue(undefined);
   mockAuditLog.mockResolvedValue(undefined);
+  mockSetApiKeyPenalty.mockResolvedValue({ modified: 1, matched: 1 });
   void mockCountSuperadmins;
 });
 
@@ -127,6 +134,10 @@ describe("applyAccountRiskAction", () => {
     expect(patch.stepUpUntil).toBe(0);
     // 封停不踢会话 = “封了但还能用”
     expect(mockRevokeAllAuthSessions).toHaveBeenCalledWith("u1");
+    // RC-19.4：封停要同时暂停该用户的全部 API Key（不让管理员逐个手工处理）
+    expect(mockSetApiKeyPenalty).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", status: "suspended", source: "account-risk:suspended" }),
+    );
 
     await Promise.resolve();
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -163,6 +174,10 @@ describe("applyAccountRiskAction", () => {
     expect(patch.riskTier).toBe("restricted");
     expect(patch.stepUpMode).toBe("sensitive");
     expect(patch.stepUpUntil as number).toBeGreaterThanOrEqual(before + 2 * 60 * 60 * 1000 - 5_000);
+    // 受限档 → Key 降速（而不是直接停用）
+    expect(mockSetApiKeyPenalty).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", status: "throttled", source: "account-risk:restricted" }),
+    );
   });
 
   it("解除：显式降级并清空旗标、分数与 step-up 窗口", async () => {

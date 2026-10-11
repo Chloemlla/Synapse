@@ -14,6 +14,7 @@ import { PROTECTED_ENV_KEYS, isDataAtRestEncryptionKey } from "../config/protect
 import { KL, deriveSecretHex, fingerprintOfSource, masterIkm, masterKeyInfo } from "../config/keyDerivation";
 import { clearAllProfileVerificationSessions } from "../services/profileUpdateVerificationService";
 import { applyAccountRiskAction } from "../services/accountRiskService";
+import { setApiKeyPenalty } from "../services/apiKeyService";
 import { hasValidSecuritySession, requestVerificationToken } from "../utils/securitySession";
 import { sanitizeAnnouncementForOutput } from "../utils/announcementHtml";
 import { validateGenerationCodeStrength } from "../utils/generationCodePolicy";
@@ -1102,6 +1103,23 @@ export const adminController = {
           accountStatus: "active",
         });
         return res.json({ success: true, message: "已清除翻译相关限制" });
+      }
+
+      // RC-19：API Key 三态处罚（降速 / 暂停 / 恢复）。管理员手工处置走同一个服务入口，
+      // 归因写成 `manual:<operatorId>`，申诉时能回答“是谁、因为什么调的”。
+      if (action === "API_KEY_THROTTLE" || action === "API_KEY_SUSPEND" || action === "API_KEY_RESTORE") {
+        const durationHours = Number(req.body?.durationHours);
+        const result = await setApiKeyPenalty({
+          userId: targetUser.id,
+          status: action === "API_KEY_THROTTLE" ? "throttled" : action === "API_KEY_SUSPEND" ? "suspended" : "active",
+          reason:
+            typeof req.body?.reason === "string" && req.body.reason.trim()
+              ? req.body.reason.trim()
+              : "管理员手工调整 API Key 处罚",
+          source: `manual:${req.user?.id || "unknown-admin"}`,
+          ...(Number.isFinite(durationHours) && durationHours > 0 ? { durationHours } : {}),
+        });
+        return res.json({ success: true, message: "已调整该用户全部 API Key 的可用状态", apiKeys: result });
       }
 
       return res.status(400).json({ error: "不支持的惩戒动作" });

@@ -11,6 +11,20 @@ export interface ApiKeyDoc {
   lastUsedAt: Date | null;
   lastUsedIp: string | null;
   usageCount: number;
+  /**
+   * RC-19：三态（原先只有 enabled 两态）。
+   * - `active`：正常；
+   * - `throttled`：降速（额度打到 10% 并带 Retry-After），用于“突发/爬虫节奏”这类可疑但未定的滥用；
+   * - `suspended`：直接 403 `API_KEY_SUSPENDED`（带稳定 code，前端/客户端才识别得了）。
+   */
+  status: "active" | "throttled" | "suspended";
+  /** 处罚截止时间；为空 = 永久（只用于 `suspended`，其余状态忽略）。 */
+  penaltyUntil: Date | null;
+  /** 降速后的每分钟额度；缺省时按 `rateLimit` 的 10% 计算（至少 1）。 */
+  effectiveRateLimit?: number | null;
+  /** 归因：`auto:SPIKE` / `auto:ROBOTIC_CADENCE` / `manual:<operatorId>` / `account-risk:<tier>`。 */
+  penaltySource?: string;
+  penaltyReason?: string;
   enabled: boolean;
   billingEnabled: boolean;
   billingMode: "metered" | "prepaid";
@@ -35,6 +49,12 @@ const ApiKeySchema = new mongoose.Schema<ApiKeyDoc>(
     lastUsedIp: { type: String, default: null },
     usageCount: { type: Number, default: 0 },
     enabled: { type: Boolean, default: true },
+    // RC-19：与 enabled 并行的三态 + 处罚归因。存量文档没有这些字段 ⇒ 默认 active / null。
+    status: { type: String, enum: ["active", "throttled", "suspended"], default: "active", index: true },
+    penaltyUntil: { type: Date, default: null },
+    effectiveRateLimit: { type: Number, default: null },
+    penaltySource: { type: String, default: "" },
+    penaltyReason: { type: String, default: "" },
     billingEnabled: { type: Boolean, default: true },
     billingMode: { type: String, enum: ["metered", "prepaid"], default: "metered" },
     balanceCredits: { type: Number, default: 0, min: 0 },

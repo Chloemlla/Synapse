@@ -331,3 +331,68 @@ async function hashKey(plain: string): Promise<string> {
     });
   });
 }
+
+/**
+ * RC-19：API Key 的三态处罚（降速 / 暂停 / 恢复）。
+ *
+ * 为什么必须收成一个入口：处罚要么是**自动**（突发频率、爬虫节奏、账户风险档升级），
+ * 要么是**人工**（管理员动作），两者都要写归因（`penaltySource` / `penaltyReason`）——
+ * 否则用户申诉时没人能回答“为什么我的 Key 变慢了”。归因写法沿用仓库约定：
+ * `auto:<判据>` / `manual:<operatorId>` / `account-risk:<tier>`。
+ *
+ * `suspended` 且不传 `durationHours` 时是**永久**（`penaltyUntil: null`）；
+ * 其余状态到期自动失效（读取侧判定，不做定时任务）。
+ */
+export interface ApiKeyPenaltyInput {
+  /** 指定单个 Key；与 userId 二选一，同时给出时以 keyId 为准。 */
+  keyId?: string;
+  /** 作用于该用户的**全部** Key（账户级处罚用）。 */
+  userId?: string;
+  status: "active" | "throttled" | "suspended";
+  reason: string;
+  source: string;
+  /** 处罚时长；省略且 status=suspended 时表示永久。 */
+  durationHours?: number;
+  /** 降速后的每分钟额度；省略时读取侧按 rateLimit 的 10% 计算。 */
+  effectiveRateLimit?: number;
+}
+
+export async function setApiKeyPenalty(
+  input: ApiKeyPenaltyInput,
+): Promise<{ modified: number; matched: number }> {
+  const filter = input.keyId ? { keyId: input.keyId } : { userId: input.userId || "" };
+  if (!input.keyId && !input.userId) {
+    return { modified: 0, matched: 0 };
+  }
+
+  const penaltyUntil =
+    input.status === "active"
+      ? null
+      : typeof input.durationHours === "number" && Number.isFinite(input.durationHours) && input.durationHours > 0
+        ? new Date(Date.now() + input.durationHours * 60 * 60 * 1000)
+        : null;
+
+  const result = await ApiKeyModel.updateMany(filter, {
+    $set: {
+      status: input.status,
+      penaltyUntil,
+      penaltyReason: input.reason.slice(0, 512),
+      penaltySource: input.source.slice(0, 128),
+      effectiveRateLimit:
+        input.status === "throttled" && typeof input.effectiveRateLimit === "number"
+          ? Math.max(1, Math.floor(input.effectiveRateLimit))
+          : null,
+      updatedAt: new Date(),
+    },
+  });
+
+  logger.warn("[ApiKey] 已应用 Key 处罚", {
+    scope: input.keyId ? `key:${input.keyId}` : `user:${input.userId}`,
+    status: input.status,
+    source: input.source,
+    matched: result.matchedCount,
+    modified: result.modifiedCount,
+  });
+
+  return { modified: result.modifiedCount, matched: result.matchedCount };
+}

@@ -13,6 +13,7 @@ import {
 import logger from "../utils/logger";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { AuditLogService } from "./auditLogService";
+import { setApiKeyPenalty } from "./apiKeyService";
 import { getLatestAuthSessionIpLocation, revokeAllAuthSessions } from "./authSessionService";
 import { getCachedIpRisk, getIpRisk, type IpRiskResult } from "./ipRiskService";
 import { mongoose } from "./mongoService";
@@ -602,6 +603,41 @@ export async function applyAccountRiskAction(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  // RC-19.4：账户级处罚要**联动 API Key**，而不是让管理员逐个手工处理。
+  // 映射：受限 → 降速；封停/危险 → 暂停全部 Key；解除/清旗标 → 恢复。
+  // 失败只告警：Key 状态是次要处罚面，不能因为它让主处罚（已落库）看起来失败。
+  try {
+    if (action === "restrict") {
+      await setApiKeyPenalty({
+        userId,
+        status: "throttled",
+        reason: reason.trim().slice(0, 200),
+        source: `account-risk:${toTier}`,
+        durationHours: Math.max(1, Math.round((stepUpUntil - now) / (60 * 60 * 1000))),
+      });
+    } else if (action === "suspend") {
+      await setApiKeyPenalty({
+        userId,
+        status: "suspended",
+        reason: reason.trim().slice(0, 200),
+        source: "account-risk:suspended",
+      });
+    } else if (action === "unban" || action === "clear_flags") {
+      await setApiKeyPenalty({
+        userId,
+        status: "active",
+        reason: reason.trim().slice(0, 200),
+        source: `account-risk:${action}`,
+      });
+    }
+  } catch (error) {
+    logger.error("[AccountRisk] 联动 API Key 处罚失败，需人工核查", {
+      userId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   await recordAccountRiskEvent({

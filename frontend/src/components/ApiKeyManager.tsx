@@ -70,6 +70,12 @@ interface ApiKeyItem {
   lastUsedIp: string | null;
   usageCount: number;
   enabled: boolean;
+  /** RC-19：三态处罚。存量 Key 没有这些字段 ⇒ 按 active 处理。 */
+  status?: 'active' | 'throttled' | 'suspended';
+  penaltyUntil?: string | null;
+  penaltyReason?: string;
+  penaltySource?: string;
+  effectiveRateLimit?: number | null;
   billingEnabled?: boolean;
   billingMode?: BillingMode;
   balanceCredits?: number;
@@ -179,6 +185,17 @@ const formatDate = (value?: string | null, withTime = false) => {
 const formatCredits = (value?: number | null) => `${Number(value || 0).toFixed(2)} 点`;
 
 const isExpired = (key: ApiKeyItem) => Boolean(key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now());
+
+/** RC-19：处罚态是否仍在生效（到期即自动失效，与后端读取侧同一口径）。 */
+const activePenalty = (key: ApiKeyItem): 'throttled' | 'suspended' | null => {
+  const status = key.status ?? 'active';
+  if (status === 'active') return null;
+  if (key.penaltyUntil && new Date(key.penaltyUntil).getTime() <= Date.now()) return null;
+  return status;
+};
+
+const penaltyLabel = (penalty: 'throttled' | 'suspended'): string =>
+  penalty === 'suspended' ? '已暂停' : '已降速';
 
 const daysUntil = (value?: string | null): number | '' => {
   if (!value) return '';
@@ -1118,6 +1135,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
         <div className="space-y-3">
           {filteredKeys.map((key) => {
             const expired = isExpired(key);
+            const penalty = activePenalty(key);
             const editing = editingKeyId === key.keyId && editForm;
             return (
               <motion.div
@@ -1207,6 +1225,16 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         <span className={`rounded px-1.5 py-0.5 text-xs ${key.enabled && !expired ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {expired ? '已过期' : key.enabled ? '启用' : '已吊销'}
                         </span>
+                        {/* RC-19：处罚态（降速/暂停）必须可见，否则用户只会看到“我的 Key 变慢了/不通了” */}
+                        {penalty ? (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-xs ${penalty === 'suspended' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}
+                            title={key.penaltyReason || undefined}
+                          >
+                            {penaltyLabel(penalty)}
+                            {key.penaltyUntil ? `至 ${formatDate(key.penaltyUntil)}` : penalty === 'suspended' ? '（永久）' : ''}
+                          </span>
+                        ) : null}
                         <span className={`rounded px-1.5 py-0.5 text-xs ${(key.billingEnabled ?? true) ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
                           {(key.billingMode || 'metered') === 'prepaid' ? '预付余额' : '后付计量'}
                         </span>
@@ -1215,7 +1243,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         {key.permissions.map(renderPermissionPill)}
                       </div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400 sm:flex sm:flex-wrap">
-                        <span>限流: {key.rateLimit}/min</span>
+                        <span>限流: {penalty === 'throttled' ? `${key.effectiveRateLimit || Math.max(1, Math.floor(key.rateLimit * 0.1))}（降速，原 ${key.rateLimit}）` : key.rateLimit}/min</span>
                         <span>调用: {key.usageCount} 次</span>
                         <span>计费请求: {key.totalBillableRequests || 0}</span>
                         <span>累计费用: {formatCredits(key.totalChargedCredits)}</span>
