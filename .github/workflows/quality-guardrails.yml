@@ -51,6 +51,11 @@ jobs:
       - name: Privacy contract validation
         run: pnpm run check:privacy-contract
 
+      - name: Soft-delete & response-slicing guard
+        # RC-21.4 / RC-58：裸删除会把“保留待取证”变回“当场消失”，而这个回退没有编译期征兆；
+        # 响应切片同理。存量违规已写入 docs/governance 的基线，本闸门只拦**新增**项。
+        run: pnpm run check:slicing-and-softdelete
+
       - name: Validate Mongo backup shell syntax
         run: bash -n deploy/openresty/backup-mongo.sh
 

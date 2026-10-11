@@ -4,6 +4,7 @@ import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
 import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
 import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
+import { checkAnyLegalHold } from "./legalHoldService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import {
   canDecryptPassword,
@@ -728,6 +729,23 @@ export const hardDeleteUser = async (id: string): Promise<void> => {
   const db = mongoose.connection.db;
   if (!db) {
     throw new Error("数据库连接不可用");
+  }
+
+  // RC-22 / 裁决三：命中法律保留的对象**禁止任何物理删除**。
+  // 库不可用时 `checkAnyLegalHold` 回 `unknown:true`，这里一并拒绝 —— 物理删除不可逆，
+  // 宁可因为一次库抽动让人工重试，也不能在拿不到 hold 结论时把证据删掉。
+  const hold = await checkAnyLegalHold({ userId: id });
+  if (hold.held) {
+    logger.warn("[UserService] 拒绝物理删除：命中法律保留", {
+      userId: id,
+      caseRef: hold.hold?.caseRef,
+      unknown: hold.unknown,
+    });
+    throw new Error(
+      hold.unknown
+        ? "无法确认法律保留状态（数据库不可用），已拒绝物理删除"
+        : `该账户受法律保留约束（案件 ${hold.hold?.caseRef || "未注明"}），禁止物理删除`,
+    );
   }
 
   const session = await mongoose.startSession();

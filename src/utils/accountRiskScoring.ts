@@ -53,6 +53,11 @@ export interface AccountRiskFacts {
   recentAbuseEventCount?: number;
   /** 是否命中跨地域跳变（RC-15 的信号，由调用方比对会话台账后传入）。 */
   geoJump?: boolean;
+  /**
+   * RC-57：自动化痕迹（无头浏览器 / 模拟器 / 调试器）。
+   * **只作为加权信号**：客户端可伪造，单独不足以升档（不能让它成为“被封的开关”）。
+   */
+  automationHint?: boolean;
 }
 
 export type AccountRiskFlag =
@@ -62,7 +67,8 @@ export type AccountRiskFlag =
   | "NEW_ACCOUNT"
   | "COMPROMISED_DEVICE"
   | "ACCOUNT_ABUSE_EVENTS"
-  | "GEO_JUMP";
+  | "GEO_JUMP"
+  | "AUTOMATION_HINT";
 
 export interface AccountRiskAssessment {
   /** 0-100，越高越危险。 */
@@ -153,6 +159,12 @@ export function evaluateAccountRiskScore(
     reasons.push("登录属地发生跨国家/省份跳变");
   }
 
+  // RC-57：自动化痕迹只进旗标与分数，**不单独决定档位**（权重 8，远小于任一阈值）。
+  if (facts.automationHint) {
+    flags.push("AUTOMATION_HINT");
+    reasons.push("检测到自动化/调试环境痕迹（仅作加权信号）");
+  }
+
   const deviceMax = typeof facts.deviceMaxRiskScore === "number" ? Math.max(0, facts.deviceMaxRiskScore) : 0;
   const score = clampScore(
     ipMax * 0.45 +
@@ -160,7 +172,8 @@ export function evaluateAccountRiskScore(
       deviceMax * 0.2 +
       Math.min(30, abuseEvents * 10) +
       (compromised > 0 ? 15 : 0) +
-      (facts.geoJump ? 10 : 0),
+      (facts.geoJump ? 10 : 0) +
+      (facts.automationHint ? 8 : 0),
   );
 
   let tier: AccountRiskTier = "normal";

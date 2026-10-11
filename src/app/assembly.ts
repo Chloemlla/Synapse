@@ -14,6 +14,8 @@ import {
 import { passkeyErrorHandler } from "../middleware/passkeyAutoFix";
 import { requestProfilingMiddleware } from "../middleware/requestProfiling";
 import { requestIdMiddleware } from "../middleware/requestId";
+import { regionGuard } from "../middleware/regionGuard";
+import { honeypotMiddleware } from "../security/honeypot";
 import {
   audioFileLimiter,
   frontendLimiter,
@@ -332,6 +334,12 @@ export function registerCoreMiddleware(app: Express): void {
 }
 
 export function registerSecurityMiddleware(app: Express): void {
+  registerSecurityPipeline(app, "preBodyParser");
+
+  // RC-13：地区限制闸门。放在 IP 封禁/审计相位（preBodyParser）之后、body 解析之前——
+  // 命中的请求不该再付出解析与后续安全组件的成本；也便于它只读缓存而不需要 body。
+  app.use(regionGuard);
+
   registerSecurityPipeline(app, "postBodyParser");
 
   if (startupConfig.security.wafEnabled) {
@@ -357,6 +365,11 @@ export function registerApiRoutes(app: Express): void {
   app.use("/api/turnstile/public-turnstile", openCorsHeadersMiddleware);
 
   app.use(authCacheBypassPaths, applyNoCacheHeaders);
+
+  // RC-42：蜜罐端点（`/api/v1/*`、`/api/debug/*` 已核实空闲）。
+  // 必须在 SPA 兜底之前挂，且已在 securityBypassPolicy 里登记 ipBan / ipVerification 绕过 ——
+  // 否则一个被封 IP 的扫描器会在 ipBanCheck 就被拦下，蜜罐永远触不到（分不清“没人扫”与“扫了但被前置拦了”）。
+  app.use(honeypotMiddleware);
 
   registerRouteModules(app, earlyRouteModules);
   registerRouteModules(app, routeLimiterModules);

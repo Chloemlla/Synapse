@@ -61,6 +61,10 @@ export const securityBypassPolicy: Record<SecurityComponent, SecurityBypassRule[
     { match: "exact", value: "/api/health", note: "API health check" },
     { match: "exact", value: "/status", note: "Status endpoint (legacy redirect)" },
     { match: "exact", value: "/api/status", note: "Status endpoint" },
+    // RC-42：蜜罐路径必须绕过 IP 封禁 —— 否则被封 IP 的扫描器会被前置拦下，
+    // 蜜罐永远触不到，也就分不清“没人扫”与“扫了但被前面的闸门拦了”。
+    { match: "prefix", value: "/api/v1", note: "Honeypot prefix: banned scanners must still reach the decoy so the hit is attributable" },
+    { match: "prefix", value: "/api/debug", note: "Same as /api/v1 (honeypot)" },
   ],
   waf: [
     { match: "exact", value: "/api/auth/login", note: "Authentication payload compatibility" },
@@ -73,6 +77,9 @@ export const securityBypassPolicy: Record<SecurityComponent, SecurityBypassRule[
     { match: "prefix", value: "/api/turnstile", note: "Public verification flow" },
     { match: "prefix", value: "/api/human-check", note: "Public human-check bootstrap" },
     { match: "prefix", value: "/api/status", note: "Status endpoint" },
+    // RC-42：蜜罐不能要求首访验证令牌 —— 自动化扫描器不会有，一拦就永远看不到命中。
+    { match: "prefix", value: "/api/v1", note: "Honeypot prefix: decoy must be reachable without an interactive verification token" },
+    { match: "prefix", value: "/api/debug", note: "Same as /api/v1 (honeypot)" },
     { match: "exact", value: "/api/frontend-config", note: "Frontend boot config" },
     { match: "prefix", value: "/api/auth/linuxdo/", note: "External auth callback" },
     { match: "prefix", value: "/api/oauth", note: "OAuth third-party authorization and token endpoints" },

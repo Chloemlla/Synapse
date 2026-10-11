@@ -7,7 +7,7 @@ import { getBackendErrorMessage } from '../../utils/backendError';
 import { useNotification } from '../Notification';
 import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import CollapsibleSection from './CollapsibleSection';
-import { ACCOUNT_RISK_API, SECURITY_SESSION_API, authFetch } from './api';
+import { ACCOUNT_RISK_API, SECURITY_SESSION_API, REGION_POLICY_API, authFetch } from './api';
 import { studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '../studioTheme';
 
 /**
@@ -21,7 +21,7 @@ import { studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButt
  * 也不会因为界面少渲染一个字段把它重置成默认值。
  */
 
-type FieldType = 'boolean' | 'number' | 'select';
+type FieldType = 'boolean' | 'number' | 'select' | 'stringList';
 
 interface FieldSpec {
   key: string;
@@ -211,6 +211,32 @@ function RiskPolicySection({
               </label>
             );
           }
+          if (field.type === 'stringList') {
+            // 国家码这类小列表：用逗号分隔的文本框（比多行 checkbox 更适合 10+ 项的 ISO 码）。
+            const list = Array.isArray(raw) ? (raw as string[]).join(', ') : typeof raw === 'string' ? raw : '';
+            return (
+              <label key={field.key} className="text-[13px] text-slate-600 sm:col-span-2">
+                {field.label}
+                <input
+                  type="text"
+                  className={`${studioFieldClassName} mt-1`}
+                  value={list}
+                  disabled={!canWrite}
+                  placeholder={field.hint ? undefined : '逗号分隔的国家码，如 CN, HK, TW'}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      [field.key]: event.target.value
+                        .split(',')
+                        .map((item) => item.trim().toUpperCase())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+                {field.hint ? <span className="mt-1 block text-[11px] text-slate-500">{field.hint}</span> : null}
+              </label>
+            );
+          }
           return (
             <label key={field.key} className="text-[13px] text-slate-600">
               {field.label}
@@ -277,8 +303,7 @@ const ACCOUNT_RISK_FIELDS: FieldSpec[] = [
   { key: 'ipRecheckEnabled', label: '登录后复查出口风险', type: 'boolean', hint: '中风险弹验证、高风险封 IP（仅对观察及以上档位、每用户 5 分钟一次；默认关闭）' },
 ];
 
-const SECURITY_SESSION_FIELDS: FieldSpec[] = [
-  { key: 'ttlSeconds', label: '安全会话有效期（秒）', type: 'number', min: 60, max: 3600, hint: '建议 180～300 秒；越短越安全，但管理员会被更频繁地要求重新验证' },
+const SECURITY_SESSION_FIELDS: FieldSpec[] = [  { key: 'ttlSeconds', label: '安全会话有效期（秒）', type: 'number', min: 60, max: 3600, hint: '建议 180～300 秒；越短越安全，但管理员会被更频繁地要求重新验证' },
   { key: 'bindUserAgent', label: '绑定客户端 UA', type: 'boolean', hint: 'UA 变化时该安全会话立即失效（防令牌被拿到另一环境重放）' },
   { key: 'revokeOnGeoJump', label: '跨地域跳变时终止会话', type: 'boolean', hint: '仅跨国家/省时终止并全站下线；同城换网只记录风险信号' },
 ];
@@ -312,6 +337,53 @@ export function SecuritySessionPolicySection({ prefersReducedMotion }: { prefers
       fields={SECURITY_SESSION_FIELDS}
       resetHint="重置后回落服务端默认值（5 分钟 TTL、UA 严格绑定、跨地跳变终止会话）。"
       successMessage={() => '已保存：安全会话策略立即生效'}
+      prefersReducedMotion={prefersReducedMotion}
+    />
+  );
+}
+
+const REGION_POLICY_FIELDS: FieldSpec[] = [
+  {
+    key: 'mode',
+    label: '地区限制模式',
+    type: 'select',
+    hint: 'off = 不判定（默认）；challenge = 非服务地区回 403；block = 额外写 IP 封禁',
+    options: [
+      { value: 'off', label: '关闭（默认）' },
+      { value: 'challenge', label: '拒绝访问（403 REGION_RESTRICTED）' },
+      { value: 'block', label: '拒绝并封禁该 IP' },
+    ],
+  },
+  {
+    key: 'allowedCountries',
+    label: '允许的国家/地区码',
+    type: 'stringList',
+    hint: '留空 = 不设白名单；填写后只有这些国家可用（ISO 3166-1，如 CN, HK）',
+  },
+  {
+    key: 'blockedCountries',
+    label: '禁止的国家/地区码',
+    type: 'stringList',
+    hint: '优先级高于白名单',
+  },
+  {
+    key: 'failOpen',
+    label: '取不到地区时放行',
+    type: 'boolean',
+    hint: '默认开启：IP 风险库拿不到国家时不因此把全站挡在门外',
+  },
+];
+
+export function RegionPolicySection({ prefersReducedMotion }: { prefersReducedMotion?: boolean | null }) {
+  return (
+    <RiskPolicySection
+      title="地区限制（Supported Regions）"
+      description="把政策里声明的「服务地区」变成可执行策略。国家取自已有的 IP 风险缓存，不新增外部查询。"
+      sectionKey="region-policy"
+      api={REGION_POLICY_API}
+      fields={REGION_POLICY_FIELDS}
+      resetHint="重置后回落服务端默认值（不判定、无名单、取不到地区时放行）。"
+      successMessage={() => '已保存：地区限制立即生效（多实例 ≤ 10 秒收敛）'}
       prefersReducedMotion={prefersReducedMotion}
     />
   );

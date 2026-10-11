@@ -537,6 +537,22 @@ router.delete(
   auditLog({ module: "security", action: "security.security-session.delete" }),
   adminController.deleteSecuritySessionSetting,
 );
+// 地区限制（REGION_POLICY / RC-13）：政策文本 → 可执行策略，保存后立即生效。
+router.get("/region-policy/setting", adminController.getRegionPolicySetting);
+router.post(
+  "/region-policy/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.region-policy.set", captureBody: false }),
+  adminController.setRegionPolicySetting,
+);
+router.delete(
+  "/region-policy/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "security", action: "security.region-policy.delete" }),
+  adminController.deleteRegionPolicySetting,
+);
 router.get("/cdict-signing/setting", adminController.getCdictSigningSetting);
 router.post(
   "/cdict-signing/setting",

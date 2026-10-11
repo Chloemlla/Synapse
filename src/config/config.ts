@@ -22,6 +22,7 @@ import {
   type MobileTokenRotationRiskRuntimeConfig,
   type AccountRiskRuntimeConfig,
   type SecuritySessionRuntimeConfig,
+  type RegionPolicyRuntimeConfig,
   type TtsRuntimeConfig,
 } from "./runtimeConfigDefaults";
 import type { TtsProviderRuntimeConfig } from "./ttsProviderConfig";
@@ -563,6 +564,9 @@ export const runtimeMutableConfig = {
   get securitySession(): SecuritySessionRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().securitySession;
   },
+  get regionPolicy(): RegionPolicyRuntimeConfig {
+    return RuntimeConfigService.getCachedConfig().regionPolicy;
+  },
   get linuxdo(): LinuxDoRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().linuxdo;
   },
@@ -661,6 +665,9 @@ export const config = {
   },
   get securitySession() {
     return runtimeMutableConfig.securitySession;
+  },
+  get regionPolicy() {
+    return runtimeMutableConfig.regionPolicy;
   },
   get linuxdo() {
     return runtimeMutableConfig.linuxdo;

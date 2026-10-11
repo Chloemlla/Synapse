@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
-import { getAuthSessionMetadata, issueTrackedLoginToken } from "../../services/authSessionService";
-import { scheduleLoginRiskSignals } from "../../services/accountRiskService";
+import { getAuthSessionMetadata, getLatestAuthSessionIpLocation, issueTrackedLoginToken } from "../../services/authSessionService";
+import { scheduleLoginRiskSignals, recordAccountAbuseSignal } from "../../services/accountRiskService";
+import { isGeoJump } from "../../services/mobileTokenRiskService";
+import { config } from "../../config/config";
 import { sendEmail } from "../../services/emailSender";
 import { sendThrottledAuthNotification } from "../../services/authEmailNotificationService";
 import {
@@ -303,7 +305,29 @@ export async function login(req: Request, res: Response) {
       ...logDetails,
     });
     // 生成JWT token
+    // RC-15：在签发新会话**之前**取上一个会话的属地，签发后取本次属地，两者一跳变就落信号。
+    // 为什么不用 `lastLoginIp`：那是单值且不带属地，而判“跨国家/省”需要属地文本（与 sml_ 令牌同一判据）。
+    const previousIpLocation = await getLatestAuthSessionIpLocation(user.id).catch(() => null);
     const token = await issueTrackedLoginToken(user, getAuthSessionMetadata(req, { ipAddress: ip }));
+    const currentIpLocation = await getLatestAuthSessionIpLocation(user.id).catch(() => null);
+    if (
+      previousIpLocation &&
+      currentIpLocation &&
+      isGeoJump(previousIpLocation, currentIpLocation, config.mobileTokenRotationRisk.geoJumpScope)
+    ) {
+      // 只落信号（账户聚合会把它算进 riskFlags/riskScore）；踢不踢人由档位与安全会话策略决定。
+      recordAccountAbuseSignal({
+        userId: user.id,
+        eventType: "ACCOUNT_ABUSE_GEO_JUMP",
+        fingerprint: "login-geo",
+        action: "login",
+        reason: `登录属地跳变：${previousIpLocation} → ${currentIpLocation}`,
+        riskScore: 50,
+        ipAddress: ip,
+        userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "",
+      });
+      logger.warn("[登录] 属地跳变已记录", { userId: user.id, ip });
+    }
 
     // RC-06：把这次登录的 IP 沉淀到账户维度并聚合一次风险（后台异步，不进登录响应路径）。
     scheduleLoginRiskSignals(user.id, ip);

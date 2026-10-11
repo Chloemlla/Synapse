@@ -382,6 +382,26 @@ export interface SecuritySessionRuntimeConfig {
   revokeOnGeoJump: boolean;
 }
 
+/**
+ * 地区限制（RC-13）。
+ *
+ * 现状：`supported-regions` 此前**只是政策文本**（注册时的一个勾选项），服务端从不读请求地区。
+ * 这里把“哪些地区能访问”做成可执行策略：
+ * - `off`：不判定（默认，保持存量行为）；
+ * - `challenge`：拒绝的地区回 `403 REGION_RESTRICTED`（不给人机验证机会 —— “不在服务区”不是一个能靠验证解决的问题）；
+ * - `block`：同上，但额外写 IP 封禁（用于确认的大规模滥用来源）；
+ * 国家取自**已有的 IP 风险缓存**（proxycheck），不新增外呼；取不到时按 `failOpen` 决定。
+ */
+export interface RegionPolicyRuntimeConfig {
+  mode: "off" | "challenge" | "block";
+  /** 白名单（非空时仅这些国家可用）。 */
+  allowedCountries: string[];
+  /** 黑名单（优先级高于白名单）。 */
+  blockedCountries: string[];
+  /** 取不到国家时的行为：true = 放行（默认，上游挂了不把全站锁死）。 */
+  failOpen: boolean;
+}
+
 export interface RuntimeConfigDefaults {
   ipqs: IpqsRuntimeConfig;
   linuxdo: LinuxDoRuntimeConfig;
@@ -404,6 +424,7 @@ export interface RuntimeConfigDefaults {
   mobileTokenRotationRisk: MobileTokenRotationRiskRuntimeConfig;
   accountRisk: AccountRiskRuntimeConfig;
   securitySession: SecuritySessionRuntimeConfig;
+  regionPolicy: RegionPolicyRuntimeConfig;
   lumen: LumenRuntimeConfig;
 }
 
@@ -635,6 +656,13 @@ export function buildRuntimeConfigDefaults(options: {
       bindUserAgent: true,
       revokeOnGeoJump: true,
     },
+    // RC-13：默认 off —— “服务地区”从政策文本变成技术限制是行为变更，必须先显式打开。
+    regionPolicy: {
+      mode: "off",
+      allowedCountries: [],
+      blockedCountries: [],
+      failOpen: true,
+    },
     // 默认关：不配置就完全沿用 24 小时节奏，只有运维显式打开才会出现提级轮换。
     mobileTokenRotationRisk: {
       enabled: false,
@@ -765,6 +793,9 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     },
     securitySession: {
       ...config.securitySession,
+    },
+    regionPolicy: {
+      ...config.regionPolicy,
     },
     lumen: {
       ...config.lumen,

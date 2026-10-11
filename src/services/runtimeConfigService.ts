@@ -6,6 +6,7 @@ import {
   type AdminSecurityRuntimeConfig,
   type AccountRiskRuntimeConfig,
   type SecuritySessionRuntimeConfig,
+  type RegionPolicyRuntimeConfig,
   type CdictSigningRuntimeConfig,
   type DeepLXRuntimeConfig,
   type EmailRuntimeConfig,
@@ -491,6 +492,7 @@ const RUNTIME_CONFIG_KEY_TO_PROP: Partial<Record<RuntimeConfigKey, keyof Runtime
   MOBILE_TOKEN_ROTATION_RISK: "mobileTokenRotationRisk",
   ACCOUNT_RISK: "accountRisk",
   SECURITY_SESSION: "securitySession",
+  REGION_POLICY: "regionPolicy",
   LUMEN: "lumen",
   NEXAI: "nexai",
 };
@@ -905,6 +907,38 @@ function normalizeStoredSecuritySessionConfig(
   };
 }
 
+const REGION_POLICY_MODES = ["off", "challenge", "block"] as const;
+
+/** 国家码归一化：只保留 2～3 位字母并大写（ISO 3166-1 alpha-2/3）。 */
+function normalizeCountryList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const result = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const code = entry.trim().toUpperCase();
+    if (/^[A-Z]{2,3}$/.test(code)) result.add(code);
+    if (result.size >= 300) break;
+  }
+  return [...result];
+}
+
+function normalizeStoredRegionPolicyConfig(
+  value: unknown,
+  defaults = runtimeConfigDefaults.regionPolicy,
+): RegionPolicyRuntimeConfig {
+  const raw = asObject(value);
+  const mode =
+    typeof raw.mode === "string" && (REGION_POLICY_MODES as readonly string[]).includes(raw.mode.trim().toLowerCase())
+      ? (raw.mode.trim().toLowerCase() as RegionPolicyRuntimeConfig["mode"])
+      : defaults.mode;
+  return {
+    mode,
+    allowedCountries: normalizeCountryList(raw.allowedCountries),
+    blockedCountries: normalizeCountryList(raw.blockedCountries),
+    failOpen: normalizeBoolean(raw.failOpen, defaults.failOpen),
+  };
+}
+
 // G5-37: 纯函数——只写传入的 target 缓存，不在遍历中改在用的 runtimeConfigCache。
 function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, value: unknown): void {
   switch (key) {
@@ -965,6 +999,9 @@ function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, 
     case "SECURITY_SESSION":
       target.securitySession = normalizeStoredSecuritySessionConfig(value);
       return;
+    case "REGION_POLICY":
+      target.regionPolicy = normalizeStoredRegionPolicyConfig(value);
+      return;
     case "LUMEN": {
       const config = normalizeStoredLumenConfig(value, target.lumen);
       target.lumen = config;
@@ -1003,6 +1040,7 @@ const RUNTIME_CONFIG_KEYS: readonly RuntimeConfigKey[] = [
   "MOBILE_TOKEN_ROTATION_RISK",
   "ACCOUNT_RISK",
   "SECURITY_SESSION",
+  "REGION_POLICY",
 ];
 
 // G5-03: 周期刷新定时器——多实例部署下每个实例每 ~10s 重载一次 DB 配置，
@@ -1089,6 +1127,9 @@ export class RuntimeConfigService {
     }
     if (!loadedKeys.has("SECURITY_SESSION")) {
       runtimeConfigCache.securitySession = cloneRuntimeConfigDefaults(defaults).securitySession;
+    }
+    if (!loadedKeys.has("REGION_POLICY")) {
+      runtimeConfigCache.regionPolicy = cloneRuntimeConfigDefaults(defaults).regionPolicy;
     }
     if (!loadedKeys.has("LUMEN")) {
       runtimeConfigCache.lumen = cloneRuntimeConfigDefaults(defaults).lumen;
@@ -2168,6 +2209,47 @@ export class RuntimeConfigService {
     runtimeConfigCache.securitySession = cloneRuntimeConfigDefaults(runtimeConfigDefaults).securitySession;
     loadedKeys.delete("SECURITY_SESSION");
     invalidateHotCache("SECURITY_SESSION");
+  }
+
+  // 地区限制（REGION_POLICY / RC-13）。
+  static async getRegionPolicySetting(): Promise<{
+    setting: { config: RegionPolicyRuntimeConfig; updatedAt?: string };
+  }> {
+    const doc = await readRuntimeConfigDoc("REGION_POLICY");
+    const config = doc ? normalizeStoredRegionPolicyConfig(doc.value) : runtimeConfigDefaults.regionPolicy;
+    runtimeConfigCache.regionPolicy = config;
+    return { setting: { config: { ...config }, updatedAt: doc?.updatedAt?.toISOString() } };
+  }
+
+  static async setRegionPolicySetting(
+    input: Partial<RegionPolicyRuntimeConfig> | Record<string, unknown>,
+  ): Promise<{ updatedAt: string }> {
+    const currentDoc = await readRuntimeConfigDoc("REGION_POLICY");
+    const current = currentDoc ? normalizeStoredRegionPolicyConfig(currentDoc.value) : runtimeConfigCache.regionPolicy;
+    const nextConfig = normalizeStoredRegionPolicyConfig(asObject(input), current);
+
+    if (nextConfig.mode !== "off" && nextConfig.allowedCountries.length === 0 && nextConfig.blockedCountries.length === 0) {
+      // 开了限制却两份名单都空 = “所有地区都不可用”。判据没配置就不该生效，显式报错而不是静默锁死全站。
+      throw new Error("开启地区限制前必须先配置至少一个国家（白名单或黑名单）");
+    }
+
+    const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
+      "REGION_POLICY",
+      nextConfig as unknown as Record<string, unknown>,
+      currentDoc?.updatedAt,
+    );
+    runtimeConfigCache.regionPolicy = nextConfig;
+    loadedKeys.add("REGION_POLICY");
+    invalidateHotCache("REGION_POLICY");
+    initialized = true;
+    return { updatedAt: persistedAt.toISOString() };
+  }
+
+  static async deleteRegionPolicySetting(): Promise<void> {
+    await RuntimeConfigModel.deleteOne({ key: "REGION_POLICY" }).exec();
+    runtimeConfigCache.regionPolicy = cloneRuntimeConfigDefaults(runtimeConfigDefaults).regionPolicy;
+    loadedKeys.delete("REGION_POLICY");
+    invalidateHotCache("REGION_POLICY");
   }
 
   static async getCdictSigningSetting(): Promise<{

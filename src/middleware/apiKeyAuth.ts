@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { recordUsage, validateApiKey } from "../services/apiKeyService";
+import { recordUsage, setApiKeyPenalty, validateApiKey } from "../services/apiKeyService";
+import { persistApiUsageFlags, recordApiUsageSample } from "../services/apiUsageWindowService";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
@@ -125,6 +126,21 @@ export function apiKeyAuth(requiredPermission: string, opts: { required?: boolea
       // 记录使用
       const ip = getClientIP(req);
       recordUsage(doc.keyId, ip).catch(() => {}); // fire-and-forget
+
+      // RC-18：记录调用样本并（异步）判定突发/爬虫节奏。
+      // 判定落到 `throttled`（降速）而不是直接封禁 —— 先给“自己跟自己的基线比”的判据一点容错，
+      // 归因写进 penaltySource（auto:SPIKE / auto:ROBOTIC_CADENCE），用户申诉时说得清。
+      void recordApiUsageSample({ keyId: doc.keyId, userId: doc.userId }).then(async (usageFlags) => {
+        if (usageFlags.length === 0) return;
+        await persistApiUsageFlags(doc.keyId, usageFlags);
+        await setApiKeyPenalty({
+          keyId: doc.keyId,
+          status: "throttled",
+          reason: usageFlags.includes("ROBOTIC_CADENCE") ? "请求节奏高度规整（疑似脚本轮询）" : "请求量远超自身基线",
+          source: `auto:${usageFlags.join("+")}`,
+          durationHours: 1,
+        });
+      });
 
       // 注入用户信息，使下游中间件/控制器可用
       // API Key 路径历史上不继承管理员角色，保持兼容。

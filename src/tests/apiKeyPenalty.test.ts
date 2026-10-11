@@ -32,6 +32,12 @@ jest.mock("../services/apiKeyBillingService", () => ({
   attachApiKeyBillingFinalizer: jest.fn(),
 }));
 
+// RC-18：调用样本记录/判定是异步旁路，这里只替掉，避免把统计管道拉进本套件。
+jest.mock("../services/apiUsageWindowService", () => ({
+  recordApiUsageSample: jest.fn(async () => []),
+  persistApiUsageFlags: jest.fn(async () => undefined),
+}));
+
 jest.mock("../utils/userStorage", () => ({
   UserStorage: {
     getUserById: jest.fn(async () => ({ id: "u1", username: "tester", role: "user" })),

@@ -203,6 +203,8 @@ export function scheduleLoginRiskSignals(userId: string, ipAddress: string): voi
 interface DeviceRiskFacts {
   deviceMaxRiskScore: number;
   compromisedDeviceCount: number;
+  /** RC-57：任一设备出现模拟器/调试器/root 痕迹即计一次自动化提示。 */
+  automationHint: boolean;
 }
 
 async function loadDeviceRiskFacts(userId: string): Promise<DeviceRiskFacts> {
@@ -214,21 +216,43 @@ async function loadDeviceRiskFacts(userId: string): Promise<DeviceRiskFacts> {
           _id: null,
           deviceMaxRiskScore: { $max: "$riskScore" },
           compromisedDeviceCount: { $sum: { $cond: ["$isCompromised", 1, 0] } },
+          automationDeviceCount: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ["$isEmulator", true] },
+                    { $eq: ["$isDebugger", true] },
+                    { $eq: ["$isRoot", true] },
+                    { $eq: ["$isTracerAttached", true] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
-    ]).exec()) as Array<{ deviceMaxRiskScore?: number; compromisedDeviceCount?: number }>;
+    ]).exec()) as Array<{
+      deviceMaxRiskScore?: number;
+      compromisedDeviceCount?: number;
+      automationDeviceCount?: number;
+    }>;
     const row = rows[0];
     return {
       deviceMaxRiskScore: typeof row?.deviceMaxRiskScore === "number" ? row.deviceMaxRiskScore : 0,
       compromisedDeviceCount:
         typeof row?.compromisedDeviceCount === "number" ? row.compromisedDeviceCount : 0,
+      // RC-57：自动化痕迹只作加权信号（在评分函数里权重固定为 8，单独不升档）。
+      automationHint: (row?.automationDeviceCount ?? 0) > 0,
     };
   } catch (error) {
     logger.warn("[AccountRisk] 设备风险聚合失败（按无信号处理）", {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return { deviceMaxRiskScore: 0, compromisedDeviceCount: 0 };
+    return { deviceMaxRiskScore: 0, compromisedDeviceCount: 0, automationHint: false };
   }
 }
 
@@ -324,6 +348,7 @@ export async function evaluateAccountRisk(
       deviceMaxRiskScore: deviceFacts.deviceMaxRiskScore,
       compromisedDeviceCount: deviceFacts.compromisedDeviceCount,
       recentAbuseEventCount: abuseEventCount,
+      automationHint: deviceFacts.automationHint,
       // RC-15（跨地域跳变）在 B7 接线；此处显式传 false，避免「没接线却像接了」。
       geoJump: false,
     },

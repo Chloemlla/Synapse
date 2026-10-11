@@ -61,6 +61,7 @@
     "check:ts-file-size": "node scripts/governance/check-ts-file-size.js",
     "check:frontend-bundle": "node scripts/governance/check-frontend-bundle.js",
     "check:privacy-contract": "node scripts/governance/check-privacy-contract.js",
+    "check:slicing-and-softdelete": "node scripts/governance/check-slicing-and-softdelete.js",
     "report:storage-responsibility": "node scripts/governance/report-storage-responsibility.js",
     "test:integration:mongo": "jest --config jest.integration.config.js --runInBand",
     "test:browser": "playwright test",

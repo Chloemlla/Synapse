@@ -45,6 +45,7 @@ export const GOOGLE_WEB_CLIENT_ID_PATTERN = /^[\w-]+\.apps\.googleusercontent\.c
 // 风控策略（RC-06 / RC-40 / RC-41）：账户风险聚合与安全会话。
 export const ACCOUNT_RISK_API = `${API_BASE_URL}/api/admin/account-risk/setting`;
 export const SECURITY_SESSION_API = `${API_BASE_URL}/api/admin/security-session/setting`;
+export const REGION_POLICY_API = `${API_BASE_URL}/api/admin/region-policy/setting`;
 
 export function getAuthHeaders(): Record<string, string> {
   return {};
