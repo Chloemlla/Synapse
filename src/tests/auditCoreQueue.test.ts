@@ -8,6 +8,7 @@ jest.mock('../tts/tts.history', () => ({ generationHistoryStore: {}, redactTtsTe
 jest.mock('../tts/tts.quota', () => ({ quotaLedger: {}, startExpiredReservationSweeper: jest.fn() }));
 jest.mock('../tts/tts.service', () => ({ TtsService: class {} }));
 jest.mock('../tts/tts.storage', () => ({ ttsStorage: { createJob: jest.fn(), recoverStaleJobs: jest.fn(), claimNextQueuedJob: jest.fn() } }));
+jest.mock('../services/adminAlertService', () => ({ sendAdminAlert: jest.fn() }));
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;

@@ -1,5 +1,6 @@
 import { wsService } from "../services/wsService";
 import logger from "../utils/logger";
+import { sendAdminAlert } from "../services/adminAlertService";
 import { generationHistoryStore, redactTtsTextForStorage } from "./tts.history";
 import type { GenerationHistoryStore, QuotaLedger } from "./tts.ports";
 import {
@@ -101,7 +102,6 @@ export class TtsQueue {
   /** 死信告警：走邮件（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL`，无钉钉/企业微信。 */
   private async alertDeadLetterJobs(failed: TtsJobRecord[]): Promise<void> {
     try {
-      const { sendAdminAlert } = await import("../services/adminAlertService");
       await sendAdminAlert({
         level: "critical",
         subject: `${failed.length} 个 TTS 任务重试超限进入死信`,

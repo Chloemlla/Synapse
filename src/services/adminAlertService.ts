@@ -27,7 +27,7 @@ export async function getAdminTeamEmails(): Promise<string[]> {
   const adminDocs = await UserModel.find({ role: { $in: ["admin", "superadmin"] } })
     .select("email")
     .lean();
-  return [...new Set(adminDocs.map((doc: { email?: unknown }) => doc.email).filter(Boolean))] as string[];
+  return [...new Set(adminDocs.map((doc: any) => doc.email).filter(Boolean))] as string[];
 }
 
 function escapeHtml(value: string): string {

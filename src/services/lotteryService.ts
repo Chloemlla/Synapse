@@ -558,8 +558,8 @@ class LotteryService {
     const userIds = Array.from(new Set(source.flatMap((round) => round.participants)));
     if (userIds.length === 0) return [];
     // 批量读（$in / IN / 一次读文件）：旧实现按用户逐个查，参与者越多往返越多。
-    const records = await getUserRecordsByIds(userIds);
-    return (records || []).filter((record): record is UserLotteryRecord => Boolean(record));
+    const records = (await getUserRecordsByIds(userIds)) as Array<UserLotteryRecord | null> | null;
+    return (records ?? []).filter((record): record is UserLotteryRecord => Boolean(record));
   }
 
   // 删除所有抽奖轮次
