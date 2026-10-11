@@ -1882,7 +1882,9 @@ docker-compose up -d
 - 抽奖任务与资产：行为任务目录（签到/浏览自助领取，下单由业务子系统核销）+ 每日限领；抽奖积分（`assetBalance`）按可配汇率 `LOTTERY_CHANCE_EXCHANGE_COST` 兑换机会，超管可发放积分；页面新增「我的抽奖机会」钱包面板
 - 抽奖三层库存：进程内售罄快速拒绝（TTL）→ Redis 预热库存 + Lua 原子预扣（`redisService.decrementIfAtLeast`，未配置时回落 DB 权威）→ DB 快照 `remaining > 0` 校验；抽奖落库失败时机会与 Redis 库存双双回补
 - 抽奖 Pacing：奖品级 `pacing = { periodMs, quotaPerWindow }`，时间窗配额用尽权重归零，中奖后按窗计数
-- 抽奖对账：T+0（DB 剩余 vs 中奖推算 vs Redis 计数，5 分钟定时 + 超管端点）与 T+1（用户价值 vs 中奖价值）报表，管理端可一键运行
+- 抽奖对账：T+0（DB 剩余 vs 中奖推算 vs Redis 计数，5 分钟定时 + 超管端点）与 T+1（用户价值 vs 中奖价值）报表，管理端可一键运行；T+1 支持外部财务流水全链路核对（`LOTTERY_FINANCE_SOURCE_URL`，未配置时明确标注无基线）
+- 抽奖风控：`services/lottery/risk.ts` 分级（上游风控分 + 同用户/同指纹/同 IP 短窗频次 + 同设备多账号）；`soft` 静默降级为暗池空奖（照常记参与与审计、不扣库存、不报错），`block` 硬拦截
+- 抽奖预算熔断：轮次 `budget = { maxTotalValue, warningRatio }`，跨预警线告警、会超预算的本次出奖降级、到上限自动停用轮次
 - 抽奖中台 PRD 与实施清单落盘 `docs/plans/2026-10-11-lottery-platform-prd.md`（产品蓝图 + 看门狗设计 + 分阶段勾选清单）
 - 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
 - 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`

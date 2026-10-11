@@ -43,6 +43,12 @@ export interface LotteryPseudoRandom {
   maxBonus: number;
 }
 
+/** 预算熔断（可选）。 */
+export interface LotteryBudget {
+  maxTotalValue: number;
+  warningRatio?: number;
+}
+
 // 抽奖轮次类型
 export interface LotteryRound {
   id: string;
@@ -76,6 +82,8 @@ export interface LotteryRound {
   softGuarantee?: LotterySoftGuarantee;
   /** 伪随机平滑补偿配置。 */
   pseudoRandom?: LotteryPseudoRandom;
+  /** 预算熔断配置。 */
+  budget?: LotteryBudget;
   /** 本人在本轮已抽次数（普通用户视图用）。 */
   drawsUsed?: number;
   /** 本人本轮剩余可抽次数（普通用户视图用）。 */
@@ -163,6 +171,14 @@ export interface LotteryT1Report {
   userTotalValue: number;
   valueDrift: number;
   mismatchedUsers: string[];
+  /** 对账日期（上海自然日）。 */
+  date?: string;
+  /** 当日发放价值。 */
+  dailyWinnerValue?: number;
+  /** 外部财务流水（未配置外部源时为 null）。 */
+  external?: { date: string; totalValue: number; count: number | null; source: string } | null;
+  /** 当日发放价值与外部流水的偏差（无可比基线时为 null）。 */
+  externalDrift?: number | null;
 }
 
 // 统计信息类型

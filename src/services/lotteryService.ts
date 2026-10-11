@@ -24,6 +24,13 @@ import {
   buildT0Report,
   buildT1Report,
 } from "./lottery/reconciliation";
+import { evaluateLotteryRisk } from "./lottery/risk";
+import { type LotteryBudget, awardedValueOf, evaluateBudget } from "./lottery/budget";
+import {
+  type LotteryFinanceEntry,
+  resolveLotteryFinanceSource,
+  shanghaiDateKey,
+} from "./lottery/finance";
 
 // 抽奖相关类型定义
 export type LotteryPrizeCategory = "common" | "rare" | "epic" | "legendary";
@@ -90,6 +97,8 @@ export interface LotteryRound {
   drawCounts?: Record<string, number>;
   /** 每个用户本轮连续未命中次数（伪随机补偿依据；普通用户视图不回传）。 */
   pityCounters?: Record<string, number>;
+  /** 预算熔断配置（可选）。 */
+  budget?: LotteryBudget;
 }
 
 export interface LotteryWinner {
@@ -139,6 +148,12 @@ export interface LotteryDrawContext {
   requestId?: string;
   ip?: string;
   userAgent?: string;
+  /** 设备指纹（风控信号）。 */
+  fingerprint?: string;
+  /** 上游可信风控分（0-100）；客户端自报只影响自己，不会造成越权。 */
+  riskScore?: number;
+  /** 同设备不同账号数（群控特征）。 */
+  distinctUsersPerFingerprint?: number;
 }
 
 /** 抽取过程产出的完整事实，供审计留痕（随机数快照 / 落点 / 结果）。 */
@@ -148,6 +163,12 @@ interface LotteryDrawOutcome {
   randomValue: number;
   drawTime: number;
   round: LotteryRound;
+  /** 风控分级与是否被静默降级。 */
+  riskLevel?: "allow" | "soft" | "block";
+  riskScore?: number;
+  downgraded?: boolean;
+  /** 是否因预算熔断而降级。 */
+  budgetPaused?: boolean;
 }
 
 /** 幂等结果保留 10 分钟：足够覆盖客户端/代理的重复投递与短时重试。 */
@@ -429,7 +450,15 @@ class LotteryService {
     }
 
     try {
-      const outcome = await this.runLotteryDraw(roundId, userId, username, cfToken, userRole, captchaProvider);
+      const outcome = await this.runLotteryDraw(
+        roundId,
+        userId,
+        username,
+        cfToken,
+        userRole,
+        captchaProvider,
+        context,
+      );
       if (idempotencyKey) {
         await sharedStateStore.set(idempotencyKey, { roundId, winner: outcome.winner }, LOTTERY_IDEMPOTENCY_TTL_MS);
       }
@@ -450,6 +479,7 @@ class LotteryService {
     cfToken?: string,
     userRole?: string,
     captchaProvider?: unknown,
+    context: LotteryDrawContext = {},
   ): Promise<LotteryDrawOutcome> {
     // 第 1 层防线：进程内售罄标记（带 TTL），命中直接拒绝，不穿透到存储/下游。
     if (isRoundMarkedSoldOut(roundId)) {
@@ -506,6 +536,20 @@ class LotteryService {
       logger.info("跳过人机验证（管理员用户）", { userId, userRole });
     }
 
+    // 风控：block 硬拦截；soft 静默降级到暗池空奖（不扣库存、不报错）。
+    const matches = evaluateLotteryRisk({
+      userId,
+      fingerprint: context.fingerprint,
+      ip: context.ip,
+      externalScore: context.riskScore,
+      distinctUsersPerFingerprint: context.distinctUsersPerFingerprint,
+    });
+    if (matches.level === "block") {
+      logger.warn("[Lottery] 风控硬拦截抽奖", { userId, score: matches.score });
+      throw new Error("操作过于频繁，请稍后再试");
+    }
+    const riskDowngraded = matches.level === "soft";
+
     // G7-09: 开奖随机数必须由服务端 CSPRNG 决定，不能用公开区块高度/客户端字段/时间戳
     // 拼种子（那些成分攻击者全部已知或可枚举）。这里直接 crypto.randomInt。
     const randomValue = crypto.randomInt(0, 0xffffffff) / 0xffffffff;
@@ -547,18 +591,35 @@ class LotteryService {
     const pseudo = latest.pseudoRandom;
     const pityCounter = Math.max(0, Math.floor(latest.pityCounters?.[userId] ?? 0));
 
-    let prize: LotteryPrize | null = guaranteedPrize;
+    // 风控 soft：静默降级为暗池空奖——照常记录参与与审计，既不报错也不出奖。
+    let prize: LotteryPrize | null = riskDowngraded ? null : guaranteedPrize;
     // 软保底：超出手数越多，触发「至少出该稀有度」的概率越高（必中该档，纯权重归一）。
-    if (!prize && latest.softGuarantee) {
+    if (!riskDowngraded && !prize && latest.softGuarantee) {
       const softChance = softGuaranteeChance(drawIndex, latest.softGuarantee);
       if (softChance > 0 && randomValue < softChance) {
         prize = pickGuaranteedPrize(availablePrizes, latest.softGuarantee.category, randomValue);
       }
     }
     // 概率和 < 1 时剩余区间表示「未中奖」：参与照样计数，只是不进 winners。
-    if (!prize) {
+    if (!riskDowngraded && !prize) {
       const effectiveRandom = pseudo ? applyPityBoost(randomValue, pityCounter, pseudo) : randomValue;
       prize = pickPrize(availablePrizes, effectiveRandom);
+    }
+
+    // 预算熔断：再出一份就超预算 → 本次降级为未中奖并把轮次停用。
+    let budgetPaused = false;
+    if (prize && latest.budget) {
+      const budgetDecision = evaluateBudget(latest.budget, awardedValueOf(latest), prize.value);
+      if (budgetDecision.action === "pause" || budgetDecision.action === "downgrade") {
+        prize = null;
+        budgetPaused = budgetDecision.action === "pause";
+      } else if (budgetDecision.crossedWarning) {
+        logger.warn("[Lottery] 中奖预算达到预警线", {
+          roundId,
+          budget: budgetDecision.budget,
+          projected: budgetDecision.projectedValue,
+        });
+      }
     }
 
     // 第 3 层（DB 最终防线）的显式前置校验：快照上该奖品仍有库存才允许扣减。
@@ -644,6 +705,7 @@ class LotteryService {
         winners: nextWinners,
         drawCounts: nextDrawCounts,
         ...(nextPityCounters ? { pityCounters: nextPityCounters } : {}),
+        ...(budgetPaused ? { isActive: false } : {}),
         blockchainHeight: blockchainData.height,
         seed: blockchainData.hash,
       });
@@ -667,7 +729,17 @@ class LotteryService {
     } else {
       logger.info(`用户 ${username} 参与轮次 ${roundId} 未中奖`);
     }
-    return { winner, prize, randomValue, drawTime: drawNow, round: latest };
+    return {
+      winner,
+      prize,
+      randomValue,
+      drawTime: drawNow,
+      round: latest,
+      riskLevel: matches.level,
+      riskScore: matches.score,
+      downgraded: riskDowngraded,
+      budgetPaused,
+    };
   }
 
   /**
@@ -701,6 +773,10 @@ class LotteryService {
         remainingAfter,
         requestId: meta.context.requestId ?? null,
         drawTime: outcome.drawTime,
+        riskLevel: outcome.riskLevel ?? "allow",
+        riskScore: outcome.riskScore ?? 0,
+        downgraded: Boolean(outcome.downgraded),
+        budgetPaused: Boolean(outcome.budgetPaused),
       },
       ip: meta.context.ip || "",
       userAgent: meta.context.userAgent,
@@ -960,18 +1036,50 @@ class LotteryService {
     return reports;
   }
 
-  /** T+1 对账：对比用户累计价值与按中奖记录推算的价值。 */
-  public async runT1Reconciliation(): Promise<T1ReconciliationReport> {
+  /** T+1 对账：对比用户累计价值与按中奖记录推算的价值；可附带外部财务流水全链路核对。 */
+  public async runT1Reconciliation(
+    date?: string,
+  ): Promise<
+    T1ReconciliationReport & {
+      date: string;
+      dailyWinnerValue: number;
+      external: LotteryFinanceEntry | null;
+      externalDrift: number | null;
+    }
+  > {
     const rounds = await this.getLotteryRounds();
     const records = await this.getAllUserRecords(rounds);
+    const targetDate = date || shanghaiDateKey();
     const report = buildT1Report(rounds, records);
+
+    // 当日发放价值（上海自然日）——与外部财务流水同口径。
+    let dailyWinnerValue = 0;
+    for (const round of rounds) {
+      const valueByPrize = new Map(round.prizes.map((prize) => [prize.id, Number(prize.value) || 0]));
+      for (const winner of round.winners) {
+        if (shanghaiDateKey(new Date(winner.drawTime)) === targetDate) {
+          dailyWinnerValue += valueByPrize.get(winner.prizeId) ?? 0;
+        }
+      }
+    }
+
+    // 外部财务源未配置时返回 null（明确「没有基线」，不伪装成对上了）。
+    const source = resolveLotteryFinanceSource();
+    const external = source ? await source.fetchDaily(targetDate) : null;
+
     if (report.valueDrift !== 0 || report.mismatchedUsers.length > 0) {
       logger.warn("T+1 价值对账发现偏差", {
         valueDrift: report.valueDrift,
         mismatched: report.mismatchedUsers.length,
       });
     }
-    return report;
+    return {
+      ...report,
+      date: targetDate,
+      dailyWinnerValue,
+      external,
+      externalDrift: external ? dailyWinnerValue - external.totalValue : null,
+    };
   }
 
   // 获取轮次详情

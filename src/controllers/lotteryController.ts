@@ -267,6 +267,25 @@ export class LotteryController {
         res.status(400).json({ success: false, error: `补偿配置非法：${pseudoParsed.error}` });
         return;
       }
+      // 预算熔断（可选）
+      let budget: { maxTotalValue: number; warningRatio: number } | undefined;
+      const rawBudget = req.body?.budget;
+      if (rawBudget && typeof rawBudget === "object") {
+        const maxTotalValue = boundedInt((rawBudget as Record<string, unknown>).maxTotalValue, {
+          min: 1,
+          max: 1_000_000_000,
+          fallback: 0,
+        });
+        const warningRatio =
+          (rawBudget as Record<string, unknown>).warningRatio === undefined
+            ? 0.8
+            : readInRange((rawBudget as Record<string, unknown>).warningRatio, 0, 1);
+        if (maxTotalValue < 1 || warningRatio === null) {
+          res.status(400).json({ success: false, error: "预算配置非法（maxTotalValue ≥ 1 且 warningRatio ∈ [0,1]）" });
+          return;
+        }
+        budget = { maxTotalValue, warningRatio };
+      }
       const roundData = {
         name,
         description,
@@ -279,6 +298,7 @@ export class LotteryController {
         ...(guarantee ? { guarantee } : {}),
         ...(softParsed.value ? { softGuarantee: softParsed.value } : {}),
         ...(pseudoParsed.value ? { pseudoRandom: pseudoParsed.value } : {}),
+        ...(budget ? { budget } : {}),
       };
       const round = await lotteryService.createLotteryRound(roundData);
       res.json({
@@ -376,7 +396,15 @@ export class LotteryController {
         cfToken,
         req.user?.role,
         captchaProvider,
-        { requestId: requestId || undefined, ip: req.ip, userAgent: req.headers["user-agent"] || "" },
+        {
+          requestId: requestId || undefined,
+          ip: req.ip,
+          userAgent: req.headers["user-agent"] || "",
+          fingerprint: typeof req.body?.fingerprint === "string" ? req.body.fingerprint.slice(0, 128) : undefined,
+          riskScore: readInRange(req.body?.riskScore, 0, 100) ?? undefined,
+          distinctUsersPerFingerprint:
+            boundedInt(req.body?.distinctUsersPerFingerprint, { min: 0, max: 10_000, fallback: 0 }) || undefined,
+        },
       );
 
       res.json({
@@ -618,7 +646,7 @@ export class LotteryController {
         res.status(403).json({ success: false, error: "权限不足" });
         return;
       }
-      const report = await lotteryService.runT1Reconciliation();
+      const report = await lotteryService.runT1Reconciliation(firstString(req.query.date));
       res.json({ success: true, data: report });
     } catch (error) {
       logger.error("T+1 对账失败:", error);

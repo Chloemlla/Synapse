@@ -60,6 +60,7 @@ jest.mock("../services/sharedStateStore", () => ({
 
 import { type LotteryPrize, type LotteryRound, lotteryService, pickPrize, applyPityBoost, softGuaranteeChance } from "../services/lotteryService";
 import { resetSoldOutCache } from "../services/lottery/stock";
+import { resetRiskWindows } from "../services/lottery/risk";
 
 function prize(overrides: Partial<LotteryPrize> & { id: string }): LotteryPrize {
   return {
@@ -95,6 +96,7 @@ function makeRound(overrides: Partial<LotteryRound> = {}): LotteryRound {
 beforeEach(() => {
   jest.clearAllMocks();
   resetSoldOutCache();
+  resetRiskWindows();
   // 区块链高度只是展示信息：让 fetch 失败即走时间戳回退，测试不打外网。
   (globalThis as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }));
   mockGetAllRounds.mockResolvedValue([]);
@@ -533,6 +535,65 @@ describe("Pacing 与三层库存", () => {
     );
     // 第二次命中进程内售罄标记：没有新增存储读取
     expect(mockGetAllRounds.mock.calls.length).toBe(callsAfterFirst);
+  });
+});
+
+describe("风控静默降级与预算熔断", () => {
+  it("soft 风控：不出奖也不报错，照常记录参与、不扣库存", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1, quantity: 5, remaining: 5 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, {
+      riskScore: 50,
+    });
+
+    expect(winner).toBeNull();
+    const patch = mockUpdateRound.mock.calls[0][1] as Record<string, any>;
+    expect(patch.participants).toEqual(["u1"]);
+    expect(patch.prizes).toEqual([expect.objectContaining({ remaining: 5 })]);
+  });
+
+  it("block 风控：硬拦截，不写库", async () => {
+    const round = makeRound({ prizes: [prize({ id: "p1", probability: 1 })] });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    await expect(
+      lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user", undefined, { riskScore: 90 }),
+    ).rejects.toThrow("操作过于频繁");
+    expect(mockUpdateRound).not.toHaveBeenCalled();
+  });
+
+  it("预算熔断：已到上限时停用轮次并降级为未中奖", async () => {
+    const big = prize({ id: "big", probability: 1, value: 100, quantity: 2, remaining: 2, category: "legendary" });
+    const round = makeRound({
+      budget: { maxTotalValue: 100, warningRatio: 0.8 },
+      prizes: [big],
+      winners: [{ userId: "u0", username: "x", prizeId: "big", prizeName: "big", drawTime: 1 }],
+    });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+
+    expect(winner).toBeNull();
+    const patch = mockUpdateRound.mock.calls[0][1] as Record<string, any>;
+    expect(patch.isActive).toBe(false);
+    expect(patch.prizes).toEqual([expect.objectContaining({ remaining: 2 })]);
+  });
+
+  it("预算熔断：本次会超预算则降级，但未到上限不停用", async () => {
+    const big = prize({ id: "big", probability: 1, value: 100, quantity: 2, remaining: 2, category: "legendary" });
+    const round = makeRound({
+      budget: { maxTotalValue: 150, warningRatio: 0.8 },
+      prizes: [big],
+      winners: [{ userId: "u0", username: "x", prizeId: "big", prizeName: "big", drawTime: 1 }],
+    });
+    mockGetAllRounds.mockResolvedValue([round]);
+
+    const winner = await lotteryService.participateInLottery(round.id, "u1", "alice", undefined, "user");
+
+    expect(winner).toBeNull();
+    const patch = mockUpdateRound.mock.calls[0][1] as Record<string, any>;
+    expect(patch.isActive).toBeUndefined();
   });
 });
 

@@ -46,6 +46,8 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     softCategory: 'epic' as 'common' | 'rare' | 'epic' | 'legendary',
     pityIncrement: 0,
     pityMaxBonus: 0,
+    budgetMaxTotalValue: 0,
+    budgetWarningRatio: 0.8,
     prizes: [] as LotteryPrize[]
   });
   const [loading, setLoading] = useState(false);
@@ -114,6 +116,9 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
         ...(formData.pityIncrement > 0
           ? { pseudoRandom: { increment: formData.pityIncrement, maxBonus: formData.pityMaxBonus } }
           : {}),
+        ...(formData.budgetMaxTotalValue > 0
+          ? { budget: { maxTotalValue: formData.budgetMaxTotalValue, warningRatio: formData.budgetWarningRatio } }
+          : {}),
         prizes: formData.prizes,
       };
       const result = await lotteryApi.createLotteryRound(payload);
@@ -143,6 +148,8 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
           softCategory: 'epic',
           pityIncrement: 0,
           pityMaxBonus: 0,
+          budgetMaxTotalValue: 0,
+          budgetWarningRatio: 0.8,
           prizes: []
         });
       }
@@ -335,6 +342,28 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               />
             </div>
             <p className="mt-1 text-xs text-slate-500">未命中累加、命中重置（增量 &gt; 0 时启用）。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">预算熔断：最高中奖价值 / 预警比例</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={0}
+                value={formData.budgetMaxTotalValue}
+                onChange={(e) => setFormData(prev => ({ ...prev, budgetMaxTotalValue: Math.max(0, parseInt(e.target.value) || 0) }))}
+                className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+              />
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={formData.budgetWarningRatio}
+                onChange={(e) => setFormData(prev => ({ ...prev, budgetWarningRatio: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)) }))}
+                className="w-full px-3 py-2 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">0 = 不启用；触及上限时本轮自动停用。</p>
           </div>
         </div>
 
@@ -783,6 +812,14 @@ const ReconciliationPanel: React.FC = () => {
             <div className="mt-2">
               T+1：中奖记录价值 {t1.winnerTotalValue}，用户累计价值 {t1.userTotalValue}，偏差 {t1.valueDrift}
               {t1.mismatchedUsers.length > 0 && `（${t1.mismatchedUsers.length} 个用户不一致）`}
+              {typeof t1.dailyWinnerValue === 'number' && (
+                <div className="mt-1 text-xs text-slate-500">
+                  当日（{t1.date}）发放价值 {t1.dailyWinnerValue}
+                  {t1.external
+                    ? ` / 外部财务流水 ${t1.external.totalValue}（偏差 ${t1.externalDrift ?? 0}）`
+                    : ' / 未配置外部财务源'}
+                </div>
+              )}
             </div>
           )}
         </div>
