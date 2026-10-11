@@ -770,7 +770,7 @@ html {
 }
 
 /* 内联代码文字色是硬编码红色，需单独反色；代码块用 vscDarkPlus/slate 深底本就适配 */
-.markdown-renderer.markdown-invert code:not(pre code) {
+.markdown-renderer.markdown-invert code:not(pre code):not([data-markdown-code] code) {
   color: #fca5a5;
 }
 
@@ -902,7 +902,11 @@ html {
   box-shadow: 0 14px 38px rgba(15, 23, 42, 0.18);
 }
 
-.markdown-renderer code:not(pre code) {
+/* 只命中的是「行内代码」。高亮代码块由 react-syntax-highlighter 用 PreTag="div" 渲染，
+   块级 <code> 的父节点不是 <pre>，只排除 `pre code` 会把它当成行内代码：
+   行内元素跨行时背景按行盒分段绘制，于是在深色代码块上逐行刷出 --md-code-bg 的浅色底。
+   故再按代码块容器标记 [data-markdown-code] 排除一次（该标记同时被导出与用例依赖）。 */
+.markdown-renderer code:not(pre code):not([data-markdown-code] code) {
   border-radius: 0.4rem;
   background: var(--md-code-bg);
   color: #cf222e;
