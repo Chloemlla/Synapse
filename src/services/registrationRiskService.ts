@@ -53,6 +53,21 @@ function mongoReady(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
+/**
+ * 把 IP / 指纹这类**请求可控值**净化为可直接当等值过滤值用的字符串。
+ *
+ * 为什么要显式净一次：这两个值会直接进入 Mongo 查询对象。它们本身是值而非操作符，
+ * 但（a）允许任意长度/控制字符进查询本身就是浪费，(b) 以 `$` 开头的字符串若被拼到**键**的位置
+ * 才会变成操作符 —— 这里把首字符的 `$` 剁掉，把“形状”固定下来，静态扫描与人工审阅都好判。
+ */
+function normalizeAttemptKey(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/^\$+/, "")
+    .slice(0, maxLength);
+}
+
 export interface RecordRegistrationAttemptInput {
   ipAddress: string;
   fingerprint: string;
@@ -110,19 +125,32 @@ export async function evaluateRegistrationRisk(input: RegistrationRiskInput): Pr
   const since24h = new Date(Date.now() - DAY_MS);
   const since7d = new Date(Date.now() - 7 * DAY_MS);
 
+  // 先净化再用：显式 `$eq` 让“这是等值过滤、不是操作符拼接”在代码里一目了然。
+  const ipKey = normalizeAttemptKey(input.ipAddress, 128);
+  const deviceKey = normalizeAttemptKey(input.fingerprint, 512);
+
+  if (!ipKey && !deviceKey) {
+    // 两个维度都拿不到有效值：没有可判定的信号，不做计数（也不误伤）。
+    return { allowed: true, ipRiskScore };
+  }
+
   const [sameIp, sameDevice, distinctEmails] = await Promise.all([
-    RegistrationAttempt.countDocuments({
-      ipAddress: input.ipAddress,
-      outcome: "succeeded",
-      createdAt: { $gte: since24h },
-    }).exec(),
-    RegistrationAttempt.countDocuments({
-      fingerprint: input.fingerprint,
-      outcome: "succeeded",
-      createdAt: { $gte: since24h },
-    }).exec(),
+    ipKey
+      ? RegistrationAttempt.countDocuments({
+          ipAddress: { $eq: ipKey },
+          outcome: "succeeded",
+          createdAt: { $gte: since24h },
+        }).exec()
+      : Promise.resolve(0),
+    deviceKey
+      ? RegistrationAttempt.countDocuments({
+          fingerprint: { $eq: deviceKey },
+          outcome: "succeeded",
+          createdAt: { $gte: since24h },
+        }).exec()
+      : Promise.resolve(0),
     RegistrationAttempt.distinct("emailCanonical", {
-      $or: [{ ipAddress: input.ipAddress }, { fingerprint: input.fingerprint }],
+      $or: [{ ipAddress: { $eq: ipKey || "\u0000" } }, { fingerprint: { $eq: deviceKey || "\u0000" } }],
       outcome: "succeeded",
       createdAt: { $gte: since7d },
     }).exec(),

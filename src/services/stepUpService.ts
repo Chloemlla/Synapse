@@ -29,9 +29,22 @@ function mongoReady(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
-function readStepUpSecret(): string {
-  // 用 JWT 主密钥做 HMAC 域分离：票据只在服务端签发/校验，客户端永远拿不到密钥。
-  return `${config.jwtSecret || process.env.JWT_SECRET || "step-up-dev-secret"}|step-up-ticket`;
+let cachedTicketKey: Buffer | null = null;
+
+/**
+ * 票据签名键：从主密钥**派生**出来的一把子键（HKDF-SHA256），不用主密钥直接签。
+ *
+ * 两个真实收益：
+ * 1. **域分离**：同一把主密钥同时用于 JWT 与票据签名是密码学上不该有的复用；
+ * 2. 绕开 CodeQL `js/insufficient-password-hash` 的误报：它把“对主密钥做快哈希”当成口令哈希，
+ *    而这里对密钥做的是标准 KDF 派生（票据里不含任何口令）。
+ * 派生结果缓存：每次请求重算 HKDF 没有必要。
+ */
+function ticketSigningKey(): Buffer {
+  if (cachedTicketKey) return cachedTicketKey;
+  const master = config.jwtSecret || process.env.JWT_SECRET || "step-up-dev-secret";
+  cachedTicketKey = Buffer.from(crypto.hkdfSync("sha256", master, "synapse-step-up", "ticket-hmac-v1", 32));
+  return cachedTicketKey;
 }
 
 /** 请求体摘要（RC-03 的 `payloadHash`）：稳定序列化后取 sha256 前 32 位十六进制。 */
@@ -59,7 +72,7 @@ function ticketSigningInput(payload: ChallengeTicketPayload): string {
  */
 export function signChallengeTicket(payload: ChallengeTicketPayload): string {
   const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const signature = crypto.createHmac("sha256", readStepUpSecret()).update(body).digest("base64url");
+  const signature = crypto.createHmac("sha256", ticketSigningKey()).update(body).digest("base64url");
   return `${body}.${signature}`;
 }
 
@@ -71,7 +84,7 @@ export function verifyChallengeTicket(
   const [body, signature] = ticket.split(".");
   if (!body || !signature) return null;
 
-  const expected = crypto.createHmac("sha256", readStepUpSecret()).update(body).digest("base64url");
+  const expected = crypto.createHmac("sha256", ticketSigningKey()).update(body).digest("base64url");
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;

@@ -6,6 +6,18 @@ import { ApiError } from "./errors.js";
 // ── Constants ───────────────────────────────────────────────────────────
 const MAX_CRASHES_PER_HOUR = 20;
 const CRASH_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * 净化「不透明标识」型入参（reportId / 安装 ID）：允许 UUID/十六进制/常见的 `.-_:@+` 分隔符，
+ * 限长、去掉控制字符与空白。返回空串表示形状不合法，调用方应 400。
+ */
+function normalizeOpaqueId(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (!/^[A-Za-z0-9._:@+-]+$/.test(trimmed)) return "";
+  return trimmed.slice(0, maxLength);
+}
 const STACK_LINES = 12;
 const LINE_MAX_LENGTH = 200;
 const MAX_STACK_TRACE_CHARS = 64 * 1024;
@@ -55,13 +67,21 @@ export async function recordCrashReport(
     throw ApiError.badRequest("reportId is required");
   }
 
+  // 入口处**一次性净化**成“形状确定的本地常量”，后续所有查询只用它：
+  // 这类值会被当成 Mongo 查询值（甚至拼进聚合管道），固定形状后静态扫描与人工审阅都好判，
+  // 也顺手挡掉超长/控制字符把查询对象撑大的浪费。允许 UUID / 十六进制 / 常见的 `.-_:@+` 分隔符。
+  const reportId = normalizeOpaqueId(request.reportId, 200);
+  if (!reportId) {
+    throw ApiError.badRequest("reportId must be a 1-200 char opaque id");
+  }
+
   // Retries of an already accepted report do not consume the new-report quota.
-  const existing = await CrashReport.findOne({ userId, reportId: request.reportId })
+  const existing = await CrashReport.findOne({ userId: { $eq: userId }, reportId: { $eq: reportId } })
     .select({ receivedAt: 1 })
     .lean()
     .exec();
   if (existing) {
-    return { accepted: true, id: request.reportId, duplicate: true, receivedAt: existing.receivedAt };
+    return { accepted: true, id: reportId, duplicate: true, receivedAt: existing.receivedAt };
   }
 
   // ── Rate limit: 20 per hour per user ──────────────────────────────────
@@ -139,8 +159,9 @@ export async function recordCrashReport(
     if ((error as { code?: number })?.code !== 11000) throw error;
     // reportId 已在入口按 `typeof !== "string"` 强制为字符串（见本文件上的输入校验），
     // 对象形态（如 {$ne: null}）在到达此处前已 400；仍额外限定 userId，不可能跨用户取文档。
-    // codeql[js/sql-injection] reportId 已在入口收窄为字符串，且查询额外限定 userId
-    const winner = await CrashReport.findOne({ userId, reportId: request.reportId })
+    // reportId 已在入口净化成形状固定的本地常量（normalizeOpaqueId）且额外限定 userId；
+    // 这里用显式 $eq 再强调一次“这是等值过滤值，不是操作符”。
+    const winner = await CrashReport.findOne({ userId: { $eq: userId }, reportId: { $eq: reportId } })
       .select({ receivedAt: 1 }).lean().exec();
     if (!winner) throw error;
     duplicateReceivedAt = winner.receivedAt;
