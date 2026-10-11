@@ -274,6 +274,27 @@ class RedisService {
     }
   }
 
+  /**
+   * 原子「足够才递减」（库存预热用）。Lua 保证并发下不会超扣。
+   * 返回：>=0 = 递减后的剩余；-1 = 余额不足；-2 = 计数器不存在（未预热）；
+   * null = Redis 不可用/命令失败（调用方应回落到权威存储）。
+   */
+  public async decrementIfAtLeast(key: string, amount = 1): Promise<number | null> {
+    if (!this.isAvailable()) return null;
+    const client = this.client;
+    if (!client) return null;
+    try {
+      const result = await (client as any).eval(
+        'local v = tonumber(redis.call("GET", KEYS[1])); if v == nil then return -2 end; if v >= tonumber(ARGV[1]) then return redis.call("DECRBY", KEYS[1], ARGV[1]) else return -1 end',
+        { keys: [key], arguments: [String(amount)] },
+      );
+      return Number(result);
+    } catch (error) {
+      logger.warn("⚠️ [Redis] 原子递减失败:", error);
+      return null;
+    }
+  }
+
   /** 只读服务端统计；任一命令不可用时对应字段为 null，不抛错。 */
   public async getServerStats(): Promise<{
     dbsize: number | null;

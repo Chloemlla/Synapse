@@ -115,6 +115,54 @@ export interface UserLotteryRecord {
 export interface LotteryChances {
   balance: number;
   dailyFree: number;
+  /** 抽奖积分余额（可按汇率兑换机会）。 */
+  assetBalance: number;
+  /** 每 1 次机会需要的积分。 */
+  exchangeCost: number;
+}
+
+/** 行为任务（含今日领取状态）。 */
+export interface LotteryTask {
+  key: string;
+  label: string;
+  description: string;
+  chances: number;
+  dailyLimit: number;
+  clientClaimable: boolean;
+  claimedToday: number;
+  canClaim: boolean;
+}
+
+// T+0 库存对账
+interface T0PrizeDrift {
+  prizeId: string;
+  name: string;
+  quantity: number;
+  dbRemaining: number;
+  awarded: number;
+  expectedRemaining: number;
+  drift: number;
+  redisRemaining: number | null;
+}
+
+export interface LotteryT0Report {
+  roundId: string;
+  roundName: string;
+  checkedAt: number;
+  prizes: T0PrizeDrift[];
+  driftPrizes: number;
+}
+
+// T+1 价值对账
+export interface LotteryT1Report {
+  generatedAt: number;
+  roundCount: number;
+  winnerCount: number;
+  winnerTotalValue: number;
+  userCount: number;
+  userTotalValue: number;
+  valueDrift: number;
+  mismatchedUsers: string[];
 }
 
 // 统计信息类型

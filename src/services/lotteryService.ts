@@ -7,6 +7,23 @@ import { AuditLogService, type AuditEntry } from "./auditLogService";
 import { TurnstileService } from "./turnstileService";
 import { readCaptchaChallenge } from "./turnstile/challenge";
 import { sharedStateStore } from "./sharedStateStore";
+import { type LotteryPacing, applyPacing, pacingWindowIndex } from "./lottery/pacing";
+import {
+  clearRoundSoldOut,
+  isRoundMarkedSoldOut,
+  markRoundSoldOut,
+  readStockCounter,
+  releaseStock,
+  seedStockCounters,
+  tryReserveStock,
+} from "./lottery/stock";
+import { LOTTERY_TASK_CATALOG, type LotteryTaskDefinition, canClaimTask, getLotteryTask } from "./lottery/tasks";
+import {
+  type T0ReconciliationReport,
+  type T1ReconciliationReport,
+  buildT0Report,
+  buildT1Report,
+} from "./lottery/reconciliation";
 
 // 抽奖相关类型定义
 export type LotteryPrizeCategory = "common" | "rare" | "epic" | "legendary";
@@ -21,6 +38,10 @@ export interface LotteryPrize {
   remaining: number; // 剩余数量
   image?: string;
   category: LotteryPrizeCategory;
+  /** 出奖速度控制：按时间窗配额发放（可选）。 */
+  pacing?: LotteryPacing;
+  /** 各时间窗已发放数（窗序号 -> 数量）。 */
+  pacingAwards?: Record<string, number>;
 }
 
 /** 保底规则：本轮个人每抽到 everyDraws 的整数倍时，至少出 category 及以上稀有度的奖品。 */
@@ -91,6 +112,12 @@ export interface UserLotteryRecord {
   chanceBalance?: number;
   /** 上次发放每日免费机会的上海天键（YYYY-MM-DD）。 */
   chanceDay?: string;
+  /** 抽奖积分余额（可用积分按汇率兑换机会；由任务/管理员发放）。 */
+  assetBalance?: number;
+  /** 行为任务领取计数归日键（YYYY-MM-DD）。 */
+  taskClaimDay?: string;
+  /** 当天各任务已领取次数（taskKey -> count）。 */
+  taskClaims?: Record<string, number>;
   history: {
     roundId: string;
     prizeId: string;
@@ -144,6 +171,12 @@ function readNonNegativeIntEnv(name: string, fallback: number, max: number): num
 
 /** 每日免费抽奖机会（env 可配，默认 0 = 不发放，保持历史免费抽行为）。 */
 export const LOTTERY_DAILY_FREE_CHANCES = readNonNegativeIntEnv("LOTTERY_DAILY_FREE_CHANCES", 0, 1000);
+
+/** 抽奖积分兑换汇率：每 1 次机会需要多少积分（env 可配）。 */
+export const LOTTERY_CHANCE_EXCHANGE_COST = Math.max(1, readNonNegativeIntEnv("LOTTERY_CHANCE_EXCHANGE_COST", 100, 1_000_000));
+
+/** 对账周期（默认 5 分钟；`LOTTERY_RECONCILE_ENABLED=false` 可关）。 */
+const LOTTERY_RECONCILE_INTERVAL_MS = Math.max(60_000, readNonNegativeIntEnv("LOTTERY_RECONCILE_INTERVAL_MS", 5 * 60 * 1000, 24 * 60 * 60 * 1000));
 
 /** 上海自然日天键（与 userService 的用量归日同口径），机会按此天级别重置。 */
 function shanghaiDayKey(now: Date = new Date()): string {
@@ -245,6 +278,18 @@ class LotteryService {
     this.usersFile = path.join(this.dataDir, "users.json");
     this.blockchainCacheFile = path.join(this.dataDir, "blockchain-cache.json");
     // 替换原有本地读写/Map操作，全部通过lotteryStorage接口实现
+    this.startReconciliationTimer();
+  }
+
+  /** T+0 对账定时器（默认 5 分钟；unref 不阻塞进程退出）。 */
+  private startReconciliationTimer(): void {
+    if (process.env.LOTTERY_RECONCILE_ENABLED === "false") return;
+    const timer = setInterval(() => {
+      void this.runT0Reconciliation().catch((error) => {
+        logger.error("T+0 库存对账失败", { error: error instanceof Error ? error.message : String(error) });
+      });
+    }, LOTTERY_RECONCILE_INTERVAL_MS);
+    timer.unref?.();
   }
 
   // 获取区块链数据
@@ -297,6 +342,11 @@ class LotteryService {
     };
     try {
       await addRound(round);
+      // 预热 Redis 库存计数器（不阻塞创建；Redis 不可用时内部直接跳过）。
+      await seedStockCounters(round.id, round.prizes).catch((error) => {
+        logger.warn("预热 Redis 抽奖库存失败", { roundId: round.id, error: error instanceof Error ? error.message : String(error) });
+      });
+      clearRoundSoldOut(round.id);
       logger.info(`创建抽奖轮次: ${round.id} - ${round.name}`);
       // 创建后强制刷新所有轮次，避免缓存/延迟
       await this.getLotteryRounds();
@@ -401,6 +451,11 @@ class LotteryService {
     userRole?: string,
     captchaProvider?: unknown,
   ): Promise<LotteryDrawOutcome> {
+    // 第 1 层防线：进程内售罄标记（带 TTL），命中直接拒绝，不穿透到存储/下游。
+    if (isRoundMarkedSoldOut(roundId)) {
+      throw new Error("没有可用的奖品");
+    }
+
     const round = await this.getRoundDetails(roundId); // 使用新的getRoundDetails
     if (!round) {
       throw new Error("抽奖轮次不存在");
@@ -470,9 +525,12 @@ class LotteryService {
     if (drawsSoFar >= latestMaxDraws) {
       throw new Error("您已经参与过此轮抽奖");
     }
+    // Pacing：窗口未到/用尽的贵重奖品权重归 0；可用池 = 未超窗配额 + 有库存 + 有概率。
+    const availablePrizes = applyPacing(latest.prizes, latest.startTime, drawNow);
     // 「没库存」与「未中奖」必须分开：前者是运营/配置问题（明确报错），后者是正常结果。
-    const hasStock = latest.prizes.some((item) => item.remaining > 0 && item.probability > 0);
+    const hasStock = availablePrizes.some((item) => item.remaining > 0 && item.probability > 0);
     if (!hasStock) {
+      markRoundSoldOut(roundId);
       throw new Error("没有可用的奖品");
     }
 
@@ -482,7 +540,7 @@ class LotteryService {
     const guarantee = latest.guarantee;
     const guaranteedPrize =
       guarantee && guarantee.everyDraws > 0 && drawIndex % guarantee.everyDraws === 0
-        ? pickGuaranteedPrize(latest.prizes, guarantee.category, randomValue)
+        ? pickGuaranteedPrize(availablePrizes, guarantee.category, randomValue)
         : null;
 
     // 伪随机平滑补偿：连续未命中累积的概率加成（命中后重置），在普通抽取前把随机值向命中区压。
@@ -494,13 +552,21 @@ class LotteryService {
     if (!prize && latest.softGuarantee) {
       const softChance = softGuaranteeChance(drawIndex, latest.softGuarantee);
       if (softChance > 0 && randomValue < softChance) {
-        prize = pickGuaranteedPrize(latest.prizes, latest.softGuarantee.category, randomValue);
+        prize = pickGuaranteedPrize(availablePrizes, latest.softGuarantee.category, randomValue);
       }
     }
     // 概率和 < 1 时剩余区间表示「未中奖」：参与照样计数，只是不进 winners。
     if (!prize) {
       const effectiveRandom = pseudo ? applyPityBoost(randomValue, pityCounter, pseudo) : randomValue;
-      prize = pickPrize(latest.prizes, effectiveRandom);
+      prize = pickPrize(availablePrizes, effectiveRandom);
+    }
+
+    // 第 3 层（DB 最终防线）的显式前置校验：快照上该奖品仍有库存才允许扣减。
+    if (prize) {
+      const freshPrize = latest.prizes.find((item) => item.id === prize.id);
+      if (!freshPrize || freshPrize.remaining <= 0) {
+        throw new Error("没有可用的奖品");
+      }
     }
 
     // 抽奖机会：chanceCost > 0 的轮次按次原子消耗；管理员豁免（与其它豁免同一口径）。
@@ -512,6 +578,21 @@ class LotteryService {
         throw new Error(`抽奖机会不足（需要 ${chanceCost} 次，当前 ${consumed.balance} 次）`);
       }
       chanceConsumed = chanceCost;
+    }
+
+    // 第 2 层防线：Redis 预热库存 Lua 原子预扣（并行账本 + 与 DB 对账的依据）。
+    // Redis 不可用/未预热/与 DB 不一致时都以 DB 为准，不因此拒绝用户，仅记日志待对账。
+    let reservedStock = false;
+    if (prize) {
+      const reserve = await tryReserveStock(roundId, prize.id, 1);
+      if (reserve === "reserved") {
+        reservedStock = true;
+      } else if (reserve === "insufficient") {
+        logger.warn("抽奖库存：Redis 预热计数与 DB 不一致（Redis 认为已空），以 DB 为准，待对账", {
+          roundId,
+          prizeId: prize.id,
+        });
+      }
     }
 
     // 获取最新的区块链数据（仅作展示信息）
@@ -529,8 +610,19 @@ class LotteryService {
         }
       : null;
 
+    const pacingWindow = prize?.pacing ? pacingWindowIndex(latest.startTime, drawNow, prize.pacing.periodMs) : null;
     const nextPrizes = prize
-      ? latest.prizes.map((item) => (item.id === prize.id ? { ...item, remaining: item.remaining - 1 } : item))
+      ? latest.prizes.map((item) => {
+          if (item.id !== prize.id) return item;
+          const updated: LotteryPrize = { ...item, remaining: item.remaining - 1 };
+          if (item.pacing && pacingWindow !== null) {
+            updated.pacingAwards = {
+              ...(item.pacingAwards || {}),
+              [String(pacingWindow)]: (item.pacingAwards?.[String(pacingWindow)] ?? 0) + 1,
+            };
+          }
+          return updated;
+        })
       : latest.prizes;
     // participants 是「本轮参与过的用户」去重列表；drawCounts 才是每人次数。
     const nextParticipants = latest.participants.includes(userId)
@@ -562,6 +654,10 @@ class LotteryService {
       // 扣了机会但状态没落库：把机会退回去，不出现「扣了机会没抽成」。
       if (chanceConsumed > 0) {
         await this.refundChances(userId, chanceConsumed).catch(() => undefined);
+      }
+      // 预扣的 Redis 库存也要回补。
+      if (reservedStock && prize) {
+        await releaseStock(roundId, prize.id, 1);
       }
       throw error;
     }
@@ -649,9 +745,15 @@ class LotteryService {
   }
 
   /** 读取机会余额（会懒发放当天的免费机会）。 */
-  public async getChances(userId: string): Promise<{ balance: number; dailyFree: number }> {
+  public async getChances(userId: string): Promise<{ balance: number; dailyFree: number; assetBalance: number; exchangeCost: number }> {
     const balance = await this.ensureDailyChances(userId);
-    return { balance, dailyFree: LOTTERY_DAILY_FREE_CHANCES };
+    const record = await getUserRecord(userId);
+    return {
+      balance,
+      dailyFree: LOTTERY_DAILY_FREE_CHANCES,
+      assetBalance: Math.max(0, Math.floor(record?.assetBalance ?? 0)),
+      exchangeCost: LOTTERY_CHANCE_EXCHANGE_COST,
+    };
   }
 
   /** 管理员给用户发抽奖机会；返回发放后余额，并写一条审计。 */
@@ -728,6 +830,150 @@ class LotteryService {
     });
   }
 
+  /** 发放抽奖积分（超管/任务奖励）；返回发放后积分余额，并写审计。 */
+  public async grantAssets(
+    userId: string,
+    amount: number,
+    operator?: { userId: string; username: string; role: string; ip?: string },
+  ): Promise<number> {
+    const delta = Math.max(1, Math.floor(amount));
+    const balance = await sharedStateStore.withLock(
+      `lottery:chances:${userId}`,
+      LOTTERY_CHANCE_LOCK_TTL_MS,
+      async () => {
+        const record = await getUserRecord(userId);
+        const next = Math.max(0, Math.floor(record?.assetBalance ?? 0)) + delta;
+        await updateUserRecord(userId, { userId, assetBalance: next });
+        return next;
+      },
+    );
+    if (operator) {
+      void AuditLogService.log({
+        userId: operator.userId,
+        username: operator.username,
+        role: operator.role,
+        action: "lottery.assets_grant",
+        module: "lottery",
+        targetId: userId,
+        targetName: userId,
+        result: "success",
+        detail: { amount: delta, balance },
+        ip: operator.ip || "",
+        method: "POST",
+      }).catch(() => undefined);
+    }
+    return balance;
+  }
+
+  /** 用抽奖积分按汇率兑换抽奖机会（与机会扣减同一把锁，原子）。 */
+  public async exchangeChances(
+    userId: string,
+    times: number,
+  ): Promise<{ balance: number; assetBalance: number; spent: number }> {
+    const count = Math.max(1, Math.floor(times));
+    const cost = count * LOTTERY_CHANCE_EXCHANGE_COST;
+    return sharedStateStore.withLock(`lottery:chances:${userId}`, LOTTERY_CHANCE_LOCK_TTL_MS, async () => {
+      const record = await getUserRecord(userId);
+      const day = shanghaiDayKey();
+      const sameDay = record?.chanceDay === day;
+      const balance = sameDay ? Math.max(0, Math.floor(record?.chanceBalance ?? 0)) : LOTTERY_DAILY_FREE_CHANCES;
+      const assets = Math.max(0, Math.floor(record?.assetBalance ?? 0));
+      if (assets < cost) {
+        throw new Error(`抽奖积分不足（需要 ${cost} 积分，当前 ${assets} 积分）`);
+      }
+      const nextAssets = assets - cost;
+      await updateUserRecord(userId, {
+        userId,
+        chanceDay: day,
+        chanceBalance: balance + count,
+        assetBalance: nextAssets,
+      });
+      return { balance: balance + count, assetBalance: nextAssets, spent: cost };
+    });
+  }
+
+  /** 行为任务状态：目录 + 今日已领次数 + 是否可领。 */
+  public async getTaskStatus(
+    userId: string,
+  ): Promise<Array<LotteryTaskDefinition & { claimedToday: number; canClaim: boolean }>> {
+    const record = await getUserRecord(userId);
+    const day = shanghaiDayKey();
+    const claims = record?.taskClaimDay === day ? record?.taskClaims || {} : {};
+    return LOTTERY_TASK_CATALOG.map((task) => {
+      const claimedToday = Math.max(0, Math.floor(claims[task.key] ?? 0));
+      return { ...task, claimedToday, canClaim: canClaimTask(task, claimedToday) };
+    });
+  }
+
+  /**
+   * 领取任务机会：前端只能领 `clientClaimable` 任务；
+   * 下单这类需外部校验的任务由子系统调用并传 `allowInternal`。
+   */
+  public async claimTaskChances(
+    userId: string,
+    taskKey: string,
+    options: { allowInternal?: boolean } = {},
+  ): Promise<{ balance: number; chances: number; claimedToday: number }> {
+    const task = getLotteryTask(taskKey);
+    if (!task) throw new Error("任务不存在");
+    if (!task.clientClaimable && !options.allowInternal) {
+      throw new Error("该任务需由业务系统核销后发放");
+    }
+    return sharedStateStore.withLock(`lottery:chances:${userId}`, LOTTERY_CHANCE_LOCK_TTL_MS, async () => {
+      const record = await getUserRecord(userId);
+      const day = shanghaiDayKey();
+      const sameDay = record?.taskClaimDay === day;
+      const claims = sameDay ? { ...(record?.taskClaims || {}) } : {};
+      const claimedToday = Math.max(0, Math.floor(claims[taskKey] ?? 0));
+      if (!canClaimTask(task, claimedToday)) {
+        throw new Error("今日该任务已领取完毕");
+      }
+      claims[taskKey] = claimedToday + 1;
+      const balance =
+        (sameDay ? Math.max(0, Math.floor(record?.chanceBalance ?? 0)) : LOTTERY_DAILY_FREE_CHANCES) + task.chances;
+      await updateUserRecord(userId, {
+        userId,
+        chanceDay: day,
+        chanceBalance: balance,
+        taskClaimDay: day,
+        taskClaims: claims,
+      });
+      return { balance, chances: task.chances, claimedToday: claimedToday + 1 };
+    });
+  }
+
+  /** T+0 对账：逐轮次对比 DB 剩余与「按中奖记录推算的应有剩余」，附 Redis 预热计数。 */
+  public async runT0Reconciliation(): Promise<T0ReconciliationReport[]> {
+    const rounds = await this.getLotteryRounds();
+    const reports: T0ReconciliationReport[] = [];
+    for (const round of rounds) {
+      const redisRemaining: Record<string, number | null> = {};
+      for (const prize of round.prizes) {
+        redisRemaining[prize.id] = await readStockCounter(round.id, prize.id);
+      }
+      const report = buildT0Report(round, redisRemaining);
+      reports.push(report);
+      if (report.driftPrizes > 0) {
+        logger.warn("T+0 库存对账发现偏差", { roundId: round.id, driftPrizes: report.driftPrizes });
+      }
+    }
+    return reports;
+  }
+
+  /** T+1 对账：对比用户累计价值与按中奖记录推算的价值。 */
+  public async runT1Reconciliation(): Promise<T1ReconciliationReport> {
+    const rounds = await this.getLotteryRounds();
+    const records = await this.getAllUserRecords(rounds);
+    const report = buildT1Report(rounds, records);
+    if (report.valueDrift !== 0 || report.mismatchedUsers.length > 0) {
+      logger.warn("T+1 价值对账发现偏差", {
+        valueDrift: report.valueDrift,
+        mismatched: report.mismatchedUsers.length,
+      });
+    }
+    return report;
+  }
+
   // 获取轮次详情
   public async getRoundDetails(roundId: string): Promise<LotteryRound | null> {
     const rounds = await this.getLotteryRounds();
@@ -750,6 +996,7 @@ class LotteryService {
     // 重置奖品数量
     round.prizes.forEach((prize) => {
       prize.remaining = prize.quantity;
+      prize.pacingAwards = {};
     });
 
     // 清空参与者和获奖者
@@ -767,6 +1014,9 @@ class LotteryService {
       drawCounts: round.drawCounts,
       pityCounters: round.pityCounters,
     });
+    // 补货后清掉售罄快速拒绝标记，并重新预热 Redis 计数。
+    clearRoundSoldOut(roundId);
+    await seedStockCounters(roundId, round.prizes).catch(() => undefined);
     logger.info(`重置抽奖轮次: ${roundId}`);
   }
 

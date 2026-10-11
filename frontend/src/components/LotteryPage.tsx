@@ -2,7 +2,9 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
-import { LotteryRound, LotteryWinner } from '../types/lottery';
+import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask } from '../types/lottery';
+import * as lotteryApi from '../api/lottery';
+import { getBackendErrorMessage } from '../utils/backendError';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useNotification } from './Notification';
@@ -21,6 +23,7 @@ import {
   InfoQueryShell,
   InfoSectionTitle,
   studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
   studioSurfaceClassName,
   studioTileClassName,
 } from './studioTheme';
@@ -435,6 +438,143 @@ const StatisticsCard: React.FC<{ stats: any }> = ({ stats }) => (
   </motion.div>
 );
 
+// 抽奖机会钱包 + 行为任务 + 积分兑换
+const LotteryWalletPanel: React.FC<{
+  chances: LotteryChances | null;
+  onRefresh: () => void | Promise<void>;
+}> = ({ chances, onRefresh }) => {
+  const { setNotification } = useNotification();
+  const [tasks, setTasks] = useState<LotteryTask[]>([]);
+  const [claiming, setClaiming] = useState<string | null>(null);
+  const [exchangeTimes, setExchangeTimes] = useState(1);
+  const [exchanging, setExchanging] = useState(false);
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setTasks(await lotteryApi.getTasks());
+    } catch {
+      // 未登录/接口暂不可用：不阻塞抽奖页其他部分。
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  const handleClaim = async (taskKey: string) => {
+    setClaiming(taskKey);
+    try {
+      const result = await lotteryApi.claimTask(taskKey);
+      setNotification({ message: `领取成功，获得 ${result.chances} 次抽奖机会`, type: 'success' });
+      await Promise.all([onRefresh(), loadTasks()]);
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '领取失败'), type: 'error' });
+    } finally {
+      setClaiming(null);
+    }
+  };
+
+  const handleExchange = async () => {
+    setExchanging(true);
+    try {
+      const result = await lotteryApi.exchangeChances(exchangeTimes);
+      setNotification({ message: `兑换成功，消耗 ${result.spent} 积分`, type: 'success' });
+      await onRefresh();
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '兑换失败'), type: 'error' });
+    } finally {
+      setExchanging(false);
+    }
+  };
+
+  const exchangeCost = chances?.exchangeCost ?? 0;
+  const assetBalance = chances?.assetBalance ?? 0;
+
+  return (
+    <motion.div
+      className={`${lotteryPanelClass} p-5 sm:p-6`}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+    >
+      <InfoSectionTitle
+        title="我的抽奖机会"
+        description="签到/浏览等任务可领机会，也可用抽奖积分按汇率兑换。"
+        icon={FaGift}
+        tone="violet"
+      />
+
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className={`${lotteryTileClass} p-3`}>
+          <div className="text-2xl font-semibold text-slate-900">{chances?.balance ?? 0}</div>
+          <div className="text-sm text-slate-600">可用抽奖机会</div>
+        </div>
+        <div className={`${lotteryTileClass} p-3`}>
+          <div className="text-2xl font-semibold text-slate-900">{assetBalance}</div>
+          <div className="text-sm text-slate-600">抽奖积分</div>
+        </div>
+        <div className={`${lotteryTileClass} p-3`}>
+          <div className="text-sm text-slate-600">每日免费：{chances?.dailyFree ?? 0} 次</div>
+          <div className="text-sm text-slate-600">兑换汇率：{exchangeCost} 积分 / 次</div>
+        </div>
+      </div>
+
+      {exchangeCost > 0 && (
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">兑换次数</label>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={exchangeTimes}
+              onChange={(e) => setExchangeTimes(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-28 rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+          <motion.button
+            type="button"
+            onClick={() => { void handleExchange(); }}
+            disabled={exchanging || assetBalance < exchangeTimes * exchangeCost}
+            className={`${studioPrimaryButtonClassName} disabled:cursor-not-allowed disabled:opacity-50`}
+            whileTap={{ scale: 0.95 }}
+          >
+            {exchanging ? '兑换中...' : `消耗 ${exchangeTimes * exchangeCost} 积分兑换`}
+          </motion.button>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {tasks.map((task) => (
+          <div
+            key={task.key}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-3 py-2"
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-slate-800">{task.label}</div>
+              <div className="text-xs text-slate-500">{task.description}</div>
+              <div className="text-xs text-slate-400">
+                每次 +{task.chances} 次 · 今日 {task.claimedToday}/{task.dailyLimit}
+              </div>
+            </div>
+            <motion.button
+              type="button"
+              onClick={() => { void handleClaim(task.key); }}
+              disabled={!task.canClaim || !task.clientClaimable || claiming === task.key}
+              className={`${studioSecondaryButtonClassName} disabled:cursor-not-allowed disabled:opacity-50`}
+              whileTap={{ scale: 0.95 }}
+              title={task.clientClaimable ? undefined : '该任务由业务系统核销后发放'}
+            >
+              {claiming === task.key ? '领取中...' : task.canClaim ? (task.clientClaimable ? '领取' : '待核销') : '已领完'}
+            </motion.button>
+          </div>
+        ))}
+        {tasks.length === 0 && <div className="py-4 text-center text-sm text-slate-400">暂无任务</div>}
+      </div>
+    </motion.div>
+  );
+};
+
 // 中奖弹窗组件
 const WinnerModal: React.FC<{ 
   winner: LotteryWinner | null; 
@@ -485,6 +625,7 @@ const LotteryPage: React.FC = () => {
     fetchActiveRounds,
     fetchLeaderboard,
     fetchStatistics,
+    fetchChances,
     participateInLottery,
     clearError
   } = useLottery();
@@ -569,6 +710,9 @@ const LotteryPage: React.FC = () => {
 
         {/* 统计信息 */}
         {statistics && <StatisticsCard stats={statistics} />}
+
+        {/* 抽奖机会 / 任务 / 兑换 */}
+        {user && <LotteryWalletPanel chances={chances} onRefresh={fetchChances} />}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* 用户记录 */}

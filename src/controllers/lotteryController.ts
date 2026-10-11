@@ -31,6 +31,9 @@ const LOTTERY_USER_FACING_ERRORS = [
   "没有可用的奖品",
   "不存在",
   "请稍后重试",
+  "积分不足",
+  "已领取完毕",
+  "需由业务系统",
 ] as const;
 
 function isUserFacingLotteryError(message: string): boolean {
@@ -103,6 +106,8 @@ function sanitizeRoundForViewer<T extends LotteryRound>(round: T, userId: string
     chanceCost: Math.max(0, Math.floor(round.chanceCost || 0)),
     drawsUsed,
     remainingDraws: Math.max(0, maxDraws - drawsUsed),
+    // 不回内部计数器（pacingAwards 会泄露贵重奖的出奖节奏）。
+    prizes: round.prizes.map(({ pacingAwards: _pacingAwards, ...prize }) => prize),
     winners: winners.map(({ userId: _ignored, ...winner }) => winner),
   } as unknown as T;
 }
@@ -186,6 +191,25 @@ export class LotteryController {
         let prizeId = typeof p.id === "string" && p.id.trim() ? p.id.trim() : "";
         if (!prizeId || seenPrizeIds.has(prizeId)) prizeId = crypto.randomUUID();
         seenPrizeIds.add(prizeId);
+        // Pacing（可选）：按时间窗配额发放
+        let pacing: { periodMs: number; quotaPerWindow: number } | undefined;
+        if (p.pacing && typeof p.pacing === "object") {
+          const periodMs = boundedInt((p.pacing as Record<string, unknown>).periodMs, {
+            min: 60_000,
+            max: 30 * 24 * 60 * 60 * 1000,
+            fallback: 0,
+          });
+          const quotaPerWindow = boundedInt((p.pacing as Record<string, unknown>).quotaPerWindow, {
+            min: 1,
+            max: MAX_PRIZE_QUANTITY,
+            fallback: 0,
+          });
+          if (periodMs < 60_000 || quotaPerWindow < 1) {
+            res.status(400).json({ success: false, error: "奖品 Pacing 配置非法（periodMs ≥ 60000 且 quotaPerWindow ≥ 1）" });
+            return;
+          }
+          pacing = { periodMs, quotaPerWindow };
+        }
         normalizedPrizes.push({
           id: prizeId,
           name: p.name,
@@ -195,6 +219,7 @@ export class LotteryController {
           quantity,
           remaining: quantity,
           category: typeof p.category === "string" && PRIZE_CATEGORIES.has(p.category) ? p.category : "common",
+          ...(pacing ? { pacing } : {}),
           ...(typeof p.image === "string" && p.image ? { image: p.image } : {}),
         });
       }
@@ -475,6 +500,128 @@ export class LotteryController {
       res.json({ success: true, data: { userId: targetUserId, balance }, message: "抽奖机会已发放" });
     } catch (error) {
       logger.error("发放抽奖机会失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 发放抽奖积分（仅超管）
+  public async grantAssets(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const targetUserId = firstString(req.body?.userId);
+      const amount = boundedInt(req.body?.amount, { min: 1, max: 10_000_000, fallback: 0 });
+      if (!targetUserId || amount < 1) {
+        res.status(400).json({ success: false, error: "参数非法（需要 userId 与正整数 amount）" });
+        return;
+      }
+      const balance = await lotteryService.grantAssets(targetUserId, amount, {
+        userId: req.user?.id || "",
+        username: req.user?.username || "",
+        role: req.user?.role || "",
+        ip: req.ip,
+      });
+      res.json({ success: true, data: { userId: targetUserId, balance }, message: "抽奖积分已发放" });
+    } catch (error) {
+      logger.error("发放抽奖积分失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 行为任务列表与今日领取状态
+  public async getTasks(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      const tasks = await lotteryService.getTaskStatus(userId);
+      res.json({ success: true, data: tasks });
+    } catch (error) {
+      logger.error("获取抽奖任务失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 领取任务机会
+  public async claimTask(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const taskKey = firstString(req.params.taskKey);
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      if (!taskKey) {
+        res.status(400).json({ success: false, error: "无效的任务标识" });
+        return;
+      }
+      const result = await lotteryService.claimTaskChances(userId, taskKey);
+      res.json({ success: true, data: result, message: `已领取 ${result.chances} 次抽奖机会` });
+    } catch (error) {
+      logger.error("领取抽奖任务失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // 积分兑换抽奖机会
+  public async exchangeChances(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: "用户未登录" });
+        return;
+      }
+      const times = boundedInt(req.body?.times, { min: 1, max: 1000, fallback: 0 });
+      if (times < 1) {
+        res.status(400).json({ success: false, error: "参数非法（times 需为正整数）" });
+        return;
+      }
+      const result = await lotteryService.exchangeChances(userId, times);
+      res.json({ success: true, data: result, message: "兑换成功" });
+    } catch (error) {
+      logger.error("兑换抽奖机会失败:", error);
+      if (error instanceof Error && isUserFacingLotteryError(error.message)) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // T+0 库存对账（仅超管）
+  public async getT0Reconciliation(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const reports = await lotteryService.runT0Reconciliation();
+      res.json({ success: true, data: reports });
+    } catch (error) {
+      logger.error("T+0 对账失败:", error);
+      res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
+    }
+  }
+
+  // T+1 价值对账（仅超管）
+  public async getT1Reconciliation(req: Request, res: Response): Promise<void> {
+    try {
+      if (!isSuperAdmin(req)) {
+        res.status(403).json({ success: false, error: "权限不足" });
+        return;
+      }
+      const report = await lotteryService.runT1Reconciliation();
+      res.json({ success: true, data: report });
+    } catch (error) {
+      logger.error("T+1 对账失败:", error);
       res.status(500).json({ success: false, error: SERVER_ERROR_MESSAGE });
     }
   }

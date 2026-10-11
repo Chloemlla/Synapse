@@ -54,6 +54,16 @@ router.get("/user/record", authenticateToken, lotteryLimiter, lotteryController.
 router.get("/chances", authenticateToken, lotteryLimiter, lotteryController.getChances.bind(lotteryController));
 // 发放抽奖机会（仅超管）
 router.post("/chances/grant", authenticateToken, lotteryLimiter, lotteryController.grantChances.bind(lotteryController));
+// 发放抽奖积分（仅超管）
+router.post("/assets/grant", authenticateToken, lotteryLimiter, lotteryController.grantAssets.bind(lotteryController));
+// 积分兑换抽奖机会
+router.post("/chances/exchange", authenticateToken, lotteryLimiter, lotteryController.exchangeChances.bind(lotteryController));
+// 行为任务列表与领取
+router.get("/tasks", authenticateToken, lotteryLimiter, lotteryController.getTasks.bind(lotteryController));
+router.post("/tasks/:taskKey/claim", authenticateToken, lotteryLimiter, lotteryController.claimTask.bind(lotteryController));
+// 对账（仅超管）
+router.get("/reconciliation/t0", authenticateToken, lotteryLimiter, lotteryController.getT0Reconciliation.bind(lotteryController));
+router.get("/reconciliation/t1", authenticateToken, lotteryLimiter, lotteryController.getT1Reconciliation.bind(lotteryController));
 // 涉及数据库写入：参与抽奖（更新用户、轮次等）
 router.post(
   "/rounds/:roundId/participate",

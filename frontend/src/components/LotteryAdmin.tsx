@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useLottery } from '../hooks/useLottery';
-import { LotteryPrize, LotteryRound } from '../types/lottery';
+import { LotteryPrize, LotteryRound, LotteryT0Report, LotteryT1Report } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -608,7 +608,9 @@ const GrantChancesPanel: React.FC = () => {
   const { setNotification } = useNotification();
   const [targetUserId, setTargetUserId] = useState('');
   const [amount, setAmount] = useState(1);
+  const [assetAmount, setAssetAmount] = useState(100);
   const [granting, setGranting] = useState(false);
+  const [grantingAssets, setGrantingAssets] = useState(false);
 
   const handleGrant = async () => {
     const trimmed = targetUserId.trim();
@@ -624,6 +626,23 @@ const GrantChancesPanel: React.FC = () => {
       setNotification({ message: getBackendErrorMessage(error, '发放失败'), type: 'error' });
     } finally {
       setGranting(false);
+    }
+  };
+
+  const handleGrantAssets = async () => {
+    const trimmed = targetUserId.trim();
+    if (!trimmed || assetAmount < 1) {
+      setNotification({ message: '请填写用户 ID 与正整数积分', type: 'warning' });
+      return;
+    }
+    setGrantingAssets(true);
+    try {
+      const result = await lotteryApi.grantAssets(trimmed, assetAmount);
+      setNotification({ message: `已发放 ${assetAmount} 积分，当前余额 ${result.balance} 积分`, type: 'success' });
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '发放积分失败'), type: 'error' });
+    } finally {
+      setGrantingAssets(false);
     }
   };
 
@@ -670,6 +689,104 @@ const GrantChancesPanel: React.FC = () => {
       >
         {granting ? '发放中...' : '发放机会'}
       </motion.button>
+
+      <div className="mt-6 border-t border-slate-200 pt-4">
+        <h4 className="mb-2 text-sm font-semibold text-slate-700">发放抽奖积分（用于兑换机会）</h4>
+        <div className="flex flex-wrap items-end gap-3">
+          <input
+            type="number"
+            min={1}
+            max={10000000}
+            value={assetAmount}
+            onChange={(e) => setAssetAmount(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-40 rounded-2xl border-2 border-slate-200 px-3 py-2 transition-all focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <motion.button
+            type="button"
+            onClick={() => { void handleGrantAssets(); }}
+            disabled={grantingAssets}
+            className="rounded-2xl bg-slate-900 px-4 py-2 font-medium text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+            whileTap={{ scale: 0.95 }}
+          >
+            {grantingAssets ? '发放中...' : '发放积分'}
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// T+0 / T+1 对账面板
+const ReconciliationPanel: React.FC = () => {
+  const { setNotification } = useNotification();
+  const [t0, setT0] = useState<LotteryT0Report[] | null>(null);
+  const [t1, setT1] = useState<LotteryT1Report | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const [t0Report, t1Report] = await Promise.all([
+        lotteryApi.getT0Reconciliation(),
+        lotteryApi.getT1Reconciliation(),
+      ]);
+      setT0(t0Report);
+      setT1(t1Report);
+      setNotification({ message: '对账完成', type: 'success' });
+    } catch (error) {
+      setNotification({ message: getBackendErrorMessage(error, '对账失败'), type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const t0Drift = (t0 ?? []).reduce((sum, report) => sum + report.driftPrizes, 0);
+
+  return (
+    <motion.div
+      className={cn(studioPanelClassName, 'p-4')}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+    >
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-800">
+        <FaChartBar className="text-lg text-slate-500" />
+        库存与价值对账
+      </h3>
+      <motion.button
+        type="button"
+        onClick={() => { void run(); }}
+        disabled={loading}
+        className="rounded-2xl bg-slate-900 px-4 py-2 font-medium text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+        whileTap={{ scale: 0.95 }}
+      >
+        {loading ? '对账中...' : '运行对账（T+0 / T+1）'}
+      </motion.button>
+
+      {t0 && (
+        <div className="mt-4 text-sm text-slate-700">
+          <div>T+0：{t0.length} 个轮次，{t0Drift} 个奖品存在库存偏差。</div>
+          {t0Drift > 0 && (
+            <ul className="mt-2 list-disc pl-5 text-xs text-rose-600">
+              {t0.flatMap((report) =>
+                report.prizes
+                  .filter((prize) => prize.drift !== 0)
+                  .map((prize) => (
+                    <li key={`${report.roundId}-${prize.prizeId}`}>
+                      {report.roundName} / {prize.name}：DB 剩余 {prize.dbRemaining}，应剩 {prize.expectedRemaining}（偏差 {prize.drift}）
+                    </li>
+                  )),
+              )}
+            </ul>
+          )}
+          {t1 && (
+            <div className="mt-2">
+              T+1：中奖记录价值 {t1.winnerTotalValue}，用户累计价值 {t1.userTotalValue}，偏差 {t1.valueDrift}
+              {t1.mismatchedUsers.length > 0 && `（${t1.mismatchedUsers.length} 个用户不一致）`}
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };
@@ -842,6 +959,7 @@ const LotteryAdmin: React.FC = () => {
       </motion.div>
 
       <GrantChancesPanel />
+      <ReconciliationPanel />
     </motion.div>
   );
 }; 

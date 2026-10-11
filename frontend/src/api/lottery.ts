@@ -5,6 +5,9 @@ import {
   UserLotteryRecord, 
   LotteryStatistics,
   LotteryChances,
+  LotteryTask,
+  LotteryT0Report,
+  LotteryT1Report,
   LotteryApiResponse 
 } from '../types/lottery';
 import getApiBaseUrl, { getApiBaseUrl as namedGetApiBaseUrl } from '../api';
@@ -120,6 +123,43 @@ export async function grantChances(userId: string, amount: number): Promise<{ us
     method: 'POST',
     body: JSON.stringify({ userId, amount }),
   });
+}
+
+// 发放抽奖积分（超管）
+export async function grantAssets(userId: string, amount: number): Promise<{ userId: string; balance: number }> {
+  return apiRequest<{ userId: string; balance: number }>('/assets/grant', {
+    method: 'POST',
+    body: JSON.stringify({ userId, amount }),
+  });
+}
+
+// 积分兑换抽奖机会
+export async function exchangeChances(times: number): Promise<{ balance: number; assetBalance: number; spent: number }> {
+  return apiRequest<{ balance: number; assetBalance: number; spent: number }>('/chances/exchange', {
+    method: 'POST',
+    body: JSON.stringify({ times }),
+  });
+}
+
+// 行为任务列表与领取
+export async function getTasks(): Promise<LotteryTask[]> {
+  return apiRequest<LotteryTask[]>('/tasks');
+}
+
+export async function claimTask(taskKey: string): Promise<{ balance: number; chances: number; claimedToday: number }> {
+  return apiRequest<{ balance: number; chances: number; claimedToday: number }>(
+    `/tasks/${encodeURIComponent(taskKey)}/claim`,
+    { method: 'POST' },
+  );
+}
+
+// 对账（超管）
+export async function getT0Reconciliation(): Promise<LotteryT0Report[]> {
+  return apiRequest<LotteryT0Report[]>('/reconciliation/t0');
+}
+
+export async function getT1Reconciliation(): Promise<LotteryT1Report> {
+  return apiRequest<LotteryT1Report>('/reconciliation/t1');
 }
 
 // 获取排行榜
