@@ -891,6 +891,26 @@ function normalizeStoredAccountRiskConfig(
     stepUpGrantTtlSeconds: normalizeInteger(raw.stepUpGrantTtlSeconds, defaults.stepUpGrantTtlSeconds, 5, 600),
     stepUpGrantMaxUses: normalizeInteger(raw.stepUpGrantMaxUses, defaults.stepUpGrantMaxUses, 1, 5),
     ipRecheckEnabled: normalizeBoolean(raw.ipRecheckEnabled, defaults.ipRecheckEnabled),
+    sharingDetectionEnabled: normalizeBoolean(raw.sharingDetectionEnabled, defaults.sharingDetectionEnabled),
+    sharingSessionWindowMinutes: normalizeInteger(
+      raw.sharingSessionWindowMinutes,
+      defaults.sharingSessionWindowMinutes,
+      1,
+      120,
+    ),
+    sharingMinDevices: normalizeInteger(raw.sharingMinDevices, defaults.sharingMinDevices, 2, 50),
+    sharingMinCountries: normalizeInteger(raw.sharingMinCountries, defaults.sharingMinCountries, 2, 20),
+    sharingMinConcurrentSessions: normalizeInteger(
+      raw.sharingMinConcurrentSessions,
+      defaults.sharingMinConcurrentSessions,
+      2,
+      50,
+    ),
+    sharingScoreWeight: normalizeInteger(raw.sharingScoreWeight, defaults.sharingScoreWeight, 0, 100),
+    fingerprintComponentsEnabled: normalizeBoolean(
+      raw.fingerprintComponentsEnabled,
+      defaults.fingerprintComponentsEnabled,
+    ),
   };
 }
 

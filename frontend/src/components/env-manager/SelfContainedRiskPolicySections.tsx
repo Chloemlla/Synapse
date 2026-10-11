@@ -301,6 +301,14 @@ const ACCOUNT_RISK_FIELDS: FieldSpec[] = [
   { key: 'stepUpGrantMaxUses', label: 'Grant 最大兑换次数', type: 'number', min: 1, max: 5 },
   // RC-26 / RC-56：登录后出口风险复查（默认关，先观察期）。
   { key: 'ipRecheckEnabled', label: '登录后复查出口风险', type: 'boolean', hint: '中风险弹验证、高风险封 IP（仅对观察及以上档位、每用户 5 分钟一次；默认关闭）' },
+  // RC-16 / RC-17：行为指纹与拼车检测。
+  { key: 'fingerprintComponentsEnabled', label: '设备指纹分量比对', type: 'boolean', hint: '上行 Canvas/WebGL/时区/屏幕四路分量摘要，用于分量漂移与跨账户共用判定（只写事实与事件）' },
+  { key: 'sharingDetectionEnabled', label: '拼车/共享账号检测', type: 'boolean', hint: '三条件联立（多设备 + 多地区 + 高并发会话）或同一设备分量跨账户出现时标记；观察期可关' },
+  { key: 'sharingMinDevices', label: '拼车：最少设备数', type: 'number', min: 2, max: 50 },
+  { key: 'sharingMinCountries', label: '拼车：最少地区数', type: 'number', min: 2, max: 20 },
+  { key: 'sharingMinConcurrentSessions', label: '拼车：并发会话阈值', type: 'number', min: 2, max: 50 },
+  { key: 'sharingSessionWindowMinutes', label: '并发会话窗口（分钟）', type: 'number', min: 1, max: 120 },
+  { key: 'sharingScoreWeight', label: '拼车旗标权重', type: 'number', min: 0, max: 100, hint: 'ACCOUNT_SHARING_SUSPECTED 对风控分的加分（默认 20）' },
 ];
 
 const SECURITY_SESSION_FIELDS: FieldSpec[] = [  { key: 'ttlSeconds', label: '安全会话有效期（秒）', type: 'number', min: 60, max: 3600, hint: '建议 180～300 秒；越短越安全，但管理员会被更频繁地要求重新验证' },

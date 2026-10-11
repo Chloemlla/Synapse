@@ -58,6 +58,11 @@ export interface AccountRiskFacts {
    * **只作为加权信号**：客户端可伪造，单独不足以升档（不能让它成为“被封的开关”）。
    */
   automationHint?: boolean;
+  /**
+   * RC-17：拼车/共享账号嫌疑。由 `detectAccountSharingSuspected` 在服务层聚合得出
+   *（三条件联立，或同一设备分量跨账户出现），这里只负责折算成旗标与权重。
+   */
+  sharingSuspected?: boolean;
 }
 
 export type AccountRiskFlag =
@@ -68,7 +73,8 @@ export type AccountRiskFlag =
   | "COMPROMISED_DEVICE"
   | "ACCOUNT_ABUSE_EVENTS"
   | "GEO_JUMP"
-  | "AUTOMATION_HINT";
+  | "AUTOMATION_HINT"
+  | "ACCOUNT_SHARING_SUSPECTED";
 
 export interface AccountRiskAssessment {
   /** 0-100，越高越危险。 */
@@ -101,7 +107,9 @@ function capTier(tier: AccountRiskTier, cap: AccountRiskRuntimeConfig["autoEscal
  * - 高危登录占比 × 25：区分「偶然走了一次机房」与「长期从高危出口登录」；
  * - 设备最高风险分 × 0.2：移动端设备证明已有的结论；
  * - 滥用事件：每件 +10，最多 +30（高频触发违规拦截是账户级特征，RC-20）；
- * - 失陷设备 +15；跨地域跳变 +10。
+ * - 失陷设备 +15；跨地域跳变 +10；
+ * - 拼车/共享账号嫌疑 `sharingSuspected` +`sharingScoreWeight`（默认 20，RC-17。
+ *   与 `AUTOMATION_HINT` 并列，两者相加仍到不了 `restricted`，需要与 IP/设备信号叠加）。
  * 阈值与权重都是运行时配置的一部分，改阈值不改公式。
  */
 export function evaluateAccountRiskScore(
@@ -165,6 +173,13 @@ export function evaluateAccountRiskScore(
     reasons.push("检测到自动化/调试环境痕迹（仅作加权信号）");
   }
 
+  // RC-17：拼车/共享账号嫌疑。三条件联立（多设备 + 多地区 + 高并发会话）或同一设备分量
+  // 跨账户出现才会置位；权重由配置给出（默认 20），供观察期逐步收紧。
+  if (facts.sharingSuspected) {
+    flags.push("ACCOUNT_SHARING_SUSPECTED");
+    reasons.push("疑似账号共享/拼车（多设备、跨地区与高并发会话同时命中，或设备分量跨账户复用）");
+  }
+
   const deviceMax = typeof facts.deviceMaxRiskScore === "number" ? Math.max(0, facts.deviceMaxRiskScore) : 0;
   const score = clampScore(
     ipMax * 0.45 +
@@ -173,7 +188,8 @@ export function evaluateAccountRiskScore(
       Math.min(30, abuseEvents * 10) +
       (compromised > 0 ? 15 : 0) +
       (facts.geoJump ? 10 : 0) +
-      (facts.automationHint ? 8 : 0),
+      (facts.automationHint ? 8 : 0) +
+      (facts.sharingSuspected ? Math.max(0, config.sharingScoreWeight) : 0),
   );
 
   let tier: AccountRiskTier = "normal";
@@ -196,6 +212,46 @@ export function evaluateAccountRiskScore(
     flags,
     reasons,
   };
+}
+
+/**
+ * 拼车/共享账号判定的事实（RC-17）。
+ *
+ * 「并发」用 `auth_sessions.lastActivityAt` 的滑动窗口统计，这是**区分「拼车」与「正常多端」
+ * 的关键指标**：正常用户设备再多也是交替使用，拼车是持续同时在用。
+ */
+export interface AccountSharingFacts {
+  distinctDeviceCount: number;
+  distinctIpCount: number;
+  distinctCountryCount: number;
+  /** 窗口内仍活跃的会话数（`revokedAt: null` 且 `lastActivityAt` 在窗口内）。 */
+  concurrentSessionCount: number;
+  /** RC-16：同一设备分量（WebGL/Canvas hash）在其他账户出现。 */
+  fingerprintSharedAcrossAccounts: boolean;
+}
+
+/**
+ * 纯函数：是否判定为拼车/共享账号嫌疑（RC-17）。
+ *
+ * 两条独立路径：
+ * 1. **三条件联立**（缺一不可，否则误报率不可接受）：不同设备数 ≥ 阈值 **且**
+ *    不同国家/地区数 ≥ 阈值 **且** 并发活跃会话数 ≥ 阈值；
+ * 2. **设备分量跨账户**（RC-16 的 `sharedAcrossAccounts`）：同一硬件被多个账号用，
+ *    比 IP 可靠且不受 NAT 影响，因此单独成立。
+ *
+ * `sharingDetectionEnabled=false` 时恒为 false（观察期可整体关掉，不改动其它信号的评分）。
+ * IP 维度**只参与「不同地区数」**，绝不单独判定 —— 企业/校园 NAT 会让大量无关用户共享出口 IP。
+ */
+export function detectAccountSharingSuspected(
+  facts: AccountSharingFacts,
+  config: AccountRiskRuntimeConfig,
+): boolean {
+  if (!config.sharingDetectionEnabled) return false;
+  if (facts.fingerprintSharedAcrossAccounts) return true;
+  const multiDevice = (facts.distinctDeviceCount || 0) >= config.sharingMinDevices;
+  const multiCountry = (facts.distinctCountryCount || 0) >= config.sharingMinCountries;
+  const concurrent = (facts.concurrentSessionCount || 0) >= config.sharingMinConcurrentSessions;
+  return multiDevice && multiCountry && concurrent;
 }
 
 /** 升档时签发的逐步验证到期时间：到期未续期即退出，避免「永久每次验证」把用户卡死。 */

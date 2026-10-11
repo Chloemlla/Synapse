@@ -25,7 +25,7 @@ export interface PrivacyDataMapDataset {
 }
 
 export const PRIVACY_DATA_MAP_VERSION = 1;
-export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-10";
+export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-11";
 export const PRIVACY_DATA_CATEGORY_ORDER = [
   "账户与身份",
   "安全与风控",
@@ -162,6 +162,18 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     category: "安全与风控",
     what: "用户 ID、登录 IP、IP 属地、首次与最近登录时间、登录次数，以及该 IP 的风险分与判定旗标（含机房/IDC 判据）。",
     why: "把「历来登录 IP 的风险」沉淀到账户维度，用于识别多账号注册、盗号与自动化滥用；风险分本身来自第三方 IP 风险库。",
+    retention: "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
+    policySection: "data-use",
+    retentionType: "account_linked",
+    exportable: "none",
+    deleteOnUserDelete: "retained",
+  },
+  {
+    id: "device-fingerprints",
+    label: "设备指纹分量摘要",
+    category: "安全与风控",
+    what: "设备指纹 ID、Canvas/WebGL/时区/屏幕四路特征各自的哈希摘要（不含原始图像），以及首次与最近出现时间、漂移次数与来源 IP。",
+    why: "识别同一设备更换浏览器沙箱或伪装后指纹 ID 变化（仍可判定为同一硬件），以及同一硬件被多个账号共用（判定共享账号/一人多号）。",
     retention: "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
     policySection: "data-use",
     retentionType: "account_linked",
@@ -329,7 +341,7 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
 export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = {
   "账户与身份": ["mobile-client-tokens"],
-  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports"],
+  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports"],
   "服务与业务": ["tts-jobs", "recommendation-feedback"],
   "合规与审计": ["policy-consents", "audit-logs"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],

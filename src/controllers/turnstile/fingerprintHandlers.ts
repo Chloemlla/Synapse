@@ -1,4 +1,7 @@
 import type { Request, Response } from "express";
+import { config } from "../../config/config";
+import { evaluateAccountRisk } from "../../services/accountRiskService";
+import { analyzeFingerprintSignals, recordDeviceFingerprint } from "../../services/deviceFingerprintService";
 import { TurnstileService } from "../../services/turnstileService";
 import { sanitizeString, validateFingerprint } from "../../services/turnstile/validators";
 import logger from "../../utils/logger";
@@ -108,6 +111,32 @@ export async function reportFingerprint(req: Request, res: Response) {
         wsService.notifyFingerprintAck(userId);
       } catch (_wsErr) {
         // WS 推送失败不影响主流程
+      }
+
+      // RC-16：把分量摘要写进 `device_fingerprints`（跨账户 / 漂移比对的事实源）。
+      // 放在响应之前**不 await**：指纹事实是增强证据，不能让一次 Mongo 写入拖慢上报接口；
+      // 失败只记日志（与上面“保存到用户记录”失败的容忍度一致）。
+      if (config.accountRisk.fingerprintComponentsEnabled) {
+        void (async () => {
+          try {
+            await recordDeviceFingerprint({
+              userId,
+              fingerprintId: safeFingerprint,
+              components: req.body?.components,
+              ipAddress: validatedClientIp,
+              source: "fingerprint_report",
+            });
+            // 先写 FP_* 信号事件（分析自带 24h 去重），再重新聚合一次账户风险，
+            // 让新出现的跨账户共用 / 分量漂移不必等到下一次登录才生效。
+            await analyzeFingerprintSignals(userId);
+            await evaluateAccountRisk(userId, { reason: "fingerprint_report" });
+          } catch (riskError) {
+            logger.debug("[Fingerprint] 指纹分量风控链路失败（不影响上报）", {
+              userId,
+              error: riskError instanceof Error ? riskError.message : String(riskError),
+            });
+          }
+        })();
       }
     } catch (saveError) {
       logger.error("[Fingerprint] 保存指纹到用户记录失败", { error: saveError, userId });

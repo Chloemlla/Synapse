@@ -1,20 +1,25 @@
 import { config } from "../config/config";
 import { AccountIpSignal } from "../models/accountIpSignalModel";
+import { AuthSessionModel } from "../models/authSessionModel";
 import { DeviceTracking } from "../models/deviceTrackingModel";
 import { SecurityEvent } from "../models/securityEventModel";
 import {
   computeStepUpUntil,
+  detectAccountSharingSuspected,
   evaluateAccountRiskScore,
   tierRank,
   type AccountIpRiskFact,
   type AccountRiskAssessment,
   type AccountRiskTier,
+  type AccountSharingFacts,
 } from "../utils/accountRiskScoring";
 import logger from "../utils/logger";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { AuditLogService } from "./auditLogService";
 import { setApiKeyPenalty } from "./apiKeyService";
 import { getLatestAuthSessionIpLocation, revokeAllAuthSessions } from "./authSessionService";
+import { loadDeviceFingerprintFacts, type DeviceFingerprintSignalFacts } from "./deviceFingerprintService";
+import { isMeaningfulLocation } from "./ipTelemetryService";
 import { getCachedIpRisk, getIpRisk, type IpRiskResult } from "./ipRiskService";
 import { mongoose } from "./mongoService";
 import { isRiskExempt } from "./riskExemption";
@@ -295,6 +300,102 @@ async function loadIpRiskFacts(userId: string, since: Date): Promise<AccountIpRi
   }));
 }
 
+/** 拼车判定的空事实：关开关/查询失败时使用，使评分函数的行为可预测。 */
+export const EMPTY_SHARING_FACTS: AccountSharingFacts = {
+  distinctDeviceCount: 0,
+  distinctIpCount: 0,
+  distinctCountryCount: 0,
+  concurrentSessionCount: 0,
+  fingerprintSharedAcrossAccounts: false,
+};
+
+/** 指纹信号的空事实：开关关闭时使用（不再查 `device_fingerprints`）。 */
+const EMPTY_FINGERPRINT_FACTS: DeviceFingerprintSignalFacts = {
+  fingerprintCount: 0,
+  componentDrift: false,
+  driftFingerprintIds: [],
+  sharedAcrossAccounts: false,
+  sharedFingerprintIds: [],
+  sharedComponentHashes: [],
+};
+
+/**
+ * 属地字符串里的国家/地区（形如 `"中国, 北京, 北京 运营商: 中国联通"`）。
+ * “未知”等失败哨兵不参与计数 —— 宁可少算一个国家，也不要把“查不到”当“换了个国家”。
+ */
+function countryOf(location: unknown): string {
+  const raw = typeof location === "string" ? location.trim() : "";
+  if (!raw || !isMeaningfulLocation(raw)) return "";
+  const first = raw.split(",")[0]?.trim() || "";
+  return first.slice(0, 64);
+}
+
+function safeCount(promise: Promise<number>, label: string, userId: string): Promise<number> {
+  return promise.catch((error) => {
+    logger.warn(`[AccountRisk] ${label}失败（按 0 处理）`, {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  });
+}
+
+/**
+ * 聚合拼车/共享账号所需的事实（RC-17）。
+ *
+ * 三个维度各自独立查询、各自容错：一个维度挂掉不应该让其余维度也退化成 0
+ *（否则一次 Mongo 抖动就会把“有嫌疑”静默变成“没嫌疑”）。
+ * 设备数直接数 `device_trackings`（唯一键是 (userId, deviceFingerprint)，行数即不同设备数）。
+ */
+async function loadSharingFacts(userId: string, since: Date, now: number): Promise<AccountSharingFacts> {
+  const windowMinutes = Math.max(1, config.accountRisk.sharingSessionWindowMinutes);
+  const sessionWindowStart = new Date(now - windowMinutes * 60 * 1000);
+
+  const [distinctDeviceCount, distinctIpCount, ipRows, concurrentSessionCount] = await Promise.all([
+    safeCount(DeviceTracking.countDocuments({ userId }).exec(), "拼车设备数统计", userId),
+    safeCount(
+      AccountIpSignal.countDocuments({ userId, lastSeenAt: { $gte: since } }).exec(),
+      "拼车登录 IP 数统计",
+      userId,
+    ),
+    AccountIpSignal.find({ userId, lastSeenAt: { $gte: since } })
+      .select("ipLocation")
+      .limit(200)
+      .lean()
+      .then((rows) => rows as Array<{ ipLocation?: string }>)
+      .catch((error) => {
+        logger.warn("[AccountRisk] 拼车地区统计失败（按 0 处理）", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [] as Array<{ ipLocation?: string }>;
+      }),
+    safeCount(
+      AuthSessionModel.countDocuments({
+        userId,
+        revokedAt: null,
+        lastActivityAt: { $gte: sessionWindowStart },
+      }).exec(),
+      "并发会话统计",
+      userId,
+    ),
+  ]);
+
+  const countries = new Set<string>();
+  for (const row of ipRows) {
+    const country = countryOf(row?.ipLocation);
+    if (country) countries.add(country);
+  }
+
+  return {
+    distinctDeviceCount,
+    distinctIpCount,
+    distinctCountryCount: countries.size,
+    concurrentSessionCount,
+    fingerprintSharedAcrossAccounts: false,
+  };
+}
+
 function sameFlags(a: string[] | undefined, b: string[]): boolean {
   const left = Array.isArray(a) ? [...a].sort() : [];
   const right = [...b].sort();
@@ -332,13 +433,31 @@ export async function evaluateAccountRisk(
   const now = Date.now();
   const since = new Date(now - cfg.windowDays * DAY_MS);
 
-  const [ipSignals, deviceFacts, abuseEventCount] = await Promise.all([
+  const [ipSignals, deviceFacts, abuseEventCount, sharingFacts, fingerprintFacts] = await Promise.all([
     loadIpRiskFacts(userId, since),
     loadDeviceRiskFacts(userId),
     countRecentAbuseEvents(userId, since),
+    cfg.sharingDetectionEnabled
+      ? loadSharingFacts(userId, since, now)
+      : Promise.resolve(EMPTY_SHARING_FACTS),
+    cfg.fingerprintComponentsEnabled ? loadDeviceFingerprintFacts(userId) : Promise.resolve(EMPTY_FINGERPRINT_FACTS),
   ]);
 
   const createdAt = state.createdAt ? Date.parse(state.createdAt) : Number.NaN;
+
+  // RC-17.4：`trusted` 是“经管理员确认的多设备账户”（手机 + 平板 + 两台电脑是常态），
+  // 只有它豁免拼车判定；其余账户一律按三条件联立或跨账户分量判定。
+  const trustedMultiDevice = state.role === "trusted";
+  const sharingSuspected =
+    !trustedMultiDevice &&
+    detectAccountSharingSuspected(
+      { ...sharingFacts, fingerprintSharedAcrossAccounts: fingerprintFacts.sharedAcrossAccounts },
+      cfg,
+    );
+
+  // RC-16：分量漂移本身不是独立旗标（用户明确要求评分层只保留
+  // ACCOUNT_SHARING_SUSPECTED 与 AUTOMATION_HINT），因此归入自动化痕迹的加权信号。
+  const automationHint = deviceFacts.automationHint || fingerprintFacts.componentDrift;
 
   const assessment = evaluateAccountRiskScore(
     {
@@ -348,7 +467,8 @@ export async function evaluateAccountRisk(
       deviceMaxRiskScore: deviceFacts.deviceMaxRiskScore,
       compromisedDeviceCount: deviceFacts.compromisedDeviceCount,
       recentAbuseEventCount: abuseEventCount,
-      automationHint: deviceFacts.automationHint,
+      automationHint,
+      sharingSuspected,
       // RC-15（跨地域跳变）在 B7 接线；此处显式传 false，避免「没接线却像接了」。
       geoJump: false,
     },

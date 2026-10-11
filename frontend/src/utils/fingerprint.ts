@@ -176,6 +176,31 @@ function buildCompositeFingerprint(): string {
   return safeHash(JSON.stringify(data));
 }
 
+/** RC-16：上行的分量摘要（四路各自 hash，不含原始图像）。 */
+export interface FingerprintComponents {
+  can: string;
+  wgl: string;
+  tz: string;
+  scr: string;
+}
+
+/**
+ * RC-16：构建分量摘要。
+ *
+ * 与 `buildCompositeFingerprint` 共用同一批采集函数（不新增采集面），区别只在于
+ * **不再只保留最终复合 id**：服务端拿到 can/wgl/tz/scr 四路各自 hash 之后，才能回答
+ * 「换浏览器沙箱 / 伪装 canvas 导致 id 变了，但对方是不是同一硬件」。
+ * tz/scr 这两路在复合指纹里是原始对象，这里按同一口径哈希后上行。
+ */
+export function buildFingerprintComponents(): FingerprintComponents {
+  return {
+    can: getCanvasFingerprint(),
+    wgl: getWebGLFingerprint(),
+    tz: safeHash(JSON.stringify(getTimezoneSignals())),
+    scr: safeHash(JSON.stringify(getScreenSignals())),
+  };
+}
+
 async function getWithFingerprintJS(timeoutMs = 1500): Promise<string | null> {
   try {
     const ctrl = new AbortController();
@@ -414,12 +439,15 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
 
   const requestPayload = {
     fingerprint,
+    // RC-16：分量摘要。旧服务端会忽略该字段（向后兼容），新服务端用它做漂移 / 跨账户比对。
+    components: buildFingerprintComponents(),
     deviceSignals
   };
 
   console.log(' 准备发送指纹上报请求:', {
     fingerprint: fingerprint.substring(0, 8) + '...',
     signalGroups: Object.keys(deviceSignals),
+    componentKeys: Object.keys(requestPayload.components),
   });
 
   try {

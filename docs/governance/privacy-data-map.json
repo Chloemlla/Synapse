@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-10",
+  "updatedAt": "2026-10-11",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
@@ -10,7 +10,8 @@
     "2026-10-03: audit_logs TTL narrowed 90d -> 60d (AUDIT_LOG_RETENTION_DAYS in src/models/auditLogModel.ts). Existing deployments must run `ts-node src/scripts/applyAuditLogTtl.ts` to change the live index in place \u2014 editing the schema alone does not update an existing TTL index.",
     "2026-10-03: every dataset now carries a userFacing block (Chinese label / category / what / why / retention + the policy section that explains it). The privacy policy page renders that block through src/generated/privacyDataMap.ts, so the page cannot drift from this contract; `pnpm run check:privacy-data-map` enforces the generated file in CI.",
     "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations).",
-    "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead."
+    "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead.",
+    "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries."
   ],
   "datasets": [
     {
@@ -347,6 +348,34 @@
         "reason": "Security telemetry; export only via admin forensic tooling"
       },
       "evidence": ["src/models/accountIpSignalModel.ts"]
+    },
+    {
+      "id": "device-fingerprints",
+      "collection": "device_fingerprints",
+      "fields": ["userId", "fingerprintId", "componentHashes.can", "componentHashes.wgl", "componentHashes.tz", "componentHashes.scr", "previousComponentHashes", "firstSeenAt", "lastSeenAt", "seenCount", "driftCount", "lastDriftAt", "ips", "sources"],
+      "purpose": "Per-account device fingerprint component hashes used to detect component drift and cross-account hardware reuse (RC-16)",
+      "legalBasis": "security_and_abuse_prevention",
+      "userFacing": {
+      "label": "设备指纹分量摘要",
+      "category": "安全与风控",
+      "what": "设备指纹 ID、Canvas/WebGL/时区/屏幕四路特征各自的哈希摘要（不含原始图像），以及首次与最近出现时间、漂移次数与来源 IP。",
+      "why": "识别同一设备更换浏览器沙箱或伪装后指纹 ID 变化（仍可判定为同一硬件），以及同一硬件被多个账号共用（判定共享账号/一人多号）。",
+      "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
+      "policySection": "data-use"
+      },
+      "retention": {
+        "type": "account_linked",
+        "description": "No TTL by design: fingerprint evidence must survive account deletion (RC-22 legal hold); the source IP list keeps only the latest 20 entries"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "retained as risk evidence; removed only after the retention window and a legal-hold check"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Security telemetry; export only via admin forensic tooling"
+      },
+      "evidence": ["src/models/deviceFingerprintModel.ts"]
     },
     {
       "id": "registration-attempts",

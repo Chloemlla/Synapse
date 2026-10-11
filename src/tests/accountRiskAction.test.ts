@@ -44,6 +44,21 @@ jest.mock("../models/securityEventModel", () => ({
 
 jest.mock("../models/accountIpSignalModel", () => ({ AccountIpSignal: {} }));
 jest.mock("../models/deviceTrackingModel", () => ({ DeviceTracking: {} }));
+// RC-16 / RC-17：accountRiskService 新增依赖（拼车会话统计 + 指纹分量事实）。
+// 这里只钉 applyAccountRiskAction，所以给空替身避免加载真实模型/查询。
+jest.mock("../models/authSessionModel", () => ({
+  AuthSessionModel: { countDocuments: () => ({ exec: async () => 0 }) },
+}));
+jest.mock("../services/deviceFingerprintService", () => ({
+  loadDeviceFingerprintFacts: jest.fn(async () => ({
+    fingerprintCount: 0,
+    componentDrift: false,
+    driftFingerprintIds: [],
+    sharedAcrossAccounts: false,
+    sharedFingerprintIds: [],
+    sharedComponentHashes: [],
+  })),
+}));
 jest.mock("../services/ipRiskService", () => ({
   getCachedIpRisk: jest.fn(async () => null),
   getIpRisk: jest.fn(async () => ({ source: "unavailable" })),
@@ -76,6 +91,14 @@ jest.mock("../config/config", () => ({
       stepUpChallengeTtlSeconds: 120,
       stepUpGrantTtlSeconds: 30,
       stepUpGrantMaxUses: 5,
+      ipRecheckEnabled: false,
+      sharingDetectionEnabled: true,
+      sharingSessionWindowMinutes: 10,
+      sharingMinDevices: 3,
+      sharingMinCountries: 2,
+      sharingMinConcurrentSessions: 3,
+      sharingScoreWeight: 20,
+      fingerprintComponentsEnabled: true,
     },
   },
 }));

@@ -363,6 +363,25 @@ export interface AccountRiskRuntimeConfig {
    * 属行为变更，必须先按 §5 B7 的观察期跑一遍再打开。
    */
   ipRecheckEnabled: boolean;
+  /** RC-17：拼车/共享账号检测总开关（观察期可关；关掉后不统计、不置旗标）。 */
+  sharingDetectionEnabled: boolean;
+  /** RC-17：并发活跃会话的滑动窗口（分钟)。 */
+  sharingSessionWindowMinutes: number;
+  /** RC-17：三条件之一 —— 窗口内不同设备数阈值。 */
+  sharingMinDevices: number;
+  /** RC-17：三条件之一 —— 窗口内不同国家/地区数阈值。 */
+  sharingMinCountries: number;
+  /** RC-17：三条件之一 —— 窗口内并发活跃会话阈值。 */
+  sharingMinConcurrentSessions: number;
+  /** RC-17：`ACCOUNT_SHARING_SUSPECTED` 的评分权重（默认 20）。 */
+  sharingScoreWeight: number;
+  /**
+   * RC-16：设备指纹分量采集与比对开关（默认 true）。
+   *
+   * 关掉后前端仍会上报 `components`，但服务端不再记录 `device_fingerprints`、
+   * 不再产出 `FP_*` 信号，账户聚合也不会把分量漂移算作 `AUTOMATION_HINT` 来源。
+   */
+  fingerprintComponentsEnabled: boolean;
 }
 
 /**
@@ -649,6 +668,16 @@ export function buildRuntimeConfigDefaults(options: {
       stepUpGrantMaxUses: 5,
       // 默认关：登录后 IP 复查会把行为变更带上生产，先观察再开（§5 B7）。
       ipRecheckEnabled: false,
+      // RC-17：拼车检测默认开启，但三条件联立 + 自动升档上限 watch 使得它只上旗标、不动档位；
+      // 小型站点可在观察期先关掉。
+      sharingDetectionEnabled: true,
+      sharingSessionWindowMinutes: 10,
+      sharingMinDevices: 3,
+      sharingMinCountries: 2,
+      sharingMinConcurrentSessions: 3,
+      sharingScoreWeight: 20,
+      // RC-16：分量采集与比对默认开启（只写事实与事件，不单独升档）。
+      fingerprintComponentsEnabled: true,
     },
     // RC-40：从 10 分钟压到 5 分钟（审计要求 3～5 分钟）；UA 严格绑定默认开。
     securitySession: {

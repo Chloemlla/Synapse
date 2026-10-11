@@ -2,11 +2,13 @@ import { describe, expect, it } from "@jest/globals";
 import type { AccountRiskRuntimeConfig } from "../config/runtimeConfigDefaults";
 import {
   computeStepUpUntil,
+  detectAccountSharingSuspected,
   evaluateAccountRiskScore,
   maxTier,
   tierRank,
   tierRequiresStepUp,
   type AccountRiskFacts,
+  type AccountSharingFacts,
 } from "../utils/accountRiskScoring";
 
 /**
@@ -34,6 +36,14 @@ const baseConfig: AccountRiskRuntimeConfig = {
   stepUpChallengeTtlSeconds: 120,
   stepUpGrantTtlSeconds: 30,
   stepUpGrantMaxUses: 5,
+  ipRecheckEnabled: false,
+  sharingDetectionEnabled: true,
+  sharingSessionWindowMinutes: 10,
+  sharingMinDevices: 3,
+  sharingMinCountries: 2,
+  sharingMinConcurrentSessions: 3,
+  sharingScoreWeight: 20,
+  fingerprintComponentsEnabled: true,
 };
 
 const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
@@ -157,6 +167,71 @@ describe("evaluateAccountRiskScore", () => {
     expect(result.riskScore).toBeGreaterThanOrEqual(90);
     expect(result.riskTier).toBe("restricted");
     expect(result.reasons.some((reason) => reason.includes("建议人工复核"))).toBe(true);
+  });
+
+  it("拼车嫌疑只加固定权重并置旗标（RC-17；权重 20 单独不足以升档）", () => {
+    const result = evaluateAccountRiskScore(facts({ sharingSuspected: true }), baseConfig);
+    expect(result.flags).toContain("ACCOUNT_SHARING_SUSPECTED");
+    expect(result.riskScore).toBe(20);
+    expect(result.riskTier).toBe("normal");
+  });
+
+  it("拼车嫌疑 + 自动化痕迹 + 两件滥用事件合计 48 分，仍不到观察档", () => {
+    const result = evaluateAccountRiskScore(
+      facts({ sharingSuspected: true, automationHint: true, recentAbuseEventCount: 2 }),
+      baseConfig,
+    );
+    expect(result.flags).toEqual(expect.arrayContaining(["ACCOUNT_SHARING_SUSPECTED", "AUTOMATION_HINT"]));
+    // 20 + 8 + 20 = 48，仍不到 watch 阈值 50
+    expect(result.riskScore).toBe(48);
+    expect(result.riskTier).toBe("normal");
+  });
+});
+
+describe("detectAccountSharingSuspected", () => {
+  const sharingFacts = (overrides: Partial<AccountSharingFacts> = {}): AccountSharingFacts => ({
+    distinctDeviceCount: 0,
+    distinctIpCount: 0,
+    distinctCountryCount: 0,
+    concurrentSessionCount: 0,
+    fingerprintSharedAcrossAccounts: false,
+    ...overrides,
+  });
+
+  it("三条件缺一不触发（避免误报真实多端用户）", () => {
+    const full = { distinctDeviceCount: 3, distinctCountryCount: 2, concurrentSessionCount: 3 };
+    expect(detectAccountSharingSuspected(sharingFacts(full), baseConfig)).toBe(true);
+    expect(
+      detectAccountSharingSuspected(sharingFacts({ ...full, distinctDeviceCount: 2 }), baseConfig),
+    ).toBe(false);
+    expect(
+      detectAccountSharingSuspected(sharingFacts({ ...full, distinctCountryCount: 1 }), baseConfig),
+    ).toBe(false);
+    expect(
+      detectAccountSharingSuspected(sharingFacts({ ...full, concurrentSessionCount: 2 }), baseConfig),
+    ).toBe(false);
+  });
+
+  it("同一设备分量跨账户单独成立（抓一人多号，不受 NAT 影响）", () => {
+    expect(
+      detectAccountSharingSuspected(sharingFacts({ fingerprintSharedAcrossAccounts: true }), baseConfig),
+    ).toBe(true);
+  });
+
+  it("关掉拼车检测后恒为 false", () => {
+    expect(
+      detectAccountSharingSuspected(
+        sharingFacts({
+          distinctDeviceCount: 9,
+          distinctCountryCount: 9,
+          concurrentSessionCount: 9,
+          fingerprintSharedAcrossAccounts: true,
+        }),
+        { ...baseConfig, sharingDetectionEnabled: false },
+      ),
+    ).toBe(false);
+    // 但分数函数仍会看 sharingSuspected 这个事实：关开关的决定在聚合层，不在折算层
+    expect(detectAccountSharingSuspected(sharingFacts(), baseConfig)).toBe(false);
   });
 });
 
