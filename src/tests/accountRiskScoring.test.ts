@@ -115,9 +115,12 @@ describe("evaluateAccountRiskScore", () => {
           { ipAddress: "1.1.1.1", riskScore: 100, loginCount: 4, lastSeenAt: NOW },
           { ipAddress: "2.2.2.2", riskScore: 95, loginCount: 4, lastSeenAt: NOW },
         ],
+        // 再加一项设备信号才能真正到 restricted（阈值 80）：100*0.45 + 25 + 100*0.2 = 90。
+        deviceMaxRiskScore: 100,
       }),
       { ...baseConfig, autoEscalationCap: "watch" },
     );
+    expect(result.riskScore).toBe(90);
     expect(result.riskTier).toBe("restricted");
     expect(result.cappedTier).toBe("watch");
   });

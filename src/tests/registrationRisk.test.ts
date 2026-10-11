@@ -26,10 +26,13 @@ jest.mock("../services/ipRiskService", () => ({
   getCachedIpRisk: (...args: unknown[]) => mockGetCachedIpRisk(...(args as [string])),
 }));
 
-jest.mock("../services/mongoService", () => ({
-  mongoose: { connection: { readyState: 1 } },
-  isConnected: () => true,
-}));
+// 用**真实的 mongoose**（而不是手写替身）：blockedIdentityModel 在 import 阶段就要
+// `mongoose.Schema`/`mongoose.model`，手写替身会在 require 阶段抛 “Schema is not a constructor”，
+// 把“闸门逻辑有问题”伪装成“套件跑不起来”。readyState 在 beforeEach 里强行置 1（connection 上是 getter）。
+jest.mock("../services/mongoService", () => {
+  const actualMongoose = jest.requireActual("mongoose");
+  return { mongoose: actualMongoose, isConnected: () => true };
+});
 
 jest.mock("../utils/logger", () => ({
   __esModule: true,
@@ -37,6 +40,7 @@ jest.mock("../utils/logger", () => ({
 }));
 
 import { evaluateRegistrationRisk, recordRegistrationAttempt } from "../services/registrationRiskService";
+import { mongoose } from "../services/mongoService";
 
 const baseInput = {
   ipAddress: "203.0.113.10",
@@ -47,6 +51,8 @@ const baseInput = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // 强制 readyState=1：accountRisk/registration 这些服务的 mongoReady() 都会读它。
+  (mongoose.connection as unknown as { readyState: number }).readyState = 1;
   mockCount.mockResolvedValue(0);
   mockDistinct.mockResolvedValue([]);
   mockGetCachedIpRisk.mockResolvedValue(null);

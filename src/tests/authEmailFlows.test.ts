@@ -3,6 +3,17 @@ jest.mock("../models/verificationTokenModel", () => ({
   VerificationTokenType: { EMAIL_REGISTRATION: "email_registration", PASSWORD_RESET: "password_reset" },
   verificationTokenStorage: { createToken: jest.fn(), deleteToken: jest.fn(), validateToken: jest.fn() },
 }));
+jest.mock("../services/blockedIdentityService", () => {
+  const actual = jest.requireActual("../services/blockedIdentityService");
+  return {
+    // 只替掉**要打库**的那个（注册侧查墓碑是 fail-closed：库不可用会抛，
+    // 而本套件不连库 → 不替的话 register() 直接 500，看起来像“注册坏了”）。
+    // 规范化是纯函数，用真实现才能验证“变体折叠”本身。
+    normalizeEmailCanonical: actual.normalizeEmailCanonical,
+    isIdentityRetired: jest.fn(async () => false),
+    retireIdentity: jest.fn(async () => undefined),
+  };
+});
 jest.mock("../services/emailSender", () => ({ sendEmail: jest.fn() }));
 jest.mock("../services/authEmailCooldownService", () => ({ reserveAuthEmail: jest.fn(), completeAuthEmail: jest.fn(), releaseAuthEmail: jest.fn() }));
 jest.mock("../services/authSessionService", () => ({ revokeAllAuthSessions: jest.fn() }));

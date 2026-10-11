@@ -140,6 +140,19 @@ const mockUserService = {
   getUserByUsername: jest.fn(async (username: string) => mockCloneUser(mockFindByUsername(username))),
   getUserAuthByUsername: jest.fn(async (username: string) => mockCloneUser(mockFindByUsername(username))),
   getUserByEmail: jest.fn(async (email: string) => mockCloneUser(mockFindByEmail(email))),
+  // RC-05：规范化邮箱查重。替身必须与生产同口径（否则 userRepository.createUser 会拿到
+  // undefined 抛 “getUserByEmailCanonical is not a function”，伪装成业务坏了）。
+  getUserByEmailCanonical: jest.fn(async (canonical: string) =>
+    mockCloneUser(
+      Array.from(mockUsers.values()).find(
+        (user) =>
+          !isMockSoftDeleted(user) &&
+          String(user.emailCanonical ?? user.email ?? "")
+            .trim()
+            .toLowerCase() === String(canonical).trim().toLowerCase(),
+      ),
+    ),
+  ),
   getUserByEmailCaseInsensitive: jest.fn(async (email: string) => {
     const normalized = String(email).trim().toLowerCase();
     return mockCloneUser(

@@ -52,6 +52,9 @@ export const mongoUserStorageProvider: UserStorageProvider = {
   },
 
   async getUserByEmailCanonical(canonical: string) {
+    // 旧替身可能没这个方法：按“查不到”处理（接口本就声明为可选），不要抛 ——
+    // 否则一个替身缺件会把“注册查重”整条链子打成 TypeError（伪装成业务坏了）。
+    if (typeof userService.getUserByEmailCanonical !== "function") return null;
     return removeAvatarBase64(await userService.getUserByEmailCanonical(canonical));
   },
 
