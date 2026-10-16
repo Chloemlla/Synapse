@@ -70,6 +70,7 @@ GeoGebra README 将项目描述为 MIT，但合并代码前仍需核实源仓库
 - 站内认证、会话、管理员角色、adminScope、审计、WAF、CSP、runtime config 与政策门禁必须复用现有实现。普通管理员的具体页面权限是运行时可配置的；未登记的管理 API 必须 fail-closed。
 - 需要上传、外部 AI/上游处理或公开发布的功能，逐项登记 `src/config/featureConsent.ts`；按真实义务归类，后端也必须门禁，不能只挡前端。
 - 新增/改变个人数据集时更新 `docs/governance/privacy-data-map.json`，维护 retention/delete/export/userFacing 字段，并按现有生成流程更新生成物。生成文件不得手工伪造。
+- 普通用户前端文案只说明功能用途、操作、当前状态、用户需要知晓的风险和下一步；不要展示 API/内部端点、脚本执行机制、数据结构、上游代理流程、加密/限流等实现原理或内部错误栈。涉及账号凭据、第三方接收方、公开分享、额度/费用等会影响用户决定的信息仍须清楚披露；技术诊断细节放管理端或折叠详情。
 - Synapse 限制本地构建、测试、lint 与依赖安装；源码文件 800 行是治理软上限，前端重依赖须 route/feature 隔离并通过 CI 预算。
 - 新依赖只改对应 `package.json`，不手改锁文件；按 `AGENTS.md` 的 `Update Lockfiles` 流程由 CI 重生锁文件。
 
@@ -232,7 +233,8 @@ GeoGebra README 将项目描述为 MIT，但合并代码前仍需核实源仓库
 - 每个新 API 端点有 routeLimiter，管理 API 有身份+adminScope 双校验；页面入口隐藏不是授权控制。
 - 先确认目标功能是否需要 `requireFeatureConsent()`，更新 `FEATURE_CONSENT_KEYS`、`FEATURE_CONSENT_REQUIREMENTS`、分类映射与配置自检测试；不要只加前端弹窗。
 - 更新 privacy data map 的个人数据、目的、接收方、保留期、删除/导出路径、用户可见说明及证据路径；运行/生成/漂移判据交给 CI。
-- 代码分拆满足 Synapse file-size 与 bundle budget；monaco/GeoGebra、AI/export 格式等重依赖路由懒加载/动态加载。
+- 代码分拆满足 Synapse file-size 与 bundle budget；Monaco/GeoGebra、AI/export 格式等重依赖路由懒加载/动态加载。
+- **新增前端统一以 `frontend/src/components/ResourceStoreList.tsx` 的实际设计语言为基准**：沿用 `studioTheme.tsx` 的 tokens/helper，不另起蓝紫渐变、Apple 蓝或 Pixel 独立配色。页面使用白/半透明白 surface、slate-50/100/200 层级和边框、slate-900 主操作、蓝/天蓝轻量径向装饰；成功/警告/错误使用 emerald/amber/rose 语义色；`rounded-2xl`、轻阴影、适度 backdrop blur、Avenir Next/中文系统字体与克制的 Framer Motion。维持 ResourceStoreList 的 max-w-7xl、hero + 主 surface + 侧栏/卡片、响应式 1/2/3 列；表单/按钮/标签/弹窗优先复用 `studioFieldClassName`、`studioPrimaryButtonClassName`、`studioGhostButtonClassName`、`studioPillClassName`、`studioModal*ClassName`。每个页面必须有独立 loading/error/empty/success 状态，动效遵守 reduced motion，触控目标与焦点行为适配移动端。新增设计代码前先读 `ResourceStoreList.tsx` 与 `studioTheme.tsx`，不得只凭本描述复刻 tokens。
 
 ---
 
@@ -328,6 +330,8 @@ GeoGebra README 将项目描述为 MIT，但合并代码前仍需核实源仓库
 - [ ] `openapi.json` 与路由注释/generated contract 无漂移；`adminPages` 和 adminModules 与实际页面/API 前缀一致；未知权限 fail-closed。
 - [ ] 隐私 data map 有所有新增集合/本地状态/外发方/保留/删除/export 信息，并由 CI 检查生成物一致；账号凭据从不作为可导出“用户数据副本”持久化。
 - [ ] 新代码遵守 TS/React 规范、源文件限制、dependency policy 和测试目录；CI 中 Node Verification、Quality Guardrails、CodeQL、Docker 等相关 job 的真实步骤结论符合目标。`skipped` 不等同通过，`continue-on-error` 不等于门禁通过。
+- [ ] 所有新增前端页面、弹窗、表单、状态卡、按钮与错误/空态逐项对照 `ResourceStoreList.tsx` 和 `studioTheme.tsx`；复用既有 tokens，Slate/白色中性底色 + 蓝/天蓝轻装饰 + emerald/amber/rose 语义色保持一致，不引入第二套配色。
+- [ ] 普通用户看到的 GeoGebra/项目/分享文案只解释用途、操作、状态与必要风险，不出现 API/脚本执行/数据传递/内部安全机制等实现说明；账号授权、数据接收方和费用信息完整且易理解。
 - [ ] GitHub Actions 是唯一 build/test/lint 裁判；本地不安装依赖、不构建、不跑测试。
 
 ---
@@ -350,8 +354,9 @@ GeoGebra README 将项目描述为 MIT，但合并代码前仍需核实源仓库
 5. 本项目原生登录用 Synapse HttpOnly session/API auth；删除/不建立 GGGGGG admin OAuth 自回环、localStorage token 或独立 admin_sessions。管理员用现有 adminScope/adminPages；上游 CDK/config 写权限默认 superadmin，若要授予 admin，必须补精确 apiPrefixes 与服务端测试，不得依赖前端隐藏或 trusted 字段近似授权。
 6. GeoGebra 代码/AI 输出/分享按不可信内容处理；AI 仅服务端调用现有 provider，输出经 schema/长度验证、预览和现有脚本预检后再执行。图片/AI/公开分享分别按实际数据分类接 featureConsent 与 privacy-data-map。不要把 Scamalytics 与 Synapse proxycheck 混作同一信号。
 7. 复用 Synapse Express/TypeScript、单 Mongo 连接、共享 axios、Mongoose、runtime config、route modules、audit/error/policy/CSP/queue 等；先查是否已有等价实体/服务。候选 API route 仅是建议，需做 collision 搜索后定名并更新 generated OpenAPI。不要保留 `/api/{*path}` 开放代理。
-8. 页面 lazy load；按功能拆组件/API/hooks/services/models，不写 mega-file；heavy Monaco/GeoGebra/导出库隔离；遵守 studioTheme、无障碍、移动端触控、reduced motion 和 bundle budget。
+8. 所有新增前端页面/组件必须以 `frontend/src/components/ResourceStoreList.tsx` 的设计语言与配色为唯一视觉基准，先读该文件和 `frontend/src/components/studioTheme.tsx`；复用 `studioTheme` tokens/helper，保持白/半透明白与 slate 中性层级、slate-900 主操作、轻量 sky/blue 装饰、emerald/amber/rose 语义状态、rounded-2xl、轻阴影、ResourceStoreList 的响应式卡片/面板结构。禁止单独沿用 GeoGebra 的蓝黑视觉、GGGGGG 的独立视觉或另起蓝紫/高饱和配色。页面 lazy load；按功能拆组件/API/hooks/services/models，不写 mega-file；Monaco/GeoGebra/导出库等重依赖隔离；遵守无障碍、移动端触控、reduced motion 和 bundle budget。
 9. 更新 data map 中的数据类别、收集目的、接收方、Retention/Deletion/Export/userFacing/evidence；维护 FeatureConsent categories/requirements/keys 和配置自检测试；维护 adminPages/adminModules、限流、API文档、用户文档及回滚方案。生成文件只走指定脚本/CI，不手改伪造生成结果。
+10. 普通用户可见文案只讲操作、结果、当前状态、必要风险/隐私披露和下一步；不向普通用户解释内部 API、脚本如何执行、请求如何代理/转发、数据结构、限流/加密等实际运作原理，也不展示错误栈。诊断细节放管理员/开发者面板或用户可选的折叠详情。
 
 交付步骤：
 A. 先做只读现状核查，给本需求每条 ID 标记复用/适配/新增/阻断；核查外部上游授权、准确 API 与 GeoGebra/源码 license。记录发现到本 PRD 的 implementation status，不得先动架构代码。
@@ -362,7 +367,7 @@ E. 本机禁止 pnpm install、构建、测试、lint；依赖只改 package.jso
 F. 遵循 AGENTS.md：显式 git add 文件；提交 GPG 签名并校验 `%G?` 为 G；push 使用 `GIT_TERMINAL_PROMPT=0`；提交/推送前核实暂存区只含本任务文件。不要提交 `.env`、secrets、keystore、签名脚本或凭据。除仓库 rules 强制且已授权的范围外不触发部署/修改外部服务。
 G. 最终逐 ID 更新本 PRD 状态（实现/验证 CI run/未完成及阻断证据），列出 API/数据模型/权限/同意/隐私变更、相关 CI jobs/steps、仍未解决的决定和回滚方式。只有真实达到验收标准的条目才能勾选完成。
 
-禁止：本地构建/测试/lint/装依赖；复制无许可源码；添加 open proxy；将账号凭据写入持久化、localStorage、审计或日志；前端单独鉴权；默认授权 trusted/admin；弱化 fail-closed、限流、policy consent、测试或隐私数据地图；把营销设想算作用户要求；把 CI skipped/advisory 当成已验证；将未实现功能隐藏后宣称“全量合并完成”。
+禁止：本地构建/测试/lint/装依赖；复制无许可源码；添加 open proxy；将账号凭据写入持久化、localStorage、审计或日志；前端单独鉴权；默认授权 trusted/admin；向普通用户展示内部运作原理或错误栈；弱化 fail-closed、限流、policy consent、测试或隐私数据地图；把营销设想算作用户要求；把 CI skipped/advisory 当成已验证；将未实现功能隐藏后宣称“全量合并完成”。
 ```
 
 ---
@@ -411,6 +416,8 @@ G. 最终逐 ID 更新本 PRD 状态（实现/验证 CI run/未完成及阻断�
 - `src/config/adminPages.ts`
 - `src/app/assembly.ts`
 - `frontend/src/App.tsx`
+- `frontend/src/components/ResourceStoreList.tsx`、`frontend/src/components/studioTheme.tsx`（新增前端设计语言与颜色的强制基准）
+- `frontend/src/components/FeatureConsentGate.tsx`
 - `frontend/src/api/api.ts`
 - `src/middleware/routeLimiters.ts`
 - `src/services/runtimeConfigService.ts`
