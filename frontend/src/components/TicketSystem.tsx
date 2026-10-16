@@ -1020,7 +1020,7 @@ const TicketSystem: React.FC = () => {
             // 卡片样式（含装饰 blob）由 TicketHero 自己给：展开态是 InfoQueryHero，专注态是紧凑条。
             <motion.div
               key="ticket-hero"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.45 }}
@@ -1275,7 +1275,7 @@ const TicketSystem: React.FC = () => {
                   {isCreating ? (
                     <motion.div
                       key="create"
-                      initial={{ opacity: 0, scale: 0.98 }}
+                      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.98 }}
                       className="p-5 sm:p-8 md:h-full md:overflow-y-auto"
@@ -1312,7 +1312,7 @@ const TicketSystem: React.FC = () => {
                   ) : selectedTicket ? (
                     <motion.div
                       key="detail"
-                      initial={{ opacity: 0 }}
+                      initial={prefersReducedMotion ? false : { opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       className="flex flex-col md:h-full"
@@ -1430,7 +1430,7 @@ const TicketSystem: React.FC = () => {
                             <motion.div
                               key={`${selectedTicket._id}-${idx}`}
                               className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-4`}
-                              initial={ROW_INITIAL}
+                              initial={prefersReducedMotion ? false : ROW_INITIAL}
                               animate={ROW_ANIMATE}
                               transition={{ duration: 0.3 }}
                             >
@@ -1548,7 +1548,7 @@ const TicketSystem: React.FC = () => {
                         <AnimatePresence>
                           {streamingAiResponse && streamingAiResponse.ticketId === selectedTicket?._id && (
                             <motion.div
-                              initial={{ opacity: 0, y: 10 }}
+                              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0 }}
                               className="flex justify-start mb-4"
@@ -1642,7 +1642,7 @@ const TicketSystem: React.FC = () => {
                     <motion.div
                       key="empty"
                       className="flex flex-col items-center justify-center h-full text-slate-300 p-8 sm:p-12"
-                      initial={{ opacity: 0 }}
+                      initial={prefersReducedMotion ? false : { opacity: 0 }}
                       animate={{ opacity: 1 }}
                     >
                       <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400 mb-4 shadow-inner sm:rounded-2xl">

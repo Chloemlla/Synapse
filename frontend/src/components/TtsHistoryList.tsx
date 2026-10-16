@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import {
   FaHistory,
   FaRedo,
@@ -136,6 +137,8 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   onDeleteRecord,
 }) => {
   const [tagFilter, setTagFilter] = useState<string>(ALL_TAGS_FILTER);
+  const reducedMotion = useReducedMotion();
+
   const [audioErrorId, setAudioErrorId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id: string; draft: HistoryDraft } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -221,7 +224,7 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 24 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.1 }}
       className={studioMainSurfaceClassName}

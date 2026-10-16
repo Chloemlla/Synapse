@@ -836,7 +836,7 @@ const DataCollectionManager: React.FC = () => {
 
             {/* List & Table */}
             <motion.div
-                initial={{ opacity: 0, y: 8 }}
+                initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`${studioSurfaceClassName} overflow-hidden`}
             >
@@ -926,12 +926,12 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {viewItem && (
-                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setViewItem(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setViewItem(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="data-collection-detail-title"
-                        initial={{ scale: 0.95, y: 10, opacity: 0 }}
+                        initial={prefersReducedMotion ? false : { scale: 0.95, y: 10, opacity: 0 }}
                         animate={{ scale: 1, y: 0, opacity: 1 }}
                         exit={{ scale: 0.95, y: 10, opacity: 0 }}
                         className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`}
@@ -1113,12 +1113,12 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {creating && (
-                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setCreating(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setCreating(false)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="data-collection-create-title"
-                        initial={{ scale: 0.95, y: 10, opacity: 0 }}
+                        initial={prefersReducedMotion ? false : { scale: 0.95, y: 10, opacity: 0 }}
                         animate={{ scale: 1, y: 0, opacity: 1 }}
                         exit={{ scale: 0.95, y: 10, opacity: 0 }}
                         className={`${studioSurfaceClassName} w-[95vw] max-w-2xl max-h-[80vh] overflow-auto p-4 sm:p-6`}
@@ -1166,8 +1166,8 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {batchView && (
-              <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setBatchView(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <motion.div role="dialog" aria-modal="true" aria-labelledby="data-collection-batch-title" initial={{ scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`} onClick={e => e.stopPropagation()} data-source-modal="data-collection-batch">
+              <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setBatchView(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.div role="dialog" aria-modal="true" aria-labelledby="data-collection-batch-title" initial={prefersReducedMotion ? false : { scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`} onClick={e => e.stopPropagation()} data-source-modal="data-collection-batch">
                   <div className="flex items-center justify-between mb-3">
                     <div id="data-collection-batch-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
                     <div className="flex items-center gap-2">

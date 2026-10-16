@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { 
   FaBan, FaUnlock, FaTrash, FaSync,
   FaExclamationTriangle, FaShieldAlt, FaClock,
@@ -85,6 +86,7 @@ function BatchPreview({ raw }: { raw: string }) {
 }
 
 function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalProps) {
+  const reducedMotion = useReducedMotion();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -164,13 +166,13 @@ function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalPr
   return ReactDOM.createPortal(
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[9999] h-full w-full overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-0"
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
           className={`${studioSurfaceClassName} relative top-0 mx-auto my-4 max-h-[95vh] w-full max-w-2xl overflow-y-auto p-4 sm:top-16 sm:my-0 sm:p-5`}
@@ -277,6 +279,7 @@ function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalPr
 }
 
 function UnbanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: UnbanIPModalProps) {
+  const reducedMotion = useReducedMotion();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -347,13 +350,13 @@ function UnbanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: UnbanIPMod
   return ReactDOM.createPortal(
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[9999] h-full w-full overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-0"
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
           className={`${studioSurfaceClassName} relative top-0 mx-auto my-4 max-h-[95vh] w-full max-w-2xl overflow-y-auto p-4 sm:top-16 sm:my-0 sm:p-5`}
@@ -403,7 +406,7 @@ function UnbanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: UnbanIPMod
 
               {error && (
                 <motion.div
-                  initial={{ opacity: 0, y: -10 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
                 >

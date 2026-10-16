@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import { FishAudioCatalogItem, TtsProviderId, TtsProviderOption, TtsRequest, TtsResponse } from "../types/tts";
 import { getApiBaseUrl } from "../api/api";
 import { useNotification } from "./Notification";
@@ -11,6 +12,7 @@ import ManagedCaptcha, {
 import { useIsAdmin } from "../hooks/useRBAC";
 import { TTS_POLICY_CONSENT_REQUIRED, TtsApiError } from "../types/ttsErrors";
 import TtsPolicyConsentPanel from "./TtsPolicyConsentPanel";
+import { StudioEmptyState, StudioModal, StudioModalHeader } from "./studioFeedback";
 import {
   FaCog,
   FaLightbulb,
@@ -112,6 +114,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   onSuccess,
   onCancel,
 }) => {
+  const reducedMotion = useReducedMotion();
   const [text, setText] = useState("");
   const [model, setModel] = useState(FALLBACK_TTS_PROVIDER_CONFIG.defaultModel);
   const [voice, setVoice] = useState(FALLBACK_TTS_PROVIDER_CONFIG.defaultVoice || "");
@@ -153,9 +156,6 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const [fishDefaultLoadingMore, setFishDefaultLoadingMore] = useState(false);
   const [fishModalOpen, setFishModalOpen] = useState(false);
   const [fishModalSource, setFishModalSource] = useState<"model" | "default-voices">("model");
-  // 音色弹窗的键盘可用性：记住打开它的按钮，关闭时把焦点还回去。
-  const fishModalTriggerRef = useRef<HTMLElement | null>(null);
-  const fishModalCloseRef = useRef<HTMLButtonElement | null>(null);
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [voiceLanguage, setVoiceLanguage] = useState("");
   // 生成被 TTS_POLICY_CONSENT_REQUIRED 拦下时展开勾选清单，确认后自动重试这次生成
@@ -202,31 +202,10 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
   const showCaptchaSection =
     captchaStatus.required || captchaStatus.loading || Boolean(captchaStatus.error);
 
-  // 关闭音色弹窗：把焦点还给打开它的按钮，键盘用户不会掉回页面顶部。
+  // 关闭音色弹窗：Escape / 遮罩点击 / 选择音色都走这里；焦点恢复由 StudioModal 负责。
   const closeFishModal = useCallback(() => {
     setFishModalOpen(false);
-    fishModalTriggerRef.current?.focus?.();
-    fishModalTriggerRef.current = null;
   }, []);
-
-  // 音色弹窗此前是裸 div：键盘用户既不能按 Esc 关闭，也辨认不出这是个对话框。
-  useEffect(() => {
-    if (!fishModalOpen) return undefined;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        closeFishModal();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    const timer = window.setTimeout(() => fishModalCloseRef.current?.focus(), 0);
-
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closeFishModal, fishModalOpen]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -664,12 +643,12 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
       <motion.form
         onSubmit={handleSubmit}
         className="min-w-0 space-y-4 sm:space-y-6"
-        initial={{ opacity: 0, scale: 0.98 }}
+        initial={reducedMotion ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4 }}
       >
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
           className="space-y-3"
@@ -678,7 +657,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             <motion.label
               htmlFor="tts-input-text"
               className={cn(studioEyebrowClassName, "flex items-center gap-2")}
-              initial={{ opacity: 0, x: -20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
             >
@@ -689,7 +668,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               <span
                 className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
                   text.length > MAX_TEXT_LENGTH * 0.9
-                    ? "border-red-200 bg-red-50/80 text-red-700"
+                    ? "border-rose-200 bg-rose-50/80 text-rose-700"
                     : text.length > MAX_TEXT_LENGTH * 0.7
                       ? "border-amber-200 bg-amber-50/80 text-amber-700"
                       : "border-slate-200 bg-slate-50/80 text-slate-600"
@@ -713,7 +692,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               studioTextareaClassName,
               "max-w-full",
               text.length > MAX_TEXT_LENGTH * 0.9
-                ? "border-red-300 bg-red-50/80 focus:ring-red-200"
+                ? "border-rose-300 bg-rose-50/80 focus:ring-rose-200"
                 : text.length > MAX_TEXT_LENGTH * 0.7
                   ? "border-amber-300 bg-amber-50/80 focus:ring-amber-200"
                   : "hover:border-slate-300",
@@ -732,10 +711,10 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             <motion.div
               className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${
                 text.length > MAX_TEXT_LENGTH * 0.9
-                  ? "border-red-200 bg-red-50/80 text-red-700"
+                  ? "border-rose-200 bg-rose-50/80 text-rose-700"
                   : "border-amber-200 bg-amber-50/80 text-amber-700"
               }`}
-              initial={{ opacity: 0, scale: 0.95 }}
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.3 }}
             >
@@ -751,7 +730,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
         <motion.div
           className="min-w-0 space-y-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-6"
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.4 }}
         >
@@ -765,7 +744,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               className="flex flex-wrap items-center gap-2"
               role="group"
               aria-label="选择语音提供商"
-              initial={{ opacity: 0, y: -6 }}
+              initial={reducedMotion ? false : { opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
@@ -791,21 +770,21 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               })}
             </motion.div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-foreground">当前提供商：{providerLabel}</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500" role="status" aria-live="polite">
+            <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-slate-900">当前提供商：{providerLabel}</span>
             {providerConfigLoading ? <span>正在同步模型配置...</span> : null}
             {usingProviderFallback ? <span>配置暂不可用，已切换到 MP3 兼容选项</span> : null}
           </div>
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
             <motion.div
               className="min-w-0"
-              initial={{ opacity: 0, x: -20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.5 }}
             >
               <motion.label
                 className={cn(studioEyebrowClassName, "mb-3 block")}
-                initial={{ opacity: 0, y: -10 }}
+                initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.6 }}
               >
@@ -853,13 +832,13 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
             <motion.div
               className="min-w-0"
-              initial={{ opacity: 0, x: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.6 }}
             >
               <motion.div
                 className={cn(studioEyebrowClassName, "mb-3 block")}
-                initial={{ opacity: 0, y: -10 }}
+                initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.7 }}
               >
@@ -870,21 +849,20 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               </motion.div>
               {activeProviderConfig.provider === "fish" ? (
                 <div className="space-y-4">
-                  {fishCatalogLoading ? <div className="rounded-md border border-border bg-muted/50 p-4 text-sm text-muted-foreground">正在加载 Fish Audio 音色...</div> : null}
-                  {fishCatalogError ? <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{fishCatalogError}</div> : null}
+                  {fishCatalogLoading ? <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500">正在加载 Fish Audio 音色...</div> : null}
+                  {fishCatalogError ? <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{fishCatalogError}</div> : null}
                   {[{ title: "模型库音色", items: fishCatalog, hasMore: fishModelHasMore, loadingMore: fishModelLoadingMore, source: "model" as const }, { title: "默认音色", items: fishDefaultVoices, hasMore: fishDefaultHasMore, loadingMore: fishDefaultLoadingMore, source: "default-voices" as const }].map((group) => (
                     <div key={group.title}>
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.title}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.title}</span>
                         {group.items.length > 0 ? (
                           <button
                             type="button"
-                            onClick={(event) => {
-                              fishModalTriggerRef.current = event.currentTarget;
+                            onClick={() => {
                               setFishModalSource(group.source);
                               setFishModalOpen(true);
                             }}
-                            className="text-xs text-primary hover:text-primary/80 transition-colors"
+                            className="text-xs font-semibold text-slate-700 transition-colors hover:text-slate-900"
                           >
                             查看全部
                           </button>
@@ -892,16 +870,16 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                       </div>
                       <div className="grid min-w-0 max-h-96 gap-2 overflow-y-auto">
                         {group.items.slice(0, 5).map((item) => (
-                          <label key={item.id} className={`flex min-w-0 max-w-full cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${voice === item.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted"}`}>
+                          <label key={item.id} className={`flex min-w-0 max-w-full cursor-pointer items-start gap-3 rounded-2xl border-2 p-3 transition-colors ${voice === item.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white/80 hover:bg-slate-50"}`}>
                             <input type="radio" name="fish-voice" value={item.id} checked={voice === item.id} onChange={() => setVoice(item.id)} disabled={fishCatalogLoading} className="mt-1 shrink-0" />
-                            {item.coverImage ? <img src={item.coverImage} alt="" className="h-10 w-10 rounded-sm object-cover" /> : null}
-                            <span className="min-w-0 flex-1 break-words"><span className="block font-semibold">{item.title}</span><span className={`block break-words text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{item.author || "Fish Audio"}{item.languages.length ? ` · ${item.languages.join(", ")}` : ""}</span>{item.description ? <span className={`mt-1 block break-words text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{item.description}</span> : null}{item.tags.length ? <span className={`mt-1 block break-words text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{item.tags.join(" · ")}</span> : null}{item.sampleAudio ? <audio className="mt-2 h-7 w-full max-w-full" controls preload="none" src={getFishAudioSampleUrl(item.sampleAudio)} aria-label={`${item.title} 试听`} /> : null}</span>
+                            {item.coverImage ? <img src={item.coverImage} alt="" className="h-10 w-10 rounded-2xl object-cover" /> : null}
+                            <span className="min-w-0 flex-1 break-words"><span className="block font-semibold">{item.title}</span><span className={`block break-words text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>{item.author || "Fish Audio"}{item.languages.length ? ` · ${item.languages.join(", ")}` : ""}</span>{item.description ? <span className={`mt-1 block break-words text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>{item.description}</span> : null}{item.tags.length ? <span className={`mt-1 block break-words text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>{item.tags.join(" · ")}</span> : null}{item.sampleAudio ? <audio className="mt-2 h-7 w-full max-w-full" controls preload="none" src={getFishAudioSampleUrl(item.sampleAudio)} aria-label={`${item.title} 试听`} /> : null}</span>
                           </label>
                         ))}
                       </div>
                     </div>
                   ))}
-                  {!fishCatalogLoading && !fishCatalog.length && !fishDefaultVoices.length && !fishCatalogError ? <div className="rounded-md border border-border bg-muted/50 p-4 text-sm text-muted-foreground">管理员尚未配置 Fish Audio 音色请求。</div> : null}
+                  {!fishCatalogLoading && !fishCatalog.length && !fishDefaultVoices.length && !fishCatalogError ? <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500">管理员尚未配置 Fish Audio 音色请求。可在右侧选择其它提供商，或联系管理员补齐音色配置。</div> : null}
                 </div>
               ) : usesSelectableVoice ? (
                 voices.length > VOICE_LANGUAGE_FILTER_THRESHOLD ? (
@@ -927,7 +905,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                   <div className="space-y-2">{renderVoiceOptions(voices)}</div>
                 )
               ) : (
-                <div className="rounded-md border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500">
                   {activeProviderConfig.voiceMode === "configured_reference"
                     ? "音色由管理员在 Fish Audio Reference ID 中统一配置，提交时不会发送 OpenAI voice 值。"
                     : "当前提供商使用服务端默认音色，无需在此选择。"}
@@ -939,14 +917,14 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           <div className="grid min-w-0 grid-cols-1 gap-6 md:grid-cols-2">
             <motion.div
               className="min-w-0"
-              initial={{ opacity: 0, x: -20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.7 }}
             >
               <motion.label
                 htmlFor="tts-output-format"
                 className={cn(studioEyebrowClassName, "mb-3 block")}
-                initial={{ opacity: 0, y: -10 }}
+                initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.8 }}
               >
@@ -972,23 +950,23 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                 ))}
               </motion.select>
               {activeProviderConfig.provider === "fish" ? (
-                <p className="mt-2 text-xs text-muted-foreground">Fish Audio 当前仅支持 MP3 输出。</p>
+                <p className="mt-2 text-xs text-slate-500">Fish Audio 当前仅支持 MP3 输出。</p>
               ) : activeProviderConfig.provider === "edge" ? (
-                <p className="mt-2 text-xs text-muted-foreground">Microsoft TTS 当前仅支持 MP3 输出。</p>
+                <p className="mt-2 text-xs text-slate-500">Microsoft TTS 当前仅支持 MP3 输出。</p>
               ) : null}
             </motion.div>
 
             {supportsSpeedAdjustment ? (
               <motion.div
                 className="min-w-0"
-                initial={{ opacity: 0, x: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: 0.8 }}
               >
                 <motion.label
                   htmlFor="tts-speed"
                   className={cn(studioEyebrowClassName, "mb-3 block")}
-                  initial={{ opacity: 0, y: -10 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 0.9 }}
                 >
@@ -1006,8 +984,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                   whileHover={{ scale: 1.02 }}
                 />
                 <motion.div
-                  className="mt-2 text-center text-muted-foreground"
-                  initial={{ opacity: 0 }}
+                  className="mt-2 text-center text-slate-500"
+                  initial={reducedMotion ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.3, delay: 1.0 }}
                 >
@@ -1017,12 +995,12 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             ) : (
               <motion.div
                 className="min-w-0"
-                initial={{ opacity: 0, x: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: 0.8 }}
               >
                 <div className={cn(studioEyebrowClassName, "mb-3 block")}>语速</div>
-                <div className="rounded-md border border-border bg-muted/50 p-4 text-sm text-muted-foreground" role="note">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500" role="note">
                   Fish Audio 当前使用默认语速 1x，暂不支持调整。
                 </div>
               </motion.div>
@@ -1031,13 +1009,13 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             {isAdmin ? (
               <motion.div
                 className="min-w-0"
-                initial={{ opacity: 0, x: -20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: 0.9 }}
               >
                 <div className={cn(studioEyebrowClassName, "mb-3 block")}>生成码</div>
                 <div
-                  className="rounded-md border border-border bg-muted/50 p-4 text-sm text-muted-foreground"
+                  className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500"
                   role="note"
                 >
                   管理员账号无需填写生成码。
@@ -1046,19 +1024,19 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
             ) : (
               <motion.div
                 className="min-w-0"
-                initial={{ opacity: 0, x: -20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: 0.9 }}
               >
                 <motion.label
                   htmlFor="tts-generation-code"
                   className={cn(studioEyebrowClassName, "mb-3 block")}
-                  initial={{ opacity: 0, y: -10 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 1.0 }}
                 >
                   生成码
-                  <span className="text-red-500 ml-1">*</span>
+                  <span className="text-rose-500 ml-1">*</span>
                 </motion.label>
                 <motion.input
                   id="tts-generation-code"
@@ -1072,7 +1050,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
                 />
                 <motion.p
                   className="text-sm text-slate-400 mt-1"
-                  initial={{ opacity: 0 }}
+                  initial={reducedMotion ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.3, delay: 1.1 }}
                 >
@@ -1086,7 +1064,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         {/* ManagedCaptcha 必须无条件挂载（理由见上方 showCaptchaSection 的说明）；
             没有可见内容时把整个外壳隐藏，免得在表单的 space-y-* 里留下一段空档。 */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.0 }}
           className={cn("space-y-3", !showCaptchaSection && "hidden")}
@@ -1094,12 +1072,12 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           {showCaptchaSection ? (
             <motion.label
               className={cn(studioEyebrowClassName, "mb-3 block")}
-              initial={{ opacity: 0, y: -10 }}
+              initial={reducedMotion ? false : { opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 1.1 }}
             >
               人机验证
-              {captchaStatus.required ? <span className="text-red-500 ml-1">*</span> : null}
+              {captchaStatus.required ? <span className="text-rose-500 ml-1">*</span> : null}
             </motion.label>
           ) : null}
 
@@ -1116,7 +1094,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           {captchaStatus.required ? (
             <motion.div
               className="flex min-w-0 items-start space-x-2 text-sm text-slate-600"
-              initial={{ opacity: 0 }}
+              initial={reducedMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, delay: 1.3 }}
             >
@@ -1129,9 +1107,9 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         <AnimatePresence>
           {displayError && (
             <motion.div
-              className="max-w-full break-words rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700"
+              className="max-w-full break-words rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700"
               role="alert"
-              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -10 }}
               transition={{ duration: 0.3 }}
@@ -1144,7 +1122,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         <AnimatePresence>
           {policyConsentRequired && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
+              initial={reducedMotion ? false : { opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
@@ -1158,7 +1136,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
           {latestNextAction && !displayError && (
             <motion.div
               className="max-w-full break-words rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-700"
-              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -10 }}
               transition={{ duration: 0.3 }}
@@ -1170,7 +1148,7 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
 
         <motion.div
           className="flex min-w-0 flex-col gap-3 sm:flex-row sm:gap-4"
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.0 }}
         >
@@ -1193,8 +1171,8 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
               <motion.div className="flex items-center justify-center">
                 <motion.div
                   className="w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  animate={reducedMotion ? { rotate: 0 } : { rotate: 360 }}
+                  transition={reducedMotion ? undefined : { duration: 1, repeat: Infinity, ease: "linear" }}
                 />
                 生成中...
               </motion.div>
@@ -1231,92 +1209,85 @@ export const TtsForm: React.FC<TtsFormProps> = React.memo<TtsFormProps>(({
         ) : null}
       </motion.form>
 
-      {/* Fish Audio 音色列表弹窗 */}
-      {fishModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeFishModal}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="fish-voice-modal-title"
-            className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl border border-border bg-background shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <h3 id="fish-voice-modal-title" className="text-base font-semibold">{fishModalSource === "model" ? "模型库音色" : "默认音色"}</h3>
-              <button
-                ref={fishModalCloseRef}
-                type="button"
-                onClick={closeFishModal}
-                aria-label="关闭音色列表"
-                className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {(() => {
-                const items = fishModalSource === "model" ? fishCatalog : fishDefaultVoices;
-                const hasMore = fishModalSource === "model" ? fishModelHasMore : fishDefaultHasMore;
-                const loadingMore = fishModalSource === "model" ? fishModelLoadingMore : fishDefaultLoadingMore;
-                if (!items.length && !loadingMore) {
-                  return <div className="py-8 text-center text-sm text-muted-foreground">暂无音色数据</div>;
-                }
-                return (
-                  <>
-                    <div className="grid gap-2">
-                      {items.map((item) => (
-                        <label
-                          key={item.id}
-                          className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
-                            voice === item.id
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-background hover:bg-muted"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="fish-voice-modal"
-                            value={item.id}
-                            checked={voice === item.id}
-                            onChange={() => { setVoice(item.id); closeFishModal(); }}
-                            className="mt-1"
-                          />
-                          {item.coverImage ? <img src={item.coverImage} alt="" className="h-10 w-10 rounded-sm object-cover" /> : null}
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-semibold">{item.title}</span>
-                            <span className={`block text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
-                              {item.author || "Fish Audio"}{item.languages.length ? ` · ${item.languages.join(", ")}` : ""}
-                            </span>
-                            {item.description ? (
-                              <span className={`mt-1 block text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{item.description}</span>
-                            ) : null}
-                            {item.tags.length ? (
-                              <span className={`mt-1 block text-xs ${voice === item.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{item.tags.join(" · ")}</span>
-                            ) : null}
-                            {item.sampleAudio ? (
-                              <audio className="mt-2 h-7 w-full" controls preload="none" src={getFishAudioSampleUrl(item.sampleAudio)} aria-label={`${item.title} 试听`} />
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    {hasMore ? (
-                      <button
-                        type="button"
-                        onClick={() => handleLoadMore(fishModalSource)}
-                        disabled={loadingMore}
-                        className="mt-3 w-full rounded-md border border-border bg-muted/30 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 disabled:opacity-50"
-                      >
-                        {loadingMore ? "加载中..." : "加载更多"}
-                      </button>
-                    ) : null}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
+      {/* Fish Audio 音色列表弹窗：用共享的 StudioModal，自带 Escape / focus trap / 关闭后恢复焦点 */}
+      <StudioModal
+        open={fishModalOpen}
+        onClose={closeFishModal}
+        labelledBy="fish-voice-modal-title"
+        maxWidthClassName="max-w-lg"
+        closeLabel="关闭音色列表"
+        className="flex flex-col"
+      >
+        <StudioModalHeader
+          title={fishModalSource === "model" ? "模型库音色" : "默认音色"}
+          titleId="fish-voice-modal-title"
+          onClose={closeFishModal}
+          closeLabel="关闭音色列表"
+        />
+        <div className="mt-4">
+          {(() => {
+            const items = fishModalSource === "model" ? fishCatalog : fishDefaultVoices;
+            const hasMore = fishModalSource === "model" ? fishModelHasMore : fishDefaultHasMore;
+            const loadingMore = fishModalSource === "model" ? fishModelLoadingMore : fishDefaultLoadingMore;
+            if (!items.length && !loadingMore) {
+              return (
+                <StudioEmptyState message="没有可选音色，可关闭本窗口后改用其它服务商或默认音色。" />
+              );
+            }
+            return (
+              <>
+                <div className="grid gap-2">
+                  {items.map((item) => (
+                    <label
+                      key={item.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-3 transition-colors ${
+                        voice === item.id
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white/80 hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="fish-voice-modal"
+                        value={item.id}
+                        checked={voice === item.id}
+                        onChange={() => { setVoice(item.id); closeFishModal(); }}
+                        className="mt-1"
+                      />
+                      {item.coverImage ? <img src={item.coverImage} alt="" className="h-10 w-10 rounded-2xl object-cover" /> : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold">{item.title}</span>
+                        <span className={`block text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>
+                          {item.author || "Fish Audio"}{item.languages.length ? ` · ${item.languages.join(", ")}` : ""}
+                        </span>
+                        {item.description ? (
+                          <span className={`mt-1 block text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>{item.description}</span>
+                        ) : null}
+                        {item.tags.length ? (
+                          <span className={`mt-1 block text-xs ${voice === item.id ? "text-white/75" : "text-slate-500"}`}>{item.tags.join(" · ")}</span>
+                        ) : null}
+                        {item.sampleAudio ? (
+                          <audio className="mt-2 h-7 w-full" controls preload="none" src={getFishAudioSampleUrl(item.sampleAudio)} aria-label={`${item.title} 试听`} />
+                        ) : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {hasMore ? (
+                  <button
+                    type="button"
+                    onClick={() => handleLoadMore(fishModalSource)}
+                    disabled={loadingMore}
+                    className="mt-3 min-h-11 w-full rounded-2xl border-2 border-slate-200 bg-white/80 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {loadingMore ? "加载中..." : "加载更多"}
+                  </button>
+                ) : null}
+              </>
+            );
+          })()}
         </div>
-      ) : null}
+      </StudioModal>
     </div>
   );
 });

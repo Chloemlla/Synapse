@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
   FaCopy,
   FaDownload,
@@ -91,6 +92,7 @@ interface Props {
  * 非法行、某条是自动判的还是手工封的、什么时候到期，管理员全都看不到。
  */
 const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const confirmDialog = useConfirm();
   // `onSummary` 由父组件传入；用 ref 承接，避免把回调身份放进 load 的依赖里
@@ -391,7 +393,7 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
                 return (
                   <motion.tr
                     key={ban.ipAddress}
-                    initial={{ opacity: 0 }}
+                    initial={reducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className={cn('border-b border-slate-100 align-top', isSelected && 'bg-slate-50/80')}
                   >

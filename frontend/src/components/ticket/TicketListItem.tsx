@@ -1,8 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiLink, FiPaperclip, FiSquare, FiTag, FiUser } from 'react-icons/fi';
+import {
+  FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiLink, FiPaperclip, FiSquare, FiTag, FiUser,
+} from 'react-icons/fi';
 import type { ITicketSummary } from '../../api/ticketApi';
 import { cn } from '../../utils/cn';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { studioBadgeClassName, studioEyebrowClassName } from '../studioTheme';
 import {
   TICKET_CATEGORY_META,
@@ -44,6 +47,7 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
 }) => {
   const statusMeta = TICKET_STATUS_META[ticket.status] || TICKET_STATUS_META.open;
   const priorityMeta = TICKET_PRIORITY_META[ticket.priority] || TICKET_PRIORITY_META.medium;
+  const reducedMotion = useReducedMotion();
   const categoryMeta = TICKET_CATEGORY_META[ticket.category] || TICKET_CATEGORY_META.other;
   const slaBreached = isAdmin && isTicketSlaBreached(ticket);
   const senderPrefix = ticket.lastSenderRole === 'user'
@@ -75,7 +79,7 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400',
         selected ? 'border-slate-900 bg-slate-50' : 'border-transparent hover:bg-slate-50/60 active:bg-slate-100',
       )}
-      initial={{ opacity: 0, x: -16 }}
+      initial={reducedMotion ? false : { opacity: 0, x: -16 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.2, delay: Math.min(index, 12) * 0.03 }}
     >

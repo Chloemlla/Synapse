@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
 import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask, LotteryFulfillment, LotteryPresentation } from '../types/lottery';
@@ -117,6 +118,7 @@ export const LotteryRoundCard: React.FC<{
   isAdmin = false,
   chanceBalance = null,
 }) => {
+  const reducedMotion = useReducedMotion();
   const { user } = useAuth();
   // 每轮拥有独立的挑战，不能让另一张卡片的回调或 ref 消费本轮令牌。
   const captchaRef = useRef<ManagedCaptchaRef | null>(null);
@@ -164,7 +166,7 @@ export const LotteryRoundCard: React.FC<{
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
       className={`${lotteryPanelClass} p-5 sm:p-6`}
@@ -296,12 +298,13 @@ export const LotteryRoundCard: React.FC<{
 
 // 用户记录组件
 const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
+  const reducedMotion = useReducedMotion();
   // 防御性处理，确保 record 存在且 history 为数组
   if (!record || typeof record !== 'object') {
     return (
       <motion.div 
         className={`${lotteryPanelClass} p-6 text-center`}
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
@@ -313,7 +316,7 @@ const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
   const safeHistory = Array.isArray(record.history) ? record.history : [];
   return (
     <motion.div
-    initial={{ opacity: 0, y: 20 }}
+    initial={reducedMotion ? false : { opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.6 }}
       className={`${lotteryPanelClass} p-5 sm:p-6`}
@@ -323,7 +326,7 @@ const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
       {/* 统计信息 */}
       <motion.div 
         className={`${lotteryTileClass} mb-4 p-4 text-left`}
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
       >
@@ -357,7 +360,7 @@ const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
               <motion.div 
                 key={index} 
                 className="flex items-center gap-2 rounded-2xl p-2 text-sm hover:bg-white/70"
-                initial={{ opacity: 0, x: -20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.3, delay: 0.1 * index }}
                 whileHover={{ scale: 1.02, x: 5 }}
@@ -382,11 +385,12 @@ const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
 
 // 排行榜组件
 const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
+  const reducedMotion = useReducedMotion();
   // 修复：防御性处理，确保 leaderboard 一定为数组
   const safeLeaderboard = Array.isArray(leaderboard) ? leaderboard : [];
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
       className={`${lotteryPanelClass} p-5 sm:p-6`}
@@ -397,7 +401,7 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
         {safeLeaderboard.length === 0 ? (
           <motion.div
             className="py-8 text-center text-slate-400"
-            initial={{ opacity: 0, y: 20 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
@@ -407,7 +411,7 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
           safeLeaderboard.map((user, index) => (
             <motion.div
               key={user.userId}
-              initial={{ opacity: 0, x: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, delay: 0.1 * index }}
               className="flex items-center gap-3 rounded-2xl p-2 text-sm hover:bg-white/70"
@@ -441,9 +445,12 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
 };
 
 // 统计信息组件
-const StatisticsCard: React.FC<{ stats: any }> = ({ stats }) => (
+const StatisticsCard: React.FC<{ stats: any }> = ({ stats }) => {
+  const reducedMotion = useReducedMotion();
+
+  return (
   <motion.div
-    initial={{ opacity: 0, y: 20 }}
+    initial={reducedMotion ? false : { opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.6 }}
     className="space-y-4"
@@ -456,13 +463,15 @@ const StatisticsCard: React.FC<{ stats: any }> = ({ stats }) => (
       <InfoMetricCard label="总价值" value={`¥${stats.totalValue}`} icon={FaGift} tone="rose" />
     </div>
   </motion.div>
-);
+  );
+};
 
 // 抽奖机会钱包 + 行为任务 + 积分兑换
 const LotteryWalletPanel: React.FC<{
   chances: LotteryChances | null;
   onRefresh: () => void | Promise<void>;
 }> = ({ chances, onRefresh }) => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const [tasks, setTasks] = useState<LotteryTask[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
@@ -574,7 +583,7 @@ const LotteryWalletPanel: React.FC<{
   return (
     <motion.div
       className={`${lotteryPanelClass} p-5 sm:p-6`}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -831,19 +840,21 @@ const WinnerModal: React.FC<{
   winner: LotteryWinner | null; 
   onClose: () => void; 
 }> = ({ winner, onClose }) => {
+  const reducedMotion = useReducedMotion();
+
   if (!winner) return null;
 
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
+          initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.8, opacity: 0 }}
           className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl max-h-[90vh] overflow-y-auto overscroll-contain"
@@ -861,6 +872,7 @@ const WinnerModal: React.FC<{
 
 // 主抽奖页面组件
 const LotteryPage: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const { user } = useAuth();
   const { setNotification } = useNotification();
   const {
@@ -939,7 +951,7 @@ const LotteryPage: React.FC = () => {
     <InfoQueryShell>
         <motion.div
           className="space-y-6"
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
@@ -973,7 +985,7 @@ const LotteryPage: React.FC = () => {
             ) : (
             <motion.div 
               className={`${lotteryPanelClass} p-6 text-center`}
-              initial={{ opacity: 0, y: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
@@ -990,7 +1002,7 @@ const LotteryPage: React.FC = () => {
 
         {/* 活跃轮次 */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           className={`${lotteryPanelClass} p-5 sm:p-6`}

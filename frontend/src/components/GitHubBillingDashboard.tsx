@@ -7,7 +7,12 @@ import { buildIpVerificationHeaders } from '../utils/ipVerification';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
-import { studioEyebrowPillClassName } from './studioTheme';
+import { cn } from '../utils/cn';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowPillClassName,
+} from './studioTheme';
 
 // 动画配置
 const ENTER_INITIAL = { opacity: 0, y: 20 };
@@ -137,6 +142,8 @@ const GitHubBillingDashboard: React.FC = () => {
   // F5-34：记录真实抓取时刻，避免用渲染时刻冒充「获取时间」
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [, setLoadingStage] = useState<'idle' | 'initial' | 'cached' | 'complete'>('idle');
+  // 远程缓存合并失败时退回本地缓存：必须让用户知道当前数据可能不是最新的（FD-056）。
+  const [remoteCacheError, setRemoteCacheError] = useState<string | null>(null);
 
   // 首访验证头统一由 utils/ipVerification 生成（X-Fingerprint + X-IP-Verification-Token）。
   // 旧实现读的是已下线的 Turnstile 访问令牌（localStorage.accessTokens，5 分钟有效期），
@@ -366,6 +373,7 @@ const GitHubBillingDashboard: React.FC = () => {
           const data = await res.json();
 
           if (res.ok && data.success && data.data?.length > 0) {
+            setRemoteCacheError(null);
             // 合并远程数据和本地数据，去重
             const remoteCustomers = data.data;
             setCachedCustomers(prevCustomers => {
@@ -373,9 +381,12 @@ const GitHubBillingDashboard: React.FC = () => {
               const newCustomers = remoteCustomers.filter((c: CachedCustomer) => !existingIds.has(c.customerId));
               return [...prevCustomers, ...newCustomers];
             });
+          } else if (!res.ok) {
+            setRemoteCacheError('远程账单缓存暂时不可用，当前显示的是本地缓存数据。');
           }
         } catch (error) {
-          console.log('远程缓存数据加载失败，使用本地数据:', error);
+          console.error('[GitHubBillingDashboard] 远程缓存数据加载失败', error);
+          setRemoteCacheError('远程账单缓存暂时不可用，当前显示的是本地缓存数据。');
         } finally {
           setCustomersLoading(false);
           setLoadingStage('complete');
@@ -389,6 +400,15 @@ const GitHubBillingDashboard: React.FC = () => {
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
       <div className="space-y-6">
+        {remoteCacheError ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            {remoteCacheError}
+          </div>
+        ) : null}
         {/* 主面板：标题与操作 */}
         <m.div
           className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
@@ -396,8 +416,8 @@ const GitHubBillingDashboard: React.FC = () => {
           animate={ENTER_ANIMATE}
           transition={trans06}
         >
-          <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-          <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+          <div className={cn(studioAccentBlobBlueClassName, "-right-16 top-0")} aria-hidden />
+          <div className={cn(studioAccentBlobSkyClassName, "-left-10 bottom-0")} aria-hidden />
           <div className="relative">
             <div className={studioEyebrowPillClassName}>
               <FaGithub className="text-[10px]" /> GITHUB BILLING

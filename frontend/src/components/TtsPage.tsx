@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import { useTts } from "../hooks/useTts";
 import { TtsForm } from "./TTSForm";
 import { TtsHistoryList } from "./TtsHistoryList";
@@ -60,6 +61,7 @@ const buildDownloadUrl = (audioUrl: string) => {
 };
 
 export const TtsPage: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const {
     loading,
     stage,
@@ -258,7 +260,7 @@ export const TtsPage: React.FC = () => {
       <div className="mx-auto w-full max-w-full min-w-0 space-y-5 sm:space-y-8 lg:max-w-7xl">
         {/* Hero */}
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
           className={cn("relative w-full min-w-0 max-w-full overflow-hidden", studioHeroCardClassName)}
@@ -323,7 +325,7 @@ export const TtsPage: React.FC = () => {
         >
           {/* Form */}
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.05 }}
             className={cn(studioMainSurfaceClassName, "w-full max-w-full")}
@@ -345,7 +347,7 @@ export const TtsPage: React.FC = () => {
           <AnimatePresence>
             {result && audioUrl && (
               <motion.div
-                initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                initial={reducedMotion ? false : { opacity: 0, y: 24, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.98 }}
                 transition={{ duration: 0.45 }}

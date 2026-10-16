@@ -1,31 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useLottery } from '../hooks/useLottery';
 import {
-  LotteryPrize,
-  LotteryRound,
-  LotteryT0Report,
-  LotteryT1Report,
-  LotteryPresentationBlock,
-  LotteryPresentationBlockType,
-  LotteryAbVariantStats,
-  LotteryRiskMetrics,
+  LotteryPrize, LotteryRound, LotteryT0Report, LotteryT1Report, LotteryPresentationBlock,
+  LotteryPresentationBlockType, LotteryAbVariantStats, LotteryRiskMetrics,
 } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getBackendErrorMessage } from '../utils/backendError';
-import { AnimatePresence } from 'framer-motion';
 import { deleteAllRounds } from '../api/lottery';
-import {
-  FaBullseye,
-  FaChartBar,
-  FaDice,
-  FaList,
-  FaLock,
-} from 'react-icons/fa';
+import { FaBullseye, FaChartBar, FaDice, FaList, FaLock } from 'react-icons/fa';
 import { studioDangerButtonClassName, studioPanelClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
@@ -48,6 +36,7 @@ const PRESENTATION_BLOCK_LABELS: Record<LotteryPresentationBlockType, string> = 
 
 // 创建轮次表单组件
 const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const confirm = useConfirm();
   const [formData, setFormData] = useState({
@@ -198,7 +187,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
   return (
     <motion.div
       className={cn(studioPanelClassName, "p-4")}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -477,7 +466,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               <motion.div 
                 key={prize.id} 
                 className="border-2 border-slate-200 rounded-2xl p-4 bg-slate-50/80"
-                initial={{ opacity: 0, y: 10 }}
+                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
               >
@@ -627,6 +616,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
 
 // 轮次管理组件
 const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void }> = ({ rounds, onRefresh }) => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const confirm = useConfirm();
   const [loading, setLoading] = useState<string | null>(null);
@@ -718,7 +708,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
   return (
     <motion.div
       className={cn(studioPanelClassName, "p-4")}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -732,7 +722,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
           <motion.div 
             key={round.id} 
             className="border-2 border-slate-200 rounded-2xl p-4 bg-slate-50/80"
-            initial={{ opacity: 0, y: 10 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
           >
@@ -902,6 +892,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
 
 // 实时风控大盘（仅超管）
 const RiskDashboardPanel: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const [metrics, setMetrics] = useState<LotteryRiskMetrics | null>(null);
 
   const load = useCallback(async () => {
@@ -921,7 +912,7 @@ const RiskDashboardPanel: React.FC = () => {
   return (
     <motion.div
       className={cn(studioPanelClassName, 'p-4')}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -975,6 +966,7 @@ const RiskDashboardPanel: React.FC = () => {
 
 // 发放抽奖机会（仅超管；接口与审计已在后端就绪）
 const GrantChancesPanel: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const [targetUserId, setTargetUserId] = useState('');
   const [amount, setAmount] = useState(1);
@@ -1019,7 +1011,7 @@ const GrantChancesPanel: React.FC = () => {
   return (
     <motion.div
       className={cn(studioPanelClassName, 'p-4')}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -1088,6 +1080,7 @@ const GrantChancesPanel: React.FC = () => {
 
 // T+0 / T+1 对账面板
 const ReconciliationPanel: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const { setNotification } = useNotification();
   const [t0, setT0] = useState<LotteryT0Report[] | null>(null);
   const [t1, setT1] = useState<LotteryT1Report | null>(null);
@@ -1115,7 +1108,7 @@ const ReconciliationPanel: React.FC = () => {
   return (
     <motion.div
       className={cn(studioPanelClassName, 'p-4')}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
@@ -1171,6 +1164,7 @@ const ReconciliationPanel: React.FC = () => {
 
 // 主管理员组件
 const LotteryAdmin: React.FC = () => {
+  const reducedMotion = useReducedMotion();
   const { user } = useAuth();
   const { allRounds, fetchAllRounds } = useLottery();
   const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
@@ -1182,13 +1176,13 @@ const LotteryAdmin: React.FC = () => {
     return (
       <motion.div 
         className="space-y-6"
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <motion.div 
           className="rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-6"
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
@@ -1228,14 +1222,14 @@ const LotteryAdmin: React.FC = () => {
   return (
     <motion.div 
       className="space-y-6"
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
       {/* 标题和说明 */}
       <motion.div 
         className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-6"
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
@@ -1263,7 +1257,7 @@ const LotteryAdmin: React.FC = () => {
       {/* 标签页切换 */}
       <motion.div 
         className={cn(studioPanelClassName, "p-4")}
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
@@ -1315,7 +1309,7 @@ const LotteryAdmin: React.FC = () => {
           {activeTab === 'create' ? (
             <motion.div
               key="create"
-              initial={{ opacity: 0, x: -20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.3 }}
@@ -1325,7 +1319,7 @@ const LotteryAdmin: React.FC = () => {
           ) : (
             <motion.div
               key="manage"
-              initial={{ opacity: 0, x: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}

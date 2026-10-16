@@ -2,6 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FiAlertCircle, FiCheckCircle, FiCpu, FiSearch, FiTerminal, FiX } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { studioEyebrowClassName } from '../studioTheme';
 
 export type TicketProcessStep =
@@ -29,13 +30,16 @@ interface TicketProcessingToastProps {
  * 两处文案要各改一次。这里收敛成一份，并补上 `aria-live`：读屏用户此前完全不知道
  * 后台正在审查/生成。
  */
-const TicketProcessingToast: React.FC<TicketProcessingToastProps> = ({ step, onDismiss }) => (
+const TicketProcessingToast: React.FC<TicketProcessingToastProps> = ({ step, onDismiss }) => {
+  const reducedMotion = useReducedMotion();
+
+  return (
   <AnimatePresence>
     {step && (
       <motion.div
         role="status"
         aria-live="polite"
-        initial={{ opacity: 0, y: 50, scale: 0.9 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 50, scale: 0.9 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.9, transition: { duration: 0.2 } }}
         className="pointer-events-none fixed bottom-20 left-1/2 z-[60] w-[90%] max-w-md -translate-x-1/2"
@@ -108,6 +112,7 @@ const TicketProcessingToast: React.FC<TicketProcessingToastProps> = ({ step, onD
       </motion.div>
     )}
   </AnimatePresence>
-);
+  );
+};
 
 export default TicketProcessingToast;
