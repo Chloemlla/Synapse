@@ -13,10 +13,12 @@ import {
   InfoSectionTitle,
   studioDangerButtonClassName,
   studioFieldClassName,
+  studioGhostButtonClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioTileClassName,
 } from './studioTheme';
+import { cn } from '../utils/cn';
 
 const starterMarkdown = `# 新文章
 
@@ -413,7 +415,7 @@ const MarkdownArticleManager: React.FC = () => {
                   </InfoBadge>
                   <button
                     type="button"
-                    className="rounded-xl border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={cn(studioGhostButtonClassName, 'px-2.5 py-1')}
                     onClick={() => void togglePublish(article)}
                     disabled={isSaving || isLoading || !canWrite}
                   >
@@ -421,7 +423,7 @@ const MarkdownArticleManager: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    className="rounded-xl border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={cn(studioDangerButtonClassName, 'px-2.5 py-1')}
                     onClick={() => void deleteArticle(article)}
                     disabled={isSaving || isLoading || !canWrite}
                     title="删除文章"
@@ -515,7 +517,7 @@ const MarkdownArticleManager: React.FC = () => {
                     <button
                       key={snippet.label}
                       type="button"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={cn(studioGhostButtonClassName, 'px-3 py-1.5 gap-1.5')}
                       onClick={() => insertSnippet(snippet.text)}
                       disabled={!canWrite || isSaving || isLoading}
                     >

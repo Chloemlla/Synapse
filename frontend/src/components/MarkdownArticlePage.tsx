@@ -4,7 +4,13 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, Clock, Copy, FileText, Image as ImageIcon, Menu, Share2, X } from 'lucide-react';
 import { markdownArticleApi, type MarkdownArticle, type MarkdownArticleSummary } from '../api/markdownArticles';
 import MarkdownRenderer, { getMarkdownHeadingId } from './MarkdownRenderer';
-import { studioEyebrowClassName } from './studioTheme';
+import { studioEyebrowClassName, studioGhostButtonClassName, studioPrimaryButtonClassName } from './studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+} from './studioFeedback';
 import { cn } from '../utils/cn';
 
 function formatDate(value?: string | null): string {
@@ -220,9 +226,7 @@ const MarkdownArticlePage: React.FC = () => {
   if (isLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
-        <div className="rounded-2xl border border-slate-200 bg-white/90 p-8 text-center text-sm text-slate-500 shadow-sm">
-          正在加载文章...
-        </div>
+        <StudioLoadingState text="正在加载文章..." minHeightClassName="min-h-[320px]" />
       </div>
     );
   }
@@ -238,13 +242,10 @@ const MarkdownArticlePage: React.FC = () => {
           <h1 className="mt-5 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">文章</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">这里展示已发布的 Markdown 文章。</p>
         </header>
-        {error && <div role="alert" className="mb-4 rounded-2xl bg-rose-50 p-4 text-rose-700">
-          <p>{error}</p><button type="button" onClick={() => setReloadNonce((value) => value + 1)}>重试</button>
-        </div>}
-        {articles.length === 0 && !error ? (
-          <div className="rounded-2xl border border-slate-200 bg-white/90 p-8 text-center text-sm text-slate-500 shadow-sm">
-            暂无已发布文章。
-          </div>
+        {error ? (
+          <StudioErrorState className="mb-4" message={error} onRetry={() => setReloadNonce((value) => value + 1)} />
+        ) : articles.length === 0 ? (
+          <StudioEmptyState message="还没有已发布的文章。可以先在管理端写一篇并发布，或稍后再来看看。" />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {articles.map((item) => (
@@ -267,12 +268,12 @@ const MarkdownArticlePage: React.FC = () => {
   if (error || !article) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
-        <div className="rounded-2xl border border-rose-100 bg-white/90 p-8 text-center shadow-sm">
-          <FileText className="mx-auto h-10 w-10 text-rose-500" />
+        <div className="rounded-2xl border border-rose-200 bg-white/80 p-8 text-center shadow-sm backdrop-blur-xl">
+          <FileText className="mx-auto h-10 w-10 text-rose-500" aria-hidden />
           <h1 className="mt-4 text-2xl font-semibold text-slate-900">文章不可访问</h1>
-          <p className="mt-3 text-sm text-slate-600">{error || '文章不存在或尚未发布'}</p>
-          <Link to="/articles" className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-            <ArrowLeft className="h-4 w-4" />
+          <StudioErrorNote className="mt-4 text-left">{error || '文章不存在或尚未发布'}</StudioErrorNote>
+          <Link to="/articles" className={cn(studioPrimaryButtonClassName, 'mt-6 px-4 py-2')}>
+            <ArrowLeft className="h-4 w-4" aria-hidden />
             查看文章列表
           </Link>
         </div>
@@ -289,7 +290,7 @@ const MarkdownArticlePage: React.FC = () => {
         />
       </div>
       <div
-        className={`sticky top-0 z-[70] -mx-4 mb-6 border-b border-slate-200/80 bg-white/88 px-4 backdrop-blur-xl transition-transform duration-200 ${
+        className={`sticky top-0 z-[70] -mx-4 mb-6 border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-xl transition-transform duration-200 ${
           isHeaderHidden ? '-translate-y-full' : 'translate-y-0'
         }`}
       >
@@ -353,7 +354,7 @@ const MarkdownArticlePage: React.FC = () => {
                   <div className="text-sm leading-6 text-slate-500">暂无相关文章。</div>
                 ) : (
                   relatedArticles.map((item) => (
-                    <Link key={item.id} to={`/articles/${item.slug}`} className="block rounded-xl px-2 py-2 text-sm leading-5 text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                    <Link key={item.id} to={`/articles/${item.slug}`} className="block rounded-2xl px-2 py-2 text-sm leading-5 text-slate-500 hover:bg-slate-50 hover:text-slate-900">
                       {item.title}
                     </Link>
                   ))
@@ -423,8 +424,8 @@ const MarkdownArticlePage: React.FC = () => {
           >
             <div className="mb-4 flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-900">目录</div>
-              <button type="button" onClick={() => setIsTocOpen(false)} className="rounded-full p-2 text-slate-500">
-                <X className="h-5 w-5" />
+              <button type="button" onClick={() => setIsTocOpen(false)} className="rounded-full p-2 text-slate-500" aria-label="关闭目录">
+                <X className="h-5 w-5" aria-hidden />
               </button>
             </div>
             <div className="space-y-2">
@@ -436,7 +437,7 @@ const MarkdownArticlePage: React.FC = () => {
                     scrollToHeading(event, heading.anchor);
                     setIsTocOpen(false);
                   }}
-                  className={`block rounded-xl px-3 py-2 text-sm ${
+                  className={`block rounded-2xl px-3 py-2 text-sm ${
                     activeHeading === heading.anchor ? 'bg-slate-900 text-white' : 'text-slate-600'
                   } ${heading.level >= 3 ? 'ml-3' : ''}`}
                 >
@@ -449,19 +450,19 @@ const MarkdownArticlePage: React.FC = () => {
       )}
       {selectionPopover && (
         <div
-          className="absolute z-[90] flex items-center gap-1 rounded-2xl border border-slate-200 bg-white/96 p-1 shadow-sm backdrop-blur-xl"
+          className="absolute z-[90] flex items-center gap-1 rounded-2xl border border-slate-200 bg-white/90 p-1 shadow-sm backdrop-blur-xl"
           style={{ top: selectionPopover.top, left: selectionPopover.left }}
         >
-          <button type="button" className="rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={() => void copySelectedText()}>
-            <Copy className="mr-1 inline h-3.5 w-3.5" />
+          <button type="button" className={cn(studioGhostButtonClassName, 'px-3 py-1.5')} onClick={() => void copySelectedText()}>
+            <Copy className="mr-1 inline h-3.5 w-3.5" aria-hidden />
             复制
           </button>
-          <button type="button" className="rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={shareSelectedText}>
-            <Share2 className="mr-1 inline h-3.5 w-3.5" />
+          <button type="button" className={cn(studioGhostButtonClassName, 'px-3 py-1.5')} onClick={shareSelectedText}>
+            <Share2 className="mr-1 inline h-3.5 w-3.5" aria-hidden />
             分享
           </button>
-          <button type="button" className="rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={downloadSelectedTextImage}>
-            <ImageIcon className="mr-1 inline h-3.5 w-3.5" />
+          <button type="button" className={cn(studioGhostButtonClassName, 'px-3 py-1.5')} onClick={downloadSelectedTextImage}>
+            <ImageIcon className="mr-1 inline h-3.5 w-3.5" aria-hidden />
             图片
           </button>
         </div>

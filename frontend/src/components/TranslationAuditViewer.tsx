@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaBan,
-  FaChevronLeft,
-  FaChevronRight,
   FaFilter,
   FaGavel,
   FaSearch,
@@ -391,40 +389,21 @@ const TranslationAuditViewer: React.FC = () => {
       />
 
       {/* Trace modal */}
-      <AnimatePresence>
+      <StudioModal
+        open={Boolean(selectedLog)}
+        onClose={() => {
+          setSelectedLogId(null);
+          setSelectedUser(null);
+        }}
+        labelledBy="translation-trace-title"
+        maxWidthClassName="max-w-3xl"
+      >
         {selectedLog ? (
-          <motion.div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => {
-              setSelectedLogId(null);
-              setSelectedUser(null);
-            }}
-          >
-            <motion.div
-              className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl sm:p-8"
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mb-6 flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Translation Trace</div>
-                  <h3 className="mt-2 text-xl font-semibold text-slate-900">翻译日志溯源</h3>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedLogId(null);
-                    setSelectedUser(null);
-                  }}
-                  className={studioSecondaryButtonClassName}
-                >
-                  关闭
-                </button>
-              </div>
+          <>
+            <div className="mb-6">
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Translation Trace</div>
+              <h3 id="translation-trace-title" className="mt-2 text-xl font-semibold text-slate-900">翻译日志溯源</h3>
+            </div>
 
               <div className="grid gap-5 lg:grid-cols-[1.2fr,0.8fr]">
                 <div className="space-y-4">
@@ -500,26 +479,18 @@ const TranslationAuditViewer: React.FC = () => {
                   )}
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+          </>
         ) : null}
-      </AnimatePresence>
+      </StudioModal>
 
-      {limitDialogOpen && selectedUser ? (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setLimitDialogOpen(false)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setLimitDialogOpen(false);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="limit-translation-title"
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
+      <StudioModal
+        open={limitDialogOpen && Boolean(selectedUser)}
+        onClose={() => setLimitDialogOpen(false)}
+        labelledBy="limit-translation-title"
+        maxWidthClassName="max-w-md"
+      >
+        {selectedUser ? (
+          <>
             <h3 id="limit-translation-title" className="text-lg font-semibold text-slate-900">限制翻译权限</h3>
             <p className="mt-2 text-sm text-slate-600">
               目标用户：<span className="font-medium text-slate-800">{selectedUser.username}</span>
@@ -554,16 +525,16 @@ const TranslationAuditViewer: React.FC = () => {
               </p>
             ) : null}
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setLimitDialogOpen(false)} className={studioSecondaryButtonClassName}>
+              <button type="button" onClick={() => setLimitDialogOpen(false)} className={studioSecondaryButtonClassName}>
                 取消
               </button>
-              <button onClick={() => void submitLimitDialog()} className={studioPrimaryButtonClassName}>
+              <button type="button" onClick={() => void submitLimitDialog()} className={studioPrimaryButtonClassName}>
                 确认限制
               </button>
             </div>
-          </div>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </StudioModal>
     </div>
   );
 };
@@ -585,13 +556,15 @@ const PenaltyButton: React.FC<{
   danger?: boolean;
 }> = ({ icon, label, onClick, disabled, danger = false }) => (
   <button
+    type="button"
     onClick={onClick}
     disabled={disabled}
-    className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition ${
+    className={cn(
+      'flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
       danger
         ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-    } disabled:cursor-not-allowed disabled:opacity-50`}
+        : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+    )}
   >
     {icon}
     {label}

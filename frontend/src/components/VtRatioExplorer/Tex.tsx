@@ -21,7 +21,11 @@ export function loadKatex(): Promise<KatexModule | null> {
   if (!katexPromise) {
     katexPromise = Promise.all([import('katex'), import('katex/dist/katex.min.css')])
       .then(([mod]) => {
-        katexModule = (mod as { default?: KatexModule }).default ?? (mod as unknown as KatexModule);
+        // katex 的 ESM 声明把引擎挂在 `default` 上（CJS 互操作），但 `typeof import('katex')`
+        // 本身已包含 `katex` 字段 —— 两个形状不重叠，直接 as 会报 TS2352，所以先过一层
+        // unknown 再收窄（同族坑：动态导入的 CJS/ESM 互操作形状）。
+        const interop = mod as unknown as { default?: KatexModule };
+        katexModule = interop.default ?? (mod as unknown as KatexModule);
         return katexModule;
       })
       .catch((error) => {

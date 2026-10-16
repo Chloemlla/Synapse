@@ -18,7 +18,22 @@ import {
 } from '../api/deeplx';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from './Notification';
-import { studioEyebrowClassName, studioEyebrowPillClassName } from './studioTheme';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowClassName,
+  studioEyebrowPillClassName,
+  studioHeroCardClassName,
+  studioMainSurfaceClassName,
+  studioPageClassName,
+  studioPanelClassName,
+  studioPillClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioTextareaClassName,
+} from './studioTheme';
+import { cn } from '../utils/cn';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface TranslatorHistoryItem {
   id: string;
@@ -115,6 +130,7 @@ function speakText(text: string, voice?: string): void {
 export const DeepLXTranslatorPage: React.FC = () => {
   const { setNotification } = useNotification();
   const { user } = useAuth();
+  const reducedMotion = useReducedMotion();
   const [config, setConfig] = useState<DeepLXConfigResponse | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [sourceText, setSourceTextState] = useState('');
@@ -363,15 +379,15 @@ export const DeepLXTranslatorPage: React.FC = () => {
 
   if (user?.isTranslationEnabled === false) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 sm:py-12">
+      <section className={cn(studioPageClassName, 'max-w-3xl')}>
         <m.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 text-center shadow-sm backdrop-blur-xl sm:p-10"
+          className={studioHeroCardClassName}
         >
-          <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(244,63,94,0.18),_transparent_68%)]" />
-          <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.12),_transparent_70%)]" />
+          <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+          <div className={cn(studioAccentBlobSkyClassName, '-left-10 bottom-0')} aria-hidden />
           <div className="relative">
             <div className={studioEyebrowPillClassName}>
               <FaLanguage className="text-[10px]" /> TRANSLATION ACCESS
@@ -389,15 +405,15 @@ export const DeepLXTranslatorPage: React.FC = () => {
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
+    <section className={cn(studioPageClassName, 'max-w-6xl')}>
       <m.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
+        className={studioHeroCardClassName}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, '-left-10 bottom-0')} aria-hidden />
 
         <div className="relative">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -424,7 +440,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
           </div>
 
           <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-            <div className="relative min-w-0 rounded-2xl border border-slate-200 bg-white/82 p-4 shadow-sm backdrop-blur-xl sm:p-5">
+            <div className={studioMainSurfaceClassName}>
               <div className="mb-3 lg:hidden">
                 <div className="grid grid-cols-[minmax(0,1fr)_52px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 p-2.5">
                   <div className="min-w-0 rounded-2xl bg-slate-50 px-3 py-2.5">
@@ -456,11 +472,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
                           key={`source-${language.code}`}
                           type="button"
                           onClick={() => setSourceLang(language.code)}
-                          className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition sm:text-xs ${
-                            sourceLang === language.code
-                              ? 'bg-slate-900 text-white'
-                              : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
-                          }`}
+                          className={cn(studioPillClassName(sourceLang === language.code), 'min-h-11')}
                         >
                           {language.nativeLabel}
                         </button>
@@ -490,7 +502,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
                       }
                     }}
                     placeholder="输入想翻译的内容，或者直接把整段文案粘贴进来。"
-                    className="mt-2 min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-[15px] leading-7 text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 sm:min-h-[280px] sm:text-base sm:leading-8"
+                    className={cn(studioTextareaClassName, 'mt-2 min-h-[220px] sm:min-h-[280px]')}
                   />
 
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -498,9 +510,9 @@ export const DeepLXTranslatorPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={handlePaste}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                        className={studioSecondaryButtonClassName}
                       >
-                        <FaPaste className="text-slate-500" />
+                        <FaPaste className="text-slate-500" aria-hidden />
                         粘贴
                       </button>
                       <button
@@ -510,9 +522,9 @@ export const DeepLXTranslatorPage: React.FC = () => {
                           setTranslatedText('');
                           setAlternatives([]);
                         }}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                        className={studioSecondaryButtonClassName}
                       >
-                        <FaTrash className="text-slate-500" />
+                        <FaTrash className="text-slate-500" aria-hidden />
                         清空
                       </button>
                     </div>
@@ -531,11 +543,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
                           key={`target-${language.code}`}
                           type="button"
                           onClick={() => setTargetLang(language.code)}
-                          className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition sm:text-xs ${
-                            targetLang === language.code
-                              ? 'bg-slate-900 text-white'
-                              : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
-                          }`}
+                          className={cn(studioPillClassName(targetLang === language.code), 'min-h-11')}
                         >
                           {language.nativeLabel}
                         </button>
@@ -562,10 +570,10 @@ export const DeepLXTranslatorPage: React.FC = () => {
                     </div>
 
                     {translating ? (
-                      <div className="space-y-3 pt-6">
-                        <div className="h-4 w-3/4 animate-pulse rounded-full bg-slate-200" />
-                        <div className="h-4 w-5/6 animate-pulse rounded-full bg-slate-200" />
-                        <div className="h-4 w-2/3 animate-pulse rounded-full bg-slate-200" />
+                      <div className={cn('space-y-3 pt-6', reducedMotion && 'opacity-70')}>
+                        <div className={cn('h-4 w-3/4 rounded-full bg-slate-200', !reducedMotion && 'animate-pulse')} />
+                        <div className={cn('h-4 w-5/6 rounded-full bg-slate-200', !reducedMotion && 'animate-pulse')} />
+                        <div className={cn('h-4 w-2/3 rounded-full bg-slate-200', !reducedMotion && 'animate-pulse')} />
                       </div>
                     ) : translatedText ? (
                       <div className="space-y-4">
@@ -583,7 +591,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
                                   key={item}
                                   type="button"
                                   onClick={() => setTranslatedText(item)}
-                                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                                  className={studioPillClassName(false)}
                                 >
                                   {item}
                                 </button>
@@ -605,18 +613,18 @@ export const DeepLXTranslatorPage: React.FC = () => {
                         type="button"
                         onClick={handleCopyResult}
                         disabled={!translatedText.trim()}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                        className={studioSecondaryButtonClassName}
                       >
-                        <FaCopy className="text-slate-500" />
+                        <FaCopy className="text-slate-500" aria-hidden />
                         复制
                       </button>
                       <button
                         type="button"
                         onClick={() => speakText(translatedText, getLanguageByCode(targetLang)?.voice)}
                         disabled={!translatedText.trim()}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                        className={studioSecondaryButtonClassName}
                       >
-                        <FaVolumeUp className="text-slate-500" />
+                        <FaVolumeUp className="text-slate-500" aria-hidden />
                         朗读
                       </button>
                     </div>
@@ -625,7 +633,7 @@ export const DeepLXTranslatorPage: React.FC = () => {
                       type="button"
                       onClick={() => void translateNow()}
                       disabled={translating || !sourceText.trim()}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 sm:w-auto"
+                      className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
                     >
                       <FaBolt />
                       立即翻译

@@ -79,8 +79,11 @@ type RunFormatting = {
   color?: string;
   underline?: {
     color?: string;
-    // 类型引用 docx 的枚举，但不产生静态 import：docx 在导出时才动态载入。
-    type?: import('docx').UnderlineType;
+    // docx 的 `UnderlineType` 是**值对象**（`export declare const UnderlineType: {...}`），
+    // 不是类型，所以写 `import('docx').UnderlineType` 会报 TS2694。这里只声明我们用得到的
+    // 字面量子集，与 docx 的 `(typeof UnderlineType)[keyof typeof UnderlineType]` 天然兼容，
+    // 同时不产生静态 import（docx 在导出时才动态载入）。
+    type?: 'single' | 'double' | 'thick' | 'dotted' | 'dash' | 'wave' | 'none';
   };
 };
 
@@ -139,7 +142,7 @@ const MarkdownExportPage: React.FC = () => {
     try {
       // docx 只在真的导出 Word 时才需要：包里只有这一处用得到它，
       // 静态 import 会把整份生成器塞进本页 chunk 的首屏依赖。
-      const { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType, Table, TableRow, TableCell } =
+      const { Document, HeadingLevel, Packer, Paragraph, TextRun, Table, TableRow, TableCell } =
         await import('docx');
       const processedMarkdown = replaceMathWithPlaceholders(markdownContent);
       setDocxSourceMarkdown(processedMarkdown);
@@ -160,7 +163,12 @@ const MarkdownExportPage: React.FC = () => {
         node.replaceWith(pre);
       });
 
-      const processNode = (node: Node, formatting: RunFormatting = {}): TextRun[] => {
+      // TextRun / Paragraph / Table 是从模块里解构出来的**值**，不能直接当类型用（TS2749），
+      // 用 InstanceType<typeof X> 取实例类型。
+      const processNode = (
+        node: Node,
+        formatting: RunFormatting = {},
+      ): InstanceType<typeof TextRun>[] => {
         if (node.nodeType === Node.TEXT_NODE) {
           let textContent = node.textContent || '';
 
@@ -204,7 +212,7 @@ const MarkdownExportPage: React.FC = () => {
               processNode(child, {
                 ...formatting,
                 color: '0066CC',
-                underline: { type: UnderlineType.SINGLE, color: '0066CC' },
+                underline: { type: 'single', color: '0066CC' },
               })
             );
 
@@ -219,7 +227,7 @@ const MarkdownExportPage: React.FC = () => {
         }
       };
 
-      const paragraphs: Array<Paragraph | Table> = [];
+      const paragraphs: Array<InstanceType<typeof Paragraph> | InstanceType<typeof Table>> = [];
       const blockChildren = (container: Node): Node[] => Array.from(container.childNodes).flatMap((child) => {
         if (child instanceof HTMLElement && ['DIV', 'SECTION'].includes(child.tagName)) return blockChildren(child);
         return [child];
