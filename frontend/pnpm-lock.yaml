@@ -109,6 +109,9 @@ importers:
       mermaid:
         specifier: ^12.1.0
         version: 12.1.0
+      monaco-editor:
+        specifier: ^0.55.1
+        version: 0.55.1
       prismjs:
         specifier: ^1.30.0
         version: 1.30.0
@@ -3470,6 +3473,9 @@ packages:
   minimatch@10.2.6:
     resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
     engines: {node: 18 || 20 || >=22}
+
+  monaco-editor@0.55.1:
+    resolution: {integrity: sha512-jz4x+TJNFHwHtwuV9vA9rMujcZRb0CEilTEwG2rRSpe/A7Jdkuj8xPKttCgOh+v/lkHy7HsZ64oj+q3xoAFl9A==}
 
   motion-dom@14.0.0:
     resolution: {integrity: sha512-aU3ApXo1yTpeUi3JU+jbDk2TELjxPE3MbBMUP7nZHlARb6RweJK+ojmLjpuB0YsY6zhbBl1YWGo8LMsI1/Llqw==}
@@ -8249,6 +8255,11 @@ snapshots:
   minimatch@10.2.6:
     dependencies:
       brace-expansion: 5.0.12
+
+  monaco-editor@0.55.1:
+    dependencies:
+      dompurify: 3.4.16
+      marked: 18.1.0
 
   motion-dom@14.0.0:
     dependencies:
