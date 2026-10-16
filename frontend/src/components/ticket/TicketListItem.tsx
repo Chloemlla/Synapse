@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiSquare, FiUser } from 'react-icons/fi';
+import { FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiLink, FiPaperclip, FiSquare, FiTag, FiUser } from 'react-icons/fi';
 import type { ITicketSummary } from '../../api/ticketApi';
 import { cn } from '../../utils/cn';
 import { studioBadgeClassName, studioEyebrowClassName } from '../studioTheme';
@@ -8,9 +8,11 @@ import {
   TICKET_CATEGORY_META,
   TICKET_PRIORITY_META,
   TICKET_STATUS_META,
+  TICKET_TYPE_META,
   formatTicketAge,
   formatTicketTime,
   isTicketSlaBreached,
+  ticketServiceLabel,
 } from './ticketConstants';
 
 interface TicketListItemProps {
@@ -120,6 +122,30 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
             <span className={cn(studioBadgeClassName(categoryMeta.tone), 'hidden sm:inline-flex')}>
               {categoryMeta.label}
             </span>
+            <span className={cn(studioBadgeClassName(TICKET_TYPE_META[ticket.type]?.tone ?? 'blue'), 'hidden sm:inline-flex')}>
+              {TICKET_TYPE_META[ticket.type]?.label ?? '咨询'}
+            </span>
+            {ticket.relatedService && ticket.relatedService !== 'other' ? (
+              <span className="hidden items-center gap-1 text-slate-400 sm:inline-flex" title="相关服务">
+                <FiTag size={10} /> {ticketServiceLabel(ticket.relatedService)}
+              </span>
+            ) : null}
+            {(ticket.attachmentCount ?? 0) > 0 ? (
+              <span
+                className="inline-flex items-center gap-1 text-slate-400"
+                title={`文件附件 ${ticket.attachmentCount} 个`}
+              >
+                <FiPaperclip size={10} /> {ticket.attachmentCount}
+              </span>
+            ) : null}
+            {(ticket.attachmentLinks?.length ?? 0) > 0 ? (
+              <span
+                className="inline-flex items-center gap-1 text-slate-400"
+                title={`附件链接 ${ticket.attachmentLinks?.length} 条`}
+              >
+                <FiLink size={10} /> {ticket.attachmentLinks?.length}
+              </span>
+            ) : null}
             {slaBreached ? (
               <span className={studioBadgeClassName('rose')} title={`待回复超过 ${formatTicketAge(ticket.ageHours)}`}>
                 <FiAlertCircle /> 逾期

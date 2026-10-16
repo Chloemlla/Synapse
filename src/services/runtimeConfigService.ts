@@ -1955,7 +1955,9 @@ export class RuntimeConfigService {
   }
 
   static async deleteTicketAttachmentSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "TICKET_ATTACHMENTS" }).exec();
+    // 这里删的是**运行时配置**而不是用户数据（与相邻的 deleteXxxSetting 同族），
+    // 软删除无意义：配置行的存亡就是它的全部语义。
+    await RuntimeConfigModel.deleteOne({ key: "TICKET_ATTACHMENTS" }).exec(); // soft-delete-exempt: 重置运行时配置项，非用户数据
     runtimeConfigCache.ticketAttachments = cloneRuntimeConfigDefaults(runtimeConfigDefaults).ticketAttachments;
     loadedKeys.delete("TICKET_ATTACHMENTS");
     invalidateHotCache("TICKET_ATTACHMENTS");

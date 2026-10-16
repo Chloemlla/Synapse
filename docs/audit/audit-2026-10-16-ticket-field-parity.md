@@ -53,8 +53,27 @@
 | TP-10 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `limit` ≤ 200；前端固定 50 | 能力缺口：每页条数不可调 | 待修 |
 | TP-11 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `assignee=<userId>`；前端只有「我受理的 / 未分配」 | 能力缺口：不能按指定客服筛选（需要管理员列表，**挂起**：本轮不引入新的用户检索接口） | 挂起 |
 | TP-12 | 中 | 治理 | 新增附件落库 | 存储责任：隐私数据地图里没有工单/附件条目，本轮补 `tickets` + `ticket_attachments` 两个数据集并重生 `src/generated/privacyDataMap.ts` | 待修 |
+| TP-13 | 中 | 前后端 | 附件上传权限口径 | **普通用户上传文件默认关闭**，需超管在后台手动开启；开启前只能以「附件链接」提交。默认开启会把任意二进制收进库，而白名单只能拦类型、拦不住内容 | 待修 |
+| TP-14 | 中 | 前后端 | `TicketAttachments.tsx` / `TicketCreateForm.tsx` | **附件 URL 输入框在开关关闭与打开时都要有**（票面要求）：关闭时它是主通道，打开时它是「不占本站存储」的补充通道 | 待修 |
 
 ### 逐条细节
+
+**TP-13 / TP-14 附件上传权限（默认关闭 + 链接兜底）**
+
+附件是用户上传的**任意二进制**：扩展名/MIME/魔数白名单只能挡住「类型不对」与「扩展名伪装」，挡不住
+「类型对但内容是恶意文件」或大量垃圾。因此默认**不对普通用户开放文件上传**，由超管在后台手动开启：
+
+- 开关实体：运行时配置 `TICKET_ATTACHMENTS.userUploadEnabled`（默认 `false`，Mongo 存储、保存即生效、
+  多实例 ≤10s 收敛）；管理端接口 `GET/POST/DELETE /api/admin/ticket-attachments/setting`；
+  管理 UI 在工单管理台的「普通用户附件上传」卡片（超管可见）。
+- 关闭时：普通用户上传接口返回 403（`ATTACHMENT_UPLOAD_DISABLED`），提示改用附件链接或联系管理员；
+  已存在的附件仍可下载与删除（不因关开关而丢数据）。
+- 开启时：普通用户可上传（jpg/jpeg/png/gif/txt/pdf、单个 ≤1MB、每工单 ≤5 个），
+  `.txt` 过同一套 AI 内容审查，避免附件成为绕过工单文本审查的直通车。
+- 管理员/超管不受该开关限制（他们本来就能改工单内容）。
+- **附件链接输入框在两种状态下都展示**：关闭时它是提交截图的主通道；打开时它仍然有用
+  （图床/网盘地址不占本站存储、不需要先传文件）。链接只做形态校验（仅 http/https、≤2048 字），
+  本站**从不代取**这些 URL（不引入 SSRF 面），渲染时 `rel="noopener noreferrer nofollow"`。
 
 **TP-01 联系邮箱**：票面「邮件地址」在两端都不存在——后端只存 `username`，通知一律取账号邮箱。
 改为：工单落库时快照 `contactEmail`（缺省取账号邮箱，格式校验，≤254 字），管理端可见 / 可改；
@@ -103,7 +122,8 @@ Synapse 没有「服务实例」注册表，所以落成两层：`relatedService
 | `relatedServiceRef` | `string \| null`，≤120 | 相关服务的具体资源 / 任务说明 |
 | `contactEmail` | `string \| null`，≤254 | 联系邮箱快照（缺省取账号邮箱） |
 | `relatedTickets` | `[{ ticketId, title }]`，≤5 | 关联工单快照 |
-| `attachmentCount` | `number`，默认 `0` | 附件计数（列表徽标；由附件接口维护） |
+| `attachmentLinks` | `[{ url, label }]`，≤5 | 附件链接（仅 http/https，只存 URL 不代取） |
+| `attachmentCount` | `number`，默认 `0` | 文件附件计数（列表徽标；由附件接口维护） |
 
 `relatedService` 允许值（两端同一份顺序）：
 `tts` 语音合成 · `transcribe` 语音转写 · `librechat` 智能对话 · `geogebra` 数学画板 · `pixel` 图片处理 ·
@@ -131,12 +151,25 @@ Synapse 没有「服务实例」注册表，所以落成两层：`relatedService
 | `POST /api/tickets/:id/attachments` | 新增：multipart 字段 `file`，返回 `{ attachment, attachmentCount }` |
 | `GET /api/tickets/:id/attachments/:attachmentId/download` | 新增：流式下载（属主 / superadmin） |
 | `DELETE /api/tickets/:id/attachments/:attachmentId` | 新增：上传者本人或 superadmin |
+| `PUT /api/tickets/:id/attachment-links` | 新增：属主 / superadmin 整体替换附件链接（关闭与打开状态下都可用） |
+| `GET /api/tickets/capabilities` | 新增：`canUploadAttachments` + 上传说明 + 各类限额（前端据此决定渲染上传入口还是仅链接输入框） |
+| `GET/POST/DELETE /api/admin/ticket-attachments/setting` | 新增：超管开关「普通用户可上传附件」（默认关闭，写入运行时时配置 `TICKET_ATTACHMENTS`） |
 | `GET /api/tickets/:id` | 详情响应新增 `attachments[]`（元数据，不含 `data`） |
 | `GET /api/tickets`（summary） | 摘要新增 `type` / `relatedService` / `attachmentCount` 等 |
 
 限流：新增 `ticketUpload` 限流档（10 分钟 20 次），挂在上传与删除上。
 
 ## 五、改动清单（按批对账）
+
+> 说明：本 clone 由多个会话共用。批次 1（后端字段/附件策略 + 隐私地图）与批次 2 的前半
+> （运行时配置接线 + `ticketApi`/`ticketConstants` 骨架）已被并行会话按“收编在飞 WIP 快照”提交为
+> `4896ca34`、`3b02dcf5`（提交信息里写明了来源），本文件与其余改动在同批次的后续提交中补齐。
+>
+> **未做（有意）**：env-manager 的「工单附件」卡片。原因是 `frontend/src/components/EnvManager.tsx`
+> 当时正被并行设计语言批次修改，改动同一文件会把对方的在飞 WIP 一起带进提交（§三 的暫存区污染风险）。
+> 当前开关已可从工单管理台（超管可见的「普通用户附件上传」卡片）与
+> `GET/POST/DELETE /api/admin/ticket-attachments/setting` 修改；待 EnvManager.tsx 空闲后再补分区即可，
+> 数据与接口无需再改。
 
 **批次 1（后端 + 治理）**
 - `src/models/ticketModel.ts`：6 个新字段 + 关联子 schema + 索引
@@ -150,17 +183,32 @@ Synapse 没有「服务实例」注册表，所以落成两层：`relatedService
 - `src/tests/ticketAttachmentPolicy.test.ts`（新）、`src/tests/ticketViewSummary.test.ts`（补新字段断言）
 
 **批次 2（前端）**
-- `frontend/src/api/ticketApi.ts`：类型 + 新方法（含 TP-09 类型收紧）
-- `frontend/src/components/ticket/ticketConstants.ts`：类型 / 相关服务 / 附件规则 / 标签
-- `frontend/src/components/ticket/TicketAttachments.tsx`（新）：选择、上传进度、失败重试、下载、删除
-- `frontend/src/components/ticket/TicketDetailMeta.tsx`（新）：类型 / 相关服务 / 联系邮箱 / 关联工单（含管理端编辑与关联选择）
+- `frontend/src/api/ticketApi.ts`：类型（类型/服务/关联/附件/链接/能力）+ 新方法（含 TP-09 类型收紧）
+- `frontend/src/components/ticket/ticketConstants.ts`：类型/服务/附件规则/链接校验/体积格式化
+- `frontend/src/components/ticket/TicketAttachments.tsx`（新）：`TicketAttachmentLinks`（链接输入框，两种状态都显示）/`TicketAttachmentPicker`/`TicketAttachmentList`
+- `frontend/src/components/ticket/TicketCreateForm.tsx`（新）：创建表单全量票面字段（从 `TicketSystem.tsx` 抽出，控制体积闸门）
+- `frontend/src/components/ticket/TicketDetailMeta.tsx`（新）：详情元信息 + 超管就地改字段 + 关联工单选择器
+- `frontend/src/components/ticket/TicketAttachmentSettingsCard.tsx`（新）：超管的附件上传开关卡片
 - `frontend/src/components/ticket/TicketFilters.tsx`：类型 / 服务 / 日期区间 / 每页条数（TP-08、TP-10）
-- `frontend/src/components/ticket/TicketListItem.tsx`：类型 / 服务 / 附件徽标
-- `frontend/src/components/TicketSystem.tsx`：创建表单新字段 + 详情元信息 + 附件接线 + TP-07 修复
+- `frontend/src/components/ticket/TicketListItem.tsx`：类型 / 服务 / 附件与链接计数徽标
+- `frontend/src/components/TicketSystem.tsx`：能力拉取、创单后附件上传、附件链接乐观提交、TP-07 修复
+- `frontend/src/tests/ticketFieldParity.test.ts`（新）：服务清单与后端一致（漂移即失败）+ 附件/链接预校验
+
+**批次 3（开关与链接通道，对应 TP-13 / TP-14）**
+- `src/models/runtimeConfigModel.ts`、`src/config/runtimeConfigDefaults.ts`、`src/services/runtimeConfigService.ts`：
+  `TICKET_ATTACHMENTS` 分区（默认 `userUploadEnabled: false`）+ get/set/delete
+- `src/controllers/adminController.ts`、`src/routes/admin/config.ts`：`/api/admin/ticket-attachments/setting`（读管理员 / 写超管 / 审计）
+- `src/models/ticketModel.ts`、`src/utils/ticketAttachments.ts`、`src/utils/ticketView.ts`：`attachmentLinks` 字段 + 链接校验/视图
+- `src/controllers/ticketController.ts`、`src/routes/ticketRoutes.ts`：`/capabilities`、`PUT /:id/attachment-links`、上传开关门控
+- `frontend/src/components/ticket/TicketAttachmentSettingsCard.tsx`：开关卡片
 
 ## 六、验证
 
 - 静态：新增/改动文件的类型与调用链自查（`ticketApi` ↔ 控制器 ↔ 视图三段字段名逐一对照）。
 - CI：`Node Verification`（后端 Jest + 前端 Vitest + 类型 + 治理闸门）与 `Quality Guardrails`
   （隐私契约、体积闸门、前端构建与预算）全绿即判通过；本地不跑任何构建/测试。
-- 逐条对账：本节编号 TP-01～TP-12 在收尾时逐条标注去向（已修 / 挂起理由）。
+- 本地静态校验（非构建）：`check-slicing-and-softdelete`、`check-privacy-contract`、
+  `generate-privacy-data-map --check`、`check-ts-file-size`、`check-frontend-design-language` 全部通过
+  （附件删除与运行时配置重置两处裸删除按闸门口径逐行标注 `soft-delete-exempt` 并写明理由，
+  基线数量保持 124 不变，只有行号刷新）。
+- 逐条对账：本节编号 TP-01～TP-14 在收尾时逐条标注去向（已修 / 挂起理由）。

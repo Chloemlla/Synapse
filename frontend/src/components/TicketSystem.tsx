@@ -2,37 +2,55 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useAuth } from "../hooks/useAuth";
 import { isAdminRole, isSuperAdmin } from "../utils/rbac";
-import { ticketApi, ITicket, ITicketSummary, TicketListMeta, TicketStats } from "../api/ticketApi";
+import {
+  ticketApi,
+  ITicket,
+  ITicketSummary,
+  ITicketAttachment,
+  TicketCapabilities,
+  TicketListMeta,
+  TicketStats,
+  type TicketCategory,
+  type TicketRelatedService,
+  type TicketType,
+} from "../api/ticketApi";
 import TicketListItem from "./ticket/TicketListItem";
 import TicketFilters, { EMPTY_TICKET_FILTER, type TicketFilterValue } from "./ticket/TicketFilters";
 import TicketStatsBar from "./ticket/TicketStatsBar";
 import TicketHeroBody, { type TicketPenaltyAppeal } from "./ticket/TicketHero";
 import { ticketPriorityBadge, ticketStatusBadge } from "./ticket/ticketBadges";
 import TicketComposer from "./ticket/TicketComposer";
+import TicketCreateForm from "./ticket/TicketCreateForm";
+import TicketDetailMeta from "./ticket/TicketDetailMeta";
+import TicketAttachmentSettingsCard from "./ticket/TicketAttachmentSettingsCard";
+import {
+  TicketAttachmentLinks,
+  TicketAttachmentList,
+} from "./ticket/TicketAttachments";
 import { OverLengthMailNotice, type OverLengthDraft } from "./ticket/OverLengthMailNotice";
 import TicketProcessingToast from "./ticket/TicketProcessingToast";
 import {
   MAX_TICKET_DESC_LEN,
   MAX_TICKET_REPLY_LEN,
-  MAX_TICKET_TITLE_LEN,
   TICKET_CATEGORY_META,
   TICKET_CATEGORY_ORDER,
   TICKET_PAGE_SIZE,
   TICKET_PRIORITY_META,
   TICKET_STATUS_META,
   TICKET_STATUS_ORDER,
+  TICKET_TYPE_META,
+  ticketServiceLabel,
 } from "./ticket/ticketConstants";
 import { useNotification } from "./Notification";
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useWebSocket, WsServerMessage } from "../hooks/useWebSocket";
 import {
-  FiSend, FiPlus, FiMessageSquare, FiClock,
+  FiPlus, FiMessageSquare, FiClock,
   FiCheckCircle, FiAlertCircle, FiX, FiFilter,
-  FiUser, FiChevronRight, FiSearch, FiInfo,
-  FiCpu, FiCheck, FiTerminal, FiEdit2, FiTrash2,
-  FiRefreshCw, FiMail, FiLink, FiLock, FiCheckSquare, FiLoader,
-} from "react-icons/fi";
-import MarkdownRenderer, { type MarkdownReaderControls } from './MarkdownRenderer';
+  FiUser, FiChevronRight, FiInfo,
+  FiCpu, FiCheck, FiEdit2, FiTrash2,
+  FiRefreshCw, FiLink, FiLock, FiCheckSquare, FiLoader,
+} from "react-icons/fi";import MarkdownRenderer, { type MarkdownReaderControls } from './MarkdownRenderer';
 import { AiErrorDetailsPanel } from './AiErrorDetailsPanel';
 import { SUPPORT_EMAIL } from './PenaltyAppealActions';
 import { emitPenaltyAppealRequired, isTicketPermissionBanError } from '../utils/penaltyAppeal';
@@ -50,8 +68,6 @@ import {
   studioPageFont,
   studioPanelClassName,
   studioPrimaryButtonClassName,
-  studioStrongBadgeClassName,
-  studioTextareaClassName,
 } from './studioTheme';
 
 type TicketProcessStep = "audit_start" | "audit_passed" | "ai_start" | "ai_complete" | "saving" | "audit_failed" | "error";
@@ -160,7 +176,24 @@ const TicketSystem: React.FC = () => {
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [overLengthDraft, setOverLengthDraft] = useState<OverLengthDraft>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [newTicket, setNewTicket] = useState({ title: "", description: "", priority: "medium", category: "other" });
+  const [newTicket, setNewTicket] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    category: "other",
+    type: "inquiry",
+    relatedService: "other",
+    relatedServiceRef: "",
+    contactEmail: "",
+    attachmentLinks: [] as Array<{ url: string; label: string | null }>,
+    relatedTicketIds: [] as string[],
+  });
+  // 创建工单时单据还未存在，附件只能先攒在内存里，提交成功后再逐个上传。
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  // 关联工单候选（创建表单用）：只拉自己最近的工单，避免为一次选择单独建一个搜索接口。
+  const [linkingCandidates, setLinkingCandidates] = useState<Array<{ _id: string; title: string }>>([]);
+  // 工单能力（附件上传开关与限额）。服务端是执行边界，这里只用于渲染。
+  const [capabilities, setCapabilities] = useState<TicketCapabilities | null>(null);
   const [adminFilter, setAdminFilter] = useState<TicketFilterValue>({ ...EMPTY_TICKET_FILTER });
   // 输入即改 adminFilter.q，但只有停止输入 350ms 后才拿去请求，避免每敲一个字打一次接口。
   const [queryFilter, setQueryFilter] = useState<TicketFilterValue>({ ...EMPTY_TICKET_FILTER });
@@ -239,6 +272,12 @@ const TicketSystem: React.FC = () => {
       ? lastSenderRole === 'user'
       : lastSenderRole === 'admin' || lastSenderRole === 'ai';
     const isOpenHere = selectedTicketRef.current?._id === ticket._id;
+    // TP-07：WS `ticket:update` 路径在本地投影工单，ageHours 写死 0 会让管理端的
+    // 「逾期」徽标在刷新列表前失效。这里按后端同一口径（2 位小数小时）算一次。
+    const ageAnchor = new Date(ticket.updatedAt || ticket.createdAt).getTime();
+    const ageHours = Number.isFinite(ageAnchor)
+      ? Math.max(0, Math.round((Date.now() - ageAnchor) / 36_000) / 100)
+      : 0;
     return {
       _id: ticket._id,
       userId: ticket.userId,
@@ -248,6 +287,12 @@ const TicketSystem: React.FC = () => {
       status: ticket.status,
       priority: ticket.priority,
       category: (ticket.category || 'other') as ITicketSummary['category'],
+      type: ticket.type ?? 'inquiry',
+      relatedService: ticket.relatedService ?? 'other',
+      relatedServiceRef: ticket.relatedServiceRef ?? null,
+      contactEmail: ticket.contactEmail ?? null,
+      relatedTickets: ticket.relatedTickets ?? [],
+      attachmentLinks: ticket.attachmentLinks ?? [],
       assigneeId: ticket.assigneeId ?? null,
       assigneeName: ticket.assigneeName ?? null,
       createdAt: ticket.createdAt,
@@ -259,7 +304,8 @@ const TicketSystem: React.FC = () => {
       lastMessageAt: last?.createdAt ?? null,
       hasUnread: !isOpenHere && fromOtherSide,
       awaitingReply: lastSenderRole === 'user',
-      ageHours: 0,
+      attachmentCount: ticket.attachmentCount ?? (ticket.attachments?.length ?? 0),
+      ageHours,
     };
   }, [isAdmin]);
 
@@ -468,6 +514,15 @@ const TicketSystem: React.FC = () => {
   const fetchTickets = useCallback(async (options: { page?: number; append?: boolean } = {}) => {
     const page = options.page ?? 1;
     const append = options.append === true;
+    // 日期筛选：用户选的是本地日期，这里换成明确的 ISO 瞬时值（含到当天 23:59:59），
+    // 避免后端 `new Date("2026-10-16")` 按 UTC 解析造成「差一天」。
+    const toIsoBoundary = (value: string, endOfDay: boolean): string | undefined => {
+      if (!value) return undefined;
+      const parsed = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00'}`);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    };
+    const pageSize = Number.parseInt(queryFilter.limit || '', 10);
+    const limit = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : TICKET_PAGE_SIZE;
     try {
       if (!append) setLoading(true);
       setListError(null);
@@ -476,15 +531,19 @@ const TicketSystem: React.FC = () => {
           status: queryFilter.status || undefined,
           priority: queryFilter.priority || undefined,
           category: queryFilter.category || undefined,
+          type: queryFilter.type || undefined,
+          service: queryFilter.service || undefined,
           assignee: queryFilter.assignee || undefined,
           awaitingReply: queryFilter.awaitingReply || undefined,
           unread: queryFilter.unread || undefined,
           sort: queryFilter.sort || undefined,
           q: queryFilter.q || undefined,
+          from: toIsoBoundary(queryFilter.from, false),
+          to: toIsoBoundary(queryFilter.to, true),
           page,
-          limit: TICKET_PAGE_SIZE,
+          limit,
         })
-        : await ticketApi.getMyTickets({ page, limit: TICKET_PAGE_SIZE });
+        : await ticketApi.getMyTickets({ page, limit });
       setListMeta(result.meta);
       setTickets(prev => {
         if (!append) return result.tickets;
@@ -518,6 +577,29 @@ const TicketSystem: React.FC = () => {
   useEffect(() => {
     void ticketApi.getUnreadCount().then(setUnreadCount).catch(() => undefined);
   }, [user?.id, isAdmin, queryFilter]);
+
+  // 工单能力（附件上传开关与限额）：只取一次。服务端才是执行边界，这里只是把
+  // 「必然 403 的按钮」 换成「附件链接输入框」。
+  useEffect(() => {
+    void ticketApi.getCapabilities().then(setCapabilities).catch(() => undefined);
+  }, [user?.id]);
+
+  // 创建表单的「关联工单」候选：打开创建面板时拉一次自己最近的工单
+  // （不为一次选择单独建搜索接口；候选上限 = 列表默认页大小）。
+  useEffect(() => {
+    if (!isCreating || isAdmin) return;
+    let cancelled = false;
+    void ticketApi
+      .getMyTickets({ page: 1, limit: TICKET_PAGE_SIZE })
+      .then((page) => {
+        if (cancelled) return;
+        setLinkingCandidates(page.tickets.map((item) => ({ _id: item._id, title: item.title })));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, isCreating]);
 
   useEffect(() => {
     refreshAdminStats();
@@ -627,14 +709,64 @@ const TicketSystem: React.FC = () => {
     }
     setOverLengthDraft(null);
     setIsSubmitting(true);
+    const filesToUpload = pendingAttachments;
     try {
-      const created = await ticketApi.createTicket(newTicket);
+      const created = await ticketApi.createTicket({
+        title: newTicket.title,
+        description: newTicket.description,
+        priority: newTicket.priority,
+        category: newTicket.category as TicketCategory,
+        type: newTicket.type as TicketType,
+        relatedService: newTicket.relatedService as TicketRelatedService,
+        relatedServiceRef: newTicket.relatedServiceRef.trim() || null,
+        contactEmail: newTicket.contactEmail.trim() || null,
+        relatedTicketIds: newTicket.relatedTicketIds,
+        attachmentLinks: newTicket.attachmentLinks,
+      });
       setNotification({ type: 'success', message: "工单已提交" });
       setIsCreating(false);
       setShowDetailOnMobile(false);
-      setNewTicket({ title: "", description: "", priority: "medium", category: "other" });
+      setNewTicket({
+        title: "",
+        description: "",
+        priority: "medium",
+        category: "other",
+        type: "inquiry",
+        relatedService: "other",
+        relatedServiceRef: "",
+        contactEmail: "",
+        attachmentLinks: [],
+        relatedTicketIds: [],
+      });
+      setPendingAttachments([]);
       setSelectedTicket(created);
       fetchTickets();
+
+      // 附件：工单已存在后才逐个上传（上传端点需要 ticketId）。
+      // 失败的附件不阻断工单本身（它已经建好了），但要如实告知哪几个没传上去。
+      if (filesToUpload.length > 0) {
+        const failed: string[] = [];
+        for (const file of filesToUpload) {
+          try {
+            await ticketApi.uploadAttachment(created._id, file);
+          } catch (uploadError) {
+            const reason =
+              (uploadError as { response?: { data?: { error?: string } } })?.response?.data?.error || '上传失败';
+            failed.push(`${file.name}（${reason}）`);
+          }
+        }
+        if (failed.length > 0) {
+          setNotification({
+            type: 'error',
+            message: `工单已提交，但有 ${failed.length} 个附件未上传：${failed.join('；')}`,
+            duration: 8000,
+          });
+        } else {
+          setNotification({ type: 'success', message: `工单已提交，${filesToUpload.length} 个附件已上传` });
+        }
+        // 附件是通过独立接口写入的，重拉一次详情以显示真实列表与计数
+        void ticketApi.getTicket(created._id).then(setSelectedTicket).catch(() => undefined);
+      }
     } catch (error: unknown) {
       const apiError = getApiErrorResponse(error);
       // 后端兜底的超长拦截：仍把输入框里的完整原文交给邮件引导
@@ -690,8 +822,20 @@ const TicketSystem: React.FC = () => {
     }
   };
 
-  // 管理端综合更新：优先级 / 分类 / 受理人（认领）
-  const handleUpdateFields = async (id: string, fields: { priority?: string; category?: string; assignee?: string | null }) => {
+  // 管理端综合更新：优先级 / 分类 / 类型 / 相关服务 / 联系邮箱 / 关联工单 / 受理人（认领）
+  const handleUpdateFields = async (
+    id: string,
+    fields: {
+      priority?: string;
+      category?: string;
+      type?: string;
+      relatedService?: string;
+      relatedServiceRef?: string | null;
+      contactEmail?: string | null;
+      relatedTickets?: string[];
+      assignee?: string | null;
+    },
+  ) => {
     if (!canWrite) return;
     try {
       const updated = await ticketApi.updateFields(id, fields);
@@ -704,6 +848,87 @@ const TicketSystem: React.FC = () => {
       setNotification({ type: 'error', message: apiError?.data?.error || "更新工单失败" });
     }
   };
+
+  /**
+   * 附件链接：乐观更新后就地提交（每次增/删一个链接 = 一次请求，这是离散动作）。
+   * 失败则回滚到请求前的列表，避免界面显示“已保存”但服务端没存上。
+   */
+  const handleAttachmentLinksChange = useCallback(
+    async (links: Array<{ url: string; label: string | null }>) => {
+      const ticket = selectedTicketRef.current;
+      if (!ticket) return;
+      const previous = ticket.attachmentLinks ?? [];
+      setSelectedTicket({ ...ticket, attachmentLinks: links });
+      try {
+        const updated = await ticketApi.updateAttachmentLinks(ticket._id, links);
+        setSelectedTicket(updated);
+        applyTicketUpdate(updated);
+      } catch (error) {
+        setSelectedTicket({ ...ticket, attachmentLinks: previous });
+        const apiError = getApiErrorResponse(error);
+        setNotification({ type: 'error', message: apiError?.data?.error || '附件链接保存失败，请重试' });
+      }
+    },
+    [applyTicketUpdate, setNotification],
+  );
+
+  const handleAttachmentUploaded = useCallback(
+    ({ attachment, attachmentCount }: { attachment: ITicketAttachment; attachmentCount: number }) => {
+      setSelectedTicket((prev) =>
+        prev ? { ...prev, attachmentCount, attachments: [...(prev.attachments ?? []), attachment] } : prev,
+      );
+      setNotification({ type: 'success', message: `附件「${attachment.fileName}」已上传` });
+    },
+    [setNotification],
+  );
+
+  const handleAttachmentDeleted = useCallback(
+    (attachmentId: string, attachmentCount: number) => {
+      setSelectedTicket((prev) =>
+        prev
+          ? {
+              ...prev,
+              attachmentCount,
+              attachments: (prev.attachments ?? []).filter((item) => item.id !== attachmentId),
+            }
+          : prev,
+      );
+      setNotification({ type: 'success', message: '附件已删除' });
+    },
+    [setNotification],
+  );
+
+  /** 打开任意工单（关联工单跳转 / 深链复用）。 */
+  const handleOpenTicketById = useCallback(
+    (ticketId: string) => {
+      if (!ticketId) return;
+      void ticketApi
+        .getTicket(ticketId)
+        .then((full) => {
+          setSelectedTicket(full);
+          setShowDetailOnMobile(true);
+          setIsCreating(false);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('ticket', full._id);
+            window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+          }
+        })
+        .catch((error) => {
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          setNotification({
+            type: 'error',
+            message:
+              status === 403
+                ? '该工单不存在，或你没有查看权限'
+                : status === 404
+                  ? '该工单不存在或已被删除'
+                  : '打开工单失败，请稍后重试',
+          });
+        });
+    },
+    [setNotification],
+  );
 
   // 批量改状态（列表多选），成功后重拉列表以反映筛选结果
   const handleBulkStatus = async (status: string) => {
@@ -760,10 +985,12 @@ const TicketSystem: React.FC = () => {
   // 导出当前已加载列表为 CSV（管理端对账/汇报用）
   const handleExportCsv = useCallback(() => {
     if (tickets.length === 0) return;
-    const header = ['ID', '标题', '用户', '状态', '优先级', '分类', '受理人', '消息数', '未读', '待回复', '创建时间', '更新时间'];
+    const header = ['ID', '标题', '用户', '状态', '优先级', '分类', '类型', '相关服务', '受理人', '附件', '消息数', '未读', '待回复', '创建时间', '更新时间'];
     const rows = tickets.map(t => [
       t._id, t.title, t.username, t.status, t.priority, t.category,
-      t.assigneeName || '', String(t.messageCount), t.hasUnread ? '是' : '否',
+      TICKET_TYPE_META[t.type]?.label || t.type,
+      ticketServiceLabel(t.relatedService),
+      t.assigneeName || '', String(t.attachmentCount ?? 0), String(t.messageCount), t.hasUnread ? '是' : '否',
       t.awaitingReply ? '是' : '否', t.createdAt, t.updatedAt,
     ]);
     const escapeCell = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
@@ -833,6 +1060,13 @@ const TicketSystem: React.FC = () => {
           </div>
         )}
 
+        {/* 附件上传承诺开关（超管）：默认关闭，普通用户只能用附件链接。 */}
+        {canWrite && (!isMobile || !showDetailOnMobile) && (
+          <div className="shrink-0">
+            <TicketAttachmentSettingsCard onNotify={setNotification} />
+          </div>
+        )}
+
         {/*
           手机：面板不定高也不裁切，整页文档滚动（嵌套的 overflow-hidden + 内层滚动区会吃掉手势，
           表现为「滑不动」）。
@@ -883,6 +1117,8 @@ const TicketSystem: React.FC = () => {
                       <motion.button
                         onClick={() => {
                           setOverLengthDraft(null);
+                          // 新建时清掉上一次未提交的附件：留着会让用户以“已选好”的错觉漏传
+                          setPendingAttachments([]);
                           setIsCreating(true);
                           if (isMobile) setShowDetailOnMobile(true);
                         }}
@@ -1055,149 +1291,34 @@ const TicketSystem: React.FC = () => {
                       exit={{ opacity: 0, scale: 0.98 }}
                       className="p-5 sm:p-8 md:h-full md:overflow-y-auto"
                     >
-                      <div className="max-w-xl mx-auto">
-                        <div className="mb-5 flex items-center gap-3">
-                          <div className={studioStrongBadgeClassName}>
-                            <FiPlus />
-                          </div>
-                          <div>
-                            <div className={studioEyebrowClassName}>New Ticket</div>
-                            <h3
-                              className="text-xl font-semibold text-slate-900"
-                              style={{ fontFamily: studioDisplayFont }}
-                            >
-                              发起新工单
-                            </h3>
-                          </div>
-                        </div>
-                        <form onSubmit={handleCreateTicket} className="space-y-4 sm:space-y-5">
-                          <div>
-                            <div className="mb-2 flex items-center justify-between">
-                              <label className={cn(studioEyebrowClassName, "block")}>工单标题</label>
-                              <span className="text-[10px] text-slate-400">{newTicket.title.length}/{MAX_TICKET_TITLE_LEN}</span>
-                            </div>
-                            <input
-                              type="text"
-                              required
-                              maxLength={MAX_TICKET_TITLE_LEN}
-                              placeholder="请输入简明扼要的标题"
-                              className={studioFieldClassName}
-                              value={newTicket.title}
-                              onChange={e => setNewTicket(prev => ({ ...prev, title: e.target.value }))}
-                            />
-                          </div>
-                          <div>
-                            <label className={cn(studioEyebrowClassName, "mb-2 block")}>问题分类</label>
-                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                              {TICKET_CATEGORY_ORDER.map((category) => {
-                                const meta = TICKET_CATEGORY_META[category];
-                                const isActive = newTicket.category === category;
-                                return (
-                                  <label key={category} className="min-w-0">
-                                    <input
-                                      type="radio"
-                                      name="category"
-                                      value={category}
-                                      checked={isActive}
-                                      onChange={e => setNewTicket(prev => ({ ...prev, category: e.target.value }))}
-                                      className="hidden peer"
-                                    />
-                                    <div
-                                      className={cn(
-                                        "cursor-pointer rounded-2xl border px-3 py-2 text-left transition",
-                                        isActive ? "border-slate-900 bg-white" : "border-slate-200 bg-white hover:border-slate-300",
-                                      )}
-                                    >
-                                      <span className="block text-xs font-semibold text-slate-900">{meta.label}</span>
-                                      <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">{meta.hint}</span>
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <div>
-                            <label className={cn(studioEyebrowClassName, "mb-2 block")}>紧急程度</label>
-                            <div className="flex gap-2 sm:gap-3">
-                              {(['low', 'medium', 'high'] as const).map(p => {
-                                const isActive = newTicket.priority === p;
-                                const toneActiveClass =
-                                  p === 'high' ? 'bg-rose-50 border-rose-300 text-rose-700' :
-                                  p === 'medium' ? 'bg-amber-50 border-amber-300 text-amber-700' :
-                                  'bg-emerald-50 border-emerald-300 text-emerald-700';
-                                return (
-                                  <label key={p} className="flex-1">
-                                    <input
-                                      type="radio"
-                                      name="priority"
-                                      value={p}
-                                      checked={isActive}
-                                      onChange={e => setNewTicket(prev => ({ ...prev, priority: e.target.value }))}
-                                      className="hidden peer"
-                                    />
-                                    <div
-                                      className={cn(
-                                        "text-center py-2.5 rounded-2xl border cursor-pointer transition-all text-xs sm:text-sm font-semibold sm:rounded-2xl",
-                                        isActive ? toneActiveClass : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700",
-                                      )}
-                                    >
-                                      {p === 'high' ? '紧急' : p === 'medium' ? '一般' : '低'}
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="mb-2 flex items-center justify-between">
-                              <label className={cn(studioEyebrowClassName, "block")}>详细描述</label>
-                              <span className={cn("text-[10px]", newTicket.description.length > MAX_TICKET_DESC_LEN ? "text-rose-500 font-semibold" : "text-slate-400")}>
-                                {newTicket.description.length}/{MAX_TICKET_DESC_LEN}
-                              </span>
-                            </div>
-                            <textarea
-                              required
-                              rows={isMobile ? 6 : 8}
-                              maxLength={MAX_TICKET_DESC_LEN + 200}
-                              placeholder="请尽可能详细地说明您遇到的问题或建议，以便我们能更快为您处理..."
-                              className={studioTextareaClassName}
-                              value={newTicket.description}
-                              onChange={e => setNewTicket(prev => ({ ...prev, description: e.target.value }))}
-                            />
-                          </div>
-                          {overLengthDraft?.kind === "create" && (
+                      {/* 票据表单（票面字段全量）抽到 ticket/TicketCreateForm：
+                          TicketSystem.tsx 贴着体积闸门，表单留在本文件会超预算。 */}
+                      <TicketCreateForm
+                        value={newTicket}
+                        onChange={(patch) => setNewTicket(prev => ({ ...prev, ...patch }))}
+                        pendingFiles={pendingAttachments}
+                        onPendingFilesChange={setPendingAttachments}
+                        linkingCandidates={linkingCandidates}
+                        capabilities={capabilities}
+                        isMobile={isMobile}
+                        isSubmitting={isSubmitting}
+                        overlengthNotice={
+                          overLengthDraft?.kind === 'create' ? (
                             <OverLengthMailNotice
                               draft={overLengthDraft}
-                              account={user?.id ?? ""}
+                              account={user?.id ?? ''}
                               onDismiss={() => setOverLengthDraft(null)}
                             />
-                          )}
-                          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                            <motion.button
-                              type="submit"
-                              disabled={isSubmitting}
-                              className={cn(studioPrimaryButtonClassName, "flex-1")}
-                              whileHover={hoverScale(1.01)}
-                              whileTap={tapScale(0.99)}
-                            >
-                              <FiSend size={14} />
-                              {isSubmitting ? '提交中...' : '提交工单'}
-                            </motion.button>
-                            <motion.button
-                              type="button"
-                              onClick={() => {
-                                setIsCreating(false);
-                                if (isMobile) setShowDetailOnMobile(false);
-                              }}
-                              className={cn(studioGhostButtonClassName, "px-6 py-3")}
-                              whileHover={hoverScale(1.01)}
-                              whileTap={tapScale(0.99)}
-                            >
-                              取消
-                            </motion.button>
-                          </div>
-                        </form>
-                      </div>
+                          ) : null
+                        }
+                        onSubmit={handleCreateTicket}
+                        onCancel={() => {
+                          setPendingAttachments([]);
+                          setIsCreating(false);
+                          if (isMobile) setShowDetailOnMobile(false);
+                        }}
+                        onError={(message) => setNotification({ type: 'error', message })}
+                      />
                     </motion.div>
                   ) : selectedTicket ? (
                     <motion.div
@@ -1294,6 +1415,15 @@ const TicketSystem: React.FC = () => {
                           </button>
                         </div>
                       </div>
+
+                      {/* 票面字段：类型 / 相关服务 / 联系邮箱 / 关联工单（超管可就地改） */}
+                      <TicketDetailMeta
+                        ticket={selectedTicket}
+                        canEdit={canWrite}
+                        onUpdateFields={(fields) => handleUpdateFields(selectedTicket._id, fields)}
+                        onOpenTicket={handleOpenTicketById}
+                        onError={(message) => setNotification({ type: 'error', message })}
+                      />
 
                       {/* Messages（同列表：不用 overscroll-contain，滚到底后把手势交回整页） */}
                       <div
@@ -1448,6 +1578,50 @@ const TicketSystem: React.FC = () => {
                             </motion.div>
                           )}
                         </AnimatePresence>
+                      </div>
+
+                      {/*
+                        附件区（链接 + 文件）。
+                        链接输入框在「上传开关关闭」时是提交截图的主通道，打开后也保留；
+                        文件上传入口仅在 capabilities.canUploadAttachments 为真时渲染（超管或已开启）。
+                      */}
+                      <div className="shrink-0 space-y-4 border-t border-slate-200/80 bg-slate-50/40 p-4 sm:p-5">
+                        <TicketAttachmentLinks
+                          links={selectedTicket.attachmentLinks ?? []}
+                          canEdit={
+                            selectedTicket.status !== 'closed' &&
+                            (selectedTicket.userId === user?.id || canWrite)
+                          }
+                          policyHint={
+                            capabilities?.canUploadAttachments ? null : capabilities?.attachmentUploadPolicy ?? null
+                          }
+                          onError={(message) => setNotification({ type: 'error', message })}
+                          onChange={(links) => void handleAttachmentLinksChange(links)}
+                        />
+                        {capabilities?.canUploadAttachments && (
+                          <TicketAttachmentList
+                            ticketId={selectedTicket._id}
+                            attachments={selectedTicket.attachments ?? []}
+                            canUpload={
+                              selectedTicket.status !== 'closed' &&
+                              (selectedTicket.userId === user?.id || canWrite)
+                            }
+                            uploadDisabledReason={
+                              selectedTicket.status === 'closed'
+                                ? '此工单已关闭，无法继续添加附件'
+                                : '你不是该工单的属主，无法添加上传附件'
+                            }
+                            canDelete={(attachment) =>
+                              selectedTicket.status !== 'closed' &&
+                              (selectedTicket.userId === user?.id ||
+                                attachment.uploadedById === user?.id ||
+                                canWrite)
+                            }
+                            onUploaded={handleAttachmentUploaded}
+                            onDeleted={handleAttachmentDeleted}
+                            onError={(message) => setNotification({ type: 'error', message })}
+                          />
+                        )}
                       </div>
 
                       {/* Reply form */}

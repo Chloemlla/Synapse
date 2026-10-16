@@ -6,32 +6,50 @@ import {
   TICKET_CATEGORY_META,
   TICKET_CATEGORY_ORDER,
   TICKET_PRIORITY_META,
+  TICKET_SERVICE_META,
+  TICKET_SERVICE_ORDER,
   TICKET_SORT_OPTIONS,
   TICKET_STATUS_META,
   TICKET_STATUS_ORDER,
+  TICKET_TYPE_META,
+  TICKET_TYPE_ORDER,
 } from './ticketConstants';
 
 export interface TicketFilterValue {
   status: string;
   priority: string;
   category: string;
+  /** 工单类型（consult/inquiry / incident）—— 空串 = 全部。 */
+  type: string;
+  /** 相关服务（平台模块）—— 空串 = 全部。 */
+  service: string;
   assignee: string;
   awaitingReply: string;
   unread: string;
   sort: string;
   /** 关键词（标题/描述/用户名）。 */
   q: string;
+  /** 创建时间区间（yyyy-mm-dd，后端按 ISO 解析；空串 = 不限）。 */
+  from: string;
+  to: string;
+  /** 每页条数（空串 = 默认 50；后端上限 200）。 */
+  limit: string;
 }
 
 export const EMPTY_TICKET_FILTER: TicketFilterValue = {
   status: '',
   priority: '',
   category: '',
+  type: '',
+  service: '',
   assignee: '',
   awaitingReply: '',
   unread: '',
   sort: 'updated',
   q: '',
+  from: '',
+  to: '',
+  limit: '',
 };
 
 interface TicketFiltersProps {
@@ -72,21 +90,29 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
     status = '',
     priority = '',
     category = '',
+    type = '',
+    service = '',
     assignee = '',
     awaitingReply = '',
     unread = '',
+    from = '',
+    to = '',
   } = value ?? EMPTY_TICKET_FILTER;
 
-  const advancedCount = [status, priority, category, assignee, awaitingReply, unread].filter(Boolean).length;
+  const advancedCount = [status, priority, category, type, service, assignee, awaitingReply, unread, from, to].filter(Boolean).length;
   const dirty = advancedCount > 0 || Boolean(searchInput);
   // 收起状态下用一个 title 把「到底开了哪几个筛选」说清楚，避免只剩一个数字徽标让人猜。
   const activeFilterLabels = [
     status ? TICKET_STATUS_META[status as keyof typeof TICKET_STATUS_META]?.label : null,
     priority ? TICKET_PRIORITY_META[priority as keyof typeof TICKET_PRIORITY_META]?.label : null,
     category ? TICKET_CATEGORY_META[category as keyof typeof TICKET_CATEGORY_META]?.label : null,
+    type ? TICKET_TYPE_META[type as keyof typeof TICKET_TYPE_META]?.label : null,
+    service ? TICKET_SERVICE_META[service]?.label : null,
     assignee ? (assignee === 'me' ? '我受理的' : '未分配') : null,
     awaitingReply ? '待我回复' : null,
     unread ? '仅未读' : null,
+    from ? `自 ${from}` : null,
+    to ? `至 ${to}` : null,
   ].filter((label): label is string => Boolean(label));
 
   const toggleFlag = (key: 'awaitingReply' | 'unread') => {
@@ -191,6 +217,60 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
             <option value="">所有受理人</option>
             <option value="me">我受理的</option>
             <option value="unassigned">未分配</option>
+          </select>
+          <select
+            aria-label="按工单类型筛选"
+            className={cn(studioFieldClassName, 'py-2 text-xs')}
+            value={type}
+            onChange={(event) => onChange({ type: event.target.value })}
+          >
+            <option value="">所有类型</option>
+            {TICKET_TYPE_ORDER.map((item) => (
+              <option key={item} value={item}>{TICKET_TYPE_META[item].label}</option>
+            ))}
+          </select>
+          <select
+            aria-label="按相关服务筛选"
+            className={cn(studioFieldClassName, 'py-2 text-xs')}
+            value={service}
+            onChange={(event) => onChange({ service: event.target.value })}
+          >
+            <option value="">所有服务</option>
+            {TICKET_SERVICE_ORDER.map((item) => (
+              <option key={item} value={item}>{TICKET_SERVICE_META[item].label}</option>
+            ))}
+          </select>
+          <label className="min-w-0">
+            <span className="sr-only">创建时间起</span>
+            <input
+              type="date"
+              aria-label="创建时间起（含）"
+              value={from}
+              max={to || undefined}
+              onChange={(event) => onChange({ from: event.target.value })}
+              className={cn(studioFieldClassName, 'py-2 text-xs')}
+            />
+          </label>
+          <label className="min-w-0">
+            <span className="sr-only">创建时间止</span>
+            <input
+              type="date"
+              aria-label="创建时间止（含）"
+              value={to}
+              min={from || undefined}
+              onChange={(event) => onChange({ to: event.target.value })}
+              className={cn(studioFieldClassName, 'py-2 text-xs')}
+            />
+          </label>
+          <select
+            aria-label="每页条数"
+            className={cn(studioFieldClassName, 'py-2 text-xs')}
+            value={value.limit}
+            onChange={(event) => onChange({ limit: event.target.value })}
+          >
+            <option value="">每页 50 条</option>
+            <option value="100">每页 100 条</option>
+            <option value="200">每页 200 条</option>
           </select>
           <select
             aria-label="排序方式"

@@ -29,6 +29,7 @@ function withTicketFieldDefaults(ticket: Record<string, unknown>): Record<string
     relatedServiceRef: typeof ticket.relatedServiceRef === "string" ? ticket.relatedServiceRef : null,
     contactEmail: typeof ticket.contactEmail === "string" ? ticket.contactEmail : null,
     relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
+    attachmentLinks: Array.isArray(ticket.attachmentLinks) ? ticket.attachmentLinks : [],
     attachmentCount: typeof ticket.attachmentCount === "number" ? ticket.attachmentCount : 0,
   };
 }

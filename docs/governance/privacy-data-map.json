@@ -13,7 +13,7 @@
     "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead.",
     "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries.",
     "2026-10-16: GeoGebra cloud projects, versions, comments and public-share snapshots are owner-scoped; deleting a project revokes its linked shares, and account soft deletion makes all owned shares inaccessible and removes their cover files.",
-    "2026-10-16: tickets and ticket_attachments added — the support ticket system previously stored user content (ticket text, contactEmail) and now also holds the new ticket fields (type inquiry/incident, related service + reference, related tickets, contact email) and an attachment store (jpg/jpeg/png/gif/txt/pdf, 1MB per file, 5 per ticket, owner/superadmin downloads only)."
+    "2026-10-16: tickets and ticket_attachments added — the support ticket system previously stored user content (ticket text, contactEmail) and now also holds the new ticket fields (type inquiry/incident, related service + reference, related tickets, contact email) an attachment store (jpg/jpeg/png/gif/txt/pdf, 1MB per file, 5 per ticket, owner/superadmin downloads only) and attachment links (external URLs only — we never fetch them, and uploads for regular users are off by default behind the TICKET_ATTACHMENTS runtime switch)."
   ],
   "datasets": [
     {
@@ -1450,7 +1450,7 @@
     {
       "id": "tickets",
       "collection": "tickets",
-      "fields": ["userId", "username", "title", "description", "status", "priority", "category", "type", "relatedService", "relatedServiceRef", "contactEmail", "relatedTickets", "assigneeId", "assigneeName", "attachmentCount", "messages[].senderRole", "messages[].content", "messages[].visibility", "messages[].aiErrorDetails", "userLastReadAt", "adminLastReadAt", "createdAt", "updatedAt"],
+      "fields": ["userId", "username", "title", "description", "status", "priority", "category", "type", "relatedService", "relatedServiceRef", "contactEmail", "relatedTickets", "attachmentLinks", "assigneeId", "assigneeName", "attachmentCount", "messages[].senderRole", "messages[].content", "messages[].visibility", "messages[].aiErrorDetails", "userLastReadAt", "adminLastReadAt", "createdAt", "updatedAt"],
       "purpose": "Support ticket intake, AI-assisted troubleshooting, and agent follow-up",
       "legalBasis": "service_delivery",
       "userFacing": {

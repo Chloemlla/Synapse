@@ -57,6 +57,14 @@ export interface ITicketAttachment {
   createdAt: string | null;
 }
 
+/** 附件链接（外部地址 + 可选说明）。 */
+export interface ITicketAttachmentLink {
+  url: string;
+  label?: string | null;
+  /** 后端视图层补的 host（便于列表里认出站点）。 */
+  host?: string;
+}
+
 /** 列表摘要与详情共有的票面字段（后端视图层会给老工单补默认值）。 */
 export interface ITicketExtraFields {
   type: TicketType;
@@ -64,6 +72,7 @@ export interface ITicketExtraFields {
   relatedServiceRef: string | null;
   contactEmail: string | null;
   relatedTickets: ITicketRelation[];
+  attachmentLinks: ITicketAttachmentLink[];
   attachmentCount: number;
 }
 
@@ -134,6 +143,22 @@ export interface TicketStats {
   slaHours: number;
 }
 
+/** 工单能力（GET /api/tickets/capabilities）：决定界面显示哪些附件入口。 */
+export interface TicketCapabilities {
+  /** 普通用户是否可上传附件文件（默认关闭，需管理员在后台开启；管理员始终为 true）。 */
+  canUploadAttachments: boolean;
+  /** 不可上传时的说明文案（联系管理员 / 改用链接）。 */
+  attachmentUploadPolicy: string | null;
+  limits: {
+    maxAttachments: number;
+    maxAttachmentBytes: number;
+    allowedExts: string[];
+    maxAttachmentLinks: number;
+    maxAttachmentLinkLength: number;
+    maxAttachmentLinkLabelLength: number;
+  };
+}
+
 export interface TicketListMeta {
   total: number;
   page: number;
@@ -199,8 +224,15 @@ export const ticketApi = {
     relatedServiceRef?: string | null;
     contactEmail?: string | null;
     relatedTicketIds?: string[];
+    attachmentLinks?: Array<{ url: string; label?: string | null }>;
   }): Promise<ITicket> {
     const response = await api.post("/api/tickets", data);
+    return response.data;
+  },
+
+  /** 工单能力：附件上传开关与限额（服务端是执行边界，这里只用于渲染）。 */
+  async getCapabilities(): Promise<TicketCapabilities> {
+    const response = await api.get("/api/tickets/capabilities");
     return response.data;
   },
 
@@ -349,11 +381,42 @@ export const ticketApi = {
     }
   },
 
+  /** 更新附件链接（属主或 superadmin）：上传文件关闭时的浏览器通道，开启后也保留。 */
+  async updateAttachmentLinks(
+    ticketId: string,
+    links: Array<{ url: string; label?: string | null }>,
+  ): Promise<ITicket> {
+    const response = await api.put(`/api/tickets/${ticketId}/attachment-links`, { links });
+    return response.data;
+  },
+
   /** 删除附件，返回删除后的附件计数。 */
   async deleteAttachment(ticketId: string, attachmentId: string): Promise<number> {
     const response = await api.delete(
       `/api/tickets/${ticketId}/attachments/${encodeURIComponent(attachmentId)}`,
     );
     return typeof response.data?.attachmentCount === "number" ? response.data.attachmentCount : 0;
+  },
+
+  // ── 管理端：附件上传开关（超管）──
+
+  /** 读取「普通用户可上传附件」开关（默认关闭）。 */
+  async getAttachmentSettings(): Promise<{ userUploadEnabled: boolean; updatedAt?: string }> {
+    const response = await api.get("/api/admin/ticket-attachments/setting");
+    const setting = response.data?.setting ?? {};
+    return {
+      userUploadEnabled: setting?.config?.userUploadEnabled === true,
+      updatedAt: typeof setting?.updatedAt === "string" ? setting.updatedAt : undefined,
+    };
+  },
+
+  /** 保存开关。只有超管能写（服务端也会再判一次）。 */
+  async saveAttachmentSettings(userUploadEnabled: boolean): Promise<void> {
+    await api.post("/api/admin/ticket-attachments/setting", { userUploadEnabled });
+  },
+
+  /** 重置开关（回到默认：关闭）。 */
+  async resetAttachmentSettings(): Promise<void> {
+    await api.delete("/api/admin/ticket-attachments/setting");
   },
 };

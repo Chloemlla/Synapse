@@ -104,6 +104,9 @@ router.delete(
 // ── 用户接口 ──
 router.post("/", ticketWriteLimiter, ticketController.createTicket);
 router.get("/", ticketReadLimiter, ticketController.getUserTickets);
+// 能力查询（附件上传开关等）必须在 `/:id` 之前，否则会被当成工单 ID。
+// 告给登录用户，不包含任何敏感配置（只有一个布尔开关与公开的限额）。
+router.get("/capabilities", ticketReadLimiter, ticketController.getTicketCapabilities);
 // `/unread-count` 必须排在 `/:id` 之前，否则会被当成工单 ID（id 校验会返回 400）。
 router.get("/unread-count", ticketReadLimiter, ticketController.getUnreadCount);
 router.get("/:id", ticketReadLimiter, ticketController.getTicketById);
@@ -117,6 +120,8 @@ router.post(
 );
 router.get("/:id/attachments/:attachmentId/download", ticketReadLimiter, ticketController.downloadTicketAttachment);
 router.delete("/:id/attachments/:attachmentId", ticketUploadLimiter, ticketController.deleteTicketAttachment);
+// 附件链接（上传文件默认关闭时用户提交截图的通道）。
+router.put("/:id/attachment-links", ticketWriteLimiter, ticketController.updateTicketAttachmentLinks);
 // 属主自助关闭；客服侧走 PATCH /admin/:id
 router.patch("/:id/close", ticketWriteLimiter, ticketController.closeOwnTicket);
 

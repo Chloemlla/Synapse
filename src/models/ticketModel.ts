@@ -64,6 +64,21 @@ const ticketRelationSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/**
+ * 附件链接：指向外部（图床 / 网盘 / 截图服务）的地址。
+ *
+ * 为什么要有它：附件上传默认对普通用户关闭（见 TICKET_ATTACHMENTS 运行时开关），
+ * 但用户常常就是要把一张截图给客服看 —— 这时链接是最低成本的通道：我们只存 URL，
+ * 不代管文件本身（不引入 SSRF、不占存储、不把本站变成文件托管）。
+ */
+const ticketAttachmentLinkSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    label: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const ticketMessageSchema = new mongoose.Schema({
   senderId: { type: String, required: true },
   senderRole: { type: String, enum: ["user", "admin", "ai"], required: true },
@@ -120,6 +135,8 @@ const ticketSchema = new mongoose.Schema(
     contactEmail: { type: String, default: null },
     /** 关联工单（≤5 条，创建/管理端设置时校验归属）。 */
     relatedTickets: { type: [ticketRelationSchema], default: [] },
+    /** 附件链接（≤5 条，仅 http/https；上传文件默认关闭，见模型注释）。 */
+    attachmentLinks: { type: [ticketAttachmentLinkSchema], default: [] },
     /**
      * 附件计数：列表徽标用。
      *
@@ -184,6 +201,12 @@ export interface ITicketRelation {
   title: string;
 }
 
+/** 附件链接（外部地址 + 可选说明）。 */
+export interface ITicketAttachmentLink {
+  url: string;
+  label?: string | null;
+}
+
 export interface ITicket {
   _id: string;
   userId: string;
@@ -198,6 +221,7 @@ export interface ITicket {
   relatedServiceRef?: string | null;
   contactEmail?: string | null;
   relatedTickets?: ITicketRelation[];
+  attachmentLinks?: ITicketAttachmentLink[];
   attachmentCount?: number;
   assigneeId?: string | null;
   assigneeName?: string | null;

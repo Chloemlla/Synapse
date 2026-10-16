@@ -90,6 +90,45 @@ export const TICKET_ATTACHMENT_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'txt', 'pdf'
 export const TICKET_ATTACHMENT_ACCEPT = '.jpg,.jpeg,.png,.gif,.txt,.pdf';
 export const TICKET_ATTACHMENT_RULE_HINT = `支持 .jpg / .jpeg / .png / .gif / .txt / .pdf，单个不超过 1MB，最多 ${MAX_TICKET_ATTACHMENTS} 个；文件名只能用英文与数字`;
 
+// ── 附件链接（外部 URL）──
+// 上传文件默认对普通用户关闭（需管理员在后台开启），此时附件链接就是提交截图的主通道；
+// 开启后也保留链接入口（不占本站存储，分享图床/网盘地址更方便）。
+export const MAX_TICKET_ATTACHMENT_LINKS = 5;
+export const MAX_TICKET_ATTACHMENT_LINK_LEN = 2048;
+export const MAX_TICKET_ATTACHMENT_LINK_LABEL_LEN = 120;
+
+/**
+ * 附件链接的本地预校验（与后端同一口径：仅 http/https、长度上限）。
+ *
+ * 返回归一化后的 URL，或一个可直接展示的错误原因。
+ */
+export function normalizeTicketAttachmentLinkUrl(raw: string): { ok: true; url: string } | { ok: false; reason: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: false, reason: '请输入附件链接' };
+  if (trimmed.length > MAX_TICKET_ATTACHMENT_LINK_LEN) {
+    return { ok: false, reason: `链接不能超过 ${MAX_TICKET_ATTACHMENT_LINK_LEN} 个字符` };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { ok: false, reason: '链接格式不正确，请粘贴完整的 http/https 地址' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, reason: '只支持 http / https 链接' };
+  }
+  return { ok: true, url: parsed.toString() };
+}
+
+/** 链接展示用的 host（解析不了时回退原文）。 */
+export function attachmentLinkHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 /** 与后端同口径的本地预校验：返回原因（可直接展示）或 null。 */
 export function validateTicketAttachmentFile(file: File): string | null {
   const name = (file.name || '').trim();

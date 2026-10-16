@@ -200,6 +200,91 @@ export interface TicketAttachmentView {
   createdAt: string | null;
 }
 
+// ── 附件链接（外部 URL）──
+// 附件上传默认对普通用户关闭（TICKET_ATTACHMENTS.userUploadEnabled），此时用户只能提交链接。
+// 链接只存不取：我们不会去请求这些 URL（否则就是一个可被利用的 SSRF 入口），
+// 也不会把它当文件托管，因此只做「形态校验 + 协议白名单」。
+
+/** 单个工单最多几条附件链接（与文件附件同档）。 */
+export const MAX_TICKET_ATTACHMENT_LINKS = 5;
+export const MAX_TICKET_ATTACHMENT_LINK_LEN = 2048;
+export const MAX_TICKET_ATTACHMENT_LINK_LABEL_LEN = 120;
+/** 仅允许 http/https：`javascript:`、`data:`、`file:` 这类协议在渲染时就可能变成执行入口。 */
+const LINK_PROTOCOL_WHITELIST = new Set(["http:", "https:"]);
+
+export interface NormalizedTicketAttachmentLink {
+  url: string;
+  label: string | null;
+}
+
+export type TicketAttachmentLinkValidation =
+  | { ok: true; links: NormalizedTicketAttachmentLink[] }
+  | { ok: false; error: string };
+
+/**
+ * 归一化附件链接列表：接受 `["https://…"]` 与 `[{ url, label }]` 两种入参形态。
+ *
+ * 非法输入直接报错而不是静默丢弃：链接是用户为了说明问题贴的，静默丢弃会让客服
+ * 看不到本应存在的信息，而用户以为早就贴上了。
+ */
+export function normalizeTicketAttachmentLinks(value: unknown): TicketAttachmentLinkValidation {
+  if (value === undefined || value === null) return { ok: true, links: [] };
+  if (!Array.isArray(value)) return { ok: false, error: "附件链接参数格式不正确" };
+  if (value.length > MAX_TICKET_ATTACHMENT_LINKS) {
+    return { ok: false, error: `附件链接最多 ${MAX_TICKET_ATTACHMENT_LINKS} 条` };
+  }
+
+  const links: NormalizedTicketAttachmentLink[] = [];
+  for (const item of value) {
+    const raw = typeof item === "string" ? { url: item } : (item as Record<string, unknown> | null);
+    const url = typeof raw?.url === "string" ? raw.url.trim() : "";
+    if (!url) continue;
+    if (url.length > MAX_TICKET_ATTACHMENT_LINK_LEN) {
+      return { ok: false, error: `附件链接不能超过 ${MAX_TICKET_ATTACHMENT_LINK_LEN} 个字符` };
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { ok: false, error: `附件链接不是有效地址：${url.slice(0, 60)}` };
+    }
+    if (!LINK_PROTOCOL_WHITELIST.has(parsed.protocol)) {
+      return { ok: false, error: "附件链接只支持 http / https 地址" };
+    }
+    const labelRaw = typeof raw?.label === "string" ? raw.label.replace(/\s+/g, " ").trim() : "";
+    if (labelRaw.length > MAX_TICKET_ATTACHMENT_LINK_LABEL_LEN) {
+      return { ok: false, error: `附件链接说明不能超过 ${MAX_TICKET_ATTACHMENT_LINK_LABEL_LEN} 个字符` };
+    }
+    const normalized: NormalizedTicketAttachmentLink = { url: parsed.toString(), label: labelRaw || null };
+    if (!links.some((existing) => existing.url === normalized.url)) links.push(normalized);
+  }
+
+  return { ok: true, links };
+}
+
+/** 链接展示视图：补上 host 便于列表里一眼认出是哪个站点的链接。 */
+export interface TicketAttachmentLinkView extends NormalizedTicketAttachmentLink {
+  host: string;
+}
+
+export function toTicketAttachmentLinkView(link: unknown): TicketAttachmentLinkView | null {
+  if (!link || typeof link !== "object") return null;
+  const source = link as Record<string, unknown>;
+  const url = typeof source.url === "string" ? source.url : "";
+  if (!url) return null;
+  let host = "";
+  try {
+    host = new URL(url).host;
+  } catch {
+    host = "";
+  }
+  return {
+    url,
+    label: typeof source.label === "string" && source.label ? source.label : null,
+    host,
+  };
+}
+
 function toDate(value: unknown): Date | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value as string | number);
