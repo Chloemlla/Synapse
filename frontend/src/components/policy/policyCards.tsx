@@ -35,7 +35,7 @@ import { splitHighlight } from '../../utils/policySearch';
 import { cn } from '../../utils/cn';
 import {
   InfoBadge,
-  studioElevatedPanelClassName,
+  studioTileClassName,
   type InfoTone,
 } from '../studioTheme';
 
@@ -66,7 +66,7 @@ export const sectionIcons: Record<PolicyIconKey, IconType> = {
   contact: FaAddressBook,
 };
 
-export const accentPalette: InfoTone[] = ['sky', 'emerald', 'violet', 'slate', 'teal'];
+export const accentPalette: InfoTone[] = ['sky', 'slate'];
 
 // 登录/注册的四份必读文件各自的图标与强调色，与 PolicyConsentChecklist 的勾选项一一对应
 export const agreementIcons: Record<PolicyAgreementKey, IconType> = {
@@ -79,7 +79,7 @@ export const agreementIcons: Record<PolicyAgreementKey, IconType> = {
 export const agreementTones: Record<PolicyAgreementKey, InfoTone> = {
   terms: 'sky',
   usage: 'amber',
-  'specific-terms': 'violet',
+  'specific-terms': 'sky',
   'supported-regions': 'emerald',
 };
 
@@ -104,8 +104,6 @@ const toneTextClass = (tone: InfoTone): string =>
     tone === 'sky' && 'text-sky-600',
     tone === 'rose' && 'text-rose-600',
     tone === 'amber' && 'text-amber-600',
-    tone === 'violet' && 'text-violet-600',
-    tone === 'teal' && 'text-teal-600',
     tone === 'slate' && 'text-slate-600',
   );
 
@@ -130,7 +128,7 @@ export const HighlightedText: React.FC<{ text: string; query: string }> = ({ tex
 export const HighlightCard: React.FC<{ highlight: PolicyHighlight; tone: InfoTone }> = ({ highlight, tone }) => {
   const Icon = resolveIcon(highlight.icon);
   return (
-    <div className={cn(studioElevatedPanelClassName, 'border')}>
+    <div className={cn(studioTileClassName, 'p-5')}>
       <Icon className={toneTextClass(tone)} />
       <h3 className="mt-3 font-semibold text-slate-950">{highlight.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{highlight.body}</p>
@@ -149,7 +147,7 @@ export const AgreementCard: React.FC<{
   const Icon = agreementIcons[agreement.key] || FaFileContract;
   const tone = agreementTones[agreement.key] || 'slate';
   return (
-    <div id={agreement.anchor} className={cn(studioElevatedPanelClassName, 'scroll-mt-24 border')}>
+    <div id={agreement.anchor} className={cn(studioTileClassName, 'scroll-mt-24 p-5')}>
       <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-100">
           <Icon className={toneTextClass(tone)} />
@@ -161,7 +159,7 @@ export const AgreementCard: React.FC<{
             </h3>
             <InfoBadge tone={tone}>登录 / 注册勾选项</InfoBadge>
           </div>
-          <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">{agreement.label}</p>
+          <p className="mt-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-500">{agreement.label}</p>
         </div>
       </div>
       <p className="mt-3 text-sm leading-7 text-slate-600">

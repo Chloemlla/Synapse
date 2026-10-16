@@ -85,7 +85,7 @@ export const PolicyReadingControls: React.FC<{
         aria-label="缩小条文正文字号"
         disabled={index <= 0}
         onClick={() => onChange(READING_SCALES[Math.max(0, index - 1)])}
-        className="rounded-xl px-2 py-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
+        className="rounded-2xl px-2 py-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
       >
         <FaMinus className="text-[10px]" />
       </button>
@@ -95,7 +95,7 @@ export const PolicyReadingControls: React.FC<{
         aria-label="放大条文正文字号"
         disabled={index >= READING_SCALES.length - 1}
         onClick={() => onChange(READING_SCALES[Math.min(READING_SCALES.length - 1, index + 1)])}
-        className="rounded-xl px-2 py-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
+        className="rounded-2xl px-2 py-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
       >
         <FaPlus className="text-[10px]" />
       </button>
@@ -103,7 +103,7 @@ export const PolicyReadingControls: React.FC<{
         type="button"
         onClick={() => onChange(1)}
         disabled={scale === 1}
-        className="rounded-xl px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
+        className="rounded-2xl px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
       >
         重置
       </button>

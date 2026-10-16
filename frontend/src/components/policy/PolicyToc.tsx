@@ -46,7 +46,7 @@ const PolicyToc: React.FC<{
               aria-current={active ? 'true' : undefined}
               title={section.title}
               className={cn(
-                'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition',
+                'flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm transition',
                 active
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',

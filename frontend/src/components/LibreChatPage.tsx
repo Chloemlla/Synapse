@@ -32,6 +32,7 @@ import { UnifiedLoadingSpinner } from './LoadingSpinner';
 import { LibreChatContext, LibreChatContextValue } from './LibreChatContext';
 import { LibreChatRealtimeDialog } from './LibreChatRealtimeDialog';
 import { LibreChatQuotaBadge, LibreChatQuotaPanel } from './LibreChatQuotaIndicator';
+import { StudioEmptyState, StudioErrorState } from './studioFeedback';
 import { parseLibreChatQuota, type LibreChatQuotaView } from '../api/librechatQuota';
 import { useLibreChatQuota } from '../hooks/useLibreChatQuota';
 import { getBackendErrorMessage } from '../utils/backendError';
@@ -114,20 +115,6 @@ function sanitizeAssistantText(text: string): string {
     return text;
   }
 }
-
-// // 统一规范化 AI 输出（仅保留针对 Mermaid 的断行箭头修复）
-// function normalizeAiOutput(input: string): string {
-//   if (!input) return input;
-//   try {
-//     // 仅处理 ```mermaid 代码块：把换行起始的箭头合并到上一行，避免 "\n -->" 导致解析错误
-//     return input.replace(/```\s*mermaid\s*[\r\n]+([\s\S]*?)```/gi, (m, code) => {
-//       const fixed = code.replace(/\n\s*--[!>]*>/g, ' -->');
-//       return '```mermaid\n' + fixed + '\n```';
-//     });
-//   } catch {
-//     return input;
-//   }
-// }
 
 // React 19: TypeScript 类型定义
 interface RequestBody {
@@ -292,6 +279,8 @@ const LibreChatPage: React.FC = () => {
 
   const [latest, setLatest] = useState<LatestRecord | null>(null);
   const [loadingLatest, setLoadingLatest] = useState(false);
+  // F5-25 同源：镜像信息加载失败不能渲染成「暂无数据」，否则用户会把故障当成「本来就没有」。
+  const [latestError, setLatestError] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(false);
 
   const [history, setHistory] = useState<HistoryResponse | null>(null);
@@ -391,12 +380,18 @@ const LibreChatPage: React.FC = () => {
   const fetchLatest = async () => {
     try {
       setLoadingLatest(true);
+      setLatestError(null);
       // 登录态唯一数据源 /api/librechat/lc（返回 update_time + image_url）；无记录为 null。
       const res = await fetch(`${apiBase}/api/librechat/lc`, { credentials: 'include' });
-      if (res.ok) setLatest((await res.json()) as LatestRecord);
-      else setLatest(null);
-    } catch (e) {
+      if (!res.ok) {
+        setLatest(null);
+        setLatestError('最新镜像信息加载失败，请稍后重试。');
+        return;
+      }
+      setLatest((await res.json()) as LatestRecord);
+    } catch {
       setLatest(null);
+      setLatestError('最新镜像信息加载失败，请检查网络后重试。');
     } finally {
       setLoadingLatest(false);
     }
@@ -1327,7 +1322,7 @@ const LibreChatPage: React.FC = () => {
         <InfoPanel className="text-center">
           <InfoSectionTitle title="需要登录" icon={FaUser} tone="sky" />
           <p className="mt-2 text-sm text-slate-600">请先登录后再使用 LibreChat。</p>
-          <motion.button
+          <motion.button type="button"
             onClick={() => navigate('/welcome')}
             className={`${librePrimaryButtonClass} mt-4`}
             whileTap={{ scale: 0.95 }}
@@ -1423,6 +1418,13 @@ const LibreChatPage: React.FC = () => {
               text="正在获取最新镜像信息..."
               className="py-8"
             />
+          ) : latestError ? (
+            <StudioErrorState
+              message={latestError}
+              onRetry={() => {
+                void fetchLatest();
+              }}
+            />
           ) : latest ? (
             <div className="space-y-3 text-slate-700">
               {latest.update_time && (
@@ -1439,10 +1441,7 @@ const LibreChatPage: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="py-8 text-center text-slate-500">
-              <FaDownload className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-              暂无数据
-            </div>
+            <StudioEmptyState message="暂无最新镜像信息，稍后刷新即可看到更新。" />
           )}
         </motion.div>
 
@@ -1488,7 +1487,7 @@ const LibreChatPage: React.FC = () => {
             )}
 
             <div className="flex flex-wrap gap-3">
-              <motion.button
+              <motion.button type="button"
                 onClick={handleSend}
                 disabled={!canSend}
                 className={`${librePrimaryButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -1497,7 +1496,7 @@ const LibreChatPage: React.FC = () => {
                 <FaPaperPlane className="w-4 h-4" />
                 {sending ? '发送中...' : '发送'}
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => {
                   setConfirmModal({
                     open: true,
@@ -1512,7 +1511,7 @@ const LibreChatPage: React.FC = () => {
               >
                 清除历史
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={openRealtimeDialog}
                 className={libreGhostButtonClass}
                 title="打开单次实时对话框"
@@ -1546,7 +1545,7 @@ const LibreChatPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setHistoryView('rendered')}
-                  className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                     historyView === 'rendered' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                   aria-pressed={historyView === 'rendered'}
@@ -1557,7 +1556,7 @@ const LibreChatPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setHistoryView('source')}
-                  className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                     historyView === 'source' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                   aria-pressed={historyView === 'source'}
@@ -1566,7 +1565,7 @@ const LibreChatPage: React.FC = () => {
                   原文
                 </button>
               </div>
-              <motion.button
+              <motion.button type="button"
                 onClick={refreshHistory}
                 className={libreGhostButtonClass}
                 title="刷新"
@@ -1575,7 +1574,7 @@ const LibreChatPage: React.FC = () => {
                 <FaRedo className="w-3 h-3" />
                 刷新
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={exportCurrentPage}
                 className={libreGhostButtonClass}
                 title="导出本页"
@@ -1584,7 +1583,7 @@ const LibreChatPage: React.FC = () => {
                 <FaDownload className="w-3 h-3" />
                 导出本页
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={exportAll}
                 className={libreGhostButtonClass}
                 title="导出全部"
@@ -1593,7 +1592,7 @@ const LibreChatPage: React.FC = () => {
                 <FaDownload className="w-3 h-3" />
                 导出全部
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={handleBatchDelete}
                 disabled={selectedIds.length === 0}
                 className={`${libreGhostButtonClass} ${selectedIds.length === 0
@@ -1621,7 +1620,7 @@ const LibreChatPage: React.FC = () => {
               <div className="max-h-[60vh] overflow-auto pr-1 min-w-0">
                 {streaming && (
                   <motion.div
-                    className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                    className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                   >
@@ -1647,7 +1646,7 @@ const LibreChatPage: React.FC = () => {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.05 * idx }}
                       >
-                        <div className={`rounded-lg border p-4 shadow-sm ${
+                        <div className={`rounded-2xl border p-4 shadow-sm ${
                           m.role === 'user'
                             ? 'max-w-[min(92%,_720px)] border-slate-200 bg-slate-50'
                             : 'w-full max-w-[980px] border-slate-200 bg-white'
@@ -1695,7 +1694,7 @@ const LibreChatPage: React.FC = () => {
                           )}
                           {m.id && (
                             <div className="mt-3 flex justify-end gap-2">
-                              <motion.button
+                              <motion.button type="button"
                                 onClick={() => handleEdit(m.id, m.content)}
                                 className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1 text-xs text-slate-700 transition hover:bg-white"
                                 whileTap={{ scale: 0.95 }}
@@ -1704,7 +1703,7 @@ const LibreChatPage: React.FC = () => {
                                 编辑
                               </motion.button>
                               {m.role !== 'user' && (
-                                <motion.button
+                                <motion.button type="button"
                                   onClick={() => handleRetry(m.id)}
                                   className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1 text-xs text-slate-700 transition hover:bg-white"
                                   whileTap={{ scale: 0.95 }}
@@ -1713,7 +1712,7 @@ const LibreChatPage: React.FC = () => {
                                   重试
                                 </motion.button>
                               )}
-                              <motion.button
+                              <motion.button type="button"
                                 onClick={() => handleDelete(m.id)}
                                 className="inline-flex items-center gap-1 rounded-2xl border border-rose-200 bg-rose-50/70 px-3 py-1 text-xs text-rose-700 transition hover:bg-rose-50"
                                 whileTap={{ scale: 0.95 }}
@@ -1736,8 +1735,7 @@ const LibreChatPage: React.FC = () => {
                         <div className="mt-1 text-xs text-slate-500">
                           这次请求失败了，页面上的历史没有被清空。
                         </div>
-                        <motion.button
-                          type="button"
+                        <motion.button type="button"
                           onClick={() => { void fetchHistory(page); }}
                           className={`${libreGhostButtonClass} mx-auto mt-4`}
                           whileTap={{ scale: 0.95 }}
@@ -1759,7 +1757,7 @@ const LibreChatPage: React.FC = () => {
             {/* 分页控制 */}
             {history && history.history.length > 0 && (
               <div className="mt-6 flex flex-col items-center gap-2 sm:flex-row sm:justify-between border-t border-slate-200 pt-4">
-                <motion.button
+                <motion.button type="button"
                   className={libreGhostButtonClass}
                   disabled={page <= 1}
                   onClick={() => {
@@ -1771,7 +1769,7 @@ const LibreChatPage: React.FC = () => {
                   <FaChevronLeft className="text-xs" />
                   上一页
                 </motion.button>
-                <motion.button
+                <motion.button type="button"
                   className={libreGhostButtonClass}
                   disabled={history ? page >= history.totalPages : true}
                   onClick={() => {

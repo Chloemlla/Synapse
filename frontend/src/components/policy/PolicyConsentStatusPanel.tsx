@@ -198,7 +198,7 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
             <span className="text-xs text-slate-500">当前条文 v{documentVersion}</span>
             <Link
               to="/profile"
-              className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline"
+              className="text-xs font-semibold text-sky-700 underline-offset-2 hover:underline"
               title="个人中心 · 隐私与同意里可以查看本设备的历次同意与撤回"
             >
               查看本设备同意轨迹
@@ -276,7 +276,7 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
           <p className="text-xs leading-6 text-slate-600">
             勾选下列四份文件后，同意会记录在服务端并绑定本设备（有效期 {status?.validityDays ?? 30} 天）。
             与登录/注册页的勾选清单完全一致；也可到
-            <Link to="/profile" className="mx-1 font-semibold text-teal-700 underline-offset-2 hover:underline">
+            <Link to="/profile" className="mx-1 font-semibold text-sky-700 underline-offset-2 hover:underline">
               个人中心 · 隐私与同意
             </Link>
             查看或撤回。

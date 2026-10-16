@@ -80,6 +80,7 @@ export function RevealPasswordModal({
             查看密码 - {state.targetUser.username}
           </h3>
           <motion.button
+            type="button"
             className="text-slate-500 hover:text-slate-700"
             onClick={onClose}
             whileHover={hoverScale?.(1.02)}

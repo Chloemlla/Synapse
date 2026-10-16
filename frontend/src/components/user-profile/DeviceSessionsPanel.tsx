@@ -17,6 +17,7 @@ import {
 } from './profileHelpers';
 import { cn } from '../../utils/cn';
 import {
+  InfoPanel,
   studioFieldClassName,
   studioPrimaryButtonClassName,
 } from '../studioTheme';
@@ -63,10 +64,11 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
 
   return (
     <section
-      className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5"
+      className="mb-4"
       aria-labelledby="device-sessions-title"
       aria-busy={loading || actionLoading}
     >
+      <InfoPanel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -100,7 +102,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
             type="button"
             onClick={onRefresh}
             disabled={loading || actionLoading}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
           >
             <FaSyncAlt />
             重试
@@ -215,6 +217,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
           <span>每个设备的退出操作会撤销该设备或客户端的全部关联会话；当前 Profile 设备不会提供退出按钮。</span>
         </div>
       )}
+      </InfoPanel>
     </section>
   );
 };

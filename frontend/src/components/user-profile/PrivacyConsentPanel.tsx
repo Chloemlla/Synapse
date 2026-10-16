@@ -234,7 +234,7 @@ const PrivacyConsentPanel: React.FC = () => {
             查看、撤回或删除<strong className="font-semibold text-slate-700">本设备</strong>对服务条款与隐私政策的同意。
             同意按浏览器设备记录，处理之后需要在本设备上重新逐项勾选条款，才能继续使用依赖同意的功能。
             条文原文见{' '}
-            <Link to="/policy" className="font-semibold text-teal-700 underline-offset-2 hover:underline">
+            <Link to="/policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">
               服务条款与隐私政策
             </Link>
             。
@@ -273,7 +273,7 @@ const PrivacyConsentPanel: React.FC = () => {
               void loadStatus();
             }}
             disabled={busy}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
           >
             <FaSyncAlt />
             重试
@@ -303,7 +303,7 @@ const PrivacyConsentPanel: React.FC = () => {
           <span>
             本浏览器没有该设备的同意凭据（可能是在其他设备上同意过，或清除了站点数据），因此这里没有可撤回的同意。
             继续使用依赖同意的功能时，会被要求重新逐项勾选；也可以直接到{' '}
-            <Link to="/policy" className="font-semibold text-teal-700 underline-offset-2 hover:underline">
+            <Link to="/policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">
               政策页
             </Link>{' '}
             就地同意。
@@ -367,7 +367,7 @@ const PrivacyConsentPanel: React.FC = () => {
           ) : null}
 
           {staleDocument && (
-            <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+            <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
               <FaExclamationTriangle className="mt-0.5 shrink-0" />
               <span>
                 这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在政策页重新同意。
@@ -376,7 +376,7 @@ const PrivacyConsentPanel: React.FC = () => {
           )}
 
           {expiringSoon && (
-            <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+            <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
               <FaExclamationTriangle className="mt-0.5 shrink-0" />
               <span>
                 本设备同意将在 {remainingDays === 0 ? '今天' : `约 ${remainingDays} 天后`}到期。
@@ -499,7 +499,7 @@ const PrivacyConsentPanel: React.FC = () => {
               return (
                 <li
                   key={entry.id}
-                  className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-[11px] leading-5 text-slate-600"
+                  className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-[11px] leading-5 text-slate-600"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold', state.className)}>

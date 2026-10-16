@@ -96,7 +96,7 @@ const PolicyConsentChecklist: React.FC<PolicyConsentChecklistProps> = ({
           type="button"
           onClick={toggleAll}
           disabled={disabled}
-          className="shrink-0 text-xs font-medium text-teal-700 transition-colors hover:text-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
+          className="shrink-0 text-xs font-medium text-sky-700 transition-colors hover:text-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {allChecked ? '取消全选' : '全部勾选'}
         </button>
@@ -140,7 +140,7 @@ const PolicyConsentChecklist: React.FC<PolicyConsentChecklistProps> = ({
                       <FaChevronDown className="text-[9px] transition-transform group-open:rotate-180" />
                       这份文件约定了什么（{detail.points.length} 条要点）
                     </summary>
-                    <div className="mt-1.5 space-y-1.5 rounded-xl border border-slate-200 bg-white/80 p-2.5">
+                    <div className="mt-1.5 space-y-1.5 rounded-2xl border border-slate-200 bg-white/80 p-2.5">
                       <p className="text-[11px] leading-5 text-slate-600">{detail.summary}</p>
                       <ul className="space-y-1">
                         {detail.points.map(point => (

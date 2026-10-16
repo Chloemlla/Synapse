@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FaCheckCircle,
+  FaDesktop,
   FaExclamationTriangle,
   FaFingerprint,
   FaKey,
@@ -16,7 +17,7 @@ import {
   type SecurityCheckStatus,
 } from '../../api/securitySummary';
 import { cn } from '../../utils/cn';
-import { studioEyebrowClassName, studioFieldClassName, studioPanelClassName } from '../studioTheme';
+import { InfoMetricCard, studioEyebrowClassName, studioFieldClassName, studioPanelClassName } from '../studioTheme';
 
 export type SecurityCheckActionTarget = NonNullable<AccountSecurityCheck['action']>;
 
@@ -91,7 +92,7 @@ function ScoreRing({ score, riskLevel }: { score: number; riskLevel: AccountSecu
       aria-label={`账号安全评分 ${clamped} 分，共 100 分，${meta.label}`}
     >
       <svg viewBox="0 0 100 100" className="h-24 w-24 -rotate-90" aria-hidden>
-        <circle cx="50" cy="50" r="42" fill="none" stroke="#e2e8f0" strokeWidth="10" />
+        <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-200" />
         <circle
           cx="50"
           cy="50"
@@ -253,7 +254,7 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
               void load();
             }}
             disabled={loading}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
           >
             <FaSyncAlt aria-hidden />
             重试
@@ -277,12 +278,20 @@ const SecurityScorecardPanel: React.FC<SecurityScorecardPanelProps> = ({ onActio
                 <span className={cn('rounded-full border px-2.5 py-1 text-xs font-semibold', RISK_META[overview.riskLevel].badge)}>
                   {RISK_META[overview.riskLevel].label}
                 </span>
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
-                  二次验证 {overview.mfaFactorCount} / 2 项
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
-                  登录设备 {overview.activeDeviceCount} 台
-                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <InfoMetricCard
+                  label="二次验证"
+                  value={`${overview.mfaFactorCount} / 2 项`}
+                  icon={FaShieldAlt}
+                  tone="sky"
+                />
+                <InfoMetricCard
+                  label="登录设备"
+                  value={`${overview.activeDeviceCount} 台`}
+                  icon={FaDesktop}
+                  tone="slate"
+                />
               </div>
               <div className="mt-3 grid gap-2 text-[13px] text-slate-600 sm:grid-cols-2">
                 <div className="flex items-center gap-2">

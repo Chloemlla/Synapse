@@ -494,7 +494,7 @@ const PolicyPage: React.FC = () => {
                   title="登录与注册须逐项同意的文件"
                   description="登录与注册页面会逐项要求勾选下列四份文件；每一项对应本页条款的一部分，正文按章节排列在本页下方。"
                   icon={FaFileContract}
-                  tone="teal"
+                  tone="sky"
                 />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   {policy.agreements.map((agreement) => (

@@ -89,7 +89,7 @@ const PolicyFooter: React.FC<{
             { label: '查询同意', value: policy.procedures.checkConsentEndpoint },
             { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
           ].map((entry) => (
-            <div key={entry.value} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <div key={entry.value} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
               <dt className="text-slate-500">{entry.label}</dt>
               <dd className="font-mono text-[11px] text-slate-700">{entry.value}</dd>
             </div>

@@ -656,7 +656,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
 
       if (!src || error) {
         return (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+          <div className="w-full h-full flex items-center justify-center bg-slate-100">
             {avatarLoading ? (
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
             ) : (
@@ -669,7 +669,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
       return (
         <div className="relative w-full h-full">
           {imageLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
             </div>
           )}
@@ -1222,7 +1222,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
             请刷新页面或重新登录。
             {typeof loadError === 'string' && loadError !== '加载失败，请刷新页面或重新登录' ? `\n${loadError}` : ''}
           </p>
-          <button
+          <button type="button"
             onClick={() => {
               void loadProfile();
             }}
@@ -1245,7 +1245,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
               加载超时
             </h1>
             <p className="mt-3 text-sm text-slate-500">请检查网络或刷新页面</p>
-            <button
+            <button type="button"
               onClick={() => {
                 void loadProfile();
               }}
@@ -1342,7 +1342,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
             <div className="mb-6 flex flex-col items-center">
               <div className="relative mb-4 h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-full bg-slate-200 shadow-lg ring-4 ring-white">
                 <Avatar src={avatarImg || profile?.avatarUrl} />
-                <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/50 opacity-0 transition hover:opacity-100">
+                <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-slate-900/60 opacity-0 transition hover:opacity-100">
                   <FaCamera className="text-xl text-white" />
                   <input
                     type="file"
@@ -1668,7 +1668,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
                   return (
                     <div
                       key={account.provider}
-                      className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-3.5"
+                      className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5"
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
@@ -1693,13 +1693,13 @@ const UserProfile: React.FC<UserProfileProps> = ({ onOpenSecuritySettings }) => 
                       </div>
 
                       {isMergeRequired ? (
-                        <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-700">
+                        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-700">
                           该 {account.label} 身份已属于另一个本站账号，合并后才能在本账号使用。
                         </div>
                       ) : null}
 
                       {googleBindActive && isGoogle ? (
-                        <div className="mt-3 rounded-[18px] border border-slate-200 bg-white p-2">
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-2">
                           <div className="mb-2 text-center text-[11px] text-slate-500">
                             请在下方 Google 按钮中选择要绑定的账号
                           </div>

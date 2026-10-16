@@ -619,7 +619,7 @@ const UserManagement: React.FC = () => {
             description="管理系统用户账户，支持查看与修改 user_datas 集合的所有字段。"
             icon={FaUsers}
             action={canWrite ? (
-              <motion.button
+              <motion.button type="button"
                 onClick={openCreate}
                 className={studioPrimaryButtonClassName}
                 whileHover={hoverScale()}
@@ -689,7 +689,7 @@ const UserManagement: React.FC = () => {
               </div>
               {error.includes('认证失败') && (
                 <div className="mt-3">
-                  <motion.button
+                  <motion.button type="button"
                     onClick={() => navigate('/welcome')}
                     className={studioPrimaryButtonClassName}
                     whileHover={hoverScale()}
@@ -714,7 +714,7 @@ const UserManagement: React.FC = () => {
               </span>
             </h3>
             <div className="flex flex-wrap gap-2">
-              <motion.button
+              <motion.button type="button"
                 onClick={() => fetchUsers(true)}
                 className={studioSecondaryButtonClassName}
                 whileHover={hoverScale()}
@@ -724,7 +724,7 @@ const UserManagement: React.FC = () => {
                 刷新
               </motion.button>
               {canWrite && (
-                <motion.button
+                <motion.button type="button"
                   onClick={openCreate}
                   className={studioPrimaryButtonClassName}
                   whileHover={hoverScale()}
@@ -818,8 +818,7 @@ const UserManagement: React.FC = () => {
                 {hasActiveFilters ? '，已启用筛选' : ''}
               </div>
               <div className="flex flex-wrap gap-2">
-                <motion.button
-                  type="button"
+                <motion.button type="button"
                   onClick={applyFilters}
                   className={studioPrimaryButtonClassName}
                   whileHover={hoverScale()}
@@ -827,8 +826,7 @@ const UserManagement: React.FC = () => {
                 >
                   应用筛选
                 </motion.button>
-                <motion.button
-                  type="button"
+                <motion.button type="button"
                   onClick={resetFilters}
                   className={studioSecondaryButtonClassName}
                   whileHover={hoverScale()}
@@ -850,8 +848,7 @@ const UserManagement: React.FC = () => {
                   <option value="">选择批量操作</option>
                   {BULK_ACTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
-                <motion.button
-                  type="button"
+                <motion.button type="button"
                   onClick={handleBulkAction}
                   disabled={selectedUserIds.length === 0 || !bulkAction || actionBusy}
                   className={studioPrimaryButtonClassName}
@@ -1029,7 +1026,7 @@ const UserManagement: React.FC = () => {
                             </span>
                           )}
                           {getBanRemainingText(u.ticketBannedUntil) && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-medium bg-rose-50 text-rose-600 border border-rose-200 italic">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-medium bg-rose-50 text-rose-600 border border-rose-200 italic">
                               {getBanRemainingText(u.ticketBannedUntil)}
                             </span>
                           )}
@@ -1066,7 +1063,7 @@ const UserManagement: React.FC = () => {
                                 ) : (
                                   <div className="text-[10px] text-slate-500">已有 {fingerprintCount} 条记录</div>
                                 )}
-                                <motion.button
+                                <motion.button type="button"
                                   className="text-slate-600 hover:underline text-[11px]"
                                   onClick={() => openFp(u)}
                                   whileHover={hoverScale()}
@@ -1083,7 +1080,7 @@ const UserManagement: React.FC = () => {
                                   <div className="text-slate-600 text-[12px]">已在预约列表</div>
                                   <div className="text-[10px] text-slate-500">上次预约：{new Date(fpRequireMap[u.id]).toLocaleString()}</div>
                                   {canWrite && (
-                                  <motion.button
+                                  <motion.button type="button"
                                     className="text-slate-600 hover:underline text-[11px]"
                                     onClick={async () => {
                                       try {
@@ -1103,7 +1100,7 @@ const UserManagement: React.FC = () => {
                                 <>
                                   <span className="text-slate-400">暂无</span>
                                   {canWrite && (
-                                  <motion.button
+                                  <motion.button type="button"
                                     className="text-slate-600 hover:underline text-[11px] block"
                                     onClick={async () => {
                                       try {
@@ -1127,7 +1124,7 @@ const UserManagement: React.FC = () => {
                       <td className="px-2 sm:px-4 py-3">
                         {canWrite ? (
                         <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
-                          <motion.button
+                          <motion.button type="button"
                             className={studioSecondaryButtonClassName}
                             onClick={() => openEdit(u)}
                             whileHover={hoverScale()}
@@ -1136,7 +1133,7 @@ const UserManagement: React.FC = () => {
                             <FaEdit className="text-xs" />
                             编辑
                           </motion.button>
-                          <motion.button
+                          <motion.button type="button"
                             className={`${studioDangerButtonClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
                             onClick={() => handleDelete(u.id)}
                             disabled={!canDeleteUser(u)}
@@ -1180,8 +1177,7 @@ const UserManagement: React.FC = () => {
               <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between text-sm text-slate-600">
                 <div>第 {pagination.page} / {pagination.totalPages} 页，当前显示 {rangeStart}-{rangeEnd} 条</div>
                 <div className="flex items-center gap-2">
-                  <motion.button
-                    type="button"
+                  <motion.button type="button"
                     onClick={() => setPage(1)}
                     disabled={pagination.page <= 1}
                     className={studioSecondaryButtonClassName}
@@ -1190,8 +1186,7 @@ const UserManagement: React.FC = () => {
                   >
                     首页
                   </motion.button>
-                  <motion.button
-                    type="button"
+                  <motion.button type="button"
                     onClick={() => setPage(pagination.page - 1)}
                     disabled={pagination.page <= 1}
                     className={studioSecondaryButtonClassName}
@@ -1200,8 +1195,7 @@ const UserManagement: React.FC = () => {
                   >
                     上一页
                   </motion.button>
-                  <motion.button
-                    type="button"
+                  <motion.button type="button"
                     onClick={() => setPage(pagination.page + 1)}
                     disabled={pagination.page >= pagination.totalPages}
                     className={studioSecondaryButtonClassName}
@@ -1210,8 +1204,7 @@ const UserManagement: React.FC = () => {
                   >
                     下一页
                   </motion.button>
-                  <motion.button
-                    type="button"
+                  <motion.button type="button"
                     onClick={() => setPage(pagination.totalPages)}
                     disabled={pagination.page >= pagination.totalPages}
                     className={studioSecondaryButtonClassName}
@@ -1249,7 +1242,7 @@ const UserManagement: React.FC = () => {
                     <h3 id="user-fingerprint-modal-title" className="text-lg font-semibold text-slate-900">指纹详情 - {fpUser.username}</h3>
                     <div className="flex items-center gap-2">
                       {canWrite && (
-                      <motion.button
+                      <motion.button type="button"
                         className={studioSecondaryButtonClassName}
                         onClick={async () => {
                           if (!fpUser) return;
@@ -1266,7 +1259,7 @@ const UserManagement: React.FC = () => {
                       >请求下次上报</motion.button>
                       )}
                       {canWrite && (
-                      <motion.button
+                      <motion.button type="button"
                         className={studioDangerButtonClassName}
                         onClick={async () => {
                           if (!fpUser) return;
@@ -1291,7 +1284,7 @@ const UserManagement: React.FC = () => {
                         whileTap={tapScale()}
                       >清空全部</motion.button>
                       )}
-                      <motion.button className="text-slate-500 hover:text-slate-700 p-1" onClick={() => setShowFpModal(false)} whileHover={hoverScale()} whileTap={tapScale()}>
+                      <motion.button type="button" className="text-slate-500 hover:text-slate-700 p-1" onClick={() => setShowFpModal(false)} whileHover={hoverScale()} whileTap={tapScale()}>
                         <FaTimes />
                       </motion.button>
                     </div>
@@ -1333,7 +1326,7 @@ const UserManagement: React.FC = () => {
                             </div>
                           )}
                           <div className="mt-2 flex gap-2">
-                            <motion.button
+                            <motion.button type="button"
                               className={studioSecondaryButtonClassName}
                               onClick={async () => {
                                 try {
@@ -1347,7 +1340,7 @@ const UserManagement: React.FC = () => {
                               whileTap={tapScale()}
                             >复制ID</motion.button>
                             {canWrite && (
-                            <motion.button
+                            <motion.button type="button"
                               className={studioDangerButtonClassName}
                               onClick={async () => {
                                 if (!fpUser) return;
@@ -1388,7 +1381,7 @@ const UserManagement: React.FC = () => {
                       <div className="text-slate-600 text-sm">已在预约列表</div>
                       <div className="text-[12px] text-slate-500">上次预约：{new Date(fpRequireMap[fpUser.id]).toLocaleString()}</div>
                       {canWrite && (
-                      <motion.button
+                      <motion.button type="button"
                         className="text-slate-600 hover:underline text-[12px]"
                         onClick={async () => {
                           if (!fpUser) return;
@@ -1409,7 +1402,7 @@ const UserManagement: React.FC = () => {
                   ) : (
                     <div className="mt-2">
                       {canWrite && (
-                      <motion.button
+                      <motion.button type="button"
                         className="text-slate-600 hover:underline text-[12px]"
                         onClick={async () => {
                           if (!fpUser) return;
@@ -1429,7 +1422,7 @@ const UserManagement: React.FC = () => {
                     </div>
                   )}
                   <div className="mt-4 text-right">
-                    <motion.button
+                    <motion.button type="button"
                       className={studioSecondaryButtonClassName}
                       onClick={() => setShowFpModal(false)}
                       whileHover={hoverScale()}

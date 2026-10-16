@@ -9,6 +9,7 @@ import {
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorState } from './studioFeedback';
 import { studioDangerButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioTileClassName } from './studioTheme';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -175,6 +176,7 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-500">共 {total} 条</span>
           <button
+            type="button"
             className={REFRESH_BUTTON_CLASS}
             onClick={() => { void load(); setNotification({ type: 'info', message: '已刷新 guest 列表' }); }}
             disabled={loading || busy}
@@ -184,7 +186,8 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
           {canWrite && (
             <>
               <button
-                className={`${studioPrimaryButtonClassName} bg-rose-600 hover:bg-rose-700`}
+                type="button"
+                className={studioDangerButtonClassName}
                 onClick={() => void onClearAll()}
                 disabled={busy}
                 title="清空所有 guest: 开头的孤儿历史（超级管理员）"
@@ -201,19 +204,10 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
       ) : loading ? (
         <UnifiedLoadingSpinner size="sm" text="正在加载 guest 历史..." className="py-6" />
       ) : loadError ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-sm text-rose-700">
-          <div>{loadError}</div>
-          <div className="mt-1 text-xs text-rose-700/80">
-            在成功加载之前，这里不能确认是否存在遗留历史。
-          </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="mt-3 rounded-2xl border border-rose-300 bg-white/80 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-white"
-          >
-            重试
-          </button>
-        </div>
+        <StudioErrorState
+          message={`${loadError}。在成功加载之前，这里不能确认是否存在遗留历史。`}
+          onRetry={() => void load()}
+        />
       ) : total === 0 ? (
         <p className="flex items-center gap-2 text-sm text-slate-500">
           <FaUsers className="text-slate-300" />
@@ -235,6 +229,7 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
               <span className="text-sm text-slate-500">已选 {selectedIds.length} 条</span>
             )}
             <button
+              type="button"
               className={studioDangerButtonClassName}
               onClick={() => void onBatchDelete()}
               disabled={selectedIds.length === 0 || busy}
@@ -266,11 +261,12 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
                       {u.total} 条
                     </span>
                     <span className="flex items-center gap-1 text-xs text-slate-400">
-                      <FaClock className="text-orange-400" />
+                      <FaClock className="text-slate-400" />
                       {fmtTs(u.updatedAt)}
                     </span>
                     <button
-                      className="rounded px-2 py-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                      type="button"
+                      className="rounded-full px-2 py-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                       onClick={() => {
                         if (!navigator.clipboard) return;
                         void navigator.clipboard
@@ -283,6 +279,7 @@ const LibreChatGuestCleanup: React.FC<{ onChanged?: () => void }> = ({ onChanged
                       <FaCopy className="text-xs" />
                     </button>
                     <button
+                      type="button"
                       className={studioDangerButtonClassName}
                       onClick={() => void onSingleDelete(u)}
                       disabled={busy}
