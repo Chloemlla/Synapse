@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { studioPillClassName, studioSurfaceClassName } from './studioTheme';
+import { StudioErrorNote } from './studioFeedback';
+import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface AudioPreviewProps {
     audioUrl: string | null;
@@ -8,6 +11,7 @@ interface AudioPreviewProps {
 }
 
 export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose }) => {
+    const reducedMotion = useReducedMotion();
     const audioRef = useRef<HTMLAudioElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
@@ -114,7 +118,10 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
     const handleSeekEnd = () => {
         setIsSeeking(false);
         if (audioRef.current && isPlaying) {
-            audioRef.current.play().catch(() => {});
+            audioRef.current.play().catch(() => {
+                setIsPlaying(false);
+                setErrorMessage('播放失败，请重试，或下载后收听。');
+            });
         }
     };
 
@@ -129,7 +136,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
     return (
         <AnimatePresence>
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 className={`${studioSurfaceClassName} z-30 mt-6 w-full`}
@@ -139,9 +146,10 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                         <h3 className="text-white font-semibold">音频预览</h3>
                         {onClose && (
                             <button
+                                type="button"
                                 onClick={onClose}
                                 aria-label="关闭预览"
-                                className="text-white hover:text-slate-200 transition-colors"
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center text-white transition-colors hover:text-slate-200"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -155,9 +163,10 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                     <div className="flex flex-col space-y-4">
                         <div className="flex items-center space-x-4">
                             <button
+                                type="button"
                                 onClick={handlePlayPause}
                                 aria-label={isPlaying ? '暂停' : '播放'}
-                                className="rounded-full bg-slate-100 p-2 transition-colors hover:bg-slate-200"
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-slate-100 p-2 transition-colors hover:bg-slate-200"
                                 disabled={isLoading}
                             >
                                 {isPlaying ? (
@@ -184,7 +193,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                                     onMouseUp={handleSeekEnd}
                                     onTouchStart={handleSeekStart}
                                     onTouchEnd={handleSeekEnd}
-                                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                    className="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer"
                                 />
                             </div>
 
@@ -199,6 +208,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                                 {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
                                     <button
                                         key={rate}
+                                        type="button"
                                         onClick={() => setPlaybackRate(rate)}
                                         className={studioPillClassName(playbackRate === rate)}
                                     >
@@ -208,10 +218,7 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                             </div>
                         </div>
                         {errorMessage && (
-                            <div
-                                role="alert"
-                                className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-                            >
+                            <StudioErrorNote className="flex flex-wrap items-center gap-2">
                                 <span className="min-w-0 break-words">{errorMessage}</span>
                                 <button
                                     type="button"
@@ -220,12 +227,12 @@ export const AudioPreview: React.FC<AudioPreviewProps> = ({ audioUrl, onClose })
                                 >
                                     重试
                                 </button>
-                            </div>
+                            </StudioErrorNote>
                         )}
                     </div>
                     {isLoading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-t-2 border-slate-700"></div>
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/20">
+                            <UnifiedLoadingSpinner size="md" text="" />
                         </div>
                     )}
                 </div>

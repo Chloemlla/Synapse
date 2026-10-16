@@ -34,7 +34,7 @@ import {
   studioSurfaceClassName,
   studioTileClassName,
 } from './studioTheme';
-import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from './studioFeedback';
 
 ChartJS.register(
   CategoryScale,
@@ -292,6 +292,11 @@ const NexAISecurityDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-white/80 backdrop-blur-xl p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
+        {/* 自动轮询失败时页面不会清空，但必须说清楚数字是上一轮的 */}
+        {loadError ? (
+          <StudioErrorNote className="mb-5 text-xs">安全数据刷新失败，下面显示的是上次成功读取的结果。</StudioErrorNote>
+        ) : null}
+
         {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-3">

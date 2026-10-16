@@ -2,12 +2,34 @@ import React, { useEffect, useRef, useState, type ComponentPropsWithoutRef } fro
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
 import { Check, Clipboard, Code2, Eye, Maximize2, Minimize2 } from 'lucide-react';
-import 'katex/dist/katex.min.css';
 import Mermaid from './Mermaid';
+
+// 重依赖（KaTeX 插件 + 样式、Prism 主题）一律跳过静态 import：
+// 只有正文里真的出现公式/代码块时才需要它们，静态 import 会让每篇文档都先背一遍。
+type KatexRehypePlugin = typeof import('rehype-katex')['default'];
+type PrismTheme = typeof import('react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus')['default'];
+
+let katexAssetsPromise: Promise<KatexRehypePlugin | null> | null = null;
+
+function loadKatexAssets(): Promise<KatexRehypePlugin | null> {
+  if (!katexAssetsPromise) {
+    katexAssetsPromise = Promise.all([import('katex/dist/katex.min.css'), import('rehype-katex')])
+      .then(([, mod]) => mod.default)
+      .catch((error) => {
+        console.error('[MarkdownRenderer] KaTeX 加载失败，公式按原文显示:', error);
+        katexAssetsPromise = null;
+        return null;
+      });
+  }
+  return katexAssetsPromise;
+}
+
+/** 只做粗筛：命中才去下载 KaTeX（$$ 块级、$ 行内、\( \[ 定界符）。 */
+function hasMathSyntax(value: string): boolean {
+  return /\$\$[\s\S]*?\$\$/.test(value) || /(^|[^\\$])\$[^$\n]+\$/.test(value) || /\\\(|\\\[/.test(value);
+}
 
 type MarkdownCodeProps = ComponentPropsWithoutRef<'code'> & ExtraProps;
 
@@ -223,6 +245,36 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const [isLightboxZoomed, setIsLightboxZoomed] = useState(false);
+  const [katexPlugin, setKatexPlugin] = useState<KatexRehypePlugin | null>(null);
+  const [codeTheme, setCodeTheme] = useState<PrismTheme | undefined>(undefined);
+
+  const contentHasMath = hasMathSyntax(content);
+
+  useEffect(() => {
+    if (!contentHasMath || katexPlugin) return undefined;
+    let alive = true;
+    void loadKatexAssets().then((plugin) => {
+      if (alive && plugin) setKatexPlugin(() => plugin);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [contentHasMath, katexPlugin]);
+
+  useEffect(() => {
+    let alive = true;
+    void import('react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus')
+      .then((mod) => {
+        if (alive) setCodeTheme(mod.default);
+      })
+      .catch((error) => {
+        // 主题拿不到时退化成纯色代码块（容器已有 !bg-slate-900 与等宽字体）。
+        console.error('[MarkdownRenderer] 代码主题加载失败:', error);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     setDisplayMode(readerControls?.defaultMode ?? 'rendered');
@@ -317,7 +369,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       }
 
       return (
-        <div data-markdown-code={rawCode} className="group relative my-4 overflow-hidden rounded-md border border-slate-700/50 shadow-lg">
+        <div data-markdown-code={rawCode} className="group relative my-4 overflow-hidden rounded-2xl border border-slate-700/50 shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-700/30 bg-slate-800 px-3 py-2 font-mono text-[10px] text-slate-400 sm:px-4">
             <span className="truncate font-bold uppercase tracking-wider">{languageLabel}</span>
             <div className="flex shrink-0 gap-1.5">
@@ -329,7 +381,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           {highlightLanguage ? (
             <CodeHighlighter
               {...props}
-              style={vscDarkPlus}
+              style={codeTheme}
               language={highlightLanguage}
               PreTag="div"
               className="!m-0 !bg-slate-900 !p-4"
@@ -352,7 +404,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           <button
             type="button"
             onClick={() => void handleCodeCopy(rawCode)}
-            className="absolute right-2 top-10 rounded-sm bg-white/10 p-2 text-white opacity-85 transition hover:bg-white/20 hover:opacity-100 focus-visible:opacity-100"
+            className="absolute right-2 top-10 rounded-full bg-white/10 p-2 text-white opacity-85 transition hover:bg-white/20 hover:opacity-100 focus-visible:opacity-100"
             title="复制代码"
             aria-label={`Copy ${languageLabel} code`}
           >
@@ -411,7 +463,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div className={rendererClassName}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={katexPlugin ? [katexPlugin] : []}
         components={components}
       >
         {content}

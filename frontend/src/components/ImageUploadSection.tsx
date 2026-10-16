@@ -58,8 +58,8 @@ const ImagePreview: React.FC<{ src?: string; alt?: string }> = ({ src, alt = '�
 
   if (!safeSrc || error) {
     return (
-      <div className="w-full h-40 sm:h-48 bg-slate-100 rounded-lg flex items-center justify-center">
-        <FaUser className="text-4xl text-slate-400" />
+      <div className="w-full h-40 sm:h-48 bg-slate-100 rounded-2xl flex items-center justify-center">
+        <FaUser className="text-4xl text-slate-400" aria-hidden />
       </div>
     );
   }
@@ -68,7 +68,7 @@ const ImagePreview: React.FC<{ src?: string; alt?: string }> = ({ src, alt = '�
     <img
       src={safeSrc}
       alt={alt}
-      className="w-full h-40 sm:h-48 object-cover rounded-lg"
+      className="w-full h-40 sm:h-48 object-cover rounded-2xl"
       onError={() => setError(true)}
     />
   );
@@ -102,6 +102,7 @@ const ImageUploadSection: React.FC<ImageUploadSectionProps> = ({
             accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/bmp"
             onChange={onImageUpload}
             className="hidden"
+            aria-label="从本机选择图片"
           />
           <button
             type="button"
@@ -126,6 +127,7 @@ const ImageUploadSection: React.FC<ImageUploadSectionProps> = ({
               }}
               className={studioFieldClassName}
               placeholder="或输入图片URL"
+              aria-label="图片 URL"
             />
           </div>
         </div>

@@ -12,17 +12,40 @@ import {
   FileText,
   Globe2,
   Lock,
-  RefreshCcw,
   Share2,
   Tags,
 } from 'lucide-react';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
 import { api } from '../api/api';
 import MarkdownRenderer from './MarkdownRenderer';
 import Mermaid from './Mermaid';
 import { cn } from '../utils/cn';
-import { studioFieldClassName, studioPrimaryButtonClassName, studioSurfaceClassName } from './studioTheme';
+import {
+  studioFieldClassName,
+  studioPrimaryButtonClassName,
+  studioSurfaceClassName,
+} from './studioTheme';
+import { StudioErrorNote } from './studioFeedback';
+import { UnifiedLoadingSpinner } from './LoadingSpinner';
+
+// Prism 主题只在真的展示带高亮的代码时才有用，改成动态 import：
+// 静态 import 会把整份主题表塞进本页首屏闭包。
+type PrismTheme = typeof import('react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus')['default'];
+
+let prismThemePromise: Promise<PrismTheme | null> | null = null;
+
+function loadPrismTheme(): Promise<PrismTheme | null> {
+  if (!prismThemePromise) {
+    prismThemePromise = import('react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus')
+      .then((mod) => mod.default)
+      .catch((error) => {
+        console.error('[ArtifactShare] 代码主题加载失败:', error);
+        prismThemePromise = null;
+        return null;
+      });
+  }
+  return prismThemePromise;
+}
 
 interface ArtifactData {
   shortId: string;
@@ -212,6 +235,19 @@ const ArtifactSharePage: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [shared, setShared] = useState(false);
+  // 顶部动作（复制/分享）失败时的用户可见提示：剪贴板在非安全上下文里会直接失败。
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [prismTheme, setPrismTheme] = useState<PrismTheme | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    void loadPrismTheme().then((theme) => {
+      if (alive && theme) setPrismTheme(theme);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const contentIcon = useMemo(() => {
     return getContentTypeIcon(artifact?.contentType ?? 'text');
@@ -296,9 +332,15 @@ const ArtifactSharePage: React.FC = () => {
   const handleCopy = async () => {
     if (!artifact) return;
 
-    await navigator.clipboard.writeText(artifact.content);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(artifact.content);
+      setActionError(null);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // 非安全上下文里剪贴板不可用：不能只静默失败。
+      setActionError('复制失败，请手动选中内容后复制。');
+    }
   };
 
   const handleDownload = () => {
@@ -324,15 +366,21 @@ const ArtifactSharePage: React.FC = () => {
           title: artifact?.title || 'NexAI Artifact',
           url,
         });
+        setActionError(null);
         return;
       } catch {
         // Fall through to clipboard when the native share sheet is cancelled or unavailable.
       }
     }
 
-    await navigator.clipboard.writeText(url);
-    setShared(true);
-    window.setTimeout(() => setShared(false), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setActionError(null);
+      setShared(true);
+      window.setTimeout(() => setShared(false), 2000);
+    } catch {
+      setActionError('分享链接复制失败，请手动复制地址栏链接。');
+    }
   };
 
   const renderContent = () => {
@@ -394,19 +442,19 @@ const ArtifactSharePage: React.FC = () => {
         );
 
       case 'json':
-        return renderHighlightedCode(artifact, 'json', safeFormatJson(artifact.content));
+        return renderHighlightedCode(artifact, 'json', safeFormatJson(artifact.content), prismTheme);
 
       case 'xml':
-        return renderHighlightedCode(artifact, 'xml', artifact.content);
+        return renderHighlightedCode(artifact, 'xml', artifact.content, prismTheme);
 
       case 'latex':
-        return renderHighlightedCode(artifact, 'latex', artifact.content);
+        return renderHighlightedCode(artifact, 'latex', artifact.content, prismTheme);
 
       case 'csv':
         return renderCsv(artifact.content);
 
       case 'code':
-        return renderHighlightedCode(artifact, artifact.language || 'text', artifact.content);
+        return renderHighlightedCode(artifact, artifact.language || 'text', artifact.content, prismTheme);
 
       case 'text':
       default:
@@ -421,8 +469,7 @@ const ArtifactSharePage: React.FC = () => {
   if (loading) {
     return (
       <ArtifactStateShell statusRole>
-        <RefreshCcw className="h-8 w-8 animate-spin text-slate-500" aria-hidden="true" />
-        <h1 className="mt-5 text-xl font-semibold text-slate-950">正在加载分享内容…</h1>
+        <UnifiedLoadingSpinner size="lg" text="正在加载分享内容..." />
       </ArtifactStateShell>
     );
   }
@@ -443,14 +490,10 @@ const ArtifactSharePage: React.FC = () => {
             className={cn(studioFieldClassName, "border border-slate-300 bg-white focus:border-slate-500 focus:ring-slate-200")}
             autoFocus
           />
-          {error && (
-            <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && <StudioErrorNote className="text-left">{error}</StudioErrorNote>}
           <button
             type="submit"
-            className={cn(studioPrimaryButtonClassName, "w-full bg-slate-950 px-4 py-3")}
+            className={cn(studioPrimaryButtonClassName, "w-full")}
           >
             解锁查看
           </button>
@@ -462,7 +505,7 @@ const ArtifactSharePage: React.FC = () => {
   if (error || !artifact) {
     return (
       <ArtifactStateShell>
-        <AlertCircle className="h-9 w-9 text-red-500" aria-hidden="true" />
+        <AlertCircle className="h-9 w-9 text-rose-600" aria-hidden="true" />
         <h1 className="mt-5 text-xl font-semibold text-slate-950">分享暂不可用</h1>
         <p className="mt-2 max-w-md text-sm leading-6 text-slate-600" role="alert">
           {error || '该分享不存在或已过期。'}
@@ -470,7 +513,7 @@ const ArtifactSharePage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/')}
-          className={cn(studioPrimaryButtonClassName, "mt-6 bg-slate-950 px-4 py-2.5")}
+          className={cn(studioPrimaryButtonClassName, "mt-6")}
         >
           返回 Synapse 首页
         </button>
@@ -526,7 +569,7 @@ const ArtifactSharePage: React.FC = () => {
                   {artifact.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
                     >
                       <Tags className="h-3 w-3" aria-hidden="true" />
                       {tag}
@@ -551,6 +594,11 @@ const ArtifactSharePage: React.FC = () => {
         </header>
 
         <main className={cn(studioSurfaceClassName, "flex-1 bg-white")}>
+          {actionError ? (
+            <div className="p-4">
+              <StudioErrorNote>{actionError}</StudioErrorNote>
+            </div>
+          ) : null}
           {renderContent()}
         </main>
 
@@ -576,7 +624,7 @@ const ArtifactStateShell: React.FC<{ children: React.ReactNode; statusRole?: boo
 );
 
 const MetadataPill: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
+  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5">
     {children}
   </span>
 );
@@ -601,7 +649,12 @@ const ActionButton: React.FC<{
   </button>
 );
 
-const renderHighlightedCode = (artifact: ArtifactData, language: string, content: string) => {
+const renderHighlightedCode = (
+  artifact: ArtifactData,
+  language: string,
+  content: string,
+  theme: PrismTheme | undefined,
+) => {
   // 产物里的 language 来自用户数据，可能是不受支持的语法。
   // PrismLight 遇到未注册语言会直接抛 `Unknown language`，所以未命中白名单时退化成等宽纯文本。
   const highlightLanguage = resolveCodeLanguage(language);
@@ -627,7 +680,7 @@ const renderHighlightedCode = (artifact: ArtifactData, language: string, content
   return (
     <CodeHighlighter
       language={highlightLanguage}
-      style={vscDarkPlus}
+      style={theme}
       showLineNumbers
       wrapLongLines
       customStyle={containerStyle}

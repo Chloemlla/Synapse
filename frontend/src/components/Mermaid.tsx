@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  studioGhostButtonClassName,
   studioModalCardClassName,
   studioModalOverlayClassName,
+  studioSecondaryButtonClassName,
   studioSubPanelClassName,
   studioSurfaceClassName,
 } from './studioTheme';
+import { StudioErrorNote, StudioSuccessNote } from './studioFeedback';
+import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { cn } from '../utils/cn';
 
 interface MermaidProps {
   code: string;
@@ -79,6 +84,7 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
   useEffect(() => () => zoomCleanup.current?.(), []);
   const [error, setError] = useState(false);
   const [isRendering, setIsRendering] = useState(true);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const diagramId = useMemo(
     () => `mermaid-${Math.random().toString(36).slice(2, 10)}`,
     []
@@ -162,8 +168,11 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(code);
+      setCopyState('copied');
     } catch (copyError) {
+      // 剪贴板不可用时不能只写 console：用户会以为已经复制了。
       console.error('[Mermaid] copy failed:', copyError);
+      setCopyState('failed');
     }
   };
 
@@ -186,6 +195,7 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
     container.onclick = (event) => event.stopPropagation();
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
+    closeButton.className = cn(studioSecondaryButtonClassName, 'mb-3');
     closeButton.textContent = '关闭图表';
     container.prepend(closeButton);
 
@@ -211,27 +221,26 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
 
   if (isRendering) {
     return (
-      <div className={`${studioSubPanelClassName} flex flex-col items-center justify-center gap-3`}>
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
-        <span className="text-sm text-slate-500">正在渲染图表...</span>
+      <div className={studioSubPanelClassName}>
+        <UnifiedLoadingSpinner size="md" text="正在渲染图表..." />
       </div>
     );
   }
 
   if (error || !svg) {
     return (
-      <div className="rounded-lg border border-rose-100 bg-rose-50 p-4">
-        <div className="mb-2 font-medium text-rose-800">图表渲染失败</div>
-        <div className="mb-3 flex gap-2">
-          <button
-            type="button"
-            onClick={() => void handleCopy()}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-rose-700"
-          >
+      <div className="space-y-2">
+        <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2">
+          <span>图表渲染失败，可复制下方源码到其它工具里排查。</span>
+          <button type="button" onClick={() => void handleCopy()} className={studioGhostButtonClassName}>
             复制原始代码
           </button>
-        </div>
-        <pre className="overflow-x-auto rounded border border-rose-200 bg-white/50 p-2 font-mono text-xs text-rose-900">
+        </StudioErrorNote>
+        {copyState === 'copied' ? <StudioSuccessNote className="text-xs">源码已复制。</StudioSuccessNote> : null}
+        {copyState === 'failed' ? (
+          <StudioErrorNote className="text-xs">复制失败，请手动选中下方源码复制。</StudioErrorNote>
+        ) : null}
+        <pre className="overflow-x-auto rounded-2xl border border-rose-200 bg-white/80 p-3 font-mono text-xs text-slate-700">
           {code}
         </pre>
       </div>
@@ -246,14 +255,17 @@ const Mermaid: React.FC<MermaidProps> = ({ code }) => {
         onClick={handleZoom}
         aria-label="放大图表"
         title="放大图表"
-        className="block w-full cursor-zoom-in rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+        className="block w-full cursor-zoom-in rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
       >
         <div
           className="mermaid-svg flex max-h-[600px] justify-center overflow-auto"
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       </button>
-      <div className="pointer-events-none absolute right-2 top-2 rounded border border-slate-100 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-2 top-2 rounded-full border border-slate-100 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
         点击放大
       </div>
     </div>

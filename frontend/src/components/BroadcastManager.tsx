@@ -409,7 +409,7 @@ const BroadcastManager: React.FC = () => {
             <motion.button type="button" key={opt.value} onClick={() => setLevel(opt.value)}
               className={`flex min-h-11 items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 level === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-              }`} whileTap={{ scale: 0.96 }}>
+              }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
               <span>{opt.icon}</span><span>{opt.label}</span>
             </motion.button>
           ))}
@@ -426,7 +426,7 @@ const BroadcastManager: React.FC = () => {
                 broadcastAudience === opt.value
                   ? 'bg-slate-100 text-slate-800 border-slate-300 shadow-sm'
                   : 'bg-slate-50/80 text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`} whileTap={{ scale: 0.97 }}>
+              }`} whileTap={reducedMotion ? undefined : { scale: 0.97 }}>
               <div className="flex items-center gap-2 text-sm font-semibold">
                 {opt.icon}
                 <span>{opt.label}</span>
@@ -495,7 +495,7 @@ const BroadcastManager: React.FC = () => {
             <motion.button type="button" key={d} onClick={() => setBroadcastDisplay(d)}
               className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 broadcastDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-              }`} whileTap={{ scale: 0.96 }}>
+              }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
               {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
             </motion.button>
           ))}
@@ -512,7 +512,7 @@ const BroadcastManager: React.FC = () => {
                 <motion.button type="button" key={f} onClick={() => setBroadcastFormat(f)}
                   className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                     broadcastFormat === f ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-                  }`} whileTap={{ scale: 0.96 }}>
+                  }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
                   {label}
                 </motion.button>
               ))}
@@ -575,7 +575,7 @@ const BroadcastManager: React.FC = () => {
             <motion.button type="button" key={opt.value} onClick={() => setDirectLevel(opt.value)}
               className={`flex min-h-11 items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 directLevel === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-              }`} whileTap={{ scale: 0.96 }}>
+              }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
               <span>{opt.icon}</span><span>{opt.label}</span>
             </motion.button>
           ))}
@@ -619,7 +619,7 @@ const BroadcastManager: React.FC = () => {
             <motion.button type="button" key={d} onClick={() => setDirectDisplay(d)}
               className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 directDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-              }`} whileTap={{ scale: 0.96 }}>
+              }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
               {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
             </motion.button>
           ))}
@@ -634,7 +634,7 @@ const BroadcastManager: React.FC = () => {
                 <motion.button type="button" key={f} onClick={() => setDirectFormat(f)}
                   className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                     directFormat === f ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
-                  }`} whileTap={{ scale: 0.96 }}>
+                  }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
                   {label}
                 </motion.button>
               ))}

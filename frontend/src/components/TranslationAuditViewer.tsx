@@ -27,11 +27,22 @@ import {
 } from '../api/translationAudit';
 import {
   studioFieldClassName,
+  studioGhostButtonClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
   studioTileClassName,
 } from './studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioModal,
+  StudioPager,
+} from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { cn } from '../utils/cn';
 
 const PAGE_SIZE = 20;
 
@@ -51,6 +62,9 @@ const TranslationAuditViewer: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // 列表与统计各自失败：接口挂了不能画成「暂无翻译日志」。
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<TranslationTraceUser | null>(null);
@@ -78,11 +92,12 @@ const TranslationAuditViewer: React.FC = () => {
       setLogs(response.logs);
       setPage(response.page);
       setTotal(response.total);
+      setLogsError(null);
     } catch (error) {
-      setNotification({
-        message: getBackendErrorMessage(error, '获取翻译日志失败'),
-        type: 'error',
-      });
+      const message = getBackendErrorMessage(error, '获取翻译日志失败');
+      console.error('[TranslationAudit] 获取翻译日志失败:', error);
+      setLogsError(message);
+      setNotification({ message, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -92,13 +107,13 @@ const TranslationAuditViewer: React.FC = () => {
     try {
       const response = await translationAuditApi.getStats();
       setStats(response);
+      setStatsError(null);
     } catch (error) {
-      setNotification({
-        message: getBackendErrorMessage(error, '获取翻译统计失败'),
-        type: 'error',
-      });
+      const message = getBackendErrorMessage(error, '获取翻译统计失败');
+      console.error('[TranslationAudit] 获取翻译统计失败:', error);
+      setStatsError(message);
     }
-  }, [setNotification]);
+  }, []);
 
   useEffect(() => {
     void fetchLogs(1);
@@ -188,9 +203,20 @@ const TranslationAuditViewer: React.FC = () => {
   }, [applyPenalty, limitHoursInput]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const reducedMotion = useReducedMotion();
 
   return (
     <div className="space-y-5">
+      {statsError ? (
+        <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2">
+          <span>翻译统计暂时读不到，统计卡已隐藏。</span>
+          <button type="button" onClick={() => void fetchStats()} className={studioGhostButtonClassName}>
+            <FaSync aria-hidden />
+            重试
+          </button>
+        </StudioErrorNote>
+      ) : null}
+
       {/* Stats row */}
       {stats ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -234,12 +260,14 @@ const TranslationAuditViewer: React.FC = () => {
             />
           </div>
           <button
+            type="button"
             onClick={() => setShowFilters((prev) => !prev)}
             className={`${studioSecondaryButtonClassName} ${showFilters ? 'bg-slate-200 text-slate-800' : ''}`}
           >
             <FaFilter />筛选
           </button>
           <button
+            type="button"
             onClick={() => {
               setPage(1);
               void fetchLogs(1);
@@ -250,13 +278,15 @@ const TranslationAuditViewer: React.FC = () => {
             搜索
           </button>
           <button
+            type="button"
+            aria-label="刷新日志"
             onClick={() => {
               void fetchLogs(page);
               void fetchStats();
             }}
             className={studioSecondaryButtonClassName}
           >
-            <FaSync className={loading ? 'animate-spin' : ''} />
+            <FaSync className={loading ? 'animate-spin' : ''} aria-hidden />
           </button>
         </div>
 
@@ -264,7 +294,7 @@ const TranslationAuditViewer: React.FC = () => {
           {showFilters ? (
             <motion.div
               key="filters"
-              initial={{ opacity: 0, height: 0 }}
+              initial={reducedMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.2 }}
@@ -296,11 +326,30 @@ const TranslationAuditViewer: React.FC = () => {
       </div>
 
       {/* Log list */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-xl shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-sm backdrop-blur-xl">
         {loading && logs.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">加载中...</div>
+          <StudioLoadingState text="加载翻译日志..." minHeightClassName="min-h-[240px]" />
+        ) : logsError && logs.length === 0 ? (
+          <div className="p-4">
+            <StudioErrorState message={logsError} onRetry={() => void fetchLogs(page)} />
+          </div>
         ) : logs.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">暂无翻译日志</div>
+          <StudioEmptyState
+            className="m-4"
+            message="当前筛选条件下没有翻译日志，换个关键词或时间范围试试。"
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  setFilters({ keyword: '', userId: '', startDate: '', endDate: '' });
+                  setPage(1);
+                }}
+                className={studioGhostButtonClassName}
+              >
+                清空筛选条件
+              </button>
+            }
+          />
         ) : (
           <div className="divide-y divide-slate-100">
             {logs.map((log) => (
@@ -332,26 +381,14 @@ const TranslationAuditViewer: React.FC = () => {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-slate-500">共 {total} 条记录</span>
-        <div className="flex items-center gap-2">
-          <button
-            disabled={page <= 1}
-            onClick={() => setPage((prev) => prev - 1)}
-            className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-          >
-            <FaChevronLeft />
-          </button>
-          <span className="text-slate-500">{page} / {totalPages}</span>
-          <button
-            disabled={page >= totalPages}
-            onClick={() => setPage((prev) => prev + 1)}
-            className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-          >
-            <FaChevronRight />
-          </button>
-        </div>
-      </div>
+      <StudioPager
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        loading={loading}
+        onPageChange={setPage}
+        label="翻译日志分页"
+      />
 
       {/* Trace modal */}
       <AnimatePresence>

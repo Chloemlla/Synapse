@@ -10,7 +10,6 @@ import {
   FaShieldAlt,
   FaExclamationTriangle,
   FaDesktop,
-  FaPhone,
   FaNetworkWired,
   FaUserGraduate,
   FaChalkboardTeacher,

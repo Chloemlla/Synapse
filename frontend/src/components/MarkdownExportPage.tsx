@@ -9,10 +9,24 @@ import {
   FaTrash,
   FaUpload,
 } from 'react-icons/fa';
-import { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType, Table, TableRow, TableCell } from 'docx';
 import MarkdownRenderer from './MarkdownRenderer';
 import { exportToPdf as exportPdfUtil } from './MarkdownExportPage/pdfExport';
-import { studioEyebrowPillClassName } from './studioTheme';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowPillClassName,
+  studioHeroCardClassName,
+  studioPageClassName,
+  studioPageFont,
+  studioPillClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioTextareaClassName,
+  studioDangerButtonClassName,
+} from './studioTheme';
+import { StudioErrorNote, StudioLoadingState, StudioSuccessNote } from './studioFeedback';
+import { cn } from '../utils/cn';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 
 // 批量面板只在切到「批量转换」时才下载；本页本身已经是懒加载，这里再懒一层是为了
@@ -65,7 +79,8 @@ type RunFormatting = {
   color?: string;
   underline?: {
     color?: string;
-    type?: typeof UnderlineType.SINGLE;
+    // 类型引用 docx 的枚举，但不产生静态 import：docx 在导出时才动态载入。
+    type?: import('docx').UnderlineType;
   };
 };
 
@@ -106,17 +121,26 @@ async function waitForAsyncContent(root: HTMLElement | null, timeoutMs = 5000): 
 
 const MarkdownExportPage: React.FC = () => {
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [isExporting, setIsExporting] = useState(false);
   const [markdownContent, setMarkdownContent] = useState(DEFAULT_MARKDOWN);
   const [docxSourceMarkdown, setDocxSourceMarkdown] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const docxPreviewRef = useRef<HTMLDivElement>(null);
 
   const exportToDocx = async () => {
     setIsExporting(true);
+    setError(null);
+    setNotice(null);
 
     try {
+      // docx 只在真的导出 Word 时才需要：包里只有这一处用得到它，
+      // 静态 import 会把整份生成器塞进本页 chunk 的首屏依赖。
+      const { Document, HeadingLevel, Packer, Paragraph, TextRun, UnderlineType, Table, TableRow, TableCell } =
+        await import('docx');
       const processedMarkdown = replaceMathWithPlaceholders(markdownContent);
       setDocxSourceMarkdown(processedMarkdown);
 
@@ -316,7 +340,7 @@ const MarkdownExportPage: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('导出 DOCX 失败:', error);
-      alert('导出 DOCX 失败，请检查内容格式。');
+      setError('导出 DOCX 失败，请检查内容格式后重试。');
     } finally {
       setDocxSourceMarkdown('');
       setIsExporting(false);
@@ -325,15 +349,18 @@ const MarkdownExportPage: React.FC = () => {
 
   const exportToPdf = async () => {
     setIsExporting(true);
+    setError(null);
+    setNotice(null);
 
     try {
       if (!previewRef.current) {
         return;
       }
       await exportPdfUtil(previewRef.current);
+      setNotice('PDF 已生成，请在浏览器下载列表里查看。');
     } catch (error) {
       console.error('导出 PDF 失败:', error);
-      alert('导出 PDF 失败，请检查内容格式。');
+      setError('导出 PDF 失败，请检查内容格式后重试。');
     } finally {
       setIsExporting(false);
     }
@@ -352,28 +379,27 @@ const MarkdownExportPage: React.FC = () => {
   };
 
   const copyToClipboard = async () => {
+    setError(null);
+    setNotice(null);
     try {
       await navigator.clipboard.writeText(markdownContent);
-      alert('内容已复制到剪贴板。');
+      setNotice('内容已复制到剪贴板。');
     } catch (error) {
       console.error('复制失败:', error);
-      alert('复制失败，请稍后重试。');
+      setError('复制失败，请手动选中内容复制。');
     }
   };
 
-  const BUTTON_BASE =
-    'inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
-
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
+    <section className={cn(studioPageClassName, 'max-w-6xl min-w-0')}>
       <motion.div
-        className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
-        initial={{ opacity: 0, y: 16 }}
+        className={cn('mb-5 sm:mb-8', studioHeroCardClassName)}
+        initial={reducedMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, '-left-10 bottom-0')} aria-hidden />
 
         <div className="relative">
           <div className={studioEyebrowPillClassName}>
@@ -389,7 +415,7 @@ const MarkdownExportPage: React.FC = () => {
           </p>
 
           <div
-            className="mt-6 inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1"
+            className="mt-6 inline-flex flex-wrap items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1"
             role="group"
             aria-label="导出模式"
           >
@@ -399,11 +425,7 @@ const MarkdownExportPage: React.FC = () => {
                 type="button"
                 aria-pressed={mode === choice.value}
                 onClick={() => setMode(choice.value)}
-                className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                  mode === choice.value
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-                }`}
+                className={cn(studioPillClassName(mode === choice.value), 'min-h-11')}
               >
                 {choice.label}
               </button>
@@ -414,52 +436,59 @@ const MarkdownExportPage: React.FC = () => {
           <div className={mode === 'single' ? undefined : 'hidden'}>
           <div className="mt-7 flex flex-wrap gap-3">
             <motion.button
+              type="button"
               onClick={exportToDocx}
               disabled={isExporting || !markdownContent.trim()}
-              className={`${BUTTON_BASE} bg-slate-900 text-white hover:bg-slate-800 focus-visible:ring-slate-400`}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              className={studioPrimaryButtonClassName}
+              whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.99 }}
             >
               <FaFileWord className="text-[13px]" />
               {isExporting ? '导出中…' : '导出 DOCX'}
             </motion.button>
 
             <motion.button
+              type="button"
               onClick={exportToPdf}
               disabled={isExporting || !markdownContent.trim()}
-              className={`${BUTTON_BASE} border border-slate-200 bg-white/80 text-slate-700 hover:border-slate-300 hover:text-slate-900 focus-visible:ring-slate-300`}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              className={studioSecondaryButtonClassName}
+              whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.99 }}
             >
               <FaFilePdf className="text-[13px]" />
               {isExporting ? '导出中…' : '导出 PDF'}
             </motion.button>
 
             <motion.button
+              type="button"
               onClick={copyToClipboard}
               disabled={!markdownContent.trim()}
-              className={`${BUTTON_BASE} border border-slate-200 bg-white/80 text-slate-700 hover:border-slate-300 hover:text-slate-900 focus-visible:ring-slate-300`}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              className={studioSecondaryButtonClassName}
+              whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.99 }}
             >
               <FaCopy className="text-[13px]" />
               复制内容
             </motion.button>
 
             <motion.button
+              type="button"
               onClick={clearContent}
-              className={`${BUTTON_BASE} border border-slate-200 bg-white/80 text-slate-500 hover:border-rose-200 hover:text-rose-600 focus-visible:ring-rose-200`}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              className={studioDangerButtonClassName}
+              whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.99 }}
             >
               <FaTrash className="text-[13px]" />
               清空
             </motion.button>
           </div>
 
+          {error ? <StudioErrorNote className="mt-4">{error}</StudioErrorNote> : null}
+          {notice ? <StudioSuccessNote className="mt-4">{notice}</StudioSuccessNote> : null}
+
           <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/82 shadow-sm backdrop-blur-xl">
-              <div className="flex items-center justify-between border-b border-slate-100 bg-white/60 px-5 py-3">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-sm backdrop-blur-xl">
+              <div className="flex items-center justify-between border-b border-slate-100 bg-white/80 px-5 py-3">
                 <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
                   <FaFileAlt className="text-slate-500" />
                   Editor
@@ -475,14 +504,14 @@ const MarkdownExportPage: React.FC = () => {
                   aria-label="Markdown 原文"
                   value={markdownContent}
                   onChange={(event) => setMarkdownContent(event.target.value)}
-                  className="h-64 w-full resize-none rounded-2xl border border-slate-200 bg-white/80 p-4 font-mono text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 sm:h-96"
+                  className={cn(studioTextareaClassName, 'h-64 font-mono text-sm sm:h-96')}
                   placeholder="在这里输入 Markdown 内容..."
                 />
               </div>
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/82 shadow-sm backdrop-blur-xl">
-              <div className="flex items-center justify-between border-b border-slate-100 bg-white/60 px-5 py-3">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-sm backdrop-blur-xl">
+              <div className="flex items-center justify-between border-b border-slate-100 bg-white/80 px-5 py-3">
                 <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
                   <FaEye className="text-slate-500" />
                   Preview
@@ -492,10 +521,7 @@ const MarkdownExportPage: React.FC = () => {
                 <div
                   ref={previewRef}
                   className="h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 sm:h-96"
-                  style={{
-                    fontFamily:
-                      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  }}
+                  style={{ fontFamily: studioPageFont }}
                 >
                   <MarkdownRenderer content={markdownContent} />
                 </div>
@@ -507,10 +533,8 @@ const MarkdownExportPage: React.FC = () => {
       </motion.div>
 
       <motion.div
-        className={`mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8 ${
-          mode === 'single' ? '' : 'hidden'
-        }`}
-        initial={{ opacity: 0, y: 16 }}
+        className={cn(studioHeroCardClassName, 'mt-5 sm:mt-6 overflow-hidden', mode === 'single' ? '' : 'hidden')}
+        initial={reducedMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.15 }}
       >
@@ -543,11 +567,7 @@ const MarkdownExportPage: React.FC = () => {
 
       {mode === 'batch' ? (
         <React.Suspense
-          fallback={
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white/88 px-4 py-10 text-center text-sm text-slate-400 backdrop-blur-xl">
-              正在加载批量转换面板…
-            </div>
-          }
+          fallback={<StudioLoadingState text="正在加载批量转换面板..." minHeightClassName="min-h-[240px]" />}
         >
           <div className="mt-6">
             <DocBatchPanel />

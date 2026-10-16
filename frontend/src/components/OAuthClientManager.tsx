@@ -5,7 +5,6 @@ import {
   FaCheck,
   FaCopy,
   FaEdit,
-  FaExclamationTriangle,
   FaHistory,
   FaKey,
   FaLayerGroup,
@@ -24,7 +23,18 @@ import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import OAuthOidcEndpointPanel from './OAuthOidcEndpointPanel';
 import { cn } from '../utils/cn';
-import { studioInfoRowClassName, studioStrongBadgeClassName } from './studioTheme';
+import {
+  studioDangerButtonClassName,
+  studioFieldClassName,
+  studioInfoRowClassName,
+  studioPanelClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioStrongBadgeClassName,
+  studioTileClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const defaultScopes = ['openid', 'profile', 'email', 'admin:identity', 'status'];
 
@@ -92,6 +102,7 @@ const getErrorMessage = (error: any) =>
 const OAuthClientManager: React.FC = () => {
   const { setNotification } = useNotification();
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
   const [clients, setClients] = useState<OAuthClient[]>([]);
   const [grants, setGrants] = useState<OAuthGrant[]>([]);
   const [scopes, setScopes] = useState<OAuthScopeDefinition[]>([]);
@@ -398,7 +409,7 @@ const OAuthClientManager: React.FC = () => {
     onReplace: (nextScopes: string[]) => void,
   ) => (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className={cn(studioInfoRowClassName, 'flex-wrap gap-2')}>
         <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
           <FaLayerGroup className="text-slate-500" />
           已选择 {activeScopes.length} / {scopes.length} 个 scope
@@ -407,21 +418,21 @@ const OAuthClientManager: React.FC = () => {
           <button
             type="button"
             onClick={() => onReplace(scopes.filter((scope) => scope.identityScope).map((scope) => scope.key))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            className={cn(studioSecondaryButtonClassName, 'min-h-11 px-3 py-1.5 text-xs')}
           >
             仅身份
           </button>
           <button
             type="button"
             onClick={() => onReplace(scopes.map((scope) => scope.key))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            className={cn(studioSecondaryButtonClassName, 'min-h-11 px-3 py-1.5 text-xs')}
           >
             全选
           </button>
           <button
             type="button"
             onClick={() => onReplace([])}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            className={cn(studioSecondaryButtonClassName, 'min-h-11 px-3 py-1.5 text-xs')}
           >
             清空
           </button>
@@ -432,7 +443,7 @@ const OAuthClientManager: React.FC = () => {
         const selectedInGroup = items.filter((scope) => activeScopes.includes(scope.key)).length;
         const allSelected = selectedInGroup === items.length;
         return (
-          <div key={category} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={category} className={cn(studioTileClassName, 'p-3')}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-slate-900">
@@ -449,7 +460,7 @@ const OAuthClientManager: React.FC = () => {
                   const base = activeScopes.filter((scope) => !groupKeys.has(scope));
                   onReplace(allSelected ? base : [...base, ...items.map((scope) => scope.key)]);
                 }}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className={cn(studioSecondaryButtonClassName, 'min-h-11 px-3 py-1.5 text-xs')}
               >
                 {allSelected ? '取消本组' : '选择本组'}
               </button>
@@ -462,7 +473,7 @@ const OAuthClientManager: React.FC = () => {
                     key={scope.key}
                     type="button"
                     onClick={() => onToggle(scope.key)}
-                    className={`min-h-[88px] rounded-lg border px-3 py-2 text-left transition ${
+                    className={`min-h-[88px] rounded-2xl border px-3 py-2 text-left transition ${
                       active
                         ? 'border-slate-900 bg-slate-900 text-white'
                         : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -470,7 +481,7 @@ const OAuthClientManager: React.FC = () => {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-sm font-semibold">{scope.label}</span>
-                      <code className={`break-all rounded px-1.5 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      <code className={`break-all rounded-full px-1.5 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
                         {scope.key}
                       </code>
                     </div>
@@ -491,7 +502,7 @@ const OAuthClientManager: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className={cn(studioStrongBadgeClassName, "h-11 w-11 rounded-xl")}>
+          <div className={cn(studioStrongBadgeClassName, "h-11 w-11 rounded-2xl")}>
             <FaShieldAlt />
           </div>
           <div>
@@ -503,7 +514,7 @@ const OAuthClientManager: React.FC = () => {
           type="button"
           onClick={loadAll}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className={cn(studioSecondaryButtonClassName, 'min-h-11')}
         >
           <FaSyncAlt className={loading ? 'animate-spin' : ''} /> 刷新
         </button>
@@ -522,11 +533,11 @@ const OAuthClientManager: React.FC = () => {
       </div>
 
       {revealedSecret && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-amber-900">client secret 仅显示一次</div>
-              <code className="mt-2 block break-all rounded-lg bg-white/80 px-3 py-2 text-xs text-amber-900">
+              <code className="mt-2 block break-all rounded-2xl bg-white/80 px-3 py-2 text-xs text-amber-900">
                 {revealedSecret.secret}
               </code>
               <p className="mt-2 text-xs text-amber-800">客户端: {revealedSecret.clientId}</p>
@@ -534,7 +545,7 @@ const OAuthClientManager: React.FC = () => {
             <button
               type="button"
               onClick={() => copy(revealedSecret.secret)}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+              className={studioPrimaryButtonClassName}
             >
               <FaCopy /> 复制
             </button>
@@ -544,7 +555,7 @@ const OAuthClientManager: React.FC = () => {
 
       <OAuthOidcEndpointPanel />
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className={studioPanelClassName}>
         <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
           <FaPlus /> 创建 OAuth 客户端
         </div>
@@ -553,12 +564,12 @@ const OAuthClientManager: React.FC = () => {
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="客户端名称"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           />
           <select
             value={type}
             onChange={(event) => setType(event.target.value as 'confidential' | 'public')}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           >
             <option value="confidential">confidential（服务端应用）</option>
             <option value="public">public（PKCE 应用）</option>
@@ -567,13 +578,13 @@ const OAuthClientManager: React.FC = () => {
             value={homepageUrl}
             onChange={(event) => setHomepageUrl(event.target.value)}
             placeholder="应用主页 URL（可选）"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           />
           <input
             value={logoUrl}
             onChange={(event) => setLogoUrl(event.target.value)}
             placeholder="Logo URL（可选）"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           />
           <input
             type="number"
@@ -581,20 +592,20 @@ const OAuthClientManager: React.FC = () => {
             max={1000}
             value={rateLimitPerMinute}
             onChange={(event) => setRateLimitPerMinute(Math.min(Math.max(Number(event.target.value) || 120, 1), 1000))}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           />
           <input
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="说明（可选）"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+            className={studioFieldClassName}
           />
           <textarea
             value={redirectUris}
             onChange={(event) => setRedirectUris(event.target.value)}
             placeholder="回调地址，每行一个"
             rows={3}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900 lg:col-span-2"
+            className={cn(studioFieldClassName, 'lg:col-span-2')}
           />
         </div>
         <div className="mt-4">{renderScopeSelector(selectedScopes, toggleScope, setSelectedScopes)}</div>
@@ -602,15 +613,15 @@ const OAuthClientManager: React.FC = () => {
           type="button"
           onClick={createClient}
           disabled={creating}
-          className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-          whileTap={{ scale: 0.98 }}
+          className={cn(studioPrimaryButtonClassName, 'mt-4')}
+          whileTap={reducedMotion ? undefined : { scale: 0.98 }}
         >
           {creating ? <FaSyncAlt className="animate-spin" /> : <FaPlus />}
           创建客户端
         </motion.button>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className={studioPanelClassName}>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <FaKey /> 客户端列表
@@ -621,43 +632,50 @@ const OAuthClientManager: React.FC = () => {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="搜索客户端"
-              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900 sm:w-72"
+              className={cn(studioFieldClassName, 'py-2 pl-9 pr-3 sm:w-72')}
             />
           </div>
         </div>
         {loading && clients.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-400">加载中...</div>
+          <StudioLoadingState text="正在读取 OAuth 客户端..." minHeightClassName="min-h-[240px]" />
         ) : loadError ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
-            <FaExclamationTriangle className="text-2xl text-rose-500" />
-            <p className="text-sm text-slate-500">{loadError}</p>
-            <button
-              type="button"
-              onClick={() => void loadAll()}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              <FaSyncAlt /> 重试
-            </button>
-          </div>
+          <StudioErrorState message={loadError} onRetry={() => void loadAll()} />
         ) : filteredClients.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-400">暂无 OAuth 客户端</div>
+          <StudioEmptyState
+            message={
+              clients.length > 0
+                ? '没有匹配当前搜索的客户端。清空搜索框可以看到全部已注册客户端。'
+                : '还没有注册 OAuth 客户端。用上方表单创建第一个，把 clientId/secret 交给接入方。'
+            }
+            action={
+              clients.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                >
+                  清空搜索
+                </button>
+              ) : null
+            }
+          />
         ) : (
           <div className="space-y-3">
             {filteredClients.map((client) => (
-              <div key={client.clientId} className={`rounded-lg border p-4 ${client.enabled ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-75'}`}>
+              <div key={client.clientId} className={`rounded-2xl border p-4 ${client.enabled ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-75'}`}>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-slate-900">{client.name}</span>
-                      <code className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{client.clientId}</code>
-                      <span className={`rounded px-2 py-1 text-xs ${client.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      <code className="rounded-2xl bg-slate-100 px-2 py-1 text-xs text-slate-600">{client.clientId}</code>
+                      <span className={`rounded-full px-2 py-1 text-xs ${client.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
                         {client.enabled ? '启用' : '停用'}
                       </span>
-                      <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{client.type}</span>
+                      <span className="rounded-2xl bg-slate-100 px-2 py-1 text-xs text-slate-600">{client.type}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1">
                       {client.allowedScopes.map((scope) => (
-                        <span key={scope} className="rounded bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                        <span key={scope} className="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-600">
                           {scopeMap.get(scope)?.label || scope}
                         </span>
                       ))}
@@ -670,23 +688,23 @@ const OAuthClientManager: React.FC = () => {
                     </div>
                     {client.operationalStats && (
                       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
                           <div className="font-semibold text-slate-800">{client.operationalStats.activeGrantCount}</div>
                           <div className="mt-0.5 text-slate-500">有效授权</div>
                         </div>
-                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
                           <div className="font-semibold text-slate-800">{client.operationalStats.activeAccessTokenCount}</div>
                           <div className="mt-0.5 text-slate-500">活跃 access token</div>
                         </div>
-                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
                           <div className="font-semibold text-slate-800">{client.operationalStats.activeRefreshTokenCount}</div>
                           <div className="mt-0.5 text-slate-500">活跃 refresh token</div>
                         </div>
-                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
                           <div className="font-semibold text-slate-800">{client.operationalStats.tokenUsageCount}</div>
                           <div className="mt-0.5 text-slate-500">累计调用</div>
                         </div>
-                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2 xl:col-span-4">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2 xl:col-span-4">
                           <div className="font-semibold text-slate-800">{formatDate(client.operationalStats.lastTokenUsedAt)}</div>
                           <div className="mt-0.5 text-slate-500">
                             最近 token 使用；已撤销 token {client.operationalStats.revokedTokenCount} 个，已撤销授权 {client.operationalStats.revokedGrantCount} 条
@@ -696,7 +714,7 @@ const OAuthClientManager: React.FC = () => {
                     )}
                     <div className="mt-3 space-y-1">
                       {client.redirectUris.map((uri) => (
-                        <code key={uri} className="block break-all rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">
+                        <code key={uri} className="block break-all rounded-2xl bg-slate-50 px-2 py-1 text-xs text-slate-500">
                           {uri}
                         </code>
                       ))}
@@ -707,7 +725,7 @@ const OAuthClientManager: React.FC = () => {
                       type="button"
                       disabled={editSaving}
                       onClick={() => (editingClientId === client.clientId ? cancelEdit() : beginEdit(client))}
-                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                      className={cn(studioSecondaryButtonClassName, 'h-11 w-11 px-0')}
                       title={editingClientId === client.clientId ? '取消编辑' : '编辑客户端信息'}
                     >
                       {editingClientId === client.clientId ? <FaTimes /> : <FaEdit />}
@@ -715,7 +733,7 @@ const OAuthClientManager: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => copy(client.clientId)}
-                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                      className={cn(studioSecondaryButtonClassName, 'h-11 w-11 px-0')}
                       title="复制 clientId"
                     >
                       <FaCopy />
@@ -724,7 +742,7 @@ const OAuthClientManager: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => rotateSecret(client)}
-                        className="rounded-lg border border-amber-200 p-2 text-amber-700 hover:bg-amber-50"
+                        className={cn(studioSecondaryButtonClassName, 'h-11 w-11 border-amber-200 bg-amber-50/80 px-0 text-amber-700 hover:bg-amber-100')}
                         title="轮换 client secret"
                       >
                         <FaRedo />
@@ -734,7 +752,7 @@ const OAuthClientManager: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => updateEnabled(client, false)}
-                        className="rounded-lg border border-orange-200 p-2 text-orange-700 hover:bg-orange-50"
+                        className={cn(studioSecondaryButtonClassName, 'h-11 w-11 border-amber-200 bg-amber-50/80 px-0 text-amber-700 hover:bg-amber-100')}
                         title="停用"
                       >
                         <FaBan />
@@ -743,7 +761,7 @@ const OAuthClientManager: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => updateEnabled(client, true)}
-                        className="rounded-lg border border-emerald-200 p-2 text-emerald-700 hover:bg-emerald-50"
+                        className={cn(studioSecondaryButtonClassName, 'h-11 w-11 border-emerald-200 bg-emerald-50/80 px-0 text-emerald-700 hover:bg-emerald-100')}
                         title="启用"
                       >
                         <FaCheck />
@@ -752,7 +770,7 @@ const OAuthClientManager: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => deleteClient(client)}
-                      className="rounded-lg border border-rose-200 p-2 text-rose-700 hover:bg-rose-50"
+                      className={cn(studioDangerButtonClassName, 'h-11 w-11 px-0')}
                       title="停用并吊销"
                     >
                       <FaTrash />
@@ -770,7 +788,7 @@ const OAuthClientManager: React.FC = () => {
                         value={editForm.name}
                         onChange={(event) => updateEditForm('name', event.target.value)}
                         placeholder="客户端名称"
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                        className={studioFieldClassName}
                       />
                       <input
                         type="number"
@@ -781,32 +799,32 @@ const OAuthClientManager: React.FC = () => {
                           const value = Math.min(Math.max(Number(event.target.value) || 120, 1), 1000);
                           updateEditForm('rateLimitPerMinute', value);
                         }}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                        className={studioFieldClassName}
                       />
                       <input
                         value={editForm.homepageUrl}
                         onChange={(event) => updateEditForm('homepageUrl', event.target.value)}
                         placeholder="应用主页 URL（可选）"
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                        className={studioFieldClassName}
                       />
                       <input
                         value={editForm.logoUrl}
                         onChange={(event) => updateEditForm('logoUrl', event.target.value)}
                         placeholder="Logo URL（可选）"
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                        className={studioFieldClassName}
                       />
                       <input
                         value={editForm.description}
                         onChange={(event) => updateEditForm('description', event.target.value)}
                         placeholder="说明（可选）"
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900 lg:col-span-2"
+                        className={cn(studioFieldClassName, 'lg:col-span-2')}
                       />
                       <textarea
                         value={editForm.redirectUris}
                         onChange={(event) => updateEditForm('redirectUris', event.target.value)}
                         placeholder="回调地址，每行一个"
                         rows={3}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900 lg:col-span-2"
+                        className={cn(studioFieldClassName, 'lg:col-span-2')}
                       />
                     </div>
                     <div className="mt-4">
@@ -819,7 +837,7 @@ const OAuthClientManager: React.FC = () => {
                         type="button"
                         onClick={() => saveClient(client)}
                         disabled={editSaving}
-                        className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                        className={studioPrimaryButtonClassName}
                       >
                         {editSaving ? <FaSyncAlt className="animate-spin" /> : <FaSave />}
                         保存修改
@@ -828,7 +846,7 @@ const OAuthClientManager: React.FC = () => {
                         type="button"
                         onClick={cancelEdit}
                         disabled={editSaving}
-                        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                       >
                         <FaTimes /> 取消
                       </button>
@@ -841,7 +859,7 @@ const OAuthClientManager: React.FC = () => {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className={studioPanelClassName}>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <FaShieldAlt /> 授权记录
@@ -853,13 +871,13 @@ const OAuthClientManager: React.FC = () => {
                 value={grantSearch}
                 onChange={(event) => setGrantSearch(event.target.value)}
                 placeholder="搜索授权用户、客户端或 scope"
-                className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900 sm:w-72"
+                className={cn(studioFieldClassName, 'py-2 pl-9 pr-3 sm:w-72')}
               />
             </div>
             <select
               value={grantStatus}
               onChange={(event) => setGrantStatus(event.target.value as 'all' | 'active' | 'revoked')}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+              className={studioFieldClassName}
             >
               <option value="all">全部授权</option>
               <option value="active">仅有效</option>
@@ -868,7 +886,7 @@ const OAuthClientManager: React.FC = () => {
           </div>
         </div>
         {filteredGrants.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-400">暂无授权记录</div>
+          <StudioEmptyState message="还没有授权记录。应用完成一次授权流程后，这里会留下授权的用户与 scope。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
@@ -895,7 +913,7 @@ const OAuthClientManager: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => copy(grant.userId)}
-                        className="block max-w-full rounded border border-slate-200 bg-white px-2 py-1 text-left text-xs text-slate-600 transition hover:bg-slate-50"
+                        className="block max-w-full rounded-2xl border border-slate-200 bg-white px-2 py-1 text-left text-xs text-slate-600 transition hover:bg-slate-50"
                         title={`${userDisplay.title}，点击复制用户 ID`}
                       >
                         <span className="block truncate font-semibold text-slate-700">{userDisplay.primary}</span>
@@ -905,14 +923,14 @@ const OAuthClientManager: React.FC = () => {
                     <td className="py-3 pr-4">
                       <div className="flex max-w-md flex-wrap gap-1">
                         {grant.scopes.map((scope) => (
-                          <span key={scope} className="rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">
+                          <span key={scope} className="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-500">
                             {scope}
                           </span>
                         ))}
                       </div>
                     </td>
                     <td className="py-3 pr-4">
-                      <span className={`rounded px-2 py-1 text-xs ${grant.revokedAt ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                      <span className={`rounded-full px-2 py-1 text-xs ${grant.revokedAt ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
                         {grant.revokedAt ? '已撤销' : '有效'}
                       </span>
                     </td>
@@ -922,7 +940,7 @@ const OAuthClientManager: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => revokeGrant(grant)}
-                          className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          className={cn(studioDangerButtonClassName, 'min-h-11 px-3 py-1.5 text-xs')}
                         >
                           撤销
                         </button>
@@ -937,22 +955,22 @@ const OAuthClientManager: React.FC = () => {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+      <section className={cn(studioPanelClassName, 'bg-slate-50/80 text-sm text-slate-600')}>
         <div className="font-semibold text-slate-900">接入端点</div>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
-          <code className="rounded bg-white px-3 py-2">GET /oauth/authorize</code>
-          <code className="rounded bg-white px-3 py-2">POST /api/oauth/token</code>
-          <code className="rounded bg-white px-3 py-2">GET /api/oauth/userinfo</code>
-          <code className="rounded bg-white px-3 py-2">POST /api/oauth/introspect</code>
+          <code className="rounded-2xl bg-white px-3 py-2">GET /oauth/authorize</code>
+          <code className="rounded-2xl bg-white px-3 py-2">POST /api/oauth/token</code>
+          <code className="rounded-2xl bg-white px-3 py-2">GET /api/oauth/userinfo</code>
+          <code className="rounded-2xl bg-white px-3 py-2">POST /api/oauth/introspect</code>
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className={studioPanelClassName}>
         <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
           <FaHistory /> 近期 OAuth 操作记录
         </div>
         {auditLogs.length === 0 ? (
-          <div className="py-6 text-center text-sm text-slate-400">暂无 OAuth 审计记录</div>
+          <StudioEmptyState message="还没有 OAuth 审计记录。创建客户端、轮换密钥等操作产生后会记录在这里。" />
         ) : (
           <div className="divide-y divide-slate-100">
             {auditLogs.map((log) => (
@@ -964,7 +982,7 @@ const OAuthClientManager: React.FC = () => {
                       {auditActionLabels[log.action] || log.action}
                     </span>
                     {log.targetId && (
-                      <code className="rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">{log.targetId}</code>
+                      <code className="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-500">{log.targetId}</code>
                     )}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -989,7 +1007,7 @@ const OAuthStatCard: React.FC<{
   hint: string;
   tone?: 'slate' | 'amber';
 }> = ({ label, value, hint, tone = 'slate' }) => (
-  <div className={`rounded-xl border p-4 ${tone === 'amber' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+  <div className={cn(studioTileClassName, 'p-4', tone === 'amber' && 'border-amber-200 bg-amber-50')}>
     <div className={`text-2xl font-bold ${tone === 'amber' ? 'text-amber-700' : 'text-slate-900'}`}>
       {typeof value === 'number' ? value.toLocaleString() : value}
     </div>

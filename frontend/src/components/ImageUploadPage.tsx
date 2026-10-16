@@ -18,13 +18,13 @@ import {
   studioAccentBlobSkyClassName,
   studioDangerButtonClassName,
   studioEyebrowPillClassName,
-  studioGhostButtonClassName,
   studioHeroCardClassName,
   studioPageClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
 } from './studioTheme';
 import { StudioEmptyState, StudioErrorNote, StudioErrorState } from './studioFeedback';
+import { SimpleLoadingSpinner } from './LoadingSpinner';
 import { cn } from '../utils/cn';
 import { useAuth } from '../hooks/useAuth';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -125,8 +125,6 @@ function getImageDB() {
   if (!imageDbPromise) {
     imageDbPromise = openDB(IMAGE_DB, 2, {
       upgrade(db, oldVersion) {
-        console.log(`[图片存储] 数据库升级: v${oldVersion}`);
-
         // v1 与 v2 的 keyPath 都是 imageId，无需重建 store。
         // 直接补建即可，避免 deleteObjectStore 把老用户的历史记录一起删掉（G12-11）。
         if (!db.objectStoreNames.contains(IMAGE_STORE)) {
@@ -465,7 +463,6 @@ const ImageUploadPage: React.FC = () => {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    console.log('[图片上传] 选择文件:', f);
     if (!f) return;
     if (!ALLOWED_TYPES.includes(f.type)) {
       console.warn('[图片上传] 类型校验失败:', f.type);
@@ -493,14 +490,11 @@ const ImageUploadPage: React.FC = () => {
     const url = URL.createObjectURL(f);
     previewUrlRef.current = url;
     setPreviewUrl(url);
-    console.log('[图片上传] 预览URL:', url);
   };
 
   // 批量文件选择处理
   const handleBatchFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    console.log('[批量上传] 选择文件数量:', files.length);
-
     if (files.length === 0) return;
 
     // 验证文件
@@ -549,7 +543,6 @@ const ImageUploadPage: React.FC = () => {
   };
 
   const handleRemove = () => {
-    console.log('[图片上传] 移除文件:', file);
     // G12-12：revoke 预览 object URL
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
@@ -654,15 +647,12 @@ const ImageUploadPage: React.FC = () => {
       formData.append('source', 'imgupload'); // 标记来源
       appendCaptchaFields(formData, isAdmin ? null : captcha);
       const uploadUrl = getApiBaseUrl() + '/api/ipfs/upload';
-      console.log('[图片上传] 开始上传:', { uploadUrl, fileName: file.name, fileSize: file.size });
       const res = await fetch(uploadUrl, {
         method: 'POST',
         body: formData,
         credentials: 'include',
       });
-      console.log('[图片上传] 响应状态:', res.status);
       const result = await res.json();
-      console.log('[图片上传] 响应内容:', result);
       if (result?.data?.web2url) {
         setUploadedUrl(result.data.web2url);
         setUploadedShortUrl(result.data.shortUrl || null);
@@ -770,7 +760,6 @@ const ImageUploadPage: React.FC = () => {
       const results: Array<{ name: string; ok: boolean }> = [];
       const uploadResults: { [key: string]: { web2url: string; shortUrl?: string } } = {};
 
-      console.log('[批量上传] 开始上传，文件数量:', batchFiles.length);
 
       // 逐个上传文件
       for (let i = 0; i < batchFiles.length; i++) {
@@ -813,7 +802,6 @@ const ImageUploadPage: React.FC = () => {
           formData.append('source', 'batch-imgupload'); // 标记批量上传来源
           appendCaptchaFields(formData, challenge);
 
-          console.log(`[批量上传] 上传文件 ${i + 1}/${batchFiles.length}:`, fileName);
 
           lastSubmittedCaptchaToken = challenge?.token;
           const res = await fetch(uploadUrl, {
@@ -892,7 +880,6 @@ const ImageUploadPage: React.FC = () => {
               storageFailed('有文件的上传记录未能保存完整，列表可能不完整。');
             }
 
-            console.log(`[批量上传] 文件 ${fileName} 上传成功`);
           } else {
             // 上传失败
             const errorMsg = toUploadErrorMessage(result?.error, '上传失败，请稍后重试');
@@ -957,7 +944,6 @@ const ImageUploadPage: React.FC = () => {
       // 重新加载图片列表，确保显示所有成功上传的文件
       try {
         const freshImages = await reloadImages();
-        console.log('[批量上传] 本地图片列表已重新加载');
 
         // 为成功上传的图片添加闪烁效果
         if (successfulFiles.length > 0) {
@@ -995,8 +981,6 @@ const ImageUploadPage: React.FC = () => {
 
       if (successCount > 0) {
         // 显示成功上传的文件列表
-        const successfulFileNames = successfulFiles.map(file => sanitizeDisplayText(file.name)).join(', ');
-
         // 根据上传结果显示不同的通知
         if (successCount === batchFiles.length) {
           // 全部成功
@@ -1036,8 +1020,6 @@ const ImageUploadPage: React.FC = () => {
           setShowBatchList(false);
         }
 
-        // 显示成功上传的文件已添加到本地历史记录
-        console.log(`[批量上传] 成功上传的文件已添加到本地历史记录：`, successfulFileNames);
       } else {
         // 全部失败
         setNotification({
@@ -1504,7 +1486,7 @@ const ImageUploadPage: React.FC = () => {
                   disabled={!batchUploading && (batchFiles.length === 0 || (captchaStatus.required && !captcha?.token))}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {batchUploading ? `取消上传（已完成 ${batchDone}/${batchFiles.length}）` : `开始批量上传 (${batchFiles.length} 个文件）`}
+                  {batchUploading ? `取消上传（已完成 ${batchDone}/${batchFiles.length}）` : `开始批量上传 (${batchFiles.length} 个文件)`}
                 </motion.button>
               </motion.div>
             )}
@@ -1559,8 +1541,8 @@ const ImageUploadPage: React.FC = () => {
 
       {/* 本地存储管理分区 */}
       <motion.div
-        className="relative mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8"
-        initial={{ opacity: 0, y: 16 }}
+        className={cn(studioHeroCardClassName, 'overflow-hidden')}
+        initial={reducedMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
@@ -1579,7 +1561,8 @@ const ImageUploadPage: React.FC = () => {
                 id="image-import-file-input"
               />
               <motion.button
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                type="button"
+                className={studioSecondaryButtonClassName}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => document.getElementById('image-import-file-input')?.click()}
               >
@@ -1591,8 +1574,9 @@ const ImageUploadPage: React.FC = () => {
             {/* 导出菜单 */}
             <div className="export-menu-container relative">
               <motion.button
+                type="button"
                 onClick={() => setShowExportMenu(!showExportMenu)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                className={studioSecondaryButtonClassName}
                 whileTap={{ scale: 0.97 }}
               >
                 <FaDownload className="text-[13px]" />
@@ -1602,8 +1586,8 @@ const ImageUploadPage: React.FC = () => {
               <AnimatePresence>
                 {showExportMenu && (
                   <motion.div
-                    className="absolute right-0 top-full z-10 mt-2 min-w-[220px] rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur-xl sm:right-0"
-                    initial={{ opacity: 0, y: -8 }}
+                    className="absolute right-0 top-full z-10 mt-2 min-w-[220px] rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm backdrop-blur-xl sm:right-0"
+                    initial={reducedMotion ? false : { opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                   >
@@ -1638,8 +1622,9 @@ const ImageUploadPage: React.FC = () => {
                       <span>AES-256 加密</span>
                     </label>
                     <button
+                      type="button"
                       onClick={handleExport}
-                      className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      className={cn(studioPrimaryButtonClassName, 'mt-2 w-full')}
                     >
                       确认导出
                     </button>
@@ -1650,8 +1635,9 @@ const ImageUploadPage: React.FC = () => {
 
             {/* 清除按钮 */}
             <motion.button
+              type="button"
               onClick={handleClear}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+              className={cn(studioDangerButtonClassName, 'px-4 py-2.5')}
               whileTap={{ scale: 0.97 }}
             >
               <FaTrash className="text-[13px]" />
@@ -1661,8 +1647,8 @@ const ImageUploadPage: React.FC = () => {
         </div>
 
         <motion.div
-          className="mt-5 flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 text-center"
-          initial={{ opacity: 0, y: 8 }}
+          className="mt-5 flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-center"
+          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
@@ -1670,42 +1656,44 @@ const ImageUploadPage: React.FC = () => {
           <span className="text-sm text-slate-600">已保存图片</span>
         </motion.div>
 
+        {storageError && storedImages.length > 0 ? (
+          <StudioErrorNote className="mt-4">{storageError}</StudioErrorNote>
+        ) : null}
+
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
           {storedImages.length === 0 ? (
-            <motion.div
-              className="col-span-full py-10 text-center text-sm text-slate-400"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
-              暂无上传的图片
-            </motion.div>
+            storageError ? (
+              <div className="col-span-full">
+                <StudioErrorState message={storageError} onRetry={() => void reloadImages()} retryLabel="重新读取" />
+              </div>
+            ) : (
+              <StudioEmptyState className="col-span-full" message="还没有保存过图片，先在上方选择一张图片上传。" />
+            )
           ) : (
             storedImages.map((img, idx) => {
               const safeWeb2Url = sanitizeImageUrl(fixIpfsDomain(img.web2url));
               const displayFileName = sanitizeDisplayText(img.fileName, '未命名图片');
               const displayCid = sanitizeDisplayText(img.cid);
+              // 新上传的卡片闪一下：reduced motion 下不做循环高亮。
+              const flashing = flashingImages.has(img.imageId) && !reducedMotion;
 
               return (
                 <motion.div
                   key={img.cid}
-                  className={`relative flex flex-col overflow-hidden rounded-2xl border bg-white/82 p-3 shadow-sm backdrop-blur-xl transition ${
-                    flashingImages.has(img.imageId)
-                      ? 'border-emerald-300 shadow-[0_18px_60px_rgba(16,185,129,0.25)] animate-pulse'
+                  className={`relative flex flex-col overflow-hidden rounded-2xl border bg-white/80 p-3 shadow-sm backdrop-blur-xl transition ${
+                    flashing
+                      ? 'border-emerald-300 animate-pulse'
                       : 'border-slate-200'
                   }`}
-                  initial={{ opacity: 0, scale: 0.97 }}
-                  animate={{
-                    opacity: 1,
-                    scale: flashingImages.has(img.imageId) ? 1.03 : 1,
-                  }}
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: flashing ? 1.03 : 1 }}
                   transition={{
-                    duration: flashingImages.has(img.imageId) ? 0.6 : 0.3,
-                    delay: idx * 0.05,
-                    repeat: flashingImages.has(img.imageId) ? 3 : 0,
+                    duration: flashing ? 0.6 : 0.3,
+                    delay: reducedMotion ? 0 : idx * 0.05,
+                    repeat: flashing ? 3 : 0,
                     repeatType: 'reverse',
                   }}
-                  whileHover={{ y: -2 }}
+                  whileHover={reducedMotion ? undefined : { y: -2 }}
                 >
                 <img
                   src={safeWeb2Url}
@@ -1718,7 +1706,8 @@ const ImageUploadPage: React.FC = () => {
                 <div className="mb-3 text-xs text-slate-400">{formatFileSize(img.fileSize)} • {formatDate(img.uploadTime)}</div>
                 <div className="mt-auto flex flex-col gap-1 sm:flex-row">
                   <motion.button
-                    className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white/80 px-2 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    type="button"
+                    className={cn(studioSecondaryButtonClassName, 'flex-1 gap-1 px-2 py-2 text-xs')}
                     onClick={() => safeWeb2Url && handleCopy(safeWeb2Url)}
                     disabled={!safeWeb2Url}
                     whileTap={{ scale: 0.96 }}
@@ -1728,7 +1717,7 @@ const ImageUploadPage: React.FC = () => {
                   </motion.button>
                   {/* 预览按钮始终使用后端返回的 web2url，确保域名和路径与后端一致 */}
                   <motion.a
-                    className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white/80 px-2 py-2 text-center text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    className={cn(studioSecondaryButtonClassName, 'flex-1 gap-1 px-2 py-2 text-xs')}
                     href={safeWeb2Url || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1738,7 +1727,8 @@ const ImageUploadPage: React.FC = () => {
                     预览
                   </motion.a>
                   <motion.button
-                    className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white/80 px-2 py-2 text-xs font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+                    type="button"
+                    className={cn(studioDangerButtonClassName, 'flex-1 gap-1 px-2 py-2 text-xs')}
                     onClick={() => handleDelete(idx)}
                     whileTap={{ scale: 0.96 }}
                   >
