@@ -56,13 +56,10 @@ import { SUPPORT_EMAIL } from './PenaltyAppealActions';
 import { emitPenaltyAppealRequired, isTicketPermissionBanError } from '../utils/penaltyAppeal';
 import { cn } from '../utils/cn';
 import {
-  studioAccentBlobBlueClassName,
-  studioAccentBlobSkyClassName,
   studioDisplayFont,
   studioEyebrowClassName,
   studioFieldClassName,
   studioGhostButtonClassName,
-  studioHeroCardClassName,
   studioMainSurfaceClassName,
   studioPageClassName,
   studioPageFont,
@@ -185,7 +182,7 @@ const TicketSystem: React.FC = () => {
     relatedService: "other",
     relatedServiceRef: "",
     contactEmail: "",
-    attachmentLinks: [] as Array<{ url: string; label: string | null }>,
+    attachmentLinks: [] as Array<{ url: string; label?: string | null }>,
     relatedTicketIds: [] as string[],
   });
   // 创建工单时单据还未存在，附件只能先攒在内存里，提交成功后再逐个上传。
@@ -854,7 +851,7 @@ const TicketSystem: React.FC = () => {
    * 失败则回滚到请求前的列表，避免界面显示“已保存”但服务端没存上。
    */
   const handleAttachmentLinksChange = useCallback(
-    async (links: Array<{ url: string; label: string | null }>) => {
+    async (links: Array<{ url: string; label?: string | null }>) => {
       const ticket = selectedTicketRef.current;
       if (!ticket) return;
       const previous = ticket.attachmentLinks ?? [];
@@ -1020,23 +1017,15 @@ const TicketSystem: React.FC = () => {
         {/* Hero */}
         <AnimatePresence>
           {(!isMobile || !showDetailOnMobile) && (
+            // 卡片样式（含装饰 blob）由 TicketHero 自己给：展开态是 InfoQueryHero，专注态是紧凑条。
             <motion.div
               key="ticket-hero"
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.45 }}
-              className={cn(
-                "relative shrink-0 overflow-hidden transition-[padding] duration-200",
-                studioHeroCardClassName,
-                // 手机 p-4、平板 p-6（原样式是 p-6 → sm:p-10，平板/小笔记本上白白多出 32px）。
-                // 专注模式再收到 p-3 且只留一行标题。
-                focusMode ? "p-3" : "p-4 sm:p-6",
-              )}
+              className="relative shrink-0 transition-[padding] duration-200"
             >
-              <div className={cn(studioAccentBlobBlueClassName, "-right-12 top-0")} aria-hidden />
-              <div className={cn(studioAccentBlobSkyClassName, "-left-10 bottom-0")} aria-hidden />
-
               <TicketHeroBody
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
@@ -1106,7 +1095,7 @@ const TicketSystem: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
+                    <button type="button"
                       onClick={() => fetchTickets()}
                       className={cn(studioGhostButtonClassName, "h-9 w-9 px-0 py-0 sm:h-9 sm:w-9 sm:px-0 sm:py-0", loading && "text-slate-400")}
                       title="刷新列表"
@@ -1267,7 +1256,7 @@ const TicketSystem: React.FC = () => {
               >
                 {isMobile && (showDetailOnMobile || isCreating) && (
                   <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 bg-white/80 backdrop-blur-md p-3 sticky top-0 z-20 shrink-0">
-                    <button
+                    <button type="button"
                       onClick={() => {
                         setShowDetailOnMobile(false);
                         setIsCreating(false);
@@ -1499,14 +1488,14 @@ const TicketSystem: React.FC = () => {
                                         autoFocus
                                       />
                                       <div className="flex gap-2 justify-end">
-                                        <button
+                                        <button type="button"
                                           onClick={() => handleAdminEdit(selectedTicket._id, idx)}
                                           disabled={isUpdating}
                                           className="px-3 py-1 bg-emerald-500 text-white text-xs rounded-full font-semibold flex items-center gap-1 hover:bg-emerald-600 transition"
                                         >
                                           {isUpdating ? <FiLoader className="animate-spin" /> : <FiCheck />} 保存
                                         </button>
-                                        <button
+                                        <button type="button"
                                           onClick={() => setEditingIdx(null)}
                                           className="px-3 py-1 bg-white/20 text-white text-xs rounded-full font-semibold hover:bg-white/30 transition"
                                         >
@@ -1531,7 +1520,7 @@ const TicketSystem: React.FC = () => {
 
                                   {canWrite && editingIdx !== idx && (
                                     <div className={`absolute -bottom-6 ${isMe ? 'left-0' : 'right-0'} opacity-0 group-hover:opacity-100 transition-opacity flex gap-2`}>
-                                      <button
+                                      <button type="button"
                                         onClick={() => {
                                           setEditingIdx(idx);
                                           setEditValue(msg.content);
@@ -1541,7 +1530,7 @@ const TicketSystem: React.FC = () => {
                                       >
                                         <FiEdit2 size={12} />
                                       </button>
-                                      <button
+                                      <button type="button"
                                         onClick={() => handleAdminDelete(selectedTicket._id, idx)}
                                         className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
                                         title="删除消息"

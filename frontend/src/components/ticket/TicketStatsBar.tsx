@@ -74,7 +74,7 @@ const TicketStatsBar: React.FC<TicketStatsBarProps> = ({ stats, loading, onQuick
       key: 'in-progress',
       label: '处理中',
       value: stats.status?.['in-progress'] || 0,
-      tone: 'border-yellow-200 bg-yellow-50 text-yellow-700',
+      tone: 'border-amber-200 bg-amber-50 text-amber-700',
       patch: { status: 'in-progress', awaitingReply: '' },
     },
     {

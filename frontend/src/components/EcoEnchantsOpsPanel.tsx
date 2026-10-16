@@ -30,7 +30,9 @@ import {
   InfoPanel,
   InfoQueryHero,
   InfoSectionTitle,
+  studioDangerButtonClassName,
   studioFieldClassName,
+  studioPrimaryButtonClassName,
   studioTileClassName,
 } from './studioTheme';
 
@@ -277,14 +279,14 @@ function OpsInstancesSection({
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                 v{inst.version}
               </span>
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                 {inst.installationId.slice(0, 12)}...
               </span>
               {inst.lastSeenAt && (
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                   {new Date(inst.lastSeenAt).toLocaleDateString()}
                 </span>
               )}
@@ -686,7 +688,7 @@ function InstanceDetailSection({
                   type="button"
                   onClick={handleCreateJob}
                   disabled={creatingJob || !canWrite || !operationReason.trim()}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className={`${studioPrimaryButtonClassName} w-full`}
                 >
                   <FaPlus />
                   {creatingJob ? "创建中..." : "创建任务"}
@@ -711,7 +713,7 @@ function InstanceDetailSection({
                     <span className="font-mono text-xs text-slate-400">{job.jobId.slice(0, 16)}...</span>
                     <span className="text-sm font-medium text-slate-700">{job.method}</span>
                     {job.commandId && (
-                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                         {job.commandId}
                       </span>
                     )}
@@ -724,7 +726,7 @@ function InstanceDetailSection({
                   </div>
                   {job.result && <details className="mt-2 text-xs"><summary>执行结果</summary><pre className="overflow-auto whitespace-pre-wrap">{JSON.stringify(job.result, null, 2)}</pre></details>}
                   {job.error && (
-                    <div className="mt-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    <div className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                       [{job.error.code}] {job.error.message}
                     </div>
                   )}
@@ -797,8 +799,8 @@ function InstanceDetailSection({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-red-200 bg-white/80 backdrop-blur-xl p-5">
-            <span className={`${labelClass} text-red-600`}>删除文件</span>
+          <div className="rounded-2xl border border-rose-200 bg-white/80 backdrop-blur-xl p-5">
+            <span className={`${labelClass} text-rose-600`}>删除文件</span>
             <div className="mt-3 flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
@@ -812,7 +814,7 @@ function InstanceDetailSection({
                 type="button"
                 onClick={handleFileDelete}
                 disabled={fileOpsLoading || !fileDeletePath.trim() || !operationReason.trim() || !canWrite}
-                className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                className={`${studioDangerButtonClassName} shrink-0`}
               >
                 <FaTrash />
                 删除
@@ -830,7 +832,7 @@ function InstanceDetailSection({
               type="button"
               onClick={handleCreateBackup}
               disabled={!canWrite || !operationReason.trim() || !backupPaths.trim()}
-              className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className={studioPrimaryButtonClassName}
             >
               <FaPlus />
               创建备份

@@ -181,7 +181,7 @@ function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalPr
                 <FaBan className="h-5 w-5 text-slate-500" />
                 {mode === 'single' ? '封禁IP' : '批量封禁IP'}
               </h3>
-              <button onClick={onClose} className="inline-flex items-center justify-center p-1 text-slate-400 transition-colors hover:text-slate-600">
+              <button type="button" onClick={onClose} aria-label="关闭" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl p-1 text-slate-400 transition-colors hover:text-slate-600 md:min-h-0 md:min-w-0">
                 <FaTimes className="w-5 h-5" />
               </button>
             </div>
@@ -364,7 +364,7 @@ function UnbanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: UnbanIPMod
                 <FaUnlock className="h-5 w-5 text-slate-500" />
                 {mode === 'single' ? '解封IP' : '批量解封IP'}
               </h3>
-              <button onClick={onClose} className="inline-flex items-center justify-center p-1 text-slate-400 transition-colors hover:text-slate-600">
+              <button type="button" onClick={onClose} aria-label="关闭" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl p-1 text-slate-400 transition-colors hover:text-slate-600 md:min-h-0 md:min-w-0">
                 <FaTimes className="w-5 h-5" />
               </button>
             </div>

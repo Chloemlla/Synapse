@@ -1,12 +1,14 @@
 import React from 'react';
-import { FiCheckCircle, FiChevronDown, FiInfo, FiMessageSquare, FiMinimize2 } from 'react-icons/fi';
+import { FiChevronDown, FiMessageSquare, FiMinimize2 } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { PenaltyAppealActions } from '../PenaltyAppealActions';
 import {
+  InfoBadge,
+  InfoQueryHero,
   studioDisplayFont,
   studioEyebrowAccentPillClassName,
-  studioEyebrowClassName,
   studioGhostButtonClassName,
+  studioHeroCardClassName,
 } from '../studioTheme';
 
 /**
@@ -16,8 +18,9 @@ import {
  *  1. TicketSystem.tsx 已逼近 1500 行的源码体积闸门，把整块纯展示 JSX 搬出来；
  *  2. 说明区有「展开 / 专注模式」两种形态，把它收在一处，改动时不会误伤页面骨架。
  *
- * 注意：只渲染内部内容，外层的 motion.div / AnimatePresence 仍由父组件持有，
- * 这样移动端切换列表/详情时保留原有的进出场动画。
+ * 展开态复用基线的 `InfoQueryHero`（hero 卡片样式与装饰由它自带），专注态保留自定义的
+ * 一行紧凑条；两种形态都自持卡片样式，父组件不再额外套卡片，否则会出现卡中卡的双层边框。
+ * 外层 motion.div 仍由父组件持有，进出场动画不变。
  */
 
 export interface TicketPenaltyAppeal {
@@ -36,123 +39,95 @@ interface TicketHeroBodyProps {
   penaltyAppeal: TicketPenaltyAppeal | null;
 }
 
+/** 处罚申诉横幅：两种形态都必须保留，它带着申诉入口，收起说明区不能顺带把它藏掉。 */
+const PenaltyAppealBanner: React.FC<{ appeal: TicketPenaltyAppeal }> = ({ appeal }) => (
+  <div className="w-full max-w-xl">
+    <div className="mb-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+      <div className="font-semibold">{appeal.title}</div>
+      <div className="mt-1 leading-6">{appeal.reason}</div>
+      {appeal.details && (
+        <div className="mt-2 whitespace-pre-line text-xs leading-5 text-rose-800/90">{appeal.details}</div>
+      )}
+    </div>
+    <PenaltyAppealActions kind={appeal.kind} reason={appeal.reason} details={appeal.details} />
+  </div>
+);
+
 const TicketHeroBody: React.FC<TicketHeroBodyProps> = ({
   isAdmin,
   unreadCount,
   focusMode,
   onToggleFocusMode,
   penaltyAppeal,
-}) => (
-  <>
-    {focusMode ? (
-      <div className="relative flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <div className={cn(studioEyebrowAccentPillClassName, 'shrink-0')}>
-          <FiMessageSquare />
-          Synapse Support
-        </div>
-        <h1
-          className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900 md:text-lg"
-          style={{ fontFamily: studioDisplayFont }}
-        >
-          支持中心
-        </h1>
-        {unreadCount > 0 && (
-          <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">
-            {unreadCount} 条未读
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onToggleFocusMode}
-          aria-pressed={true}
-          className={cn(
-            studioGhostButtonClassName,
-            'shrink-0 gap-1 px-2.5 py-1.5 text-[11px] normal-case tracking-normal',
-          )}
-          title="展开顶部说明区"
-        >
-          <FiChevronDown size={13} /> 展开说明
-        </button>
-      </div>
-    ) : (
-      <div className="relative flex min-w-0 flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="max-w-2xl min-w-0">
-          <div className={studioEyebrowAccentPillClassName}>
+}) => {
+  if (focusMode) {
+    return (
+      <div className={cn(studioHeroCardClassName, 'relative space-y-3 p-3')}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <div className={cn(studioEyebrowAccentPillClassName, 'shrink-0')}>
             <FiMessageSquare />
             Synapse Support
           </div>
           <h1
-            className="mt-4 text-2xl font-semibold leading-tight text-slate-900 sm:text-[2rem] lg:text-[2.5rem]"
+            className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900 md:text-lg"
             style={{ fontFamily: studioDisplayFont }}
           >
             支持中心
-            {unreadCount > 0 && (
-              <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 align-middle text-xs font-semibold text-sky-700 sm:text-sm">
-                {unreadCount} 条未读
-              </span>
-            )}
           </h1>
-          <p className="mt-3 max-w-xl text-[13px] leading-6 text-slate-600 sm:text-base sm:leading-7">
-            提交技术支持、功能反馈或投诉建议，所有工单都会经过 AI 审计并由人工跟进。
-          </p>
-        </div>
-        {/* 切换按钮从 md 起就要有（否则平板/小笔记本无法收起说明区）；
-            「功能说明」卡片会拉高说明区，留到 xl 才显示。 */}
-        <div className="hidden w-full shrink-0 md:flex md:w-auto md:max-w-sm md:flex-col md:items-end md:gap-2">
+          {unreadCount > 0 && (
+            <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">
+              {unreadCount} 条未读
+            </span>
+          )}
           <button
             type="button"
             onClick={onToggleFocusMode}
-            aria-pressed={false}
+            aria-pressed={true}
             className={cn(
               studioGhostButtonClassName,
-              'gap-1 px-2.5 py-1.5 text-[11px] normal-case tracking-normal',
+              'shrink-0 gap-1 px-2.5 py-1.5 text-[11px] normal-case tracking-normal',
             )}
-            title="收起顶部说明区，给列表让出更多空间"
+            title="展开顶部说明区"
           >
-            <FiMinimize2 size={13} /> 专注模式
+            <FiChevronDown size={13} /> 展开说明
           </button>
-          <div className="hidden w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:rounded-2xl xl:block">
-            <div className={cn(studioEyebrowClassName, 'flex items-center gap-2')}>
-              <FiInfo className="text-slate-500" />
-              功能说明
-            </div>
-            <ul className="mt-3 space-y-2 text-[13px] leading-6 text-slate-600">
-              <li className="flex items-start gap-2">
-                <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                <span>提交技术支持、功能反馈或投诉建议</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                <span>实时查看客服回复并进行双向沟通</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <FiCheckCircle className="mt-1 shrink-0 text-emerald-500" />
-                <span>{isAdmin ? '管理全局工单，支持状态过滤与更新' : '管理个人工单历史，追踪处理进度'}</span>
-              </li>
-            </ul>
-          </div>
         </div>
+        {penaltyAppeal && <PenaltyAppealBanner appeal={penaltyAppeal} />}
       </div>
-    )}
+    );
+  }
 
-    {/* 处罚申诉横幅在两种形态下都要保留：它带着申诉入口，收起说明区不能顺带把它藏掉。 */}
-    {penaltyAppeal && (
-      <div className="relative mt-4 max-w-xl">
-        <div className="mb-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          <div className="font-semibold">{penaltyAppeal.title}</div>
-          <div className="mt-1 leading-6">{penaltyAppeal.reason}</div>
-          {penaltyAppeal.details && (
-            <div className="mt-2 whitespace-pre-line text-xs leading-5 text-rose-800/90">{penaltyAppeal.details}</div>
+  return (
+    <InfoQueryHero
+      eyebrow="Synapse Support"
+      title="支持中心"
+      description={`提交技术支持、功能反馈或投诉建议，所有工单都会经过 AI 审计并由人工跟进；可实时查看客服回复并进行双向沟通，${
+        isAdmin ? '管理全局工单并追踪处理进度' : '管理个人工单历史并追踪处理进度'
+      }。`}
+      icon={FiMessageSquare}
+      tone="sky"
+      meta={
+        <>
+          {unreadCount > 0 ? <InfoBadge tone="sky">{unreadCount} 条未读</InfoBadge> : null}
+          {penaltyAppeal ? <PenaltyAppealBanner appeal={penaltyAppeal} /> : null}
+        </>
+      }
+      actions={
+        <button
+          type="button"
+          onClick={onToggleFocusMode}
+          aria-pressed={false}
+          className={cn(
+            studioGhostButtonClassName,
+            'min-h-11 gap-1 px-2.5 py-1.5 text-[11px] normal-case tracking-normal md:min-h-0',
           )}
-        </div>
-        <PenaltyAppealActions
-          kind={penaltyAppeal.kind}
-          reason={penaltyAppeal.reason}
-          details={penaltyAppeal.details}
-        />
-      </div>
-    )}
-  </>
-);
+          title="收起顶部说明区，给列表让出更多空间"
+        >
+          <FiMinimize2 size={13} /> 专注模式
+        </button>
+      }
+    />
+  );
+};
 
 export default TicketHeroBody;

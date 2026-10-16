@@ -25,6 +25,7 @@ import {
 } from "../utils/ttsHistoryTags";
 import {
   studioEyebrowClassName,
+  studioFieldClassName,
   studioStrongBadgeClassName,
   studioGhostButtonClassName,
   studioPrimaryButtonClassName,
@@ -115,8 +116,8 @@ const buildDraft = (record: TtsHistoryRecord): HistoryDraft => ({
 const mergeTags = (extra?: string[]) =>
   Array.from(new Set([...TTS_HISTORY_PRESET_TAGS, ...(extra || [])]));
 
-const draftInputClassName =
-  "mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none";
+// 表单草稿输入框：直接复用 studioFieldClassName，避免与 token 漂移。
+const draftInputClassName = `${studioFieldClassName} mt-1`;
 
 const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
   history,
@@ -391,7 +392,7 @@ const TtsHistoryListInner: React.FC<TtsHistoryListProps> = ({
                         {formatAudioSize(record.audioSize)}
                         {record.audioFileId ? ` · ${record.audioFileId}` : ""}
                       </div>
-                      <div className="mt-2 max-w-full min-w-0 break-words rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-500">
+                      <div className="mt-2 max-w-full min-w-0 break-words rounded-2xl border border-slate-200 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-500">
                         {record.text || "[redacted]"}
                       </div>
                     </div>

@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { LotteryRound, LotteryWinner, LotteryChances, LotteryTask, LotteryFulfillment, LotteryPresentation } from '../types/lottery';
 import * as lotteryApi from '../api/lottery';
 import { getBackendErrorMessage } from '../utils/backendError';
+import { cn } from '../utils/cn';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useNotification } from './Notification';
@@ -22,6 +23,7 @@ import {
   InfoQueryHero,
   InfoQueryShell,
   InfoSectionTitle,
+  studioFieldClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
@@ -233,7 +235,7 @@ export const LotteryRoundCard: React.FC<{
             {[...round.winners].slice(-5).reverse().map((winner, index) => (
               <div
                 key={`${winner.prizeId}-${winner.drawTime}-${index}`}
-                className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-1.5 text-xs text-slate-600"
+                className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-1.5 text-xs text-slate-600"
               >
                 <span className="truncate">{winner.username || '匿名用户'}</span>
                 <span className="ml-2 shrink-0 font-medium text-emerald-700">{winner.prizeName}</span>
@@ -412,9 +414,9 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
               whileHover={{ scale: 1.02, x: -5 }}
           >
               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs ${
-              index === 0 ? 'bg-yellow-500' : 
+              index === 0 ? 'bg-amber-500' : 
               index === 1 ? 'bg-slate-400' :
-              index === 2 ? 'bg-orange-500' : 'bg-slate-500'
+              index === 2 ? 'bg-amber-700' : 'bg-slate-500'
             }`}>
               {index === 0 ? <FaCrown className="w-3 h-3" /> : 
                index === 1 ? <FaMedal className="w-3 h-3" /> : 
@@ -705,19 +707,19 @@ const LotteryWalletPanel: React.FC<{
                 {addressForId === record.id && (
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <input
-                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      className={cn(studioFieldClassName, 'px-3 py-1.5 text-sm')}
                       placeholder="收件人"
                       value={addressForm.name}
                       onChange={(e) => setAddressForm((prev) => ({ ...prev, name: e.target.value }))}
                     />
                     <input
-                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      className={cn(studioFieldClassName, 'px-3 py-1.5 text-sm')}
                       placeholder="手机号"
                       value={addressForm.phone}
                       onChange={(e) => setAddressForm((prev) => ({ ...prev, phone: e.target.value }))}
                     />
                     <input
-                      className="rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      className={cn(studioFieldClassName, 'px-3 py-1.5 text-sm')}
                       placeholder="详细地址"
                       value={addressForm.detail}
                       onChange={(e) => setAddressForm((prev) => ({ ...prev, detail: e.target.value }))}
@@ -735,7 +737,7 @@ const LotteryWalletPanel: React.FC<{
                 {transferForId === record.id && (
                   <div className="mt-2 flex gap-2">
                     <input
-                      className="w-full rounded-xl border border-slate-200 px-2 py-1 text-sm"
+                      className={cn(studioFieldClassName, 'w-full px-3 py-1.5 text-sm')}
                       placeholder="受赠人用户 ID"
                       value={transferTarget}
                       onChange={(e) => setTransferTarget(e.target.value)}
@@ -847,7 +849,7 @@ const WinnerModal: React.FC<{
           className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl max-h-[90vh] overflow-y-auto overscroll-contain"
           onClick={(e) => e.stopPropagation()}
         >
-          <FaGift className="text-6xl mb-4 text-yellow-500" />
+          <FaGift className="text-6xl mb-4 text-amber-500" />
           <h2 className="mb-2 text-2xl font-semibold text-slate-950">恭喜中奖！</h2>
           <p className="mb-4 text-lg text-slate-600">{winner.prizeName}</p>
           <InfoPrimaryButton onClick={onClose} tone="sky">确定</InfoPrimaryButton>

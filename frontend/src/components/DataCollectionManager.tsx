@@ -17,6 +17,8 @@ import {
     InfoMetricCard,
     InfoPanel,
     InfoSectionTitle,
+    StudioErrorState,
+    StudioPager,
     studioDangerButtonClassName,
     studioFieldClassName,
     studioSecondaryButtonClassName,
@@ -206,6 +208,8 @@ const DataCollectionManager: React.FC = () => {
     const [items, setItems] = useState<Item[]>([]);
     const [total, setTotal] = useState(0);
     const [stats, setStats] = useState<any>(null);
+    // 概览读取失败必须显式报错，不能用“全部记录 0 / -”冒充真实数据（FD-056）。
+    const [statsError, setStatsError] = useState<string | null>(null);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [viewItem, setViewItem] = useState<Item | null>(null);
     const [batchLoading, setBatchLoading] = useState(false);
@@ -326,6 +330,7 @@ const DataCollectionManager: React.FC = () => {
         const aborter = new AbortController();
         statsAbortRef.current = aborter;
         try {
+            setStatsError(null);
             const res = await fetch(`${base}/api/data-collection/admin/stats`, {
                 headers: buildHeaders(),
                 credentials: 'include',
@@ -333,12 +338,17 @@ const DataCollectionManager: React.FC = () => {
             });
             if (res.status === 401) {
                 setNotification({ type: 'error', message: '未授权或登录已过期，请重新登录' });
+                setStatsError('未授权或登录已过期，请重新登录后重试。');
                 return;
             }
             const data = await res.json();
-            if (res.ok && data.success !== false) setStats(data.data);
+            if (!res.ok || data.success === false) throw new Error(data.message || '数据概览加载失败');
+            setStats(data.data);
         } catch (e: any) {
-            if (e?.name !== 'AbortError') console.error('[DataCollectionManager] stats error', e);
+            if (e?.name !== 'AbortError') {
+                console.error('[DataCollectionManager] stats error', e);
+                setStatsError(e?.message || '数据概览加载失败，请稍后重试');
+            }
         }
     }, [base, setNotification]);
 
@@ -372,7 +382,6 @@ const DataCollectionManager: React.FC = () => {
         };
     }, []);
 
-    const totalPages = Math.max(1, Math.ceil(total / Math.max(1, limit)));
     const allChecked = items.length > 0 && items.every(i => selected.has(i._id));
     const toggleAll = () => {
         if (allChecked) setSelected(new Set());
@@ -770,6 +779,12 @@ const DataCollectionManager: React.FC = () => {
                 </div>
             </InfoPanel>
 
+            {statsError ? (
+                <StudioErrorState
+                    message="数据概览读取失败，下方列表与筛选仍可正常使用。"
+                    onRetry={() => { void fetchStats(); }}
+                />
+            ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <InfoMetricCard label="总记录" value={stats?.total ?? '-'} detail="全部数据收集记录" icon={FaChartBar} />
                 <InfoMetricCard label="动作种类" value={Array.isArray(stats?.byAction) ? stats.byAction.length : '-'} detail="按 action 聚合" icon={FaListAlt} />
@@ -780,6 +795,7 @@ const DataCollectionManager: React.FC = () => {
                     icon={FaClock}
                 />
             </div>
+            )}
 
             {/* Filters */}
             <InfoPanel>
@@ -836,8 +852,8 @@ const DataCollectionManager: React.FC = () => {
                 <div className="block md:hidden divide-y divide-slate-100">
                     {loadError ? (
                         <div className="p-6 text-center">
-                            <FaTimes className="mx-auto mb-1 h-6 w-6 text-red-500" />
-                            <div className="text-sm text-red-600">{loadError}</div>
+                            <FaTimes className="mx-auto mb-1 h-6 w-6 text-rose-500" />
+                            <div className="text-sm text-rose-600">{loadError}</div>
                             <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaSync className="w-4 h-4" /> 重试
                             </motion.button>
@@ -848,7 +864,7 @@ const DataCollectionManager: React.FC = () => {
                                 <DataCard key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
                             ))}
                             {deferredItems.length === 0 && (
-                                <div className="p-6 text-center text-slate-400">{loading ? '加载中…' : '暂无数据'}</div>
+                                <div className="p-6 text-center text-slate-400">{loading ? '加载中…' : '暂无记录，调整筛选条件或点上方「重置」后再试'}</div>
                             )}
                         </>
                     )}
@@ -871,8 +887,8 @@ const DataCollectionManager: React.FC = () => {
                             {loadError ? (
                                 <tr>
                                     <td className="p-6 text-center" colSpan={6}>
-                                        <FaTimes className="mx-auto mb-1 h-6 w-6 text-red-500" />
-                                        <div className="text-sm text-red-600">{loadError}</div>
+                                        <FaTimes className="mx-auto mb-1 h-6 w-6 text-rose-500" />
+                                        <div className="text-sm text-rose-600">{loadError}</div>
                                         <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                             <FaSync className="w-4 h-4" /> 重试
                                         </motion.button>
@@ -884,7 +900,7 @@ const DataCollectionManager: React.FC = () => {
                                         <DataRow key={item._id} item={item} checked={selected.has(item._id)} onToggle={toggleOne} onView={onView} onDelete={deleteOne} openDetail={openDetail} canWrite={canWrite} />
                                     ))}
                                     {deferredItems.length === 0 && (
-                                        <tr><td className="p-6 text-center text-slate-400" colSpan={6}>{loading ? '加载中…' : '暂无数据'}</td></tr>
+                                        <tr><td className="p-6 text-center text-slate-400" colSpan={6}>{loading ? '加载中…' : '暂无记录，调整筛选条件或点上方「重置」后再试'}</td></tr>
                                     )}
                                 </>
                             )}
@@ -893,12 +909,16 @@ const DataCollectionManager: React.FC = () => {
                 </div>
 
                 {/* Pagination */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-50 border-t border-slate-100">
-                    <div className="text-slate-500">共 {total} 条 • 第 {page}/{totalPages} 页</div>
-                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                        <motion.button className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} whileHover={hoverScale(1.02, page > 1)} whileTap={tapScale(0.98, page > 1)}>上一页</motion.button>
-                        <motion.button className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} whileHover={hoverScale(1.02, page < totalPages)} whileTap={tapScale(0.98, page < totalPages)}>下一页</motion.button>
-                    </div>
+                <div className="border-t border-slate-100 bg-slate-50 p-3">
+                    <StudioPager
+                        page={page}
+                        pageSize={limit}
+                        total={total}
+                        loading={loading}
+                        onPageChange={setPage}
+                        label="数据收集记录分页"
+                        className="mt-0"
+                    />
                 </div>
             </motion.div>
 
@@ -1023,7 +1043,7 @@ const DataCollectionManager: React.FC = () => {
                                         >
                                             {txt}
                                         </SyntaxHighlighter>
-                                        <button
+                                        <button type="button"
                                             className="absolute right-2 top-2 flex min-h-[32px] min-w-[32px] items-center justify-center rounded-2xl bg-slate-800 p-1.5 text-slate-300 opacity-0 transition-all duration-200 hover:bg-slate-700 hover:text-white group-hover:opacity-100 md:group-hover:opacity-100 touch-manipulation"
                                             onClick={async () => {
                                                 try {
@@ -1058,7 +1078,7 @@ const DataCollectionManager: React.FC = () => {
                                     >
                                         {jsonPretty(viewItem)}
                                     </SyntaxHighlighter>
-                                    <button
+                                    <button type="button"
                                         className="absolute right-2 top-2 flex min-h-[32px] min-w-[32px] items-center justify-center rounded-2xl bg-slate-800 p-1.5 text-slate-300 opacity-0 transition-all duration-200 hover:bg-slate-700 hover:text-white group-hover:opacity-100 md:group-hover:opacity-100 touch-manipulation"
                                         onClick={async () => {
                                             try {
@@ -1163,7 +1183,7 @@ const DataCollectionManager: React.FC = () => {
                     <SyntaxHighlighter language={'json'} style={vscDarkPlus} wrapLongLines customStyle={{ background: 'rgb(15 23 42)', borderRadius: '1rem', maxHeight: '70vh' }}>
                       {JSON.stringify(batchView, null, 2)}
                     </SyntaxHighlighter>
-                    <button
+                    <button type="button"
                       className="absolute right-2 top-2 flex min-h-[32px] min-w-[32px] items-center justify-center rounded-2xl bg-slate-800 p-1.5 text-slate-300 opacity-0 transition-all duration-200 hover:bg-slate-700 hover:text-white group-hover:opacity-100 md:group-hover:opacity-100 touch-manipulation"
                       onClick={async () => {
                         try {

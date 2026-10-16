@@ -255,7 +255,7 @@ const TicketDetailMeta: React.FC<TicketDetailMetaProps> = ({
                         <button
                           type="button"
                           onClick={() => addRelated(candidate)}
-                          className="w-full truncate rounded-xl px-2 py-1.5 text-left text-[11px] text-slate-700 transition hover:bg-slate-50"
+                          className="w-full truncate rounded-2xl px-2 py-1.5 text-left text-[11px] text-slate-700 transition hover:bg-slate-50"
                         >
                           {candidate.title}
                         </button>

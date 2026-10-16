@@ -50,7 +50,7 @@ interface LinksProps {
    * 创建时由表单状态承接；详情里由页面乐观更新 + 调接口（每次增/删一个链接=一次请求，
    * 因为这是离散动作而不是连续输入）。
    */
-  onChange: (links: Array<{ url: string; label: string | null }>) => void;
+  onChange: (links: Array<{ url: string; label?: string | null }>) => void;
   canEdit: boolean;
   /** 为什么需要填链接（上传关闭时显示），null 表示不额外提示。 */
   policyHint?: string | null;

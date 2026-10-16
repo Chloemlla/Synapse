@@ -241,6 +241,7 @@ const GitHubBillingCacheManager: React.FC = () => {
                     icon={FaDatabase}
                     action={
                         <button
+                            type="button"
                             onClick={loadCachedCustomers}
                             disabled={loading}
                             className={studioSecondaryButtonClassName}
@@ -328,6 +329,7 @@ const GitHubBillingCacheManager: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-4">
                     {canWrite && (
                         <button
+                            type="button"
                             onClick={clearExpiredCache}
                             disabled={clearingExpired}
                             className={studioDangerButtonClassName}
@@ -365,6 +367,7 @@ const GitHubBillingCacheManager: React.FC = () => {
 
                                     {canWrite && (
                                         <button
+                                            type="button"
                                             onClick={() => clearCustomerCache(customer.customerId)}
                                             disabled={clearingCache === customer.customerId}
                                             className={studioDangerButtonClassName}

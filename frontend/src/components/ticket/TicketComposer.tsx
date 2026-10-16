@@ -157,7 +157,7 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
               key={reply.label}
               type="button"
               onClick={() => insertQuickReply(reply.content)}
-              className="block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-50"
+              className="block w-full rounded-2xl px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-50"
             >
               <span className="font-semibold text-slate-900">{reply.label}</span>
               <span className="mt-0.5 block truncate text-[11px] text-slate-500">{reply.content}</span>
@@ -171,7 +171,7 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
       ) : (
         <>
           {internal && (
-            <div className="mb-2 flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] font-medium text-violet-700">
+            <div className="mb-2 flex items-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] font-medium text-violet-700">
               <FiLock size={12} /> 内部备注：只有客服可见，用户端不会收到这条内容
             </div>
           )}

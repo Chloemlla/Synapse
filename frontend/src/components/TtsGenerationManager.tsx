@@ -23,7 +23,13 @@ import { SimpleLoadingSpinner } from "./LoadingSpinner";
 import { useNotification } from "./Notification";
 import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
-import { InfoSectionTitle, studioEyebrowPillClassName, studioSubPanelClassName } from './studioTheme';
+import {
+  InfoSectionTitle,
+  StudioErrorState,
+  StudioPager,
+  studioEyebrowPillClassName,
+  studioSubPanelClassName,
+} from './studioTheme';
 
 type ReviewFilter = TtsHistoryReviewStatus | "all";
 type ScopeFilter = "all" | "user" | "anonymous";
@@ -405,19 +411,15 @@ const TtsGenerationManager: React.FC = () => {
       )}
 
       <div className={cn(studioSubPanelClassName, "border bg-white")}>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold text-slate-900">
-            共 {total} 条记录，第 {page}/{totalPages} 页
-          </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => goToPage(page - 1)} disabled={page <= 1 || loading} className={secondaryButtonClassName}>
-              上一页
-            </button>
-            <button type="button" onClick={() => goToPage(page + 1)} disabled={page >= totalPages || loading} className={secondaryButtonClassName}>
-              下一页
-            </button>
-          </div>
-        </div>
+        <StudioPager
+          page={page}
+          pageSize={limit}
+          total={total}
+          loading={loading}
+          onPageChange={goToPage}
+          label="TTS 生成记录分页"
+          className="mt-0 mb-4 justify-start sm:justify-center"
+        />
 
         {loading && !records.length ? (
           <div className="flex min-h-[260px] items-center justify-center text-slate-500">
@@ -425,9 +427,7 @@ const TtsGenerationManager: React.FC = () => {
           </div>
         ) : records.length === 0 ? (
           error ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-              加载失败，请点击上方「重试」重新获取记录。
-            </div>
+            <StudioErrorState message="记录读取失败，请重试。" onRetry={() => void fetchRecords(page)} />
           ) : (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
               {filtersActive ? (

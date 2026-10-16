@@ -26,7 +26,7 @@ import {
   FaList,
   FaLock,
 } from 'react-icons/fa';
-import { studioPanelClassName } from './studioTheme';
+import { studioDangerButtonClassName, studioPanelClassName } from './studioTheme';
 import { cn } from '../utils/cn';
 
 const PRIZE_CATEGORY_LABELS: Record<string, string> = {
@@ -416,7 +416,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               {formData.abVariants.map((variant, index) => (
                 <div key={index} className="flex flex-wrap items-center gap-2">
                   <input
-                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    className="w-24 rounded-2xl border border-slate-200 px-2 py-1 text-sm"
                     placeholder="变体 key"
                     value={variant.key}
                     onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, key: e.target.value } : item) }))}
@@ -424,7 +424,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
                   <input
                     type="number"
                     min={1}
-                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    className="w-24 rounded-2xl border border-slate-200 px-2 py-1 text-sm"
                     placeholder="权重"
                     value={variant.weight}
                     onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, weight: Math.max(1, parseInt(e.target.value) || 1) } : item) }))}
@@ -432,7 +432,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
                   <input
                     type="number"
                     min={0}
-                    className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    className="w-28 rounded-2xl border border-slate-200 px-2 py-1 text-sm"
                     placeholder="机会成本覆盖"
                     value={variant.chanceCost}
                     onChange={(e) => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.map((item, i) => i === index ? { ...item, chanceCost: Math.max(0, parseInt(e.target.value) || 0) } : item) }))}
@@ -440,7 +440,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
                   <button
                     type="button"
                     onClick={() => setFormData(prev => ({ ...prev, abVariants: prev.abVariants.filter((_, i) => i !== index) }))}
-                    className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                    className="rounded-2xl border border-rose-200 px-2 py-1 text-xs text-rose-700"
                   >
                     删除
                   </button>
@@ -449,7 +449,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
               <button
                 type="button"
                 onClick={() => setFormData(prev => ({ ...prev, abVariants: [...prev.abVariants, { key: String.fromCharCode(65 + prev.abVariants.length), weight: 1, chanceCost: 0 }] }))}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                className="rounded-2xl border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700"
               >
                 + 添加变体
               </button>
@@ -486,7 +486,7 @@ const CreateRoundForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
                   <motion.button
                     type="button"
                     onClick={() => removePrize(index)}
-                    className="text-red-500 hover:text-red-700 transition-colors"
+                    className="text-rose-500 hover:text-rose-700 transition-colors"
                     whileTap={{ scale: 0.95 }}
                   >
                     删除
@@ -742,7 +742,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                 <p className="text-slate-600 text-sm">{round.description}</p>
               </div>
               <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                round.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                round.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
               }`}>
                 {round.isActive ? '活跃' : '非活跃'}
               </div>
@@ -788,7 +788,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               <motion.button
                 onClick={() => handleResetRound(round.id)}
                 disabled={loading === round.id}
-                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-slate-400 text-sm font-medium"
+                className={`${studioDangerButtonClassName} px-3 py-1 text-sm font-medium`}
                 whileTap={{ scale: 0.95 }}
               >
                 {loading === round.id ? '处理中...' : '重置'}
@@ -827,7 +827,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                       key={type}
                       type="button"
                       onClick={() => addBlock(type)}
-                      className="rounded-xl border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="rounded-2xl border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       + {PRESENTATION_BLOCK_LABELS[type]}
                     </button>
@@ -836,7 +836,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                 <div className="space-y-2">
                   {blocks.length === 0 && <div className="text-xs text-slate-400">还没有区块，点上面的按钮添加。</div>}
                   {blocks.map((block, index) => (
-                    <div key={block.id} className="rounded-xl border border-slate-200 bg-white p-2">
+                    <div key={block.id} className="rounded-2xl border border-slate-200 bg-white p-2">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                         <span className="font-semibold">{PRESENTATION_BLOCK_LABELS[block.type] ?? block.type}</span>
                         <div className="flex gap-1">
@@ -848,7 +848,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(block.type === 'text' || block.type === 'button' || block.type === 'countdown') && (
                           <input
-                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            className="min-w-[10rem] flex-1 rounded-2xl border border-slate-200 px-2 py-1 text-xs"
                             placeholder="文案"
                             value={String(block.props?.text ?? block.props?.label ?? '')}
                             onChange={(e) => patchBlock(block.id, block.type === 'text' ? { text: e.target.value } : { label: e.target.value })}
@@ -856,7 +856,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                         )}
                         {(block.type === 'image' || block.type === 'button') && (
                           <input
-                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            className="min-w-[10rem] flex-1 rounded-2xl border border-slate-200 px-2 py-1 text-xs"
                             placeholder={block.type === 'image' ? '图片地址' : '跳转地址（可选）'}
                             value={String(block.type === 'image' ? block.props?.src ?? '' : block.props?.href ?? '')}
                             onChange={(e) => patchBlock(block.id, block.type === 'image' ? { src: e.target.value } : { href: e.target.value })}
@@ -864,7 +864,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
                         )}
                         {block.type === 'countdown' && (
                           <input
-                            className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            className="min-w-[10rem] flex-1 rounded-2xl border border-slate-200 px-2 py-1 text-xs"
                             placeholder="截止时间（ISO，如 2026-11-01T00:00:00Z）"
                             value={String(block.props?.target ?? '')}
                             onChange={(e) => patchBlock(block.id, { target: e.target.value })}
@@ -958,7 +958,7 @@ const RiskDashboardPanel: React.FC = () => {
           {metrics.recent.length > 0 && (
             <ul className="max-h-40 space-y-1 overflow-auto pr-1 text-xs text-slate-600">
               {metrics.recent.slice(0, 20).map((event, index) => (
-                <li key={`${event.at}-${index}`} className="flex items-center justify-between gap-2 rounded-xl bg-white/70 px-2 py-1">
+                <li key={`${event.at}-${index}`} className="flex items-center justify-between gap-2 rounded-2xl bg-white/70 px-2 py-1">
                   <span className="truncate">
                     {new Date(event.at).toLocaleTimeString()} · {event.reasons.join('，') || '命中阈值'}
                   </span>
@@ -1187,18 +1187,18 @@ const LotteryAdmin: React.FC = () => {
         transition={{ duration: 0.6 }}
       >
         <motion.div 
-          className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 sm:p-6 border border-red-100"
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-2xl font-bold text-red-700 mb-3 flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-rose-700 mb-3 flex items-center gap-2">
             <FaLock className="shrink-0" aria-hidden />
             访问被拒绝
           </h2>
           <div className="text-slate-600 space-y-2">
             <p>你不是管理员，禁止访问！请用管理员账号登录后再来。</p>
-            <div className="text-sm text-red-500 italic">
+            <div className="text-sm text-rose-500 italic">
               抽奖管理仅限管理员使用
             </div>
           </div>
@@ -1234,7 +1234,7 @@ const LotteryAdmin: React.FC = () => {
     >
       {/* 标题和说明 */}
       <motion.div 
-        className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-4 sm:p-6 border border-slate-200"
+        className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
@@ -1275,7 +1275,7 @@ const LotteryAdmin: React.FC = () => {
           {activeTab === 'manage' && (
             <motion.button
               onClick={handleDeleteAllRounds}
-              className="px-4 py-2 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition font-medium"
+              className={studioDangerButtonClassName}
               whileTap={{ scale: 0.95 }}
             >
               删除所有轮次
@@ -1287,7 +1287,7 @@ const LotteryAdmin: React.FC = () => {
           <div className="bg-slate-100 rounded-2xl p-1">
             <motion.button
               onClick={() => setActiveTab('create')}
-              className={`px-6 py-2 rounded-md transition-colors font-medium ${
+              className={`px-6 py-2 rounded-2xl transition-colors font-medium ${
                 activeTab === 'create'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-600 hover:text-slate-800'
@@ -1298,7 +1298,7 @@ const LotteryAdmin: React.FC = () => {
             </motion.button>
             <motion.button
               onClick={() => setActiveTab('manage')}
-              className={`px-6 py-2 rounded-md transition-colors font-medium ${
+              className={`px-6 py-2 rounded-2xl transition-colors font-medium ${
                 activeTab === 'manage'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-600 hover:text-slate-800'

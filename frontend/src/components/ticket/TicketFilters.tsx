@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronUp, FiDownload, FiEye, FiFilter, FiRefreshCw, FiSearch, FiSliders, FiX } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
-import { studioEyebrowClassName, studioFieldClassName, studioGhostButtonClassName } from '../studioTheme';
+import { studioEyebrowClassName, studioFieldClassName, studioGhostButtonClassName, studioPillClassName } from '../studioTheme';
 import {
   TICKET_CATEGORY_META,
   TICKET_CATEGORY_ORDER,
@@ -291,10 +291,8 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           onClick={() => toggleFlag('awaitingReply')}
           aria-pressed={awaitingReply === '1'}
           className={cn(
-            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-            awaitingReply === '1'
-              ? 'border-amber-300 bg-amber-50 text-amber-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+            studioPillClassName(awaitingReply === '1', 'amber'),
+            'inline-flex items-center gap-1 normal-case tracking-normal',
           )}
         >
           <FiFilter size={11} /> 待我回复
@@ -304,10 +302,8 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           onClick={() => toggleFlag('unread')}
           aria-pressed={unread === '1'}
           className={cn(
-            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-            unread === '1'
-              ? 'border-sky-300 bg-sky-50 text-sky-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+            studioPillClassName(unread === '1', 'blue'),
+            'inline-flex items-center gap-1 normal-case tracking-normal',
           )}
         >
           <FiEye size={11} /> 仅未读
@@ -316,7 +312,10 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           <button
             type="button"
             onClick={onReset}
-            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+            className={cn(
+              studioPillClassName(false),
+              'inline-flex items-center gap-1 normal-case tracking-normal hover:text-slate-800',
+            )}
           >
             <FiX size={11} /> 清空筛选
           </button>
@@ -325,7 +324,10 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           type="button"
           onClick={onExport}
           disabled={shown === 0}
-          className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50"
+          className={cn(
+            studioPillClassName(false),
+            'ml-auto inline-flex items-center gap-1 normal-case tracking-normal disabled:cursor-not-allowed disabled:opacity-50',
+          )}
           title="把当前已加载的工单导出为 CSV"
         >
           <FiDownload size={11} /> 导出

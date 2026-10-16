@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FaChevronLeft,
-  FaChevronRight,
   FaCopy,
   FaDownload,
-  FaFilter,
   FaSearch,
   FaSync,
   FaTachometerAlt,
@@ -23,6 +20,7 @@ import {
   InfoBadge,
   InfoPanel,
   InfoSectionTitle,
+  StudioPager,
   studioFieldClassName,
   studioSecondaryButtonClassName,
 } from '../studioTheme';
@@ -171,7 +169,6 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
     return () => { ++requestRef.current; };
   }, [load, reloadToken]);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const toggleSort = (field: SortField) => {
     ++requestRef.current; setPage(1); setSelected([]);
@@ -434,7 +431,7 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
                           onClick={() => void copyIp(ban.ipAddress)}
                           title="复制地址"
                           aria-label={`复制 ${ban.ipAddress}`}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                          className="flex h-7 w-7 items-center justify-center rounded-2xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                         >
                           <FaCopy className="h-3 w-3" />
                         </button>
@@ -445,7 +442,7 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
                           title={canWrite ? '解封' : '需要超级管理员权限'}
                           aria-label={`解封 ${ban.ipAddress}`}
                           className={cn(
-                            'flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold transition',
+                            'flex h-7 items-center gap-1 rounded-2xl px-2 text-xs font-semibold transition',
                             canWrite
                               ? 'text-rose-600 hover:bg-rose-50'
                               : 'cursor-not-allowed text-slate-300',
@@ -464,33 +461,15 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
         </table>
       </div>
 
-      {/* 分页 */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1.5">
-          <FaFilter className="h-3 w-3" aria-hidden="true" />
-          共 {total} 条匹配 · 第 {page} / {totalPages} 页
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            className={cn(studioSecondaryButtonClassName, 'px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40')}
-          >
-            <FaChevronLeft className="h-3 w-3" />
-            上一页
-          </button>
-          <button
-            type="button"
-            disabled={page >= totalPages || loading}
-            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            className={cn(studioSecondaryButtonClassName, 'px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40')}
-          >
-            下一页
-            <FaChevronRight className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
+      {/* 分页：与基准同款（StudioPager 内部就是 aria-label + 上一页/下一页 + 计数） */}
+      <StudioPager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        loading={loading}
+        onPageChange={setPage}
+        label="IP 封禁名单分页"
+      />
 
       {loading && bans.length === 0 ? (
         <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-400">

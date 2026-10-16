@@ -2,11 +2,11 @@
   "palette-forbidden-hue": 74,
   "arbitrary-color-value": 678,
   "non-slate-neutral": 9,
-  "semantic-color-drift": 353,
+  "semantic-color-drift": 351,
   "saturated-gradient": 76,
   "second-ui-kit-token": 63,
   "legacy-palette-name": 0,
   "second-brand-color-literal": 6,
   "independent-visual-overlay": 0,
-  "off-scale-radius": 253
+  "off-scale-radius": 244
 }

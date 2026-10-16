@@ -41,7 +41,7 @@ export interface TicketCreateFormValue {
   relatedService: string;
   relatedServiceRef: string;
   contactEmail: string;
-  attachmentLinks: Array<{ url: string; label: string | null }>;
+  attachmentLinks: Array<{ url: string; label?: string | null }>;
   relatedTicketIds: string[];
 }
 
