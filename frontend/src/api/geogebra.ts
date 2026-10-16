@@ -1,6 +1,5 @@
-import { api } from "../../api/api";
-import type { GeoGebraProject, GeoGebraReviewComment, GeoGebraShare, GeoGebraVersion, WorkspaceSummary } from "./types";
-import type { GeoGebraMode } from "./script";
+import { api } from "./api";
+import type { GeoGebraMode, GeoGebraProject, GeoGebraReviewComment, GeoGebraShare, GeoGebraVersion, WorkspaceSummary } from "../types/geogebra";
 
 type Envelope<T> = { success: boolean; data: T };
 
@@ -112,4 +111,21 @@ export async function createUserWorkspace(input: { name: string; description?: s
 
 export async function inviteWorkspaceMember(workspaceId: string, input: { email: string; role: "editor" | "reviewer" | "viewer" }): Promise<void> {
   await api.post(`/api/workspaces/${encodeURIComponent(workspaceId)}/invite`, input);
+}
+
+export async function listWorkspaceMembers(workspaceId: string): Promise<WorkspaceSummary["members"]> {
+  const response = await api.get<{ success: boolean; data: WorkspaceSummary["members"] }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`);
+  return response.data.data;
+}
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  userId: string,
+  role: "admin" | "editor" | "reviewer" | "viewer",
+): Promise<void> {
+  await api.put(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, { role });
+}
+
+export async function removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+  await api.delete(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`);
 }

@@ -184,6 +184,85 @@ router.get("/:id/members", workspaceLimiter, authenticateToken, WorkspaceControl
 
 /**
  * @openapi
+ * /workspaces/{id}/members/{userId}:
+ *   put:
+ *     summary: 修改工作空间成员角色
+ *     description: 仅工作空间管理员可操作；创建者角色不可更改，且空间至少保留一名管理员
+ *     tags:
+ *       - Workspaces
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工作空间ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 目标成员用户ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - role
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [admin, editor, reviewer, viewer]
+ *     responses:
+ *       200:
+ *         description: 更新后的成员
+ *       400:
+ *         description: 角色无效
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 权限不足
+ *       404:
+ *         description: 工作空间或成员不存在
+ *   delete:
+ *     summary: 移除工作空间成员
+ *     description: 管理员可移除其他成员；成员也可以移除自己以退出团队
+ *     tags:
+ *       - Workspaces
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工作空间ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 目标成员用户ID
+ *     responses:
+ *       200:
+ *         description: 成员已移除
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 权限不足
+ *       404:
+ *         description: 工作空间或成员不存在
+ */
+router.put("/:id/members/:userId", workspaceLimiter, authenticateToken, WorkspaceController.updateMemberRole);
+router.delete("/:id/members/:userId", workspaceLimiter, authenticateToken, WorkspaceController.removeMember);
+
+/**
+ * @openapi
  * /workspaces/{id}/invite:
  *   post:
  *     summary: 邀请成员加入工作空间

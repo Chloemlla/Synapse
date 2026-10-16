@@ -19,15 +19,22 @@ import {
   createUserWorkspace,
   deleteGeoGebraProject,
   exportGeoGebraData,
+  getGeoGebraProject,
   inviteWorkspaceMember,
   listGeoGebraProjects,
+  listGeoGebraVersions,
   listUserWorkspaces,
+  listWorkspaceMembers,
+  removeWorkspaceMember,
   updateGeoGebraProject,
+  updateWorkspaceMemberRole,
 } from "../../api/geogebra";
-import type { GeoGebraLocalProject, GeoGebraProject, WorkspaceSummary } from "./types";
+import { summarizeGeoGebraDiff } from "./script";
+import type { GeoGebraLocalProject, GeoGebraMode, GeoGebraProject, GeoGebraVersion, WorkspaceSummary } from "../../types/geogebra";
 
 const AUTO_SYNC_KEY = "synapse-geogebra-cloud-sync-enabled";
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
+const ROLE_LABELS: Record<string, string> = { admin: "管理员", editor: "编辑者", reviewer: "审阅者", viewer: "查看者" };
 
 type Props = {
   project: GeoGebraLocalProject | null;
@@ -35,9 +42,10 @@ type Props = {
   onOpenProject: (project: GeoGebraProject) => void;
   onProjectDeleted: (projectId: string) => void;
   onWorkspaceChange: (workspaceId: string | null) => void;
+  onApplyVersion: (code: string, canvasMode: GeoGebraMode) => void;
 };
 
-export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenProject, onProjectDeleted, onWorkspaceChange }: Props) {
+export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenProject, onProjectDeleted, onWorkspaceChange, onApplyVersion }: Props) {
   const { user } = useAuth();
   const confirm = useConfirm();
   const { ready: projectConsentReady } = useFeatureConsent("geogebra-projects");
@@ -54,6 +62,11 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"editor" | "reviewer" | "viewer">("reviewer");
   const [teamBusy, setTeamBusy] = useState(false);
+  const [members, setMembers] = useState<WorkspaceSummary["members"]>([]);
+  const [cloudVersions, setCloudVersions] = useState<GeoGebraVersion[]>([]);
+  // 冲突不只是一个 409：本地稿、云端稿与共同基线三者的先后关系决定该保留哪一份，
+  // 所以这里把云端稿与逐行差异一起摊开，由用户显式选。
+  const [conflict, setConflict] = useState<{ cloud: GeoGebraProject; diff: ReturnType<typeof summarizeGeoGebraDiff> } | null>(null);
   const syncRef = useRef<((createSnapshot: boolean) => Promise<void>) | null>(null);
 
   const refresh = useCallback(async () => {
@@ -72,6 +85,31 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
   }, [projectConsentReady, user]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    const workspaceId = project?.workspaceId;
+    if (!user || !workspaceId) {
+      setMembers([]);
+      return undefined;
+    }
+    let active = true;
+    void listWorkspaceMembers(workspaceId)
+      .then((items) => { if (active) setMembers(items); })
+      .catch(() => { if (active) setMembers([]); });
+    return () => { active = false; };
+  }, [project?.workspaceId, user]);
+
+  useEffect(() => {
+    if (!user || !project?.cloudRevision) {
+      setCloudVersions([]);
+      return undefined;
+    }
+    let active = true;
+    void listGeoGebraVersions(project.projectId)
+      .then((items) => { if (active) setCloudVersions(items); })
+      .catch(() => { if (active) setCloudVersions([]); });
+    return () => { active = false; };
+  }, [project?.cloudRevision, project?.projectId, user]);
 
   const syncNow = useCallback(async (createSnapshot: boolean) => {
     if (!project || !user || !projectConsentReady || busy) return;
@@ -107,17 +145,58 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
     } catch (caught) {
       const statusCode = (caught as { response?: { status?: number } })?.response?.status;
       if (statusCode === 409) {
+        const cloud = await getGeoGebraProject(project.projectId).catch(() => null);
+        if (cloud) {
+          setConflict({ cloud, diff: summarizeGeoGebraDiff(project.code, cloud.code) });
+          setError("");
+          setStatus("云端已有更新的版本，请选择保留哪一份。");
+          return;
+        }
         setError("云端已有较新的项目版本。重新打开云端项目后再保存，可避免覆盖他人修改。");
-        void refresh();
       } else {
         setError("项目保存失败，请检查网络后重试。");
+        setStatus("");
       }
-      setStatus("");
     } finally {
       setBusy(false);
     }
   }, [busy, onProjectSynced, project, projectConsentReady, projects, refresh, user]);
   syncRef.current = syncNow;
+
+  const keepLocalOnConflict = useCallback(async () => {
+    if (!conflict || !project || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      // 用云端已确认的 revision 作为前提提交，才能把“本机覆盖”与“又被人改过”区分开：
+      // 如果再被并发修改，服务端会再返回 409，而不是静默丢弃别人的改动。
+      const saved = await updateGeoGebraProject(project.projectId, {
+        title: project.title,
+        folder: project.folder,
+        tags: project.tags,
+        isFavorite: project.isFavorite,
+        canvasMode: project.canvasMode,
+        code: project.code,
+        workspaceId: project.workspaceId,
+        revision: conflict.cloud.revision,
+      });
+      onProjectSynced(saved.projectId, saved.revision, saved.workspaceId);
+      setProjects((items) => [saved, ...items.filter((item) => item.projectId !== saved.projectId)]);
+      setConflict(null);
+      setStatus("已用本机版本覆盖云端。");
+    } catch {
+      setError("保存失败，请稍后重试。");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, conflict, onProjectSynced, project]);
+
+  const openCloudOnConflict = useCallback(() => {
+    if (!conflict) return;
+    onOpenProject(conflict.cloud);
+    setConflict(null);
+    setStatus("已打开云端版本，本机草稿仍保留在浏览器中。");
+  }, [conflict, onOpenProject]);
 
   useEffect(() => {
     if (!autoSync || !user || !projectConsentReady || !project) return undefined;
@@ -157,6 +236,44 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
       setStatus("邀请已发送。");
     } catch {
       setError("邀请暂时无法发送，请确认邮箱并重试。");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, role: "admin" | "editor" | "reviewer" | "viewer") => {
+    const workspaceId = project?.workspaceId;
+    if (!workspaceId || teamBusy) return;
+    setTeamBusy(true);
+    setError("");
+    try {
+      await updateWorkspaceMemberRole(workspaceId, userId, role);
+      setMembers((items) => items.map((item) => item.userId === userId ? { ...item, role } : item));
+      setStatus("成员角色已更新。");
+    } catch {
+      setError("成员角色暂时无法更新；工作空间至少需要保留一名管理员。");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    const workspaceId = project?.workspaceId;
+    if (!workspaceId || teamBusy) return;
+    const approved = await confirm({
+      title: "移除团队成员",
+      description: "被移除的成员将不再能看到该团队空间下的 GeoGebra 项目。",
+      confirmLabel: "移除成员",
+      tone: "danger",
+    });
+    if (!approved) return;
+    setTeamBusy(true);
+    try {
+      await removeWorkspaceMember(workspaceId, userId);
+      setMembers((items) => items.filter((item) => item.userId !== userId));
+      setStatus("成员已移除。");
+    } catch {
+      setError("成员暂时无法移除。");
     } finally {
       setTeamBusy(false);
     }
@@ -224,6 +341,33 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
         {error && <p role="alert" className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
         {status && <p role="status" aria-live="polite" className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{status}</p>}
 
+        {conflict && (
+          <section className={cn(studioSubPanelClassName, "mb-3 border-amber-200 bg-amber-50/60")} aria-labelledby="geogebra-conflict-heading">
+            <h3 id="geogebra-conflict-heading" className="text-sm font-semibold text-slate-900">云端与本期本机都有改动</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              云端版本：{conflict.cloud.title}（更新于 {new Date(conflict.cloud.updatedAt).toLocaleString("zh-CN")}）。
+              与本机脚本相比：改动 {conflict.diff.changedLines} 行、新增 {conflict.diff.addedLines} 行、删除 {conflict.diff.removedLines} 行。
+            </p>
+            {conflict.diff.samples.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {conflict.diff.samples.map((sample) => (
+                  <li key={sample.lineNumber} className="rounded-xl border border-amber-200 bg-white/80 px-3 py-1.5 text-[11px] text-slate-600">
+                    <span className="font-semibold text-slate-700">第 {sample.lineNumber} 行</span>
+                    <span className="mt-1 block font-mono text-slate-500">云端：{sample.after ?? "（无）"}</span>
+                    <span className="mt-1 block font-mono text-sky-700">本机：{sample.before ?? "（无）"}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => void openCloudOnConflict()} className={studioPrimaryButtonClassName}>打开云端版本</button>
+              <button type="button" onClick={() => void keepLocalOnConflict()} disabled={busy} className={studioGhostButtonClassName}>{busy ? "保存中…" : "用本机版本覆盖云端"}</button>
+              <button type="button" onClick={() => setConflict(null)} className={studioGhostButtonClassName}>稍后处理</button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">覆盖云端会替换别人刚保存的内容，建议先打开云端版本确认差异。</p>
+          </section>
+        )}
+
         <div className="grid min-w-0 gap-4 xl:grid-cols-2">
           <div className={studioSubPanelClassName}>
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -278,6 +422,32 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                   <button type="button" onClick={() => void handleInvite()} disabled={teamBusy || !inviteEmail.trim()} className={studioGhostButtonClassName}>邀请</button>
                 </div>
               )}
+              {project?.workspaceId && (
+                <div className="mt-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">成员</h4>
+                  {members.length ? (
+                    <ul className="mt-2 space-y-2">
+                      {members.map((member) => (
+                        <li key={member.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                          <span className="min-w-0 text-sm text-slate-700">{member.userId === user.id ? "我" : `${member.userId.slice(0, 10)}…`}</span>
+                          <span className="flex items-center gap-2">
+                            <select
+                              className={cn(studioFieldClassName, "w-28")}
+                              value={member.role}
+                              onChange={(event) => void handleRoleChange(member.userId, event.target.value as "admin" | "editor" | "reviewer" | "viewer")}
+                              aria-label={`成员 ${member.userId} 的角色`}
+                            >
+                              {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                            </select>
+                            <button type="button" onClick={() => void handleRemoveMember(member.userId)} className={cn(studioGhostButtonClassName, "text-rose-700 hover:border-rose-200 hover:bg-rose-50")}>移除</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="mt-2 text-sm text-slate-500">还没有其他成员。</p>}
+                  <p className="mt-2 text-xs text-slate-500">创建者不可被移除，团队至少保留一名管理员。</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -303,6 +473,28 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                 })}
               </div>
             ) : <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">保存项目后，可在这里从任意设备继续。</div>}
+
+            {project?.cloudRevision && cloudVersions.length > 0 && (
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <h3 className="text-sm font-semibold text-slate-900">云端历史版本</h3>
+                <p className="mt-1 text-xs text-slate-500">先看与当前脚本的差异，再决定是否应用。</p>
+                <div className="mt-3 space-y-2">
+                  {cloudVersions.slice(0, 6).map((version) => {
+                    const diff = summarizeGeoGebraDiff(project.code, version.code);
+                    return (
+                      <div key={version.versionId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-slate-700">{version.label}</span>
+                          <span className="text-xs text-slate-500">{new Date(version.createdAt).toLocaleString("zh-CN")}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">与当前脚本相比：改动 {diff.changedLines} 行、新增 {diff.addedLines} 行、删除 {diff.removedLines} 行</p>
+                        <button type="button" onClick={() => onApplyVersion(version.code, version.canvasMode)} className={cn(studioGhostButtonClassName, "mt-2")}>应用该版本</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </section>

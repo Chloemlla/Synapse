@@ -1,4 +1,6 @@
-import type { GeoGebraMode } from "./script";
+// GeoGebra 工作台的领域类型。放在 src/types/ 是仓库既有约定（lottery.ts / tts.ts 同层），
+// 让 API 客户端与页面共用同一份形状，避免 api/ 反向依赖 components/。
+export type GeoGebraMode = "geometry" | "3d" | "graphing" | "classic";
 
 export type GeoGebraLocalVersion = {
   versionId: string;

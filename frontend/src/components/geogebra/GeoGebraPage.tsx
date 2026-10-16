@@ -14,7 +14,7 @@ import {
   studioSubPanelClassName,
 } from "../studioTheme";
 import { getGeoGebraProject, listGeoGebraVersions } from "../../api/geogebra";
-import GeoGebraApplet, { type GeoGebraHandle } from "./GeoGebraApplet";
+import GeoGebraApplet, { type GeoGebraHandle, type GeoGebraRunStep } from "./GeoGebraApplet";
 import GeoGebraCloudPanel from "./GeoGebraCloudPanel";
 import GeoGebraCommentsPanel from "./GeoGebraCommentsPanel";
 import GeoGebraEditor from "./GeoGebraEditor";
@@ -28,14 +28,18 @@ import {
   writeLocalGeoGebraProjects,
 } from "./localProjects";
 import {
+  analyzeGeoGebraVariables,
+  describeGeoGebraPointChanges,
   extractGeoGebraControls,
   mergeFreePointStates,
   prepareGeoGebraScript,
   replaceGeoGebraAssignment,
+  summarizeGeoGebraDiff,
   type GeoGebraMode,
+  type GeoGebraPointState,
   type GeoGebraScalar,
 } from "./script";
-import type { GeoGebraLocalProject, GeoGebraLocalVersion, GeoGebraProject } from "./types";
+import type { GeoGebraLocalProject, GeoGebraLocalVersion, GeoGebraProject } from "../../types/geogebra";
 
 type LogEntry = { id: string; message: string; tone: "info" | "success" | "warning" | "error"; at: string };
 type ConfirmAction = { title: string; message: string; action: () => void } | null;
@@ -72,7 +76,7 @@ export default function GeoGebraPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [runReport, setRunReport] = useState<{ success: boolean; successCount: number; errorCount: number; duration: number } | null>(null);
+  const [runReport, setRunReport] = useState<{ success: boolean; successCount: number; errorCount: number; duration: number; steps: GeoGebraRunStep[] } | null>(null);
   const [canvasObjects, setCanvasObjects] = useState<string[]>([]);
   const [canvasMovedNames, setCanvasMovedNames] = useState<string[]>([]);
   const [selectedMovedNames, setSelectedMovedNames] = useState<string[]>([]);
@@ -95,6 +99,13 @@ export default function GeoGebraPage() {
   const currentCode = currentProject?.code ?? DEFAULT_CODE;
   const prepared = useMemo(() => prepareGeoGebraScript(currentCode), [currentCode]);
   const controls = useMemo(() => extractGeoGebraControls(currentCode), [currentCode]);
+  const variableReport = useMemo(() => analyzeGeoGebraVariables(currentCode), [currentCode]);
+  const [movedPointStates, setMovedPointStates] = useState<GeoGebraPointState[]>([]);
+  // before 从当前脚本现算（脚本可能又改过），不缓存历史文本；只缓存本次拖动的画布坐标。
+  const movedPointChanges = useMemo(
+    () => describeGeoGebraPointChanges(currentCode, movedPointStates.filter((point) => canvasMovedNames.includes(point.name))),
+    [canvasMovedNames, currentCode, movedPointStates],
+  );
   const canvasDrift = canvasMovedNames.length > 0;
   const driftConflict = canvasDrift && driftBaselineRef.current !== null && driftBaselineRef.current !== currentCode;
 
@@ -216,7 +227,7 @@ export default function GeoGebraPage() {
     const runPrepared = prepareGeoGebraScript(source);
     if (runPrepared.errors.length) {
       setError(runPrepared.errors.map((item) => `第 ${item.lineNumber} 行：${item.message}`).join("\n"));
-      setRunReport({ success: false, successCount: 0, errorCount: runPrepared.errors.length, duration: 0 });
+      setRunReport({ success: false, successCount: 0, errorCount: runPrepared.errors.length, duration: 0, steps: [] });
       return;
     }
     if (!runPrepared.commands.length) {
@@ -231,7 +242,7 @@ export default function GeoGebraPage() {
     try {
       const report = await appletRef.current?.run(runPrepared.commands, (current, total) => setProgress(total ? Math.round(current / total * 100) : 0));
       if (!report) throw new Error("画布暂时无法运行。");
-      setRunReport({ success: report.success, successCount: report.successCount, errorCount: report.error ? 1 : 0, duration: report.executionTime });
+      setRunReport({ success: report.success, successCount: report.successCount, errorCount: report.errorCount, duration: report.executionTime, steps: report.steps });
       if (report.success) {
         setError("");
         setNotice(`运行完成：${report.successCount} 条指令。`);
@@ -245,7 +256,7 @@ export default function GeoGebraPage() {
       }
     } catch {
       setError("画布暂时无法运行，请重试。");
-      setRunReport({ success: false, successCount: 0, errorCount: 1, duration: Date.now() - started });
+      setRunReport({ success: false, successCount: 0, errorCount: 1, duration: Date.now() - started, steps: [] });
     } finally {
       setRunning(false);
       setProgress(100);
@@ -260,6 +271,14 @@ export default function GeoGebraPage() {
     driftBaselineRef.current ??= currentCode;
     setCanvasMovedNames((previous) => [...new Set([...previous, ...names])]);
     setSelectedMovedNames((previous) => [...new Set([...previous, ...names])]);
+    const points = appletRef.current?.readFreePoints(names) ?? [];
+    if (points.length) {
+      setMovedPointStates((previous) => {
+        const merged = new Map(previous.map((point) => [point.name, point]));
+        for (const point of points) merged.set(point.name, point);
+        return [...merged.values()];
+      });
+    }
     setNotice("画布上的点位已调整，可选择要保留的变化。");
   }, [currentCode]);
 
@@ -300,8 +319,16 @@ export default function GeoGebraPage() {
         setError("点位暂时无法同步，请重试。");
       }
     };
-    if (driftConflict) setConfirmAction({ title: "同步点位", message: "你在拖动点位后也修改了脚本。继续会覆盖这些点位在脚本中的坐标。", action: sync });
-    else sync();
+    if (driftConflict) {
+      const pending = appletRef.current.readFreePoints(selectedMovedNames);
+      const diff = summarizeGeoGebraDiff(currentCode, mergeFreePointStates(currentCode, pending));
+      const sample = diff.samples.slice(0, 3).map((item) => `第 ${item.lineNumber} 行：${item.before ?? "（空）"} → ${item.after ?? "（删除）"}`).join("；");
+      setConfirmAction({
+        title: "同步点位",
+        message: `你在拖动点位后也修改了脚本。保存会调整 ${diff.changedLines + diff.addedLines + diff.removedLines} 行${sample ? `：${sample}` : ""}。`,
+        action: sync,
+      });
+    } else sync();
   };
 
   const handleNewProject = () => {
@@ -448,6 +475,20 @@ export default function GeoGebraPage() {
     if (currentProject) updateProject((project) => ({ ...project, workspaceId, updatedAt: new Date().toISOString() }));
   }, [currentProject, updateProject]);
 
+  // 云端历史版本：应用前必须确认，因为它会直接覆盖编辑器里的当前脚本。
+  const handleApplyCloudVersion = useCallback((code: string, canvasMode: GeoGebraMode) => {
+    setConfirmAction({
+      title: "应用云端版本",
+      message: "当前脚本会被该版本替换，未保存的改动将丢失。",
+      action: () => {
+        updateProject((project) => ({ ...project, code, canvasMode, updatedAt: new Date().toISOString() }));
+        appendSnapshot("应用云端版本", "cloud_restore", code, canvasMode);
+        setNotice("已应用云端版本。");
+        setError("");
+      },
+    });
+  }, [appendSnapshot, updateProject]);
+
   const handleParameterValueChange = (name: string, value: GeoGebraScalar) => setParameterValues((previous) => ({ ...previous, [name]: value }));
   const applyParameters = async (runAfter: boolean) => {
     if (!currentProject) return;
@@ -475,11 +516,12 @@ export default function GeoGebraPage() {
       setError("请先运行脚本并选择要设置的对象。");
       return;
     }
-    const updated = appletRef.current.applyStyles({ names, color: styleColor, lineThickness, pointSize, labelVisible: labelsVisible, showGrid: gridVisible, showAxes: axesVisible });
-    setNotice(`已更新 ${updated} 个对象的显示效果。`);
-    setError("");
+    const result = appletRef.current.applyStyles({ names, color: styleColor, lineThickness, pointSize, labelVisible: labelsVisible, showGrid: gridVisible, showAxes: axesVisible });
+    setNotice(`已更新 ${result.changed.length} 个对象的显示效果。`);
+    setError(result.skipped.length
+      ? `有 ${result.skipped.length} 个对象没有生效：${result.skipped.slice(0, 3).map((item) => `${item.name}（${item.reason}）`).join("；")}${result.skipped.length > 3 ? " 等" : ""}`
+      : "");
   };
-  const [selectedStyleNames, setSelectedStyleNames] = useState<string[]>([]);
 
   const runLectureStep = async (step: number, commands: string[]) => {
     if (!appletRef.current) return;
@@ -630,6 +672,7 @@ export default function GeoGebraPage() {
               onOpenProject={handleOpenCloudProject}
               onProjectDeleted={(projectId) => setProjects((items) => items.map((item) => item.projectId === projectId ? { ...item, cloudRevision: undefined, workspaceId: null } : item))}
               onWorkspaceChange={updateWorkspace}
+              onApplyVersion={handleApplyCloudVersion}
             />
             <GeoGebraCommentsPanel project={currentProject} objectNames={canvasObjects} />
             <GeoGebraSharePanel project={currentProject} onGetCover={() => appletRef.current?.exportPng() ?? null} />
@@ -688,6 +731,17 @@ export default function GeoGebraPage() {
                     </div>
                   </div>
                   {driftConflict && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">脚本内容也有更新，保存点位前会再次确认。</p>}
+                  {movedPointChanges.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {movedPointChanges.slice(0, 6).map((change) => (
+                        <li key={change.name} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+                          <span className="font-semibold text-slate-700">{change.name}</span>
+                          <span className="mt-1 block font-mono text-[11px] text-slate-500">{change.before ?? "脚本里还没有这条定义，保存后会新增。"}</span>
+                          <span className="mt-1 block font-mono text-[11px] text-sky-700">保存后：{change.after}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {canvasMovedNames.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedMovedNames.includes(name)} onChange={() => setSelectedMovedNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>)}
                   </div>
@@ -707,6 +761,22 @@ export default function GeoGebraPage() {
                 </label>
               ))}</div> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本中还没有可调节的简单参数。</p>}
               <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void applyParameters(false)} disabled={!controls.length} className={studioGhostButtonClassName}>应用参数</button><button type="button" onClick={() => void applyParameters(true)} disabled={!controls.length || running} className={studioPrimaryButtonClassName}>应用并运行</button></div>
+            </section>
+
+            <section className={studioPanelClassName}>
+              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Script Structure</p><h2 className="mt-1 text-lg font-semibold text-slate-900">脚本结构</h2><p className="mt-1 text-sm text-slate-500">确认变量是否已定义、在哪里被用到。</p></div>
+              <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">定义 {variableReport.stats.definitions}</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">引用 {variableReport.stats.references}</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未使用 {variableReport.stats.unused}</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未定义 {variableReport.stats.undefined}</span>
+              </div>
+              {variableReport.undefinedNames.length > 0 && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">这些名字在脚本里没有定义：{variableReport.undefinedNames.slice(0, 6).join("、")}。请检查拼写或补上定义行。</p>}
+              {variableReport.duplicateNames.length > 0 && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">这些名字定义了多次，后一次会覆盖前一次：{variableReport.duplicateNames.slice(0, 6).join("、")}。</p>}
+              {variableReport.unusedNames.length > 0 && <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">这些定义暂时没有被引用：{variableReport.unusedNames.slice(0, 6).join("、")}。</p>}
+              {variableReport.definitions.length
+                ? <ul className="mt-3 space-y-2">{variableReport.definitions.slice(0, 8).map((item) => <li key={`${item.name}-${item.lineNumber}`} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">{item.name}</span><span className="ml-2 text-xs text-slate-400">第 {item.lineNumber} 行 · {item.kind === "function" ? "函数" : "值"}</span><span className="mt-1 block text-xs text-slate-500">{item.usedAtLines.length ? `在第 ${item.usedAtLines.slice(0, 5).join("、")} 行被使用` : "暂时没有被引用"}</span></li>)}</ul>
+                : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本里还没有可分析的变量。</p>}
             </section>
 
             <section className={studioPanelClassName}>
@@ -742,12 +812,24 @@ export default function GeoGebraPage() {
 
             <section className={studioPanelClassName}>
               <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Run History</p><h2 className="mt-1 text-lg font-semibold text-slate-900">最近活动</h2></div>
+              {runReport && runReport.steps.length > 0 && (
+                <ul className="mb-3 max-h-56 space-y-1 overflow-y-auto">
+                  {runReport.steps.slice(0, 40).map((step) => (
+                    <li key={`${step.lineNumber}-${step.command}`} className={cn("rounded-xl border px-3 py-1.5 text-xs", step.status === "ok" ? "border-slate-200 bg-white/80 text-slate-600" : "border-rose-200 bg-rose-50 text-rose-700")}>
+                      <span className="font-semibold">第 {step.lineNumber} 行</span>
+                      <span className="ml-2 font-mono text-[11px]">{step.command}</span>
+                      <span className="ml-2 opacity-70">{step.durationMs} ms</span>
+                      {step.message && <span className="mt-1 block">{step.message}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {logs.length ? <ul className="space-y-2">{logs.slice(0, 12).map((entry) => <li key={entry.id} className={cn("rounded-2xl border px-3 py-2 text-sm", entry.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : entry.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : entry.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white/80 text-slate-600")}><span>{entry.message}</span><time className="ml-2 text-xs opacity-70">{new Date(entry.at).toLocaleTimeString("zh-CN")}</time></li>)}</ul> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">运行后会显示最近结果。</p>}
             </section>
           </div>
         )}
 
-        {presentationMode && <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between bg-white/90 px-4 py-3 shadow-sm backdrop-blur"><span className="text-sm font-semibold text-slate-700">演示模式</span><div className="flex gap-2"><button type="button" onClick={() => void handleRun(true)} className={studioGhostButtonClassName}>重新运行</button><button type="button" onClick={() => void exportData(appletRef.current?.exportPng() ?? null, "geogebra.png")} className={studioGhostButtonClassName}>导出 PNG</button><button type="button" onClick={() => void togglePresentation()} className={studioPrimaryButtonClassName}>退出演示</button></div></div>}
+        {presentationMode && <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between bg-white/90 px-4 py-3 shadow-sm backdrop-blur"><span className="text-sm font-semibold text-slate-700">演示模式</span><div className="flex gap-2"><button type="button" onClick={() => void handleRun(true)} className={studioGhostButtonClassName}>重新运行</button><button type="button" onClick={() => void exportData(appletRef.current?.exportPng() ?? null, "geogebra.png")} className={studioGhostButtonClassName}>导出 PNG</button><button type="button" onClick={() => void exportData(appletRef.current?.exportGgb() ?? null, "geogebra.ggb")} className={studioGhostButtonClassName}>导出 GGB</button><button type="button" onClick={() => void togglePresentation()} className={studioPrimaryButtonClassName}>退出演示</button></div></div>}
 
         {confirmAction && (
           <div className="fixed inset-0 z-[10050] grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm" role="presentation" onClick={() => setConfirmAction(null)}>

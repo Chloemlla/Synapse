@@ -266,6 +266,86 @@ export class WorkspaceController {
   }
 
   /**
+   * 修改工作空间成员角色（GEO-19）
+   * PUT /workspaces/:id/members/:userId
+   */
+  static async updateMemberRole(req: Request, res: Response): Promise<void> {
+    try {
+      const actorId = (req as any).user?.id || (req as any).userId;
+      if (!actorId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const id = firstString(req.params.id);
+      const targetUserId = firstString(req.params.userId);
+      if (!id || !targetUserId) {
+        res.status(400).json({ error: "缺少工作空间ID或成员ID" });
+        return;
+      }
+      // 服务端白名单校验角色，不信任前端传来的任意字符串。
+      const role = req.body?.role;
+      if (!["admin", "editor", "reviewer", "viewer"].includes(role)) {
+        res.status(400).json({ error: "无效的角色", code: WorkspaceErrorCodes.INVALID_ROLE });
+        return;
+      }
+
+      const member = await workspaceService.updateMemberRole(id, actorId, targetUserId, role as "admin" | "editor" | "reviewer" | "viewer");
+      res.json({ success: true, data: member });
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        res.status(WorkspaceController.statusForWorkspaceError(error)).json({ error: error.message, code: error.code });
+        return;
+      }
+      logger.error("[WorkspaceController] 更新成员角色失败:", error);
+      res.status(500).json({ error: "更新成员角色失败" });
+    }
+  }
+
+  /**
+   * 移除工作空间成员（GEO-19）；成员也可用该端点退出自己所在的团队。
+   * DELETE /workspaces/:id/members/:userId
+   */
+  static async removeMember(req: Request, res: Response): Promise<void> {
+    try {
+      const actorId = (req as any).user?.id || (req as any).userId;
+      if (!actorId) {
+        res.status(401).json({ error: "未授权访问" });
+        return;
+      }
+      const id = firstString(req.params.id);
+      const targetUserId = firstString(req.params.userId);
+      if (!id || !targetUserId) {
+        res.status(400).json({ error: "缺少工作空间ID或成员ID" });
+        return;
+      }
+
+      await workspaceService.removeMember(id, actorId, targetUserId);
+      res.json({ success: true, data: { removed: true } });
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        res.status(WorkspaceController.statusForWorkspaceError(error)).json({ error: error.message, code: error.code });
+        return;
+      }
+      logger.error("[WorkspaceController] 移除成员失败:", error);
+      res.status(500).json({ error: "移除成员失败" });
+    }
+  }
+
+  private static statusForWorkspaceError(error: WorkspaceError): number {
+    switch (error.code) {
+      case WorkspaceErrorCodes.WORKSPACE_NOT_FOUND:
+      case WorkspaceErrorCodes.MEMBER_NOT_FOUND:
+        return 404;
+      case WorkspaceErrorCodes.PERMISSION_DENIED:
+        return 403;
+      case WorkspaceErrorCodes.MEMBER_LIMIT_REACHED:
+        return 409;
+      default:
+        return 400;
+    }
+  }
+
+  /**
    * 接受邀请
    * POST /invitations/:id/accept
    * Requirements: 4.3

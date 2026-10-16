@@ -9,7 +9,7 @@ import {
   studioPillClassName,
   studioSubPanelClassName,
 } from "../studioTheme";
-import type { GeoGebraLocalProject, GeoGebraLocalVersion } from "./types";
+import type { GeoGebraLocalProject, GeoGebraLocalVersion } from "../../types/geogebra";
 import { summarizeLocalGeoGebraDiff } from "./localProjects";
 
 const MAX_VISIBLE_VERSIONS = 6;

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+// monaco-editor 的 exports 只有 "." 与 "./*" 两条：深路径必须带扩展名才能命中
+// "./*": "./*"，否则 TS/vite 都解析不到（TS2307）。editor.api 是不含语言贡献的轻量入口。
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import "monaco-editor/min/vs/editor/editor.main.css";
 

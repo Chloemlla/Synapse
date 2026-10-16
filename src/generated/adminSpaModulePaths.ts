@@ -85,6 +85,7 @@ export const FRONTEND_SPA_ROUTE_PATHS = [
   "/email-sender",
   "/fbi-wanted",
   "/forgot-password",
+  "/geogebra",
   "/github-billing",
   "/hcaptcha-verify",
   "/image-upload",
@@ -121,5 +122,6 @@ export const FRONTEND_SPA_ROUTE_PATHS = [
 /** 参数路由的静态前缀（/artifacts/:shortId → /artifacts）。这类前缀下的子路径才是页面，按前缀放行。 */
 export const FRONTEND_SPA_ROUTE_PREFIX_PATHS = [
   "/artifacts",
+  "/geogebra/share",
   "/store/resources",
 ] as const;

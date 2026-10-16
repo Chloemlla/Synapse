@@ -6,7 +6,7 @@ import { cn } from "../../utils/cn";
 import FeatureConsentGate from "../FeatureConsentGate";
 import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName } from "../studioTheme";
 import { prepareGeoGebraScript } from "./script";
-import type { GeoGebraLocalProject, GeoGebraShare } from "./types";
+import type { GeoGebraLocalProject, GeoGebraShare } from "../../types/geogebra";
 
 type Props = {
   project: GeoGebraLocalProject | null;

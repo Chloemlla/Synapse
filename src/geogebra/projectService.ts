@@ -3,7 +3,7 @@ import GeoGebraProjectModel, { type IGeoGebraProject } from "../models/geogebraP
 import GeoGebraProjectVersionModel, { type IGeoGebraProjectVersion } from "../models/geogebraProjectVersionModel";
 import GeoGebraReviewCommentModel from "../models/geogebraReviewCommentModel";
 import GeoGebraShareModel from "../models/geogebraShareModel";
-import { workspaceService } from "./workspaceService";
+import { workspaceService } from "../services/workspaceService";
 import { deleteGeoGebraShareCover } from "./shareAssetStorage";
 import { validateGeoGebraProjectCode } from "./scriptValidation";
 import type { GeoGebraMode } from "../models/geogebraProjectModel";

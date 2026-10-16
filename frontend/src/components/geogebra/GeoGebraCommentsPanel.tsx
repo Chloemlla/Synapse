@@ -5,7 +5,7 @@ import { createGeoGebraComment, listGeoGebraComments, resolveGeoGebraComment } f
 import { cn } from "../../utils/cn";
 import FeatureConsentGate from "../FeatureConsentGate";
 import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName } from "../studioTheme";
-import type { GeoGebraLocalProject, GeoGebraReviewComment } from "./types";
+import type { GeoGebraLocalProject, GeoGebraReviewComment } from "../../types/geogebra";
 
 type Props = { project: GeoGebraLocalProject | null; objectNames: string[] };
 

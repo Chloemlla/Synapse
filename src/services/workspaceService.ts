@@ -27,6 +27,7 @@ export const WorkspaceErrorCodes = {
   INVITATION_NOT_FOUND: "WS_005",
   ALREADY_MEMBER: "WS_006",
   INVALID_ROLE: "WS_007",
+  MEMBER_NOT_FOUND: "WS_008",
 };
 
 /**
@@ -601,6 +602,85 @@ export class WorkspaceService {
       logger.error("[WorkspaceService] 获取成员角色失败:", error);
       return null;
     }
+  }
+
+  // ==================== 成员角色与移除 ====================
+
+  /**
+   * 修改成员角色（GEO-19：团队角色 admin/editor/reviewer/viewer 语义）。
+   *
+   * 只有 admin 可操作；创建者角色不可更改；不允许把最后一个 admin 降级，
+   * 否则空间会变成无人可管理的死锁状态。
+   */
+  async updateMemberRole(
+    workspaceId: string,
+    actorId: string,
+    targetUserId: string,
+    role: "admin" | "editor" | "reviewer" | "viewer",
+  ): Promise<WorkspaceMember> {
+    // 服务层也白名单校验一次：调用方漏了校验时不能变成“任意字符串写入枚举字段”。
+    if (!["admin", "editor", "reviewer", "viewer"].includes(role)) {
+      throw new WorkspaceError(`无效的角色: ${String(role)}`, WorkspaceErrorCodes.INVALID_ROLE);
+    }
+    const workspace = await WorkspaceModel.findOne({ id: workspaceId });
+    if (!workspace) {
+      throw new WorkspaceError(`工作空间不存在: ${workspaceId}`, WorkspaceErrorCodes.WORKSPACE_NOT_FOUND);
+    }
+
+    const actor = workspace.members.find((m: WorkspaceMember) => m.userId === actorId);
+    if (!actor || actor.role !== "admin") {
+      throw new WorkspaceError("只有工作空间管理员可以调整成员角色", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+
+    const target = workspace.members.find((m: WorkspaceMember) => m.userId === targetUserId);
+    if (!target) {
+      throw new WorkspaceError("成员不存在", WorkspaceErrorCodes.MEMBER_NOT_FOUND);
+    }
+    if (targetUserId === workspace.creatorId) {
+      throw new WorkspaceError("不能修改创建工作空间的成员角色", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+    const remainingAdmins = workspace.members.filter((m: WorkspaceMember) => m.role === "admin" && m.userId !== targetUserId).length;
+    if (target.role === "admin" && role !== "admin" && remainingAdmins === 0) {
+      throw new WorkspaceError("工作空间至少需要保留一名管理员", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+
+    target.role = role;
+    workspace.updatedAt = new Date();
+    await workspace.save();
+    logger.info(`[WorkspaceService] 成员角色已更新: ${workspaceId}/${targetUserId} -> ${role}`);
+    return { userId: target.userId, role: target.role, joinedAt: target.joinedAt, invitedBy: target.invitedBy };
+  }
+
+  /**
+   * 移除成员（GEO-19）。创建者不可被移除；成员也可以主动退出自己所在的团队。
+   */
+  async removeMember(workspaceId: string, actorId: string, targetUserId: string): Promise<void> {
+    const workspace = await WorkspaceModel.findOne({ id: workspaceId });
+    if (!workspace) {
+      throw new WorkspaceError(`工作空间不存在: ${workspaceId}`, WorkspaceErrorCodes.WORKSPACE_NOT_FOUND);
+    }
+
+    const actor = workspace.members.find((m: WorkspaceMember) => m.userId === actorId);
+    // PRD 要求服务端校验操作者权限，不能只靠前端隐藏按钮；自己退出是允许的例外。
+    if (!actor || (actor.role !== "admin" && actorId !== targetUserId)) {
+      throw new WorkspaceError("只有工作空间管理员可以移除成员", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+    if (targetUserId === workspace.creatorId) {
+      throw new WorkspaceError("不能移除创建工作空间的成员", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+    const target = workspace.members.find((m: WorkspaceMember) => m.userId === targetUserId);
+    if (!target) {
+      throw new WorkspaceError("成员不存在", WorkspaceErrorCodes.MEMBER_NOT_FOUND);
+    }
+    const remainingAdmins = workspace.members.filter((m: WorkspaceMember) => m.role === "admin" && m.userId !== targetUserId).length;
+    if (target.role === "admin" && remainingAdmins === 0) {
+      throw new WorkspaceError("工作空间至少需要保留一名管理员", WorkspaceErrorCodes.PERMISSION_DENIED);
+    }
+
+    workspace.members = workspace.members.filter((m: WorkspaceMember) => m.userId !== targetUserId);
+    workspace.updatedAt = new Date();
+    await workspace.save();
+    logger.info(`[WorkspaceService] 成员已移除: ${workspaceId}/${targetUserId}`);
   }
 
   // ==================== 私有辅助方法 ====================

@@ -1,8 +1,19 @@
+import type { GeoGebraMode } from "../../types/geogebra";
+
+// 画布模式是领域类型，唯一定义在 types/geogebra.ts；此处重导出，保持既有 `from "./script"` 的引用。
+export type { GeoGebraMode };
+
 export const GEO_GEBRA_MAX_CODE_LENGTH = 50_000;
 export const GEO_GEBRA_MAX_COMMANDS = 5_000;
 export const GEO_GEBRA_MAX_EXECUTION_MS = 30_000;
 
-export type GeoGebraMode = "geometry" | "3d" | "graphing" | "classic";
+// 预检阈值允许调用方覆盖：来源只给出行为基线，最终数值应由实测与运营决策调整，
+// 而不是散落在多个调用点的硬编码常量。
+export type GeoGebraScriptLimits = {
+  maxCodeLength: number;
+  maxCommands: number;
+};
+
 export type GeoGebraScalar = number | boolean | string;
 export type GeoGebraControl = {
   name: string;
@@ -177,15 +188,17 @@ function maxNestingDepth(command: string): number {
   return maximum;
 }
 
-export function prepareGeoGebraScript(source: string): GeoGebraPreparedScript {
+export function prepareGeoGebraScript(source: string, limits?: GeoGebraScriptLimits): GeoGebraPreparedScript {
   const input = typeof source === "string" ? source : "";
+  const maxCodeLength = limits?.maxCodeLength ?? GEO_GEBRA_MAX_CODE_LENGTH;
+  const maxCommands = limits?.maxCommands ?? GEO_GEBRA_MAX_COMMANDS;
   const lines = input.split("\n");
   const commands: string[] = [];
   const errors: GeoGebraIssue[] = [];
   const warnings: GeoGebraIssue[] = [];
 
-  if (input.length > GEO_GEBRA_MAX_CODE_LENGTH) {
-    errors.push({ lineNumber: 1, message: `脚本超过 ${GEO_GEBRA_MAX_CODE_LENGTH} 字符限制。` });
+  if (input.length > maxCodeLength) {
+    errors.push({ lineNumber: 1, message: `脚本超过 ${maxCodeLength} 字符限制。` });
   }
 
   lines.forEach((line, index) => {
@@ -220,8 +233,8 @@ export function prepareGeoGebraScript(source: string): GeoGebraPreparedScript {
     }
   });
 
-  if (commands.length > GEO_GEBRA_MAX_COMMANDS) {
-    errors.push({ lineNumber: lines.length, message: `脚本超过 ${GEO_GEBRA_MAX_COMMANDS} 条指令限制。` });
+  if (commands.length > maxCommands) {
+    errors.push({ lineNumber: lines.length, message: `脚本超过 ${maxCommands} 条指令限制。` });
   }
 
   return {
@@ -241,7 +254,7 @@ export function extractGeoGebraControls(source: string): GeoGebraControl[] {
   const prepared = prepareGeoGebraScript(source);
   if (prepared.errors.length > 0) return [];
 
-  return prepared.commands.flatMap((command, index) => {
+  return prepared.commands.flatMap((command, index): GeoGebraControl[] => {
     const assignment = extractTopLevelAssignment(command);
     if (!assignment) return [];
     const target = parseAssignmentTarget(assignment.left);
@@ -344,4 +357,114 @@ export function summarizeGeoGebraDiff(before: string, after: string) {
     if (samples.length < 5) samples.push({ lineNumber: index + 1, before: previous, after: next });
   }
   return { beforeLineCount: oldLines.length, afterLineCount: newLines.length, changedLines, addedLines, removedLines, samples };
+}
+
+export type GeoGebraVariableDefinition = {
+  name: string;
+  lineNumber: number;
+  kind: "value" | "function";
+  usedAtLines: number[];
+};
+
+export type GeoGebraVariableReport = {
+  definitions: GeoGebraVariableDefinition[];
+  unusedNames: string[];
+  undefinedNames: string[];
+  duplicateNames: string[];
+  stats: { definitions: number; references: number; unused: number; undefined: number; duplicates: number };
+};
+
+// 只把确属用户变量的名字当变量：内建常量、GeoGebra 指令调用（Cmd(...)）与函数形参都不算，
+// 否则报告会被一堆假阳性的“未定义”淹没，用户反而不再看它。
+const GEO_GEBRA_BUILTIN_NAMES = new Set(["pi", "e", "true", "false", "x", "y", "z"]);
+const IDENTIFIER_SCAN = /[_\p{L}][_\p{L}\p{N}’']*/gu;
+
+export function analyzeGeoGebraVariables(source: string): GeoGebraVariableReport {
+  const lines = (typeof source === "string" ? source : "").split("\n");
+  type RawDefinition = { name: string; lineNumber: number; kind: "value" | "function"; params: string[] };
+  const parsed: Array<{ lineNumber: number; body: string; definition: RawDefinition | null }> = [];
+  const rawDefinitions: RawDefinition[] = [];
+
+  lines.forEach((line, index) => {
+    const cleaned = stripLineComment(line).trim();
+    if (!cleaned) return;
+    const lineNumber = index + 1;
+    const assignment = extractTopLevelAssignment(cleaned);
+    const target = assignment ? parseAssignmentTarget(assignment.left) : null;
+    const definition: RawDefinition | null = target && assignment
+      ? { name: target.name, lineNumber, kind: target.params.length ? "function" : "value", params: target.params }
+      : null;
+    if (definition) rawDefinitions.push(definition);
+    parsed.push({ lineNumber, body: assignment ? assignment.right : cleaned, definition });
+  });
+
+  const definedNames = new Set(rawDefinitions.map((item) => item.name));
+  const references = new Map<string, number[]>();
+  for (const entry of parsed) {
+    const seen = new Set<string>();
+    for (const match of entry.body.matchAll(IDENTIFIER_SCAN)) {
+      const name = match[0];
+      if (GEO_GEBRA_BUILTIN_NAMES.has(name) || seen.has(name)) continue;
+      if (entry.definition?.name === name) continue;
+      if (entry.definition?.kind === "function" && entry.definition.params.includes(name)) continue;
+      const trailing = entry.body.slice((match.index ?? 0) + name.length);
+      // 后面紧跟左括号且不是本地定义的名字 ⇒ 内建指令或未知函数调用，不计为用户变量引用。
+      if (/^\s*\(/.test(trailing) && !definedNames.has(name)) continue;
+      seen.add(name);
+      references.set(name, [...(references.get(name) ?? []), entry.lineNumber]);
+    }
+  }
+
+  const definitions: GeoGebraVariableDefinition[] = rawDefinitions.map((item) => ({
+    name: item.name,
+    lineNumber: item.lineNumber,
+    kind: item.kind,
+    usedAtLines: (references.get(item.name) ?? []).filter((lineNumber) => lineNumber !== item.lineNumber),
+  }));
+  const duplicateNames = [...definedNames].filter((name) => rawDefinitions.filter((item) => item.name === name).length > 1);
+  const undefinedNames = [...references.keys()].filter((name) => !definedNames.has(name));
+  // “未使用”按名字判定：同名被多次定义时，只要任意一处被引用就不算未使用，
+  // 否则 `a = 1 / a = 5 / b = a + 2` 这种常见写法会误报。
+  const definitionLines = new Map<string, Set<number>>();
+  for (const item of rawDefinitions) {
+    definitionLines.set(item.name, new Set([...(definitionLines.get(item.name) ?? []), item.lineNumber]));
+  }
+  const unusedNames = [...definedNames].filter((name) =>
+    (references.get(name) ?? []).every((lineNumber) => definitionLines.get(name)?.has(lineNumber) === true));
+  const referenceCount = [...references.values()].reduce((total, list) => total + list.length, 0);
+
+  return {
+    definitions,
+    unusedNames,
+    undefinedNames,
+    duplicateNames,
+    stats: {
+      definitions: definitions.length,
+      references: referenceCount,
+      unused: unusedNames.length,
+      undefined: undefinedNames.length,
+      duplicates: duplicateNames.length,
+    },
+  };
+}
+
+// 把“画布拖动后的点”与“脚本里的原定义”放在一起，用户才能判断这次改动到底改了什么，
+// 否则只能看到对象名（GEO-06 要求展示原/新指令）。
+export function describeGeoGebraPointChanges(
+  source: string,
+  points: GeoGebraPointState[],
+): Array<{ name: string; before: string | null; after: string }> {
+  const definitions = new Map<string, string>();
+  (typeof source === "string" ? source : "").split("\n").forEach((line) => {
+    const cleaned = stripLineComment(line).trim();
+    const assignment = extractTopLevelAssignment(cleaned);
+    if (!assignment) return;
+    const target = parseAssignmentTarget(assignment.left);
+    if (target && target.params.length === 0) definitions.set(target.name, cleaned);
+  });
+  return points.filter((point) => IDENTIFIER.test(point.name)).map((point) => ({
+    name: point.name,
+    before: definitions.get(point.name) ?? null,
+    after: `${point.name} = (${formatCoordinate(point.x)}, ${formatCoordinate(point.y)})`,
+  }));
 }

@@ -10,7 +10,7 @@ import { studioAccentBlobBlueClassName, studioAccentBlobSkyClassName, studioHero
 import GeoGebraApplet, { type GeoGebraHandle } from "./GeoGebraApplet";
 import GeoGebraEditor from "./GeoGebraEditor";
 import { prepareGeoGebraScript } from "./script";
-import type { GeoGebraMode, GeoGebraShare } from "./types";
+import type { GeoGebraMode, GeoGebraShare } from "../../types/geogebra";
 
 export default function GeoGebraSharePage() {
   const { slug = "" } = useParams();

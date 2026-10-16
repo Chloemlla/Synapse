@@ -1,4 +1,4 @@
-import type { GeoGebraLocalProject, GeoGebraLocalVersion } from "./types";
+import type { GeoGebraLocalProject, GeoGebraLocalVersion } from "../../types/geogebra";
 
 export const GEOGEBRA_STORAGE_KEY = "synapse-geogebra-studio-v1";
 const MAX_LOCAL_PROJECTS = 40;

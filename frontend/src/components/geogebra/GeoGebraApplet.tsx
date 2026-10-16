@@ -93,11 +93,28 @@ function loadGeoGebraApi(): Promise<void> {
   return scriptLoadPromise;
 }
 
+export type GeoGebraRunStep = {
+  lineNumber: number;
+  command: string;
+  status: "ok" | "failed";
+  durationMs: number;
+  message?: string;
+};
+
 export type GeoGebraRunReport = {
   success: boolean;
   successCount: number;
+  errorCount: number;
   error?: { lineNumber: number; command: string; message: string };
   executionTime: number;
+  // 逐条明细：单条失败中止后，用户需要看到“跑到第几条、哪条失败、花了多久”，
+  // 只有汇总计数无法定位问题。
+  steps: GeoGebraRunStep[];
+};
+
+export type GeoGebraStyleResult = {
+  changed: string[];
+  skipped: Array<{ name: string; reason: string }>;
 };
 
 export type GeoGebraStyleOptions = {
@@ -119,7 +136,7 @@ export type GeoGebraHandle = {
   readFreePoints(names?: string[]): GeoGebraPointState[];
   getObjectNames(): string[];
   lockPoints(locked: boolean): void;
-  applyStyles(options: GeoGebraStyleOptions): number;
+  applyStyles(options: GeoGebraStyleOptions): GeoGebraStyleResult;
 };
 
 type Props = {
@@ -168,7 +185,7 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
   useEffect(() => {
     if (!containerRef.current) return undefined;
     let cancelled = false;
-    let timeout: ReturnType<typeof window.setTimeout> | undefined;
+    let timeout: number | undefined;
     setLoading(true);
     setError("");
 
@@ -246,25 +263,34 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
       const api = requireApi(apiRef.current);
       const started = Date.now();
       api.reset?.();
+      const steps: GeoGebraRunStep[] = [];
       let successCount = 0;
       for (let index = 0; index < commands.length; index += 1) {
+        const command = commands[index] ?? "";
+        const stepStarted = Date.now();
         if (Date.now() - started > GEO_GEBRA_MAX_EXECUTION_MS) {
-          return { success: false, successCount, executionTime: Date.now() - started, error: { lineNumber: index + 1, command: commands[index] ?? "", message: "脚本执行超时，已停止。" } };
+          const message = "脚本执行超时，已停止。";
+          steps.push({ lineNumber: index + 1, command, status: "failed", durationMs: Date.now() - stepStarted, message });
+          return { success: false, successCount, errorCount: 1, executionTime: Date.now() - started, error: { lineNumber: index + 1, command, message }, steps };
         }
+        let failure: string | null = null;
         try {
-          const result = api.evalCommand?.(commands[index]);
-          if (result === false) {
-            return { success: false, successCount, executionTime: Date.now() - started, error: { lineNumber: index + 1, command: commands[index], message: "GeoGebra 未能执行该指令。" } };
-          }
+          const result = api.evalCommand?.(command);
+          if (result === false) failure = "GeoGebra 未能执行该指令。";
         } catch (caught) {
-          return { success: false, successCount, executionTime: Date.now() - started, error: { lineNumber: index + 1, command: commands[index], message: caught instanceof Error ? caught.message : "指令执行失败。" } };
+          failure = caught instanceof Error ? caught.message : "指令执行失败。";
+        }
+        if (failure) {
+          steps.push({ lineNumber: index + 1, command, status: "failed", durationMs: Date.now() - stepStarted, message: failure });
+          return { success: false, successCount, errorCount: 1, executionTime: Date.now() - started, error: { lineNumber: index + 1, command, message: failure }, steps };
         }
         successCount += 1;
+        steps.push({ lineNumber: index + 1, command, status: "ok", durationMs: Date.now() - stepStarted });
         onProgress?.(index + 1, commands.length);
         if (index % 20 === 19) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
       this.lockPoints(locked);
-      return { success: true, successCount, executionTime: Date.now() - started };
+      return { success: true, successCount, errorCount: 0, executionTime: Date.now() - started, steps };
     },
     clear() {
       const api = requireApi(apiRef.current);
@@ -314,22 +340,30 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
     },
     applyStyles(options) {
       const api = requireApi(apiRef.current);
-      let changed = 0;
+      const changed: string[] = [];
+      const skipped: Array<{ name: string; reason: string }> = [];
       const color = hexToRgb(options.color);
+      const available = new Set(api.getAllObjectNames?.() ?? []);
       for (const name of options.names) {
+        // 对象可能已被删除或来自旧版本脚本：按对象逐条汇报，而不是只给一个成功计数，
+        // 否则用户无法知道“部分成功”到底哪几个没生效。
+        if (available.size > 0 && !available.has(name)) {
+          skipped.push({ name, reason: "该对象已不在画布上。" });
+          continue;
+        }
         try {
           if (color) api.setColor?.(name, color.red, color.green, color.blue);
           api.setLineThickness?.(name, options.lineThickness);
           api.setPointSize?.(name, options.pointSize);
           api.setLabelVisible?.(name, options.labelVisible);
-          changed += 1;
+          changed.push(name);
         } catch {
-          // Skip one unsupported object and continue applying to remaining objects.
+          skipped.push({ name, reason: "该对象暂不支持这些显示设置。" });
         }
       }
       api.showGrid?.(options.showGrid);
       api.setAxesVisible?.(options.showAxes, options.showAxes);
-      return changed;
+      return { changed, skipped };
     },
   }), [locked]);
 

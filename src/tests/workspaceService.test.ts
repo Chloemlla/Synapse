@@ -454,6 +454,137 @@ describe("WorkspaceError", () => {
       INVITATION_NOT_FOUND: "WS_005",
       ALREADY_MEMBER: "WS_006",
       INVALID_ROLE: "WS_007",
+      MEMBER_NOT_FOUND: "WS_008",
     });
+  });
+});
+
+describe("workspaceService.updateMemberRole", () => {
+  it("管理员可调整成员角色，并只返回成员白名单字段", async () => {
+    const doc = workspaceDoc({ save: jest.fn(async () => undefined) });
+    mockWorkspaceFindOne(doc);
+
+    const member = await service.updateMemberRole("ws-1", "owner", "bob", "reviewer");
+
+    expect(member).toEqual({
+      userId: "bob",
+      role: "reviewer",
+      joinedAt: expect.any(Date),
+      invitedBy: "owner",
+    });
+    expect((doc.members as Array<{ role: string }>)[1].role).toBe("reviewer");
+    expect(doc.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("非管理员调整角色被拒（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.updateMemberRole("ws-1", "bob", "owner", "viewer"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("创建者角色不可更改（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.updateMemberRole("ws-1", "owner", "owner", "viewer"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("不允许降级最后一名管理员，避免空间无人可管（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({
+      save: jest.fn(),
+      members: [
+        { userId: "owner", role: "editor", joinedAt: new Date(), invitedBy: "owner" },
+        { userId: "carol", role: "admin", joinedAt: new Date(), invitedBy: "owner" },
+      ],
+    }));
+    await expect(service.updateMemberRole("ws-1", "carol", "carol", "viewer"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("非创建者管理员降级后仍有主人可管，允许", async () => {
+    const doc = workspaceDoc({
+      save: jest.fn(async () => undefined),
+      members: [
+        { userId: "owner", role: "admin", joinedAt: new Date(), invitedBy: "owner" },
+        { userId: "bob", role: "admin", joinedAt: new Date(), invitedBy: "owner" },
+      ],
+    });
+    mockWorkspaceFindOne(doc);
+    await expect(service.updateMemberRole("ws-1", "owner", "bob", "viewer"))
+      .resolves.toMatchObject({ userId: "bob", role: "viewer" });
+  });
+
+  it("成员不存在（WS_008）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.updateMemberRole("ws-1", "owner", "carol", "viewer"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.MEMBER_NOT_FOUND });
+  });
+
+  it("拒绝白名单外的角色字符串（WS_007）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.updateMemberRole("ws-1", "owner", "bob", "superuser" as never))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.INVALID_ROLE });
+  });
+
+  it("工作空间不存在（WS_001）", async () => {
+    mockWorkspaceFindOne(null);
+    await expect(service.updateMemberRole("ws-x", "owner", "bob", "viewer"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.WORKSPACE_NOT_FOUND });
+  });
+});
+
+describe("workspaceService.removeMember", () => {
+  it("管理员可移除成员", async () => {
+    const doc = workspaceDoc({ save: jest.fn(async () => undefined) });
+    mockWorkspaceFindOne(doc);
+
+    await service.removeMember("ws-1", "owner", "bob");
+
+    expect((doc.members as Array<{ userId: string }>).map((m) => m.userId)).toEqual(["owner"]);
+    expect(doc.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("成员可以主动退出自己所在的团队", async () => {
+    const doc = workspaceDoc({ save: jest.fn(async () => undefined) });
+    mockWorkspaceFindOne(doc);
+
+    await service.removeMember("ws-1", "bob", "bob");
+
+    expect((doc.members as Array<{ userId: string }>).map((m) => m.userId)).toEqual(["owner"]);
+  });
+
+  it("非管理员移除他人被拒（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.removeMember("ws-1", "bob", "owner"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("创建者不可被移除（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.removeMember("ws-1", "owner", "owner"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("最后一名管理员不能被移除（WS_003）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({
+      save: jest.fn(),
+      members: [
+        { userId: "owner", role: "editor", joinedAt: new Date(), invitedBy: "owner" },
+        { userId: "bob", role: "admin", joinedAt: new Date(), invitedBy: "owner" },
+      ],
+    }));
+    await expect(service.removeMember("ws-1", "bob", "bob"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.PERMISSION_DENIED });
+  });
+
+  it("成员不存在（WS_008）", async () => {
+    mockWorkspaceFindOne(workspaceDoc({ save: jest.fn() }));
+    await expect(service.removeMember("ws-1", "owner", "carol"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.MEMBER_NOT_FOUND });
+  });
+
+  it("工作空间不存在（WS_001）", async () => {
+    mockWorkspaceFindOne(null);
+    await expect(service.removeMember("ws-x", "owner", "bob"))
+      .rejects.toMatchObject({ code: WorkspaceErrorCodes.WORKSPACE_NOT_FOUND });
   });
 });
