@@ -21,7 +21,11 @@ import {
   InfoPanel,
   InfoQueryHero,
   InfoQueryShell,
+  studioFieldClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
 } from '@/components/studioTheme';
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
@@ -68,8 +72,8 @@ const SUPERSEDED_BADGE: BadgeStyle = {
 };
 const REVOKED_BADGE: BadgeStyle = {
   label: '已撤销',
-  badgeClass: 'border-orange-200 bg-orange-50 text-orange-700',
-  dotClass: 'bg-orange-500',
+  badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+  dotClass: 'bg-amber-500',
 };
 const REUSED_BADGE: BadgeStyle = {
   label: '复用断链',
@@ -133,20 +137,24 @@ const OverviewTab: React.FC<{
   overview: OverviewResponse | null;
   loading: boolean;
   error: string | null;
-}> = ({ overview, loading, error }) => {
+  onRetry: () => void;
+}> = ({ overview, loading, error, onRetry }) => {
   const counts = overview?.counts;
+
+  if (loading && !overview) {
+    return <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取令牌血缘统计…" />;
+  }
+
+  if (error && !overview) {
+    return <StudioErrorState message={error} onRetry={onRetry} />;
+  }
+
   return (
     <div className="space-y-5">
       <SectionNote>
-        {loading && !overview
-          ? '正在读取令牌血缘统计……'
-          : '这里的「代」= 一次签发或轮换产生的 sml_ 令牌；一张令牌被下一张顶替后进入 5 分钟在途宽限，宽限期后被再次使用即触发整链吊销，并计入下方复用事件。'}
+        这里的「代」= 一次签发或轮换产生的 sml_ 令牌；一张令牌被下一张顶替后进入 5 分钟在途宽限，宽限期后被再次使用即触发整链吊销，并计入下方复用事件。
       </SectionNote>
-      {error ? (
-        <InfoPanel compact>
-          <div className="px-4 py-3 text-sm text-rose-600">{error}</div>
-        </InfoPanel>
-      ) : null}
+      {error ? <StudioErrorNote>{error}</StudioErrorNote> : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <InfoMetricCard
           label="令牌总量（含历史代）"
@@ -167,7 +175,7 @@ const OverviewTab: React.FC<{
           value={counts ? formatCount(counts.revokedTokens) : '—'}
           detail="含整链吊销与用户/管理员主动撤销"
           icon={FaShieldAlt}
-          tone="violet"
+          tone="sky"
         />
         <InfoMetricCard
           label="复用断链事件"
@@ -321,7 +329,8 @@ const ReuseTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
             }
           }}
           placeholder="按用户 ID 过滤（可选）"
-          className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-xs font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-w-xs"
+          aria-label="按用户 ID 过滤"
+          className={`${studioFieldClassName} sm:max-w-xs`}
         />
         <button
           type="button"
@@ -329,7 +338,7 @@ const ReuseTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
             setUserId(userIdDraft.trim());
             setOffset(0);
           }}
-          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+          className={studioPrimaryButtonClassName}
         >
           查询
         </button>
@@ -341,7 +350,7 @@ const ReuseTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
               setUserIdDraft('');
               setOffset(0);
             }}
-            className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+            className={studioSecondaryButtonClassName}
           >
             清除过滤
           </button>
@@ -477,7 +486,8 @@ const LineageTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
             if (event.key === 'Enter') void search();
           }}
           placeholder="血缘 ID（lineageId）"
-          className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 font-mono text-xs text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-w-sm"
+          aria-label="按血缘 ID 查询"
+          className={`${studioFieldClassName} font-mono sm:max-w-sm`}
         />
         <input
           type="text"
@@ -487,21 +497,20 @@ const LineageTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
             if (event.key === 'Enter') void search();
           }}
           placeholder="或 用户 ID"
-          className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 font-mono text-xs text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-w-xs"
+          aria-label="按用户 ID 查询"
+          className={`${studioFieldClassName} font-mono sm:max-w-xs`}
         />
         <button
           type="button"
           onClick={() => void search()}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          className={studioPrimaryButtonClassName}
         >
           <FaRoute /> {loading ? '查询中…' : '查时间线'}
         </button>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-xs text-rose-700">{error}</div>
-      ) : null}
+      {error ? <StudioErrorNote>{error}</StudioErrorNote> : null}
 
       {query && data ? (
         <InfoPanel compact>
@@ -575,11 +584,10 @@ const LineageTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
           </TableWrap>
         </InfoPanel>
       ) : (
-        <InfoPanel compact>
-          <div className="px-4 py-10 text-center text-sm text-slate-500">
-            输入血缘 ID 或用户 ID 后，这里会按时间顺序列出每一代令牌的签发、顶替与撤销轨迹。
-          </div>
-        </InfoPanel>
+        <StudioEmptyState
+          className="py-10"
+          message="输入血缘 ID 或用户 ID 并查询后，这里会按时间顺序列出每一代令牌的签发、顶替与撤销轨迹。"
+        />
       )}
     </div>
   );
@@ -643,7 +651,7 @@ const MobileTokenLineagePanel: React.FC = () => {
           'sml_ 令牌的代际轨迹一目了然：一条血缘如何一天天推进、哪些旧代超宽限期被重放触发了整链吊销、每个用户/设备签到了第几代。本页全部只读，标识与 IP 均为服务端掩码值。'
         }
         icon={FaShieldAlt}
-        tone="violet"
+        tone="sky"
         meta={
           <>
             <InfoBadge>{lastUpdatedAt ? `概览更新于 ${new Date(lastUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}` : '概览尚未加载'}</InfoBadge>
@@ -668,7 +676,7 @@ const MobileTokenLineagePanel: React.FC = () => {
               type="button"
               onClick={() => setRefreshNonce((current) => current + 1)}
               disabled={overviewLoading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              className={studioPrimaryButtonClassName}
             >
               <FaSync className={cn(overviewLoading && 'animate-spin')} /> 刷新全部
             </button>
@@ -684,7 +692,7 @@ const MobileTokenLineagePanel: React.FC = () => {
             title={item.hint}
             onClick={() => setTab(item.key)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition',
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               tab === item.key
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
@@ -698,7 +706,12 @@ const MobileTokenLineagePanel: React.FC = () => {
 
       <div className="mt-5">
         {tab === 'overview' ? (
-          <OverviewTab overview={overview} loading={overviewLoading} error={overviewError} />
+          <OverviewTab
+            overview={overview}
+            loading={overviewLoading}
+            error={overviewError}
+            onRetry={() => setRefreshNonce((current) => current + 1)}
+          />
         ) : null}
         {tab === 'reuse' ? <ReuseTab refreshNonce={refreshNonce} /> : null}
         {tab === 'lineage' ? <LineageTab refreshNonce={refreshNonce} /> : null}

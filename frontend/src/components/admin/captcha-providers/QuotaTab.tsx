@@ -1,5 +1,6 @@
 import { FaSync } from 'react-icons/fa';
 import { studioPanelClassName, studioSecondaryButtonClassName } from '@/components/studioTheme';
+import { StudioEmptyState, StudioLoadingState } from '@/components/studioFeedback';
 import {
   PROVIDER_ORDER,
   formatQuota,
@@ -23,7 +24,7 @@ export interface QuotaTabProps extends TabActions {
 const MONTH_CHOICES = [3, 6, 12] as const;
 
 export default function QuotaTab(props: QuotaTabProps) {
-  const { canWrite, rows, history, months, onMonthsChange, loading, onRefresh } = props;
+  const { rows, history, months, onMonthsChange, loading, onRefresh } = props;
 
   const maxCount = Math.max(1, ...history.map((entry) => entry.count));
 
@@ -34,8 +35,7 @@ export default function QuotaTab(props: QuotaTabProps) {
           <div>
             <h3 className="text-base font-semibold text-slate-800">本月额度</h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              口径与 proxycheck 限额一致：<b>先算额度再外呼</b>，用尽即不再调用并落一条 trace；
-              下月 1 日 00:00（北京时间）自动归零。0 = 不限额（只计数不拦截）。
+              先算额度再外呼，用尽即不再调用；下月 1 日 00:00（北京时间）自动归零。0 = 不限额（只计数不拦截）。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -44,8 +44,8 @@ export default function QuotaTab(props: QuotaTabProps) {
                 key={choice}
                 type="button"
                 onClick={() => onMonthsChange(choice)}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  months === choice ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 text-slate-600'
+                className={`inline-flex min-h-11 items-center rounded-full border px-3 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 ${
+                  months === choice ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600'
                 }`}
               >
                 {choice} 个月
@@ -104,10 +104,13 @@ export default function QuotaTab(props: QuotaTabProps) {
 
       <section className={`${studioPanelClassName} p-5`}>
         <h3 className="text-base font-semibold text-slate-800">逐月用量（近 {months} 个月）</h3>
-        {history.length === 0 ? (
-          <p className="mt-3 text-xs text-slate-500">
-            还没有用量记录。{canWrite ? '' : '（只读账号也能看到这里的数据）'}
-          </p>
+        {history.length === 0 && loading ? (
+          <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取逐月用量…" />
+        ) : history.length === 0 ? (
+          <StudioEmptyState
+            className="mt-3 py-10"
+            message="还没有用量记录。调一次「刷新」重新读取；有新记录时每月一行会出现在这里。"
+          />
         ) : (
           <div className="mt-4 space-y-4">
             {PROVIDER_ORDER.map((provider) => {
@@ -122,7 +125,7 @@ export default function QuotaTab(props: QuotaTabProps) {
                       .reverse()
                       .map((entry) => (
                         <div key={`${entry.provider}-${entry.monthKey}`} className="flex w-16 flex-col items-center gap-1">
-                          <div className="flex h-24 w-full items-end justify-center rounded-lg bg-slate-50">
+                          <div className="flex h-24 w-full items-end justify-center rounded-2xl bg-slate-50">
                             <div
                               className="w-6 rounded-t bg-slate-700"
                               style={{ height: `${Math.max(2, Math.round((entry.count / maxCount) * 96))}px` }}

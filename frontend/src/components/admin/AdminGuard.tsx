@@ -219,7 +219,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
 
   if (loading || isLoading) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel>
           <div className='flex min-h-[360px] items-center justify-center'>
             <div className='text-center'>
@@ -241,7 +241,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
 
   if (verifyError && !isAuthorized) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel className='border-amber-100'>
           <div className='flex min-h-[360px] items-center justify-center'>
             <div className='max-w-md text-center'>
@@ -275,7 +275,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
 
   if (!isAuthorized) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel className='border-rose-100'>
           <div className='flex min-h-[360px] items-center justify-center'>
             <div className='max-w-md text-center'>

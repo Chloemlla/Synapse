@@ -22,7 +22,7 @@ export const SuperAdminGuard: React.FC<{ children?: React.ReactNode }> = ({
 
   if (!isSuperAdminUser) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel className='border-rose-100'>
           <div className='flex min-h-[360px] items-center justify-center'>
             <div className='max-w-md text-center'>

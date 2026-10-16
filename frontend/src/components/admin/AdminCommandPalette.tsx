@@ -23,6 +23,8 @@ import { useAdminNavPrefs } from '@/hooks/useAdminNavPrefs';
 import { indexAdminNavByUrl } from '@/navigation/adminNavIndex';
 import { fuzzyMatch } from '@/utils/fuzzyMatch';
 import { cn } from '@/lib/utils';
+import { studioModalCardClassName, studioModalOverlayClassName } from '../studioTheme';
+import { StudioEmptyState } from '../studioFeedback';
 
 /**
  * 管理员命令面板（⌘/Ctrl + K）。
@@ -67,7 +69,7 @@ const SECTION_RECENT = '最近访问';
 const SECTION_RESULTS = '搜索结果';
 
 const ROW_CLASS =
-  'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition';
+  'flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition';
 const ACTIVE_ROW_CLASS = 'bg-slate-900 text-white shadow-sm';
 const IDLE_ROW_CLASS = 'text-slate-700 hover:bg-slate-100';
 
@@ -396,7 +398,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
 
   return (
     <div
-      className='fixed inset-0 z-[120] flex items-start justify-center bg-slate-900/45 px-4 pt-[12vh] backdrop-blur-sm'
+      className={cn(studioModalOverlayClassName, 'items-start pt-[12vh]')}
       role='presentation'
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -408,7 +410,10 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
         aria-modal='true'
         aria-label='管理员命令面板'
         onKeyDown={handleDialogKeyDown}
-        className='w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_30px_80px_-30px_rgba(15,23,42,0.55)]'
+        className={cn(
+          studioModalCardClassName,
+          'max-w-2xl overflow-hidden bg-white p-0 sm:p-0',
+        )}
       >
         <div className='flex items-center gap-2 border-b border-slate-100 px-4 py-3'>
           <FaSearch className='size-3.5 shrink-0 text-slate-400' aria-hidden='true' />
@@ -427,7 +432,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
             }
             className='min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none'
           />
-          <kbd className='hidden shrink-0 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:block'>
+          <kbd className='hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:block'>
             Esc
           </kbd>
           <button
@@ -435,7 +440,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
             onClick={onClose}
             aria-label='关闭命令面板'
             title='关闭命令面板'
-            className='flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400'
+            className='flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 sm:size-7 sm:min-h-0 sm:min-w-0'
           >
             <FaTimes className='size-3.5' aria-hidden='true' />
           </button>
@@ -449,10 +454,15 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
           className='hover-scrollbar max-h-[52vh] min-h-[8rem] overflow-y-auto px-2 py-2'
         >
           {visibleEntries.length === 0 ? (
-            <div className='px-3 py-10 text-center text-sm text-slate-500'>
-              没有匹配的模块或动作
-              <div className='mt-1 text-xs text-slate-400'>试试模块名里的任意几个字，或输入 /admin 的路径片段</div>
-            </div>
+            <StudioEmptyState
+              className='px-3 py-10'
+              message={
+                <>
+                  没有匹配的模块或动作
+                  <div className='mt-1 text-xs text-slate-400'>试试模块名里的任意几个字，或输入 /admin 的路径片段</div>
+                </>
+              }
+            />
           ) : (
             sections.map((section) => {
               const sectionEntries = visibleEntries.filter((entry) => entry.section === section);
@@ -467,7 +477,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
                       <button
                         type='button'
                         onClick={clearRecent}
-                        className='rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600'
+                        className='inline-flex min-h-11 items-center justify-center rounded-full px-2 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 sm:min-h-0 sm:py-0.5'
                       >
                         清空
                       </button>
@@ -493,7 +503,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
                         >
                           <span
                             className={cn(
-                              'flex size-7 shrink-0 items-center justify-center rounded-lg',
+                              'flex size-7 shrink-0 items-center justify-center rounded-2xl',
                               isActive ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500',
                             )}
                           >
@@ -527,7 +537,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({
                                 setNotification({ type: 'success', message: nowPinned ? '已置顶到侧边栏' : '已取消置顶' });
                               }}
                               className={cn(
-                                'flex size-6 shrink-0 items-center justify-center rounded-md transition',
+                                'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition sm:size-6 sm:min-h-0 sm:min-w-0',
                                 pinnedEntry
                                   ? isActive
                                     ? 'text-amber-300'

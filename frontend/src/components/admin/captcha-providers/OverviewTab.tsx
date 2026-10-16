@@ -331,7 +331,7 @@ export default function OverviewTab(props: OverviewTabProps) {
           </table>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          统计口径：`shc_traces` 里按 `verificationMethod` 归集的校验结果，不含前端控件加载失败。
+          统计口径：按校验方式归集的结果，不含前端控件加载失败。
         </p>
       </section>
     </div>

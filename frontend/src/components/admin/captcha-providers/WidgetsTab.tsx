@@ -89,7 +89,7 @@ function AppearancePreview({
         <p className="text-sm font-semibold text-slate-800">{label}</p>
         <span className="text-[11px] text-slate-500">{provider}</span>
       </div>
-      <div className={`mt-3 flex items-center justify-center rounded-xl border ${skin.border} ${skin.box} ${width} ${height}`}>
+      <div className={`mt-3 flex items-center justify-center rounded-2xl border ${skin.border} ${skin.box} ${width} ${height}`}>
         <span className={`text-xs ${skin.text}`}>
           {appearance.language === 'auto' ? '跟随浏览器语言' : appearance.language}
         </span>

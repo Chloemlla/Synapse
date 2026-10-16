@@ -1,10 +1,24 @@
 import React from 'react';
 
 import { getInfoToneClasses } from '../../studioTheme';
+import { cn } from '../../utils/cn';
+import {
+  studioDangerButtonClassName,
+  studioGhostButtonClassName,
+  studioPrimaryButtonClassName,
+} from '../../studioTheme';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
+
+// 行内小按钮：底子是共享 token，只覆盖尺寸/字距，不再手写第二套配色。
+export const rowGhostButtonClassName = cn(
+  studioGhostButtonClassName,
+  'min-h-11 px-2 tracking-normal sm:min-h-0',
+);
+export const rowPrimaryButtonClassName = cn(studioPrimaryButtonClassName, 'min-h-11 px-2 py-1 text-[11px] sm:min-h-0');
+export const rowDangerButtonClassName = cn(studioDangerButtonClassName, 'min-h-11 px-2 py-1 text-[11px] sm:min-h-0');
 
 export function formatDateTime(value?: string | number | Date | null): string {
   if (!value) return '未知时间';
@@ -82,7 +96,7 @@ export function eventBadge(event: string, verdict?: string): EventBadgeView {
   } else if (event === 'review_pending') {
     color = getInfoToneClasses('amber').badge;
   } else if (event === 'exempted') {
-    color = getInfoToneClasses('violet').badge;
+    color = getInfoToneClasses('sky').badge;
   }
   const baseLabel = EVENT_LABELS[event] ?? event;
   let label = baseLabel;

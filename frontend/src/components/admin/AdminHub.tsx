@@ -79,7 +79,7 @@ export const AdminHub: React.FC = () => {
   };
 
   return (
-    <InfoQueryShell className='logshare-admin-surface'>
+    <InfoQueryShell>
       <div className='space-y-6'>
         <InfoQueryHero
           eyebrow='Admin Console'
@@ -147,7 +147,7 @@ export const AdminHub: React.FC = () => {
                     <button
                       type='button'
                       onClick={clearRecent}
-                      className='rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600'
+                      className='inline-flex min-h-11 min-w-11 items-center justify-center rounded-full px-2.5 text-[11px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0 sm:py-1'
                     >
                       清空
                     </button>
@@ -157,7 +157,7 @@ export const AdminHub: React.FC = () => {
                       <Link
                         key={`recent-${item!.url}`}
                         to={item!.url}
-                        className='inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600'
+                        className='inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0'
                       >
                         {item!.title}
                       </Link>
@@ -214,13 +214,13 @@ export const AdminHub: React.FC = () => {
                         'group flex items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/90 px-4 py-3.5',
                         'text-sm font-semibold text-slate-700 shadow-[0_1px_0_rgba(15,23,42,0.03)]',
                         'transition duration-150',
-                        'hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white hover:text-slate-900',
-                        'hover:shadow-[0_10px_30px_-18px_rgba(79,70,229,0.45)]',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2',
+                        'hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:text-slate-900',
+                        'hover:shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
                         pinnedNow && 'border-amber-200/90',
                       )}
                     >
-                      <span className='flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition group-hover:bg-indigo-50 group-hover:text-indigo-600'>
+                      <span className='flex size-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition group-hover:bg-slate-200 group-hover:text-slate-700'>
                         {Icon ? (
                           <Icon className='size-4' aria-hidden='true' />
                         ) : (
@@ -229,7 +229,7 @@ export const AdminHub: React.FC = () => {
                       </span>
                       <span className='min-w-0 flex-1 truncate'>{item.title}</span>
                       <FaChevronRight
-                        className='size-3 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-400'
+                        className='size-3 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500'
                         aria-hidden='true'
                       />
                     </Link>
@@ -239,7 +239,7 @@ export const AdminHub: React.FC = () => {
                       aria-label={pinnedNow ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}
                       title={pinnedNow ? '取消置顶' : '置顶到侧边栏'}
                       className={cn(
-                        'absolute top-2 right-2 flex size-6 items-center justify-center rounded-lg transition',
+                        'absolute top-2 right-2 flex min-h-11 min-w-11 items-center justify-center rounded-full transition sm:size-6 sm:min-h-0 sm:min-w-0',
                         pinnedNow
                           ? 'text-amber-500 hover:bg-amber-50'
                           : 'text-slate-300 opacity-0 hover:bg-slate-100 hover:text-amber-500 focus-visible:opacity-100 group-hover/card:opacity-100',
@@ -320,7 +320,7 @@ export const AdminModulePage: React.FC = () => {
 
   if (!module || !isAdminModuleKey(module)) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel>
           <div className='py-16 text-center'>
             <div className='mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400'>
@@ -357,7 +357,7 @@ export const AdminModulePage: React.FC = () => {
     // 授权还在拉取时先等一下，避免把「未裁定的可见页面」闪成拒绝页。
     if (scopeLoading) {
       return (
-        <InfoQueryShell className='logshare-admin-surface'>
+        <InfoQueryShell>
           <InfoPanel>
             <div className='py-16 text-center text-sm text-slate-500'>正在校验页面授权…</div>
           </InfoPanel>
@@ -370,7 +370,7 @@ export const AdminModulePage: React.FC = () => {
     const requiredPageKey = adminPageKeyForModule(module);
     const requiredPageLabel = scopeAvailablePages.find((page) => page.key === requiredPageKey)?.label;
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel>
           <div className='py-16 text-center'>
             <div className='mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-500'>
@@ -412,10 +412,10 @@ export const AdminModulePage: React.FC = () => {
   const pinnedNow = Boolean(activeItem && isPinned(activeItem.url));
 
   return (
-    <InfoQueryShell className='logshare-admin-surface'>
+    <InfoQueryShell>
       <div className='mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-slate-200/90 bg-white/80 px-3 py-2 shadow-[0_1px_0_rgba(15,23,42,0.03)]'>
         <nav aria-label='面包屑' className='flex min-w-0 items-center gap-1.5 text-xs text-slate-500'>
-          <Link to='/admin' className='shrink-0 font-medium hover:text-indigo-600'>
+          <Link to='/admin' className='shrink-0 font-medium hover:text-slate-900'>
             管理总览
           </Link>
           <FaChevronRight className='size-2.5 shrink-0 text-slate-300' aria-hidden='true' />

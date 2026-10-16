@@ -34,6 +34,10 @@ import {
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
 } from '@/components/studioTheme';
+import {
+  StudioErrorState,
+  StudioLoadingState,
+} from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 
 /**
@@ -120,9 +124,9 @@ const PagePicker: React.FC<PagePickerProps> = ({
               <label
                 htmlFor={inputId}
                 className={cn(
-                  'flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition',
+                  'flex min-h-11 cursor-pointer items-start gap-2 rounded-2xl border px-3 py-2.5 text-left transition',
                   checked
-                    ? 'border-indigo-200 bg-indigo-50/70'
+                    ? 'border-sky-200 bg-sky-50/70'
                     : 'border-slate-200 bg-white hover:border-slate-300',
                   disabled && 'cursor-not-allowed opacity-60',
                 )}
@@ -133,7 +137,7 @@ const PagePicker: React.FC<PagePickerProps> = ({
                   checked={checked}
                   disabled={disabled}
                   onChange={() => onToggle(option.key)}
-                  className='mt-0.5 size-4 shrink-0 rounded border-slate-300 text-indigo-600'
+                  className='mt-0.5 size-4 shrink-0 rounded border-slate-300 text-slate-900'
                 />
                 <span className='min-w-0'>
                   <span className='block truncate text-sm font-semibold text-slate-800'>
@@ -159,8 +163,8 @@ const PagePicker: React.FC<PagePickerProps> = ({
           );
         })}
         {filtered.length === 0 ? (
-          <li className='col-span-full rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500'>
-            没有匹配的页面。
+          <li className='col-span-full rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-6 text-center text-sm text-slate-500'>
+            没有匹配的页面。换个关键词，或清空搜索框查看全部页面。
           </li>
         ) : null}
       </ul>
@@ -327,7 +331,7 @@ const AdminScopeManager: React.FC = () => {
 
   if (!canManage) {
     return (
-      <InfoQueryShell className='logshare-admin-surface'>
+      <InfoQueryShell>
         <InfoPanel className='border-rose-200 bg-rose-50/70'>
           <p className='flex items-center gap-2 text-sm font-semibold text-rose-700'>
             <FaExclamationTriangle aria-hidden /> 该页面仅超级管理员可用。
@@ -347,7 +351,7 @@ const AdminScopeManager: React.FC = () => {
   }
 
   return (
-    <InfoQueryShell className='logshare-admin-surface'>
+    <InfoQueryShell>
       <InfoQueryHero
         eyebrow='Access Control'
         title='普通管理员页面授权'
@@ -375,14 +379,20 @@ const AdminScopeManager: React.FC = () => {
       />
 
       {error ? (
-        <InfoPanel className='mt-4 border-rose-200 bg-rose-50/70'>
-          <p className='text-sm text-rose-700'>
-            {error}
-            <button type='button' onClick={() => void load()} className='ml-3 font-semibold underline'>
-              重试
-            </button>
-          </p>
-        </InfoPanel>
+        <StudioErrorState
+          className='mt-4'
+          message={error}
+          onRetry={() => void load()}
+          retryLabel='重新读取'
+        />
+      ) : null}
+
+      {!error && loading && !setting ? (
+        <StudioLoadingState
+          className='mt-4'
+          minHeightClassName='min-h-[280px]'
+          text='正在读取页面授权配置…'
+        />
       ) : null}
 
       {setting ? (
@@ -394,176 +404,180 @@ const AdminScopeManager: React.FC = () => {
             </span>
             <span>操作者：{setting.updatedBy || '—'}</span>
           </div>
-          <p className='mt-3 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2 text-[13px] leading-6 text-sky-800'>
+          <p className='mt-3 flex items-start gap-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-3 py-2 text-[13px] leading-6 text-sky-800'>
             <FaInfoCircle className='mt-0.5 shrink-0' aria-hidden />
             <span>
-              标注「无 API 范围」的页面在登记表里没有对应的 API 前缀，授给普通管理员只会放出入口，
-              页面内的请求仍会被服务端拒绝 —— 需要先给该页面登记 API 前缀才能真的用起来。
+              标记「无 API 范围」的页面只放出了入口：拿到授权的管理员打开后仍会用不了。
+              先为该页面补齐接口范围，授权才会真正生效。
             </span>
           </p>
         </InfoPanel>
       ) : null}
 
-      <InfoPanel className='mt-4'>
-        <InfoSectionTitle
-          title='默认授权'
-          description='所有普通管理员都拿到的页面。留空表示「除总览外什么都不给」。'
-          icon={FaUsers}
-          eyebrow='Default'
-          action={
+      {setting ? (
+        <>
+        <InfoPanel className='mt-4'>
+          <InfoSectionTitle
+            title='默认授权'
+            description='所有普通管理员都拿到的页面。留空表示「除总览外什么都不给」。'
+            icon={FaUsers}
+            eyebrow='Default'
+            action={
+              <button
+                type='button'
+                onClick={() => setConfirmReset(true)}
+                disabled={saving || loading || !setting || !!error}
+                className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
+              >
+                <FaUndoAlt aria-hidden /> 恢复后端默认
+              </button>
+            }
+          />
+          <div className='mt-4'>
+            <PagePicker
+              options={options}
+              selected={draftDefaults}
+              onToggle={toggleDefault}
+              onSetAll={setDefaultAll}
+              keyword={defaultKeyword}
+              onKeywordChange={setDefaultKeyword}
+              disabled={saving || loading || !setting || !!error}
+              idPrefix='scope-default'
+            />
+          </div>
+        </InfoPanel>
+
+        <InfoPanel className='mt-4'>
+          <InfoSectionTitle
+            title='按用户覆盖'
+            description='在默认授权之上，给某个普通管理员额外加页面（并集，不会减少默认授权）。'
+            icon={FaUserShield}
+            eyebrow='Per user'
+          />
+
+          <div className='mt-4 flex flex-wrap items-center gap-2'>
+            <input
+              type='text'
+              value={newUserId}
+              onChange={(event) => setNewUserId(event.target.value)}
+              placeholder='普通管理员的用户 ID（如 1754476659129）'
+              aria-label='要覆盖授权的用户 ID'
+              className={cn(studioFieldClassName, 'w-full sm:w-80')}
+            />
             <button
               type='button'
-              onClick={() => setConfirmReset(true)}
+              onClick={addOrSelectUser}
               disabled={saving || loading || !setting || !!error}
-              className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
+              className={cn(studioSecondaryButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
             >
-              <FaUndoAlt aria-hidden /> 恢复后端默认
+              添加 / 选择
             </button>
-          }
-        />
-        <div className='mt-4'>
-          <PagePicker
-            options={options}
-            selected={draftDefaults}
-            onToggle={toggleDefault}
-            onSetAll={setDefaultAll}
-            keyword={defaultKeyword}
-            onKeywordChange={setDefaultKeyword}
-            disabled={saving || loading || !setting || !!error}
-            idPrefix='scope-default'
-          />
-        </div>
-      </InfoPanel>
+            <span className='text-xs text-slate-500'>
+              用户 ID 可在「用户管理」列表里复制（用户名下方那行 ID）。
+            </span>
+          </div>
 
-      <InfoPanel className='mt-4'>
-        <InfoSectionTitle
-          title='按用户覆盖'
-          description='在默认授权之上，给某个普通管理员额外加页面（并集，不会减少默认授权）。'
-          icon={FaUserShield}
-          eyebrow='Per user'
-        />
+          {perUserIds.length === 0 ? (
+            <p className='mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-6 text-center text-sm text-slate-500'>
+              还没有按用户覆盖，所有普通管理员都使用默认授权。在上方填入用户 ID 并点「添加 / 选择」即可单独加页面。
+            </p>
+          ) : (
+            <>
+              <div className='mt-4 flex flex-wrap gap-2'>
+                {perUserIds.map((userId) => {
+                  const count = draftPerUser[userId]?.length ?? 0;
+                  const active = activeUserId === userId;
+                  return (
+                    <button
+                      key={userId}
+                      type='button'
+                      onClick={() => setActiveUserId(userId)}
+                      aria-pressed={active}
+                      className={cn(
+                        'inline-flex min-h-11 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
+                        active
+                          ? 'border-sky-300 bg-sky-50 text-sky-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                      )}
+                    >
+                      <code className='font-mono' title={`用户 ID：${userId}`}>{userId}</code>
+                      <span className='text-[10px] text-slate-400'>+{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-        <div className='mt-4 flex flex-wrap items-center gap-2'>
-          <input
-            type='text'
-            value={newUserId}
-            onChange={(event) => setNewUserId(event.target.value)}
-            placeholder='普通管理员的用户 ID（如 1754476659129）'
-            aria-label='要覆盖授权的用户 ID'
-            className={cn(studioFieldClassName, 'w-full sm:w-80')}
-          />
-          <button
-            type='button'
-            onClick={addOrSelectUser}
-            disabled={saving || loading || !setting || !!error}
-            className={cn(studioSecondaryButtonClassName, 'px-3 py-2 text-xs disabled:opacity-50')}
-          >
-            添加 / 选择
-          </button>
-          <span className='text-xs text-slate-500'>
-            用户 ID 可在「用户管理」列表里复制（用户名下方那行 ID）。
-          </span>
-        </div>
-
-        {perUserIds.length === 0 ? (
-          <p className='mt-4 rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500'>
-            还没有按用户覆盖，所有普通管理员都使用默认授权。
-          </p>
-        ) : (
-          <>
-            <div className='mt-4 flex flex-wrap gap-2'>
-              {perUserIds.map((userId) => {
-                const count = draftPerUser[userId]?.length ?? 0;
-                const active = activeUserId === userId;
-                return (
-                  <button
-                    key={userId}
-                    type='button'
-                    onClick={() => setActiveUserId(userId)}
-                    aria-pressed={active}
-                    className={cn(
-                      'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                      active
-                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
-                    )}
-                  >
-                    <code className='font-mono' title={`用户 ID：${userId}`}>{userId}</code>
-                    <span className='text-[10px] text-slate-400'>+{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {activeUserId ? (
-              <div className='mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4'>
-                <div className='flex flex-wrap items-center justify-between gap-2'>
-                  <div className='flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800'>
-                    <span>正在编辑：<code className='font-mono text-xs' title={`用户 ID：${activeUserId}`}>{activeUserId}</code></span>
+              {activeUserId ? (
+                <div className='mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4'>
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <div className='flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800'>
+                      <span>正在编辑：<code className='font-mono text-xs' title={`用户 ID：${activeUserId}`}>{activeUserId}</code></span>
+                      <button
+                        type='button'
+                        onClick={() => copyUserId(activeUserId)}
+                        title='复制用户 ID'
+                        aria-label='复制用户 ID'
+                        className={cn(studioGhostButtonClassName, 'px-2 py-1 text-xs')}
+                      >
+                        复制 ID
+                      </button>
+                    </div>
                     <button
                       type='button'
-                      onClick={() => copyUserId(activeUserId)}
-                      title='复制用户 ID'
-                      aria-label='复制用户 ID'
-                      className={cn(studioGhostButtonClassName, 'px-2 py-1 text-xs')}
+                      onClick={() => removeUser(activeUserId)}
+                      disabled={saving || loading || !setting || !!error}
+                      className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs text-rose-600 disabled:opacity-50')}
                     >
-                      复制 ID
+                      删除该用户覆盖
                     </button>
                   </div>
-                  <button
-                    type='button'
-                    onClick={() => removeUser(activeUserId)}
-                    disabled={saving || loading || !setting || !!error}
-                    className={cn(studioGhostButtonClassName, 'px-3 py-2 text-xs text-rose-600 disabled:opacity-50')}
-                  >
-                    删除该用户覆盖
-                  </button>
+                  <div className='mt-3'>
+                    <PagePicker
+                      options={options}
+                      selected={draftPerUser[activeUserId] ?? []}
+                      onToggle={(key) => togglePerUser(activeUserId, key)}
+                      onSetAll={(keys, mode) => setPerUserAll(activeUserId, keys, mode)}
+                      keyword={perUserKeyword}
+                      onKeywordChange={setPerUserKeyword}
+                      disabled={saving || loading || !setting || !!error}
+                      idPrefix={`scope-user-${activeUserId}`}
+                    />
+                  </div>
                 </div>
-                <div className='mt-3'>
-                  <PagePicker
-                    options={options}
-                    selected={draftPerUser[activeUserId] ?? []}
-                    onToggle={(key) => togglePerUser(activeUserId, key)}
-                    onSetAll={(keys, mode) => setPerUserAll(activeUserId, keys, mode)}
-                    keyword={perUserKeyword}
-                    onKeywordChange={setPerUserKeyword}
-                    disabled={saving || loading || !setting || !!error}
-                    idPrefix={`scope-user-${activeUserId}`}
-                  />
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
-      </InfoPanel>
+              ) : null}
+            </>
+          )}
+        </InfoPanel>
 
-      <div className='sticky bottom-4 mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur'>
-        <button
-          type='button'
-          onClick={() => void save()}
-          disabled={saving || loading || !setting || !!error || !dirty}
-          className={cn(studioPrimaryButtonClassName, 'px-4 py-2 text-sm disabled:opacity-50')}
-        >
-          {saving ? <FaSyncAlt className='animate-spin' aria-hidden /> : <FaSave aria-hidden />}
-          保存授权
-        </button>
-        <button
-          type='button'
-          onClick={() => {
-            if (!setting) return;
-            setDraftDefaults(setting.defaultPages);
-            setDraftPerUser(setting.perUser);
-            setDirty(false);
-          }}
-          disabled={saving || !dirty}
-          className={cn(studioSecondaryButtonClassName, 'px-4 py-2 text-sm disabled:opacity-50')}
-        >
-          放弃改动
-        </button>
-        <span className='flex items-center gap-1.5 text-xs text-slate-500'>
-          <FaCheck aria-hidden /> 保存为覆盖式写入：默认授权 + 按用户覆盖会整体替换为当前选择。
-        </span>
-      </div>
+        <div className='sticky bottom-4 mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur'>
+          <button
+            type='button'
+            onClick={() => void save()}
+            disabled={saving || loading || !setting || !!error || !dirty}
+            className={cn(studioPrimaryButtonClassName, 'px-4 py-2 text-sm disabled:opacity-50')}
+          >
+            {saving ? <FaSyncAlt className='animate-spin' aria-hidden /> : <FaSave aria-hidden />}
+            保存授权
+          </button>
+          <button
+            type='button'
+            onClick={() => {
+              if (!setting) return;
+              setDraftDefaults(setting.defaultPages);
+              setDraftPerUser(setting.perUser);
+              setDirty(false);
+            }}
+            disabled={saving || !dirty}
+            className={cn(studioSecondaryButtonClassName, 'px-4 py-2 text-sm disabled:opacity-50')}
+          >
+            放弃改动
+          </button>
+          <span className='flex items-center gap-1.5 text-xs text-slate-500'>
+            <FaCheck aria-hidden /> 保存为覆盖式写入：默认授权 + 按用户覆盖会整体替换为当前选择。
+          </span>
+        </div>
+        </>
+      ) : null}
 
       <ConfirmModal
         open={confirmReset}

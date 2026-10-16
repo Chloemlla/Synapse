@@ -6,6 +6,12 @@ import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/admin/crash-reports/ui';
 import { InfoBadge, InfoPanel, studioSecondaryButtonClassName } from '@/components/studioTheme';
 import {
+  StudioEmptyState,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioPager,
+} from '@/components/studioFeedback';
+import {
   ACTION_CONFIG,
   ACTION_ORDER,
   CALLER_HINTS,
@@ -99,7 +105,7 @@ export const Collapsible: React.FC<{
           type="button"
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 transition hover:text-slate-900"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl text-xs font-semibold text-slate-600 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 sm:min-h-0"
         >
           {open ? <FaChevronDown className="text-[10px]" /> : <FaChevronRight className="text-[10px]" />}
           {title}
@@ -156,12 +162,13 @@ export const Chip: React.FC<{ active: boolean; label: string; onClick: () => voi
   <button
     type="button"
     title={title ?? label}
+    aria-pressed={active}
     onClick={onClick}
     className={cn(
-      'rounded-full border px-3.5 py-1.5 text-xs font-semibold transition',
+      'inline-flex min-h-11 items-center rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 sm:min-h-0 sm:py-1.5',
       active
-        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-        : 'border-slate-200 bg-white/80 text-slate-600 hover:border-slate-300',
+        ? 'border-slate-900 bg-slate-900 text-white'
+        : 'border-slate-200 bg-white/80 text-slate-600 hover:border-slate-300 hover:text-slate-900',
     )}
   >
     {label}
@@ -181,7 +188,7 @@ export const FilterSelect: React.FC<{
     aria-label={title}
     onChange={(event) => onChange(event.target.value)}
     className={cn(
-      'rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300',
+      'min-h-11 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
       className,
     )}
   >
@@ -198,7 +205,12 @@ export const RefreshButton: React.FC<{ onClick: () => void; loading?: boolean; l
   loading = false,
   label = '刷新',
 }) => (
-  <button type="button" onClick={onClick} disabled={loading} className={studioSecondaryButtonClassName}>
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={loading}
+    className={cn(studioSecondaryButtonClassName, 'min-h-11 sm:min-h-0')}
+  >
     <FaSync className={cn('text-xs', loading && 'animate-spin')} />
     {label}
   </button>
@@ -228,6 +240,10 @@ export const useErrorNotice = (): ErrorNotice => {
   return useMemo(() => Object.assign(notice, { reset }), [notice, reset]);
 };
 
+/**
+ * 列表分页：统一走 studioFeedback 的 StudioPager（FD-062）。
+ * 本组件只把 offset/limit 换算成页码，调用方不必改各自的分页状态。
+ */
 export const Pager: React.FC<{
   total: number;
   limit: number;
@@ -235,75 +251,51 @@ export const Pager: React.FC<{
   loading: boolean;
   onChange: (offset: number) => void;
 }> = ({ total, limit, offset, loading, onChange }) => {
-  const totalPages = Math.max(1, Math.ceil(total / Math.max(1, limit)));
-  const currentPage = Math.min(totalPages, Math.floor(offset / Math.max(1, limit)) + 1);
+  const pageSize = Math.max(1, limit);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(pageCount, Math.floor(offset / pageSize) + 1);
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <span className="text-xs text-slate-500">
-        共 {total.toLocaleString('zh-CN')} 条 · 第 {currentPage}/{totalPages} 页 · 每页 {limit} 条
-      </span>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(0)}
-          disabled={loading || offset <= 0}
-          className={studioSecondaryButtonClassName}
-        >
-          首页
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(0, offset - limit))}
-          disabled={loading || offset <= 0}
-          className={studioSecondaryButtonClassName}
-        >
-          上一页
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(offset + limit)}
-          disabled={loading || offset + limit >= total}
-          className={studioSecondaryButtonClassName}
-        >
-          下一页
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(0, (totalPages - 1) * limit))}
-          disabled={loading || offset + limit >= total}
-          className={studioSecondaryButtonClassName}
-        >
-          末页
-        </button>
-      </div>
-    </div>
+    <StudioPager
+      page={page}
+      pageSize={pageSize}
+      total={total}
+      loading={loading}
+      label="列表分页"
+      onPageChange={(next) => onChange(Math.max(0, (next - 1) * pageSize))}
+    />
   );
 };
 
+/**
+ * 表格内的四态：失败渲染成「什么都没有」会让管理员以为集合真的为空，
+ * 所以 error 走 StudioErrorState（带重试），empty 走 StudioEmptyState（必须给下一步）。
+ */
 export const TableState: React.FC<{
   loading: boolean;
   error: string | null;
   empty: boolean;
   emptyText: string;
   colSpan: number;
-}> = ({ loading, error, empty, emptyText, colSpan }) => (
+  onRetry?: () => void;
+}> = ({ loading, error, empty, emptyText, colSpan, onRetry }) => (
   <>
     {loading ? (
       <tr>
-        <td colSpan={colSpan} className="px-4 py-10 text-center text-slate-400">
-          正在读取……
+        <td colSpan={colSpan} className="px-4 py-6">
+          <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取……" />
         </td>
       </tr>
     ) : error ? (
       <tr>
-        <td colSpan={colSpan} className="px-4 py-10 text-center text-rose-600">
-          {error}
+        <td colSpan={colSpan} className="px-4 py-6">
+          <StudioErrorState message={error} onRetry={onRetry} />
         </td>
       </tr>
     ) : empty ? (
       <tr>
-        <td colSpan={colSpan} className="px-4 py-10 text-center text-slate-500">
-          {emptyText}
+        <td colSpan={colSpan} className="px-4 py-6">
+          <StudioEmptyState className="py-10" message={emptyText} />
         </td>
       </tr>
     ) : null}
@@ -311,7 +303,7 @@ export const TableState: React.FC<{
 );
 
 const decisionNoteClass =
-  'flex items-start gap-1.5 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-800';
+  'flex items-start gap-1.5 rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-800';
 
 /**
  * 一条决策的完整字段。`derived` 表示这是按当前配置重算的结果，不是当时的记录 —— 必须显式告知。
@@ -325,7 +317,7 @@ export const DecisionBlock: React.FC<{
 }> = ({ decision, derived = false, missingText }) => {
   if (!decision) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
         {missingText ?? '这条记录写入时还没有 decision 字段（本面板上线前的旧数据）。'}
       </div>
     );
@@ -479,7 +471,7 @@ export const KeyField: React.FC<{
   masked: string;
   hint?: string;
 }> = ({ label, has, masked, hint }) => (
-  <div className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2">
+  <div className="rounded-2xl border border-slate-200 bg-white/70 px-3 py-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-slate-500">{label}</span>
       {has ? (

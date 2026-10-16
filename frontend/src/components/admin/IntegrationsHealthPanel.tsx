@@ -5,7 +5,6 @@ import {
   FaBoxOpen,
   FaDatabase,
   FaEnvelopeOpenText,
-  FaExclamationTriangle,
   FaGlobe,
   FaLayerGroup,
   FaLightbulb,
@@ -27,7 +26,8 @@ import {
 } from '@/api/integrations';
 import { useNotification } from '@/components/Notification';
 import { useConfirm } from '@/components/confirm/ConfirmDialogProvider';
-import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell, InfoSectionTitle } from '@/components/studioTheme';
+import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell, InfoSectionTitle, studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '@/components/studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
 
@@ -38,6 +38,9 @@ import { getBackendErrorMessage } from '@/utils/backendError';
  */
 
 type TabKey = 'overview' | 'cache' | 'email' | 'webhooks' | 'recommendations' | 'invites';
+
+/** 需要各自独立拉取（也因此需要各自独立 loading/error）的下钻 tab。 */
+type SectionTab = 'email' | 'webhooks' | 'invites' | 'recommendations';
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: React.ReactNode; hint: string }> = [
   { key: 'overview', label: '总览', icon: <FaLayerGroup />, hint: '五个集成面的关键指标' },
@@ -90,8 +93,15 @@ const IntegrationsHealthPanel: React.FC = () => {
 
   const [overview, setOverview] = useState<IntegrationsOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  // 「Webhook 端点健康」列表的拉取错误态（与空态区分，失败时保留已有数据）
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // 四个下钻 tab 各自独立的拉取状态：失败不能渲染成「名单为空」这类空态。
+  const [sectionLoading, setSectionLoading] = useState<Record<SectionTab, boolean>>({
+    email: false,
+    webhooks: false,
+    invites: false,
+    recommendations: false,
+  });
+  const [sectionError, setSectionError] = useState<{ tab: SectionTab; message: string } | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const requestRef = useRef(0);
@@ -124,6 +134,7 @@ const IntegrationsHealthPanel: React.FC = () => {
     const requestId = ++requestRef.current;
     setLoading(true);
     try {
+      setOverviewError(null);
       const res = await integrationsApi.overview();
       if (requestId !== requestRef.current) return;
       setOverview(res);
@@ -131,12 +142,19 @@ const IntegrationsHealthPanel: React.FC = () => {
     } catch (error) {
       if (requestId !== requestRef.current) return;
       notifyError(error, '加载集成总览失败');
+      setOverviewError(getBackendErrorMessage(error, '获取集成总览失败，请稍后重试'));
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }
   }, [notifyError]);
 
+  const markSection = useCallback((tab: SectionTab, loadingNow: boolean) => {
+    setSectionLoading((current) => ({ ...current, [tab]: loadingNow }));
+    if (loadingNow) setSectionError((prev) => (prev?.tab === tab ? null : prev));
+  }, []);
+
   const loadSuppressions = useCallback(async () => {
+    markSection('email', true);
     try {
       const res = await integrationsApi.listSuppressions({
         page: 1,
@@ -147,36 +165,49 @@ const IntegrationsHealthPanel: React.FC = () => {
       setSuppressions(res);
     } catch (error) {
       notifyError(error, '加载邮件抑制名单失败');
+      setSectionError({ tab: 'email', message: getBackendErrorMessage(error, '获取邮件抑制名单失败，请稍后重试') });
+    } finally {
+      markSection('email', false);
     }
-  }, [notifyError, suppressionQuery, suppressionReason]);
+  }, [markSection, notifyError, suppressionQuery, suppressionReason]);
 
   const loadWebhooks = useCallback(async () => {
+    markSection('webhooks', true);
     try {
-      setLoadError(null);
       setWebhooks(await integrationsApi.webhooks());
     } catch (error) {
       notifyError(error, '加载 Webhook 健康信息失败');
-      setLoadError(getBackendErrorMessage(error, '获取 Webhook 健康信息失败，请稍后重试'));
+      setSectionError({ tab: 'webhooks', message: getBackendErrorMessage(error, '获取 Webhook 健康信息失败，请稍后重试') });
+    } finally {
+      markSection('webhooks', false);
     }
-  }, [notifyError]);
+  }, [markSection, notifyError]);
 
   const loadInvites = useCallback(async () => {
+    markSection('invites', true);
     try {
       const res = await integrationsApi.invites();
       setInvites(res.stats);
     } catch (error) {
       notifyError(error, '加载邀请码统计失败');
+      setSectionError({ tab: 'invites', message: getBackendErrorMessage(error, '获取邀请码统计失败，请稍后重试') });
+    } finally {
+      markSection('invites', false);
     }
-  }, [notifyError]);
+  }, [markSection, notifyError]);
 
   const loadRecommendations = useCallback(async () => {
+    markSection('recommendations', true);
     try {
       const res = await integrationsApi.recommendations();
       setRecommendations(res.analytics);
     } catch (error) {
       notifyError(error, '加载推荐分析失败');
+      setSectionError({ tab: 'recommendations', message: getBackendErrorMessage(error, '获取推荐分析失败，请稍后重试') });
+    } finally {
+      markSection('recommendations', false);
     }
-  }, [notifyError]);
+  }, [markSection, notifyError]);
 
   useEffect(() => {
     void loadOverview();
@@ -350,7 +381,7 @@ const IntegrationsHealthPanel: React.FC = () => {
             type="button"
             onClick={() => setRefreshNonce((current) => current + 1)}
             disabled={loading || busy}
-            className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            className={studioPrimaryButtonClassName}
           >
             <FaSync className={cn((loading || busy) && 'animate-spin')} /> 刷新
           </button>
@@ -365,7 +396,7 @@ const IntegrationsHealthPanel: React.FC = () => {
             title={item.hint}
             onClick={() => setTab(item.key)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition',
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               tab === item.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
             )}
           >
@@ -376,7 +407,13 @@ const IntegrationsHealthPanel: React.FC = () => {
       </div>
 
       <div className="mt-5 space-y-5">
-        {tab === 'overview' ? (
+        {overviewError && !overview ? (
+          <StudioErrorState message={overviewError} onRetry={() => void loadOverview()} />
+        ) : loading && !overview ? (
+          <StudioLoadingState minHeightClassName="min-h-[280px]" text="正在读取集成总览…" />
+        ) : null}
+
+        {tab === 'overview' && (overview || (!loading && !overviewError)) ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <InfoMetricCard
@@ -391,7 +428,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                 value={overview?.webhooks ? overview.webhooks.total7d : '—'}
                 detail={overview?.webhooks ? `24h ${overview.webhooks.last24h} · 失败 ${overview.webhooks.failed}` : '暂无数据'}
                 icon={FaPlug}
-                tone="violet"
+                tone="sky"
               />
               <InfoMetricCard
                 label="邮件抑制"
@@ -414,7 +451,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                 title="Webhook 端点"
                 description="按 routeKey 聚合近 7 天事件量、失败率与最近一次到达时间；「密钥」列表示该端点是否已配置签名密钥（只看有无，不显示密钥内容）。"
                 icon={FaPlug}
-                tone="violet"
+                tone="sky"
               />
               {overview?.webhooks && overview.webhooks.routes.length > 0 ? (
                 <div className="overflow-x-auto">
@@ -448,7 +485,10 @@ const IntegrationsHealthPanel: React.FC = () => {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">近 7 天没有收到任何 Webhook 事件。</p>
+                <StudioEmptyState
+                  className="py-8"
+                  message="近 7 天没有收到任何 Webhook 事件。新接入的端点触发一次事件后会出现在这里。"
+                />
               )}
             </InfoPanel>
 
@@ -478,12 +518,12 @@ const IntegrationsHealthPanel: React.FC = () => {
           </>
         ) : null}
 
-        {tab === 'cache' ? (
+        {tab === 'cache' && (overview || (!loading && !overviewError)) ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <InfoMetricCard label="缓存分层" value={cacheStats ? (cacheStats.tier === 'redis' ? 'Redis' : '内存') : '—'} detail={redisStatus ? (redisStatus.available ? 'Redis 可用' : 'Redis 不可用，已降级') : ''} icon={FaDatabase} tone="sky" />
               <InfoMetricCard label="命中率" value={cacheStats ? formatPct(cacheStats.hitRate) : '—'} detail={cacheStats ? `${cacheStats.hits} 命中 / ${cacheStats.misses} 未命中` : ''} icon={FaBoxOpen} tone="emerald" />
-              <InfoMetricCard label="进程内存条目" value={cacheStats ? cacheStats.memoryEntries : '—'} detail={cacheStats ? `在飞回源 ${cacheStats.inflight}` : ''} icon={FaLayerGroup} tone="violet" />
+              <InfoMetricCard label="进程内存条目" value={cacheStats ? cacheStats.memoryEntries : '—'} detail={cacheStats ? `在飞回源 ${cacheStats.inflight}` : ''} icon={FaLayerGroup} tone="sky" />
               <InfoMetricCard label="Redis 键总数" value={overview?.cache?.server.dbsize ?? '—'} detail={`内存占用 ${formatBytes(overview?.cache?.server.usedMemoryBytes ?? null)}`} icon={FaDatabase} tone="amber" />
             </div>
 
@@ -494,14 +534,15 @@ const IntegrationsHealthPanel: React.FC = () => {
                   value={cachePrefix}
                   onChange={(event) => setCachePrefix(event.target.value)}
                   placeholder="例如 recommendation:user"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 sm:max-w-sm"
+                  aria-label="要失效的缓存前缀"
+                  className={`${studioFieldClassName} sm:max-w-sm`}
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={handleInvalidateCache}
                     disabled={busy || cachePrefix.trim().length < 3}
-                    className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                    className={studioDangerButtonClassName}
                   >
                     失效前缀
                   </button>
@@ -509,7 +550,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                     type="button"
                     onClick={handleFlushMemory}
                     disabled={busy}
-                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                    className={studioSecondaryButtonClassName}
                   >
                     清空本进程内存
                   </button>
@@ -536,12 +577,14 @@ const IntegrationsHealthPanel: React.FC = () => {
                   value={newEmail}
                   onChange={(event) => setNewEmail(event.target.value)}
                   placeholder="user@example.com"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 sm:max-w-sm"
+                  aria-label="要抑制的邮箱"
+                  className={`${studioFieldClassName} sm:max-w-sm`}
                 />
                 <select
                   value={newReason}
                   onChange={(event) => setNewReason(event.target.value as SuppressionReason)}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  aria-label="加入抑制名单的原因"
+                  className={`${studioFieldClassName} sm:w-40`}
                 >
                   <option value="manual">人工添加</option>
                   <option value="bounce">退信</option>
@@ -552,7 +595,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                   type="button"
                   onClick={handleAddSuppression}
                   disabled={busy}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                  className={studioPrimaryButtonClassName}
                 >
                   加入名单
                 </button>
@@ -566,12 +609,14 @@ const IntegrationsHealthPanel: React.FC = () => {
                   value={suppressionQuery}
                   onChange={(event) => setSuppressionQuery(event.target.value)}
                   placeholder="按邮箱搜索"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 sm:max-w-xs"
+                  aria-label="按邮箱搜索抑制名单"
+                  className={`${studioFieldClassName} sm:max-w-xs`}
                 />
                 <select
                   value={suppressionReason}
                   onChange={(event) => setSuppressionReason(event.target.value)}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  aria-label="按原因筛选抑制名单"
+                  className={`${studioFieldClassName} sm:w-40`}
                 >
                   <option value="">全部原因</option>
                   {Object.entries(REASON_LABELS).map(([value, label]) => (
@@ -583,13 +628,18 @@ const IntegrationsHealthPanel: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => void loadSuppressions()}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  disabled={sectionLoading.email}
+                  className={studioSecondaryButtonClassName}
                 >
                   查询
                 </button>
               </div>
 
-              {suppressions && suppressions.items.length > 0 ? (
+              {sectionError?.tab === 'email' && !suppressions ? (
+                <StudioErrorState message={sectionError.message} onRetry={() => void loadSuppressions()} />
+              ) : sectionLoading.email && !suppressions ? (
+                <StudioLoadingState minHeightClassName="min-h-[200px]" text="正在读取抑制名单…" />
+              ) : suppressions && suppressions.items.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[640px] text-sm">
                     <thead>
@@ -615,7 +665,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                               type="button"
                               onClick={() => void handleRemoveSuppression(row.email)}
                               disabled={busy}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+                              className="inline-flex min-h-11 items-center gap-1 rounded-full border border-slate-300 px-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:opacity-50 sm:min-h-0 sm:py-1"
                             >
                               <FaTrashAlt /> 移出
                             </button>
@@ -626,7 +676,10 @@ const IntegrationsHealthPanel: React.FC = () => {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">名单为空，或当前筛选没有匹配记录。</p>
+                <StudioEmptyState
+                  className="py-10"
+                  message="抑制名单为空。在上方填入邮箱即可手动加入；退信与投诉会由系统自动记录。"
+                />
               )}
               {suppressions && suppressions.total > suppressions.items.length ? (
                 <p className="mt-3 text-xs text-slate-500">
@@ -642,22 +695,14 @@ const IntegrationsHealthPanel: React.FC = () => {
             <InfoPanel>
               <InfoSectionTitle
                 title="端点健康"
-                description="失败 = 事件状态属于 failed / error / bounced / complained / delivery_delayed。"
+                description="失败 = 近 7 天未成功投递的事件。"
                 icon={FaPlug}
-                tone="violet"
+                tone="sky"
               />
-              {loadError ? (
-                <div className="flex flex-col items-center gap-3 py-8 text-center">
-                  <FaExclamationTriangle className="text-2xl text-rose-500" />
-                  <p className="text-sm text-slate-500">{loadError}</p>
-                  <button
-                    type="button"
-                    onClick={() => void loadWebhooks()}
-                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                  >
-                    重试
-                  </button>
-                </div>
+              {sectionError?.tab === 'webhooks' && !webhooks ? (
+                <StudioErrorState message={sectionError.message} onRetry={() => void loadWebhooks()} />
+              ) : sectionLoading.webhooks && !webhooks ? (
+                <StudioLoadingState minHeightClassName="min-h-[220px]" text="正在读取端点健康…" />
               ) : webhooks && webhooks.routes.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[560px] text-sm">
@@ -690,7 +735,10 @@ const IntegrationsHealthPanel: React.FC = () => {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">近 7 天没有收到任何 Webhook 事件。</p>
+                <StudioEmptyState
+                  className="py-8"
+                  message="近 7 天没有收到任何 Webhook 事件。新接入的端点触发一次事件后会出现在这里。"
+                />
               )}
             </InfoPanel>
 
@@ -712,14 +760,14 @@ const IntegrationsHealthPanel: React.FC = () => {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-slate-500">数据库里没有存过签名密钥（可能只配了环境变量）。</p>
+                <p className="text-sm text-slate-500">没有存过签名密钥（可能只配了环境变量）。</p>
               )}
             </InfoPanel>
 
             <InfoPanel>
               <InfoSectionTitle
                 title="事件保留清理"
-                description="按天清理历史事件。默认「预检」只统计条数，不删除；确认后再执行实际删除。"
+                description="按天清理历史事件，避免存储无限增长。默认「预检」只统计条数，不删除；确认后再执行实际删除。"
                 icon={FaTrashAlt}
                 tone="rose"
               />
@@ -732,7 +780,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                     max={3650}
                     value={pruneDays}
                     onChange={(event) => setPruneDays(Number(event.target.value) || 90)}
-                    className="w-24 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    className={`${studioFieldClassName} w-24`}
                   />
                   天
                 </label>
@@ -745,8 +793,8 @@ const IntegrationsHealthPanel: React.FC = () => {
                   onClick={handlePrune}
                   disabled={busy}
                   className={cn(
-                    'rounded-xl px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50',
-                    pruneDryRun ? 'bg-slate-900 hover:bg-slate-800' : 'bg-rose-600 hover:bg-rose-700',
+                    pruneDryRun ? studioPrimaryButtonClassName : studioDangerButtonClassName,
+                    'disabled:opacity-50',
                   )}
                 >
                   {pruneDryRun ? '预检' : '执行清理'}
@@ -756,7 +804,15 @@ const IntegrationsHealthPanel: React.FC = () => {
           </>
         ) : null}
 
-        {tab === 'recommendations' ? (
+        {tab === 'recommendations' && sectionError?.tab === 'recommendations' && !recommendations ? (
+          <StudioErrorState message={sectionError.message} onRetry={() => void loadRecommendations()} />
+        ) : null}
+
+        {tab === 'recommendations' && sectionLoading.recommendations && !recommendations ? (
+          <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取推荐分析…" />
+        ) : null}
+
+        {tab === 'recommendations' && recommendations ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <InfoMetricCard label="活跃用户" value={recommendations?.totalUsers ?? '—'} detail="有生成历史的用户数" icon={FaUsers} tone="emerald" />
@@ -773,7 +829,7 @@ const IntegrationsHealthPanel: React.FC = () => {
 
             <div className="grid gap-5 lg:grid-cols-2">
               <InfoPanel>
-                <InfoSectionTitle title="热门风格" description="按生成记录次数统计的前 10 个风格。" icon={FaLightbulb} tone="violet" />
+                <InfoSectionTitle title="热门风格" description="按生成记录次数统计的前 10 个风格。" icon={FaLightbulb} tone="sky" />
                 {recommendations && recommendations.topStyles.length > 0 ? (
                   <ul className="space-y-2 text-sm">
                     {recommendations.topStyles.map((row) => (
@@ -784,7 +840,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">暂无数据。</p>
+                  <StudioEmptyState className="py-6" message="暂无数据。" />
                 )}
               </InfoPanel>
 
@@ -800,17 +856,25 @@ const IntegrationsHealthPanel: React.FC = () => {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">暂无数据。</p>
+                  <StudioEmptyState className="py-6" message="暂无数据。" />
                 )}
               </InfoPanel>
             </div>
           </>
         ) : null}
 
-        {tab === 'invites' ? (
+        {tab === 'invites' && sectionError?.tab === 'invites' && !invites ? (
+          <StudioErrorState message={sectionError.message} onRetry={() => void loadInvites()} />
+        ) : null}
+
+        {tab === 'invites' && sectionLoading.invites && !invites ? (
+          <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取邀请码统计…" />
+        ) : null}
+
+        {tab === 'invites' && invites ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <InfoMetricCard label="邀请码总数" value={invites?.total ?? '—'} detail={invites ? `启用 ${invites.active} · 已过期 ${invites.expired}` : ''} icon={FaUsers} tone="violet" />
+              <InfoMetricCard label="邀请码总数" value={invites?.total ?? '—'} detail={invites ? `启用 ${invites.active} · 已过期 ${invites.expired}` : ''} icon={FaUsers} tone="sky" />
               <InfoMetricCard label="累计使用" value={invites?.totalUses ?? '—'} detail={invites ? `剩余可用次数 ${invites.remainingUses}` : ''} icon={FaEnvelopeOpenText} tone="sky" />
               <InfoMetricCard label="已用尽" value={invites?.exhausted ?? '—'} detail="达到最大使用次数" icon={FaBoxOpen} tone="amber" />
               <InfoMetricCard label="近 30 天使用" value={invites ? invites.trend.reduce((sum, row) => sum + row.uses, 0) : '—'} detail="按天聚合的注册用量" icon={FaLightbulb} tone="emerald" />
@@ -818,7 +882,7 @@ const IntegrationsHealthPanel: React.FC = () => {
 
             <div className="grid gap-5 lg:grid-cols-2">
               <InfoPanel>
-                <InfoSectionTitle title="用量最高的邀请码" icon={FaUsers} tone="violet" />
+                <InfoSectionTitle title="用量最高的邀请码" icon={FaUsers} tone="sky" />
                 {invites && invites.topCodes.length > 0 ? (
                   <ul className="space-y-2 text-sm">
                     {invites.topCodes.map((row) => (
@@ -832,7 +896,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">暂无数据。</p>
+                  <StudioEmptyState className="py-6" message="暂无数据。" />
                 )}
               </InfoPanel>
 
@@ -851,7 +915,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-slate-500">暂无数据。</p>
+                  <StudioEmptyState className="py-6" message="暂无数据。" />
                 )}
               </InfoPanel>
             </div>

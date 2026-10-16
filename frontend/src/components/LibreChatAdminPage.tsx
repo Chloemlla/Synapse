@@ -301,7 +301,7 @@ const LibreChatAdminPage: React.FC = () => {
           transition={{ duration: 0.6 }}
         >
           {/* 危险操作提示 */}
-          <div className="mb-4 p-3 rounded-2xl border border-red-200 bg-red-50 text-red-700 text-sm">
+          <div className="mb-4 p-3 rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 text-sm">
             危险操作提示：点击 “删除全部” 将清空所有用户的聊天历史（无需选择）。
           </div>
 
@@ -322,7 +322,7 @@ const LibreChatAdminPage: React.FC = () => {
               </motion.button>
               {users.length > 0 && (
                 <motion.button
-                  className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 transition flex items-center gap-1"
+                  className="inline-flex items-center gap-1 rounded-2xl bg-emerald-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-emerald-700"
                   onClick={async () => {
                     try {
                       const allUserIds = users.map(u => u.userId).join('\n');
@@ -344,7 +344,7 @@ const LibreChatAdminPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-blue-600">已选择 {selectedUserIds.length} 个用户</span>
                   <motion.button
-                    className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition flex items-center gap-1"
+                    className="inline-flex items-center gap-1 rounded-2xl bg-rose-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-rose-700"
                     onClick={handleBatchDelete}
                     disabled={actionLoading}
                     whileTap={{ scale: 0.95 }}
@@ -429,7 +429,7 @@ const LibreChatAdminPage: React.FC = () => {
               </label>
               {canWrite && (
               <motion.button
-                className="px-6 py-2 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition font-medium flex items-center gap-2"
+                className="inline-flex items-center gap-2 rounded-2xl bg-rose-600 px-6 py-2 font-semibold text-white transition hover:bg-rose-700"
                 onClick={handleDeleteAll}
                 disabled={loading || actionLoading}
                 title="删除所有用户历史（无需选择）"
@@ -519,7 +519,7 @@ const LibreChatAdminPage: React.FC = () => {
                         复制ID
                       </motion.button>
                       <motion.button
-                        className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition flex items-center gap-1"
+                        className="inline-flex items-center gap-1 rounded-2xl bg-rose-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-rose-700"
                         onClick={handleBatchDelete}
                         disabled={selectedUserIds.length === 0 || actionLoading}
                         whileTap={{ scale: 0.95 }}
@@ -588,7 +588,7 @@ const LibreChatAdminPage: React.FC = () => {
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-slate-600">
                               <div className="flex items-center gap-1">
-                                <FaComments className="text-green-500" />
+                                <FaComments className="text-emerald-500" aria-hidden />
                                 <span>{u.total} 条消息</span>
                               </div>
                               <div className="flex items-center gap-1">
@@ -610,7 +610,7 @@ const LibreChatAdminPage: React.FC = () => {
                           </motion.button>
                           {canWrite && (
                           <motion.button
-                            className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition flex items-center gap-1"
+                            className="inline-flex items-center gap-1 rounded-2xl bg-rose-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-rose-700"
                             onClick={() => onDeleteUser(u)}
                             disabled={actionLoading}
                             whileTap={{ scale: 0.95 }}
@@ -667,7 +667,7 @@ const LibreChatAdminPage: React.FC = () => {
             </h3>
             {history.length > 0 && (
               <motion.button
-                className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 transition flex items-center gap-1"
+                className="inline-flex items-center gap-1 rounded-2xl bg-emerald-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-emerald-700"
                 onClick={async () => {
                   try {
                     const allMessages = history.map(m => 
@@ -762,7 +762,7 @@ const LibreChatAdminPage: React.FC = () => {
                           <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
                             m.role === 'user' 
                               ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-green-100 text-green-800'
+                              : 'bg-emerald-100 text-emerald-800'
                           }`}>
                             {m.role === 'user' ? '用户' : '助手'}
                           </span>

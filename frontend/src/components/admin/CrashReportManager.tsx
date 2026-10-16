@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FaExclamationTriangle, FaSync } from 'react-icons/fa';
 import { crashReportsApi, type CrashGroup, type FullCrashReport } from '@/api/crashReports';
 import { useNotification } from '@/components/Notification';
-import { InfoPanel, InfoPrimaryButton, InfoQueryShell } from '@/components/studioTheme';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import CrashGroupDetailView from './crash-reports/CrashGroupDetailView';
 import CrashGroupListView from './crash-reports/CrashGroupListView';
@@ -31,6 +29,8 @@ const CrashReportManager: React.FC = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportLoadingMore, setReportLoadingMore] = useState(false);
   const [reportUpdatedAt, setReportUpdatedAt] = useState<number | null>(null);
+  // 崩溃报告的报告列表拉取失败时，也把错误交给详情视图渲染（与空态分开，带重试）。
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const groupRequestRef = useRef(0);
@@ -72,6 +72,7 @@ const CrashReportManager: React.FC = () => {
       if (mode === 'append') setReportLoadingMore(true);
       else setReportLoading(true);
       try {
+        setReportError(null);
         const res = await crashReportsApi.getGroupReports(groupKey, {
           limit: REPORT_PAGE_SIZE,
           offset,
@@ -85,6 +86,7 @@ const CrashReportManager: React.FC = () => {
       } catch (error) {
         if (requestId !== reportRequestRef.current) return;
         setNotification({ message: getBackendErrorMessage(error, '加载崩溃报告失败'), type: 'error' });
+        setReportError(getBackendErrorMessage(error, '获取崩溃报告失败，请稍后重试'));
       } finally {
         if (requestId === reportRequestRef.current) {
           setReportLoading(false);
@@ -158,6 +160,7 @@ const CrashReportManager: React.FC = () => {
         loadingMore={reportLoadingMore}
         lastUpdatedAt={reportUpdatedAt}
         deviceFilter={deviceFilter}
+        error={reportError}
         searchInputRef={searchInputRef}
         onBack={() => setSelectedGroup(null)}
         onRefresh={refresh}
@@ -167,30 +170,12 @@ const CrashReportManager: React.FC = () => {
     );
   }
 
-  // 崩溃组列表拉取失败且无任何数据时，渲染独立错误面板（与「暂无崩溃报告」空态区分），并提供重试。
-  // 注：列表本身的渲染在 CrashGroupListView 内，此处以整体错误态替代，避免错误与空态共用同一块 UI。
-  if (loadError && groups.length === 0) {
-    return (
-      <InfoQueryShell>
-        <InfoPanel className="mt-6">
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <FaExclamationTriangle className="text-2xl text-rose-500" />
-            <p className="text-sm font-semibold text-slate-700">崩溃报告加载失败</p>
-            <p className="text-sm text-slate-500">{loadError}</p>
-            <InfoPrimaryButton onClick={() => void loadGroups()}>
-              <FaSync /> 重试
-            </InfoPrimaryButton>
-          </div>
-        </InfoPanel>
-      </InfoQueryShell>
-    );
-  }
-
   return (
     <CrashGroupListView
       groups={groups}
       total={total}
       loading={loading}
+      error={loadError}
       query={query}
       autoRefreshMs={autoRefreshMs}
       lastUpdatedAt={lastUpdatedAt}

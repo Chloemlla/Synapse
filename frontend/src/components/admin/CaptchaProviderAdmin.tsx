@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaCheckCircle, FaCloudUploadAlt, FaExclamationTriangle, FaLock, FaSync } from 'react-icons/fa';
-import { SimpleLoadingSpinner } from '@/components/LoadingSpinner';
+import { StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { useNotification } from '@/components/Notification';
 import { useConfirm } from '@/components/confirm/ConfirmDialogProvider';
 import {
@@ -487,30 +487,17 @@ export default function CaptchaProviderAdmin() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <SimpleLoadingSpinner size={0.75} />
-      </div>
+      <StudioLoadingState minHeightClassName="min-h-[40vh]" text="正在读取人机验证配置…" />
     );
   }
 
   if (!overview || !drafts || !policy || !widgets) {
     return (
       <div className={`${studioPanelClassName} p-6`}>
-        <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2 text-sm text-rose-700">
-            <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span>{loadError || '获取人机验证配置失败，请稍后重试'}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadAll()}
-            disabled={loading || refreshing}
-            className={studioSecondaryButtonClassName}
-          >
-            <FaSync className="mr-2 inline h-3.5 w-3.5" />
-            重试
-          </button>
-        </div>
+        <StudioErrorState
+          message={loadError || '获取人机验证配置失败，请稍后重试'}
+          onRetry={() => void loadAll()}
+        />
       </div>
     );
   }
@@ -555,15 +542,16 @@ export default function CaptchaProviderAdmin() {
           </div>
         </div>
 
-        <nav className="mt-4 flex flex-wrap gap-2" aria-label="人机验证控制台页签">
+        <nav className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="人机验证控制台页签">
           {TABS.map((entry) => (
             <button
               key={entry.key}
               type="button"
+              role="tab"
               onClick={() => setTab(entry.key)}
-              aria-current={tab === entry.key}
-              className={`rounded-full border px-4 py-2 text-xs font-medium transition ${
-                tab === entry.key ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-400'
+              aria-selected={tab === entry.key}
+              className={`inline-flex min-h-11 items-center rounded-full border px-4 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 ${
+                tab === entry.key ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-400'
               }`}
             >
               {entry.label}

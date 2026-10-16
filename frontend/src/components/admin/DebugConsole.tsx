@@ -13,6 +13,7 @@ import {
   studioFieldClassName,
   studioSecondaryButtonClassName,
 } from '../studioTheme';
+import { StudioEmptyState } from '../studioFeedback';
 
 /**
  * `/admin/debug-console` — Passkey 调试控制台。
@@ -134,7 +135,12 @@ const DebugConsole: React.FC = () => {
         ) : (
           <ul className="mt-4 space-y-2">
             {filtered.length === 0 ? (
-              <li className="py-6 text-center text-sm text-slate-500">没有匹配当前关键词的记录</li>
+              <li>
+                <StudioEmptyState
+                  className="py-6"
+                  message="没有匹配当前关键词的记录。换个关键词，或清空筛选框查看全部。"
+                />
+              </li>
             ) : null}
             {filtered.map((entry, index) => (
               <li key={`${entry.timestamp}-${index}`} className="rounded-2xl border border-slate-200 bg-white/80 p-3">

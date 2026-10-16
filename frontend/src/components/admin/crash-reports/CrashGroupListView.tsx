@@ -1,12 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FaAngleDoubleLeft,
-  FaAngleDoubleRight,
   FaBug,
   FaChevronDown,
-  FaChevronLeft,
-  FaChevronRight,
   FaChevronUp,
   FaClock,
   FaExclamationTriangle,
@@ -27,7 +23,16 @@ import {
   InfoQueryHero,
   InfoQueryShell,
   studioFieldClassName,
+  studioGhostButtonClassName,
 } from '@/components/studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioPager,
+} from '@/components/studioFeedback';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import {
   AUTO_REFRESH_OPTIONS,
   GROUP_SORTS,
@@ -45,6 +50,8 @@ interface Props {
   groups: CrashGroup[];
   total: number;
   loading: boolean;
+  /** 列表拉取失败：必须与「本来就没有」的空态分开渲染。 */
+  error?: string | null;
   query: GroupQueryState;
   autoRefreshMs: number;
   lastUpdatedAt: number | null;
@@ -59,6 +66,7 @@ const CrashGroupListView: React.FC<Props> = ({
   groups,
   total,
   loading,
+  error = null,
   query,
   autoRefreshMs,
   lastUpdatedAt,
@@ -102,7 +110,6 @@ const CrashGroupListView: React.FC<Props> = ({
 
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
   const currentPage = Math.min(totalPages, Math.floor(query.offset / query.pageSize) + 1);
-  const lastOffset = Math.max(0, (totalPages - 1) * query.pageSize);
 
   const toggleExpanded = (groupKey: string) =>
     setExpandedKeys((current) => {
@@ -135,7 +142,7 @@ const CrashGroupListView: React.FC<Props> = ({
       <InfoQueryHero
         eyebrow="崩溃报告"
         title="Lumen 崩溃报告"
-        description="聚合 Lumen 应用与匿名 crash-sdk 通道（/api/crash-sdk/v1/crash-report）的崩溃数据。筛选、排序、搜索均由服务端执行，作用于全部崩溃组而非当前页。"
+        description="聚合 Lumen 应用与匿名崩溃 SDK 两个来源上报的崩溃数据。筛选、排序、搜索作用于全部崩溃组，而非仅当前页。"
         icon={FaBug}
         meta={
           <>
@@ -176,7 +183,7 @@ const CrashGroupListView: React.FC<Props> = ({
                 type="button"
                 onClick={() => setDraftSearch('')}
                 title="清空搜索"
-                className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -193,7 +200,7 @@ const CrashGroupListView: React.FC<Props> = ({
               placeholder="按设备 ID 筛选（支持前缀）"
               aria-label="按设备 ID 筛选"
               className={`${studioFieldClassName} ${
-                query.device ? 'border-indigo-300 bg-indigo-50/60' : ''
+                query.device ? 'border-sky-300 bg-sky-50/60' : ''
               }`}
             />
             {draftDevice ? (
@@ -201,7 +208,7 @@ const CrashGroupListView: React.FC<Props> = ({
                 type="button"
                 onClick={() => setDraftDevice('')}
                 title="清空设备筛选"
-                className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -211,18 +218,18 @@ const CrashGroupListView: React.FC<Props> = ({
 
         {query.device ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+            <span className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 sm:min-h-0">
               <FaMobileAlt />
               <span className="font-mono" title={query.device}>
                 {shortKey(query.device, 20)}
               </span>
-              <span className="font-normal text-indigo-500">命中 {total.toLocaleString()} 个崩溃组</span>
+              <span className="font-normal text-sky-600">命中 {total.toLocaleString()} 个崩溃组</span>
               <button
                 type="button"
                 onClick={() => onQueryChange({ device: '', offset: 0 })}
                 title="清除设备筛选"
                 aria-label="清除设备筛选"
-                className="inline-flex items-center justify-center rounded-lg p-0.5 transition hover:bg-indigo-100"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full transition hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -305,85 +312,60 @@ const CrashGroupListView: React.FC<Props> = ({
       </InfoPanel>
 
       <div className="mt-6 space-y-4">
-        {loading && groups.length === 0 ? (
-          <InfoPanel>
-            <div className="p-8 text-center text-slate-400">加载中...</div>
-          </InfoPanel>
+        {error && groups.length === 0 ? (
+          <StudioErrorState message={error} onRetry={onRefresh} />
+        ) : loading && groups.length === 0 ? (
+          <StudioLoadingState minHeightClassName="min-h-[280px]" text="正在读取崩溃组…" />
         ) : groups.length === 0 ? (
-          <InfoPanel>
-            <div className="p-8 text-center text-slate-400">
-              {query.search || query.risk || query.source || query.device
-                ? '当前筛选条件下没有崩溃组'
-                : '暂无崩溃报告'}
-            </div>
-          </InfoPanel>
+          <StudioEmptyState
+            message={
+              query.search || query.risk || query.source || query.device
+                ? '当前筛选条件下没有崩溃组。放宽筛选条件或清空搜索后再看。'
+                : '还没有崩溃上报。可以先刷新；或核对该应用的崩溃上报是否已经接入。'
+            }
+            action={
+              query.search || query.risk || query.source || query.device ? (
+                <button
+                  type="button"
+                  onClick={() => onQueryChange({ search: '', risk: '', source: '', device: '', offset: 0 })}
+                  className={studioGhostButtonClassName}
+                >
+                  清除筛选
+                </button>
+              ) : (
+                <button type="button" onClick={onRefresh} className={studioGhostButtonClassName}>
+                  <FaSync /> 刷新
+                </button>
+              )
+            }
+          />
         ) : (
-          groups.map((group) => (
-            <GroupCard
-              key={group.groupKey}
-              group={group}
-              expanded={expandedKeys.has(group.groupKey)}
-              onToggle={() => toggleExpanded(group.groupKey)}
-              onOpen={() => onOpenGroup(group.groupKey)}
-            />
-          ))
+          <>
+            {error ? <StudioErrorNote>{error}</StudioErrorNote> : null}
+            {groups.map((group) => (
+              <GroupCard
+                key={group.groupKey}
+                group={group}
+                expanded={expandedKeys.has(group.groupKey)}
+                onToggle={() => toggleExpanded(group.groupKey)}
+                onOpen={() => onOpenGroup(group.groupKey)}
+              />
+            ))}
+          </>
         )}
       </div>
 
-      {total > query.pageSize ? (
-        <div className="mt-6 flex flex-col items-center justify-between gap-2 text-xs text-slate-500 sm:flex-row sm:text-sm">
-          <span>
-            共 {total.toLocaleString()} 个崩溃组，第 {currentPage}/{totalPages} 页
-          </span>
-          <div className="flex items-center gap-1">
-            <PagerButton title="首页" disabled={query.offset <= 0} onClick={() => onQueryChange({ offset: 0 })}>
-              <FaAngleDoubleLeft />
-            </PagerButton>
-            <PagerButton
-              title="上一页"
-              disabled={query.offset <= 0}
-              onClick={() => onQueryChange({ offset: Math.max(0, query.offset - query.pageSize) })}
-            >
-              <FaChevronLeft />
-            </PagerButton>
-            <PagerButton
-              title="下一页"
-              disabled={query.offset + query.pageSize >= total}
-              onClick={() => onQueryChange({ offset: query.offset + query.pageSize })}
-            >
-              <FaChevronRight />
-            </PagerButton>
-            <PagerButton
-              title="末页"
-              disabled={query.offset >= lastOffset}
-              onClick={() => onQueryChange({ offset: lastOffset })}
-            >
-              <FaAngleDoubleRight />
-            </PagerButton>
-          </div>
-        </div>
-      ) : null}
+      <StudioPager
+        page={currentPage}
+        pageSize={query.pageSize}
+        total={total}
+        loading={loading}
+        onPageChange={(page) => onQueryChange({ offset: (page - 1) * query.pageSize })}
+        label="崩溃组分页"
+      />
     </InfoQueryShell>
   );
 };
-
-const PagerButton: React.FC<{
-  title: string;
-  disabled: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}> = ({ title, disabled, onClick, children }) => (
-  <button
-    type="button"
-    title={title}
-    aria-label={title}
-    disabled={disabled}
-    onClick={onClick}
-    className="rounded-2xl border border-slate-200 bg-white/80 px-2 py-1 transition hover:bg-slate-100 disabled:opacity-40"
-  >
-    {children}
-  </button>
-);
 
 const GroupCard: React.FC<{
   group: CrashGroup;
@@ -391,6 +373,7 @@ const GroupCard: React.FC<{
   onToggle: () => void;
   onOpen: () => void;
 }> = ({ group, expanded, onToggle, onOpen }) => {
+  const reducedMotion = useReducedMotion();
   const risk = RISK_CONFIG[group.risk] || RISK_CONFIG.low;
   const frame = topFrame(group.cleanStack);
 
@@ -449,7 +432,7 @@ const GroupCard: React.FC<{
 
       {expanded ? (
         <motion.div
-          initial={{ opacity: 0, height: 0 }}
+          initial={reducedMotion ? false : { opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           className="mt-4 border-t border-slate-100 pt-4"
         >

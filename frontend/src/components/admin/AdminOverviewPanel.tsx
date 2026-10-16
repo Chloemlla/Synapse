@@ -20,6 +20,7 @@ import {
   InfoSectionTitle,
   studioSecondaryButtonClassName,
 } from '../studioTheme';
+import { StudioErrorNote, StudioLoadingState } from '../studioFeedback';
 
 /**
  * 管理总览的系统级汇总卡片。
@@ -110,9 +111,7 @@ const AdminOverviewPanel: React.FC = () => {
     return (
       <InfoPanel>
         <InfoSectionTitle eyebrow="Overview" title="系统概览" icon={FaChartLine} />
-        <div className="flex items-center justify-center py-8">
-          <div className="size-6 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
-        </div>
+        <StudioLoadingState minHeightClassName="min-h-[160px]" text="正在读取系统概览…" />
       </InfoPanel>
     );
   }
@@ -131,7 +130,7 @@ const AdminOverviewPanel: React.FC = () => {
             </button>
           }
         />
-        <p className="text-sm text-slate-500">系统概览暂时取不到数据，可稍后重试；其它面板不受影响。</p>
+        <StudioErrorNote>系统概览暂时取不到数据，可稍后重试；其它面板不受影响。</StudioErrorNote>
       </InfoPanel>
     );
   }
@@ -226,10 +225,10 @@ const AdminOverviewPanel: React.FC = () => {
         <p className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <InfoBadge tone="rose">需要关注</InfoBadge>
           近 24 小时有 {failures} 条失败审计记录
-          <Link to="/admin/audit-log" className="font-semibold text-indigo-600 hover:underline">
+          <Link to="/admin/audit-log" className="font-semibold text-sky-700 hover:underline">
             查看审计日志
           </Link>
-          <Link to="/admin/ip-ban" className="font-semibold text-indigo-600 hover:underline">
+          <Link to="/admin/ip-ban" className="font-semibold text-sky-700 hover:underline">
             查看封禁名单
           </Link>
         </p>

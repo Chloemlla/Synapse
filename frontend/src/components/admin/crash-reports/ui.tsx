@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaCheck, FaChevronDown, FaChevronUp, FaCopy, FaDownload } from 'react-icons/fa';
 import { useNotification } from '@/components/Notification';
-import { studioPillClassName, studioSecondaryButtonClassName } from '@/components/studioTheme';
+import { cn } from '@/utils/cn';
+import {
+  studioPillClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+} from '@/components/studioTheme';
 import { isAppFrame } from './format';
 
 /** navigator.clipboard is unavailable on plain-HTTP admin hosts, hence the fallback. */
@@ -62,14 +67,19 @@ export const CopyButton: React.FC<{
   message?: string;
   title?: string;
   className?: string;
-}> = ({ getValue, label, message = '已复制到剪贴板', title, className = '' }) => {
+  variant?: 'primary' | 'secondary';
+}> = ({ getValue, label, message = '已复制到剪贴板', title, className = '', variant = 'secondary' }) => {
   const { copied, run } = useCopyAction();
   return (
     <button
       type="button"
       title={title || label}
       onClick={() => void run(getValue(), message)}
-      className={`${chipButtonClass} ${copied ? 'border-emerald-200 text-emerald-700' : ''} ${className}`}
+      className={cn(
+        variant === 'primary' ? studioPrimaryButtonClassName : chipButtonClass,
+        copied && 'border-emerald-200 text-emerald-700',
+        className,
+      )}
     >
       {copied ? <FaCheck /> : <FaCopy />}
       {copied ? '已复制' : label}
@@ -85,7 +95,7 @@ export const CopyIconButton: React.FC<{ getValue: () => string; title: string }>
       title={title}
       aria-label={title}
       onClick={() => void run(getValue())}
-      className={`shrink-0 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
+      className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0 ${
         copied ? 'text-emerald-600' : ''
       }`}
     >
@@ -205,7 +215,7 @@ export const CollapsibleBlock: React.FC<{
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
-          className="inline-flex items-center gap-1 text-slate-500 transition hover:text-slate-700"
+          className="inline-flex min-h-11 items-center gap-1 text-slate-500 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0"
         >
           {open ? <FaChevronUp /> : <FaChevronDown />}
           {label}

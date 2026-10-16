@@ -5,7 +5,6 @@ import {
   FaCopy,
   FaDatabase,
   FaDownload,
-  FaExclamationTriangle,
   FaInfoCircle,
   FaKey,
   FaLock,
@@ -31,6 +30,12 @@ import {
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
 } from '../studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+} from '../studioFeedback';
 import { useAuth } from '../../hooks/useAuth';
 import { useSecuritySession } from '../../hooks/useSecuritySession';
 import { isSuperAdmin } from '../../utils/rbac';
@@ -225,7 +230,7 @@ export default function RedisDataBrowser() {
       <InfoSectionTitle
         eyebrow="Redis In-Store Data"
         title="Redis 在库数据"
-        description="只读浏览当前服务在 Redis 里的键与明文内容，并可导出全库快照。需要超级管理员身份 + 安全会话；列表用 SCAN 分页，不使用会阻塞实例的 KEYS。"
+        description="只读浏览当前服务在 Redis 里的键与明文内容，并可导出全库快照。需要超级管理员身份 + 安全会话；列表分页读取，不会阻塞实例。"
         icon={FaDatabase}
         action={<span className="text-xs text-slate-500">超管 · 安全会话 · 只读 · 操作审计</span>}
       />
@@ -245,20 +250,20 @@ export default function RedisDataBrowser() {
             <InfoMetricCard
               label="连接状态"
               value={overview?.status.available ? '可用' : overview?.status.configured ? '已配置未就绪' : '未配置'}
-              detail={overview?.status.ready ? 'ready' : overview?.status.enabled ? '已连接未就绪' : 'Redis 未启用'}
+              detail={overview?.status.ready ? '已就绪' : overview?.status.enabled ? '已连接未就绪' : 'Redis 未启用'}
               icon={FaDatabase}
             />
-            <InfoMetricCard label="键总数" value={overview?.dbsize ?? '未知'} detail="当前 DB 的 DBSIZE" icon={FaKey} />
+            <InfoMetricCard label="键总数" value={overview?.dbsize ?? '未知'} detail="当前数据库的键总数" icon={FaKey} />
             <InfoMetricCard
               label="内存占用"
               value={formatBytes(overview?.usedMemoryBytes)}
-              detail="used_memory"
+              detail="当前实例占用内存"
               icon={FaDatabase}
             />
             <InfoMetricCard
               label="浏览范围"
               value={scope?.restricted ? `${scope.prefixes.length} 个命名空间` : '整个当前 DB'}
-              detail={scope?.restricted ? 'ADMIN_REDIS_KEY_PREFIXES 已收紧' : '未配置前缀白名单'}
+              detail={scope?.restricted ? '已限制在允许的命名空间内' : '未配置命名空间白名单'}
               icon={FaSearch}
             />
           </div>
@@ -358,16 +363,7 @@ export default function RedisDataBrowser() {
           </div>
 
           {error ? (
-            <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-2 text-sm text-rose-700">
-                <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-              <button type="button" onClick={() => void load()} className={studioSecondaryButtonClassName}>
-                <FaSync className="h-4 w-4" />
-                重试
-              </button>
-            </div>
+            <StudioErrorState message={error} onRetry={() => void load()} />
           ) : null}
 
           {/* 键列表 */}
@@ -428,7 +424,7 @@ export default function RedisDataBrowser() {
                         <td className="px-3 py-2 text-right">
                           <button
                             type="button"
-                            className="text-xs text-sky-600 underline"
+                            className="inline-flex min-h-11 items-center text-xs text-sky-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-0"
                             onClick={() => void openDetail(entry.key)}
                           >
                             查看
@@ -439,10 +435,10 @@ export default function RedisDataBrowser() {
                   </tbody>
                 </table>
               </div>
+            ) : loading ? (
+              <StudioLoadingState minHeightClassName="min-h-[200px]" text="正在读取键列表…" />
             ) : (
-              <div className="px-3 py-6 text-center text-sm text-slate-500">
-                {loading ? '正在读取…' : '没有匹配的键（换了命名空间或过滤条件再试，也可能确实为空）。'}
-              </div>
+              <StudioEmptyState className="rounded-none border-0 bg-transparent px-3 py-6" message="没有匹配的键。换个命名空间或过滤条件再试，也可能确实为空。" />
             )}
           </div>
 
@@ -484,10 +480,7 @@ export default function RedisDataBrowser() {
               </div>
 
               {detailError ? (
-                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                  <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                  <span>{detailError}</span>
-                </div>
+                <StudioErrorNote>{detailError}</StudioErrorNote>
               ) : !detail ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <UnifiedLoadingSpinner size="sm" />
@@ -504,19 +497,19 @@ export default function RedisDataBrowser() {
                   </div>
 
                   {detail.content.truncated ? (
-                    <div className="rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2 text-xs text-amber-800">
-                      内容过长，已按服务端上限截断显示；完整内容请用「导出快照」。
+                    <div className="rounded-2xl border border-amber-300 bg-amber-100/70 px-3 py-2 text-xs text-amber-800">
+                      内容过长，已按上限截断显示；完整内容请用「导出快照」。
                     </div>
                   ) : null}
 
                   {detail.content.value !== null ? (
-                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800">
+                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-800">
                       {detail.content.value || '（空字符串）'}
                     </pre>
                   ) : null}
 
                   {detail.content.entries !== null ? (
-                    <div className="max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white">
+                    <div className="max-h-80 overflow-auto rounded-2xl border border-slate-200 bg-white">
                       <table className="w-full border-collapse text-xs">
                         <thead className="sticky top-0 bg-slate-50 text-slate-500">
                           <tr>
@@ -545,7 +538,7 @@ export default function RedisDataBrowser() {
                   ) : null}
 
                   {detail.content.value === null && detail.content.entries === null ? (
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
                       该类型（{detail.content.type}）暂不支持内容预览，仅展示元信息。
                     </div>
                   ) : null}
@@ -562,12 +555,10 @@ export default function RedisDataBrowser() {
                 <span className="text-sm font-semibold text-slate-700">导出全库快照</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                逐键 <code>DUMP</code> + <code>PTTL</code> 流式导出为 NDJSON，字节精确、可用 <code>RESTORE</code>{' '}
-                恢复；导出范围跟随上面的命名空间/过滤条件。
+                字节精确导出为 NDJSON，可直接用于恢复；导出范围跟随上面的命名空间/过滤条件。
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                需要物理 RDB（<code>--rdb</code>）时只能在 Redis 宿主机执行{' '}
-                <code>deploy/openresty/backup-redis.sh</code> —— 应用进程看不到 Redis 数据目录。
+                需要物理 RDB 备份时，只能由运维在 Redis 宿主机上离线执行 —— 应用进程看不到 Redis 数据目录。
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2">

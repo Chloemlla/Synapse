@@ -9,7 +9,15 @@ import {
   FaSync,
 } from 'react-icons/fa';
 import { ipRiskLogsApi, type ProxycheckOverviewResponse } from '@/api/ipRiskLogs';
-import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell } from '@/components/studioTheme';
+import {
+  InfoBadge,
+  InfoMetricCard,
+  InfoPanel,
+  InfoQueryHero,
+  InfoQueryShell,
+  studioPrimaryButtonClassName,
+} from '@/components/studioTheme';
+import { StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { useNotification } from '@/components/Notification';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
@@ -106,7 +114,7 @@ const IpRiskLogPanel: React.FC = () => {
           '都来自后端的同一个 buildIpRiskDecision 函数，与真正回给前端的判据同源。',
         ].join('')}
         icon={FaShieldAlt}
-        tone="violet"
+        tone="sky"
         meta={
           <>
             {config ? <Badge style={switchBadge(config.enabled)} /> : null}
@@ -132,13 +140,24 @@ const IpRiskLogPanel: React.FC = () => {
               type="button"
               onClick={refreshAll}
               disabled={overviewLoading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              className={cn(studioPrimaryButtonClassName, 'min-h-11 px-4 py-2 sm:min-h-0')}
             >
               <FaSync className={cn(overviewLoading && 'animate-spin')} /> 刷新全部
             </button>
           </>
         }
       />
+
+      {/* 概览指标块自己的四态：失败不能渲染成「全是 —」的完成态。 */}
+      {overviewError && !overview ? (
+        <StudioErrorState
+          className="mt-6"
+          message="概览数据读取失败，下方各分页仍可单独使用。"
+          onRetry={() => void loadOverview()}
+        />
+      ) : overviewLoading && !overview ? (
+        <StudioLoadingState className="mt-6" minHeightClassName="min-h-[240px]" text="正在读取 proxycheck 概览…" />
+      ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <InfoMetricCard
@@ -174,14 +193,14 @@ const IpRiskLogPanel: React.FC = () => {
           value={counts ? formatCount(counts.riskCacheActive) : '—'}
           detail={counts ? `缓存合计 ${formatCount(counts.riskCache)} 条` : '等待概览'}
           icon={FaDatabase}
-          tone="teal"
+          tone="emerald"
         />
         <InfoMetricCard
           label="探测上报"
           value={counts ? formatCount(counts.probeReports) : '—'}
           detail={counts ? `24 小时内 ${formatCount(counts.probeReports24h)} 条` : '等待概览'}
           icon={FaShieldAlt}
-          tone="violet"
+          tone="sky"
         />
         <InfoMetricCard
           label="今日配额"
@@ -213,8 +232,9 @@ const IpRiskLogPanel: React.FC = () => {
             type="button"
             title={item.hint}
             onClick={() => setTab(item.key)}
+            aria-pressed={tab === item.key}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition',
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               tab === item.key
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
