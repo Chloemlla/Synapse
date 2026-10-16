@@ -27,7 +27,13 @@ import {
   FaGlobe
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
-import { studioModalCardClassName, studioSubPanelClassName, studioSurfaceClassName } from './studioTheme';
+import {
+  studioFieldClassName,
+  studioPillClassName,
+  studioSurfaceClassName,
+  studioTileClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
 
 ChartJS.register(
   CategoryScale,
@@ -177,11 +183,11 @@ const NexAISecurityDashboard: React.FC = () => {
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
-      case 'SAFE': return 'text-green-600 bg-green-100';
-      case 'LOW': return 'text-blue-600 bg-slate-100';
-      case 'MEDIUM': return 'text-yellow-600 bg-yellow-100';
-      case 'HIGH': return 'text-orange-600 bg-orange-100';
-      case 'CRITICAL': return 'text-red-600 bg-red-100';
+      case 'SAFE': return 'text-emerald-600 bg-emerald-100';
+      case 'LOW': return 'text-sky-600 bg-sky-100';
+      case 'MEDIUM': return 'text-amber-600 bg-amber-100';
+      case 'HIGH': return 'text-amber-700 bg-amber-200';
+      case 'CRITICAL': return 'text-rose-600 bg-rose-100';
       default: return 'text-slate-600 bg-slate-100';
     }
   };
@@ -210,18 +216,18 @@ const NexAISecurityDashboard: React.FC = () => {
         stats.riskDistribution.CRITICAL || 0
       ] : [0, 0, 0, 0, 0],
       backgroundColor: [
-        'rgba(34, 197, 94, 0.8)',
-        'rgba(59, 130, 246, 0.8)',
-        'rgba(234, 179, 8, 0.8)',
-        'rgba(249, 115, 22, 0.8)',
-        'rgba(239, 68, 68, 0.8)'
+        'rgba(16, 185, 129, 0.8)',
+        'rgba(14, 165, 233, 0.8)',
+        'rgba(251, 191, 36, 0.8)',
+        'rgba(217, 119, 6, 0.8)',
+        'rgba(244, 63, 94, 0.8)'
       ],
       borderColor: [
-        'rgb(34, 197, 94)',
-        'rgb(59, 130, 246)',
-        'rgb(234, 179, 8)',
-        'rgb(249, 115, 22)',
-        'rgb(239, 68, 68)'
+        'rgb(16, 185, 129)',
+        'rgb(14, 165, 233)',
+        'rgb(251, 191, 36)',
+        'rgb(217, 119, 6)',
+        'rgb(244, 63, 94)'
       ],
       borderWidth: 2
     }]
@@ -233,8 +239,8 @@ const NexAISecurityDashboard: React.FC = () => {
     datasets: [{
       label: '事件数量',
       data: stats ? Object.values(stats.eventTypeDistribution) : [],
-      backgroundColor: 'rgba(99, 102, 241, 0.8)',
-      borderColor: 'rgb(99, 102, 241)',
+      backgroundColor: 'rgba(14, 165, 233, 0.8)',
+      borderColor: 'rgb(14, 165, 233)',
       borderWidth: 1
     }]
   }), [stats]);
@@ -255,16 +261,12 @@ const NexAISecurityDashboard: React.FC = () => {
     });
   }, [devices, filterRiskLevel, hasActiveDeviceFilter, normalizedDeviceSearch]);
 
-  if (loading) {
+  // 页巡检每 30 秒会把 loading 置为 true：只在「一条数据都还没有」时才整页等，
+  // 否则每次轮询都会把已经显示的指标刷成白屏。
+  if (!stats && loading) {
     return (
-      <div
-        role="status"
-        aria-live="polite"
-        aria-busy="true"
-        className="flex flex-col items-center justify-center gap-3 min-h-screen"
-      >
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" aria-hidden="true"></div>
-        <p className="text-sm text-slate-600">正在加载安全数据…</p>
+      <div className="p-4 sm:p-6">
+        <StudioLoadingState text="正在加载安全数据…" minHeightClassName="min-h-screen" />
       </div>
     );
   }
@@ -272,22 +274,16 @@ const NexAISecurityDashboard: React.FC = () => {
   // 首次加载就失败：给可重试的错误态，而不是一组全 0 的指标（那等于给出了错误结论）
   if (!stats && loadError) {
     return (
-      <div
-        role="alert"
-        className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white/80 px-4 text-center backdrop-blur-xl"
-      >
-        <FaExclamationTriangle className="h-10 w-10 text-rose-500" aria-hidden="true" />
-        <p className="text-sm text-slate-700">{loadError}</p>
-        <button
-          type="button"
-          onClick={() => {
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <StudioErrorState
+          message={loadError}
+          retryLabel="重新加载"
+          onRetry={() => {
             setLoading(true);
             void fetchDashboardData();
           }}
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-        >
-          重新加载
-        </button>
+          className="w-full max-w-md"
+        />
       </div>
     );
   }
@@ -298,23 +294,20 @@ const NexAISecurityDashboard: React.FC = () => {
         {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <FaShieldAlt className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
+            <FaShieldAlt className="w-6 h-6 sm:w-8 sm:h-8 text-slate-500" />
             NexAI 安全监控中心
           </h1>
           <p className="mt-2 text-slate-600">实时监控设备安全状态、风险评估和异常行为</p>
         </div>
 
         {/* 时间范围选择器 */}
-        <div className="mb-6 flex gap-2">
+        <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
           {(['1h', '24h', '7d', '30d'] as const).map((range) => (
             <button
+              type="button"
               key={range}
               onClick={() => setTimeRange(range)}
-              className={`px-4 py-2 rounded-2xl font-medium transition-colors ${
-                timeRange === range
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/80 backdrop-blur-xl text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-sm'
-              }`}
+              className={cn(studioPillClassName(timeRange === range), 'min-h-11')}
             >
               {range === '1h' && '最近1小时'}
               {range === '24h' && '最近24小时'}
@@ -326,80 +319,71 @@ const NexAISecurityDashboard: React.FC = () => {
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className={cn(studioModalCardClassName, "border-slate-100")}>
+          <div className={cn(studioTileClassName, "p-6")}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">总设备数</p>
                 <p className="text-3xl font-bold text-slate-900 mt-2">{stats?.totalDevices || 0}</p>
               </div>
-              <FaMobileAlt className="w-10 h-10 text-indigo-600 opacity-80" />
+              <FaMobileAlt className="w-10 h-10 text-slate-500 opacity-80" />
             </div>
           </div>
 
-          <div className={cn(studioModalCardClassName, "border-slate-100")}>
+          <div className={cn(studioTileClassName, "p-6")}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">高风险设备</p>
-                <p className="text-3xl font-bold text-orange-600 mt-2">{stats?.highRiskDevices || 0}</p>
+                <p className="text-3xl font-bold text-amber-600 mt-2">{stats?.highRiskDevices || 0}</p>
               </div>
-              <FaExclamationTriangle className="w-10 h-10 text-orange-600 opacity-80" />
+              <FaExclamationTriangle className="w-10 h-10 text-amber-600 opacity-80" />
             </div>
           </div>
 
-          <div className={cn(studioModalCardClassName, "border-slate-100")}>
+          <div className={cn(studioTileClassName, "p-6")}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">已攻破设备</p>
-                <p className="text-3xl font-bold text-red-600 mt-2">{stats?.compromisedDevices || 0}</p>
+                <p className="text-3xl font-bold text-rose-600 mt-2">{stats?.compromisedDevices || 0}</p>
               </div>
-              <FaShieldAlt className="w-10 h-10 text-red-600 opacity-80" />
+              <FaShieldAlt className="w-10 h-10 text-rose-600 opacity-80" />
             </div>
           </div>
 
-          <div className={cn(studioModalCardClassName, "border-slate-100")}>
+          <div className={cn(studioTileClassName, "p-6")}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">安全事件</p>
                 <p className="text-3xl font-bold text-slate-900 mt-2">{stats?.totalEvents || 0}</p>
               </div>
-              <FaChartBar className="w-10 h-10 text-indigo-600 opacity-80" />
+              <FaChartBar className="w-10 h-10 text-slate-500 opacity-80" />
             </div>
           </div>
         </div>
 
         {/* 标签页导航 */}
-        <div className={cn(studioSurfaceClassName, "border-slate-100 mb-6")}>
-          <div className="border-b border-slate-200">
-            <nav className="flex -mb-px">
+        <div className={cn(studioSurfaceClassName, "mb-6")}>
+          <div className="border-b border-slate-200 p-2">
+            <nav className="flex gap-2 overflow-x-auto" aria-label="安全监控视图">
               <button
+                type="button"
                 onClick={() => setSelectedTab('overview')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                  selectedTab === 'overview'
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                className={cn(studioPillClassName(selectedTab === 'overview'), 'inline-flex min-h-11 items-center gap-2')}
               >
-                <FaChartBar className="w-4 h-4" /> 概览
+                <FaChartBar className="w-4 h-4" aria-hidden /> 概览
               </button>
               <button
+                type="button"
                 onClick={() => setSelectedTab('devices')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                  selectedTab === 'devices'
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                className={cn(studioPillClassName(selectedTab === 'devices'), 'inline-flex min-h-11 items-center gap-2')}
               >
-                <FaMobileAlt className="w-4 h-4" /> 设备管理
+                <FaMobileAlt className="w-4 h-4" aria-hidden /> 设备管理
               </button>
               <button
+                type="button"
                 onClick={() => setSelectedTab('events')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                  selectedTab === 'events'
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                className={cn(studioPillClassName(selectedTab === 'events'), 'inline-flex min-h-11 items-center gap-2')}
               >
-                <FaClock className="w-4 h-4" /> 安全事件
+                <FaClock className="w-4 h-4" aria-hidden /> 安全事件
               </button>
             </nav>
           </div>
@@ -411,7 +395,7 @@ const NexAISecurityDashboard: React.FC = () => {
                 {/* 风险分布饼图 */}
                 <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100">
                   <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                    <FaShieldAlt className="text-indigo-600" /> 风险等级分布
+                    <FaShieldAlt className="text-slate-500" /> 风险等级分布
                   </h3>
                   <div className="h-48 sm:h-64">
                     <Doughnut
@@ -432,7 +416,7 @@ const NexAISecurityDashboard: React.FC = () => {
                 {/* 事件类型分布柱状图 */}
                 <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100">
                   <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                    <FaChartBar className="text-indigo-600" /> 安全事件类型分布
+                    <FaChartBar className="text-slate-500" /> 安全事件类型分布
                   </h3>
                   <div className="h-48 sm:h-64">
                     <Bar
@@ -459,7 +443,7 @@ const NexAISecurityDashboard: React.FC = () => {
               {/* 高风险设备列表 */}
               <div className="mt-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <FaExclamationTriangle className="text-orange-600" /> 高风险设备 Top 10
+                  <FaExclamationTriangle className="text-amber-600" /> 高风险设备 Top 10
                 </h3>
                 <div className={cn(studioSurfaceClassName)}>
                   <table className="min-w-full divide-y divide-slate-200">
@@ -487,11 +471,11 @@ const NexAISecurityDashboard: React.FC = () => {
                             </td>
                             <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                               {device.isCompromised ? (
-                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-red-700 bg-red-100 border border-red-200">
+                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-rose-700 bg-rose-100 border border-rose-200">
                                   已攻破
                                 </span>
                               ) : (
-                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-green-700 bg-green-100 border border-green-200">
+                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200">
                                   正常
                                 </span>
                               )}
@@ -527,13 +511,14 @@ const NexAISecurityDashboard: React.FC = () => {
                     placeholder="搜索设备指纹、用户ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none bg-white/80 backdrop-blur-xl shadow-sm"
+                    className={cn(studioFieldClassName, 'pl-10')}
                   />
                 </div>
                 <select
                   value={filterRiskLevel}
                   onChange={(e) => setFilterRiskLevel(e.target.value)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white/80 backdrop-blur-xl shadow-sm font-medium"
+                  aria-label="按风险等级筛选"
+                  className={cn(studioFieldClassName, 'font-medium sm:w-48')}
                 >
                   <option value="all">所有风险等级</option>
                   <option value="SAFE">安全</option>
@@ -579,19 +564,19 @@ const NexAISecurityDashboard: React.FC = () => {
                             <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                               <div className="flex gap-1.5 flex-wrap max-w-xs">
                                 {device.isRoot && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">ROOT</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">ROOT</span>
                                 )}
                                 {device.isDebugger && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200">DEBUG</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">DEBUG</span>
                                 )}
                                 {device.isEmulator && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">模拟器</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">模拟器</span>
                                 )}
                                 {device.isVpn && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-blue-700 border border-blue-200">VPN</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-sky-700 border border-sky-200">VPN</span>
                                 )}
                                 {!device.signatureValid && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">签名错</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">签名错</span>
                                 )}
                               </div>
                             </td>
@@ -625,10 +610,10 @@ const NexAISecurityDashboard: React.FC = () => {
                   events.map((event) => {
                     const getSeverityColor = (riskScore?: number) => {
                       if (!riskScore) return 'bg-slate-100 text-slate-700 border-slate-200';
-                      if (riskScore >= 80) return 'bg-red-50 text-red-700 border-red-200';
-                      if (riskScore >= 50) return 'bg-orange-50 text-orange-700 border-orange-200';
-                      if (riskScore >= 30) return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-                      return 'bg-slate-50/80 text-blue-700 border-blue-200';
+                      if (riskScore >= 80) return 'bg-rose-50 text-rose-700 border-rose-200';
+                      if (riskScore >= 50) return 'bg-amber-50 text-amber-700 border-amber-200';
+                      if (riskScore >= 30) return 'bg-sky-50 text-sky-700 border-sky-200';
+                      return 'bg-slate-50/80 text-slate-700 border-slate-200';
                     };
 
                     const getTimeAgo = (dateString: string) => {
@@ -650,7 +635,7 @@ const NexAISecurityDashboard: React.FC = () => {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <span className="px-2.5 py-0.5 rounded-2xl text-xs font-bold uppercase tracking-wider">
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider">
                                 {getEventTypeLabel(event.eventType)}
                               </span>
                               <span className="text-xs font-medium opacity-60 flex items-center gap-1">

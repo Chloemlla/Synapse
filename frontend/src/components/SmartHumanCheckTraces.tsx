@@ -193,9 +193,10 @@ const SmartHumanCheckTraces: React.FC = () => {
     return () => clearTimeout(timer);
   }, [reason, traceId, ip, ua]);
 
-  const pages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
-  
-  // 优化的选择状态计算  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  // 分页页数由 StudioPager 内部根据 total/pageSize 计算，这里不再重复维护。
+
+  // 优化的选择状态计算
+  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   
   // 虚拟滚动优化 - 当数据量大时启用
   const shouldUseVirtualScroll = useMemo(() => items.length > 100, [items.length]);

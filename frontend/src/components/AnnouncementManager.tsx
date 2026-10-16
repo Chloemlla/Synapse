@@ -9,19 +9,20 @@ import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import {
   FaBullhorn,
-  FaCode,
   FaEdit,
-  FaExclamationTriangle,
-  FaEye,
-  FaEyeSlash,
   FaLock,
-  FaMarkdown,
-  FaSave,
-  FaTimes,
-  FaTrash
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
-import { studioModalCardClassName, studioSubPanelClassName } from './studioTheme';
+import {
+  studioDangerButtonClassName,
+  studioPanelClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioSubPanelClassName,
+  studioTextareaClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const API_URL = getApiBaseUrl() + '/api/admin/announcement';
 
@@ -38,6 +39,7 @@ const AnnouncementManager: React.FC = () => {
   const [editing, setEditing] = useState(false);
   const { setNotification } = useNotification();
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
 
   // 获取公告
   const fetchAnnouncement = async () => {
@@ -196,23 +198,23 @@ const AnnouncementManager: React.FC = () => {
     return (
       <motion.div 
         className="space-y-6"
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <motion.div 
-          className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-6 border border-red-100"
-          initial={{ opacity: 0, y: 20 }}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-6"
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-2xl font-bold text-red-700 mb-3 flex items-center gap-2">
+          <h2 className="mb-3 flex items-center gap-2 text-2xl font-bold text-rose-700">
             <FaLock className="shrink-0" aria-hidden />
             访问被拒绝
           </h2>
-          <div className="text-slate-600 space-y-2">
+          <div className="space-y-2 text-slate-600">
             <p>你不是管理员，禁止访问！请用管理员账号登录后再来。</p>
-            <div className="text-sm text-red-500 italic">
+            <div className="text-sm italic text-rose-600">
               公告管理仅限管理员使用
             </div>
           </div>
@@ -224,14 +226,14 @@ const AnnouncementManager: React.FC = () => {
   return (
     <motion.div 
       className="space-y-6"
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
       {/* 标题和说明 */}
       <motion.div 
-        className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200"
-        initial={{ opacity: 0, y: 20 }}
+        className="rounded-2xl border border-slate-200 bg-slate-50/80 p-6"
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
@@ -257,23 +259,24 @@ const AnnouncementManager: React.FC = () => {
 
       {/* 公告内容卡片 */}
       <motion.div 
-        className={cn(studioModalCardClassName)}
-        initial={{ opacity: 0, y: 20 }}
+        className={studioPanelClassName}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaEdit className="text-lg text-slate-500" />
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+            <FaEdit className="text-lg text-slate-500" aria-hidden />
             公告内容
           </h3>
           <motion.button
+            type="button"
             onClick={fetchAnnouncement}
             disabled={loading}
-            className="px-3 py-2 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-            whileTap={{ scale: 0.95 }}
+            className={cn(studioSecondaryButtonClassName, 'min-h-11 shrink-0')}
+            whileTap={reducedMotion ? undefined : { scale: 0.95 }}
           >
-            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             刷新
@@ -281,43 +284,26 @@ const AnnouncementManager: React.FC = () => {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-slate-500">
-            <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-slate-500" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            加载中...
-          </div>
+          <StudioLoadingState text="正在读取公告..." minHeightClassName="min-h-[240px]" />
         ) : loadError ? (
-          <div className="text-center py-8">
-            <FaExclamationTriangle className="w-10 h-10 mx-auto mb-3 text-red-500" aria-hidden />
-            <p className="text-slate-600">{loadError}</p>
-            <motion.button
-              onClick={fetchAnnouncement}
-              disabled={loading}
-              className="mt-4 px-6 py-3 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition disabled:opacity-50 text-sm font-medium"
-              whileTap={{ scale: 0.95 }}
-            >
-              重试
-            </motion.button>
-          </div>
+          <StudioErrorState message={loadError} onRetry={() => void fetchAnnouncement()} />
         ) : (
           <AnimatePresence mode="wait">
             {editing ? (
               <motion.div
                 key="edit"
-                initial={{ opacity: 0, x: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -20 }}
                 transition={{ duration: 0.3 }}
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
                     公告内容
                   </label>
                   <textarea
-                    className="w-full h-40 border-2 border-slate-200 rounded-2xl p-3 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-all"
+                    className={cn(studioTextareaClassName, 'h-40')}
                     value={content}
                     onChange={e => setContent(e.target.value)}
                     placeholder="请输入公告内容"
@@ -350,28 +336,31 @@ const AnnouncementManager: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-3 sm:space-x-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <motion.button
-                    className="w-full sm:w-auto px-6 py-3 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition disabled:opacity-50 font-medium"
+                    type="button"
+                    className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
                     onClick={saveAnnouncement}
                     disabled={!canWrite || !content.trim() || saving || deleting}
-                    whileTap={{ scale: 0.95 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.95 }}
                   >
                     {saving ? '保存中...' : '保存'}
                   </motion.button>
                   <motion.button
-                    className="w-full sm:w-auto px-6 py-3 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition font-medium disabled:opacity-50"
+                    type="button"
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11 w-full sm:w-auto')}
                     onClick={() => setEditing(false)}
                     disabled={saving || deleting}
-                    whileTap={{ scale: 0.95 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.95 }}
                   >
                     取消
                   </motion.button>
                   <motion.button
-                    className="w-full sm:w-auto px-6 py-3 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition font-medium disabled:opacity-50"
+                    type="button"
+                    className={cn(studioDangerButtonClassName, 'min-h-11 w-full sm:w-auto')}
                     onClick={deleteAnnouncement}
                     disabled={saving || deleting}
-                    whileTap={{ scale: 0.95 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.95 }}
                   >
                     {deleting ? '删除中...' : '删除公告'}
                   </motion.button>
@@ -380,14 +369,14 @@ const AnnouncementManager: React.FC = () => {
             ) : (
               <motion.div
                 key="view"
-                initial={{ opacity: 0, x: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -20 }}
                 transition={{ duration: 0.3 }}
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
                     公告预览
                   </label>
                   <div className={cn(studioSubPanelClassName, "min-h-[120px]")}>
@@ -401,32 +390,32 @@ const AnnouncementManager: React.FC = () => {
                         />
                       )
                     ) : (
-                      <div className="text-slate-400 text-center py-8">
-                        <svg className="w-12 h-12 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        暂无公告内容
-                      </div>
+                      <StudioEmptyState
+                        message="还没有公告内容。点下面的「编辑公告」写第一条，读者会在站点顶部看到它。"
+                        className="border-0 bg-transparent px-0 py-2"
+                      />
                     )}
                   </div>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-3 sm:space-x-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   {canWrite && (
                   <motion.button
-                    className="w-full sm:w-auto px-6 py-3 bg-slate-500 text-white rounded-2xl hover:bg-slate-600 transition font-medium"
+                    type="button"
+                    className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
                     onClick={() => setEditing(true)}
-                    whileTap={{ scale: 0.95 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.95 }}
                   >
                     编辑公告
                   </motion.button>
                   )}
                   {canWrite && content && (
                     <motion.button
-                      className="w-full sm:w-auto px-6 py-3 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition font-medium disabled:opacity-50"
+                      type="button"
+                      className={cn(studioDangerButtonClassName, 'min-h-11 w-full sm:w-auto')}
                       onClick={deleteAnnouncement}
                       disabled={deleting}
-                      whileTap={{ scale: 0.95 }}
+                      whileTap={reducedMotion ? undefined : { scale: 0.95 }}
                     >
                       {deleting ? '删除中...' : '删除公告'}
                     </motion.button>
