@@ -546,7 +546,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
                                     event.stopPropagation();
                                     handleRemoveAccount(account.user.id);
                                   }}
-                                  className="inline-flex items-center justify-center rounded-full border border-transparent p-2 text-slate-300 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2"
+                                  className="inline-flex items-center justify-center rounded-full border border-transparent p-2 text-slate-300 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2"
                                   title="移除此账号"
                                   aria-label={`移除账号 ${account.user.username}`}
                                 >
@@ -569,7 +569,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
                           <button
                             type="button"
                             onClick={handleLogoutAll}
-                            className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-red-200/70 bg-red-50/80 p-2.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2"
+                            className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-rose-200/70 bg-rose-50/80 p-2.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2"
                           >
                             <FaSignOutAlt aria-hidden="true" />
                             退出所有
@@ -662,7 +662,7 @@ const MobileNav: React.FC<MobileNavProps> = React.memo(({
                   <button
                     type="button"
                     onClick={handleLogoutCurrent}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200/70 bg-white/90 p-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2"
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-rose-200/70 bg-white/90 p-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2"
                   >
                     <FaSignOutAlt aria-hidden="true" />
                     退出当前账号

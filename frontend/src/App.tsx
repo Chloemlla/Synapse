@@ -25,7 +25,8 @@ import { fetchWithTimeout } from './utils/fetchWithTimeout';
 import { afterFirstPaintIdle } from './utils/scheduleAfterPaint';
 import ArticleCommandPalette from './components/ArticleCommandPalette';
 import { isAdminRole } from './utils/rbac';
-import { studioModalOverlayClassName } from './components/studioTheme';
+import { cn } from './utils/cn';
+import { studioModalOverlayClassName, studioPrimaryButtonClassName } from './components/studioTheme';
 
 // 动态导入 clarity 以减少主 bundle 体积，避免与 FirstVisitVerification 的动态导入冲突
 // 性能：只在非验证类页面启用。Clarity 的脚本求值 + 会话回放采集会占用主线程
@@ -237,7 +238,7 @@ const BackgroundParticles: React.FC = React.memo(() => {
       {particles.map((p) => (
         <div
           key={p.id}
-          className="absolute w-2 h-2 bg-indigo-200 rounded-full"
+          className="absolute w-2 h-2 bg-slate-300 rounded-full"
           style={{
             left: `${p.x}px`,
             top: `${p.y}px`,
@@ -323,7 +324,7 @@ const WatermarkOverlay: React.FC = React.memo(() => {
       {watermarks.map((wm) => (
         <div
           key={wm.id}
-          className="absolute text-red-500/40 font-bold select-none whitespace-nowrap"
+          className="absolute text-rose-500/40 font-bold select-none whitespace-nowrap"
           style={{
             left: wm.left,
             top: wm.top,
@@ -1522,8 +1523,8 @@ const App: React.FC = () => {
           <div
             className={
               useDesktopSidebar
-                ? 'relative flex h-svh max-h-svh flex-col overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100'
-                : 'relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100'
+                ? 'relative flex h-svh max-h-svh flex-col overflow-hidden bg-slate-50'
+                : 'relative flex min-h-screen flex-col overflow-hidden bg-slate-50'
             }
           >
             {showParticles && <BackgroundParticles />}
@@ -1609,7 +1610,7 @@ const App: React.FC = () => {
                         <Link
                           id="app-brand-text"
                           to="/"
-                          className="text-xl font-bold tracking-tight text-gray-900 transition-colors hover:text-indigo-600"
+                          className="text-xl font-bold tracking-tight text-slate-900 transition-colors hover:text-slate-700"
                           data-integrity="critical"
                           data-protection="brand-text"
                           data-critical-text="Synapse"
@@ -1634,7 +1635,7 @@ const App: React.FC = () => {
                         ) : (
                           <Link
                             to="/welcome"
-                            className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+                            className={cn(studioPrimaryButtonClassName, "px-5 py-2 text-sm")}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
@@ -1768,16 +1769,17 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full">
-            <div className="w-20 h-20 mx-auto mb-6 bg-red-100 rounded-full flex items-center justify-center">
-              <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur-xl">
+            <div className="w-20 h-20 mx-auto mb-6 bg-rose-50 rounded-2xl flex items-center justify-center">
+              <svg className="w-12 h-12 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-center text-gray-800 mb-4">页面加载失败</h2>
-            <p className="text-gray-600 text-center mb-8">抱歉，页面出现了一些问题。请尝试刷新页面或稍后重试。</p>
+            <h2 className="text-2xl font-semibold text-center text-slate-900 mb-4">页面加载失败</h2>
+            <p className="text-slate-600 text-center mb-8">抱歉，页面出现了一些问题。请尝试刷新页面或稍后重试。</p>
             <button
+              type="button"
               onClick={() => {
                 try {
                   window.location.reload();
@@ -1786,7 +1788,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
                   this.setState({ hasError: false });
                 }
               }}
-              className="w-full py-3 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-300"
+              className={cn(studioPrimaryButtonClassName, "w-full")}
             >
               刷新页面
             </button>

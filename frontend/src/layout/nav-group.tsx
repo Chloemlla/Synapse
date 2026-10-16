@@ -26,7 +26,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
 
   return (
     <SidebarGroup className='px-2 py-0.5'>
-      <SidebarGroupLabel className='text-muted-foreground/65 h-7 px-2 text-[10px] font-semibold tracking-[0.14em] uppercase'>
+      <SidebarGroupLabel className='text-slate-500/65 h-7 px-2 text-[10px] font-semibold tracking-[0.14em] uppercase'>
         {title}
       </SidebarGroupLabel>
       <SidebarMenu className='gap-0.5'>
@@ -79,10 +79,10 @@ function SidebarMenuLink({
         isActive={active}
         tooltip={item.title}
         className={cn(
-          'h-9 rounded-lg px-2.5 transition-colors',
+          'h-9 rounded-2xl px-2.5 transition-colors',
           active &&
-            'bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-primary)_18%,transparent)]',
-          !active && 'text-sidebar-foreground/85 hover:text-sidebar-foreground',
+            'bg-slate-100 text-slate-700 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.18)]',
+          !active && 'text-slate-900/85 hover:text-slate-900',
         )}
         render={
           <Link to={item.url} onClick={() => setOpenMobile(false)} />
@@ -92,10 +92,10 @@ function SidebarMenuLink({
           <>
             <span
               className={cn(
-                'flex size-6 shrink-0 items-center justify-center rounded-md transition-colors group-data-[collapsible=icon]:hidden',
+                'flex size-6 shrink-0 items-center justify-center rounded-full transition-colors group-data-[collapsible=icon]:hidden',
                 active
-                  ? 'bg-sidebar-primary/15 text-sidebar-primary'
-                  : 'bg-sidebar-accent/50 text-sidebar-foreground/70 group-hover/menu-button:bg-sidebar-accent group-hover/menu-button:text-sidebar-foreground',
+                  ? 'bg-slate-900/15 text-slate-900'
+                  : 'bg-slate-100/50 text-slate-900/70 group-hover/menu-button:bg-slate-100 group-hover/menu-button:text-slate-900',
               )}
             >
               <Icon className='size-3.5' aria-hidden='true' />
@@ -103,7 +103,7 @@ function SidebarMenuLink({
             <Icon
               className={cn(
                 'hidden size-4 shrink-0 group-data-[collapsible=icon]:block',
-                active ? 'text-sidebar-primary' : 'text-sidebar-foreground/75',
+                active ? 'text-slate-900' : 'text-slate-900/75',
               )}
               aria-hidden='true'
             />
@@ -113,7 +113,7 @@ function SidebarMenuLink({
           {item.title}
         </span>
         {item.badge ? (
-          <span className='bg-sidebar-primary/12 text-sidebar-primary shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold group-data-[collapsible=icon]:hidden'>
+          <span className='bg-slate-900/12 text-slate-900 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold group-data-[collapsible=icon]:hidden'>
             {item.badge}
           </span>
         ) : null}

@@ -21,8 +21,8 @@ const getErrorConfig = (errorType: AntiCounterfeitErrorType) => {
     case AntiCounterfeitErrorType.PRODUCT_NOT_FOUND:
       return {
         title: '产品未找到',
-        toneClass: 'border-orange-200 bg-orange-50/85 text-orange-800',
-        iconClass: 'bg-orange-100 text-orange-700 ring-orange-200',
+        toneClass: 'border-slate-200 bg-slate-50/85 text-slate-800',
+        iconClass: 'bg-slate-100 text-slate-700 ring-slate-200',
       };
     case AntiCounterfeitErrorType.NETWORK_ERROR:
       return {
@@ -33,8 +33,8 @@ const getErrorConfig = (errorType: AntiCounterfeitErrorType) => {
     case AntiCounterfeitErrorType.API_TIMEOUT:
       return {
         title: '查询超时',
-        toneClass: 'border-violet-200 bg-violet-50/85 text-violet-800',
-        iconClass: 'bg-violet-100 text-violet-700 ring-violet-200',
+        toneClass: 'border-amber-200 bg-amber-50/85 text-amber-800',
+        iconClass: 'bg-amber-100 text-amber-700 ring-amber-200',
       };
     case AntiCounterfeitErrorType.RATE_LIMIT_EXCEEDED:
       return {
@@ -121,7 +121,7 @@ const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, onReset }) 
                 <button
                   type="button"
                   onClick={onReset}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-current/20 bg-white/70 px-4 py-2.5 text-sm font-semibold transition hover:bg-white"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-current/20 bg-white/70 px-4 py-2.5 text-sm font-semibold transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
                 >
                   <FaTimesCircle /> 重新查询
                 </button>

@@ -50,7 +50,7 @@ export function AppSidebar({
       {view ? (
         <SidebarViewHeader view={view} />
       ) : (
-        <SidebarHeader className='border-sidebar-border gap-0 border-b px-2 py-2.5'>
+        <SidebarHeader className='border-slate-200 gap-0 border-b px-2 py-2.5'>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -58,7 +58,7 @@ export function AppSidebar({
                 tooltip='Synapse'
                 className={cn(
                   'h-11 gap-2.5 px-2 data-active:bg-transparent',
-                  'hover:bg-sidebar-accent/60',
+                  'hover:bg-slate-100/60',
                 )}
                 render={<Link to='/' />}
               >
@@ -72,10 +72,10 @@ export function AppSidebar({
                   />
                 </span>
                 <span className='grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden'>
-                  <span className='truncate text-sm font-semibold tracking-tight text-sidebar-foreground'>
+                  <span className='truncate text-sm font-semibold tracking-tight text-slate-900'>
                     Synapse
                   </span>
-                  <span className='text-muted-foreground truncate text-[11px] font-medium'>
+                  <span className='text-slate-500 truncate text-[11px] font-medium'>
                     工作台
                   </span>
                 </span>
@@ -107,8 +107,8 @@ export function AppSidebar({
         </AnimatePresence>
       </SidebarContent>
 
-      <SidebarFooter className='border-sidebar-border border-t px-2 py-2 group-data-[collapsible=icon]:hidden'>
-        <p className='text-muted-foreground/75 px-2 text-[10px] leading-relaxed'>
+      <SidebarFooter className='border-slate-200 border-t px-2 py-2 group-data-[collapsible=icon]:hidden'>
+        <p className='text-slate-500/75 px-2 text-[10px] leading-relaxed'>
           {view
             ? '管理模块 · 点「返回」退出工作区'
             : '顶栏按钮或侧栏边缘可折叠 · Ctrl/⌘+B · 状态会记住'}

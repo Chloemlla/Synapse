@@ -245,18 +245,18 @@ const Footer: React.FC = () => {
           每块都是「拉伸等高 + 内容居中」：内容包一层单一子节点，
           否则 flex 会把行内图标/文本拆成多个子项而打乱排版。 */}
       <div className="grid w-full max-w-5xl grid-cols-1 items-stretch gap-2 px-4 sm:grid-cols-2 sm:px-6 xl:grid-cols-4">
-        <div className="flex items-center justify-center rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 text-xs">
+        <div className="flex items-center justify-center rounded-2xl border-2 border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 text-xs">
           <div className="text-center">
             <FaExclamationTriangle className="inline mr-1" /> 本站为个人独立开发项目，与 OpenAI 官方无任何隶属或合作关系。请勿将本站内容视为 OpenAI 官方服务。
           </div>
         </div>
-        <div className="flex items-center justify-center rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700 text-xs">
+        <div className="flex items-center justify-center rounded-2xl border-2 border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700 text-xs">
           <div className="text-center">
             <FaRocket className="inline mr-1" /> 自 2025年6月15日 9:30 以来，本站已稳定运行{' '}
             <UptimeClock />
           </div>
         </div>
-        <div className="flex items-center justify-center rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 text-xs">
+        <div className="flex items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 text-xs">
           <div className="text-center">
             <FaGlobe className="inline mr-1" /> 您的网络信息：
             {ipLoading ? (
@@ -279,7 +279,7 @@ const Footer: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIpRetryToken((token) => token + 1)}
-                  className="rounded border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                  className="rounded-2xl border-2 border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
                 >
                   重试
                 </button>
@@ -287,7 +287,7 @@ const Footer: React.FC = () => {
             )}
           </div>
         </div>
-        <div className="flex items-center justify-center rounded border border-slate-200 bg-slate-100 px-2 py-1 text-slate-600 text-xs font-mono leading-relaxed">
+        <div className="flex items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-100 px-2 py-1 text-slate-600 text-xs font-mono leading-relaxed">
           <div className="text-center">
             <div>前端 v{buildInfo.frontendVersion} ({buildInfo.shortSha})</div>
             <div>后端 v{backendBuild.version} ({backendBuild.shortSha})</div>

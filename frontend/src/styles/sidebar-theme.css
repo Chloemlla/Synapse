@@ -1,86 +1,35 @@
 /**
- * Shell chrome tokens for the desktop sidebar.
+ * Shell chrome 的少量运行时变量。
  *
  * 视觉基准：`frontend/src/components/studioTheme.tsx` + `ResourceStoreList.tsx`。
- * 这里**只**给 `@/components/ui/sidebar` 及其 peer 原语（button / sheet / tooltip /
- * separator / skeleton）喂 token，值全部落在 slate/white 中性刻度上：
- * 主操作 = slate-900，装饰 = sky/blue，语义色 = emerald/amber/rose。
  *
- * 历史上这里的 `--primary` 是 oklch(0.45 0.16 265) 的 indigo-violet，注释还写着
- * "Synapse brand" —— 结果是同一个站点里 studio 页的主按钮是 slate-900、
- * sidebar/ui 页的主按钮是蓝紫。**不要再把任何非 slate 主色写回来**。
+ * 历史：这个文件曾是一整套 shadcn `@theme inline` token，其中 `--primary` 是
+ * oklch(0.45 0.16 265) 的 indigo-violet（注释还写着 "Synapse brand"），
+ * 于是同一个站点里 studio 页的主按钮是 slate-900、sidebar/ui 页的主按钮是蓝紫。
+ * 2026-10-16 已把 `components/ui/*` 与 `layout/*` 的 `bg-primary` / `bg-sidebar` /
+ * `text-muted-foreground` 等 token 全部换成 slate 刻度，`@theme inline` 段随之删除
+ * （docs/audit/audit-2026-10-16-frontend-design-language.md FD-001 / FD-004 / FD-005）。
+ *
+ * 现在这里只保留确实还有消费者的变量：
+ *   --radius                shell 组件的圆角刻度（--radius-xl 固定 1rem，与 rounded-2xl 对齐）
+ *   --app-header-height     DesktopShell 在桌面端把它置 0，侧栏由此贴顶
+ *   --border / --foreground styles/scrollbar.css 的滚动条配色
  */
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  /* 基准里卡片/面/表单/按钮/弹窗统一 rounded-2xl (1rem)，不要让 shell 溢出另一套刻度。 */
-  --radius-xl: 1rem;
-}
 
 :root {
   --radius: 0.75rem;
   /* DesktopShell zeros this so the sidebar is full-height; mobile uses top nav h-16. */
   --app-header-height: 4rem;
 
-  --background: oklch(0.985 0.004 255);
-  --foreground: oklch(0.18 0.02 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 255);
-  --primary: oklch(0.21 0.03 257); /* slate-900 (#0f172a)，与 studioPrimaryButtonClassName 同色 */
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 255);
-  --secondary-foreground: oklch(0.28 0.03 255);
-  --muted: oklch(0.965 0.008 255);
-  --muted-foreground: oklch(0.5 0.02 255);
-  --accent: oklch(0.955 0.006 247); /* slate-100 */
-  --accent-foreground: oklch(0.28 0.03 257);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.91 0.01 255);
-  --input: oklch(0.91 0.01 255);
-  --ring: oklch(0.71 0.02 257); /* slate-400 */
-
-  /* Distinct app-chrome surface (not pure white page canvas) */
-  --sidebar: oklch(0.995 0.002 247);
-  --sidebar-foreground: oklch(0.22 0.02 257);
-  --sidebar-primary: oklch(0.21 0.03 257); /* slate-900 */
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.955 0.006 247); /* slate-100 */
-  --sidebar-accent-foreground: oklch(0.28 0.02 257);
-  --sidebar-border: oklch(0.92 0.008 257);
-  --sidebar-ring: oklch(0.71 0.02 257); /* slate-400 */
+  /* slate-200 / slate-900；保持与 studioTheme 的中性刻度同值。 */
+  --border: oklch(0.925 0.008 257);
+  --foreground: oklch(0.21 0.03 257);
 }
 
-/* no-scrollbar / hover-scrollbar live in styles/scrollbar.css (new-api parity). */
+@theme inline {
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  /* 基准里卡片/面/表单/按钮/弹窗统一 rounded-2xl (1rem)。 */
+  --radius-xl: 1rem;
+}

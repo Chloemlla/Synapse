@@ -128,14 +128,14 @@ export default function DesktopShell({
                 title='搜索管理模块（⌘/Ctrl + K）'
                 aria-label='搜索管理模块'
                 className={cn(
-                  'ml-2 hidden shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5',
+                  'ml-2 hidden shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5',
                   'text-xs font-medium text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-700 sm:flex',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2',
                 )}
               >
                 <FaSearch className='size-3' aria-hidden='true' />
                 <span>搜索模块</span>
-                <kbd className='rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-semibold text-slate-400'>
+                <kbd className='rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-semibold text-slate-400'>
                   ⌘K
                 </kbd>
               </button>
