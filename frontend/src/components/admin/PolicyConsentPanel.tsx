@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaClipboardCheck, FaExclamationTriangle, FaFileSignature, FaListUl, FaSync } from 'react-icons/fa';
 import { policyConsentApi, type PolicyConsentOverviewResponse } from '@/api/policyConsents';
 import { useNotification } from '@/components/Notification';
-import { InfoBadge, InfoQueryHero, InfoQueryShell } from '@/components/studioTheme';
+import { InfoBadge, InfoQueryHero, InfoQueryShell, studioPrimaryButtonClassName } from '@/components/studioTheme';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import { AUTO_REFRESH_OPTIONS } from './ip-risk-log/format';
@@ -86,10 +86,10 @@ const PolicyConsentPanel: React.FC = () => {
           '把 policy_consents 集合摊开：谁（设备指纹）在什么时候、从哪个入口（登录/注册/TTS 门禁）同意了哪个版本的政策、勾选了哪几份文件、什么时候到期、同意的是哪份条文。同一设备重复同意会原地续期而非堆积；用户主动撤回会留下撤回时间与 IP。本页只读，导出会写审计日志。'
         }
         icon={FaFileSignature}
-        tone="violet"
+        tone="sky"
         meta={
           <>
-            {overview ? <InfoBadge tone="violet">当前版本 {overview.currentVersion}</InfoBadge> : null}
+            {overview ? <InfoBadge tone="sky">当前版本 {overview.currentVersion}</InfoBadge> : null}
             {overview ? <InfoBadge tone="slate">同意有效期 {overview.validityDays} 天</InfoBadge> : null}
             <InfoBadge>
               {lastUpdatedAt
@@ -123,7 +123,7 @@ const PolicyConsentPanel: React.FC = () => {
               type="button"
               onClick={() => setRefreshNonce((current) => current + 1)}
               disabled={overviewLoading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              className={cn(studioPrimaryButtonClassName, 'min-h-11 px-4 py-2 sm:min-h-0')}
             >
               <FaSync className={cn(overviewLoading && 'animate-spin')} /> 刷新全部
             </button>
@@ -138,8 +138,9 @@ const PolicyConsentPanel: React.FC = () => {
             type="button"
             title={item.hint}
             onClick={() => setTab(item.key)}
+            aria-pressed={tab === item.key}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition',
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               tab === item.key
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
@@ -157,6 +158,7 @@ const PolicyConsentPanel: React.FC = () => {
             overview={overview}
             loading={overviewLoading}
             error={overviewError}
+            onRetry={() => void loadOverview()}
             onFocusIncomplete={() => {
               setIncompleteOnly(true);
               setTab('records');

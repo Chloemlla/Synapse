@@ -2,15 +2,22 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { FaTrashAlt, FaUserPlus, FaUsers } from 'react-icons/fa';
 import { qqGuardApi } from '../../../api/qqGuard';
 import type { QqGuardWhitelistRow } from '../../../api/qqGuard';
-import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 import {
   InfoSectionTitle,
+  studioFieldClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../../studioTheme';
-import { cx, formatDateTime } from './ui';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioSuccessNote,
+} from '../../studioFeedback';
+import { cx, formatDateTime, rowDangerButtonClassName, rowGhostButtonClassName } from './ui';
 
 /**
  * 白名单（免 AI 审查成员）。面板增删即时写库；
@@ -105,7 +112,7 @@ export const WhitelistPanel: React.FC = () => {
           icon={FaUsers}
           tone="emerald"
         />
-        <button onClick={() => void load()} disabled={loading} className={studioSecondaryButtonClassName}>
+        <button type="button" onClick={() => void load()} disabled={loading} className={studioSecondaryButtonClassName}>
           刷新
         </button>
       </div>
@@ -118,25 +125,29 @@ export const WhitelistPanel: React.FC = () => {
           value={userId}
           onChange={(e) => setUserId(e.target.value)}
           placeholder="QQ 号 *"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300"
+          aria-label="QQ 号（必填）"
+          className={`py-2 text-sm ${studioFieldClassName}`}
         />
         <input
           value={groupId}
           onChange={(e) => setGroupId(e.target.value)}
           placeholder="群号（默认全群）"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300"
+          aria-label="群号（留空 = 全群生效）"
+          className={`py-2 text-sm ${studioFieldClassName}`}
         />
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="姓名（可选）"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300"
+          aria-label="姓名（可选）"
+          className={`py-2 text-sm ${studioFieldClassName}`}
         />
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="加入原因（可选）"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300"
+          aria-label="加入白名单的原因（可选）"
+          className={`py-2 text-sm ${studioFieldClassName}`}
         />
         <button type="submit" disabled={busy || !userId.trim()} className={studioPrimaryButtonClassName}>
           <FaUserPlus className="text-sm" />
@@ -144,12 +155,15 @@ export const WhitelistPanel: React.FC = () => {
         </button>
       </form>
 
-      {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-      )}
-      {msg && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{msg}</div>
-      )}
+      {error ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} className={rowGhostButtonClassName}>
+            重试
+          </button>
+        </StudioErrorNote>
+      ) : null}
+      {msg ? <StudioSuccessNote>{msg}</StudioSuccessNote> : null}
 
       <div className={cx(studioSurfaceClassName, 'overflow-hidden')}>
         <div className="overflow-x-auto">
@@ -166,10 +180,25 @@ export const WhitelistPanel: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 && !loading ? (
+              {loading && items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
-                    白名单为空
+                  <td colSpan={7} className="px-4 py-6">
+                    <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取白名单…" />
+                  </td>
+                </tr>
+              ) : error && items.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6">
+                    <StudioErrorState message={error} onRetry={() => void load()} />
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6">
+                    <StudioEmptyState
+                      className="py-10"
+                      message="白名单为空。在上方填入成员 QQ 号后点「加入」，或在「总览 · 待复审」对误判成员点「豁免」。"
+                    />
                   </td>
                 </tr>
               ) : (
@@ -183,9 +212,10 @@ export const WhitelistPanel: React.FC = () => {
                     <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{formatDateTime(row.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
+                        type="button"
                         onClick={() => void remove(row.userId)}
                         disabled={busy}
-                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                        className={rowDangerButtonClassName}
                       >
                         <FaTrashAlt className="text-[10px]" />
                         移除
@@ -197,11 +227,6 @@ export const WhitelistPanel: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {loading && (
-          <div className="flex justify-center py-4">
-            <SimpleLoadingSpinner size={0.9} />
-          </div>
-        )}
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaAngleDoubleDown, FaAngleDoubleUp, FaShieldAlt, FaTimes } from 'react-icons/fa';
 import { ipRiskLogsApi, type ProbeReportRow } from '@/api/ipRiskLogs';
-import { InfoBadge, InfoPanel, InfoSectionTitle, studioFieldClassName } from '@/components/studioTheme';
+import { InfoBadge, InfoPanel, InfoSectionTitle, studioFieldClassName, studioGhostButtonClassName } from '@/components/studioTheme';
+import { StudioErrorNote } from '@/components/studioFeedback';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
   DEFAULT_PAGE_SIZE,
@@ -204,10 +205,17 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
       </SectionNote>
 
       {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
-      {error ? (
-        <InfoPanel compact>
-          <div className="text-sm text-rose-600">{error}</div>
-        </InfoPanel>
+      {error && rows.length > 0 ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setManualNonce((current) => current + 1)}
+            className={studioGhostButtonClassName}
+          >
+            重试
+          </button>
+        </StudioErrorNote>
       ) : null}
 
       <InfoPanel compact>
@@ -237,7 +245,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                 onClick={() => setDraftIp('')}
                 title="清空输入"
                 aria-label="清空输入"
-                className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -266,7 +274,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
             onClick={() =>
               setExpanded(allExpanded ? new Set() : new Set(rows.map((row, index) => rowKey(row, index))))
             }
-            className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-1.5"
           >
             {allExpanded ? <FaAngleDoubleUp /> : <FaAngleDoubleDown />}
             {allExpanded ? '折叠全部' : '展开全部'}
@@ -297,8 +305,13 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
               loading={loading && rows.length === 0}
               error={rows.length === 0 ? error : null}
               empty={!loading && rows.length === 0}
-              emptyText={ip ? '该 IP 前缀没有探测上报' : '还没有任何客户端探测上报'}
+              emptyText={
+                ip
+                  ? '该 IP 前缀没有探测上报。换个前缀或清空筛选后重试。'
+                  : '还没有任何客户端探测上报。打开任意页面后上报会自动产生，再回本页点「刷新」。'
+              }
               colSpan={6}
+              onRetry={() => setManualNonce((current) => current + 1)}
             />
             {rows.map((row, index) => {
               const key = rowKey(row, index);
@@ -330,7 +343,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                       {leak !== 'none' ? (
                         <span
                           title={WEBRTC_BADGE[leak].title}
-                          className={`mb-1 inline-flex items-center rounded-lg border px-2 py-0.5 text-[11px] ${WEBRTC_BADGE[leak].className}`}
+                          className={`mb-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${WEBRTC_BADGE[leak].className}`}
                         >
                           {WEBRTC_BADGE[leak].label}
                         </span>
@@ -366,7 +379,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                                     ? item.unavailableHint
                                     : LEGACY_ROW_HINT
                               }
-                              className={`rounded-lg border px-2 py-0.5 text-[11px] ${style.className}`}
+                              className={`rounded-full border px-2 py-0.5 text-[11px] ${style.className}`}
                             >
                               {item.label} {style.label}
                             </span>
@@ -395,7 +408,7 @@ const ProbesTab: React.FC<Props> = ({ refreshNonce }) => {
                       <button
                         type="button"
                         onClick={() => toggle(key)}
-                        className="rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+                        className="rounded-2xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       >
                         {isOpen ? '收起' : '展开'}
                       </button>

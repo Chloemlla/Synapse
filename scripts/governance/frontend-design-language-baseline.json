@@ -1,12 +1,12 @@
 {
-  "palette-forbidden-hue": 236,
+  "palette-forbidden-hue": 142,
   "arbitrary-color-value": 1110,
-  "non-slate-neutral": 19,
-  "semantic-color-drift": 533,
-  "saturated-gradient": 88,
-  "second-ui-kit-token": 171,
-  "legacy-palette-name": 21,
+  "non-slate-neutral": 11,
+  "semantic-color-drift": 493,
+  "saturated-gradient": 83,
+  "second-ui-kit-token": 63,
+  "legacy-palette-name": 20,
   "second-brand-color-literal": 9,
-  "independent-visual-overlay": 12,
-  "off-scale-radius": 526
+  "independent-visual-overlay": 0,
+  "off-scale-radius": 382
 }

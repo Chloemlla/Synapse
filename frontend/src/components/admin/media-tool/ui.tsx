@@ -3,10 +3,12 @@ import type { MediaJobStatus, MediaJobStage } from '../../../api/mediaTool';
 import {
   studioDangerButtonClassName,
   studioFieldClassName,
+  studioGhostButtonClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioTextareaClassName,
 } from '../../studioTheme';
+import { StudioEmptyState, StudioErrorNote, StudioSuccessNote } from '../../studioFeedback';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
@@ -16,18 +18,11 @@ export const inputCls = `${studioFieldClassName} disabled:cursor-not-allowed dis
 
 export const textareaCls = `${studioTextareaClassName} font-mono disabled:cursor-not-allowed disabled:opacity-60`;
 
-export const btnBase =
-  'inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
-
+// 按钮只做尺寸/字距覆盖，配色一律来自 studioTheme 的共享 token。
 export const btnPrimary = studioPrimaryButtonClassName;
-export const btnIndigo = studioPrimaryButtonClassName;
-export const btnViolet = cx(btnBase, 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm');
 export const btnDanger = studioDangerButtonClassName;
 export const btnGhost = studioSecondaryButtonClassName;
-export const btnTiny = cx(
-  btnBase,
-  'rounded-lg px-2 py-1 text-[11px]',
-);
+export const btnTiny = cx(studioGhostButtonClassName, 'min-h-11 px-2 tracking-normal sm:min-h-0');
 
 export const Field: React.FC<{
   label: string;
@@ -54,7 +49,7 @@ export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void
     aria-checked={checked}
     disabled={disabled}
     onClick={() => onChange(!checked)}
-    className="inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+    className="inline-flex min-h-11 items-center gap-2 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0"
   >
     <span
       className={cx(
@@ -147,9 +142,9 @@ export function baseName(rel: string): string {
   return parts[parts.length - 1] || rel;
 }
 
-export const ProgressBar: React.FC<{ percent: number; tone?: 'indigo' | 'emerald' }> = ({
+export const ProgressBar: React.FC<{ percent: number; tone?: 'sky' | 'emerald' }> = ({
   percent,
-  tone = 'indigo',
+  tone = 'sky',
 }) => {
   const p = Math.max(0, Math.min(100, percent));
   return (
@@ -165,16 +160,22 @@ export const ProgressBar: React.FC<{ percent: number; tone?: 'indigo' | 'emerald
   );
 };
 
+// 四态一律复用 studioFeedback 的共享原语（FD-080），媒体工具各面板只传文案。
 export const ErrLine: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-    {children}
-  </div>
+  <StudioErrorNote className="flex flex-wrap items-center gap-2">{children}</StudioErrorNote>
 );
 
 export const OkLine: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{children}</div>
+  <StudioSuccessNote>{children}</StudioSuccessNote>
 );
 
 export const EmptyHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="px-4 py-10 text-center text-sm text-slate-400">{children}</div>
+  <StudioEmptyState className="py-10" message={children} />
+);
+
+/** 提醒线（功能不可用 / 需要先做别的）:amber 语义色，与错误态的 rose 分开。 */
+export const WarnLine: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    {children}
+  </div>
 );

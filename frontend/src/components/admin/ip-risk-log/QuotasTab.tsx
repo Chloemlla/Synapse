@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaCalendarAlt, FaKey } from 'react-icons/fa';
 import { ipRiskLogsApi, type ProxycheckQuotaRow } from '@/api/ipRiskLogs';
-import { InfoBadge, InfoMetricCard, InfoPanel, InfoSectionTitle } from '@/components/studioTheme';
+import { InfoBadge, InfoMetricCard, InfoPanel, InfoSectionTitle, studioGhostButtonClassName } from '@/components/studioTheme';
+import { StudioErrorNote } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import { DAYS_OPTIONS, boolLabel, formatCount, formatTime } from './format';
@@ -87,10 +88,17 @@ const QuotasTab: React.FC<Props> = ({ refreshNonce, configuredDailyQuota }) => {
         fail_open / fail_closed（取决于 failOpen）。
       </SectionNote>
 
-      {error ? (
-        <InfoPanel compact>
-          <div className="text-sm text-rose-600">{error}</div>
-        </InfoPanel>
+      {error && rows.length > 0 ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setManualNonce((current) => current + 1)}
+            className={studioGhostButtonClassName}
+          >
+            重试
+          </button>
+        </StudioErrorNote>
       ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -149,8 +157,9 @@ const QuotasTab: React.FC<Props> = ({ refreshNonce, configuredDailyQuota }) => {
               loading={loading && rows.length === 0}
               error={rows.length === 0 ? error : null}
               empty={!loading && rows.length === 0}
-              emptyText={`最近 ${days} 天没有任何配额记录（一次都没真正打到上游）`}
+              emptyText={`最近 ${days} 天没有任何配额记录。把「查询天数」调大，或到「判定决策日志」确认是否所有判定都命中了缓存。`}
               colSpan={10}
+              onRetry={() => setManualNonce((current) => current + 1)}
             />
             {rows.map((row, index) => {
               const key = rowKey(row, index);
@@ -200,7 +209,7 @@ const QuotasTab: React.FC<Props> = ({ refreshNonce, configuredDailyQuota }) => {
                       <button
                         type="button"
                         onClick={() => setExpanded(isOpen ? null : key)}
-                        className="rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+                        className="rounded-2xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       >
                         {isOpen ? '收起' : '展开'}
                       </button>

@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fa';
 import type { PolicyConsentOverviewResponse } from '@/api/policyConsents';
 import { InfoBadge, InfoMetricCard, InfoPanel } from '@/components/studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { formatCount } from '../ip-risk-log/format';
 import { SectionNote } from '../ip-risk-log/ui';
@@ -54,9 +55,11 @@ const PolicyConsentOverviewTab: React.FC<{
   overview: PolicyConsentOverviewResponse | null;
   loading: boolean;
   error: string | null;
+  /** 读取失败时的重试入口；调用方持有拉取函数 */
+  onRetry: () => void;
   /** 点「勾选不完整」卡片时跳到记录 tab 并带上该筛选 */
   onFocusIncomplete: () => void;
-}> = ({ overview, loading, error, onFocusIncomplete }) => {
+}> = ({ overview, loading, error, onRetry, onFocusIncomplete }) => {
   const counts = overview?.counts;
   const maxVersion = Math.max(1, ...(overview?.versions.map((row) => row.count) ?? [1]));
   const maxSource = Math.max(1, ...(overview?.sources.map((row) => row.count) ?? [1]));
@@ -77,12 +80,13 @@ const PolicyConsentOverviewTab: React.FC<{
         ) : null}
       </SectionNote>
 
-      {error ? (
-        <InfoPanel compact>
-          <div className="px-4 py-3 text-sm text-rose-600">{error}</div>
-        </InfoPanel>
+      {error && !overview ? <StudioErrorState message={error} onRetry={onRetry} /> : null}
+      {loading && !overview && !error ? (
+        <StudioLoadingState minHeightClassName="min-h-[260px]" text="正在读取同意记录统计……" />
       ) : null}
 
+      {overview || (!loading && !error) ? (
+        <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <InfoMetricCard
           label="记录总量（含已过期）"
@@ -96,7 +100,7 @@ const PolicyConsentOverviewTab: React.FC<{
           value={counts ? formatCount(counts.valid) : '—'}
           detail="isValid 且未过期，且勾满四份文件"
           icon={FaCheckCircle}
-          tone="teal"
+          tone="emerald"
         />
         <InfoMetricCard
           label="已过期 / 失效"
@@ -151,7 +155,7 @@ const PolicyConsentOverviewTab: React.FC<{
               ))}
             </div>
           ) : (
-            <p className="px-1 text-xs text-slate-400">暂无数据</p>
+            <StudioEmptyState className="py-8" message="近 30 天没有按版本分布的记录。等有新的同意写入后再回来看。" />
           )}
         </InfoPanel>
 
@@ -167,7 +171,7 @@ const PolicyConsentOverviewTab: React.FC<{
                   <span className="w-20 shrink-0 text-xs text-slate-600">{sourceLabel(row.key)}</span>
                   <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className="h-full rounded-full bg-violet-400"
+                      className="h-full rounded-full bg-sky-400"
                       style={{ width: `${Math.round((row.count / maxSource) * 100)}%` }}
                     />
                   </div>
@@ -178,7 +182,7 @@ const PolicyConsentOverviewTab: React.FC<{
               ))}
             </div>
           ) : (
-            <p className="px-1 text-xs text-slate-400">暂无数据</p>
+            <StudioEmptyState className="py-8" message="近 30 天没有按来源分布的记录。等有新的同意写入后再回来看。" />
           )}
         </InfoPanel>
       </div>
@@ -205,7 +209,10 @@ const PolicyConsentOverviewTab: React.FC<{
             ))}
           </div>
         ) : (
-          <p className="px-1 text-xs text-slate-400">该窗口内暂无新增同意记录</p>
+          <StudioEmptyState
+            className="py-10"
+            message={`近 ${trendDays} 天没有新增同意记录。把右上角的趋势窗口调大可以看更早的数据。`}
+          />
         )}
       </InfoPanel>
 
@@ -244,9 +251,11 @@ const PolicyConsentOverviewTab: React.FC<{
               ))}
             </div>
           ) : (
-            <p className="mt-2 px-1 text-xs text-slate-400">无可读取的索引信息</p>
+            <StudioEmptyState className="py-6" message="没有读到索引信息。重新读取一次；若持续如此，请确认后端已启动。" />
           )}
         </InfoPanel>
+      ) : null}
+        </>
       ) : null}
     </div>
   );

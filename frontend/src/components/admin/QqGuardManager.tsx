@@ -12,14 +12,26 @@ import {
 } from 'react-icons/fa';
 import { qqGuardApi } from '../../api/qqGuard';
 import type { QqGuardPendingTask, QqGuardStats, QqGuardHealth } from '../../api/qqGuard';
-import { SimpleLoadingSpinner } from '../LoadingSpinner';
-import { InfoMetricCard, InfoSectionTitle, studioSurfaceClassName } from '../studioTheme';
+import {
+  InfoBadge,
+  InfoMetricCard,
+  InfoQueryHero,
+  InfoQueryShell,
+  studioSurfaceClassName,
+} from '../studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioSuccessNote,
+} from '../studioFeedback';
 import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import { AuditLogPanel } from './qq-guard/AuditLogPanel';
 import { WhitelistPanel } from './qq-guard/WhitelistPanel';
 import { CommandPanel } from './qq-guard/CommandPanel';
 import { TimelineDrawer } from './qq-guard/TimelineDrawer';
-import { cx, formatDateTime, shortText } from './qq-guard/ui';
+import { cx, formatDateTime, shortText, rowDangerButtonClassName, rowGhostButtonClassName, rowPrimaryButtonClassName } from './qq-guard/ui';
 
 type TabKey = 'overview' | 'audit' | 'whitelist' | 'commands';
 
@@ -29,9 +41,6 @@ const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
   { key: 'whitelist', label: '白名单', icon: <FaUserCheck className="text-xs" /> },
   { key: 'commands', label: '命令中心', icon: <FaTerminal className="text-xs" /> },
 ];
-
-const tinyBtn =
-  'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
 
 const HEALTH_REASON: Record<string, string> = {
   'ws-down': '与 NapCat 的 WebSocket 断开',
@@ -44,7 +53,7 @@ const healthBar = (h: QqGuardHealth | null) => {
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
         <FaShieldAlt className="text-slate-400" />
-        <span>尚未收到机器人健康上报（bot 需开启 config.health.enabled）</span>
+        <span>尚未收到机器人的健康上报；离线与否要等第一次上报后才能判断。</span>
       </div>
     );
   }
@@ -118,7 +127,7 @@ export const QqGuardManager: React.FC = () => {
     { label: '已撤回', value: c('recalled'), icon: FaStopCircle, tone: 'rose' as const },
     { label: '已私信', value: c('dm_sent'), icon: FaPaperPlane, tone: 'sky' as const },
     { label: '限频免私信', value: c('dm_suppressed'), icon: FaCheckCircle, tone: 'amber' as const },
-    { label: '复审任务', value: pending.length, icon: FaRedo, tone: 'violet' as const },
+    { label: '复审任务', value: pending.length, icon: FaRedo, tone: 'sky' as const },
   ];
 
   const flash = (m: string) => {
@@ -166,7 +175,7 @@ export const QqGuardManager: React.FC = () => {
       flash(`已下发「${label}」，命令 ${commandId}，机器人约 20 秒内执行`);
       await loadOverview();
     } catch (err) {
-      setError(`「${label}」下发失败：请确认 bot 数据接口可用（Mongo 就绪）`);
+      setError(`「${label}」下发失败，请稍后重试。`);
       console.error('下发面板命令失败:', err);
     } finally {
       setBusyTrace(null);
@@ -174,22 +183,47 @@ export const QqGuardManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5">
-      <InfoSectionTitle
+    <InfoQueryShell maxWidthClassName="max-w-7xl">
+      <InfoQueryHero
+        eyebrow="QQ 群纪律"
         title="QQ 群纪律管理"
-        description="远端 QQ 群合规审查：AI 裁决、撤回/私信、30 分钟递进复审与命令下发均由 bot 执行，本面板只读审计并下发指令。"
+        description="远端 QQ 群合规审查：AI 裁决、撤回/私信、30 分钟递进复审与命令下发均由机器人执行，本面板只读审计并下发指令。"
         icon={FaShieldAlt}
-        tone="violet"
+        tone="sky"
+        meta={
+          <>
+            {health ? (
+              <InfoBadge tone={health.online ? 'emerald' : 'rose'}>
+                {health.online === null || health.online === undefined ? '机器人状态未知' : health.online ? '机器人在线' : '机器人离线'}
+              </InfoBadge>
+            ) : null}
+            {pending.length > 0 ? <InfoBadge tone="amber">待复审 {pending.length} 条</InfoBadge> : null}
+            {loading ? <InfoBadge tone="slate">正在读取…</InfoBadge> : null}
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadOverview()}
+            disabled={loading}
+            className={rowGhostButtonClassName}
+          >
+            <FaRedo className="text-xs" />
+            刷新
+          </button>
+        }
       />
 
       {/* tab */}
-      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200/80 bg-white/80 p-1.5">
+      <div className="mt-5 flex flex-wrap gap-1.5 rounded-2xl border border-slate-200/80 bg-white/80 p-1.5">
         {TABS.map((t) => (
           <button
             key={t.key}
+            type="button"
             onClick={() => setTab(t.key)}
+            aria-pressed={tab === t.key}
             className={cx(
-              'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition',
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               tab === t.key
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
@@ -212,7 +246,7 @@ export const QqGuardManager: React.FC = () => {
       </div>
 
       {tab === 'overview' ? (
-        <div className="space-y-5">
+        <div className="mt-5 space-y-5">
           {healthBar(health)}
           <div className={cx(studioSurfaceClassName, 'p-5')}>
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
@@ -222,15 +256,18 @@ export const QqGuardManager: React.FC = () => {
             </div>
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              <FaExclamationTriangle className="text-rose-500" />
-              {error}
-            </div>
-          )}
-          {msg && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{msg}</div>
-          )}
+          {error && pending.length === 0 && !loading ? (
+            <StudioErrorState message="总览暂时读不出来。" onRetry={() => void loadOverview()} />
+          ) : error ? (
+            <StudioErrorNote className="flex flex-wrap items-center gap-3">
+              <FaExclamationTriangle className="shrink-0 text-rose-500" aria-hidden />
+              <span className="min-w-0 flex-1">{error}</span>
+              <button type="button" onClick={() => void loadOverview()} className={rowGhostButtonClassName}>
+                重试
+              </button>
+            </StudioErrorNote>
+          ) : null}
+          {msg ? <StudioSuccessNote>{msg}</StudioSuccessNote> : null}
 
           <div className={cx(studioSurfaceClassName, 'overflow-hidden')}>
             <div className="flex items-center justify-between px-5 pt-4">
@@ -243,9 +280,10 @@ export const QqGuardManager: React.FC = () => {
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => void loadOverview()}
                 disabled={loading}
-                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100"
+                className={rowGhostButtonClassName}
               >
                 <FaRedo className="text-xs" />
                 刷新
@@ -265,8 +303,11 @@ export const QqGuardManager: React.FC = () => {
                 <tbody>
                   {pending.length === 0 && !loading ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                        当前没有待复审任务 — 每条消息都已完成判定或 AI 可达。
+                      <td colSpan={5} className="px-4 py-4">
+                        <StudioEmptyState
+                          className="py-10"
+                          message="当前没有待复审任务——每条消息都已完成判定或 AI 可达。新的挂起任务会自动出现在这里。"
+                        />
                       </td>
                     </tr>
                   ) : (
@@ -288,8 +329,9 @@ export const QqGuardManager: React.FC = () => {
                             <div className="mt-0.5 text-[10px] text-amber-600">{shortText(task.reason, 60)}</div>
                           ) : null}
                           <button
+                            type="button"
                             onClick={() => setOpenTrace(task.traceId)}
-                            className="mt-1 font-mono text-[10px] text-indigo-600 hover:underline"
+                            className="mt-1 min-h-11 rounded-2xl px-1 font-mono text-[10px] text-slate-500 underline decoration-slate-300 underline-offset-2 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0"
                           >
                             {task.traceId}
                           </button>
@@ -302,33 +344,37 @@ export const QqGuardManager: React.FC = () => {
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
                             <button
+                              type="button"
                               onClick={() => void dispatchAction('retry', task)}
                               disabled={busyTrace !== null}
-                              className={cx(tinyBtn, 'bg-indigo-600 text-white hover:bg-indigo-700')}
+                              className={rowPrimaryButtonClassName}
                             >
                               <FaRedo className="text-[10px]" />
                               立即复审
                             </button>
                             <button
+                              type="button"
                               onClick={() => void dispatchAction('exempt', task)}
                               disabled={busyTrace !== null}
-                              className={cx(tinyBtn, 'bg-violet-600 text-white hover:bg-violet-700')}
+                              className={cx(rowGhostButtonClassName, 'px-2')}
                             >
                               <FaUserCheck className="text-[10px]" />
                               豁免
                             </button>
                             <button
+                              type="button"
                               onClick={() => void dispatchAction('recall', task)}
                               disabled={busyTrace !== null || !task.messageId}
                               title={task.messageId ? '按 messageId 追溯撤回' : '缺少 messageId，无法追溯撤回'}
-                              className={cx(tinyBtn, 'bg-rose-600 text-white hover:bg-rose-700')}
+                              className={rowDangerButtonClassName}
                             >
                               <FaStopCircle className="text-[10px]" />
                               撤回
                             </button>
                             <button
+                              type="button"
                               onClick={() => setOpenTrace(task.traceId)}
-                              className={cx(tinyBtn, 'border border-slate-200 text-slate-500 hover:bg-slate-100')}
+                              className={rowGhostButtonClassName}
                             >
                               时间线
                             </button>
@@ -341,9 +387,7 @@ export const QqGuardManager: React.FC = () => {
               </table>
             </div>
             {loading && (
-              <div className="flex justify-center py-4">
-                <SimpleLoadingSpinner size={0.9} />
-              </div>
+              <StudioLoadingState minHeightClassName="min-h-[120px]" text="正在刷新待复审任务…" />
             )}
           </div>
 
@@ -359,7 +403,7 @@ export const QqGuardManager: React.FC = () => {
       {tab === 'commands' ? <CommandPanel /> : null}
 
       {openTrace ? <TimelineDrawer traceId={openTrace} onClose={() => setOpenTrace(null)} /> : null}
-    </div>
+    </InfoQueryShell>
   );
 };
 

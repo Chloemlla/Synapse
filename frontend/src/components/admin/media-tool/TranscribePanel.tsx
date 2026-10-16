@@ -19,14 +19,16 @@ import type {
   TranscribeOutput,
 } from '../../../api/mediaTool';
 import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
+import { StudioEmptyState, StudioLoadingState } from '../../studioFeedback';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import {
-  btnIndigo,
+  btnPrimary,
   btnTiny,
   cx,
   ErrLine,
   OkLine,
   Toggle,
+  WarnLine,
   fmtBytes,
 } from './ui';
 
@@ -146,7 +148,7 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
       />
 
       {!settings.enabled ? (
-        <ErrLine>媒体工具当前处于停用状态,请在「设置」页启用后再提交。</ErrLine>
+        <WarnLine>媒体工具当前处于停用状态,请在「设置」页启用后再提交。</WarnLine>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -156,7 +158,7 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
             <span className="text-[11px] text-slate-400">上限 {fmtBytes(settings.maxUploadBytes)} · 单文件</span>
           </div>
           <input ref={fileRef} type="file" multiple hidden accept="audio/*" onChange={(e) => void onFilesChosen(e)} />
-          <button onClick={pickFiles} disabled={busy || !settings.enabled} className={cx(btnIndigo, 'w-full')}>
+          <button type="button" onClick={pickFiles} disabled={busy || !settings.enabled} className={cx(btnPrimary, 'w-full')}>
             {busy && uploadName ? <SimpleLoadingSpinner size={0.7} /> : <FaUpload className="text-xs" />}
             {busy && uploadName ? `上传中 ${uploadName}…` : '选择音频文件上传'}
           </button>
@@ -171,7 +173,11 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
             </div>
             <div className="flex flex-wrap items-center gap-1 pb-2 text-xs text-slate-500">
               <button
-                className={cx('rounded px-1.5 py-0.5', !sub ? 'bg-indigo-50 font-semibold text-indigo-700' : 'hover:bg-slate-100')}
+                type="button"
+                className={cx(
+                  'inline-flex min-h-11 items-center rounded-2xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-0.5',
+                  !sub ? 'bg-slate-100 font-semibold text-slate-900' : 'hover:bg-slate-100',
+                )}
                 onClick={() => setSub('')}
               >
                 workDir 根目录
@@ -180,7 +186,8 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
                 <React.Fragment key={`${i}-${s}`}>
                   <FaChevronRight className="text-[9px] text-slate-300" />
                   <button
-                    className="rounded px-1.5 py-0.5 hover:bg-slate-100"
+                    type="button"
+                    className="inline-flex min-h-11 items-center rounded-2xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 hover:bg-slate-100 sm:min-h-0 sm:py-0.5"
                     onClick={() => setSub(segs.slice(0, i + 1).join('/'))}
                   >
                     {s}
@@ -188,15 +195,14 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
                 </React.Fragment>
               ))}
             </div>
-            <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-100">
+            <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-100">
               {loading ? (
-                <div className="flex justify-center py-8">
-                  <SimpleLoadingSpinner size={0.9} />
-                </div>
+                <StudioLoadingState minHeightClassName="min-h-[160px]" text="正在读取目录…" />
               ) : entries.length === 0 ? (
-                <div className="px-4 py-8 text-center text-xs text-slate-400">
-                  {sub ? '该目录为空' : '工作目录为空,可先上传音频或下载 B 站音频'}
-                </div>
+                <StudioEmptyState
+                  className="mx-3 my-3 py-8"
+                  message={sub ? '该目录为空。换个目录，或先上传音频再回来。' : '工作目录为空，可先上传音频或下载 B 站音频。'}
+                />
               ) : (
                 <table className="w-full text-left text-xs">
                   <tbody>
@@ -205,7 +211,8 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
                         <td className="w-1/2 px-3 py-2">
                           {ent.dir ? (
                             <button
-                              className="flex items-center gap-2 text-slate-700 hover:text-indigo-600"
+                              type="button"
+                              className="flex min-h-11 items-center gap-2 rounded-2xl text-slate-700 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0"
                               onClick={() => setSub(ent.rel)}
                             >
                               <FaFolder className="text-amber-400" />
@@ -226,13 +233,14 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
                         <td className="w-20 px-3 py-2 text-right">
                           {!ent.dir && ent.audio ? (
                             <button
+                              type="button"
                               disabled={busy || !settings.enabled || chosen.includes(ent.rel)}
                               onClick={() => addChosen(ent.rel)}
                               className={cx(
                                 btnTiny,
                                 chosen.includes(ent.rel)
                                   ? 'border border-emerald-200 bg-emerald-50 text-emerald-600'
-                                  : 'border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100',
+                                  : 'border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900',
                               )}
                             >
                               {chosen.includes(ent.rel) ? '已加入' : '加入'}
@@ -252,23 +260,25 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
 
         <div className={`${studioSurfaceClassName} flex flex-col gap-3 p-5`}>
           <div className="text-sm font-semibold text-slate-800">
-            待转写文件 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] text-violet-700">{chosen.length}</span>
+            待转写文件 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{chosen.length}</span>
           </div>
 
           <div className="flex min-h-[120px] flex-1 flex-col gap-1.5">
             {chosen.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 py-8 text-xs text-slate-400">
-                从左侧「加入」服务器音频,或直接上传后自动进入清单
-              </div>
+              <StudioEmptyState
+                className="flex flex-1 items-center justify-center py-8 text-xs"
+                message="还没有待转写的文件。从左侧「加入」服务器音频，或直接上传后自动进入清单。"
+              />
             ) : (
               chosen.map((rel) => (
-                <div key={rel} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5">
+                <div key={rel} className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-1.5">
                   <FaFileAudio className="shrink-0 text-emerald-500" />
                   <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-600">{rel}</span>
                   <button
+                    type="button"
                     onClick={() => removeChosen(rel)}
                     disabled={busy}
-                    className="inline-flex items-center justify-center text-slate-400 transition hover:text-rose-500"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-400 transition hover:text-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:min-w-0"
                     aria-label={`移除 ${rel}`}
                   >
                     <FaTimes className="text-xs" />
@@ -300,9 +310,10 @@ export const TranscribePanel: React.FC<{ target: MediaTarget; settings: MediaToo
 
           <div className="flex justify-end">
             <button
+              type="button"
               onClick={() => void start()}
               disabled={busy || chosen.length === 0 || !settings.enabled}
-              className={btnIndigo}
+              className={btnPrimary}
             >
               {busy ? <SimpleLoadingSpinner size={0.7} /> : <FaPlay className="text-xs" />}
               开始转写 ({chosen.length})

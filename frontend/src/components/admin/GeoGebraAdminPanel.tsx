@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { FaBroom, FaChartBar, FaComments, FaFileAlt, FaFolderOpen, FaShareAlt, FaSync } from "react-icons/fa";
 import { getGeoGebraAdminOverview, runGeoGebraMaintenance, type GeoGebraAdminOverview } from "@/api/geogebraAdmin";
-import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell } from "@/components/studioTheme";
+import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell, studioDangerButtonClassName, studioFieldClassName, studioSecondaryButtonClassName } from "@/components/studioTheme";
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from "@/components/studioFeedback";
 import { useNotification } from "@/components/Notification";
 import { cn } from "@/lib/utils";
 
@@ -73,25 +74,45 @@ const GeoGebraAdminPanel: React.FC = () => {
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             <select
-              className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700"
+              className={`${studioFieldClassName} min-h-11 w-auto text-sm sm:min-h-0`}
               value={refreshMs}
               onChange={(event) => setRefreshMs(Number(event.target.value))}
               aria-label="自动刷新间隔"
             >
               {REFRESH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <button type="button" onClick={() => void load()} disabled={loading} className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:border-slate-300">
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              className={cn(studioSecondaryButtonClassName, 'min-h-11 sm:min-h-0')}
+            >
               <FaSync className={cn("mr-2 inline", loading && "animate-spin")} />刷新
             </button>
-            <button type="button" onClick={() => void handleMaintenance()} disabled={maintaining} className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-rose-700 hover:border-rose-200 hover:bg-rose-50">
+            <button
+              type="button"
+              onClick={() => void handleMaintenance()}
+              disabled={maintaining}
+              className={cn(studioDangerButtonClassName, 'min-h-11 sm:min-h-0')}
+            >
               <FaBroom className="mr-2 inline" />{maintaining ? "清理中…" : "清理过期资源"}
             </button>
           </div>
         )}
       />
 
-      {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-      {loading && !overview && <p role="status" className="text-sm text-slate-500">正在读取运行概览…</p>}
+      {error && !overview ? <StudioErrorState message={error} onRetry={() => void load()} /> : null}
+      {error && overview ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} className={studioSecondaryButtonClassName}>
+            重试
+          </button>
+        </StudioErrorNote>
+      ) : null}
+      {loading && !overview ? (
+        <StudioLoadingState minHeightClassName="min-h-[280px]" text="正在读取运行概览…" />
+      ) : null}
 
       {overview && (
         <div className="space-y-4">
@@ -116,7 +137,7 @@ const GeoGebraAdminPanel: React.FC = () => {
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">异步任务</h3>
             {Object.keys(overview.jobsByStatus).length === 0
-              ? <p className="mt-2 text-sm text-slate-500">还没有任务记录。</p>
+              ? <StudioEmptyState className="mt-2 py-8" message="还没有任务记录。在工作台发起一次编辑导出后，任务状态会出现在这里。" />
               : <div className="mt-2 flex flex-wrap gap-2">{Object.entries(overview.jobsByStatus).map(([status, count]) => <InfoBadge key={status}>{status}: {count}</InfoBadge>)}</div>}
             {overview.recentJobs.length > 0 && (
               <ul className="mt-3 space-y-2">
@@ -136,7 +157,7 @@ const GeoGebraAdminPanel: React.FC = () => {
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">最近分享</h3>
             {overview.recentShares.length === 0
-              ? <p className="mt-2 text-sm text-slate-500">还没有公开分享。</p>
+              ? <StudioEmptyState className="mt-2 py-8" message="还没有公开分享。在工作板里点「分享」生成链接后会出现在这里。" />
               : <ul className="mt-3 space-y-2">{overview.recentShares.map((share) => (
                 <li key={share.shareId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
                   <span className="font-semibold text-slate-700">{share.title}</span>
@@ -150,7 +171,7 @@ const GeoGebraAdminPanel: React.FC = () => {
 
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">延迟与体积指标</h3>
-            <p className="mt-2 text-sm text-slate-500">{overview.metrics.unavailableReason}</p>
+            <StudioEmptyState className="mt-2 py-8" message={overview.metrics.unavailableReason} />
           </InfoPanel>
         </div>
       )}

@@ -4,7 +4,7 @@ import { mediaToolApi } from '../../../api/mediaTool';
 import type { MediaJobRecord, MediaTarget, MediaToolSettings, TranscribeOutput } from '../../../api/mediaTool';
 import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
-import { btnIndigo, ErrLine, Field, OkLine, Toggle, inputCls, textareaCls } from './ui';
+import { btnPrimary, ErrLine, Field, OkLine, Toggle, WarnLine, inputCls, textareaCls } from './ui';
 
 const OUTPUT_CHOICES: Array<{ value: TranscribeOutput; label: string }> = [
   { value: 'plain', label: '纯文本' },
@@ -13,7 +13,7 @@ const OUTPUT_CHOICES: Array<{ value: TranscribeOutput; label: string }> = [
 ];
 
 const segBtn = (active: boolean) =>
-  `inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+  `inline-flex min-h-11 items-center gap-1.5 rounded-2xl px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-2 ${
     active ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
   }`;
 
@@ -76,7 +76,7 @@ export const BiliPanel: React.FC<{ target: MediaTarget; settings: MediaToolSetti
       />
 
       {!settings.enabled ? (
-        <ErrLine>媒体工具当前处于停用状态,请在「设置」页启用后再提交。</ErrLine>
+        <WarnLine>媒体工具当前处于停用状态,请在「设置」页启用后再提交。</WarnLine>
       ) : null}
 
       <div className={`${studioSurfaceClassName} space-y-4 p-5`}>
@@ -110,6 +110,7 @@ export const BiliPanel: React.FC<{ target: MediaTarget; settings: MediaToolSetti
               value={audioFormat}
               onChange={(e) => setAudioFormat(e.target.value)}
               placeholder={`格式(默认 ${settings.bili.audioFormat})`}
+              aria-label="音频格式(留空用服务端默认)"
             />
           ) : null}
         </div>
@@ -146,7 +147,7 @@ export const BiliPanel: React.FC<{ target: MediaTarget; settings: MediaToolSetti
         ) : null}
 
         <div className="flex justify-end">
-          <button onClick={() => void start()} disabled={disabled || lines.length === 0} className={btnIndigo}>
+          <button type="button" onClick={() => void start()} disabled={disabled || lines.length === 0} className={btnPrimary}>
             {busy ? <SimpleLoadingSpinner size={0.7} /> : <FaDownload className="text-xs" />}
             开始下载 {lines.length > 0 ? `(${lines.length})` : ''}
           </button>

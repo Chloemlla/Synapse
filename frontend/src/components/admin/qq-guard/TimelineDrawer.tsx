@@ -1,139 +1,116 @@
-import React, { useEffect, useState } from 'react';
-import { FaTimes } from 'react-icons/fa';
+import React, { useCallback, useEffect, useState } from 'react';
 import { qqGuardApi } from '../../../api/qqGuard';
 import type { QqGuardAuditRow } from '../../../api/qqGuard';
-import { SimpleLoadingSpinner } from '../../LoadingSpinner';
-import { studioBadgeClassName, studioModalOverlayClassName, studioSurfaceClassName } from '../../studioTheme';
-import { cx, eventBadge, formatDateTime, shortText } from './ui';
+import { studioBadgeClassName } from '../../studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioModal,
+  StudioModalHeader,
+} from '../../studioFeedback';
+import { eventBadge, formatDateTime, shortText } from './ui';
+
+/** 审计行的内部状态值 → 面向人的文案（不把原始枚举直接摆到界面上）。 */
+const STATUS_LABELS: Record<string, string> = {
+  done: '已完成',
+  pending: '待执行',
+  failed: '失败',
+};
 
 /**
  * 按 traceId 打开完整时间线（倒序展示：最新在上）。
  * 每个 attempt 独立一条，可逐次核对 AI 不可达期间的重试/终态，支撑误判申诉复核。
+ *
+ * 弹窗行为（Escape / Tab 循环 / 关闭后恢复焦点）由 StudioModal 统一提供（FD-070）。
  */
 export const TimelineDrawer: React.FC<{ traceId: string; onClose: () => void }> = ({ traceId, onClose }) => {
   const [events, setEvents] = useState<QqGuardAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    qqGuardApi
-      .timeline(traceId)
-      .then((rows) => {
-        if (alive) setEvents(rows);
-      })
-      .catch((err) => {
-        if (alive) {
-          setError('时间线加载失败，请稍后重试');
-          console.error('加载 trace 时间线失败:', err);
-        }
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
+    try {
+      setEvents(await qqGuardApi.timeline(traceId));
+    } catch (err) {
+      setEvents([]);
+      setError('时间线暂时读不出来，请稍后重试。');
+      console.error('加载 trace 时间线失败:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [traceId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const sorted = [...events].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
 
-  // Escape 关闭抽屉（F4-19）。
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
   return (
-    <div className={studioModalOverlayClassName}>
-      <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="qq-guard-timeline-title"
-        className={`${studioSurfaceClassName} flex max-h-[86vh] w-full max-w-3xl flex-col`}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-          <div className="min-w-0">
-            <div id="qq-guard-timeline-title" className="text-sm font-semibold text-slate-900">操作时间线</div>
-            <div className="truncate font-mono text-xs text-slate-500">{traceId}</div>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            aria-label="关闭"
-          >
-            <FaTimes />
-          </button>
-        </div>
+    <StudioModal open onClose={onClose} labelledBy="qq-guard-timeline-title" maxWidthClassName="max-w-3xl">
+      <StudioModalHeader
+        title="操作时间线"
+        titleId="qq-guard-timeline-title"
+        description={traceId}
+        onClose={onClose}
+      />
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {loading && (
-            <div className="flex justify-center py-10">
-              <SimpleLoadingSpinner size={1} />
-            </div>
-          )}
-          {!loading && error && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-          )}
-          {!loading && !error && sorted.length === 0 && (
-            <div className="py-10 text-center text-sm text-slate-500">该 trace 暂无审计记录</div>
-          )}
-          {!loading && !error && sorted.length > 0 && (
-            <ol className="relative space-y-4 border-l-2 border-slate-100 pl-5">
-              {sorted.map((ev, i) => {
-                const badge = eventBadge(ev.event, ev.verdict);
-                return (
-                  <li key={`${ev._id ?? i}`} className="relative">
-                    <span className="absolute -left-[27px] top-2 size-2 rounded-full bg-slate-300 ring-4 ring-white" />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={badge.className}>{badge.label}</span>
-                      <span className="text-xs text-slate-400">{formatDateTime(ev.createdAt)}</span>
-                      {typeof ev.attempt === 'number' && (
-                        <span className={studioBadgeClassName('slate')}>
-                          attempt #{ev.attempt}
-                        </span>
-                      )}
-                      {ev.status && ev.status !== 'done' && (
-                        <span className="font-mono text-[11px] text-slate-400">status: {ev.status}</span>
-                      )}
-                    </div>
-                    {(ev.reason || ev.error) && (
-                      <div className="mt-1 text-xs text-slate-600">
-                        {ev.error ? <span className="text-rose-600">错误：{shortText(ev.error, 160)}</span> : null}
-                        {ev.error && ev.reason ? ' · ' : null}
-                        {ev.reason ? <span>原因：{shortText(ev.reason, 160)}</span> : null}
-                      </div>
+      <div className="mt-5">
+        {loading ? (
+          <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取时间线…" />
+        ) : error ? (
+          <StudioErrorState message={error} onRetry={() => void load()} />
+        ) : sorted.length === 0 ? (
+          <StudioEmptyState
+            className="py-12"
+            message="这条 trace 还没有审计记录。等机器人处理过这条消息后重新打开即可看到。"
+          />
+        ) : (
+          <ol className="relative space-y-4 border-l-2 border-slate-100 pl-5">
+            {sorted.map((ev, i) => {
+              const badge = eventBadge(ev.event, ev.verdict);
+              return (
+                <li key={`${ev._id ?? i}`} className="relative">
+                  <span className="absolute -left-[27px] top-2 size-2 rounded-full bg-slate-300 ring-4 ring-white" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={badge.className}>{badge.label}</span>
+                    <span className="text-xs text-slate-400">{formatDateTime(ev.createdAt)}</span>
+                    {typeof ev.attempt === 'number' && (
+                      <span className={studioBadgeClassName('slate')}>第 {ev.attempt} 次尝试</span>
                     )}
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11px] text-slate-400">
-                      <span>群 {ev.groupId ?? '-'}</span>
-                      <span>用户 {ev.userId ?? '-'}</span>
-                      {ev.messageId && <span>消息 {ev.messageId}</span>}
-                      {ev.action && <span>action {ev.action}</span>}
+                    {ev.status && ev.status !== 'done' && (
+                      <span className="text-[11px] text-slate-400">状态：{STATUS_LABELS[ev.status] ?? '处理中'}</span>
+                    )}
+                  </div>
+                  {(ev.reason || ev.error) && (
+                    <div className="mt-1 text-xs text-slate-600">
+                      {ev.error ? <span className="text-rose-600">错误：{shortText(ev.error, 160)}</span> : null}
+                      {ev.error && ev.reason ? ' · ' : null}
+                      {ev.reason ? <span>原因：{shortText(ev.reason, 160)}</span> : null}
                     </div>
-                    {ev.content ? (
-                      <div
-                        className={cx(
-                          'mt-1.5 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-6 text-slate-600',
-                        )}
-                      >
-                        {shortText(ev.content, 220)}
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </div>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-slate-400">
+                    <span>群 {ev.groupId ?? '-'}</span>
+                    <span>用户 {ev.userId ?? '-'}</span>
+                    {ev.messageId && <span>消息 {ev.messageId}</span>}
+                    {ev.action && <span>处置 {ev.action}</span>}
+                  </div>
+                  {ev.content ? (
+                    <div className="mt-1.5 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-6 text-slate-600">
+                      {shortText(ev.content, 220)}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </div>
-    </div>
+    </StudioModal>
   );
 };

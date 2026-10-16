@@ -8,7 +8,8 @@ import {
   FaSlidersH,
 } from 'react-icons/fa';
 import type { ProxycheckCollectionInfo, ProxycheckOverviewResponse } from '@/api/ipRiskLogs';
-import { InfoBadge, InfoMetricCard, InfoPanel, InfoSectionTitle } from '@/components/studioTheme';
+import { InfoBadge, InfoMetricCard, InfoPanel, InfoSectionTitle, studioSecondaryButtonClassName } from '@/components/studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { formatCount, formatRelativeTime, formatTime, shortText, switchBadge } from './format';
 import {
@@ -40,31 +41,23 @@ const collectionHasTtl = (collection: ProxycheckCollectionInfo): boolean =>
 
 const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) => {
   if (loading && !overview) {
-    return (
-      <DataPanel>
-        <div className="p-8 text-center text-slate-400">正在读取 proxycheck 概览……</div>
-      </DataPanel>
-    );
+    return <StudioLoadingState minHeightClassName="min-h-[320px]" text="正在读取 proxycheck 概览……" />;
   }
 
   if (error && !overview) {
-    return (
-      <DataPanel>
-        <div className="space-y-3 p-8 text-center">
-          <div className="text-rose-600">{error}</div>
-          <button type="button" onClick={onRefresh} className="text-xs font-semibold text-indigo-600 underline">
-            重试
-          </button>
-        </div>
-      </DataPanel>
-    );
+    return <StudioErrorState message={error} onRetry={onRefresh} />;
   }
 
   if (!overview) {
     return (
-      <DataPanel>
-        <div className="p-8 text-center text-slate-400">暂无概览数据</div>
-      </DataPanel>
+      <StudioEmptyState
+        message="概览暂时没有可展示的数据。稍后重试一次；若持续为空，请确认后端已启动并已配置媒介。"
+        action={
+          <button type="button" onClick={onRefresh} className={studioSecondaryButtonClassName}>
+            重新读取
+          </button>
+        }
+      />
     );
   }
 
@@ -107,10 +100,11 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
   if (!config) {
     return (
       <DataPanel>
-        <div className="space-y-3 p-8 text-center">
-          <div className="text-slate-500">概览没有回传配置（setting.config），无法渲染配置现状。</div>
-          <JsonBlock value={overview} />
-        </div>
+        <StudioEmptyState
+          className="mb-4 py-10"
+          message="概览没有返回配置现状，无法渲染配置卡片。可重新读取一次；若持续如此，请联系维护者。"
+        />
+        <JsonBlock value={overview} />
       </DataPanel>
     );
   }
@@ -143,14 +137,14 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
           value={formatCount(counts?.riskCache)}
           detail={`生效中 ${formatCount(counts?.riskCacheActive)} 条`}
           icon={FaDatabase}
-          tone="teal"
+          tone="emerald"
         />
         <InfoMetricCard
           label="探测上报"
           value={formatCount(counts?.probeReports)}
           detail={`24 小时内 ${formatCount(counts?.probeReports24h)} 条`}
           icon={FaShieldAlt}
-          tone="violet"
+          tone="sky"
         />
       </div>
 
@@ -296,7 +290,10 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
             </TableWrap>
           </div>
         ) : (
-          <p className="mt-4 text-xs text-slate-400">最近 30 天没有任何配额记录（说明一次都没真正打到上游）。</p>
+          <StudioEmptyState
+            className="mt-4 py-10"
+            message="最近 30 天没有任何配额记录：说明一次都没有真正请求过上游。切到「判定决策日志」可以确认是否所有判定都命中了缓存。"
+          />
         )}
       </InfoPanel>
 
@@ -336,7 +333,7 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
                     collection.indexes.map((index) => (
                       <span
                         key={index}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600"
+                        className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600"
                       >
                         {index}
                       </span>
@@ -347,7 +344,10 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
             );
           })}
           {(collections ?? []).length === 0 ? (
-            <p className="text-xs text-slate-400">本端点没有回传集合信息。</p>
+            <StudioEmptyState
+              className="py-8"
+              message="本次概览没有返回集合信息。重新读取一次；若持续为空，请确认后端已启动。"
+            />
           ) : null}
         </div>
         <p className="mt-4 flex items-start gap-1.5 text-xs leading-5 text-slate-500">

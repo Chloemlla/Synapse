@@ -747,11 +747,45 @@ P11 需先确认 WIP 清零；P12 待 owner 对 demo 页去留的裁决。
 
 ---
 
-## 6. 收尾核对（修复后逐条回填）
+## 6. 收尾核对（随批次推进回填）
 
-| 编号 | 状态 | commit / 说明 |
-| --- | --- | --- |
-| FD-001 … FD-079 | 待修复 | — |
+> 状态图例：✅ 已修并推送 / 🟡 部分已修（余下在后续批次）/ ⏳ 排队中 / 🧊 挂起（见 §5）
+> 闸门基线：`scripts/governance/frontend-design-language-baseline.json`，只允许下降。
+
+| 批次 | commit | 覆盖编号 | 状态 |
+| --- | --- | --- | --- |
+| 清单落盘 | `a23fe21b` | 本文档本身 | ✅ |
+| P1 地基 | `0c5b1816` | FD-001 ✅、FD-002 ✅、FD-003（Toastify/字体部分）✅、FD-007 ✅、FD-008 ✅（澄清为白名单）、FD-079 ✅、FD-080 ✅ | ✅ |
+| P2 shell | `868671c5` | FD-004 ✅、FD-005 ✅、FD-006 ✅、FD-009 ✅（确认 `main.tsx` 无需改）、FD-018 ✅、FD-031（MobileNav 部分）✅、FD-034 ✅、FD-045 ✅、FD-051 ✅、FD-060 ✅、FD-067 ✅（ui/button）、FD-070（原语就绪）✅ | ✅ |
+| P4 管理端 A | `f7d182ed` | FD-017 ✅、FD-038 ✅、FD-053（11 处使用点）✅ | ✅ |
+| P6 账户/政策/LibreChat | `8a2c4ebf` | FD-040 ✅、FD-041 ✅、FD-042 ✅ | ✅ |
+| P5 管理端 B | `（本批）` | FD-017 收口 ✅、FD-038 收口 ✅、FD-053 收口 ✅（`independent-visual-overlay` 归零）、FD-055 ✅、FD-062（部分）✅ | ✅ |
+| — 其它会话在飞 WIP 收编 | `4896ca34` | 不属于本清单（工单/隐私地图），已按 owner 要求一并推送 | ✅ |
+| P7 商店/工具 | — | FD-011、FD-012、FD-015、FD-049、FD-057、FD-074、FD-078 | ⏳（首轮 429 中断，待重跑） |
+| P8 通讯/集成（a：Webhook/ShortLink/FBI/Notification） | — | FD-019、FD-020、FD-022、FD-023、FD-025、FD-034 | ⏳ |
+| P3 认证/验证 | — | FD-026～FD-028、FD-031、FD-056～FD-062、FD-063～FD-070 | ⏳ |
+| P9 内容/媒体 | — | FD-016、FD-043、FD-062、FD-071 | ⏳ |
+| P8b 环境配置（env-manager 56 + Email/SMTP） | — | FD-014、FD-039、FD-054、FD-056、FD-076 | ⏳（运行中） |
+| P10 票据/杂项 | — | FD-013、FD-035（TTSForm）、FD-044、FD-049、FD-056、FD-040（ticket） | ⏳ |
+| P11 GeoGebra/Pixel | — | FD-036、FD-037 | ⏳ |
+| P12 demo 页 | — | FD-021、FD-052、FD-068 | ⏳ / 🧊（S1 待 owner 裁决） |
+| FD-010 / FD-030 / FD-072 / FD-073 / FD-075 / FD-077 | — | 待核项/CSS 拆分/错误归一化 | ⏳ |
+
+### 6.1 闸门计数轨迹（每批只允许下降）
+
+| 规则 | 基线起点 | P1+P2 | +P4 | +P6 | +P5 |
+| --- | --- | --- | --- | --- | --- |
+| palette-forbidden-hue | 236 | 229 | 193 | 193 | **142** |
+| arbitrary-color-value | 1110 | 1110 | 1110 | 1110 | 1110 |
+| non-slate-neutral | 19 | 11 | 11 | 11 | **11** |
+| semantic-color-drift | 533 | 516 | 498 | 498 | **493** |
+| saturated-gradient | 88 | 85 | 83 | 83 | **83** |
+| second-ui-kit-token | 171 | 63 | 63 | 63 | **63** |
+| legacy-palette-name | 21 | 21 | 21 | 21 | **20** |
+| second-brand-color-literal | 11 | 9 | 9 | 9 | **9** |
+| independent-visual-overlay | 12 | 7 | 1 | 1 | **0** |
+| off-scale-radius | 526 | 508 | 441 | 441 | **382** |
+| **合计** | **2727** | 2559 | 2430 | 2430 | **2313** |
 
 ---
 

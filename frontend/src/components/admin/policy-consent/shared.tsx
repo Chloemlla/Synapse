@@ -20,8 +20,8 @@ export const EXPIRED_BADGE: BadgeStyle = {
 };
 export const INVALID_BADGE: BadgeStyle = {
   label: '已失效',
-  badgeClass: 'border-orange-200 bg-orange-50 text-orange-700',
-  dotClass: 'bg-orange-500',
+  badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+  dotClass: 'bg-amber-500',
 };
 
 /** 一条记录的状态徽标：先判是否置无效（撤回/顶替），再判是否过期，否则有效。 */
@@ -111,7 +111,7 @@ export const CopyableMono: React.FC<{
         onClick={() => void copy()}
         aria-label={copied ? `${label}（已复制）` : label}
         title={copied ? '已复制' : label}
-        className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+        className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 px-1.5 text-[10px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0 sm:py-0.5"
       >
         {copied ? '已复制' : '复制'}
       </button>

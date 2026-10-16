@@ -6,7 +6,8 @@ import {
   type ProxycheckLookupLogRow,
   type TriStateFilter,
 } from '@/api/ipRiskLogs';
-import { InfoPanel, InfoSectionTitle, studioFieldClassName } from '@/components/studioTheme';
+import { InfoPanel, InfoSectionTitle, studioFieldClassName, studioGhostButtonClassName } from '@/components/studioTheme';
+import { StudioErrorNote } from '@/components/studioFeedback';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
   CALLER_LABELS,
@@ -156,10 +157,17 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
       </SectionNote>
 
       {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
-      {error ? (
-        <InfoPanel compact>
-          <div className="text-sm text-rose-600">{error}</div>
-        </InfoPanel>
+      {error && rows.length > 0 ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setManualNonce((current) => current + 1)}
+            className={studioGhostButtonClassName}
+          >
+            重试
+          </button>
+        </StudioErrorNote>
       ) : null}
 
       <InfoPanel compact>
@@ -186,7 +194,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
                 onClick={() => setDraftIp('')}
                 title="清空输入"
                 aria-label="清空输入"
-                className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -235,7 +243,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Chip active={!hasFilters} label="重置筛选" onClick={resetFilters} title="清空全部筛选条件" />
           {ip ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
               IP 前缀 <span className="font-mono">{ip}</span>
               <button
                 type="button"
@@ -246,7 +254,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
                 }}
                 title="清除 IP 筛选"
                 aria-label="清除 IP 筛选"
-                className="inline-flex items-center justify-center rounded-lg p-0.5 transition hover:bg-indigo-100"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full p-0.5 transition hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -257,7 +265,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
             onClick={() =>
               setExpanded(allExpanded ? new Set() : new Set(rows.map((row, index) => rowKey(row, index))))
             }
-            className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-1.5"
           >
             {allExpanded ? <FaAngleDoubleUp /> : <FaAngleDoubleDown />}
             {allExpanded ? '折叠全部' : '展开全部'}
@@ -290,8 +298,13 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
               loading={loading && rows.length === 0}
               error={rows.length === 0 ? error : null}
               empty={!loading && rows.length === 0}
-              emptyText={hasFilters ? '当前筛选条件下没有风险判定决策日志' : '还没有任何风险判定决策日志'}
+              emptyText={
+                hasFilters
+                  ? '当前筛选条件下没有风险判定决策日志。可以点「重置筛选」回到全量数据，或换一个 IP 前缀重试。'
+                  : '还没有任何风险判定决策日志。等有浏览器访问后回到本页点「刷新」即可看到记录。'
+              }
               colSpan={11}
+              onRetry={() => setManualNonce((current) => current + 1)}
             />
             {rows.map((row, index) => {
               const key = rowKey(row, index);
@@ -350,7 +363,7 @@ const LookupsTab: React.FC<Props> = ({ refreshNonce }) => {
                       <button
                         type="button"
                         onClick={() => toggle(key)}
-                        className="rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+                        className="rounded-2xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       >
                         {isOpen ? '收起' : '展开'}
                       </button>

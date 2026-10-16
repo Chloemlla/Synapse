@@ -1,12 +1,12 @@
 import React from 'react';
 
-import { getInfoToneClasses } from '../../studioTheme';
-import { cn } from '../../utils/cn';
 import {
+  getInfoToneClasses,
   studioDangerButtonClassName,
   studioGhostButtonClassName,
   studioPrimaryButtonClassName,
 } from '../../studioTheme';
+import { cn } from '../../utils/cn';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
@@ -17,8 +17,14 @@ export const rowGhostButtonClassName = cn(
   studioGhostButtonClassName,
   'min-h-11 px-2 tracking-normal sm:min-h-0',
 );
-export const rowPrimaryButtonClassName = cn(studioPrimaryButtonClassName, 'min-h-11 px-2 py-1 text-[11px] sm:min-h-0');
-export const rowDangerButtonClassName = cn(studioDangerButtonClassName, 'min-h-11 px-2 py-1 text-[11px] sm:min-h-0');
+export const rowPrimaryButtonClassName = cn(
+  studioPrimaryButtonClassName,
+  'min-h-11 px-2 py-1 text-[11px] sm:min-h-0',
+);
+export const rowDangerButtonClassName = cn(
+  studioDangerButtonClassName,
+  'min-h-11 px-2 py-1 text-[11px] sm:min-h-0',
+);
 
 export function formatDateTime(value?: string | number | Date | null): string {
   if (!value) return '未知时间';

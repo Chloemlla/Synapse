@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaCheck, FaExclamationTriangle, FaMicrophone, FaSave, FaSlidersH, FaTrash, FaUpload } from 'react-icons/fa';
 import { mediaToolApi } from '../../../api/mediaTool';
 import type { BiliCookiesStatus, MediaTarget, MediaToolSettings, TranscribeOutput } from '../../../api/mediaTool';
-import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
+import { InfoSectionTitle, studioDangerButtonClassName, studioSurfaceClassName } from '../../studioTheme';
+import { StudioErrorState, StudioLoadingState } from '../../studioFeedback';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import { useConfirm } from '../../confirm/ConfirmDialogProvider';
-import { btnIndigo, ErrLine, Field, OkLine, Toggle, inputCls, cx } from './ui';
+import { btnPrimary, ErrLine, Field, OkLine, Toggle, WarnLine, inputCls, cx } from './ui';
 
 const SECRET_MASK = '********';
 
@@ -194,15 +195,16 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <SimpleLoadingSpinner size={1} />
-      </div>
-    );
+    return <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取媒体工具设置…" />;
   }
 
   if (!form) {
-    return <ErrLine>无法加载设置</ErrLine>;
+    return (
+      <StudioErrorState
+        message="设置暂时读不出来。请确认目标后端已启动、本页连接配置正确后重试。"
+        onRetry={() => void load()}
+      />
+    );
   }
 
   const hasMaskedLasr =
@@ -210,7 +212,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
 
   return (
     <fieldset disabled={!canManage} className="space-y-4">
-      {!canManage && <p role="status">当前账号可查看设置；修改设置及 cookies 需要超级管理员权限。</p>}
+      {!canManage && <WarnLine>当前账号可查看设置；修改设置及 cookies 需要超级管理员权限。</WarnLine>}
       <InfoSectionTitle
         title="媒体工具设置"
         description="转写接口参数、yt-dlp / cookies、代理与并发。密钥输入框显示 ******** 表示沿用当前值；cookies 正文单独入库保存。"
@@ -257,11 +259,11 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
       <div className={cx(studioSurfaceClassName, 'space-y-4 p-5')}>
         <div className="text-sm font-semibold text-slate-800">录音转写</div>
         {hasMaskedLasr ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
             检测到密钥以占位符展示。若沿用当前密钥，请勿改动该输入框。
           </div>
         ) : null}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-500">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-500">
           接口地址、AppId/AppKey、账号凭据、目录类参数若同时在环境变量（「系统配置 → 语音转文本与媒体工具」）里写了值，
           <strong>以环境变量为准</strong>；本节其余参数只走这里。
         </div>
@@ -340,7 +342,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
 
       <div className={cx(studioSurfaceClassName, 'space-y-4 p-5')}>
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-          <FaMicrophone className="text-violet-500" />
+          <FaMicrophone className="text-slate-400" />
           语音转文本(用户页 /transcribe)
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -406,17 +408,19 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
                 onChange={(e) => void pickCookiesFile(e.target.files?.[0])}
               />
               <button
+                type="button"
                 onClick={() => void saveCookies()}
                 disabled={cookieBusy || !cookieText.trim()}
-                className={btnIndigo}
+                className={btnPrimary}
               >
                 {cookieBusy ? <SimpleLoadingSpinner size={0.7} /> : <FaUpload className="text-xs" />}
                 保存到数据库
               </button>
               <button
+                type="button"
                 onClick={() => void clearCookies()}
                 disabled={cookieBusy || !cookies?.configured}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                className={cx(studioDangerButtonClassName, 'px-3 py-1.5 text-xs')}
               >
                 <FaTrash className="text-xs" />
                 清除
@@ -457,7 +461,7 @@ export const SettingsPanel: React.FC<{ target: MediaTarget; canManage?: boolean 
       </div>
 
       <div className="flex justify-end">
-        <button onClick={() => void save()} disabled={saving} className={btnIndigo}>
+        <button type="button" onClick={() => void save()} disabled={saving} className={btnPrimary}>
           {saving ? <SimpleLoadingSpinner size={0.7} /> : <FaSave className="text-xs" />}
           保存设置
         </button>

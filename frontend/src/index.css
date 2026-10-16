@@ -242,105 +242,12 @@ body {
   }
 }
 
-/* Admin pages: scoped LogShare visual language */
-.logshare-admin-surface {
-  color: #0f172a;
-}
-
-.logshare-admin-surface .font-songti {
-  font-family: inherit !important;
-}
-
-.logshare-admin-surface :where([class*="bg-gradient-to-"]) {
-  background-image: none !important;
-}
-
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="border"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="shadow"] {
-  border-color: rgba(255, 255, 255, 0.7) !important;
-  border-radius: 26px !important;
-  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.06) !important;
-  backdrop-filter: blur(16px);
-}
-
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-white"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-blue"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-indigo"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-purple"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-cyan"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-[#"] {
-  background-color: rgba(255, 255, 255, 0.82) !important;
-}
-
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-slate"],
-.logshare-admin-surface :where(section, main, article, form, header, div)[class*="rounded"][class*="bg-gray"] {
-  background-color: rgba(248, 250, 252, 0.72) !important;
-}
-
-.logshare-admin-surface :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 1rem !important;
-  background-color: rgba(255, 255, 255, 0.8) !important;
-  color: #0f172a !important;
-  box-shadow: none !important;
-}
-
-.logshare-admin-surface :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus {
-  border-color: #94a3b8 !important;
-  outline: none !important;
-  box-shadow: 0 0 0 2px #cbd5e1 !important;
-}
-
-.logshare-admin-surface :where(button, a)[class*="bg-"]:not([class*="hover:bg-"]):not([class*="bg-white"]):not([class*="bg-transparent"]):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-yellow"]) {
-  border-color: #0f172a !important;
-  border-radius: 1rem !important;
-  background-color: #0f172a !important;
-  color: #fff !important;
-  box-shadow: none !important;
-}
-
-.logshare-admin-surface :where(button, a)[class*="bg-amber"],
-.logshare-admin-surface :where(button, a)[class*="bg-yellow"] {
-  border-color: #e2e8f0 !important;
-  border-radius: 1rem !important;
-  background-color: rgba(255, 255, 255, 0.8) !important;
-  color: #334155 !important;
-}
-
-.logshare-admin-surface :where(button, a)[class*="bg-red"],
-.logshare-admin-surface :where(button, a)[class*="bg-rose"] {
-  border-color: #fecdd3 !important;
-  border-radius: 1rem !important;
-  background-color: rgba(255, 241, 242, 0.82) !important;
-  color: #be123c !important;
-}
-
-.logshare-admin-surface :where([class*="text-[#"], [class*="text-blue"], [class*="text-indigo"], [class*="text-purple"], [class*="text-cyan"], [class*="text-orange"]) {
-  color: #334155 !important;
-}
-
-.logshare-admin-surface :where([class*="text-red"], [class*="text-rose"]) {
-  color: #be123c !important;
-}
-
-.logshare-admin-surface :where([class*="text-green"], [class*="text-emerald"]) {
-  color: #047857 !important;
-}
-
-.logshare-admin-surface :where(table) {
-  border-color: #e2e8f0 !important;
-  background-color: rgba(255, 255, 255, 0.78) !important;
-}
-
-.logshare-admin-surface :where(th) {
-  background-color: rgba(248, 250, 252, 0.9) !important;
-  color: #475569 !important;
-}
-
-.logshare-admin-surface :where(td) {
-  border-color: #e2e8f0 !important;
-  color: #334155;
-}
+/* Admin pages: scoped LogShare visual language —— 已删除。
+   这里曾用一整段 `!important` 规则（强制 26px 圆角、white/82 底色、slate-900 按钮、
+   indigo/purple/cyan/orange 文本一律压成 #334155…）把管理端页面「化妆」成 slate 视觉，
+   用来掩盖页面里真实的 indigo 配色。2026-10-16 管理端 21+23 个面板的真实 class 已改到
+   studioTheme token，这层伪装配色不再需要，整段移除；App.tsx 的包裹 div 同步删除。
+   见 docs/audit/audit-2026-10-16-frontend-design-language.md FD-003 / FD-053。 */
 
 /* 文本截断和行数限制样式 */
 .line-clamp-2 {

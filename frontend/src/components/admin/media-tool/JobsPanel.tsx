@@ -15,6 +15,7 @@ import { mediaToolApi } from '../../../api/mediaTool';
 import type { AdminTranscriptItem, MediaJobRecord, MediaTarget } from '../../../api/mediaTool';
 import TranscriptView from '../../speech-to-text/TranscriptView';
 import { InfoSectionTitle, studioSurfaceClassName } from '../../studioTheme';
+import { StudioErrorNote, StudioLoadingState, StudioModal, StudioModalHeader } from '../../studioFeedback';
 import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 import {
@@ -53,6 +54,8 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; text: string } | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, AdminTranscriptItem[]>>({});
+  // 详情拉取失败必须可见：否则展开后只能看到列表行的旧数据，看起来像「详情本来就是空的」。
+  const [detailError, setDetailError] = useState<{ id: string; message: string } | null>(null);
   const polling = useRef(false);
   const detailRequests = useRef<Record<string, number>>({});
 
@@ -69,8 +72,13 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
           if (!job) return;
           setDetail((d) => ({ ...d, [job.id]: job }));
           setTranscripts((t) => ({ ...t, [job.id]: res.transcripts }));
+          setDetailError((prev) => (prev?.id === job.id ? null : prev));
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (detailRequests.current[id] !== request) return;
+          setDetailError({ id, message: '任务详情暂时读不出来，请稍后重试。' });
+          console.error('加载媒体工具任务详情失败:', err);
+        });
     },
     [target],
   );
@@ -196,7 +204,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
         icon={FaHistory}
         tone="slate"
         action={
-          <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-semibold text-indigo-700">
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
             {activeCount} 进行中
           </span>
         }
@@ -204,17 +212,18 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
 
       {error ? (
         <ErrLine>
-          <FaExclamationTriangle className="text-rose-500" />
-          {error}
+          <FaExclamationTriangle className="shrink-0 text-rose-500" />
+          <span className="min-w-0 flex-1">{error}</span>
+          <button type="button" onClick={() => void refreshList()} className={btnTiny}>
+            重试
+          </button>
         </ErrLine>
       ) : null}
       {flash ? <OkLine>{flash}</OkLine> : null}
 
       <div className="space-y-2">
         {loading && jobs.length === 0 ? (
-          <div className="flex justify-center py-14">
-            <SimpleLoadingSpinner size={1} />
-          </div>
+          <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在读取任务…" />
         ) : jobs.length === 0 ? (
           <div className={`${studioSurfaceClassName} overflow-hidden`}>
             <EmptyHint>还没有任务。到「B站下载」或「转写」页提交第一个任务。</EmptyHint>
@@ -266,6 +275,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                   <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     {isActive ? (
                       <button
+                        type="button"
                         onClick={() => void act('cancel', job)}
                         disabled={pendingAction !== null}
                         className={cx(btnTiny, 'border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100')}
@@ -275,15 +285,17 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                       </button>
                     ) : showRetry ? (
                       <button
+                        type="button"
                         onClick={() => void act('retry', job)}
                         disabled={pendingAction !== null}
-                        className={cx(btnTiny, 'border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100')}
+                        className={cx(btnTiny, 'bg-slate-900 text-white hover:bg-slate-800')}
                       >
                         {pendingAction === `retry:${job.id}` ? <SimpleLoadingSpinner size={0.6} /> : <FaRedo className="text-[10px]" />}
                         重试
                       </button>
                     ) : null}
                     <button
+                      type="button"
                       onClick={() => void act('delete', job)}
                       disabled={!canManage || pendingAction !== null || isActive}
                       className={cx(btnTiny, 'border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600', isActive && 'cursor-not-allowed opacity-40')}
@@ -298,7 +310,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                 {expanded ? (
                   <div id={`job-detail-${job.id}`} className="space-y-3 border-t border-slate-100 px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     {failedItems.length > 0 ? (
-                      <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                      <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                         {failedItems.map((it) => (
                           <div key={it.label} className="flex gap-2 py-0.5">
                             <span className="shrink-0 font-medium">✗ {it.label}</span>
@@ -308,6 +320,15 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                       </div>
                     ) : null}
 
+                    {detailError?.id === job.id ? (
+                      <StudioErrorNote className="flex flex-wrap items-center gap-3">
+                        <span className="min-w-0 flex-1">{detailError.message}</span>
+                        <button type="button" onClick={() => void loadDetail(job.id)} className={btnTiny}>
+                          重试
+                        </button>
+                      </StudioErrorNote>
+                    ) : null}
+
                     {files.length > 0 ? (
                       <div>
                         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -315,22 +336,26 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {files.map((rel) => (
-                            <span key={rel} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                            <span key={rel} className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white px-2 py-1">
                               <FaFileAlt className={cx('text-[10px]', isTextRel(rel) ? 'text-sky-400' : 'text-emerald-500')} />
                               <span className="max-w-[220px] truncate font-mono text-[11px] text-slate-600">{rel}</span>
                               {isTextRel(rel) ? (
                                 <button
+                                  type="button"
                                   onClick={() => void openPreview(rel)}
-                                  className="ml-0.5 text-slate-400 transition hover:text-indigo-600"
+                                  className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-400 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
                                   title="查看文本"
+                                  aria-label={`查看 ${rel} 的文本`}
                                 >
                                   <FaEye className="text-[11px]" />
                                 </button>
                               ) : null}
                               <button
+                                type="button"
                                 onClick={() => doDownload(rel)}
-                                className="ml-0.5 text-slate-400 transition hover:text-indigo-600"
+                                className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-400 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
                                 title="下载"
+                                aria-label={`下载 ${rel}`}
                               >
                                 <FaDownload className="text-[11px]" />
                               </button>
@@ -366,7 +391,7 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
                       <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                         实时日志
                       </div>
-                      <pre className="max-h-72 overflow-auto rounded-xl bg-slate-900 px-3 py-2.5 font-mono text-[11px] leading-5 text-slate-100">
+                      <pre className="max-h-72 overflow-auto rounded-2xl border border-slate-900 bg-slate-900 px-3 py-2.5 font-mono text-[11px] leading-5 text-slate-100">
                         {full.logs.length === 0
                           ? '（暂无日志）'
                           : full.logs
@@ -382,24 +407,26 @@ export const JobsPanel: React.FC<{ target: MediaTarget; canManage?: boolean }> =
         )}
       </div>
 
-      {preview ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPreview(null)}>
-          <div
-            className="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <div className="truncate font-mono text-xs text-slate-700">{preview.title}</div>
-              <button onClick={() => setPreview(null)} className="inline-flex items-center justify-center text-slate-400 hover:text-slate-600">
-                <FaTimes />
-              </button>
-            </div>
-            <pre className="min-h-[40vh] flex-1 overflow-auto whitespace-pre-wrap bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700">
+      <StudioModal
+        open={preview !== null}
+        onClose={() => setPreview(null)}
+        labelledBy="media-tool-preview-title"
+        maxWidthClassName="max-w-3xl"
+      >
+        {preview ? (
+          <>
+            <StudioModalHeader
+              title={preview.title}
+              titleId="media-tool-preview-title"
+              description="任务产物的文本内容（只读）。"
+              onClose={() => setPreview(null)}
+            />
+            <pre className="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700">
               {preview.text}
             </pre>
-          </div>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </StudioModal>
     </div>
   );
 };

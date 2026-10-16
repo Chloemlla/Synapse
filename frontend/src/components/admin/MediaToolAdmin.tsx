@@ -12,13 +12,14 @@ import {
 import type { IconType } from 'react-icons';
 import { emptyTarget, mediaToolApi } from '../../api/mediaTool';
 import type { MediaTarget, MediaToolHealth, MediaToolSettings } from '../../api/mediaTool';
-import { InfoMetricCard, InfoSectionTitle, studioSurfaceClassName } from '../studioTheme';
+import { InfoMetricCard, InfoQueryHero, InfoQueryShell, studioSurfaceClassName } from '../studioTheme';
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from '../studioFeedback';
 import { SimpleLoadingSpinner } from '../LoadingSpinner';
 import { BiliPanel } from './media-tool/BiliPanel';
 import { JobsPanel } from './media-tool/JobsPanel';
 import { SettingsPanel } from './media-tool/SettingsPanel';
 import { TranscribePanel } from './media-tool/TranscribePanel';
-import { btnGhost, cx, ErrLine, inputCls } from './media-tool/ui';
+import { btnGhost, cx, inputCls } from './media-tool/ui';
 
 import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
@@ -190,7 +191,7 @@ export const MediaToolAdmin: React.FC = () => {
 
   const segBtn = (active: boolean) =>
     cx(
-      'inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-semibold transition',
+      'inline-flex min-h-11 items-center gap-2 rounded-2xl px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-2',
       active ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
     );
 
@@ -221,14 +222,14 @@ export const MediaToolAdmin: React.FC = () => {
   const canManage = health?.mode === 'standalone' || isSuperAdmin(user?.role);
 
   return (
-    <div className="space-y-4">
-      <InfoSectionTitle
-        title="媒体工具"
+    <InfoQueryShell maxWidthClassName="max-w-7xl">
+      <InfoQueryHero
         eyebrow="Media Tool"
+        title="媒体工具"
         description="B 站视频下载与录音转写完整流程。可连接当前站点的内置接口(服务器内部下载),或仅连一台独立本地后端把本页当方便壳用。"
         icon={FaDownload}
         tone="slate"
-        action={
+        meta={
           <span
             className={cx(
               'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold',
@@ -245,7 +246,7 @@ export const MediaToolAdmin: React.FC = () => {
         }
       />
 
-      <div className={`${studioSurfaceClassName} space-y-4 p-5`}>
+      <div className={`${studioSurfaceClassName} mt-5 space-y-4 p-5`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm font-semibold text-slate-800">运行目标</div>
           <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
@@ -261,8 +262,8 @@ export const MediaToolAdmin: React.FC = () => {
         </div>
 
         {isInternal ? (
-          <div className="flex items-start gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-xs leading-5 text-indigo-800">
-            <FaServer className="mt-0.5 shrink-0 text-indigo-400" />
+          <div className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-600">
+            <FaServer className="mt-0.5 shrink-0 text-slate-400" />
             <span>
               使用<b>当前站点</b>的内置媒体工具接口 (<code className="font-mono">/api/admin/media-tool</code>)。下载 / 转写均在服务器本机
               workDir 完成,任务历史写入站点数据库。需以管理员身份登录。
@@ -307,14 +308,14 @@ export const MediaToolAdmin: React.FC = () => {
         )}
 
         {probeError ? (
-          <ErrLine>
-            <FaExclamationTriangle className="text-rose-500" />
+          <StudioErrorNote className="flex flex-wrap items-center gap-2">
+            <FaExclamationTriangle className="shrink-0 text-rose-500" aria-hidden />
             {probeError}
-          </ErrLine>
+          </StudioErrorNote>
         ) : null}
 
         <div className="flex items-center justify-end gap-2">
-          <button onClick={() => void probe()} disabled={probing} className={btnGhost}>
+          <button type="button" onClick={() => void probe()} disabled={probing} className={btnGhost}>
             {probing ? <SimpleLoadingSpinner size={0.6} /> : <FaSyncAlt className="text-xs" />}
             测试连接
           </button>
@@ -352,16 +353,17 @@ export const MediaToolAdmin: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-200">
+      <div className="mt-5 flex flex-wrap gap-1.5 border-b border-slate-200">
         {TAB.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setActiveTab(t.id)}
+            aria-pressed={activeTab === t.id}
             className={cx(
-              'inline-flex items-center gap-2 rounded-t-2xl border-b-2 px-4 py-2.5 text-sm font-semibold transition',
+              'inline-flex min-h-11 items-center gap-2 rounded-t-2xl border-b-2 px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0',
               activeTab === t.id
-                ? 'border-indigo-500 text-indigo-700'
+                ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-800',
             )}
           >
@@ -371,8 +373,17 @@ export const MediaToolAdmin: React.FC = () => {
         ))}
       </div>
 
-      <div key={panelKey}>
-        {!health ? <p>连接成功后即可使用媒体工具。</p> : (
+      <div key={panelKey} className="mt-4">
+        {probeError && !health ? (
+          <StudioErrorState
+            message="还没有连接到媒体工具。请核对上方地址与密钥(或切换回「站点内置」),然后重试。"
+            onRetry={() => void probe()}
+          />
+        ) : probing && !health ? (
+          <StudioLoadingState minHeightClassName="min-h-[240px]" text="正在连接媒体工具…" />
+        ) : !health ? (
+          <StudioEmptyState message="还没有连接到媒体工具。选好运行目标后点「测试连接」,连接成功即可使用下方各分页。" />
+        ) : (
           <>
             {activeTab === 'settings' ? <SettingsPanel target={target} canManage={canManage} /> : null}
             {activeTab === 'bili' ? <BiliPanel target={target} settings={panelSettings} /> : null}
@@ -382,13 +393,13 @@ export const MediaToolAdmin: React.FC = () => {
         )}
       </div>
 
-      <div className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+      <div className="mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
         <FaCheckCircle className="mt-0.5 shrink-0 text-slate-400" />
         <span>
           连接偏好保存在本浏览器(localStorage)。面板切换目标会自动重新挂载并从对应后端拉取数据;任务列表每 2.5 秒轮询一次,当前选择会被记住。
         </span>
       </div>
-    </div>
+    </InfoQueryShell>
   );
 };
 

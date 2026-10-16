@@ -262,6 +262,7 @@ export const Pager: React.FC<{
       total={total}
       loading={loading}
       label="列表分页"
+      className="px-4 pb-3"
       onPageChange={(next) => onChange(Math.max(0, (next - 1) * pageSize))}
     />
   );

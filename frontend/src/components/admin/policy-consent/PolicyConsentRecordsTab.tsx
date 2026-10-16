@@ -8,7 +8,7 @@ import {
   type PolicyConsentState,
 } from '@/api/policyConsents';
 import { useNotification } from '@/components/Notification';
-import { InfoPanel } from '@/components/studioTheme';
+import { InfoPanel, studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '@/components/studioTheme';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import { cn } from '@/lib/utils';
 import { PAGE_SIZE_OPTIONS, formatCount } from '../ip-risk-log/format';
@@ -186,7 +186,7 @@ const PolicyConsentRecordsTab: React.FC<{
           }}
           placeholder="按设备指纹精确匹配（可选）"
           aria-label="按设备指纹精确匹配"
-          className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 font-mono text-xs text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-w-xs"
+          className={`${studioFieldClassName} min-w-0 flex-1 font-mono text-xs sm:max-w-xs`}
         />
         <input
           type="text"
@@ -197,9 +197,9 @@ const PolicyConsentRecordsTab: React.FC<{
           }}
           placeholder="按 IP 精确匹配（可选）"
           aria-label="按 IP 精确匹配"
-          className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 font-mono text-xs text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-w-[12rem]"
+          className={`${studioFieldClassName} min-w-0 flex-1 font-mono text-xs sm:max-w-[12rem]`}
         />
-        <label className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600">
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-600 sm:min-h-0 sm:py-1.5">
           同意时间
           <input
             type="date"
@@ -220,7 +220,7 @@ const PolicyConsentRecordsTab: React.FC<{
         <button
           type="button"
           onClick={applyText}
-          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+          className={`${studioPrimaryButtonClassName} min-h-11 px-4 py-2 text-xs sm:min-h-0`}
         >
           <FaFilter className="text-[10px]" /> 查询
         </button>
@@ -260,7 +260,7 @@ const PolicyConsentRecordsTab: React.FC<{
           aria-pressed={incompleteOnly}
           title="只看缺 agreements 字段或未勾满四份文件的记录（这些记录不会被门禁当作有效同意）"
           className={cn(
-            'rounded-2xl border px-3 py-2 text-xs font-semibold transition',
+            'inline-flex min-h-11 items-center rounded-2xl border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-2',
             incompleteOnly
               ? 'border-amber-300 bg-amber-50 text-amber-800'
               : 'border-slate-200 bg-white/80 text-slate-600 hover:border-slate-300',
@@ -274,7 +274,7 @@ const PolicyConsentRecordsTab: React.FC<{
           onClick={() => void handleExport()}
           disabled={exporting || loading}
           title="按当前筛选导出 CSV（服务端上限 5000 行，导出动作会写审计日志）"
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 disabled:opacity-50"
+          className={`${studioSecondaryButtonClassName} min-h-11 px-4 py-2 text-xs sm:min-h-0`}
         >
           <FaDownload className="text-[10px]" />
           {exporting ? '导出中…' : '导出 CSV'}
@@ -283,7 +283,7 @@ const PolicyConsentRecordsTab: React.FC<{
           <button
             type="button"
             onClick={resetFilters}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+            className={`${studioSecondaryButtonClassName} min-h-11 px-4 py-2 text-xs sm:min-h-0`}
           >
             <FaUndo className="text-[10px]" /> 重置筛选
           </button>
@@ -319,8 +319,9 @@ const PolicyConsentRecordsTab: React.FC<{
               loading={loading && rows.length === 0}
               error={rows.length === 0 ? error : null}
               empty={!loading && rows.length === 0}
-              emptyText="当前筛选条件下没有同意记录"
+              emptyText="当前筛选条件下没有同意记录。点「重置筛选」回到默认条件，或把「同意时间」范围放宽。"
               colSpan={13}
+              onRetry={() => setManualNonce((current) => current + 1)}
             />
             {rows.map((row) => (
               <tr key={row.id} className="align-top hover:bg-slate-50/60">

@@ -2,14 +2,21 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { FaListUl, FaRedo, FaSearch } from 'react-icons/fa';
 import { qqGuardApi } from '../../../api/qqGuard';
 import type { QqGuardAuditRow } from '../../../api/qqGuard';
-import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import {
   InfoSectionTitle,
+  studioFieldClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../../studioTheme';
-import { cx, eventBadge, formatDateTime, shortText } from './ui';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioPager,
+} from '../../studioFeedback';
+import { cx, eventBadge, formatDateTime, shortText, rowGhostButtonClassName } from './ui';
 
 const PAGE_SIZE = 30;
 
@@ -139,7 +146,7 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
           icon={FaListUl}
           tone="slate"
         />
-        <button onClick={refresh} disabled={loading} className={studioSecondaryButtonClassName}>
+        <button type="button" onClick={refresh} disabled={loading} className={studioSecondaryButtonClassName}>
           <FaRedo className="text-sm" />
           刷新
         </button>
@@ -153,24 +160,28 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
           value={fTrace}
           onChange={(e) => setFTrace(e.target.value)}
           placeholder="traceId"
-          className="col-span-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300 sm:col-span-1"
+          aria-label="按 traceId 筛选"
+          className={`${studioFieldClassName} col-span-2 py-2 text-xs sm:col-span-1`}
         />
         <input
           value={fUser}
           onChange={(e) => setFUser(e.target.value)}
           placeholder="QQ号"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300"
+          aria-label="按 QQ 号筛选"
+          className={`${studioFieldClassName} py-2 text-xs`}
         />
         <input
           value={fGroup}
           onChange={(e) => setFGroup(e.target.value)}
           placeholder="群号"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300"
+          aria-label="按群号筛选"
+          className={`${studioFieldClassName} py-2 text-xs`}
         />
         <select
           value={fEvent}
           onChange={(e) => setFEvent(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300"
+          aria-label="按事件类型筛选"
+          className={`${studioFieldClassName} py-2 text-xs`}
         >
           <option value="">全部事件</option>
           {EVENT_OPTIONS.map((ev) => (
@@ -182,7 +193,8 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
         <select
           value={fVerdict}
           onChange={(e) => setFVerdict(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-300"
+          aria-label="按 AI 判定筛选"
+          className={`${studioFieldClassName} py-2 text-xs`}
         >
           <option value="">全部判定</option>
           <option value="violated" title="violated">{VERDICT_LABELS.violated}</option>
@@ -195,9 +207,14 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
         </button>
       </form>
 
-      {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-      )}
+      {error ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button type="button" onClick={refresh} className={rowGhostButtonClassName}>
+            重试
+          </button>
+        </StudioErrorNote>
+      ) : null}
 
       <div className={cx(studioSurfaceClassName, 'overflow-hidden')}>
         <div className="overflow-x-auto">
@@ -213,10 +230,25 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && !loading ? (
+              {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                    暂无审计记录
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取审计日志…" />
+                  </td>
+                </tr>
+              ) : error && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioErrorState message={error} onRetry={refresh} />
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioEmptyState
+                      className="py-10"
+                      message="还没有审计记录。等到机器人在群里处理过消息（或下发过命令）后，回本页点「刷新」。"
+                    />
                   </td>
                 </tr>
               ) : (
@@ -235,8 +267,9 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
                       </td>
                       <td className="px-4 py-2.5">
                         <button
+                          type="button"
                           onClick={() => onOpenTrace(row.traceId)}
-                          className="max-w-[190px] truncate rounded-md px-1 font-mono text-xs text-indigo-600 transition hover:bg-indigo-50"
+                          className="max-w-[190px] truncate rounded-2xl px-1 font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                           title="查看时间线"
                         >
                           {row.traceId}
@@ -251,7 +284,7 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
                       </td>
                       <td className="max-w-[200px] truncate px-4 py-2.5 text-xs text-slate-500">
                         {row.error ? (
-                          <span className="text-orange-600">{shortText(row.error, 80)}</span>
+                          <span className="text-amber-700">{shortText(row.error, 80)}</span>
                         ) : (
                           shortText(row.reason, 80)
                         )}
@@ -264,32 +297,15 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ onOpenTrace }) => 
           </table>
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs text-slate-500">
-            共 {total} 条 · 第 {page}/{totalPages} 页
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => goTo(page - 1)}
-              disabled={page <= 1 || loading}
-              className={studioSecondaryButtonClassName}
-            >
-              上一页
-            </button>
-            <button
-              onClick={() => goTo(page + 1)}
-              disabled={page >= totalPages || loading}
-              className={studioPrimaryButtonClassName}
-            >
-              下一页
-            </button>
-          </div>
-        </div>
-        {loading && (
-          <div className="flex justify-center pb-4">
-            <SimpleLoadingSpinner size={0.9} />
-          </div>
-        )}
+        <StudioPager
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          loading={loading}
+          label="审计日志分页"
+          className="px-4 pb-4"
+          onPageChange={goTo}
+        />
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaAngleDoubleDown, FaAngleDoubleUp, FaClock, FaDatabase, FaTimes } from 'react-icons/fa';
 import { ipRiskLogsApi, type RiskCacheEntry, type RiskCacheState } from '@/api/ipRiskLogs';
-import { InfoPanel, InfoSectionTitle, studioFieldClassName } from '@/components/studioTheme';
+import { InfoPanel, InfoSectionTitle, studioFieldClassName, studioGhostButtonClassName } from '@/components/studioTheme';
+import { StudioErrorNote } from '@/components/studioFeedback';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import {
   DETECTION_FLAGS,
@@ -126,10 +127,17 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
       </SectionNote>
 
       {/* 常驻错误条：表里已有数据时刷新失败也必须可见，不能只靠会自动消失的 toast。 */}
-      {error ? (
-        <InfoPanel compact>
-          <div className="text-sm text-rose-600">{error}</div>
-        </InfoPanel>
+      {error && rows.length > 0 ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setManualNonce((current) => current + 1)}
+            className={studioGhostButtonClassName}
+          >
+            重试
+          </button>
+        </StudioErrorNote>
       ) : null}
 
       <InfoPanel compact>
@@ -159,7 +167,7 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
                 onClick={() => setDraftIp('')}
                 title="清空输入"
                 aria-label="清空输入"
-                className="inline-flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:min-w-0"
               >
                 <FaTimes />
               </button>
@@ -195,7 +203,7 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
             onClick={() =>
               setExpanded(allExpanded ? new Set() : new Set(rows.map((row, index) => rowKey(row, index))))
             }
-            className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:min-h-0 sm:py-1.5"
           >
             {allExpanded ? <FaAngleDoubleUp /> : <FaAngleDoubleDown />}
             {allExpanded ? '折叠全部' : '展开全部'}
@@ -227,9 +235,14 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
               error={rows.length === 0 ? error : null}
               empty={!loading && rows.length === 0}
               emptyText={
-                ip ? '该 IP 前缀没有缓存文档' : state === 'active' ? '当前没有生效中的缓存文档' : '没有缓存文档'
+                ip
+                  ? '该 IP 前缀没有缓存文档。换个前缀或清空筛选后重试。'
+                  : state === 'active'
+                    ? '当前没有生效中的缓存文档。切到「全部」可以看到已过期的文档。'
+                    : '还没有任何缓存文档。等到有风险查询写入后回本页点「刷新」。'
               }
               colSpan={9}
+              onRetry={() => setManualNonce((current) => current + 1)}
             />
             {rows.map((row, index) => {
               const key = rowKey(row, index);
@@ -334,7 +347,7 @@ const RiskCacheTab: React.FC<Props> = ({ refreshNonce }) => {
                       <button
                         type="button"
                         onClick={() => toggle(key)}
-                        className="rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+                        className="rounded-2xl border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       >
                         {isOpen ? '收起' : '展开'}
                       </button>

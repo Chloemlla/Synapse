@@ -2,18 +2,24 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { FaPaperPlane, FaRedo, FaTerminal } from 'react-icons/fa';
 import { qqGuardApi } from '../../../api/qqGuard';
 import type { QqGuardCommandRow } from '../../../api/qqGuard';
-import { SimpleLoadingSpinner } from '../../LoadingSpinner';
 import {
   InfoSectionTitle,
+  studioFieldClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../../studioTheme';
-import { cx, formatDateTime, shortText } from './ui';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioSuccessNote,
+} from '../../studioFeedback';
+import { cx, formatDateTime, shortText, rowGhostButtonClassName } from './ui';
 import { useConfirm } from '../../confirm/ConfirmDialogProvider';
 
-const inputClass =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition focus:border-indigo-300';
+const inputClass = `py-2 text-xs ${studioFieldClassName}`;
 
 function statusBadge(row: QqGuardCommandRow): { label: string; className: string } {
   if (row.status === 'done') {
@@ -99,7 +105,7 @@ export const CommandPanel: React.FC = () => {
       setExReason('');
       await load();
     } catch (err) {
-      setError(`「${label}」下发失败：请确认机器人数据就绪（Mongo 可用）`);
+      setError(`「${label}」下发失败，请稍后重试。`);
       console.error('下发 QQ 群命令失败:', err);
     } finally {
       setBusyAction(null);
@@ -170,7 +176,7 @@ export const CommandPanel: React.FC = () => {
           icon={FaTerminal}
           tone="violet"
         />
-        <button onClick={() => void load()} disabled={loading} className={studioSecondaryButtonClassName}>
+        <button type="button" onClick={() => void load()} disabled={loading} className={studioSecondaryButtonClassName}>
           <FaRedo className="text-sm" />
           刷新
         </button>
@@ -208,12 +214,15 @@ export const CommandPanel: React.FC = () => {
         )}
       </div>
 
-      {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-      )}
-      {msg && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{msg}</div>
-      )}
+      {error ? (
+        <StudioErrorNote className="flex flex-wrap items-center gap-3">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} className={rowGhostButtonClassName}>
+            重试
+          </button>
+        </StudioErrorNote>
+      ) : null}
+      {msg ? <StudioSuccessNote>{msg}</StudioSuccessNote> : null}
 
       <div className={cx(studioSurfaceClassName, 'overflow-hidden')}>
         <div className="px-5 pt-4 text-sm font-semibold text-slate-800">最近命令</div>
@@ -230,10 +239,25 @@ export const CommandPanel: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {commands.length === 0 && !loading ? (
+              {loading && commands.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                    暂无命令记录
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取命令历史…" />
+                  </td>
+                </tr>
+              ) : error && commands.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioErrorState message={error} onRetry={() => void load()} />
+                  </td>
+                </tr>
+              ) : commands.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6">
+                    <StudioEmptyState
+                      className="py-10"
+                      message="还没有下发过命令。用上方三个表单下发一条（例如「立即复审」），命令与回执会出现在这里。"
+                    />
                   </td>
                 </tr>
               ) : (
@@ -267,11 +291,6 @@ export const CommandPanel: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {loading && (
-          <div className="flex justify-center py-4">
-            <SimpleLoadingSpinner size={0.9} />
-          </div>
-        )}
       </div>
     </div>
   );

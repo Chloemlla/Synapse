@@ -686,9 +686,7 @@ const App: React.FC = () => {
         {renderAnimatedRoute(
           <Suspense fallback={<RouteLoadingShell label="正在加载管理模块..." />}>
             <AdminGuard>
-              <div className="logshare-admin-surface">
-                {element}
-              </div>
+              {element}
             </AdminGuard>
           </Suspense>
         )}
