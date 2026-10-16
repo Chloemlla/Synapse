@@ -25,11 +25,21 @@ import {
   InfoQueryHero,
   InfoQueryShell,
   InfoSectionTitle,
+  studioBadgeClassName,
+  studioGhostButtonClassName,
+  studioPillClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSubPanelClassName,
   studioSurfaceClassName,
 } from '../studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorNote,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioSuccessNote,
+} from '../studioFeedback';
 import { cn } from '../../utils/cn';
 import { fmtBytes } from '../admin/media-tool/ui';
 import TranscriptView from './TranscriptView';
@@ -84,6 +94,8 @@ export const SpeechToTextPage: React.FC = () => {
   // 任务列表加载失败必须与「本来就没有任务」区分开：把接口失败渲染成首用空态会让用户以为
   // 自己没提交过任务，从而放弃重试。
   const [jobsError, setJobsError] = useState<string | null>(null);
+  // 首屏拉任务期间只给面板内部一个局部 loading，避免整页白屏。
+  const [jobsLoading, setJobsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptItem[]>>({});
   const [uploading, setUploading] = useState<string | null>(null);
@@ -117,6 +129,8 @@ export const SpeechToTextPage: React.FC = () => {
     } catch (err) {
       console.error('加载我的转写任务失败:', err);
       setJobsError('加载转写任务失败，请稍后重试。');
+    } finally {
+      setJobsLoading(false);
     }
   }, []);
 
@@ -257,19 +271,22 @@ export const SpeechToTextPage: React.FC = () => {
         />
 
         {error ? (
-          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            <FaExclamationTriangle className="shrink-0" />
-            <span className="min-w-0 flex-1">{error}</span>
+          <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-2">
+              <FaExclamationTriangle className="shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">{error}</span>
+            </span>
             {configError ? (
               <button
                 type="button"
                 onClick={() => void loadConfig()}
-                className="shrink-0 rounded-xl border border-rose-300 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:border-rose-400 hover:bg-rose-100"
+                className={studioGhostButtonClassName}
               >
+                <FaRedo aria-hidden />
                 重新加载配置
               </button>
             ) : null}
-          </div>
+          </StudioErrorNote>
         ) : null}
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -299,7 +316,7 @@ export const SpeechToTextPage: React.FC = () => {
 
             {chosen.length === 0 ? (
               <div className={cn(studioSubPanelClassName, 'px-4 py-6 text-center text-xs text-slate-400')}>
-                还没有待转写文件
+                还没有待转写文件，先点上方按钮上传音频。
               </div>
             ) : (
               <ul className="space-y-1.5">
@@ -342,12 +359,7 @@ export const SpeechToTextPage: React.FC = () => {
                     type="button"
                     aria-pressed={on}
                     onClick={() => toggleOutput(value)}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
-                      on
-                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
-                    )}
+                    className={cn(studioPillClassName(on), 'min-h-11')}
                   >
                     {OUTPUT_LABELS[value]}
                     <span className="ml-1.5 text-[11px] font-normal opacity-70">
@@ -373,9 +385,7 @@ export const SpeechToTextPage: React.FC = () => {
                 开始转写
               </button>
             </div>
-            {notice ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{notice}</div>
-            ) : null}
+            {notice ? <StudioSuccessNote className="text-xs">{notice}</StudioSuccessNote> : null}
           </InfoPanel>
         </div>
 
@@ -386,56 +396,51 @@ export const SpeechToTextPage: React.FC = () => {
             tone="slate"
             action={
               hasActive ? (
-                <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                <span className={studioBadgeClassName('blue')}>
                   {jobs.filter((j) => j.status === 'running').length} 个进行中
                 </span>
               ) : null
             }
           />
-          {jobs.length === 0 ? (
+          {jobsLoading ? (
+            <StudioLoadingState text="加载任务列表..." minHeightClassName="min-h-[240px]" />
+          ) : jobs.length === 0 ? (
             jobsError ? (
-              <div
-                role="alert"
-                className={cn(studioSubPanelClassName, 'flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-rose-700')}
-              >
-                <span className="flex items-center gap-2">
-                  <FaExclamationTriangle className="shrink-0" />
-                  {jobsError}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void loadJobs()}
-                  className={cn(studioSecondaryButtonClassName, 'px-3 py-1.5 text-xs')}
-                >
-                  <FaRedo className="text-[10px]" />
-                  重试
-                </button>
-              </div>
+              <StudioErrorState message={jobsError} onRetry={() => void loadJobs()} />
             ) : (
-              <div className={cn(studioSubPanelClassName, 'px-4 py-8 text-center text-sm text-slate-400')}>
-                还没有任务,先上传一段录音试试。
-              </div>
+              <StudioEmptyState
+                message="还没有提交过任务，先上传一段录音试试。"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className={studioGhostButtonClassName}
+                  >
+                    <FaUpload aria-hidden />
+                    上传音频
+                  </button>
+                }
+              />
             )
           ) : (
             <div className="space-y-2">
               {jobsError ? (
-                <div
-                  role="alert"
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
-                >
-                  <span className="flex items-center gap-2">
-                    <FaExclamationTriangle className="shrink-0" />
-                    {jobsError}
+                <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <FaExclamationTriangle className="shrink-0" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      任务列表刷新失败，正在显示上次成功读取的结果。
+                    </span>
                   </span>
                   <button
                     type="button"
                     onClick={() => void loadJobs()}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
+                    className={studioGhostButtonClassName}
                   >
-                    <FaRedo className="text-[10px]" />
+                    <FaRedo aria-hidden />
                     重试
                   </button>
-                </div>
+                </StudioErrorNote>
               ) : null}
               {jobs.map((job) => {
                 const active = job.status === 'queued' || job.status === 'running';
@@ -455,7 +460,7 @@ export const SpeechToTextPage: React.FC = () => {
                         aria-controls={expanded ? panelId : undefined}
                         className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 self-stretch text-left"
                       >
-                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : job.status === 'succeeded' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : job.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-100 text-slate-600')}>
+                        <span className={studioBadgeClassName(active ? 'blue' : job.status === 'succeeded' ? 'green' : job.status === 'failed' ? 'rose' : 'slate')}>
                           {STATUS_LABEL[job.status] ?? job.status}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-xs text-slate-600">
@@ -464,7 +469,7 @@ export const SpeechToTextPage: React.FC = () => {
                         {active ? (
                           <span className="flex min-w-[160px] items-center gap-2">
                             <span className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
-                              <span className="block h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${job.progress}%` }} />
+                              <span className="block h-full rounded-full bg-slate-900 transition-all" style={{ width: `${job.progress}%` }} />
                             </span>
                             <span className="font-mono text-[10px] text-slate-500">{job.progress}%</span>
                             <span className="text-[10px] text-slate-400">{STAGE_LABEL[job.stage] ?? job.stage}</span>
@@ -494,9 +499,7 @@ export const SpeechToTextPage: React.FC = () => {
 
                     {expanded ? (
                       <div id={panelId} className="space-y-3 border-t border-slate-100 px-4 py-3">
-                        {job.error ? (
-                          <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{job.error}</div>
-                        ) : null}
+                        {job.error ? <StudioErrorNote className="text-xs">{job.error}</StudioErrorNote> : null}
                         {list.length === 0 ? (
                           <div className="text-xs text-slate-400">{active ? '任务进行中,完成后可在这里查看分段。' : '没有可展示的结果。'}</div>
                         ) : (
@@ -514,9 +517,9 @@ export const SpeechToTextPage: React.FC = () => {
                           ))
                         )}
                         {active && job.logs.length > 0 ? (
-                          <details className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                          <details className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2">
                             <summary className="cursor-pointer text-[11px] font-semibold text-slate-500">技术详情</summary>
-                            <pre className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-slate-950/90 px-3 py-2 font-mono text-[11px] leading-5 text-slate-100">
+                            <pre className="mt-2 max-h-32 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] leading-5 text-slate-600">
                               {job.logs.slice(-12).map((l) => l.text).join('\n')}
                             </pre>
                           </details>

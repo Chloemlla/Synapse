@@ -21,6 +21,7 @@ import {
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../studioTheme';
+import { StudioErrorNote } from '../studioFeedback';
 
 const STATUS_VIEW: Record<DocJobStatus, { label: string; tone: 'blue' | 'yellow' | 'green' | 'slate' | 'rose' }> = {
   queued: { label: '排队中', tone: 'slate' },
@@ -141,12 +142,10 @@ const DocJobProgress: React.FC<DocJobProgressProps> = ({
         </div>
       </div>
 
-      {job.error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{job.error}</div>
-      ) : null}
+      {job.error ? <StudioErrorNote className="text-xs">{job.error}</StudioErrorNote> : null}
 
       {failedItems.length > 0 ? (
-        <details className="rounded-xl border border-rose-100 bg-rose-50/70 px-3 py-2">
+        <details className="rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2">
           <summary className="cursor-pointer text-xs font-semibold text-rose-700">
             {`失败明细（${failedItems.length}）`}
           </summary>
@@ -162,7 +161,7 @@ const DocJobProgress: React.FC<DocJobProgressProps> = ({
       ) : null}
 
       {job.items.length > 0 ? (
-        <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-100 bg-white/70">
+        <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-100 bg-white/70">
           {job.items.map((item) => (
             <ResultRow key={`${item.rel}|${item.destRel}`} item={item} onDownloadFile={onDownloadFile} />
           ))}

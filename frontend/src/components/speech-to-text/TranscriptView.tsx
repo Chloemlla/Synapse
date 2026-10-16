@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FaClock, FaCopy, FaDownload } from 'react-icons/fa';
 import type { TranscriptItem } from '../../api/transcribe';
 import { cn } from '../../utils/cn';
-import { studioSecondaryButtonClassName, studioSubPanelClassName } from '../studioTheme';
+import { studioPillClassName, studioSecondaryButtonClassName, studioSubPanelClassName } from '../studioTheme';
 
 /** 与后端 fmtClock 对齐:mm:ss,超过一小时补时位。 */
 function fmtClock(ms: number): string {
@@ -33,6 +33,7 @@ export const TranscriptView: React.FC<{
 }> = ({ item, onDownload }) => {
   const [timed, setTimed] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   const plain = useMemo(() => item.segments.map((s) => s.onebest || '').join(''), [item.segments]);
 
@@ -40,9 +41,11 @@ export const TranscriptView: React.FC<{
     try {
       await navigator.clipboard.writeText(plain);
       setCopied(true);
+      setCopyFailed(false);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      // 剪贴板不可用(非安全上下文)时静默:文本本来就在页面上
+      // 剪贴板不可用（非安全上下文）时不能只静默失败：用户会以为已经复制了。
+      setCopyFailed(true);
     }
   };
 
@@ -65,24 +68,20 @@ export const TranscriptView: React.FC<{
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
           <button
             type="button"
+            aria-pressed={!timed}
             onClick={() => setTimed(false)}
-            className={cn(
-              'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition',
-              !timed ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700',
-            )}
+            className={cn(studioPillClassName(!timed), 'min-h-11')}
           >
             无时间线
           </button>
           <button
             type="button"
+            aria-pressed={timed}
             onClick={() => setTimed(true)}
-            className={cn(
-              'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition',
-              timed ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700',
-            )}
+            className={cn(studioPillClassName(timed), 'min-h-11')}
           >
             有时间线
           </button>
@@ -90,6 +89,11 @@ export const TranscriptView: React.FC<{
         <span className="text-[11px] text-slate-400">
           {item.segmentCount} 段{item.durationSec ? ` · ${fmtClock(item.durationSec * 1000)}` : ''}
         </span>
+        {copyFailed ? (
+          <span role="alert" className="text-[11px] text-rose-600">
+            复制失败，请手动选中文本复制
+          </span>
+        ) : null}
         <div className="ml-auto flex items-center gap-1.5">
           <button type="button" onClick={() => void copy()} className={cn(studioSecondaryButtonClassName, 'px-2.5 py-1 text-[11px]')}>
             <FaCopy className="text-[10px]" />
@@ -123,7 +127,7 @@ export const TranscriptView: React.FC<{
                     <span className="text-slate-300"> → </span>
                     {fmtClock(seg.ed)}
                   </td>
-                  <td className="w-16 whitespace-nowrap px-1 py-2 align-top text-[11px] text-violet-500">
+                  <td className="w-16 whitespace-nowrap px-1 py-2 align-top text-[11px] text-slate-500">
                     {seg.speaker ? `说话人${seg.speaker}` : ''}
                   </td>
                   <td className="px-3 py-2 leading-6 text-slate-700">{seg.onebest}</td>

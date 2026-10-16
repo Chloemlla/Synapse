@@ -7,7 +7,14 @@ import React, { useMemo, useState } from 'react';
 import { FaSearch } from 'react-icons/fa';
 import type { DocFileEntry, DocFileFreshness } from '../../api/docTool';
 import { fmtBytes, fmtTime } from '../admin/media-tool/ui';
-import { studioBadgeClassName, studioFieldClassName, studioSurfaceClassName } from '../studioTheme';
+import {
+  studioBadgeClassName,
+  studioFieldClassName,
+  studioGhostButtonClassName,
+  studioSurfaceClassName,
+} from '../studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from '../studioFeedback';
+import { cn } from '../../utils/cn';
 
 const FRESHNESS_VIEW: Record<DocFileFreshness, { label: string; tone: 'blue' | 'yellow' | 'green' }> = {
   new: { label: '待生成', tone: 'blue' },
@@ -15,8 +22,7 @@ const FRESHNESS_VIEW: Record<DocFileFreshness, { label: string; tone: 'blue' | '
   fresh: { label: '已是最新', tone: 'green' },
 };
 
-const SELECT_BUTTON_CLASS =
-  'inline-flex items-center rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50';
+const SELECT_BUTTON_CLASS = cn(studioGhostButtonClassName, 'shrink-0');
 
 const baseName = (rel: string): string => rel.replace(/\\/g, '/').split('/').pop() || rel;
 
@@ -25,6 +31,9 @@ export interface DocFileListProps {
   /** 已勾选的相对路径（与 files[].rel 同一套命名）。 */
   selected: string[];
   loading: boolean;
+  /** 列表读取失败（与 loading、空结果三选一） */
+  error?: string | null;
+  onRetry?: () => void;
   onToggle: (rel: string) => void;
   onSelectAll: () => void;
   onSelectNone: () => void;
@@ -41,6 +50,8 @@ const DocFileList: React.FC<DocFileListProps> = ({
   files,
   selected,
   loading,
+  error = null,
+  onRetry,
   onToggle,
   onSelectAll,
   onSelectNone,
@@ -108,12 +119,26 @@ const DocFileList: React.FC<DocFileListProps> = ({
       </div>
 
       <div className="max-h-80 overflow-y-auto">
-        {loading ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">正在读取文件列表…</div>
-        ) : visible.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">
-            {files.length === 0 ? '还没有文件，先上传一些 .md 文件。' : '没有匹配的文件。'}
+        {error ? (
+          <div className="p-4">
+            <StudioErrorState message={error} onRetry={onRetry} />
           </div>
+        ) : loading ? (
+          <StudioLoadingState text="正在读取文件列表..." minHeightClassName="min-h-[240px]" />
+        ) : visible.length === 0 ? (
+          <StudioEmptyState
+            className="m-4"
+            message={
+              files.length === 0 ? '还没有文件，先在上面上传一些 .md 文件。' : '没有匹配的文件，换个关键词试试。'
+            }
+            action={
+              query ? (
+                <button type="button" onClick={() => setQuery('')} className={studioGhostButtonClassName}>
+                  清除筛选
+                </button>
+              ) : null
+            }
+          />
         ) : (
           visible.map((entry) => {
             const badge = FRESHNESS_VIEW[entry.status] ?? { label: entry.status, tone: 'slate' as const };
@@ -156,7 +181,7 @@ const DocFileList: React.FC<DocFileListProps> = ({
                   <button
                     type="button"
                     onClick={() => onDownload(entry.existingRel as string)}
-                    className={`${SELECT_BUTTON_CLASS} shrink-0`}
+                    className={cn(SELECT_BUTTON_CLASS)}
                     title={`下载 ${baseName(entry.existingRel)}`}
                     // 多行都是「下载」，可访问名必须带上文件名，屏幕阅读器与测试才能区分
                     aria-label={`下载 ${baseName(entry.existingRel)}`}

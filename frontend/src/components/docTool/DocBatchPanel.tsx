@@ -7,7 +7,7 @@
 // 不要从首屏静态 import —— 首屏静态闭包有 800 KiB gzip 预算。
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FaExclamationTriangle, FaFileWord, FaFolderOpen, FaPlusCircle, FaUpload } from 'react-icons/fa';
+import { FaExclamationTriangle, FaFileWord, FaFolderOpen, FaPlusCircle, FaSync, FaUpload } from 'react-icons/fa';
 import {
   CONFLICT_MODES,
   DEFAULT_DOC_PREFS,
@@ -29,10 +29,14 @@ import {
   InfoSectionTitle,
   studioBadgeClassName,
   studioFieldClassName,
+  studioGhostButtonClassName,
+  studioPillClassName,
   studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from '../studioTheme';
+import { StudioErrorNote, StudioSuccessNote } from '../studioFeedback';
+import { cn } from '../../utils/cn';
 import { POLICY_CONSENT_REQUIRED_EVENT } from '../../utils/policyConsent';
 import DocFileList from './DocFileList';
 import DocJobProgress from './DocJobProgress';
@@ -53,10 +57,8 @@ const OUT_MODE_LABEL: Record<OutMode, string> = {
 // 文件夹选择靠非标准的 webkitdirectory；React 的类型里没有这个属性，只能展开注入。
 const DIRECTORY_INPUT_PROPS = { webkitdirectory: 'true' } as unknown as React.InputHTMLAttributes<HTMLInputElement>;
 
-const segClass = (active: boolean): string =>
-  `rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-    active ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-  }`;
+/** 分段切换：用 studioPillClassName 的激活态，避免页内再出现一种「选中色」。 */
+const segClass = (active: boolean): string => cn(studioPillClassName(active), 'min-h-11');
 
 const isJobActive = (status: DocJobStatus): boolean => status === 'queued' || status === 'running';
 
@@ -104,6 +106,10 @@ const DocBatchPanel: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 列表自己的失败态：与面板级 error 分开，服务端不可用时列表不能画成「还没有文件」。
+  const [listError, setListError] = useState<string | null>(null);
+  // 轮询失败后进度会停在上一次的值：必须让用户看得见并能手动续上。
+  const [pollError, setPollError] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -139,8 +145,9 @@ const DocBatchPanel: React.FC = () => {
         setSelected(
           res.files.filter((entry) => (select === 'all' ? true : entry.status !== 'fresh')).map((entry) => entry.rel),
         );
+        setListError(null);
       } catch (err) {
-        setError(describeError(err, '读取文件列表失败，请稍后重试。'));
+        setListError(describeError(err, '读取文件列表失败，请稍后重试。'));
         console.error('doc-tool 读取文件列表失败:', err);
       } finally {
         setLoadingFiles(false);
@@ -193,10 +200,16 @@ const DocBatchPanel: React.FC = () => {
       void docToolApi
         .getJob(jobId)
         .then((next) => {
-          if (!cancelled && next) setJob(next);
+          if (!cancelled && next) {
+            setJob(next);
+            setPollError(false);
+          }
         })
         .catch((err) => {
-          if (!cancelled) console.error('doc-tool 轮询任务失败:', err);
+          if (!cancelled) {
+            console.error('doc-tool 轮询任务失败:', err);
+            setPollError(true);
+          }
         });
     }, POLL_INTERVAL_MS);
     return () => {
@@ -398,16 +411,12 @@ const DocBatchPanel: React.FC = () => {
       />
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          <FaExclamationTriangle className="shrink-0 text-rose-500" />
+        <StudioErrorNote className="flex items-center gap-2">
+          <FaExclamationTriangle className="shrink-0" aria-hidden />
           {error}
-        </div>
+        </StudioErrorNote>
       ) : null}
-      {notice ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {notice}
-        </div>
-      ) : null}
+      {notice ? <StudioSuccessNote>{notice}</StudioSuccessNote> : null}
 
       {pandoc && !pandoc.available ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -477,7 +486,7 @@ const DocBatchPanel: React.FC = () => {
           ) : null}
         </div>
         {rejected.length > 0 ? (
-          <details className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+          <details className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2">
             <summary className="cursor-pointer text-[11px] font-semibold text-amber-800">
               {`有 ${rejected.length} 个文件未接收`}
             </summary>
@@ -496,6 +505,8 @@ const DocBatchPanel: React.FC = () => {
         files={files}
         selected={selected}
         loading={loadingFiles}
+        error={listError}
+        onRetry={() => void loadFiles(conflict, recursive, 'all')}
         onToggle={toggleSelected}
         onSelectAll={() => setSelected(files.map((entry) => entry.rel))}
         onSelectNone={() => setSelected([])}
@@ -607,6 +618,23 @@ const DocBatchPanel: React.FC = () => {
           参考样式决定正文中英文字体与标题层级样式；不选就用服务器自带的那份，也可以自己生成一份在 Word 里改好再替换。
         </p>
       </section>
+
+      {pollError ? (
+        <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <FaExclamationTriangle className="shrink-0" aria-hidden />
+            任务进度刷新失败，正在显示最后一次成功读取的进度。
+          </span>
+          <button
+            type="button"
+            onClick={() => setVisibilityTick((tick) => tick + 1)}
+            className={cn(studioGhostButtonClassName, 'shrink-0')}
+          >
+            <FaSync aria-hidden />
+            继续刷新
+          </button>
+        </StudioErrorNote>
+      ) : null}
 
       {jobId ? (
         job ? (

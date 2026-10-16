@@ -13,9 +13,21 @@ import ManagedCaptcha, {
   type ManagedCaptchaStatus,
 } from './ManagedCaptcha';
 import { waitForCaptcha } from '../utils/waitForCaptcha';
-import { studioEyebrowPillClassName } from './studioTheme';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioDangerButtonClassName,
+  studioEyebrowPillClassName,
+  studioGhostButtonClassName,
+  studioHeroCardClassName,
+  studioPageClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorNote, StudioErrorState } from './studioFeedback';
 import { cn } from '../utils/cn';
 import { useAuth } from '../hooks/useAuth';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { isAdminRole } from '../utils/rbac';
 import {
   FaImage,
@@ -96,6 +108,15 @@ const STORAGE_KEY = 'happy_images';
 const IMAGE_DB = 'image-store';
 const IMAGE_STORE = 'images';
 
+/**
+ * 本地图片记录读写失败时页面上的列表会「少东西」，只写 console 用户看不到、
+ * 会以为记录丢了。存储 helper 是模块级函数、改不了组件 state，所以由组件挂载时
+ * 登记一个上报口；没登记时（例如被其它入口复用）就是空操作。
+ */
+let reportStorageError: ((message: string) => void) | null = null;
+const STORAGE_ERROR_MESSAGE = '本地图片记录读写失败，列表可能不是最新的；可重试或刷新页面。';
+const storageFailed = (message: string = STORAGE_ERROR_MESSAGE) => reportStorageError?.(message);
+
 // IndexedDB 数据库操作
 // G12-11：缓存单例连接，避免批量上传 N 个文件累积 N+ 个连接
 let imageDbPromise: Promise<IDBPDatabase> | null = null;
@@ -120,69 +141,77 @@ function getImageDB() {
   return imageDbPromise;
 }
 
-// 获取存储的图片
-async function getStoredImages(): Promise<any[]> {
+/** 读取失败返回 null：调用方不能把 null 当成「本来就没有」。 */
+async function getStoredImages(): Promise<any[] | null> {
   try {
     const db = await getImageDB();
     const images = await db.getAll(IMAGE_STORE);
     return images || [];
   } catch (error) {
     console.error('[图片存储] 获取图片失败:', error);
-    return [];
+    storageFailed();
+    return null;
   }
 }
 
 // 保存图片到IndexedDB
-async function saveImageToStorage(imageData: any): Promise<void> {
+async function saveImageToStorage(imageData: any): Promise<boolean> {
   try {
     const db = await getImageDB();
     // 直接使用 put 方法，如果已存在则更新，不存在则添加
     await db.put(IMAGE_STORE, imageData);
-    console.log('[图片存储] 保存成功，imageId:', imageData.imageId);
+    return true;
   } catch (error) {
     console.error('[图片存储] 保存失败:', error);
+    storageFailed();
+    return false;
   }
 }
 
 // 从IndexedDB删除图片
-async function deleteImageFromStorage(index: number): Promise<void> {
+async function deleteImageFromStorage(index: number): Promise<boolean> {
   try {
     const db = await getImageDB();
     const images = await db.getAll(IMAGE_STORE);
     if (images[index]) {
       await db.delete(IMAGE_STORE, images[index].imageId);
-      console.log('[图片存储] 删除成功，imageId:', images[index].imageId);
     }
+    return true;
   } catch (error) {
     console.error('[图片存储] 删除失败:', error);
+    storageFailed();
+    return false;
   }
 }
 
 // 清空所有图片
-async function clearAllImages(): Promise<void> {
+async function clearAllImages(): Promise<boolean> {
   try {
     const db = await getImageDB();
     await db.clear(IMAGE_STORE);
-    console.log('[图片存储] 清空成功');
+    return true;
   } catch (error) {
     console.error('[图片存储] 清空失败:', error);
+    storageFailed();
+    return false;
   }
 }
 
 // 导出时从IndexedDB获取数据
-async function exportImagesFromDB(): Promise<any[]> {
+async function exportImagesFromDB(): Promise<any[] | null> {
   try {
     const db = await getImageDB();
     const images = await db.getAll(IMAGE_STORE);
     return images || [];
   } catch (error) {
     console.error('[图片存储] 导出获取失败:', error);
-    return [];
+    storageFailed();
+    return null;
   }
 }
 
 // 导入时保存到IndexedDB
-async function importImagesToDB(images: any[]): Promise<void> {
+async function importImagesToDB(images: any[]): Promise<boolean> {
   try {
     const db = await getImageDB();
     // 清空现有数据
@@ -191,9 +220,11 @@ async function importImagesToDB(images: any[]): Promise<void> {
     for (const img of images) {
       await db.put(IMAGE_STORE, img);
     }
-    console.log('[图片存储] 导入成功，图片数量:', images.length);
+    return true;
   } catch (error) {
     console.error('[图片存储] 导入失败:', error);
+    storageFailed();
+    return false;
   }
 }
 
@@ -202,15 +233,15 @@ async function resetImageDB(): Promise<void> {
   try {
     const db = await getImageDB();
     await db.clear(IMAGE_STORE);
-    console.log('[图片存储] 数据库重置成功');
   } catch (error) {
     console.error('[图片存储] 数据库重置失败:', error);
+    storageFailed();
     // 如果重置失败，尝试删除并重新创建数据库
     try {
       await deleteDB(IMAGE_DB);
-      console.log('[图片存储] 数据库删除成功，将在下次访问时重新创建');
     } catch (deleteError) {
       console.error('[图片存储] 数据库删除失败:', deleteError);
+      storageFailed();
     }
   }
 }
@@ -221,7 +252,6 @@ async function checkAndFixDB(): Promise<void> {
     const db = await getImageDB();
     // 尝试获取一条记录来测试数据库是否正常工作
     await db.getAll(IMAGE_STORE);
-    console.log('[图片存储] 数据库检查通过');
   } catch (error) {
     console.error('[图片存储] 数据库检查失败，尝试重置:', error);
     await resetImageDB();
@@ -340,6 +370,7 @@ const ImageUploadPage: React.FC = () => {
   const { setNotification } = useNotification();
   const confirm = useConfirm();
   const { user } = useAuth();
+  const reducedMotion = useReducedMotion();
   // 管理员身份直接跳过人机验证（与头像上传 / FBI 上传 / 抽奖 / CDK 同一豁免口径）。
   const isAdmin = useMemo(() => isAdminRole(user?.role), [user]);
   const [file, setFile] = useState<File | null>(null);
@@ -375,6 +406,8 @@ const ImageUploadPage: React.FC = () => {
   // 2. 新增本地图片管理相关state
   const [storedImages, setStoredImages] = useState<any[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  // 存储层失败（读写 IndexedDB）与「本来就没有记录」是两件事，必须分开。
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   // 人机验证状态：三家供应商共用同一套下发链路（/admin/captcha-providers 调控）
   const [captcha, setCaptcha] = useState<ManagedCaptchaChallenge | null>(null);
@@ -392,26 +425,30 @@ const ImageUploadPage: React.FC = () => {
   const captchaSectionVisible =
     captchaStatus.required || captchaStatus.loading || Boolean(captchaStatus.error);
 
-  // 加载本地图片
+  // 先登记存储层的失败上报口，后面的加载 effect 才会把失败送到页面上。
   React.useEffect(() => {
-    const loadImages = async () => {
-      try {
-        // 先检查并修复数据库
-        await checkAndFixDB();
-        const images = await getStoredImages();
-        setStoredImages(images);
-      } catch (error) {
-        console.error('[图片存储] 加载图片失败:', error);
-        setStoredImages([]);
-      }
+    reportStorageError = setStorageError;
+    return () => {
+      reportStorageError = null;
     };
-    loadImages();
   }, []);
 
-  // 刷新本地图片
+  // 加载本地图片
+  React.useEffect(() => {
+    void (async () => {
+      // 先检查并修复数据库
+      await checkAndFixDB();
+      const images = await getStoredImages();
+      if (images) setStoredImages(images);
+    })();
+  }, []);
+
+  // 刷新本地图片（读失败时返回空列表，但失败已由存储层上报）
   const reloadImages = async () => {
     const images = await getStoredImages();
+    if (!images) return [];
     setStoredImages(images);
+    setStorageError(null);
     return images;
   };
 
@@ -661,31 +698,29 @@ const ImageUploadPage: React.FC = () => {
           fileHash,
           md5Hash
         };
-        saveImageToStorage(imageData).then(() => {
+        void saveImageToStorage(imageData).then(async () => {
           // 记录到后端数据库
-          imageDataApi.recordImageData({
-            imageId,
-            fileName: file.name,
-            fileSize: file.size,
-            fileHash,
-            md5Hash,
-            web2url: result.data.web2url,
-            cid: result.data.cid || '',
-            uploadTime: new Date().toISOString()
-          }).then(() => {
-            console.log('[图片上传] 数据已记录到后端');
-          }).catch((error) => {
+          try {
+            await imageDataApi.recordImageData({
+              imageId,
+              fileName: file.name,
+              fileSize: file.size,
+              fileHash,
+              md5Hash,
+              web2url: result.data.web2url,
+              cid: result.data.cid || '',
+              uploadTime: new Date().toISOString()
+            });
+          } catch (error) {
             console.error('[图片上传] 记录到后端失败:', error);
             setNotification({ message: '图片上传成功，但数据记录失败', type: 'warning' });
-          });
+          }
 
-          reloadImages().then(() => {
-            console.log('[图片上传] 上传成功，web2url:', result.data.web2url);
-            // 清空文件输入框，避免重复选择
-            if (fileInputRef.current) {
-              fileInputRef.current.value = '';
-            }
-          });
+          await reloadImages();
+          // 清空文件输入框，避免重复选择
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
         });
       } else if (result?.error) {
         setUploadedShortUrl(null);
@@ -826,7 +861,7 @@ const ImageUploadPage: React.FC = () => {
               md5Hash = 'md5-generation-failed';
             }
 
-            // 保存到本地存储
+            // 保存到本地存储（写失败会在页面下方的本地存储管理区提示）
             const imageData = {
               imageId,
               cid: result.data.cid || '',
@@ -838,13 +873,7 @@ const ImageUploadPage: React.FC = () => {
               fileHash,
               md5Hash
             };
-
-            try {
-              await saveImageToStorage(imageData);
-              console.log(`[批量上传] 文件 ${fileName} 已保存到本地存储`);
-            } catch (error) {
-              console.error('[批量上传] 保存到本地存储失败:', error);
-            }
+            await saveImageToStorage(imageData);
 
             // 记录到后端数据库
             try {
@@ -858,9 +887,9 @@ const ImageUploadPage: React.FC = () => {
                 cid: result.data.cid || '',
                 uploadTime: new Date().toISOString()
               });
-              console.log(`[批量上传] 文件 ${fileName} 已记录到后端数据库`);
             } catch (error) {
-              console.error('[批量上传] 记录到后端失败:', error);
+              console.error(`[批量上传] 文件 ${fileName} 记录到后端失败:`, error);
+              storageFailed('有文件的上传记录未能保存完整，列表可能不完整。');
             }
 
             console.log(`[批量上传] 文件 ${fileName} 上传成功`);
@@ -961,6 +990,7 @@ const ImageUploadPage: React.FC = () => {
         }
       } catch (error) {
         console.error('[批量上传] 重新加载图片列表失败:', error);
+        storageFailed('上传已完成，但列表刷新失败，可手动重试。');
       }
 
       if (successCount > 0) {
@@ -1086,7 +1116,7 @@ const ImageUploadPage: React.FC = () => {
 
   const handleExport = async () => {
     const images = await exportImagesFromDB();
-    if (images.length === 0) {
+    if (!images || images.length === 0) {
       setNotification({ message: '没有数据可以导出', type: 'error' });
       return;
     }
@@ -1173,12 +1203,14 @@ const ImageUploadPage: React.FC = () => {
 
         // 从IndexedDB获取现有图片
         getStoredImages().then(async (existingImages) => {
+          // 读不到现有记录时不能当成「没有」继续合并，否则会把已有记录覆盖掉
+          if (!existingImages) return;
           const existingCids = new Set(existingImages.map((img: any) => img.cid));
           const newImages = validData.filter((img: any) => !existingCids.has(img.cid));
           const mergedImages = [...existingImages, ...newImages];
 
-          // 保存到IndexedDB
-          await importImagesToDB(mergedImages);
+          // 保存到IndexedDB（写失败时不报「导入成功」）
+          if (!(await importImagesToDB(mergedImages))) return;
           await reloadImages();
 
           // 执行数据验证
@@ -1200,8 +1232,8 @@ const ImageUploadPage: React.FC = () => {
       tone: 'danger',
       confirmLabel: '清空',
     });
-    if (ok) {
-      await clearAllImages();
+    if (!ok) return;
+    if (await clearAllImages()) {
       await reloadImages();
       setNotification({ message: '数据已清空', type: 'success' });
     }
@@ -1214,8 +1246,8 @@ const ImageUploadPage: React.FC = () => {
       tone: 'danger',
       confirmLabel: '删除',
     });
-    if (ok) {
-      await deleteImageFromStorage(index);
+    if (!ok) return;
+    if (await deleteImageFromStorage(index)) {
       await reloadImages();
       setNotification({ message: '已删除', type: 'success' });
     }
@@ -1226,16 +1258,16 @@ const ImageUploadPage: React.FC = () => {
   const failedBatchCount = batchFiles.filter(f => batchProgress[f.name]?.status === 'error').length;
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
+    <section className={cn(studioPageClassName, 'max-w-6xl min-w-0')}>
       {/* 主面板：上传图片 */}
       <motion.div
-        className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
-        initial={{ opacity: 0, y: 16 }}
+        className={cn('mb-5 sm:mb-8', studioHeroCardClassName)}
+        initial={reducedMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, '-left-10 bottom-0')} aria-hidden />
 
         <div className="relative">
           <div className={studioEyebrowPillClassName}>
@@ -1263,7 +1295,8 @@ const ImageUploadPage: React.FC = () => {
                   disabled={batchUploading}
                 />
                 <motion.button
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  className={studioSecondaryButtonClassName}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => !batchUploading && batchFileInputRef.current?.click()}
                   disabled={batchUploading}
@@ -1310,7 +1343,7 @@ const ImageUploadPage: React.FC = () => {
             {file && previewUrl && (
               <motion.div
                 className="mt-5 flex flex-col items-center rounded-2xl border border-slate-200 bg-white/80 p-4"
-                initial={{ opacity: 0, scale: 0.97 }}
+                initial={reducedMotion ? false : { opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
               >
                 <img src={sanitizeImageUrl(previewUrl)} alt="预览" className="h-24 w-24 rounded-2xl border border-slate-200 object-contain sm:h-32 sm:w-32 md:h-48 md:w-48" />
@@ -1318,7 +1351,8 @@ const ImageUploadPage: React.FC = () => {
                   {sanitizeDisplayText(file.name)} ({(file.size / 1024).toFixed(1)} KB)
                 </div>
                 <motion.button
-                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50"
+                  type="button"
+                  className={studioSecondaryButtonClassName}
                   onClick={handleRemove}
                   disabled={uploading}
                   whileTap={{ scale: 0.97 }}
@@ -1332,10 +1366,10 @@ const ImageUploadPage: React.FC = () => {
             {!isAdmin && (
               <motion.div
                 className={cn(
-                  "mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4",
+                  "mt-5 rounded-2xl border border-slate-200 bg-white/80 p-4",
                   !captchaSectionVisible && "hidden",
                 )}
-                initial={{ opacity: 0, y: 10 }}
+                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
@@ -1353,8 +1387,8 @@ const ImageUploadPage: React.FC = () => {
             {/* 批量上传列表 */}
             {showBatchList && batchFiles.length > 0 && (
               <motion.div
-                className="mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4"
-                initial={{ opacity: 0, y: 10 }}
+                className="mt-5 rounded-2xl border border-slate-200 bg-white/80 p-4"
+                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
@@ -1363,7 +1397,8 @@ const ImageUploadPage: React.FC = () => {
                     批量上传队列 ({batchFiles.length})
                   </h4>
                   <motion.button
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+                    type="button"
+                    className={cn(studioDangerButtonClassName, 'px-3 py-1.5 text-xs')}
                     onClick={clearBatchFiles}
                     whileTap={{ scale: 0.96 }}
                   >
@@ -1402,6 +1437,7 @@ const ImageUploadPage: React.FC = () => {
                                         短链: {safeShortUrl}
                                       </div>
                                       <motion.button
+                                        type="button"
                                         className="text-xs font-semibold text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline"
                                         onClick={() => handleCopy(safeShortUrl)}
                                         whileTap={{ scale: 0.96 }}
@@ -1420,16 +1456,30 @@ const ImageUploadPage: React.FC = () => {
                         </div>
                         <div className="ml-3 flex items-center gap-2">
                           {progress?.status === 'uploading' && (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent"></div>
+                            <SimpleLoadingSpinner size={0.8} />
                           )}
                           {progress?.status === 'success' && (
                             <FaCheck className="h-4 w-4 text-emerald-500" />
                           )}
                           {progress?.status === 'error' && (
-                            <FaTrash className="h-4 w-4 cursor-pointer text-rose-500" onClick={() => removeBatchFile(file.name)} />
+                            <button
+                              type="button"
+                              onClick={() => removeBatchFile(file.name)}
+                              aria-label={`从队列移除 ${displayFileName}`}
+                              className="text-rose-500 transition hover:text-rose-700"
+                            >
+                              <FaTrash className="h-4 w-4" />
+                            </button>
                           )}
                           {progress?.status === 'pending' && (
-                            <FaTrash className="h-4 w-4 cursor-pointer text-slate-400 hover:text-rose-500" onClick={() => removeBatchFile(file.name)} />
+                            <button
+                              type="button"
+                              onClick={() => removeBatchFile(file.name)}
+                              aria-label={`从队列移除 ${displayFileName}`}
+                              className="text-slate-400 transition hover:text-rose-600"
+                            >
+                              <FaTrash className="h-4 w-4" />
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1448,36 +1498,34 @@ const ImageUploadPage: React.FC = () => {
                   </div>
                 )}
                 <motion.button
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                  type="button"
+                  className={cn(studioPrimaryButtonClassName, 'mt-3 w-full')}
                   onClick={batchUploading ? cancelBatchUpload : handleBatchUpload}
                   disabled={!batchUploading && (batchFiles.length === 0 || (captchaStatus.required && !captcha?.token))}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {batchUploading ? `取消上传（已完成 ${batchDone}/${batchFiles.length}）` : `开始批量上传 (${batchFiles.length} 个文件)`}
+                  {batchUploading ? `取消上传（已完成 ${batchDone}/${batchFiles.length}）` : `开始批量上传 (${batchFiles.length} 个文件）`}
                 </motion.button>
               </motion.div>
             )}
 
             <motion.button
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+              type="button"
+              className={cn(studioPrimaryButtonClassName, 'mt-5 w-full')}
               onClick={handleUpload}
               disabled={!file || uploading || (captchaStatus.required && !captcha?.token)}
               whileTap={{ scale: 0.98 }}
             >
               {uploading ? '上传中…' : '上传图片'}
             </motion.button>
-            {error && (
-              <div className="mt-3 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-5 py-3 text-center text-sm leading-7 text-rose-700">
-                {sanitizeDisplayText(error, '上传失败')}
-              </div>
-            )}
+            {error && <StudioErrorNote className="mt-3">{sanitizeDisplayText(error, '上传失败')}</StudioErrorNote>}
           </motion.div>
 
           <AnimatePresence>
             {uploadedUrl && safeUploadedUrl && (
               <motion.div
-                className="mt-5 rounded-2xl border border-emerald-200/70 bg-emerald-50/80 px-5 py-4"
-                initial={{ opacity: 0, y: 10 }}
+                className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4"
+                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
                 transition={{ duration: 0.35 }}
@@ -1495,7 +1543,8 @@ const ImageUploadPage: React.FC = () => {
                     rel="noopener noreferrer"
                   >{safeUploadedUrl}</a>
                   <motion.button
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    type="button"
+                    className={cn(studioSecondaryButtonClassName, 'px-3 py-1.5 text-xs')}
                     onClick={() => handleCopy(safeUploadedUrl)}
                     whileTap={{ scale: 0.96 }}
                   >
