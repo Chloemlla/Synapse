@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { masterIkm } from "../config/keyDerivation";
+import { KL, deriveKey, legacyDecryptKeys } from "../config/keyDerivation";
 
 // 内容级取证的加密：与「上游卡密」**不同**的子密钥与 AAD。
 //
@@ -9,14 +9,18 @@ import { masterIkm } from "../config/keyDerivation";
 //   · 证据链清楚：AAD 里写明用途与版本，跨用途重放（把卡密密文塞进取证表）会在解密时直接失败。
 const EVIDENCE_SECRET_ALGORITHM = "aes-256-gcm";
 export const PIXEL_EVIDENCE_CRYPTO_VERSION = 1;
-const EVIDENCE_KEY_SALT = Buffer.from("synapse-key-v1", "utf8");
-const EVIDENCE_KEY_INFO = Buffer.from("pixel-account-evidence-v1", "utf8");
 const EVIDENCE_AAD = Buffer.from(`pixel:account-evidence:v${PIXEL_EVIDENCE_CRYPTO_VERSION}`, "utf8");
 const GCM_IV_BYTES = 12;
 const GCM_TAG_BYTES = 16;
 
+/**
+ * 取证内容的子密钥：统一注册表 `KL.PIXEL_ACCOUNT_EVIDENCE`（与上游卡密那把相互独立）。
+ * 标签字符串与最初就地派生的 info 逐字相同 ⇒ 存量密文继续可解；
+ * 解密走候选链 ⇒ 轮换 AES_KEY 后旧取证不会被锁死（取证被锁死比卡密更不能接受：
+ * 那是配合法律程序留下的证据）。
+ */
 function evidenceKey(): Buffer {
-  return Buffer.from(crypto.hkdfSync("sha256", masterIkm(), EVIDENCE_KEY_SALT, EVIDENCE_KEY_INFO, 32));
+  return deriveKey(KL.PIXEL_ACCOUNT_EVIDENCE);
 }
 
 export interface PixelEncryptedEvidence {
@@ -52,11 +56,41 @@ export function decryptPixelEvidence(doc: Partial<PixelEncryptedEvidence>): stri
   if (iv.length !== GCM_IV_BYTES || tag.length !== GCM_TAG_BYTES) {
     throw new Error("取证秘文格式非法");
   }
-  const decipher = crypto.createDecipheriv(EVIDENCE_SECRET_ALGORITHM, evidenceKey(), iv);
+  const payload = Buffer.from(doc.ciphertext, "base64");
+  let lastError: unknown = null;
+  for (const key of legacyDecryptKeys(KL.PIXEL_ACCOUNT_EVIDENCE)) {
+    try {
+      const decipher = crypto.createDecipheriv(EVIDENCE_SECRET_ALGORITHM, key, iv);
+      decipher.setAAD(EVIDENCE_AAD);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(payload), decipher.final()]).toString("utf8");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    lastError instanceof Error ? `取证秘文解密失败：${lastError.message}` : "取证秘文解密失败",
+  );
+}
+
+/** 仅供密钥轮换迁移使用：用「仅当前主密钥」试解，区分「已是新钥加密」与「仍需重加密」。 */
+export function isPixelEvidenceEncryptedWithCurrentKey(doc: Partial<PixelEncryptedEvidence>): boolean {
+  try {
+    decryptWithEvidenceKey(doc, evidenceKey());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function decryptWithEvidenceKey(doc: Partial<PixelEncryptedEvidence>, key: Buffer): string {
+  const iv = Buffer.from(String(doc.iv ?? ""), "base64");
+  const tag = Buffer.from(String(doc.tag ?? ""), "base64");
+  const decipher = crypto.createDecipheriv(EVIDENCE_SECRET_ALGORITHM, key, iv);
   decipher.setAAD(EVIDENCE_AAD);
   decipher.setAuthTag(tag);
   return Buffer.concat([
-    decipher.update(Buffer.from(doc.ciphertext, "base64")),
+    decipher.update(Buffer.from(String(doc.ciphertext ?? ""), "base64")),
     decipher.final(),
   ]).toString("utf8");
 }

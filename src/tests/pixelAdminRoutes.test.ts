@@ -173,6 +173,21 @@ describe("pixel 管理端路由", () => {
         throw new PixelDomainError("本用例不覆盖取证读取", 404, "PIXEL_EVIDENCE_NOT_FOUND");
       },
     },
+    keyRotation: {
+      async status() {
+        return {
+          master: { origin: "AES_KEY", fingerprint: "ffffffffffffffff", previousConfigured: false, previousFingerprint: null },
+          mappings: { total: 0, encryptedWithCurrentKey: 0, needsReencrypt: 0, undecryptable: 0 },
+          evidence: { total: 0, encryptedWithCurrentKey: 0, needsReencrypt: 0, undecryptable: 0 },
+        };
+      },
+      async reencrypt() {
+        return { apply: false, scanned: 0, reencrypted: 0, pending: 0, undecryptable: 0, remaining: 0 };
+      },
+      async canRetire() {
+        return { canRetire: false, reason: "当前没有配置 AES_KEY_PREV（无需退役）。" };
+      },
+    },
     audit: (entry) => {
       audits.push(entry as unknown as Record<string, unknown>);
     },

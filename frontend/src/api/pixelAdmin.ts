@@ -180,3 +180,29 @@ export async function getPixelEvidenceRecords(params: { caseRef?: string; userId
 export async function readPixelEvidenceRecord(evidenceId: string, caseRef: string): Promise<{ meta: PixelEvidenceView; accountsText: string }> {
   return data(await api.post<Envelope<{ meta: PixelEvidenceView; accountsText: string }>>(`/api/admin/pixel/evidence/${encodeURIComponent(evidenceId)}/read`, { caseRef }));
 }
+
+// —— 主密钥轮换：体检 + 存量密文重加密（仅超级管理员 + 安全会话） ——
+
+export type PixelKeyRotationStatus = {
+  master: { origin: string; fingerprint: string; previousConfigured: boolean; previousFingerprint: string | null };
+  mappings: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  evidence: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  retirePreviousKey: { canRetire: boolean; reason: string };
+};
+
+export type PixelReencryptResult = {
+  apply: boolean;
+  scanned: number;
+  reencrypted: number;
+  pending: number;
+  undecryptable: number;
+  remaining: number;
+};
+
+export async function getPixelKeyRotationStatus(): Promise<PixelKeyRotationStatus> {
+  return data(await api.get<Envelope<PixelKeyRotationStatus>>("/api/admin/pixel/key-rotation"));
+}
+
+export async function reencryptPixelSecrets(input: { apply: boolean; limit?: number }): Promise<PixelReencryptResult> {
+  return data(await api.post<Envelope<PixelReencryptResult>>("/api/admin/pixel/key-rotation/reencrypt", input));
+}

@@ -13,7 +13,9 @@ import {
   getPixelEvidenceRecords,
   getPixelIntegrationConfig,
   getPixelLegalHolds,
+  getPixelKeyRotationStatus,
   readPixelEvidenceRecord,
+  reencryptPixelSecrets,
   releasePixelLegalHold,
   revokePixelEvidenceApproval,
   savePixelIntegrationConfig,
@@ -24,6 +26,7 @@ import {
   type PixelEvidenceHoldView,
   type PixelEvidenceView,
   type PixelIntegrationConfigView,
+  type PixelKeyRotationStatus,
   type PixelUsageLogView,
 } from "@/api/pixelAdmin";
 import { useAuth } from "@/hooks/useAuth";
@@ -72,6 +75,8 @@ const PixelAdminPanel: React.FC = () => {
   const [approvalForm, setApprovalForm] = useState({ userId: "", caseRef: "", legalBasis: "", validDays: 7 });
   const [readCaseRef, setReadCaseRef] = useState("");
   const [readResult, setReadResult] = useState<{ meta: PixelEvidenceView; accountsText: string } | null>(null);
+  const [rotation, setRotation] = useState<PixelKeyRotationStatus | null>(null);
+  const [reencryptResult, setReencryptResult] = useState<string>("");
   const [created, setCreated] = useState<PixelCdkMappingCreated | null>(null);
   const [form, setForm] = useState({ distributionCdk: "", upstreamCdk: "", note: "" });
   const [configForm, setConfigForm] = useState({ upstreamBaseUrl: "", allowedHosts: "", enabled: false, requestTimeoutMs: 20000 });
@@ -124,14 +129,16 @@ const PixelAdminPanel: React.FC = () => {
 
   const loadCompliance = useCallback(async () => {
     try {
-      const [nextHolds, nextApprovals, nextEvidence] = await Promise.all([
+      const [nextHolds, nextApprovals, nextEvidence, nextRotation] = await Promise.all([
         getPixelLegalHolds(true),
         getPixelEvidenceApprovals(true),
         getPixelEvidenceRecords({ limit: 50 }),
+        getPixelKeyRotationStatus(),
       ]);
       setHolds(nextHolds);
       setApprovals(nextApprovals);
       setEvidence(nextEvidence);
+      setRotation(nextRotation);
     } catch {
       setError("暂时无法读取保全与取证记录。");
     }
@@ -287,6 +294,25 @@ const PixelAdminPanel: React.FC = () => {
       setNotification?.({ type: "success", message: "已撤销取证审批（已进审计）。" });
     } catch {
       setError("撤销失败，请稍后重试。");
+    }
+  };
+
+  const handleReencrypt = async (apply: boolean) => {
+    if (!isSuperAdmin) return;
+    setBusy(true);
+    setError("");
+    setReencryptResult("");
+    try {
+      const result = await reencryptPixelSecrets({ apply, limit: 200 });
+      setReencryptResult(
+        `${apply ? "已重加密" : "仅扫描"}：本次扫描 ${result.scanned} 条，重加密 ${result.reencrypted} 条，`
+        + `待重加密 ${result.pending} 条，无法解密 ${result.undecryptable} 条。`,
+      );
+      setRotation(await getPixelKeyRotationStatus());
+    } catch {
+      setError("重加密未能完成（需超级管理员与有效安全会话）。");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -617,6 +643,37 @@ const PixelAdminPanel: React.FC = () => {
                 <pre className="mt-2 max-h-64 overflow-auto rounded-2xl border border-amber-200 bg-white p-3 text-[11px] leading-5 text-slate-700">{readResult.accountsText}</pre>
               </div>
             )}
+          </InfoPanel>
+
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">主密钥轮换</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              轮换主密钥后，旧密文靠 <code>AES_KEY_PREV</code> 只能“只解不写”。这里把 Pixel 的两处密文
+              （上游卡密、取证内容）重加密为当前主密钥；全量迁完后才能真正退役上一代密钥。
+              本操作需超级管理员 + 有效安全会话。
+            </p>
+            {rotation ? (
+              <div className="mt-3 space-y-2 text-xs text-slate-600">
+                <div className="flex flex-wrap items-center gap-2">
+                  <InfoBadge tone={rotation.master.previousConfigured ? "amber" : "slate"}>
+                    当前主密钥 {rotation.master.origin} · 指纹 {rotation.master.fingerprint}
+                  </InfoBadge>
+                  {rotation.master.previousConfigured && (
+                    <InfoBadge tone="slate">上一代指纹 {rotation.master.previousFingerprint}</InfoBadge>
+                  )}
+                </div>
+                <div>上游卡密：共 {rotation.mappings.total} 条 · 已是当前密钥 {rotation.mappings.encryptedWithCurrentKey} · 待重加密 {rotation.mappings.needsReencrypt} · 无法解密 {rotation.mappings.undecryptable}</div>
+                <div>取证内容：共 {rotation.evidence.total} 条 · 已是当前密钥 {rotation.evidence.encryptedWithCurrentKey} · 待重加密 {rotation.evidence.needsReencrypt} · 无法解密 {rotation.evidence.undecryptable}</div>
+                <div className={rotation.retirePreviousKey.canRetire ? "text-emerald-700" : "text-amber-700"}>
+                  退役上一代密钥：{rotation.retirePreviousKey.canRetire ? "可以" : "不可以"} —— {rotation.retirePreviousKey.reason}
+                </div>
+              </div>
+            ) : <p className="mt-2 text-sm text-slate-500">无数据。</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => void handleReencrypt(false)} disabled={busy || !isSuperAdmin} className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">仅扫描（不写）</button>
+              <button type="button" onClick={() => void handleReencrypt(true)} disabled={busy || !isSuperAdmin} className="min-h-11 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50">执行重加密</button>
+            </div>
+            {reencryptResult && <p role="status" className="mt-2 text-xs text-slate-600">{reencryptResult}</p>}
           </InfoPanel>
         </div>
       )}

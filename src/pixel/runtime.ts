@@ -5,7 +5,7 @@
  * 不需要 Mongo 连接。生产唯一的可逆加密入口就是这里的 encryptPixelSecret/decryptPixelSecret。
  */
 import crypto from "node:crypto";
-import { masterIkm } from "../config/keyDerivation";
+import { KL, deriveKey, legacyDecryptKeys } from "../config/keyDerivation";
 
 export interface PixelRuntimeLimits {
   /** 单次提交允许的最大账号行数。 */
@@ -84,25 +84,25 @@ export function hashDistributionCdk(value: string): string {
 /**
  * 上游 CDK 的静态加密（AES-256-GCM，可逆）。
  *
- * 为什么要自己派生而不是直接加一个 `KL.PIXEL_CDK` 标签：`KL` 在 src/config/keyDerivation.ts，
- * 本阶段不改那个文件；直接复用某个既有用途标签会把两套无关密文挂到同一把子密钥上。
- * 这里按 keyDerivation 的同一套参数（salt = "synapse-key-v1"、HKDF-SHA256）派生一把
- * **用途隔离**的子密钥，安全属性与新增标签等价；后续若要归位，把它换成 deriveKey(KL.PIXEL_CDK)
- * 并做一次重加密迁移即可。AAD 里再钉一次用途，防止密文跨用途搬运。
- *
- * 取舍：这里不支持 AES_KEY_PREV 双解（本集合是本阶段新建的，没有存量密文需要迁移）；
- * 将来轮换主密钥时按 upstreamCdkCryptoVersion 走显式迁移。
+ * 密钥来自统一注册表 `KL.PIXEL_UPSTREAM_CDK`（HKDF-SHA256，salt = "synapse-key-v1"）。
+ * 这个标签的字符串与最初就地派生时逐字相同，所以**存量密文照旧可解**；
+ * 而解密改走 `legacyDecryptKeys` 候选链后，轮换 AES_KEY 时旧密文(含只留在 AES_KEY_PREV
+ * 里的那一代)仍然解得开。AAD 里再钉一次用途与版本，防止密文跨用途搬运。
  */
 const PIXEL_SECRET_ALGORITHM = "aes-256-gcm";
 export const PIXEL_SECRET_CRYPTO_VERSION = 1;
-const PIXEL_KEY_SALT = Buffer.from("synapse-key-v1", "utf8");
-const PIXEL_KEY_INFO = Buffer.from("pixel-upstream-cdk-v1", "utf8");
 const PIXEL_SECRET_AAD = Buffer.from(`pixel:upstream-cdk:v${PIXEL_SECRET_CRYPTO_VERSION}`, "utf8");
 const GCM_IV_BYTES = 12;
 const GCM_TAG_BYTES = 16;
 
+/**
+ * 加密用当前主密钥派生的子密钥；解密用候选链（新 → AES_KEY_PREV → 各旧命名 env）。
+ *
+ * 用量标签走统一的 KL 注册表：标签字符串与最初就地派生时逐字一致，因此**存量密文继续可解**，
+ * 而从此以后轮换 AES_KEY 不会把旧卡密锁死（这正是之前直接调 masterIkm 后的缺口）。
+ */
 function pixelSecretKey(): Buffer {
-  return Buffer.from(crypto.hkdfSync("sha256", masterIkm(), PIXEL_KEY_SALT, PIXEL_KEY_INFO, 32));
+  return deriveKey(KL.PIXEL_UPSTREAM_CDK);
 }
 
 export interface PixelEncryptedSecret {
@@ -141,11 +141,43 @@ export function decryptPixelSecret(doc: Partial<PixelEncryptedSecret>): string {
   if (iv.length !== GCM_IV_BYTES || tag.length !== GCM_TAG_BYTES) {
     throw new Error("Pixel 秘文格式非法");
   }
-  const decipher = crypto.createDecipheriv(PIXEL_SECRET_ALGORITHM, pixelSecretKey(), iv);
+  const payload = Buffer.from(doc.ciphertext, "base64");
+  // 候选链：当前主密钥 → AES_KEY_PREV → 旧命名 env。认证 tag 判定命中；全部失败则报错，
+  // 绝不回退到「把密文当明文用」。
+  let lastError: unknown = null;
+  for (const key of legacyDecryptKeys(KL.PIXEL_UPSTREAM_CDK)) {
+    try {
+      const decipher = crypto.createDecipheriv(PIXEL_SECRET_ALGORITHM, key, iv);
+      decipher.setAAD(PIXEL_SECRET_AAD);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(payload), decipher.final()]).toString("utf8");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    lastError instanceof Error ? `Pixel 秘文解密失败：${lastError.message}` : "Pixel 秘文解密失败",
+  );
+}
+
+/** 仅供密钥轮换迁移使用：用「仅当前主密钥」试解，用来区分「已是新钥加密」与「仍需重加密」。 */
+export function isPixelSecretEncryptedWithCurrentKey(doc: Partial<PixelEncryptedSecret>): boolean {
+  try {
+    decryptWithPixelKey(doc, pixelSecretKey());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function decryptWithPixelKey(doc: Partial<PixelEncryptedSecret>, key: Buffer): string {
+  const iv = Buffer.from(String(doc.iv ?? ""), "base64");
+  const tag = Buffer.from(String(doc.tag ?? ""), "base64");
+  const decipher = crypto.createDecipheriv(PIXEL_SECRET_ALGORITHM, key, iv);
   decipher.setAAD(PIXEL_SECRET_AAD);
   decipher.setAuthTag(tag);
   return Buffer.concat([
-    decipher.update(Buffer.from(doc.ciphertext, "base64")),
+    decipher.update(Buffer.from(String(doc.ciphertext ?? ""), "base64")),
     decipher.final(),
   ]).toString("utf8");
 }

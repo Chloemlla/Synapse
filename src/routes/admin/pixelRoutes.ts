@@ -19,6 +19,13 @@ import {
   readPixelEvidence,
   revokeEvidenceApproval,
 } from "../../pixel/evidenceService";
+import {
+  assertReencryptLimit,
+  canRetirePreviousMasterKey,
+  getPixelKeyRotationStatus,
+  reencryptPixelSecretsWithCurrentKey,
+} from "../../pixel/reencryptService";
+import { hasValidSecuritySession } from "../../utils/securitySession";
 import { suppressAuditPayloadCapture } from "../../pixel/requestAudit";
 import { PixelDomainError, type PixelAdminDashboardView } from "../../pixel/types";
 import { AuditLogService, type AuditEntry } from "../../services/auditLogService";
@@ -65,6 +72,12 @@ export interface PixelAdminRouterDeps {
     revokeApproval: typeof revokeEvidenceApproval;
     listEvidence: typeof listPixelEvidence;
     readEvidence: typeof readPixelEvidence;
+  };
+  /** 主密钥轮换的体检与重加密迁移。 */
+  keyRotation: {
+    status: typeof getPixelKeyRotationStatus;
+    reencrypt: typeof reencryptPixelSecretsWithCurrentKey;
+    canRetire: typeof canRetirePreviousMasterKey;
   };
   /** 注入点：单测不连 Mongo；默认 fire-and-forget 写审计。 */
   audit?: (entry: AuditEntry) => void | Promise<void>;
@@ -699,6 +712,80 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
     }
   });
 
+  /**
+   * @openapi
+   * /api/admin/pixel/key-rotation:
+   *   get:
+   *     summary: 主密钥轮换体检（指纹 + 两处密文的迁移进度）
+   *     description: 只回来源名与指纹，从不回密钥本身；用于轮换前后核对“是不是同一把钥匙”。
+   *     responses:
+   *       200:
+   *         description: 轮换状态与迁移进度
+   *       403:
+   *         description: 需要管理员权限
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.get("/pixel/key-rotation", authenticateAdmin, async (_req, res) => {
+    try {
+      const status = await deps.keyRotation.status();
+      const retire = await deps.keyRotation.canRetire();
+      res.json({ success: true, data: { ...status, retirePreviousKey: retire } });
+    } catch (error) {
+      sendError(res, "key-rotation-status", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/key-rotation/reencrypt:
+   *   post:
+   *     summary: 把 Pixel 存量密文重加密为当前主密钥（仅超级管理员 + 安全会话）
+   *     description: 默认只扫描报告（apply=false）；apply=true 才写。分批处理，反复调用到 needsReencrypt=0 后才能退役 AES_KEY_PREV。
+   *     responses:
+   *       200:
+   *         description: 本次扫描/重加密计数
+   *       400:
+   *         description: 批次大小非法
+   *       403:
+   *         description: 需要超级管理员权限与有效安全会话
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/key-rotation/reencrypt", authenticateSuperAdmin, async (req, res) => {
+    // 与 /admin/envs/rotate-aes-key 同级：主密钥相关操作额外要求有效安全会话。
+    if (!hasValidSecuritySession(req)) {
+      res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话。", code: "SECURITY_SESSION_REQUIRED" });
+      return;
+    }
+    const body = jsonBody(req);
+    try {
+      assertReencryptLimit(body.limit);
+      const result = await deps.keyRotation.reencrypt({
+        apply: body.apply === true,
+        limit: typeof body.limit === "number" ? body.limit : undefined,
+      });
+      audit(req, res, {
+        module: "config",
+        action: "pixel.key-rotation.reencrypt",
+        detail: {
+          apply: result.apply,
+          scanned: result.scanned,
+          reencrypted: result.reencrypted,
+          pending: result.pending,
+          undecryptable: result.undecryptable,
+        },
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      audit(req, res, {
+        module: "config",
+        action: "pixel.key-rotation.reencrypt",
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "key-rotation-reencrypt", error);
+    }
+  });
+
   return router;
 }
 
@@ -714,5 +801,10 @@ export default createPixelAdminRouter({
     revokeApproval: revokeEvidenceApproval,
     listEvidence: listPixelEvidence,
     readEvidence: readPixelEvidence,
+  },
+  keyRotation: {
+    status: getPixelKeyRotationStatus,
+    reencrypt: reencryptPixelSecretsWithCurrentKey,
+    canRetire: canRetirePreviousMasterKey,
   },
 });

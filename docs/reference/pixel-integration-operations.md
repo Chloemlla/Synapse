@@ -159,6 +159,59 @@ POST /api/admin/pixel/evidence-approvals/<approvalId>/revoke
 
 - 取证内容用**独立子密钥**（HKDF label `pixel-account-evidence-v1`）+ AES-256-GCM，
   AAD 绑定版本，跨用途重放会解密失败；与「上游卡密」那把子密钥互不影响。
-- **未实现**：主密钥轮换后的批量重加密。轮换前必须先把待回应的法律程序处理完，
-  否则旧密文可能无法解密（`decryptPixelEvidence` 会直接报错，而不是回退明文）。
-- 检查清单：确认没有保全中的账号、没有生效审批、没有未到期的取证记录，再动主密钥。
+- 两个用途已在 `src/config/keyDerivation.ts` 的 `KL` 注册表里登记（`PIXEL_UPSTREAM_CDK` /
+  `PIXEL_ACCOUNT_EVIDENCE`），**标签字符串与最初就地派生时逐字相同**：所以存量密文照旧可解，
+  同时解密会走 `legacyDecryptKeys` 候选链（当前主密钥 → `AES_KEY_PREV` → 旧命名 env）。
+
+## 10. 主密钥轮换：完整动作顺序
+
+主密钥是 `AES_KEY`（`masterIkm = sha256(AES_KEY)`，各用途经 HKDF 派生，见 `src/config/keyDerivation.ts`）。
+轮换入口：`POST /api/admin/envs/rotate-aes-key`（超级管理员 + 有效安全会话）。它会生成新主密钥、
+把旧值转存为 `AES_KEY_PREV`、并结束全部安全会话（全体登出）。
+
+**关键点：HKDF 单向，换钥匙无法反推旧子密钥** —— 于是只有两件事能保证旧密文还能读：
+①旧钥留在 `AES_KEY_PREV`（只解不写）；②把旧密文重加密为当前主密钥。只做①不做②，
+`AES_KEY_PREV` 就永远退不掉，「泄露的旧钥」风险一直在。
+
+### 10.1 轮换前
+
+1. 看一眼体检：`GET /api/admin/pixel/key-rotation`（或 `/admin/pixel` → 「法律保全与取证」→ 主密钥轮换）
+   —— 确认 `master.origin` 是 `AES_KEY`（不是回退到 `JWT_SECRET` 或临时源），记下当前指纹。
+2. 确认 `previousConfigured=false` 或上一代已无待迁数据；若有，先把待迁数据处理完，
+   否则这次轮换会把「上一代」覆盖掉，旧密文永久不可读。
+3. 备份 `.env` 与 `monogdb` 里 `pixel_cdk_mappings` / `pixel_evidence` 两张表（密文可备，密钥必须另存）。
+
+### 10.2 轮换后（按顺序）
+
+```bash
+# 1) 体检：指纹变了、previousConfigured 变 true，两处密文的 needsReencrypt > 0
+GET  /api/admin/pixel/key-rotation
+
+# 2) 先只扫描（默认 apply=false，不写任何东西）
+POST /api/admin/pixel/key-rotation/reencrypt   { "apply": false, "limit": 200 }
+
+# 3) 确认 pending 数目符合预期后再写；反复调用直到 pending=0 且 undecryptable=0
+POST /api/admin/pixel/key-rotation/reencrypt   { "apply": true,  "limit": 200 }
+
+# 4) 验证：mappings/evidence 的 needsReencrypt 均为 0，且没有人任务因卡密解不开而失败
+GET  /api/admin/pixel/key-rotation      # retirePreviousKey.canRetire 应为 true
+```
+
+### 10.3 什么时候才能删掉 AES_KEY_PREV
+
+只有当 `canRetirePreviousKey` 返回 `true` 时才允许：
+
+| 判据 | 不满足时会发生什么 |
+|---|---|
+| `mappings.undecryptable == 0` 且 `evidence.undecryptable == 0` | 有密文连上一代密钥都解不开（密文损坏或上一代密钥丢了）——此时退役会让它们永久不可读 |
+| `mappings.needsReencrypt == 0` 且 `evidence.needsReencrypt == 0` | 还有密文由上一代密钥加密，退役即读不出来了 |
+
+> 这个判据目前只覆盖 **Pixel 自己的两处密文**。全站其它用途（password-kek / bilibili 凭据 /
+> short-url / proxycheck payload 等）各有自己的迁移路径，退役全局 `AES_KEY_PREV` 前必须逐个确认。
+
+### 10.4 已知限制
+
+- **未实现**：全站统一的重加密迁移器；当前只有 Pixel 这一块的（`src/pixel/reencryptService.ts`）。
+- **未实现**：主密钥轮换后对“旧登录态”的平滑过渡 —— 轮换会结束全部安全会话并让旧 JWT 失效（这是有意为之）。
+- 轮换后如果发现 `undecryptable > 0`：**立即停止**，先把 `AES_KEY_PREV` 找回来（它就在 `.env` 里，除非被覆盖），
+  不要继续做第二次轮换 —— 第二次会覆盖上一代，把不可解变成永久不可解。

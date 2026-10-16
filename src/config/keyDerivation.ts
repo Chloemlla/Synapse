@@ -31,6 +31,13 @@ export const KL = {
   CDICT_SIGN: "cdict-app-sign",
   QQGUARD_SIGN: "qqguard-shared",
   LUMEN_SIGN: "lumen-request-sign",
+  // Pixel 的两个用途。
+  // 注意：标签里的 `-v1` **不是装饰** —— 这两个用途原先在 src/pixel/ 本地用同样的字符串
+  // 作 HKDF info 派生（salt 也是同一个 "synapse-key-v1"）。归位到 KL 时字符串必须逐字不变，
+  // 否则派生子密钥会变，存量密文（上游卡密、取证内容）当场解不开。
+  // 归位的好处：解密侧从此走 legacyDecryptKeys 的候选链，轮换 AES_KEY 后旧密文仍可解。
+  PIXEL_UPSTREAM_CDK: "pixel-upstream-cdk-v1",
+  PIXEL_ACCOUNT_EVIDENCE: "pixel-account-evidence-v1",
 } as const;
 
 export type KeyLabel = (typeof KL)[keyof typeof KL];
