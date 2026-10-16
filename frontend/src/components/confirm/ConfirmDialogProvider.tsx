@@ -1,10 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
 
 import { ModalPortal } from '../ModalPortal';
 import { cn } from '../../utils/cn';
-import { studioSecondaryButtonClassName, studioSurfaceClassName } from '../studioTheme';
+import { studioPrimaryButtonClassName, studioSecondaryButtonClassName } from '../studioTheme';
+import { StudioModal, StudioModalDangerButton } from '../studioFeedback';
 
 /**
  * 全站二次确认的统一入口。
@@ -21,6 +21,9 @@ import { studioSecondaryButtonClassName, studioSurfaceClassName } from '../studi
  *
  * 未包 `ConfirmDialogProvider` 的渲染分支会自动退回原生 `window.confirm`，
  * 因此调用点不需要关心自己在哪棵树里（`App.tsx` 有多处提前 return 的渲染树）。
+ *
+ * 弹窗外壳（层级压过 MobileNav、Escape 关闭、Tab 循环、关闭后恢复焦点）由 StudioModal 提供；
+ * 「取消」在 DOM 里排在确认之前，因此打开时焦点自然落在取消上，回车不会误执行破坏性操作。
  */
 
 export interface ConfirmOptions {
@@ -30,7 +33,7 @@ export interface ConfirmOptions {
   description?: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  /** danger 用于不可撤销的破坏性操作：红色确认按钮 + 警示图标。 */
+  /** danger 用于不可撤销的破坏性操作：rose 确认按钮 + 警示图标。 */
   tone?: 'default' | 'danger';
 }
 
@@ -55,9 +58,6 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
   // 未决的 resolver 放在 ref 里（而不是 state 更新函数里调用），避免在 StrictMode
   // 的双调用下重复结算。
   const pendingRef = useRef<((value: boolean) => void) | null>(null);
-  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const confirm = useCallback<ConfirmFn>((input) => {
     return new Promise<boolean>((resolve) => {
@@ -76,121 +76,64 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
     resolve?.(value);
   }, []);
 
-  const open = options !== null;
-
-  useEffect(() => {
-    if (!open) return undefined;
-    previouslyFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
-    // 默认焦点落在"取消"上：回车/空格不会误触发破坏性操作。
-    const timer = setTimeout(() => cancelButtonRef.current?.focus(), 0);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        settle(false);
-      } else if (event.key === 'Tab') {
-        const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
-        if (!buttons?.length) return;
-        const first = buttons[0];
-        const last = buttons[buttons.length - 1];
-        if (!dialogRef.current?.contains(document.activeElement) ||
-            (event.shiftKey && document.activeElement === first) ||
-            (!event.shiftKey && document.activeElement === last)) {
-          event.preventDefault();
-          (event.shiftKey ? last : first).focus();
-        }
-      }
-    };
-    const containFocus = (event: FocusEvent) => {
-      if (!dialogRef.current?.contains(event.target as Node)) cancelButtonRef.current?.focus();
-    };
-    document.addEventListener('keydown', handleKeyDown, true);
-    document.addEventListener('focusin', containFocus);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('keydown', handleKeyDown, true);
-      document.removeEventListener('focusin', containFocus);
-      previouslyFocusedRef.current?.focus?.();
-    };
-  }, [open, settle]);
-
   const tone = options?.tone === 'danger' ? 'danger' : 'default';
 
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
       <ModalPortal>
-        <AnimatePresence>
-          {options ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
-              onClick={() => settle(false)}
+        <StudioModal
+          open={options !== null}
+          onClose={() => settle(false)}
+          labelledBy="global-confirm-title"
+          maxWidthClassName="max-w-md"
+          closeLabel="取消"
+        >
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                'flex size-10 shrink-0 items-center justify-center rounded-2xl',
+                tone === 'danger' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500',
+              )}
+              aria-hidden="true"
             >
-              <motion.div
-                ref={dialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="global-confirm-title"
-                aria-describedby={options.description ? 'global-confirm-description' : undefined}
-                initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 12 }}
-                transition={{ duration: 0.18 }}
-                onClick={(event) => event.stopPropagation()}
-                className={cn(studioSurfaceClassName, 'w-full max-w-md p-5')}
-              >
-                <div className="flex items-start gap-3">
-                  <span
-                    className={cn(
-                      'flex size-10 shrink-0 items-center justify-center rounded-2xl',
-                      tone === 'danger' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500',
-                    )}
-                    aria-hidden="true"
-                  >
-                    {tone === 'danger' ? <FaExclamationTriangle className="size-4" /> : <FaInfoCircle className="size-4" />}
-                  </span>
-                  <div className="min-w-0">
-                    <h2 id="global-confirm-title" className="text-base font-semibold text-slate-900">
-                      {options.title}
-                    </h2>
-                    {options.description ? (
-                      <p id="global-confirm-description" className="mt-1.5 text-sm leading-6 whitespace-pre-line text-slate-600">
-                        {options.description}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
+              {tone === 'danger' ? <FaExclamationTriangle className="size-4" /> : <FaInfoCircle className="size-4" />}
+            </span>
+            <div className="min-w-0">
+              <h2 id="global-confirm-title" className="text-base font-semibold text-slate-900">
+                {options?.title}
+              </h2>
+              {options?.description ? (
+                <p id="global-confirm-description" className="mt-1.5 text-sm leading-6 whitespace-pre-line text-slate-600">
+                  {options.description}
+                </p>
+              ) : null}
+            </div>
+          </div>
 
-                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    ref={cancelButtonRef}
-                    type="button"
-                    onClick={() => settle(false)}
-                    className={studioSecondaryButtonClassName}
-                  >
-                    {options.cancelLabel || '取消'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => settle(true)}
-                    className={cn(
-                      studioSecondaryButtonClassName,
-                      tone === 'danger'
-                        ? 'border-rose-200 bg-rose-600 text-white hover:bg-rose-700'
-                        : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800',
-                    )}
-                  >
-                    {options.confirmLabel || '确认执行'}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => settle(false)}
+              className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+            >
+              {options?.cancelLabel || '取消'}
+            </button>
+            {tone === 'danger' ? (
+              <StudioModalDangerButton onClick={() => settle(true)} className="min-h-11">
+                {options?.confirmLabel || '确认执行'}
+              </StudioModalDangerButton>
+            ) : (
+              <button
+                type="button"
+                onClick={() => settle(true)}
+                className={studioPrimaryButtonClassName}
+              >
+                {options?.confirmLabel || '确认执行'}
+              </button>
+            )}
+          </div>
+        </StudioModal>
       </ModalPortal>
     </ConfirmContext.Provider>
   );

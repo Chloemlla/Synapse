@@ -22,6 +22,7 @@ import {
   studioGhostButtonClassName,
   studioModalCardClassName,
   studioModalCloseButtonClassName,
+  studioModalOverlayClassName,
   studioPageFont,
   studioPrimaryButtonClassName,
 } from './studioTheme';
@@ -322,7 +323,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[10060] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm"
+            className={studioModalOverlayClassName}
             onClick={() => setConfirmDeleteId(null)}
           >
             <motion.div
@@ -372,7 +373,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[10060] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm"
+            className={studioModalOverlayClassName}
             onClick={closeRegisterModal}
           >
             <motion.div

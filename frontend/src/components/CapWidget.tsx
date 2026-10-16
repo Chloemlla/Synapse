@@ -261,6 +261,7 @@ const CapWidget = ({
         try {
           elementRef.current?.reset?.();
         } catch (error) {
+          // 控件重置失败无用户可执行动作（下次挂载会重新取挑战），只留诊断。
           console.warn('Failed to reset Cap widget:', error);
         }
       },

@@ -56,18 +56,18 @@ const installDevelopmentTurnstile = () => {
         button.textContent = '点击模拟验证 (开发模式)';
         button.style.width = options.size === 'compact' ? '130px' : '300px';
         button.style.height = options.size === 'compact' ? '120px' : '65px';
-        button.style.border = '2px dashed #9ca3af';
+        button.style.border = '2px dashed #94a3b8';
         button.style.display = 'flex';
         button.style.alignItems = 'center';
         button.style.justifyContent = 'center';
-        button.style.background = '#f9fafb';
-        button.style.color = '#4b5563';
+        button.style.background = '#f8fafc';
+        button.style.color = '#475569';
         button.style.fontFamily = 'Arial, sans-serif';
         button.style.fontSize = '14px';
         button.style.cursor = 'pointer';
 
         button.addEventListener('click', () => {
-          button.style.background = '#e8f5e8';
+          button.style.background = '#d1fae5';
           button.textContent = '验证成功 (开发模式)';
           window.setTimeout(() => options.callback?.(`mock-token-${Date.now()}`), 500);
         });
@@ -172,6 +172,7 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
           'error-callback': () => { if (active()) callbacksRef.current.onError(); },
         });
       } catch (error) {
+        // 初始化失败要交给页面显示失败态（ManagedCaptcha 据此渲染错误条 + 重试）；console 仅作诊断。
         console.error('Turnstile initialization error:', error);
         if (active()) callbacksRef.current.onError();
       }
@@ -186,6 +187,7 @@ export const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
           if (window.turnstile.remove) window.turnstile.remove(widgetId);
           else window.turnstile.reset(widgetId);
         } catch (error) {
+          // 卸载/重置失败：容器随后会被清空，用户没有可执行的补救动作，只留诊断。
           warnTurnstile('Turnstile cleanup error:', error);
         }
       }

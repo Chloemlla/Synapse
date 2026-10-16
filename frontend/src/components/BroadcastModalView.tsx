@@ -7,8 +7,7 @@
  * 否则这些依赖会跟着入口进首屏（见 docs/perf/2026-10-01-captcha-verify-trace-analysis.md）。
  */
 import { useCallback, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaTimes, FaBullhorn, FaExclamationTriangle, FaInfoCircle, FaCheckCircle } from 'react-icons/fa';
+import { FaBullhorn, FaExclamationTriangle, FaInfoCircle, FaCheckCircle } from 'react-icons/fa';
 import DOMPurify from 'dompurify';
 import { useNavigate } from 'react-router-dom';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -18,11 +17,9 @@ import {
   readConfigurationWorkflow,
   writeConfigurationWorkflow,
 } from './env-manager/configurationNotice';
-import {
-  studioModalOverlayClassName,
-  studioSecondaryButtonClassName,
-  studioSurfaceClassName,
-} from './studioTheme';
+import { studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
+import { StudioModal, StudioModalHeader } from './studioFeedback';
+import { cn } from '../utils/cn';
 import type { BroadcastFormat, BroadcastLevel } from './BroadcastModal';
 
 interface BroadcastModalViewProps {
@@ -35,29 +32,29 @@ interface BroadcastModalViewProps {
   onClose: () => void;
 }
 
+const TITLE_ID = 'broadcast-modal-title';
+
+// 弹窗外壳（层级、Escape、focus trap、恢复焦点）统一由 StudioModal 提供，这里只留内容与语义色。
 const LEVEL_CONFIG = {
   info: {
-    icon: <FaInfoCircle className="w-6 h-6 text-sky-500" />,
-    border: 'border-sky-200',
-    bg: 'bg-sky-50',
-    btn: 'bg-sky-500 hover:bg-sky-600',
+    icon: <FaInfoCircle className="h-4 w-4" aria-hidden />,
+    iconClassName: 'bg-sky-50 text-sky-600',
     badge: 'bg-sky-100 text-sky-700',
+    label: '系统通知',
   },
   warn: {
-    icon: <FaExclamationTriangle className="w-6 h-6 text-amber-500" />,
-    border: 'border-amber-200',
-    bg: 'bg-amber-50',
-    btn: 'bg-amber-500 hover:bg-amber-600',
+    icon: <FaExclamationTriangle className="h-4 w-4" aria-hidden />,
+    iconClassName: 'bg-amber-50 text-amber-600',
     badge: 'bg-amber-100 text-amber-700',
+    label: '重要提醒',
   },
   error: {
-    icon: <FaExclamationTriangle className="w-6 h-6 text-rose-500" />,
-    border: 'border-rose-200',
-    bg: 'bg-rose-50',
-    btn: 'bg-rose-500 hover:bg-rose-600',
+    icon: <FaExclamationTriangle className="h-4 w-4" aria-hidden />,
+    iconClassName: 'bg-rose-50 text-rose-600',
     badge: 'bg-rose-100 text-rose-700',
+    label: '紧急通知',
   },
-};
+} as const;
 
 function BroadcastModalView({ title, content, format = 'text', level = 'info', issues = [], onClose }: BroadcastModalViewProps) {
   const cfg = LEVEL_CONFIG[level] || LEVEL_CONFIG.info;
@@ -97,126 +94,96 @@ function BroadcastModalView({ title, content, format = 'text', level = 'info', i
   }, [content, format]);
 
   return (
-    <AnimatePresence>
-      <motion.div
-        className={studioModalOverlayClassName}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      >
-        <motion.div
-          className={`${studioSurfaceClassName} w-full max-w-lg mx-4 max-h-[90vh]`}
-          initial={{ opacity: 0, scale: 0.92, y: 30 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 30 }}
-          transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* 顶部横幅 */}
-          <div className={`${cfg.bg} px-5 py-3 flex items-center justify-between border-b ${cfg.border}`}>
-            <div className="flex items-center gap-2.5">
-              <FaBullhorn className="w-4 h-4 text-slate-500" />
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>
-                {level === 'error' ? '紧急通知' : level === 'warn' ? '重要提醒' : '系统通知'}
-              </span>
-            </div>
-            <button
-              onClick={onClose}
-              className="inline-flex items-center justify-center p-1 rounded-full hover:bg-black/10 transition"
-              aria-label="关闭"
-            >
-              <FaTimes className="w-4 h-4 text-slate-500" />
-            </button>
-          </div>
+    <StudioModal
+      open
+      onClose={onClose}
+      titleId={TITLE_ID}
+      maxWidthClassName="max-w-lg"
+      closeLabel="关闭通知"
+    >
+      <StudioModalHeader
+        title={title || '管理员通知'}
+        titleId={TITLE_ID}
+        icon={cfg.icon}
+        iconClassName={cfg.iconClassName}
+        onClose={onClose}
+        closeLabel="关闭通知"
+        description={
+          <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold', cfg.badge)}>
+            <FaBullhorn className="h-3 w-3" aria-hidden />
+            {cfg.label}
+          </span>
+        }
+      />
 
-          {/* 内容区 */}
-          <div className="px-6 py-5">
-            {/* 图标 + 标题 */}
-            <div className="flex items-center gap-3 mb-4">
-              {cfg.icon}
-              <h2 className="text-lg font-semibold text-slate-800">
-                {title || '管理员通知'}
-              </h2>
+      <div className="mt-5">
+        {isConfigurationNotice ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-sm text-slate-600">
+              <span>待处理配置</span>
+              <span>{activeIssues.length} / {issues.length}</span>
             </div>
-
-            {isConfigurationNotice ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm text-slate-600">
-                  <span>待处理配置</span>
-                  <span>{activeIssues.length} / {issues.length}</span>
+            {activeIssues.length > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <FaExclamationTriangle className="mt-0.5 shrink-0 text-amber-500" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-slate-800">{activeIssues[0].label}</div>
+                    <div className="mt-1 break-words font-mono text-xs text-slate-600">
+                      {activeIssues[0].settingNames.join(' / ')}
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-700">{activeIssues[0].impact}</p>
+                  </div>
                 </div>
-                {activeIssues.length > 0 ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <div className="flex items-start gap-3">
-                      <FaExclamationTriangle className="mt-0.5 shrink-0 text-amber-500" />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-800">{activeIssues[0].label}</div>
-                        <div className="mt-1 break-words font-mono text-xs text-slate-600">
-                          {activeIssues[0].settingNames.join(' / ')}
-                        </div>
-                        <p className="mt-2 text-sm leading-relaxed text-slate-700">{activeIssues[0].impact}</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleIgnoreIssue(activeIssues[0].id)}
-                        className={studioSecondaryButtonClassName}
-                      >
-                        忽略此项
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConfigureIssue(activeIssues[0])}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-600"
-                      >
-                        <FaCheckCircle />
-                        前往配置
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                    <FaCheckCircle />
-                    已忽略当前列表中的配置项。
-                  </div>
-                )}
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleIgnoreIssue(activeIssues[0].id)}
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                  >
+                    忽略此项
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfigureIssue(activeIssues[0])}
+                    className={studioPrimaryButtonClassName}
+                  >
+                    <FaCheckCircle aria-hidden />
+                    前往配置
+                  </button>
+                </div>
               </div>
-            ) : null}
-
-            {/* 正文 */}
-            {!isConfigurationNotice && (
-            <div className="max-h-[50vh] overflow-y-auto">
-              {format === 'text' && (
-                <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{content}</p>
-              )}
-              {format === 'markdown' && (
-                  <MarkdownRenderer content={content} density="compact" />
-              )}
-              {format === 'html' && (
-                <div
-                  className="prose prose-sm max-w-none text-slate-700"
-                  dangerouslySetInnerHTML={{ __html: renderedHtml }}
-                />
-              )}
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                <FaCheckCircle aria-hidden />
+                已忽略当前列表中的配置项。
+              </div>
             )}
           </div>
-
-          {/* 底部按钮 */}
-          <div className="px-6 pb-5 flex justify-center">
-            <motion.button
-              onClick={onClose}
-              className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold text-white transition ${cfg.btn}`}
-              whileTap={{ scale: 0.96 }}
-            >
-              {isConfigurationNotice && activeIssues.length > 0 ? '稍后处理' : '知道了'}
-            </motion.button>
+        ) : (
+          <div className="max-h-[50vh] overflow-y-auto">
+            {format === 'text' && (
+              <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{content}</p>
+            )}
+            {format === 'markdown' && (
+              <MarkdownRenderer content={content} density="compact" />
+            )}
+            {format === 'html' && (
+              <div
+                className="prose prose-sm max-w-none text-slate-700"
+                dangerouslySetInnerHTML={{ __html: renderedHtml }}
+              />
+            )}
           </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        )}
+      </div>
+
+      <div className="mt-6 flex justify-center">
+        <button type="button" onClick={onClose} className={studioPrimaryButtonClassName}>
+          {isConfigurationNotice && activeIssues.length > 0 ? '稍后处理' : '知道了'}
+        </button>
+      </div>
+    </StudioModal>
   );
 }
 

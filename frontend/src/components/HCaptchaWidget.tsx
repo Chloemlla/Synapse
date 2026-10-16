@@ -137,6 +137,7 @@ const HCaptchaWidget = ({
         try {
           window.hcaptcha.remove(widgetId);
         } catch (error) {
+          // 卸载失败无用户可执行动作（容器随后会被清空），只留诊断。
           console.warn('Failed to remove hCaptcha widget:', error);
         }
       }
@@ -149,6 +150,7 @@ const HCaptchaWidget = ({
       try {
         window.hcaptcha.execute(widgetIdRef.current);
       } catch (error) {
+        // 执行失败要交给页面显示失败态（onError 通路），console 仅作诊断。
         console.error('Failed to execute hCaptcha challenge:', error);
         callbacksRef.current.onError?.(error);
       }
@@ -160,6 +162,7 @@ const HCaptchaWidget = ({
       try {
         window.hcaptcha.reset(widgetIdRef.current);
       } catch (error) {
+        // 重置失败无用户可执行动作（控件自己会重新拉挑战），只留诊断。
         console.warn('Failed to reset hCaptcha widget:', error);
       }
     }
@@ -170,6 +173,7 @@ const HCaptchaWidget = ({
       try {
         return window.hcaptcha.getResponse(widgetIdRef.current);
       } catch (error) {
+        // 取不到令牌时按「未通过」处理（返回空串），失败本身不需要用户操作，只留诊断。
         console.warn('Failed to get hCaptcha response:', error);
         return '';
       }

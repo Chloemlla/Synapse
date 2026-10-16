@@ -172,7 +172,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                     exit="exit"
                 >
                     <motion.div
-                        className="fixed inset-0 bg-slate-950/30 backdrop-blur-sm"
+                        className="absolute inset-0"
                         onClick={onClose}
                     />
                     <motion.div
