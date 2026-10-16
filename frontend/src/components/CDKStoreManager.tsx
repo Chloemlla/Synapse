@@ -116,7 +116,7 @@ function ImportCDKModal({ isOpen, onClose, onSuccess }: ImportCDKModalProps) {
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-                <FaUpload className="w-5 h-5 text-purple-500" />
+                <FaUpload className="w-5 h-5 text-slate-500" />
                 导入CDK
               </h3>
               <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1">
@@ -130,13 +130,13 @@ function ImportCDKModal({ isOpen, onClose, onSuccess }: ImportCDKModalProps) {
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700">导入内容</label>
                 <textarea
-                  className="w-full h-48 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 font-mono text-sm"
+                  className="w-full h-48 rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 font-mono text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   placeholder="粘贴要导入的CDK文本。支持每行一个或JSON字段组合，字段名可为 code/resourceId/expiresAt 的变体。"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                 />
                 <div className="flex items-center gap-3">
-                  <label className="inline-flex items-center px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-md text-sm cursor-pointer">
+                  <label className="inline-flex items-center rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer">
                     <input type="file" accept=".txt,.csv,.json" className="hidden" onChange={handleFileChange} />
                     <FaUpload className="w-4 h-4 mr-2" /> 从文件添加
                   </label>
@@ -176,7 +176,7 @@ function ImportCDKModal({ isOpen, onClose, onSuccess }: ImportCDKModalProps) {
                 <motion.button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200"
+                  className="w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 sm:w-auto"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -315,7 +315,7 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-                <FaPlus className="w-5 h-5 text-purple-500" />
+                <FaPlus className="w-5 h-5 text-slate-500" />
                 生成CDK
               </h3>
               <button
@@ -332,7 +332,7 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
                 <label className="block text-sm font-medium text-slate-700">选择资源</label>
                 <select
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.resourceId}
                   onChange={(e) => {
                     console.log('选择的资源ID:', e.target.value);
@@ -393,7 +393,7 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
                   min="1"
                   max="5000"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.count}
                   onChange={(e) => setFormData({ ...formData, count: parseInt(e.target.value) || 1 })}
                 />
@@ -404,7 +404,7 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
                 <label className="block text-sm font-medium text-slate-700">过期时间（可选）</label>
                 <input
                   type="datetime-local"
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.expiresAt}
                   onChange={(e) => setFormData({ ...formData, expiresAt: e.target.value })}
                 />
@@ -426,7 +426,7 @@ function GenerateCDKModal({ isOpen, onClose, onSuccess }: GenerateCDKModalProps)
                 <motion.button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-all duration-200"
+                  className="w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 sm:w-auto transition-all duration-200"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -605,7 +605,7 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
                 <input
                   type="text"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                 />
@@ -615,7 +615,7 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
                 <label className="block text-sm font-medium text-slate-700">选择资源</label>
                 <select
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.resourceId}
                   onChange={(e) => setFormData({ ...formData, resourceId: e.target.value })}
                 >
@@ -639,7 +639,7 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
                 <label className="block text-sm font-medium text-slate-700">过期时间（可选）</label>
                 <input
                   type="datetime-local"
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className="mt-1 block w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   value={formData.expiresAt}
                   onChange={(e) => setFormData({ ...formData, expiresAt: e.target.value })}
                 />
@@ -661,7 +661,7 @@ function EditCDKModal({ isOpen, onClose, onSuccess, cdk }: EditCDKModalProps) {
                 <motion.button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-all duration-200"
+                  className="w-full rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 sm:w-auto transition-all duration-200"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -1168,9 +1168,9 @@ export default function CDKStoreManager() {
         <div className="text-slate-600 space-y-2">
           <p>此功能用于管理CDK兑换码，支持生成、查看、删除CDK，提供完整的CDK生命周期管理。</p>
           <div className="flex items-start gap-2 text-sm">
-            <FaInfoCircle className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+            <FaInfoCircle className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold text-purple-700">功能说明：</p>
+              <p className="font-semibold text-slate-700">功能说明：</p>
               <ul className="list-disc list-inside space-y-1 mt-1">
                 <li>支持为指定资源批量生成CDK</li>
                 <li>实时搜索和筛选CDK</li>
@@ -1192,13 +1192,13 @@ export default function CDKStoreManager() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h3 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaSearch className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
+            <FaSearch className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
             搜索和刷新
           </h3>
           <motion.button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="px-3 py-2 bg-purple-500 text-white rounded-2xl hover:bg-purple-600 transition disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2 w-full sm:w-auto"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 sm:w-auto"
             whileTap={{ scale: 0.95 }}
           >
             <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -1208,7 +1208,7 @@ export default function CDKStoreManager() {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <input
-            className="flex-1 px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+            className="flex-1 rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
             placeholder="搜索CDK代码或资源ID"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -1224,7 +1224,7 @@ export default function CDKStoreManager() {
       >
         <div className="space-y-4">
           <h3 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaPlus className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
+            <FaPlus className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
             生成CDK
           </h3>
           
@@ -1435,7 +1435,7 @@ export default function CDKStoreManager() {
       >
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
           <h3 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaList className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
+            <FaList className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
             CDK列表
             {totalItems > 0 && (
               <span className="text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
@@ -1486,7 +1486,7 @@ export default function CDKStoreManager() {
                             clearSelection();
                           }
                         }}
-                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        className="rounded-md border-slate-300 text-slate-900 focus:ring-slate-400"
                       />
                     </th>
                   )}
@@ -1551,14 +1551,14 @@ export default function CDKStoreManager() {
                               checked={selectedCDKs.has(cdk.id)}
                               onChange={() => toggleSelectCDK(cdk.id)}
                               disabled={cdk.isUsed}
-                              className={`rounded border-slate-300 text-purple-600 focus:ring-purple-500 ${cdk.isUsed ? 'opacity-50 cursor-not-allowed' : ''
+                              className={`rounded-md border-slate-300 text-slate-900 focus:ring-slate-400 ${cdk.isUsed ? 'opacity-50 cursor-not-allowed' : ''
                                 }`}
                             />
                           </td>
                         )}
                         <td className="whitespace-nowrap px-6 py-4 text-sm font-mono text-slate-900">
                           <div className="flex items-center gap-2">
-                            <FaKey className="w-4 h-4 text-purple-500" />
+                            <FaKey className="w-4 h-4 text-slate-500" />
                             {cdk.code}
                           </div>
                         </td>
@@ -1698,11 +1698,11 @@ export default function CDKStoreManager() {
                             checked={selectedCDKs.has(cdk.id)}
                             onChange={() => toggleSelectCDK(cdk.id)}
                             disabled={cdk.isUsed}
-                            className={`rounded border-slate-300 text-purple-600 focus:ring-purple-500 mr-2 flex-shrink-0 ${cdk.isUsed ? 'opacity-50 cursor-not-allowed' : ''
+                            className={`rounded-md border-slate-300 text-slate-900 focus:ring-slate-400 mr-2 flex-shrink-0 ${cdk.isUsed ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
                           />
                         )}
-                        <FaKey className="w-5 h-5 text-purple-500 flex-shrink-0" />
+                        <FaKey className="w-5 h-5 text-slate-500 flex-shrink-0" />
                         <div className="font-mono text-lg font-bold text-slate-900 truncate">
                           {cdk.code}
                         </div>
@@ -1818,7 +1818,7 @@ export default function CDKStoreManager() {
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === 1
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-purple-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== 1 ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== 1 ? { scale: 0.95 } : {}}
@@ -1833,7 +1833,7 @@ export default function CDKStoreManager() {
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === 1
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-purple-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== 1 ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== 1 ? { scale: 0.95 } : {}}
@@ -1849,8 +1849,8 @@ export default function CDKStoreManager() {
                     onClick={() => handlePageChange(page)}
                     className={`px-3 py-2 rounded-2xl text-sm font-medium transition-all duration-200 ${
                       page === currentPage
-                        ? 'bg-purple-500 text-white shadow-md'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-purple-600'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -1867,7 +1867,7 @@ export default function CDKStoreManager() {
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === totalPages
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-purple-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== totalPages ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== totalPages ? { scale: 0.95 } : {}}
@@ -1882,7 +1882,7 @@ export default function CDKStoreManager() {
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === totalPages
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-purple-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== totalPages ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== totalPages ? { scale: 0.95 } : {}}

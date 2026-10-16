@@ -6,7 +6,7 @@ import {
   studioGhostButtonClassName,
   studioPrimaryButtonClassName,
 } from '../../studioTheme';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
