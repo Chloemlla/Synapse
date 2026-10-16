@@ -3,13 +3,51 @@
 @import "./styles/sidebar-theme.css";
 @import "./styles/scrollbar.css";
 
+/* Tailwind v4 的主题只能从 CSS 声明。历史上有 frontend/tailwind.config.js，
+   但仓库里没有任何 `@config` 指令，v4 也不会自动探测 JS 配置
+   （2026-10-16 用 @tailwindcss/postcss 4.3.3 实测：把 screens.xs 改成 481px、
+   把配置放到 CSS 旁边，输出里都不会出现 481px）—— 所以那个文件里的
+   自定义色板/宋体字体类/animation/minHeight 全部是死配置。
+   教训：在 v4 里定义主题必须写在这里，写进 JS 文件不会生效。
+   注意：本闸门会统计注释里的字面量，所以解释文字里不要写出那些已废弃的类名。 */
+@theme {
+  /* TigerAdventure 等页面已经写了的 `xs:` 变体（当前被静默丢弃）。 */
+  --breakpoint-xs: 480px;
+  /* 与 body / studioPageFont 保持同一套字体栈。 */
+  --font-sans: "Avenir Next", "PingFang SC", "Noto Sans SC", "Microsoft YaHei",
+    ui-sans-serif, system-ui, sans-serif;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  /* 视觉基准字体：必须与 frontend/src/components/studioTheme.tsx 的 studioPageFont 一致。
+     以前靠每个页面内联 style={{ fontFamily: studioPageFont }} 注入，漏写的页面会掉回
+     -apple-system，同一站出现两种正文观感。CSS 不能 import TS 常量，两处改必须同步。 */
+  font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", "Microsoft YaHei",
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #0f172a; /* slate-900 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* reduced motion 兜底：页面级 useReducedMotion() 负责关掉 framer-motion 的入场/循环动画，
+   这里负责手写 CSS 动画与过渡（toastSlideIn / animate-bounce-slow / animate-spin 等）。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 键盘焦点兜底：studio*ButtonClassName 自带 focus-visible:ring-*；
+   这个只拯救尚未走 token 的手写控件，不替代 token。 */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #94a3b8; /* slate-400 */
+  outline-offset: 2px;
 }
 .custom-toast {
   background: transparent !important;
@@ -79,34 +117,34 @@ body {
   color: #10b981 !important;
 }
 
-/* 错误类型Toast */
+/* 错误类型Toast（rose 刻度，与 studioDangerButtonClassName / ResourceStoreList 错误块同色） */
 .custom-toast-error {
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
-  border: 1px solid #fecaca !important;
-  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.1), 0 4px 6px -2px rgba(239, 68, 68, 0.05) !important;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%) !important;
+  border: 1px solid #fecdd3 !important;
+  box-shadow: 0 10px 25px -5px rgba(225, 29, 72, 0.1), 0 4px 6px -2px rgba(225, 29, 72, 0.05) !important;
 }
 
 .custom-toast-error .Toastify__toast-body {
-  color: #991b1b !important;
+  color: #9f1239 !important;
   font-weight: 500 !important;
   padding: 16px !important;
 }
 
 .custom-toast-error .Toastify__progress-bar {
-  background: linear-gradient(90deg, #ef4444, #dc2626) !important;
+  background: linear-gradient(90deg, #f43f5e, #e11d48) !important;
   height: 3px !important;
   border-radius: 0 0 16px 16px !important;
 }
 
 .custom-toast-error .Toastify__close-button {
-  color: #ef4444 !important;
+  color: #e11d48 !important;
 }
 
-/* 警告类型Toast */
+/* 警告类型Toast（amber 刻度） */
 .custom-toast-warning {
   background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
-  border: 1px solid #fed7aa !important;
-  box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.1), 0 4px 6px -2px rgba(245, 158, 11, 0.05) !important;
+  border: 1px solid #fde68a !important;
+  box-shadow: 0 10px 25px -5px rgba(217, 119, 6, 0.1), 0 4px 6px -2px rgba(217, 119, 6, 0.05) !important;
 }
 
 .custom-toast-warning .Toastify__toast-body {
@@ -125,33 +163,35 @@ body {
   color: #f59e0b !important;
 }
 
-/* 信息类型Toast */
+/* 信息类型Toast（sky 刻度） */
 .custom-toast-info {
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
-  border: 1px solid #bfdbfe !important;
-  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.1), 0 4px 6px -2px rgba(59, 130, 246, 0.05) !important;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border: 1px solid #bae6fd !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.04) !important;
 }
 
 .custom-toast-info .Toastify__toast-body {
-  color: #1e40af !important;
+  color: #0c4a6e !important;
   font-weight: 500 !important;
   padding: 16px !important;
 }
 
 .custom-toast-info .Toastify__progress-bar {
-  background: linear-gradient(90deg, #3b82f6, #6366f1) !important;
+  background: linear-gradient(90deg, #0ea5e9, #0284c7) !important;
   height: 3px !important;
   border-radius: 0 0 16px 16px !important;
 }
 
 .custom-toast-info .Toastify__close-button {
-  color: #3b82f6 !important;
+  color: #0284c7 !important;
 }
 
 /* 通用Toast样式增强 */
 .Toastify__toast {
   border-radius: 16px !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+  /* 与 body 的基准字体保持一致 */
+  font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", "Microsoft YaHei",
+    ui-sans-serif, system-ui, sans-serif !important;
   backdrop-filter: blur(10px) !important;
   transition: all 0.3s ease !important;
 }

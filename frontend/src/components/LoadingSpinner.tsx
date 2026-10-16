@@ -1,8 +1,23 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+
+// 配色基准：frontend/src/components/studioTheme.tsx。
+// 旋转弧 = slate-900 主操作色 + sky 轻装饰（与 studioAccentBlobSkyClassName 同族），
+// 不再使用 indigo/violet 十六进制或 rgb() 字面量（历史遗留见
+// docs/audit/audit-2026-10-16-frontend-design-language.md FD-058 / FD-063）。
+const SPINNER_TRACK = 'rgba(148, 163, 184, 0.22)'; // slate-400/22
+const SPINNER_PRIMARY = 'rgb(15, 23, 42)'; // slate-900
+const SPINNER_ACCENT = 'rgb(14, 165, 233)'; // sky-500
+const SPINNER_HALO =
+  'radial-gradient(circle, rgba(15,23,42,0.16) 0%, rgba(14,165,233,0.16) 45%, transparent 72%)';
 
 // 轻量级加载组件（用于组件级别的懒加载），支持 size
 export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) => {
+  const reducedMotion = useReducedMotion();
+  const spin = reducedMotion ? undefined : { rotate: 360 };
+  const spinReverse = reducedMotion ? undefined : { rotate: -360 };
+  const pulse = reducedMotion ? undefined : { opacity: [0.55, 0.95, 0.55], scale: [0.9, 1.04, 0.9] };
   const compact = size <= 0.75;
   const ringSize = compact ? Math.round(34 * size) : Math.round(56 * size);
   const ringStroke = Math.max(2, Math.round(2.6 * size));
@@ -24,11 +39,10 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
         style={{
           width: haloSize,
           height: haloSize,
-          background:
-            'radial-gradient(circle, rgba(99,102,241,0.22) 0%, rgba(56,189,248,0.16) 45%, transparent 72%)',
+          background: SPINNER_HALO,
           filter: 'blur(6px)',
         }}
-        animate={{ opacity: [0.55, 0.95, 0.55], scale: [0.9, 1.04, 0.9] }}
+        animate={pulse}
         transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
       />
 
@@ -38,7 +52,7 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
         style={{
           borderWidth: ringStroke,
           borderStyle: 'solid',
-          borderColor: 'rgba(148, 163, 184, 0.22)',
+          borderColor: SPINNER_TRACK,
         }}
       />
 
@@ -49,11 +63,11 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
           borderWidth: ringStroke,
           borderStyle: 'solid',
           borderColor: 'transparent',
-          borderTopColor: 'rgb(99, 102, 241)',
-          borderRightColor: 'rgb(56, 189, 248)',
-          boxShadow: '0 0 12px rgba(99,102,241,0.28)',
+          borderTopColor: SPINNER_PRIMARY,
+          borderRightColor: SPINNER_ACCENT,
+          boxShadow: '0 0 12px rgba(15,23,42,0.22)',
         }}
-        animate={{ rotate: 360 }}
+        animate={spin}
         transition={{ duration: 1.05, repeat: Infinity, ease: 'linear' }}
       />
 
@@ -65,9 +79,9 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
           borderWidth: Math.max(1, ringStroke - 1),
           borderStyle: 'solid',
           borderColor: 'transparent',
-          borderBottomColor: 'rgba(34, 211, 238, 0.55)',
+          borderBottomColor: 'rgba(14, 165, 233, 0.55)',
         }}
-        animate={{ rotate: -360 }}
+        animate={spinReverse}
         transition={{ duration: 1.7, repeat: Infinity, ease: 'linear' }}
       />
 
@@ -77,10 +91,10 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
         style={{
           width: dotSize,
           height: dotSize,
-          background: 'linear-gradient(135deg, #6366f1, #38bdf8)',
-          boxShadow: '0 0 10px rgba(99,102,241,0.55)',
+          background: `linear-gradient(135deg, ${SPINNER_PRIMARY}, ${SPINNER_ACCENT})`,
+          boxShadow: '0 0 10px rgba(15,23,42,0.4)',
         }}
-        animate={{ scale: [0.78, 1.08, 0.78], opacity: [0.78, 1, 0.78] }}
+        animate={reducedMotion ? undefined : { scale: [0.78, 1.08, 0.78], opacity: [0.78, 1, 0.78] }}
         transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
       />
     </div>
@@ -103,7 +117,7 @@ export const SimpleLoadingSpinner: React.FC<{ size?: number }> = ({ size = 1 }) 
         <motion.span
           className="font-semibold uppercase tracking-[0.26em] text-slate-500"
           style={{ fontSize: labelSize }}
-          animate={{ opacity: [0.78, 1, 0.78] }}
+          animate={reducedMotion ? undefined : { opacity: [0.78, 1, 0.78] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         >
           Loading

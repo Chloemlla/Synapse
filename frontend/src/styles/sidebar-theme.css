@@ -1,10 +1,14 @@
 /**
- * Minimal shadcn / new-api sidebar design tokens for Synapse.
+ * Shell chrome tokens for the desktop sidebar.
  *
- * Only the tokens consumed by `@/components/ui/sidebar` and its peer
- * ui primitives (button / sheet / tooltip / separator / skeleton).
- * Existing Synapse slate/indigo visual language is preserved for
- * non-sidebar surfaces; these tokens only light up the new shell.
+ * 视觉基准：`frontend/src/components/studioTheme.tsx` + `ResourceStoreList.tsx`。
+ * 这里**只**给 `@/components/ui/sidebar` 及其 peer 原语（button / sheet / tooltip /
+ * separator / skeleton）喂 token，值全部落在 slate/white 中性刻度上：
+ * 主操作 = slate-900，装饰 = sky/blue，语义色 = emerald/amber/rose。
+ *
+ * 历史上这里的 `--primary` 是 oklch(0.45 0.16 265) 的 indigo-violet，注释还写着
+ * "Synapse brand" —— 结果是同一个站点里 studio 页的主按钮是 slate-900、
+ * sidebar/ui 页的主按钮是蓝紫。**不要再把任何非 slate 主色写回来**。
  */
 
 @theme inline {
@@ -39,7 +43,8 @@
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  /* 基准里卡片/面/表单/按钮/弹窗统一 rounded-2xl (1rem)，不要让 shell 溢出另一套刻度。 */
+  --radius-xl: 1rem;
 }
 
 :root {
@@ -53,29 +58,29 @@
   --card-foreground: oklch(0.18 0.02 255);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.02 255);
-  --primary: oklch(0.45 0.16 265); /* indigo-violet, Synapse brand */
+  --primary: oklch(0.21 0.03 257); /* slate-900 (#0f172a)，与 studioPrimaryButtonClassName 同色 */
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.96 0.01 255);
   --secondary-foreground: oklch(0.28 0.03 255);
   --muted: oklch(0.965 0.008 255);
   --muted-foreground: oklch(0.5 0.02 255);
-  --accent: color-mix(in oklch, var(--primary) 10%, var(--background));
-  --accent-foreground: oklch(0.28 0.06 265);
+  --accent: oklch(0.955 0.006 247); /* slate-100 */
+  --accent-foreground: oklch(0.28 0.03 257);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.91 0.01 255);
   --input: oklch(0.91 0.01 255);
-  --ring: oklch(0.55 0.16 265);
+  --ring: oklch(0.71 0.02 257); /* slate-400 */
 
   /* Distinct app-chrome surface (not pure white page canvas) */
-  --sidebar: oklch(0.995 0.004 265);
-  --sidebar-foreground: oklch(0.22 0.03 265);
-  --sidebar-primary: oklch(0.48 0.17 265);
+  --sidebar: oklch(0.995 0.002 247);
+  --sidebar-foreground: oklch(0.22 0.02 257);
+  --sidebar-primary: oklch(0.21 0.03 257); /* slate-900 */
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: color-mix(in oklch, var(--sidebar-primary) 11%, var(--sidebar));
-  --sidebar-accent-foreground: oklch(0.32 0.1 265);
-  --sidebar-border: oklch(0.92 0.012 265);
-  --sidebar-ring: oklch(0.55 0.16 265);
+  --sidebar-accent: oklch(0.955 0.006 247); /* slate-100 */
+  --sidebar-accent-foreground: oklch(0.28 0.02 257);
+  --sidebar-border: oklch(0.92 0.008 257);
+  --sidebar-ring: oklch(0.71 0.02 257); /* slate-400 */
 }
 
 /* no-scrollbar / hover-scrollbar live in styles/scrollbar.css (new-api parity). */

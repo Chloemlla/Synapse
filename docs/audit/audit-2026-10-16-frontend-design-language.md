@@ -121,17 +121,26 @@
   且主色必须等于 slate-900」。同步修 `--radius` 语义：`--radius: 0.75rem` 时
   `--radius-xl = 1.05rem`，与 `rounded-2xl`(1rem) 不一致 → 令 `--radius-xl: 1rem`。
 
-#### FD-002 `frontend/tailwind.config.js` — legacy 色板与 songti 字体
+#### FD-002 `frontend/tailwind.config.js` — **整份文件是死配置**（比想象的严重）
 - **位置**：`theme.extend.colors` 的 `ink-black: '#04151f'`、`dark-slate: '#183a37'`、
   `wheat: '#efd6ac'`、`burnt-orange: '#c44900'`、`midnight-violet: '#432534'`；
-  `fontFamily.songti`；`scrollbar` 插件色。
-- **类型**：第二套色板（暗色系 + 高饱和橙），与 white/slate + sky 装饰完全冲突。
-- **详情**：`font-songti` 仍被 `components/FBIWantedManager.tsx`（9 处）、
-  `components/ShortLinkManager.tsx`（11 处）使用，配合 `index.css:209`
-  `.logshare-admin-surface .font-songti { font-family: inherit !important; }` 打补丁。
-  legacy 色名前缀（`wheat`/`burnt-orange`）与 Tailwind 内置色名冲突风险高。
-- **改法**：删除 5 个 legacy 色与 `font-songti`；把这两个文件改用 `studioPageFont` 体系；
-  若 `scrollbar` 插件色无引用则连同插件一并移除。
+  `fontFamily.songti`；`screens.xs: '480px'`；`animation['bounce-slow']`；`minHeight.btn-*`；
+  `plugin: tailwind-scrollbar`。
+- **类型**：第二套色板 + 主题声明完全不生效。
+- **详情（已实测确认，不是推测）**：仓库使用 Tailwind v4（`index.css` 的 `@import "tailwindcss"`
+  + `@tailwindcss/postcss@4.3.3`），全仓**没有任何 `@config` 指令**；
+  实测把 `screens.xs` 改成 `481px`、并把同份配置放到 CSS 文件旁边，编译输出里均**不出现 `481px`** ⇒
+  v4 既不自探项目根配置、也不自探相邻目录配置。
+  后果（都是静默的，没有报错）：
+  - `xs:` 变体（`components/TigerAdventure.tsx` 14 处，如 `L1134 xs:left-6 xs:right-6`、
+    `L1144 xs:text-2xl`、`L1174 xs:flex-row`）被整类丢弃 → 480–640px 区间没拿到预期样式；
+  - `font-songti`（`FBIWantedManager.tsx` 9 处 + `ShortLinkManager.tsx` 11 处）被丢弃；
+  - `animate-bounce-slow`（`tailwind.config.js` 定义）被丢弃；
+  - 5 个 legacy 色名全仓零引用。
+- **改法**：删除 `frontend/tailwind.config.js`；把真正需要的主题改成 v4 原生的 CSS 声明
+  （`index.css` 的 `@theme { --breakpoint-xs: 480px; --font-sans: … }`）；
+  `font-songti` 与 `animate-bounce-slow` 的使用点一并清掉（前者归 FD-025，后者归 FD-068）。
+  `tailwind-scrollbar` 依赖保留在 `package.json`（移除需走 §十七 锁文件重生成），仅停用插件。
 
 #### FD-003 `frontend/src/index.css` — `!important` 覆盖层伪造统一（最严重）
 - **位置**：`index.css:205-303` 的 `.logshare-admin-surface` 一族规则，例如
@@ -651,14 +660,29 @@
 
 ### I. 缺自动化闸门
 
-#### FD-079 新增静态检查 `pnpm run check:design-language`
+#### FD-079 新增静态检查 `pnpm run check:frontend-design-language`
 - **类型**：防回流（否则改完下一批代码又会引入 indigo/hex）。
 - **详情**：本次审查用的扫描器逻辑（禁用色 / 任意 hex / 非 slate 中性 / 非 2xl 圆角 /
   未复用 token / 未处理 reduced motion / 缺 `type`）已可脚本化。
-- **改法**：落地 `frontend/scripts/check-design-language.mjs`（Node ESM，无第三方依赖，< 300 行），
-  基线写进 `frontend/scripts/design-language-baseline.json`（当前命中数），CI 只允许**下降**；
-  接入 `.github/workflows` 的 Quality Guardrails（与 `check:ts-file-size` 同一 job）。
-  **禁止**一次性把基线设成当前值后就不管 —— 每个修复批次结束都要下调基线。
+- **改法（已落地于 P1）**：`scripts/governance/check-frontend-design-language.js`
+  （Node CJS、零第三方依赖、只读 `frontend/src`，不需构建、不读 `node_modules`），
+  基线 `scripts/governance/frontend-design-language-baseline.json`（每条规则一个上限），
+  接入 `.github/workflows/quality-guardrails.yml` 的 Guardrails job；CI 只允许命中数**下降**。
+  `--report` 打印违规点，`--update-baseline` 在清理后收紧上限。
+  **禁止**把基线改成当前值后就不管：每个修复批次结束都要跑 `--update-baseline` 并回填 §6。
+
+#### FD-080 新增共享四态/弹窗原语 `components/studioFeedback.tsx`
+- **类型**：缺少共享实现，导致每个页面各自手写四态与弹窗（FD-044 / FD-056～FD-062 的根因）。
+- **详情**：基准里只有 `ResourceStoreList.tsx` 一处把「独立 error 态 / 局部 loading /
+  空态给下一步 / success role=status / 分页 / 弹窗 focus trap」做全了，其他 300+ 页面无参照物，
+  于是“照猫画虎”成 6 套弹窗与 60 个吞错误的 catch。
+- **改法（已落地于 P1）**：新增 `frontend/src/components/studioFeedback.tsx`，导出
+  `StudioErrorNote` / `StudioSuccessNote` / `StudioErrorState` / `StudioEmptyState` /
+  `StudioLoadingState` / `StudioPager` / `StudioModal` / `StudioModalHeader` /
+  `StudioModalDangerButton` / `StudioModalPrimaryButton`。
+  内部只用 `studioTheme` 常量 + `UnifiedLoadingSpinner` + `useReducedMotion`，
+  不新增任何 Tailwind 颜色串。后续所有批次的新代码必须从这里取，
+  自建弹窗、自写四态、自绘 spinner 一律不接受。
 
 ---
 
@@ -670,8 +694,8 @@
 
 | 批次 | 范围（可编辑文件） | 覆盖编号 | 交付 |
 | --- | --- | --- | --- |
-| **P1 地基** | `frontend/tailwind.config.js`、`frontend/src/index.css`、`frontend/src/styles/sidebar-theme.css`、`frontend/src/components/studioTheme.tsx`、`frontend/src/main.tsx`、`frontend/scripts/check-design-language.mjs`（新）、`frontend/package.json` | FD-001～FD-004、FD-006～FD-010、FD-079 | 单一配色体系 + 静态闸门 |
-| **P2 shell** | `frontend/src/App.tsx`、`frontend/src/layout/*`、`frontend/src/components/ui/*`、`frontend/src/lib/utils.ts`、`frontend/src/components/MobileNav.tsx`、`frontend/src/components/Footer.tsx`、`frontend/src/components/HomeHub.tsx`、`frontend/src/components/LoadingSpinner.tsx`、`frontend/src/components/ErrorDisplay.tsx` | FD-005、FD-018、FD-034、FD-044、FD-050、FD-051、FD-058、FD-060、FD-067、FD-070 | shell 与共享件对齐 |
+| **P1 地基** ✅ | `frontend/tailwind.config.js`（已删）、`frontend/src/index.css`、`frontend/src/styles/sidebar-theme.css`、`frontend/src/components/studioTheme.tsx`、`frontend/src/components/studioFeedback.tsx`（新）、`frontend/src/components/LoadingSpinner.tsx`、`scripts/governance/check-frontend-design-language.js`（新）、`scripts/governance/frontend-design-language-baseline.json`（新）、`package.json`、`.github/workflows/quality-guardrails.yml`、`readme.md` | FD-001、FD-002、FD-003（Toastify/字体部分）、FD-007、FD-008、FD-079、FD-080 | 单一配色体系 + 共享原语 + 静态闸门 |
+| **P2 shell** | `frontend/src/App.tsx`、`frontend/src/layout/*`、`frontend/src/components/ui/*`、`frontend/src/lib/utils.ts`、`frontend/src/components/MobileNav.tsx`、`frontend/src/components/Footer.tsx`、`frontend/src/components/HomeHub.tsx`、`frontend/src/components/ErrorDisplay.tsx`、`frontend/src/components/ModalPortal.tsx` | FD-004～FD-006、FD-009、FD-018、FD-034、FD-050、FD-051、FD-060、FD-067、FD-070 | shell 与共享件对齐 |
 | **P3 auth/验证** | `LoginPage`、`RegisterPage`、`ForgotPasswordPage`、`ResetPasswordPage`、`ResetPasswordLinkPage`、`MobileLoginPanel`、`EmailVerifyPage`、`GoogleAuthButton`、`LinuxDoAuthButton`、`LinuxDoAuthCallbackPage`、`TOTPManager`、`TOTPSetup`、`TOTPVerification`、`PasskeySetup`、`PasskeyVerifyModal`、`BackupCodesModal`、`VerificationMethodSelector`、`VerifyCodeInput`、`EstablishSecuritySession`、`StepUpGate`、`FirstVisitVerification`、`SmartHumanCheck`、`SmartHumanCheckTraces`、`SmartHumanCheckTestPage`、`TurnstileWidget`、`HCaptchaWidget`、`CapWidget`、`ManagedCaptcha`、`CaptchaVerificationPage`、`CaptchaVerificationExample`、`CloudflareChallengePage`、`FeatureConsentGate`、`FingerprintManager`、`FingerprintRequestModal` | FD-013 变体、FD-026、FD-027、FD-056～FD-062 | 认证/验证域四态齐备 |
 | **P4 管理端 A** | `components/admin/AdminHub.tsx`、`AdminGuard.tsx`、`SuperAdminGuard.tsx`、`AdminScopeManager.tsx`、`AdminOverviewPanel.tsx`、`AdminCommandPalette.tsx`、`adminModules.tsx`、`CaptchaProviderAdmin.tsx`、`captcha-providers/*`(5)、`CrashReportManager.tsx`、`crash-reports/*`(3)、`DebugConsole.tsx`、`RedisDataBrowser.tsx`、`IntegrationsHealthPanel.tsx`、`MobileTokenLineagePanel.tsx` | FD-017、FD-038、FD-053 | 删 `.logshare-admin-surface` |
 | **P5 管理端 B** | `components/admin/IpRiskLogPanel.tsx`、`ip-risk-log/*`(6)、`MediaToolAdmin.tsx`、`media-tool/*`(5)、`PolicyConsentPanel.tsx`、`policy-consent/*`(3)、`QqGuardManager.tsx`、`qq-guard/*`(5)、`GeoGebraAdminPanel.tsx`、`AdminDashboard.tsx`、`AdminLogin.tsx`、`AdminStoreDashboard.tsx` | FD-017、FD-038、FD-055 | 同上 |

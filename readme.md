@@ -479,9 +479,9 @@ Synapse/
 │   │   └── config/                   # 前端配置
 │   ├── docs/                         # 已退役占位目录
 │   ├── vite.config.ts                # Vite 构建配置
-│   ├── tailwind.config.js            # Tailwind CSS 配置
 │   ├── vitest.config.ts              # Vitest 测试配置
 │   └── package.json
+│   # Tailwind v4 主题写在 src/index.css 的 @theme 块（无 JS 配置） 
 │
 ├── data/                             # 运行时数据目录
 │   ├── blocked-ips.json              # IP 封禁列表
