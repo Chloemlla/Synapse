@@ -51,7 +51,7 @@ export type PixelEvidenceHoldView = {
 function holdView(doc: {
   holdId: string; userId: string; caseRef: string; legalBasis: string; reason: string;
   issuedByUsername: string; issuedAt: Date;
-  taskAccess?: Array<Record<string, unknown>>; usageLogs?: Array<Record<string, unknown>>;
+  taskAccess?: unknown[]; usageLogs?: unknown[];
   taskAccessCount?: number; usageLogCount?: number; truncated: boolean;
   releasedAt: Date | null; releasedByUsername: string; releaseReason: string; purgeAfter: Date | null;
 }): PixelEvidenceHoldView {
@@ -114,8 +114,8 @@ export async function createPixelEvidenceHold(input: {
     PixelTaskAccessModel.find({ userId }).limit(MAX_SNAPSHOT_ROWS).lean(),
     PixelUsageLogModel.find({ userId }).sort({ createdAt: -1 }).limit(MAX_SNAPSHOT_ROWS).lean(),
   ]);
-  const taskAccess = taskAccessRows.map((row) => pickFields(row as Record<string, unknown>, TASK_ACCESS_FIELDS));
-  const usageLogs = usageRows.map((row) => pickFields(row as Record<string, unknown>, USAGE_LOG_FIELDS));
+  const taskAccess = taskAccessRows.map((row) => pickFields(row as unknown as Record<string, unknown>, TASK_ACCESS_FIELDS));
+  const usageLogs = usageRows.map((row) => pickFields(row as unknown as Record<string, unknown>, USAGE_LOG_FIELDS));
   const truncated = taskAccessRows.length >= MAX_SNAPSHOT_ROWS || usageRows.length >= MAX_SNAPSHOT_ROWS;
 
   const created = await PixelEvidenceHoldModel.create({

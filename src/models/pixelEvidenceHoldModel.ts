@@ -20,9 +20,9 @@ export interface IPixelEvidenceHold extends Document {
   issuedByUsername: string;
   issuedAt: Date;
   /** 任务归属的快照。 */
-  taskAccess: Array<Record<string, unknown>>;
+  taskAccess: unknown[];
   /** 脱敏溯源的快照。 */
-  usageLogs: Array<Record<string, unknown>>;
+  usageLogs: unknown[];
   /** 行数超过上限时为 true，管理员需要知道快照不是全量。 */
   truncated: boolean;
   /** 快照行数（列表视图不带明细，因此单独存计数）。 */
