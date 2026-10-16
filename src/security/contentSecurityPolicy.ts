@@ -199,8 +199,19 @@ export function buildHelmetCspDirectives(): Record<string, Iterable<HelmetCspDir
     // trycap（Cap）的 PoW 求解器是 WASM，缺这一条时浏览器直接拦掉 WebAssembly.compile
     // （控制台报 "because 'unsafe-eval' is not an allowed source of script"），
     // 控件只能退化到约慢 10 倍的 JS 求解器，hashwx 挑战更是无解。
-    scriptSrc: ["'self'", "'wasm-unsafe-eval'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
-    scriptSrcElem: ["'self'", "'wasm-unsafe-eval'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
+    //
+    // 'strict-dynamic'：GeoGebra 的加载器链是「我们自己 nonce 过的 bundle → deployggb.js →
+    // web3d-0.js → 运行时内联脚本」，后半段全是运行时动态插入、不带 nonce 的内联脚本。
+    // 没有 strict-dynamic 时它们一律被 script-src-elem 拦掉（实测报错：
+    // "Executing inline script violates ... script-src-elem"，调用栈在 web3d-0.js 里）。
+    // 可选方案只有三个：unsafe-inline（会一并放行注入的内联脚本，等于是把 XSS 防线拆了）、
+    // 逐个脚本加 hash（内容是运行时生成的，GeoGebra 一发新版就失效）、或者 strict-dynamic。
+    // strict-dynamic 的信任链正好对应上面这条链：nonce 过的 bundle 插入的脚本被信任，
+    // 被信任的脚本再插入的脚本也被信任，而页面里凭空出现的内联脚本（注入）依然被拦。
+    // 代价要说清：支持 CSP3 的浏览器里 script-src 的 host 名单会被忽略（名单保留作为 CSP2 回退），
+    // 所以这里实际信任的是「我们自己的 bundle + 它加载的第三方控件代码」，而不是 host 白名单。
+    scriptSrc: ["'self'", "'wasm-unsafe-eval'", "'strict-dynamic'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
+    scriptSrcElem: ["'self'", "'wasm-unsafe-eval'", "'strict-dynamic'", asHttpNonceSource, ...THIRD_PARTY_SCRIPT_HOSTS],
     scriptSrcAttr: ["'none'"],
     styleSrc: ["'self'", asHttpStyleElementSource, ...THIRD_PARTY_STYLE_HOSTS],
     styleSrcElem: ["'self'", asHttpStyleElementSource, ...THIRD_PARTY_STYLE_HOSTS],
@@ -289,6 +300,8 @@ export function summarizeCspHeader(headerValue: string | string[] | undefined): 
   hasStyleAttrUnsafeInline: boolean;
   hasNonce: boolean;
   hasScriptNonce: boolean;
+  /** 是否启用 strict-dynamic（GeoGebra 等第三方加载器运行时插入脚本所必需）。 */
+  hasStrictDynamic: boolean;
 } {
   const raw = Array.isArray(headerValue) ? headerValue.join(",") : headerValue || "";
   const lower = raw.toLowerCase();
@@ -307,5 +320,6 @@ export function summarizeCspHeader(headerValue: string | string[] | undefined): 
     hasStyleAttrUnsafeInline: /'unsafe-inline'/.test(styleAttr),
     hasNonce: /'nonce-/.test(lower),
     hasScriptNonce: /'nonce-/.test(scriptSrc),
+    hasStrictDynamic: /'strict-dynamic'/.test(scriptSrc),
   };
 }

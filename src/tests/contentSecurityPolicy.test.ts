@@ -80,6 +80,25 @@ describe("contentSecurityPolicy", () => {
       expect(header).not.toMatch(/style-src[^;]*'nonce-/);
     });
 
+    it("enables strict-dynamic for scripts so trusted loaders can insert their own scripts (GeoGebra)", () => {
+      const header = renderCspHeaderValue({ cspNonce: "spaNonce", cspSurface: "spa" }, { path: "/geogebra", nodeEnv: "production" });
+      const summary = summarizeCspHeader(header);
+
+      // 信任根必须存在：没有 nonce 时 strict-dynamic 会把我们自己 bundle 也拦掉。
+      expect(summary.hasStrictDynamic).toBe(true);
+      expect(summary.hasScriptNonce).toBe(true);
+      // strict-dynamic 只用于脚本；样式仍走 unsafe-inline（framer-motion 运行时样式）。
+      expect(header).toMatch(/script-src\s+[^;]*'strict-dynamic'/);
+      expect(header).toMatch(/script-src-elem\s+[^;]*'strict-dynamic'/);
+      expect(header).not.toMatch(/style-src[^;]*'strict-dynamic'/);
+      // 仍然不得出现 unsafe-inline / unsafe-eval：这两个才是真正会拆掉 XSS 防线的。
+      expect(summary.hasScriptUnsafeInline).toBe(false);
+      expect(summary.hasUnsafeEval).toBe(false);
+      // host 名单保留（CSP2 浏览器忽略 strict-dynamic 时的回退），GeoGebra 与 Cap 都还在。
+      expect(header).toMatch(/script-src[^;]*https:\/\/www\.geogebra\.org/);
+      expect(header).toMatch(/script-src[^;]*https:\/\/cdn\.jsdelivr\.net/);
+    });
+
     it("keeps docs style unsafe-inline without style nonces so Swagger can inject CSS", () => {
       const header = renderCspHeaderValue({ cspNonce: "docsNonce", cspSurface: "docs" }, { path: "/api-docs", nodeEnv: "production" });
       const summary = summarizeCspHeader(header);
