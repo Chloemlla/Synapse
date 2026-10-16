@@ -82,6 +82,7 @@ export default function EmailSystemSettingsSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onRefresh();
@@ -220,6 +221,7 @@ export default function EmailSystemSettingsSection({
               </span>
             )}
             <m.button
+              type="button"
               onClick={handleSave}
               disabled={saving || deleting || disabled}
               className={studioPrimaryButtonClassName}
@@ -228,6 +230,7 @@ export default function EmailSystemSettingsSection({
               {saving ? '保存中...' : '保存'}
             </m.button>
             <m.button
+              type="button"
               onClick={onDelete}
               disabled={saving || deleting || disabled}
               className={studioDangerButtonClassName}

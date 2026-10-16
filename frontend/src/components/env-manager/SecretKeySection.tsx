@@ -83,6 +83,7 @@ export default function SecretKeySection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();

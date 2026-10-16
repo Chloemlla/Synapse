@@ -44,7 +44,7 @@ export default function ClarityConfigSection({
 }: ClarityConfigSectionProps) {
   return (
     <CollapsibleSection title="Microsoft Clarity 配置设置" description="管理 Microsoft Clarity Project ID 和启用状态。用于前端用户行为分析（会话回放、热力图），不需要后端参与。" sectionKey="clarity" isOpen={isOpen} onToggle={onToggle} prefersReducedMotion={prefersReducedMotion} headerRight={
-              <m.button onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
+              <m.button type="button" onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
                 <FaSync className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
               </m.button>
             }>
@@ -79,6 +79,7 @@ export default function ClarityConfigSection({
 
                 <div className="flex items-center justify-end gap-3">
                   <m.button
+                    type="button"
                     onClick={onDelete}
                     disabled={deleting || disabled}
                     className={studioDangerButtonClassName}
@@ -87,6 +88,7 @@ export default function ClarityConfigSection({
                     {deleting ? '删除中...' : '删除'}
                   </m.button>
                   <m.button
+                    type="button"
                     onClick={onSave}
                     disabled={saving || disabled}
                     className={studioPrimaryButtonClassName}

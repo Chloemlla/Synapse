@@ -63,7 +63,7 @@ export default function IpfsConfigSection({
   const isDisabled = saving || disabled;
   return (
     <CollapsibleSection title="IPFS 配置设置" description="管理 IPFS 文件上传配置和图片床参数。用于用户头像、TTS 音频封面等文件的外部存储，后端通过 IPFS / 图床 API 上传并获取访问 URL。" sectionKey="ipfs" isOpen={isOpen} onToggle={onToggle} prefersReducedMotion={prefersReducedMotion} headerRight={
-              <m.button onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
+              <m.button type="button" onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
                 <FaSync className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
               </m.button>
             }>
@@ -107,6 +107,7 @@ export default function IpfsConfigSection({
 
               <div className="flex items-center justify-end gap-3">
                 <m.button
+                  type="button"
                   onClick={() => onTest('imagebed')}
                   disabled={testing || disabled}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -115,6 +116,7 @@ export default function IpfsConfigSection({
                   {testing ? '测试中...' : '测试 ImageBed'}
                 </m.button>
                 <m.button
+                  type="button"
                   onClick={() => onTest('ipfs')}
                   disabled={testing || disabled || !ipfsConfig?.ipfsUploadUrl}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -123,6 +125,7 @@ export default function IpfsConfigSection({
                   {testing ? '测试中...' : '测试 IPFS'}
                 </m.button>
                 <m.button
+                  type="button"
                   onClick={onSave}
                   disabled={isDisabled}
                   className={studioPrimaryButtonClassName}

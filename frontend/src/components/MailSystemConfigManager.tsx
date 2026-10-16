@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorNote } from './studioFeedback';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import {
@@ -304,7 +305,7 @@ const MailSystemConfigManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {loadError && <p role="alert">读取邮件配置失败，请刷新重试。成功读取前无法保存。</p>}
+      {loadError && <StudioErrorNote>读取邮件配置失败，请点上方「刷新」重试。成功读取前无法保存。</StudioErrorNote>}
       {!canWrite ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
           当前账号是只读管理员：邮件系统配置的修改 / 重置需要超级管理员权限，相关控件已禁用。

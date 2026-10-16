@@ -1,6 +1,7 @@
 import { m } from 'framer-motion';
 import { FaSync } from 'react-icons/fa';
 import CollapsibleSection from './CollapsibleSection';
+import InfoBox from './InfoBox';
 import {
   studioDangerButtonClassName,
   studioFieldClassName,
@@ -74,6 +75,7 @@ export default function CDictSigningConfigSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();
@@ -86,10 +88,10 @@ export default function CDictSigningConfigSection({
         </m.button>
       }
     >
-      <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs leading-5 text-amber-950">
+      <InfoBox className="space-y-2">
         <p>生产环境必须连接共享 Redis，否则已签名客户端不会获得独立额度；enforce 模式下，携带无效签名的请求会被拒绝，完全未签名的旧客户端仍使用普通额度。</p>
         <p>密钥随客户端构建分发，只用于请求额度分层，不应作为账号身份或授权凭据。多实例部署保存后需同步重启其他实例。</p>
-      </div>
+      </InfoBox>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
@@ -173,6 +175,7 @@ export default function CDictSigningConfigSection({
 
       <div className="flex items-center justify-end gap-3">
         <m.button
+          type="button"
           onClick={onReset}
           disabled={isDisabled}
           className={studioDangerButtonClassName}
@@ -181,6 +184,7 @@ export default function CDictSigningConfigSection({
           {deleting ? '重置中...' : '恢复部署默认值'}
         </m.button>
         <m.button
+          type="button"
           onClick={onSave}
           disabled={isDisabled}
           className={studioPrimaryButtonClassName}

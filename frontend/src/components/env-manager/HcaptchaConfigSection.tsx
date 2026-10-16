@@ -44,7 +44,7 @@ export default function HcaptchaConfigSection({
   const isDisabled = saving || deleting || disabled;
   return (
     <CollapsibleSection title="hCaptcha 配置设置" description="管理 hCaptcha Site Key 和 Secret Key。用于前端人机验证（登录、注册等），保护后端接口免受自动化攻击。" sectionKey="hcaptcha" isOpen={isOpen} onToggle={onToggle} prefersReducedMotion={prefersReducedMotion} headerRight={
-              <m.button onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
+              <m.button type="button" onClick={(e) => { e.stopPropagation(); onRefresh(); }} disabled={loading} className={REFRESH_BUTTON_CLASS} whileTap={{ scale: 0.95 }}>
                 <FaSync className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
               </m.button>
             }>
@@ -72,6 +72,7 @@ export default function HcaptchaConfigSection({
 
                 <div className="flex items-center justify-end gap-3">
                   <m.button
+                    type="button"
                     onClick={() => onDelete('HCAPTCHA_SITE_KEY')}
                     disabled={isDisabled}
                     className={studioDangerButtonClassName}
@@ -80,6 +81,7 @@ export default function HcaptchaConfigSection({
                     {deleting ? '删除中...' : '删除'}
                   </m.button>
                   <m.button
+                    type="button"
                     onClick={() => onSave('HCAPTCHA_SITE_KEY')}
                     disabled={isDisabled}
                     className={studioPrimaryButtonClassName}
@@ -114,6 +116,7 @@ export default function HcaptchaConfigSection({
 
                 <div className="flex items-center justify-end gap-3">
                   <m.button
+                    type="button"
                     onClick={() => onDelete('HCAPTCHA_SECRET_KEY')}
                     disabled={isDisabled}
                     className={studioDangerButtonClassName}
@@ -122,6 +125,7 @@ export default function HcaptchaConfigSection({
                     {deleting ? '删除中...' : '删除'}
                   </m.button>
                   <m.button
+                    type="button"
                     onClick={() => onSave('HCAPTCHA_SECRET_KEY')}
                     disabled={isDisabled}
                     className={studioPrimaryButtonClassName}

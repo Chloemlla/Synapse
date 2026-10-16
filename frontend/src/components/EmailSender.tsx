@@ -19,8 +19,10 @@ import MarkdownPreview from "./MarkdownPreview";
 import { useNotification } from "./Notification";
 import { api, getApiBaseUrl } from "../api/api";
 import { useEmailQuota } from "../hooks/useEmailQuota";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import { buildEmailDeliveryNotice } from "../utils/emailDelivery";
 import { cn } from '../utils/cn';
+import { StudioErrorNote } from './studioFeedback';
 import { studioEyebrowPillClassName, studioModalCardClassName, studioPageClassName, studioPanelClassName } from './studioTheme';
 
 interface EmailForm {
@@ -140,6 +142,7 @@ const EmailSender: React.FC = () => {
 
   // G11-10: 防双击重复提交（setState 是异步的，光靠 loading 挡不住同帧内的第二次点击）
   const sendingRef = useRef(false);
+  const prefersReducedMotion = useReducedMotion();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [emailMode, setEmailMode] = useState<EmailMode>("html");
@@ -148,22 +151,18 @@ const EmailSender: React.FC = () => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const [senderDomains, setSenderDomains] = useState<string[]>([]);
+  // 域名列表拉取失败必须让用户看到：否则选择器只剩「暂无域名」，看起来像后端真的没配置。
+  const [senderDomainsError, setSenderDomainsError] = useState("");
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
   const { quota, loading: quotaLoading, refresh: fetchQuota } = useEmailQuota("/api/email/quota");
 
-  const [outemailStatus, setOutemailStatus] = useState<ServiceStatus | null>(
-    null
-  );
+  const [outemailStatus, setOutemailStatus] = useState<ServiceStatus | null>(null);
   const { quota: outemailQuota, loading: outemailQuotaLoading, refresh: fetchOutemailQuota } = useEmailQuota("/api/outemail/quota");
   const [outemailDomain, setOutemailDomain] = useState("");
-  const [outemailSettings, setOutemailSettings] = useState<OutemailSettingItem[]>(
-    []
-  );
+  const [outemailSettings, setOutemailSettings] = useState<OutemailSettingItem[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsDeletingDomain, setSettingsDeletingDomain] = useState<
-    string | null
-  >(null);
+  const [settingsDeletingDomain, setSettingsDeletingDomain] = useState<string | null>(null);
   const [settingDomain, setSettingDomain] = useState("");
   const [settingCode, setSettingCode] = useState("");
 
@@ -179,8 +178,7 @@ const EmailSender: React.FC = () => {
     message?: string;
     isWhitelisted?: boolean;
   } | null>(null);
-  const [checkingRecipientWhitelist, setCheckingRecipientWhitelist] =
-    useState(false);
+  const [checkingRecipientWhitelist, setCheckingRecipientWhitelist] = useState(false);
 
   const [simpleContent, setSimpleContent] = useState("");
   const [markdownContent, setMarkdownContent] = useState("");
@@ -209,13 +207,13 @@ const EmailSender: React.FC = () => {
   const fetchSenderDomains = async () => {
     try {
       const response = await api.get("/api/email/domains");
-      const domains = Array.isArray(response.data?.domains)
-        ? response.data.domains
-        : [];
+      const domains = Array.isArray(response.data?.domains) ? response.data.domains : [];
       setSenderDomains(domains);
+      setSenderDomainsError("");
       syncDefaultSender(domains);
     } catch (error) {
       console.error("获取发件域名失败", error);
+      setSenderDomainsError("读取发件域名失败，请点击重试。");
     }
   };
 
@@ -578,10 +576,7 @@ const EmailSender: React.FC = () => {
 
   const internalQuotaPercent =
     quota && quota.total > 0 ? Math.min((quota.used / quota.total) * 100, 100) : 0;
-  const publicQuotaPercent =
-    outemailQuota && outemailQuota.total > 0
-      ? Math.min((outemailQuota.used / outemailQuota.total) * 100, 100)
-      : 0;
+  const publicQuotaPercent = outemailQuota && outemailQuota.total > 0 ? Math.min((outemailQuota.used / outemailQuota.total) * 100, 100) : 0;
 
   const tabs: Array<{ key: AdminTab; label: string }> = [
     { key: "overview", label: "总览" },
@@ -592,7 +587,7 @@ const EmailSender: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-0 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_32%),linear-gradient(180deg,#f8fafc_0%,#eef6ff_48%,#ffffff_100%)]">
+    <div className="min-h-0">
       <div className={cn(studioPageClassName, "py-0")}>
         <div className="mb-6 rounded-2xl border border-sky-100 bg-white/90 p-6 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -681,7 +676,7 @@ const EmailSender: React.FC = () => {
           {activeTab === "overview" && (
             <motion.div
               key="overview"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
               className="grid gap-6 xl:grid-cols-[1.3fr_1fr]"
@@ -725,7 +720,7 @@ const EmailSender: React.FC = () => {
                     </div>
                     <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-400"
+                        className="h-full rounded-full bg-emerald-500"
                         style={{ width: `${publicQuotaPercent}%` }}
                       />
                     </div>
@@ -884,7 +879,12 @@ const EmailSender: React.FC = () => {
                         可用发信域名
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {senderDomains.length > 0 ? (
+                        {senderDomainsError ? (
+                          <StudioErrorNote className="flex w-full flex-wrap items-center gap-3">
+                            {senderDomainsError}
+                            <button type="button" onClick={() => void fetchSenderDomains()} className="font-semibold underline">重试</button>
+                          </StudioErrorNote>
+                        ) : senderDomains.length > 0 ? (
                           senderDomains.map((domain) => (
                             <span
                               key={domain}
@@ -909,7 +909,7 @@ const EmailSender: React.FC = () => {
           {activeTab === "internal" && (
             <motion.div
               key="internal"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
               className="grid gap-6 xl:grid-cols-[1.6fr_1fr]"
@@ -1171,7 +1171,7 @@ const EmailSender: React.FC = () => {
           {activeTab === "governance" && (
             <motion.div
               key="governance"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
               className="grid gap-6 xl:grid-cols-[1.05fr_1.2fr]"
@@ -1223,7 +1223,7 @@ const EmailSender: React.FC = () => {
                     </div>
                     <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                        className="h-full rounded-full bg-emerald-500"
                         style={{ width: `${publicQuotaPercent}%` }}
                       />
                     </div>
@@ -1357,7 +1357,7 @@ const EmailSender: React.FC = () => {
           {activeTab === "risk" && (
             <motion.div
               key="risk"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
               className="grid gap-6 xl:grid-cols-[1fr_1fr]"
@@ -1486,7 +1486,7 @@ const EmailSender: React.FC = () => {
           {activeTab === "templates" && (
             <motion.div
               key="templates"
-              initial={{ opacity: 0, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
               className="space-y-6"

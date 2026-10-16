@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { FaChevronDown, FaExclamationTriangle, FaSync, FaUpload } from 'react-icons/fa';
+import { useReducedMotion } from 'framer-motion';
+import { FaExclamationTriangle, FaSync, FaUpload } from 'react-icons/fa';
 import { useSearchParams } from 'react-router-dom';
 import getApiBaseUrl from '../api';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getConfigurationSectionKey } from './env-manager/configurationNotice';
+import CollapsibleSection from './env-manager/CollapsibleSection';
+import { StudioErrorNote, StudioLoadingState } from './studioFeedback';
 import { studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -125,45 +128,33 @@ function SectionCard(props: {
   children: React.ReactNode;
 }) {
   const { sectionKey, title, description, isOpen, loading, onToggle, onRefresh, children } = props;
+  const prefersReducedMotion = useReducedMotion();
 
+  // 分组卡统一走 env-manager 的共享折叠层（FD-054），不再手写一遍面/头/身三段样式。
   return (
-    <section data-env-section={sectionKey} className="rounded-2xl border border-slate-200 bg-white/80 shadow-sm backdrop-blur-xl">
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
-          <p className="mt-1 text-sm text-slate-500">{description}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={loading}
-            className={studioPrimaryButtonClassName}
-          >
-            <FaSync className={loading ? 'animate-spin' : ''} />
-            刷新
-          </button>
-          <button
-            type="button"
-            onClick={onToggle}
-            className={studioSecondaryButtonClassName}
-          >
-            <FaChevronDown className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-            {isOpen ? '收起' : '展开'}
-          </button>
-        </div>
-      </div>
-      {isOpen ? (
-        <div className="space-y-4 px-5 py-5">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500">
-              <FaSync className="animate-spin" />
-              加载中...
-            </div>
-          ) : children}
-        </div>
-      ) : null}
-    </section>
+    <CollapsibleSection
+      sectionKey={sectionKey}
+      title={title}
+      description={description}
+      isOpen={isOpen}
+      onToggle={onToggle}
+      prefersReducedMotion={prefersReducedMotion}
+      headerRight={
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className={studioPrimaryButtonClassName}
+        >
+          <FaSync className={loading ? 'animate-spin' : ''} />
+          刷新
+        </button>
+      }
+    >
+      {loading ? (
+        <StudioLoadingState text="加载中..." minHeightClassName="min-h-[160px]" />
+      ) : children}
+    </CollapsibleSection>
   );
 }
 
@@ -1031,7 +1022,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('adminSecurity')}
         onRefresh={() => refreshSection('adminSecurity', fetchAdminSecuritySetting)}
       >
-        {!adminSecurityLoading && !adminSecuritySetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!adminSecurityLoading && !adminSecuritySetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="管理员操作密码" htmlFor={fieldId('admin-operation-password')} hint={adminSecuritySetting?.config.operationPassword || '未配置'} />
@@ -1069,7 +1060,7 @@ const RuntimeConfigSections: React.FC = () => {
               disabled={!canWrite || !adminSecuritySetting || adminSecurityLoading || adminSecuritySaving}
             />
           </div>
-          <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={adminSecurityForm.publicShortUrlEnabled}
@@ -1112,10 +1103,10 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('ipqs')}
         onRefresh={() => refreshSection('ipqs', fetchIpqsSetting)}
       >
-        {!ipqsLoading && !ipqsSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!ipqsLoading && !ipqsSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         {ipqsLoadError ? (
-          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2 text-sm text-rose-700">
+          <StudioErrorNote className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
               <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
                 {ipqsLoadError}。当前表单显示的是默认值而非线上真实配置，已停用保存以免覆盖线上配置。
@@ -1129,7 +1120,7 @@ const RuntimeConfigSections: React.FC = () => {
               <FaSync className="h-4 w-4" />
               重试
             </button>
-          </div>
+          </StudioErrorNote>
         ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
@@ -1231,7 +1222,7 @@ const RuntimeConfigSections: React.FC = () => {
             ['lighterPenalties', '使用轻处罚'],
             ['failOpen', '失败时放行'],
           ].map(([key, label]) => (
-            <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+            <label key={key} className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={Boolean(ipqsForm[key as keyof typeof ipqsForm])}
@@ -1276,7 +1267,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('linuxdo')}
         onRefresh={() => refreshSection('linuxdo', fetchLinuxDoSetting)}
       >
-        {!linuxdoLoading && !linuxdoSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!linuxdoLoading && !linuxdoSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="Client ID" htmlFor={fieldId('linuxdo-client-id')} />
@@ -1420,7 +1411,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('googleAuth')}
         onRefresh={() => refreshSection('googleAuth', fetchGoogleAuthSetting)}
       >
-        {!googleAuthLoading && !googleAuthSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!googleAuthLoading && !googleAuthSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         <input
           ref={googleAuthImportInputRef}
           type="file"
@@ -1501,7 +1492,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('deeplx')}
         onRefresh={() => refreshSection('deeplx', fetchDeepLXSetting)}
       >
-        {!deeplxLoading && !deeplxSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!deeplxLoading && !deeplxSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="API Base URL" htmlFor={fieldId('deeplx-base-url')} />
@@ -1565,7 +1556,7 @@ const RuntimeConfigSections: React.FC = () => {
         onToggle={() => toggleSection('nexai')}
         onRefresh={() => refreshSection('nexai', fetchNexaiSetting)}
       >
-        {!nexaiLoading && !nexaiSetting && <p role="alert">配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</p>}
+        {!nexaiLoading && !nexaiSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <FieldLabel label="JWT Secret" htmlFor={fieldId('nexai-jwt-secret')} hint={nexaiSetting?.config.jwtSecret || '未配置'} />

@@ -1,8 +1,8 @@
 import React from 'react';
-import { m } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { FaChevronDown } from 'react-icons/fa';
 import { DURATION_06, ENTER_ANIMATE, ENTER_INITIAL, NO_DURATION } from './motion';
-import { studioSecondaryButtonClassName } from '../studioTheme';
+import { studioSecondaryButtonClassName, studioSurfaceClassName } from '../studioTheme';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -18,13 +18,16 @@ interface CollapsibleSectionProps {
 const CollapsibleSection = React.memo(function CollapsibleSection({
   title, description, sectionKey, isOpen, onToggle, children, headerRight, prefersReducedMotion
 }: CollapsibleSectionProps) {
+  // 调用方可能没传 reduced-motion 判定（如自包含分区），此处按系统偏好兜底（FD-063）。
+  const reducedMotion = useReducedMotion() ?? prefersReducedMotion;
+
   return (
     <m.section
       data-env-section={sectionKey}
-      className="rounded-2xl border border-slate-200 bg-white/80 shadow-sm backdrop-blur-xl"
+      className={studioSurfaceClassName}
       initial={ENTER_INITIAL}
       animate={ENTER_ANIMATE}
-      transition={prefersReducedMotion ? NO_DURATION : DURATION_06}
+      transition={reducedMotion ? NO_DURATION : DURATION_06}
     >
       <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

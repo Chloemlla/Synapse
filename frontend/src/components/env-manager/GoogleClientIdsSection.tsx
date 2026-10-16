@@ -60,6 +60,7 @@ export default function GoogleClientIdsSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();
@@ -122,6 +123,7 @@ export default function GoogleClientIdsSection({
 
       <div className="flex items-center justify-end gap-3">
         <m.button
+          type="button"
           onClick={onReset}
           disabled={isDisabled}
           className={studioDangerButtonClassName}
@@ -130,6 +132,7 @@ export default function GoogleClientIdsSection({
           {deleting ? '重置中...' : '重置'}
         </m.button>
         <m.button
+          type="button"
           onClick={onSave}
           disabled={isDisabled}
           className={studioPrimaryButtonClassName}

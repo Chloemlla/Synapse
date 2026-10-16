@@ -8,10 +8,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaEnvelope, FaShieldAlt, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaSync, FaArrowLeft, FaUserSecret } from 'react-icons/fa';
 import getApiBaseUrl from '../api';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useNotification } from './Notification';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
-import { studioEyebrowClassName, studioEyebrowPillClassName } from './studioTheme';
+import { cn } from '../utils/cn';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowClassName,
+  studioEyebrowPillClassName,
+  studioFieldClassName,
+} from './studioTheme';
 
 const OutEmail: React.FC = () => {
   const { user } = useAuth();
@@ -34,6 +42,7 @@ const OutEmail: React.FC = () => {
   const [domainExemptionStatus, setDomainExemptionStatus] = useState<{ exempted: boolean; message?: string } | null>(null);
   const [checkingExemption, setCheckingExemption] = useState(false);
   const { setNotification } = useNotification();
+  const reducedMotion = useReducedMotion();
   const { quota, loading: quotaLoading, refresh: refreshQuota } = useEmailQuota('/api/outemail/quota');
   const { seconds: cooldownSeconds, applyCooldown } = useEmailCooldown();
   const sendingRef = React.useRef(false);
@@ -205,7 +214,9 @@ const OutEmail: React.FC = () => {
               const u = new URL(url);
               const base = u.pathname.split('/').filter(Boolean).pop();
               if (base) filename = decodeURIComponent(base);
-            } catch { }
+            } catch {
+              // 地址不是合法 URL：沿用默认文件名，附件仍按原地址上传。
+            }
             return { path: url, filename } as { path: string; filename: string };
           });
         const fileList = await Promise.all(selectedFiles.map(async (f) => ({ filename: f.name, content: await fileToBase64(f) })));
@@ -250,7 +261,7 @@ const OutEmail: React.FC = () => {
     return (
       <section className="mx-auto max-w-2xl px-4 py-16">
         <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-10 text-center shadow-sm backdrop-blur-xl">
-          <div className="pointer-events-none absolute -right-12 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(244,63,94,0.22),_transparent_68%)]" />
+          <div className={cn(studioAccentBlobBlueClassName, "-right-12 top-0")} aria-hidden />
           <div className="relative">
             <div className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-500">
               Admin Only
@@ -269,10 +280,8 @@ const OutEmail: React.FC = () => {
     );
   }
 
-  const INPUT_CLASS =
-    'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300';
-  const LABEL_CLASS =
-    'block text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500';
+  const INPUT_CLASS = studioFieldClassName;
+  const LABEL_CLASS = studioEyebrowClassName;
 
   /** 附件数量上限：选择时即校验，避免发送前静默截断（F5-28） */
   const MAX_ATTACHMENTS = 10;
@@ -294,12 +303,12 @@ const OutEmail: React.FC = () => {
       {/* Hero card */}
       <motion.div
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
-        initial={{ opacity: 0, y: 16 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, "-right-16 top-0")} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, "-left-10 bottom-0")} aria-hidden />
 
         <div className="relative">
           <div className={studioEyebrowPillClassName}>
@@ -347,7 +356,7 @@ const OutEmail: React.FC = () => {
 
       {/* Service status */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl"
       >
@@ -357,6 +366,7 @@ const OutEmail: React.FC = () => {
             服务状态
           </div>
           <motion.button
+            type="button"
             onClick={async () => {
               try {
                 const statusRes = await fetch(getApiBaseUrl() + '/api/outemail/status');
@@ -409,7 +419,7 @@ const OutEmail: React.FC = () => {
 
       {/* Send form */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8"
       >
@@ -432,7 +442,7 @@ const OutEmail: React.FC = () => {
         <AnimatePresence>
           {error && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
+              initial={reducedMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-5 py-4 text-sm text-rose-700"
@@ -443,7 +453,7 @@ const OutEmail: React.FC = () => {
           )}
           {success && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
+              initial={reducedMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className={`mt-4 flex items-center gap-2 rounded-2xl border px-5 py-4 text-sm ${deliveryWarning ? 'border-amber-200/70 bg-amber-50/80 text-amber-700' : 'border-emerald-200/70 bg-emerald-50/80 text-emerald-700'}`}
@@ -538,6 +548,7 @@ const OutEmail: React.FC = () => {
               </select>
               {canWrite && (
               <motion.button
+                type="button"
                 onClick={checkDomainExemption}
                 disabled={checkingExemption || !selectedDomain}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
@@ -555,7 +566,7 @@ const OutEmail: React.FC = () => {
 
             {domainExemptionStatus && (
               <motion.div
-                initial={{ opacity: 0, y: -8 }}
+                initial={reducedMotion ? false : { opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`mt-3 rounded-2xl border px-5 py-3 ${
                   domainExemptionStatus.exempted
@@ -659,6 +670,7 @@ const OutEmail: React.FC = () => {
 
         <div className="mt-7">
           <motion.button
+            type="button"
             onClick={handleSend}
             disabled={!canWrite || loading || cooldownSeconds > 0}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
@@ -682,12 +694,12 @@ const OutEmail: React.FC = () => {
 
       {/* Help */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-8"
       >
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-          <FaInfoCircle className="text-slate-500" />
+          <FaInfoCircle className="text-slate-500" aria-hidden />
           使用帮助
         </div>
 

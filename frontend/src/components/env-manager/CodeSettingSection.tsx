@@ -61,6 +61,7 @@ export default function CodeSettingSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();

@@ -1,6 +1,7 @@
 import { m } from 'framer-motion';
 import { FaSync, FaTrash } from 'react-icons/fa';
 import CollapsibleSection from './CollapsibleSection';
+import InfoBox from './InfoBox';
 import {
   studioDangerButtonClassName,
   studioFieldClassName,
@@ -93,6 +94,7 @@ export default function CDictDonationConfigSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();
@@ -105,7 +107,7 @@ export default function CDictDonationConfigSection({
         </m.button>
       }
     >
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs leading-5 text-emerald-900">
+      <InfoBox tone="emerald">
         <p>
           填了图片地址，客户端访问
           <code className="mx-1 rounded bg-white/80 px-1">/api/cdict/donate/&lt;渠道 id&gt;</code>
@@ -122,7 +124,7 @@ export default function CDictDonationConfigSection({
           <code className="mx-1 rounded bg-white/80 px-1">/api/cdict/donate/…</code>
           本身——那会让跳转绕回本接口。想用本站图片就把地址留空。
         </p>
-      </div>
+      </InfoBox>
 
       <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
         <input
@@ -188,6 +190,7 @@ export default function CDictDonationConfigSection({
                 </span>
                 <span className="flex items-center gap-2">
                   <m.button
+                    type="button"
                     onClick={() => onClaimAccept(claim)}
                     disabled={isDisabled}
                     className="rounded-2xl border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -196,6 +199,7 @@ export default function CDictDonationConfigSection({
                     加入名单
                   </m.button>
                   <m.button
+                    type="button"
                     onClick={() => onClaimDelete(claim)}
                     disabled={isDisabled}
                     className={studioDangerButtonClassName}
@@ -282,6 +286,7 @@ export default function CDictDonationConfigSection({
                   </a>
                 ) : null}
                 <m.button
+                  type="button"
                   onClick={() => onChannelRemove(index)}
                   disabled={isDisabled || channels.length <= 1}
                   className={studioDangerButtonClassName}
@@ -297,6 +302,7 @@ export default function CDictDonationConfigSection({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <m.button
+          type="button"
           onClick={onChannelAdd}
           disabled={isDisabled || channels.length >= 8}
           className="rounded-2xl border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -306,6 +312,7 @@ export default function CDictDonationConfigSection({
         </m.button>
         <div className="flex items-center gap-3">
           <m.button
+            type="button"
             onClick={onReset}
             disabled={isDisabled}
             className={studioDangerButtonClassName}
@@ -314,6 +321,7 @@ export default function CDictDonationConfigSection({
             {deleting ? '重置中...' : '重置为默认'}
           </m.button>
           <m.button
+            type="button"
             onClick={onSave}
             disabled={isDisabled}
             className={studioPrimaryButtonClassName}

@@ -21,6 +21,7 @@ import {
   studioFieldClassName,
   studioSecondaryButtonClassName,
 } from './studioTheme';
+import { StudioModal, StudioModalDangerButton, StudioModalHeader } from './studioFeedback';
 
 type BilibiliTab = 'reports' | 'accounts';
 
@@ -241,10 +242,10 @@ const BilibiliDataAdmin: React.FC = () => {
         title='Bilibili 凭据与设备'
         description='查看 PiliPlus 上报到 Synapse 的 B 站登录凭据与账号绑定。所有 Cookie 仅以密文存档，此处只展示元数据，绝不回传明文。'
         icon={FaDatabase}
-        tone='violet'
+        tone='sky'
         meta={
           <>
-            <InfoBadge tone='violet'>{TAB_META[tab].description.split(' · ')[0]}</InfoBadge>
+            <InfoBadge tone='sky'>{TAB_META[tab].description.split(' · ')[0]}</InfoBadge>
             <InfoBadge tone='slate'>管理员专属</InfoBadge>
             <InfoBadge tone='slate'>{pagination.total} 条记录</InfoBadge>
           </>
@@ -265,7 +266,7 @@ const BilibiliDataAdmin: React.FC = () => {
       {!isAdmin && (
         <InfoPanel>
           <div className='flex items-start gap-3'>
-            <div className='flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700'>
+            <div className='flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700'>
               <FaExclamationTriangle />
             </div>
             <div>
@@ -286,7 +287,7 @@ const BilibiliDataAdmin: React.FC = () => {
                 onClick={() => setTab(key)}
                 className={`inline-flex items-center gap-2 rounded-2xl border-2 px-4 py-2.5 text-sm font-semibold transition ${
                   tab === key
-                    ? 'border-violet-300 bg-violet-50 text-violet-700'
+                    ? 'border-sky-300 bg-sky-50 text-sky-700'
                     : 'border-slate-200 bg-white/80 text-slate-600 hover:border-slate-300 hover:text-slate-900'
                 }`}
               >
@@ -369,7 +370,7 @@ const BilibiliDataAdmin: React.FC = () => {
                       <tr key={`${row.clientId}:${row.deviceId}:${row.uid}`} className='border-b border-slate-100 align-top'>
                         <td className='px-3 py-3 font-semibold text-slate-900'>
                           {row.uid}
-                          {row.isPrimary && <InfoBadge tone='violet' className='ml-2'>主</InfoBadge>}
+                          {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
                         </td>
                         <td className='px-3 py-3'>{statusBadge(row.status)}</td>
                         <td className='px-3 py-3 text-slate-700'>
@@ -397,7 +398,7 @@ const BilibiliDataAdmin: React.FC = () => {
                               onClick={() => setDeleteTarget(row)}
                               title='删除这条上报记录（仅删除密文存档，操作会写入审计日志）'
                               aria-label={`删除 UID ${row.uid} 在设备 ${row.deviceId} 上的上报记录`}
-                              className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50'
+                              className='inline-flex min-h-11 items-center gap-1 rounded-2xl px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50'
                             >
                               <FaTrash className='h-3 w-3' />
                               删除
@@ -409,7 +410,7 @@ const BilibiliDataAdmin: React.FC = () => {
                     {reports.length === 0 && !loading && (
                       <tr>
                         <td colSpan={canDelete ? 8 : 7} className='px-3 py-10 text-center text-slate-400'>
-                          暂无记录
+                          {keyword ? '没有匹配的记录：换个关键词，或清除搜索条件重新查询' : '暂无记录：点上方的「刷新」重新读取'}
                         </td>
                       </tr>
                     )}
@@ -432,7 +433,7 @@ const BilibiliDataAdmin: React.FC = () => {
                       <tr key={`${row.userId}:${row.uid}`} className='border-b border-slate-100 align-top'>
                         <td className='px-3 py-3 font-semibold text-slate-900'>
                           {row.uid}
-                          {row.isPrimary && <InfoBadge tone='violet' className='ml-2'>主</InfoBadge>}
+                          {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
                         </td>
                         <td className='px-3 py-3'>{statusBadge(row.status)}</td>
                         <td className='px-3 py-3'>
@@ -452,7 +453,7 @@ const BilibiliDataAdmin: React.FC = () => {
                     {accounts.length === 0 && !loading && (
                       <tr>
                         <td colSpan={6} className='px-3 py-10 text-center text-slate-400'>
-                          暂无记录
+                          {keyword ? '没有匹配的记录：换个关键词，或清除搜索条件重新查询' : '暂无记录：点上方的「刷新」重新读取'}
                         </td>
                       </tr>
                     )}
@@ -490,39 +491,42 @@ const BilibiliDataAdmin: React.FC = () => {
         </>
       )}
 
-      {deleteTarget ? (
-        <div
-          role='dialog'
-          aria-modal='true'
-          aria-label='确认删除上报记录'
-          className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm'
-        >
-          <div className='w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-xl'>
-            <h3 className='flex items-center gap-2 text-base font-semibold text-slate-900'>
-              <FaTrash className='h-4 w-4 text-rose-500' aria-hidden='true' />
-              删除上报记录
-            </h3>
-            <p className='mt-2 text-sm leading-6 text-slate-600'>
+      <StudioModal
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        labelledBy="bilibili-delete-report-title"
+        maxWidthClassName="max-w-lg"
+      >
+        {deleteTarget ? (
+          <>
+            <StudioModalHeader
+              title="删除上报记录"
+              titleId="bilibili-delete-report-title"
+              icon={<FaTrash className="h-4 w-4" aria-hidden />}
+              iconClassName="bg-rose-100 text-rose-700"
+              onClose={() => setDeleteTarget(null)}
+            />
+            <p className="mt-4 text-sm leading-6 text-slate-600">
               将删除 UID <strong>{deleteTarget.uid}</strong> 在设备 <strong>{deleteTarget.deviceId}</strong>
               （客户端 {deleteTarget.clientId}）上的密文存档。此操作不可撤销，且会写入审计日志；
               客户端下次登录会重新上报。
             </p>
-            <div className='mt-4 flex justify-end gap-2'>
-              <button type='button' onClick={() => setDeleteTarget(null)} className={studioSecondaryButtonClassName} disabled={deleting}>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className={studioSecondaryButtonClassName}
+                disabled={deleting}
+              >
                 取消
               </button>
-              <button
-                type='button'
-                onClick={() => void confirmDeleteReport()}
-                disabled={deleting}
-                className={`${studioSecondaryButtonClassName} border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50`}
-              >
+              <StudioModalDangerButton onClick={() => void confirmDeleteReport()} disabled={deleting}>
                 {deleting ? '删除中…' : '确认删除'}
-              </button>
+              </StudioModalDangerButton>
             </div>
-          </div>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </StudioModal>
     </div>
   );
 };

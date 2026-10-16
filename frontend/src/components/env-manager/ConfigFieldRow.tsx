@@ -1,6 +1,12 @@
 import React, { useId } from 'react';
 import { m } from 'framer-motion';
-import { studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
+import { cn } from '../../utils/cn';
+import {
+  studioDangerButtonClassName,
+  studioFieldClassName,
+  studioPrimaryButtonClassName,
+  studioSubPanelClassName,
+} from '../studioTheme';
 
 interface ConfigFieldRowProps {
   inputLabel: string;
@@ -63,7 +69,7 @@ const ConfigFieldRow: React.FC<ConfigFieldRowProps> = ({
             readOnly={readOnly}
           />
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
+        <div className={cn(studioSubPanelClassName, 'px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3')}>
           {currentLabel}：{loading ? '加载中...' : currentValue || '未设置'}
         </div>
         <div className="flex items-center justify-end gap-3">
@@ -111,7 +117,7 @@ const ConfigFieldRow: React.FC<ConfigFieldRowProps> = ({
         </div>
         <div>
           <span className="block text-sm font-medium text-slate-700 mb-1">{currentLabel}</span>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-600 min-h-[48px] flex items-center sm:px-4 sm:py-3">
+          <div className={cn(studioSubPanelClassName, 'flex min-h-[48px] items-center px-3 py-2 text-sm text-slate-600 sm:px-4 sm:py-3')}>
             {loading ? '加载中...' : currentValue || '未设置'}
           </div>
         </div>

@@ -97,6 +97,7 @@ export default function LibreChatProvidersSection({
                   className={`${studioFieldClassName} sm:w-auto`}
                 />
                 <m.button
+                  type="button"
                   onClick={onRefresh}
                   disabled={loading}
                   className={`${REFRESH_BUTTON_CLASS} w-full sm:w-auto`}
@@ -189,6 +190,7 @@ export default function LibreChatProvidersSection({
 
               <div className="flex items-center justify-end gap-3 mb-4">
                 <m.button
+                  type="button"
                   onClick={onReset}
                   className={studioSecondaryButtonClassName}
                   whileTap={{ scale: 0.96 }}
@@ -196,6 +198,7 @@ export default function LibreChatProvidersSection({
                   重置
                 </m.button>
                 <m.button
+                  type="button"
                   onClick={onSave}
                   disabled={isDisabled}
                   className={studioPrimaryButtonClassName}
@@ -233,6 +236,7 @@ export default function LibreChatProvidersSection({
                           </div>
                           <div className="mt-2 flex items-center justify-end gap-2">
                             <m.button
+                              type="button"
                               onClick={() => onEdit(p)}
                               disabled={disabled}
                               className={studioSecondaryButtonClassName}
@@ -241,6 +245,7 @@ export default function LibreChatProvidersSection({
                               编辑
                             </m.button>
                             <m.button
+                              type="button"
                               onClick={() => onDelete(p.id)}
                               disabled={deletingId === p.id || disabled}
                               className={studioDangerButtonClassName}
@@ -287,6 +292,7 @@ export default function LibreChatProvidersSection({
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <m.button
+                                  type="button"
                                   onClick={() => onEdit(p)}
                                   disabled={disabled}
                                   className={studioSecondaryButtonClassName}
@@ -295,6 +301,7 @@ export default function LibreChatProvidersSection({
                                   编辑
                                 </m.button>
                                 <m.button
+                                  type="button"
                                   onClick={() => onDelete(p.id)}
                                   disabled={deletingId === p.id || disabled}
                                   className={studioDangerButtonClassName}

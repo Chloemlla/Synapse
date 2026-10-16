@@ -18,21 +18,22 @@ const EnvRow = React.memo(function EnvRow({ item, idx, prefersReducedMotion, onS
 
   return (
     <m.tr
-      className={`border-b border-slate-100 last:border-b-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+      className={`border-b border-slate-100 last:border-b-0 transition-colors hover:bg-slate-100/70 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
         }`}
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={rowTransition}
-      whileHover={{ backgroundColor: '#f8fafc' }}
     >
       <td className="px-4 py-3 font-mono text-sm font-medium text-slate-900 align-top">
         <div className="break-words whitespace-normal leading-relaxed flex items-start gap-1">
           {item.source && (
             <button
+              type="button"
               onClick={() => onSourceClick(item.source!)}
-              className="w-3 h-3 sm:w-4 sm:h-4 text-slate-500 mt-0.5 flex-shrink-0 hover:text-slate-600 transition-colors cursor-pointer"
+              aria-label="查看数据来源"
+              className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1"
             >
-              <FaInfoCircle />
+              <FaInfoCircle className="h-3 w-3" aria-hidden />
             </button>
           )}
           <span>{item.key.split(':').pop() || item.key}</span>

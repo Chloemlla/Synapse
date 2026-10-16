@@ -1,8 +1,23 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api } from "@/api";
-import { FaSearch, FaRedo, FaEnvelope, FaDatabase, FaGlobe, FaTimes, FaEye, FaCopy, FaCheck, FaCode, FaFileAlt, FaExclamationTriangle } from "react-icons/fa";
+import { FaSearch, FaRedo, FaEnvelope, FaDatabase, FaGlobe, FaEye, FaCopy, FaCheck, FaCode, FaFileAlt } from "react-icons/fa";
 import { cn } from '../utils/cn';
-import { studioModalOverlayClassName, studioSurfaceClassName } from './studioTheme';
+import {
+  studioFieldClassName,
+  studioGhostButtonClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioSoftBadgeClassName,
+  studioSurfaceClassName,
+} from './studioTheme';
+import {
+  StudioEmptyState,
+  StudioErrorState,
+  StudioLoadingState,
+  StudioModal,
+  StudioModalHeader,
+  StudioPager,
+} from './studioFeedback';
 
 interface EmailRecord {
   _id: string;
@@ -69,6 +84,8 @@ const EmailTraceability: React.FC = () => {
   // 详情弹窗状态
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailRecord, setDetailRecord] = useState<FullRecord | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<"text" | "html">("text");
@@ -132,7 +149,10 @@ const EmailTraceability: React.FC = () => {
   };
 
   const handleViewDetail = async (id: string) => {
+    setDetailId(id);
     setDetailLoading(true);
+    setDetailError("");
+    setDetailRecord(null);
     setDetailOpen(true);
     setCopied(false);
     setViewMode("text");
@@ -141,10 +161,10 @@ const EmailTraceability: React.FC = () => {
       if (res.data?.success && res.data?.record) {
         setDetailRecord(res.data.record);
       } else {
-        setDetailRecord(null);
+        setDetailError("读取邮件详情失败，请重试。");
       }
     } catch {
-      setDetailRecord(null);
+      setDetailError("读取邮件详情失败，请检查网络后重试。");
     } finally {
       setDetailLoading(false);
     }
@@ -153,21 +173,11 @@ const EmailTraceability: React.FC = () => {
   const handleCloseDetail = () => {
     setDetailOpen(false);
     setDetailRecord(null);
+    setDetailId(null);
+    setDetailError("");
     setCopied(false);
     setViewMode("text");
   };
-
-  // 邮件详情弹窗：Escape 关闭（F4-19）。
-  useEffect(() => {
-    if (!detailOpen) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') handleCloseDetail();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-    // handleCloseDetail 每次渲染都会重建，仅依赖 detailOpen 避免反复重订阅
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailOpen]);
 
   const handleCopyContent = async () => {
     if (!detailRecord?.content) return;
@@ -187,8 +197,8 @@ const EmailTraceability: React.FC = () => {
     <div className="space-y-6">
       {/* 标题 */}
       <div className="flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-          <FaDatabase className="size-4" />
+        <div className={cn(studioSoftBadgeClassName, "h-10 w-10 sm:h-10 sm:w-10")}>
+          <FaDatabase className="size-4" aria-hidden />
         </div>
         <div>
           <h2 className="text-lg font-bold text-slate-900">邮件发信溯源日志</h2>
@@ -224,7 +234,7 @@ const EmailTraceability: React.FC = () => {
           </div>
           <div className="mt-1.5 h-1.5 rounded-full bg-slate-100">
             <div
-              className="h-1.5 rounded-full bg-indigo-500 transition-all"
+              className="h-1.5 rounded-full bg-slate-900 transition-all"
               style={{ width: `${quotaPercent}%` }}
             />
           </div>
@@ -248,39 +258,43 @@ const EmailTraceability: React.FC = () => {
       {/* 搜索栏 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <FaSearch className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+          <FaSearch className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
           <input
             type="text"
             placeholder="搜索收件人邮箱..."
+            aria-label="按收件人邮箱搜索"
             value={searchTo}
             onChange={(e) => setSearchTo(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className={cn(studioFieldClassName, "py-2 pl-9 pr-3")}
           />
         </div>
         <div className="relative flex-1 min-w-[200px]">
-          <FaSearch className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+          <FaSearch className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
           <input
             type="text"
             placeholder="搜索邮件主题..."
+            aria-label="按邮件主题搜索"
             value={searchSubject}
             onChange={(e) => setSearchSubject(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className={cn(studioFieldClassName, "py-2 pl-9 pr-3")}
           />
         </div>
         <button
+          type="button"
           onClick={handleSearch}
-          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+          className={studioPrimaryButtonClassName}
         >
-          <FaSearch className="size-3.5" />
+          <FaSearch className="size-3.5" aria-hidden />
           查询
         </button>
         <button
+          type="button"
           onClick={handleRefresh}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          className={studioSecondaryButtonClassName}
         >
-          <FaRedo className="size-3.5" />
+          <FaRedo className="size-3.5" aria-hidden />
           刷新
         </button>
       </div>
@@ -288,23 +302,19 @@ const EmailTraceability: React.FC = () => {
       {/* 记录列表 */}
       <div className={cn(studioSurfaceClassName, "border-slate-200/90 bg-white/90")}>
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="size-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-500" />
-          </div>
+          <StudioLoadingState text="加载中..." minHeightClassName="min-h-[320px]" />
         ) : loadError ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <FaExclamationTriangle className="text-2xl text-rose-500" />
-            <p className="text-sm text-slate-500">{loadError}</p>
-            <button
-              onClick={() => fetchRecords(page)}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              <FaRedo className="size-3.5" />
-              重试
-            </button>
-          </div>
+          <StudioErrorState message={loadError} onRetry={() => fetchRecords(page)} className="m-4" />
         ) : records.length === 0 ? (
-          <div className="py-16 text-center text-sm text-slate-400">暂无邮件发送记录</div>
+          <StudioEmptyState
+            message="暂无邮件发送记录"
+            className="m-4"
+            action={
+              <button type="button" onClick={() => fetchRecords(1)} className={studioGhostButtonClassName}>
+                <FaRedo aria-hidden /> 重新读取
+              </button>
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -338,10 +348,11 @@ const EmailTraceability: React.FC = () => {
                     </td>
                     <td className="whitespace-nowrap px-3 sm:px-4 py-3">
                       <button
+                        type="button"
                         onClick={() => handleViewDetail(rec._id)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
+                        className={studioGhostButtonClassName}
                       >
-                        <FaEye className="size-3" />
+                        <FaEye aria-hidden />
                         查看详情
                       </button>
                     </td>
@@ -353,180 +364,140 @@ const EmailTraceability: React.FC = () => {
         )}
 
         {/* 分页 */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-3 sm:px-4 py-3">
-            <span className="text-xs text-slate-400">
-              共 {total} 条记录
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                disabled={page <= 1}
-                onClick={() => fetchRecords(page - 1)}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-30"
-              >
-                上一页
-              </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                const start = Math.max(1, Math.min(page - 2, totalPages - 4));
-                const p = start + i;
-                if (p > totalPages) return null;
-                return (
-                  <button
-                    key={p}
-                    onClick={() => fetchRecords(p)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      p === page
-                        ? "bg-indigo-600 text-white"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-              <button
-                disabled={page >= totalPages}
-                onClick={() => fetchRecords(page + 1)}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-30"
-              >
-                下一页
-              </button>
-            </div>
-          </div>
-        )}
+        <StudioPager
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          loading={loading}
+          onPageChange={(next) => fetchRecords(next)}
+          label="邮件记录分页"
+          className="border-t border-slate-100 px-3 py-3 sm:px-4"
+        />
       </div>
 
       {/* 详情弹窗 */}
-      {detailOpen && (
-        <div className={cn(studioModalOverlayClassName, "z-50 bg-black/40")} onClick={handleCloseDetail}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="email-traceability-detail-title"
-            className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 弹窗头部 */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 sm:px-6 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                  <FaEnvelope className="size-3.5" />
+      <StudioModal
+        open={detailOpen}
+        onClose={handleCloseDetail}
+        labelledBy="email-traceability-detail-title"
+        maxWidthClassName="max-w-2xl"
+      >
+        <StudioModalHeader
+          title="邮件详情"
+          titleId="email-traceability-detail-title"
+          description="完整邮件内容查看"
+          icon={<FaEnvelope className="size-4" aria-hidden />}
+          iconClassName="bg-slate-100 text-slate-600"
+          onClose={handleCloseDetail}
+        />
+
+        <div className="mt-5">
+          {detailLoading ? (
+            <StudioLoadingState text="加载中..." minHeightClassName="min-h-[280px]" />
+          ) : detailError ? (
+            <StudioErrorState
+              message={detailError}
+              onRetry={detailId ? () => void handleViewDetail(detailId) : undefined}
+            />
+          ) : detailRecord ? (
+            <div className="space-y-4">
+              {/* 元信息 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">收件人</span>
+                  <p className="mt-1 text-sm font-medium text-slate-800 break-all">{detailRecord.to}</p>
                 </div>
-                <div>
-                  <h3 id="email-traceability-detail-title" className="text-base font-bold text-slate-900">邮件详情</h3>
-                  <p className="text-xs text-slate-400">完整邮件内容查看</p>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">发送时间</span>
+                  <p className="mt-1 text-sm font-medium text-slate-800">{formatDateTime(detailRecord.sentAt)}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">主题</span>
+                  <p className="mt-1 text-sm font-medium text-slate-800 break-all">{detailRecord.subject}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">来源 IP</span>
+                  <p className="mt-1 text-sm font-medium text-slate-800 font-mono">{detailRecord.ip || "-"}</p>
                 </div>
               </div>
-              <button
-                onClick={handleCloseDetail}
-                className="flex size-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                <FaTimes className="size-4" />
-              </button>
-            </div>
 
-            {/* 弹窗内容 */}
-            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-              {detailLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="size-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-500" />
-                </div>
-              ) : detailRecord ? (
-                <div className="space-y-4">
-                  {/* 元信息 */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">收件人</span>
-                      <p className="mt-1 text-sm font-medium text-slate-800 break-all">{detailRecord.to}</p>
+              {/* 完整内容 */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">完整内容</span>
+                  <div className="flex items-center gap-2">
+                    {/* 视图切换 */}
+                    <div className="flex overflow-hidden rounded-2xl border border-slate-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("text")}
+                        aria-pressed={viewMode === "text"}
+                        className={`inline-flex min-h-11 items-center gap-1.5 px-2.5 py-1.5 font-medium ${
+                          viewMode === "text"
+                            ? "bg-slate-900 text-white"
+                            : "bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <FaFileAlt className="size-3" aria-hidden />
+                        文本
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("html")}
+                        aria-pressed={viewMode === "html"}
+                        className={`inline-flex min-h-11 items-center gap-1.5 px-2.5 py-1.5 font-medium ${
+                          viewMode === "html"
+                            ? "bg-slate-900 text-white"
+                            : "bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <FaCode className="size-3" aria-hidden />
+                        HTML
+                      </button>
                     </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">发送时间</span>
-                      <p className="mt-1 text-sm font-medium text-slate-800">{formatDateTime(detailRecord.sentAt)}</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">主题</span>
-                      <p className="mt-1 text-sm font-medium text-slate-800 break-all">{detailRecord.subject}</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">来源 IP</span>
-                      <p className="mt-1 text-sm font-medium text-slate-800 font-mono">{detailRecord.ip || "-"}</p>
-                    </div>
-                  </div>
-
-                  {/* 完整内容 */}
-                  <div>
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">完整内容</span>
-                      <div className="flex items-center gap-2">
-                        {/* 视图切换 */}
-                        <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs">
-                          <button
-                            onClick={() => setViewMode("text")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium ${
-                              viewMode === "text"
-                                ? "bg-indigo-600 text-white"
-                                : "bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            <FaFileAlt className="size-3" />
-                            文本
-                          </button>
-                          <button
-                            onClick={() => setViewMode("html")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium ${
-                              viewMode === "html"
-                                ? "bg-indigo-600 text-white"
-                                : "bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            <FaCode className="size-3" />
-                            HTML
-                          </button>
-                        </div>
-                        <button
-                          onClick={handleCopyContent}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
-                        >
-                          {copied ? (
-                            <>
-                              <FaCheck className="size-3 text-emerald-500" />
-                              已复制
-                            </>
-                          ) : (
-                            <>
-                              <FaCopy className="size-3" />
-                              复制内容
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    {viewMode === "text" ? (
-                      <div className="max-h-[300px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <pre className="whitespace-pre-wrap break-all text-sm text-slate-700 font-sans">
-                          {detailRecord.content}
-                        </pre>
-                      </div>
-                    ) : (
-                      <div className="max-h-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <iframe
-                          srcDoc={detailRecord.content}
-                          title="邮件 HTML 预览"
-                          sandbox="allow-same-origin"
-                          className="h-[400px] w-full"
-                          style={{ border: "none" }}
-                        />
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={handleCopyContent}
+                      className={`${studioGhostButtonClassName} min-h-11`}
+                    >
+                      {copied ? (
+                        <>
+                          <FaCheck className="size-3 text-emerald-500" />
+                          已复制
+                        </>
+                      ) : (
+                        <>
+                          <FaCopy className="size-3" />
+                          复制内容
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <div className="py-16 text-center text-sm text-slate-400">无法加载邮件详情</div>
-              )}
+                {viewMode === "text" ? (
+                  <div className="max-h-[300px] overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <pre className="whitespace-pre-wrap break-all text-sm text-slate-700 font-sans">
+                      {detailRecord.content}
+                    </pre>
+                  </div>
+                ) : (
+                  <div className="max-h-[400px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <iframe
+                      srcDoc={detailRecord.content}
+                      title="邮件 HTML 预览"
+                      sandbox="allow-same-origin"
+                      className="h-[400px] w-full"
+                      style={{ border: "none" }}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <StudioEmptyState message="这条记录暂时没有可展示的邮件内容" />
+          )}
         </div>
-      )}
+      </StudioModal>
     </div>
   );
 };

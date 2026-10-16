@@ -62,6 +62,7 @@ export default function OutemailSettingsSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onRefresh();
@@ -109,6 +110,7 @@ export default function OutemailSettingsSection({
 
       <div className="flex items-center justify-end gap-3 mb-4">
         <m.button
+          type="button"
           onClick={onSave}
           disabled={isDisabled}
           className={studioPrimaryButtonClassName}
@@ -147,6 +149,7 @@ export default function OutemailSettingsSection({
                     </td>
                     <td className="px-4 py-3 text-right">
                       <m.button
+                        type="button"
                         onClick={() => onDelete(s.domain || '')}
                         disabled={deletingDomain === (s.domain || '') || disabled}
                         className={studioDangerButtonClassName}

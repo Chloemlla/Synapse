@@ -1,6 +1,7 @@
 import { m } from 'framer-motion';
 import { FaSync } from 'react-icons/fa';
 import CollapsibleSection from './CollapsibleSection';
+import InfoBox from './InfoBox';
 import {
   studioDangerButtonClassName,
   studioFieldClassName,
@@ -71,6 +72,7 @@ export default function SynapseAndroidConfigSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();
@@ -83,7 +85,7 @@ export default function SynapseAndroidConfigSection({
         </m.button>
       }
     >
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs leading-5 text-emerald-900">
+      <InfoBox tone="emerald">
         <p>
           运行时配置仅对指定 package 做 upsert / disable；不会删除 NexAI 默认 assetlinks，也不会覆盖
           <code className="mx-1 rounded bg-white/80 px-1">NEXAI_ANDROID_ASSETLINKS_JSON</code>
@@ -96,7 +98,7 @@ export default function SynapseAndroidConfigSection({
           <code className="mx-1 rounded bg-white/80 px-1">SYNAPSE_ANDROID_GOOGLE_CLIENT_ID</code>
           作为 Android Credential Manager SIWG 的 serverClientId 覆盖；留空则回退主站 GOOGLE_CLIENT_ID。
         </p>
-      </div>
+      </InfoBox>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
@@ -175,6 +177,7 @@ export default function SynapseAndroidConfigSection({
 
       <div className="flex items-center justify-end gap-3">
         <m.button
+          type="button"
           onClick={onReset}
           disabled={isDisabled}
           className={studioDangerButtonClassName}
@@ -183,6 +186,7 @@ export default function SynapseAndroidConfigSection({
           {deleting ? '重置中...' : '重置'}
         </m.button>
         <m.button
+          type="button"
           onClick={onSave}
           disabled={isDisabled}
           className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"

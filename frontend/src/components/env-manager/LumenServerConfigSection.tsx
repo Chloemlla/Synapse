@@ -1,6 +1,7 @@
 import { m } from 'framer-motion';
 import { FaSync } from 'react-icons/fa';
 import CollapsibleSection from './CollapsibleSection';
+import InfoBox from './InfoBox';
 import { studioDangerButtonClassName, studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
 
 interface LumenServerConfigSectionProps {
@@ -224,6 +225,7 @@ export default function LumenServerConfigSection({
       prefersReducedMotion={prefersReducedMotion}
       headerRight={
         <m.button
+          type="button"
           onClick={(event) => {
             event.stopPropagation();
             onRefresh();
@@ -236,12 +238,12 @@ export default function LumenServerConfigSection({
         </m.button>
       }
     >
-      <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+      <InfoBox>
         <p>
           部署环境变量 <code className="mx-1 rounded bg-white/80 px-1">LUMEN_ENABLED=true</code> 是启用 Lumen 的最高优先级开关（进程启动时即判定）。
           在下方开启「启用 Lumen 服务」可在不重启的情况下生效；但启用时管理端密码、请求签名密钥与对外邮件密钥必须满足强度要求。
         </p>
-      </div>
+      </InfoBox>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <BoolField field="enabled" value={bools.enabled} meta={BOOL_FIELDS.enabled} disabled={disabled} onChange={onBoolChange} />
@@ -318,6 +320,7 @@ export default function LumenServerConfigSection({
 
       <div className="flex items-center justify-end gap-3">
         <m.button
+          type="button"
           onClick={onReset}
           disabled={isDisabled}
           className={studioDangerButtonClassName}
@@ -326,6 +329,7 @@ export default function LumenServerConfigSection({
           {deleting ? '重置中...' : '重置'}
         </m.button>
         <m.button
+          type="button"
           onClick={onSave}
           disabled={isDisabled}
           className={studioPrimaryButtonClassName}

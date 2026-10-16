@@ -22,6 +22,7 @@ import {
 } from 'react-icons/fa';
 import { useAuth } from '@/hooks/useAuth';
 import { isAdminRole } from '@/utils/rbac';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -29,8 +30,10 @@ import {
   InfoQueryHero,
   InfoSectionTitle,
   studioFieldClassName,
+  studioGhostButtonClassName,
   studioSecondaryButtonClassName,
 } from './studioTheme';
+import { StudioErrorNote, StudioEmptyState, StudioLoadingState } from './studioFeedback';
 
 interface BilibiliSyncRecord {
   _id: string;
@@ -112,6 +115,10 @@ const BilibiliSyncAdmin: React.FC = () => {
   const [searchRecordData, setSearchRecordData] = useState<Record<string, { data: BilibiliSyncRecord['searchRecords']; total: number; page: number; totalPages: number }>>({});
   const [searchRecordLoading, setSearchRecordLoading] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState('');
+  // 展开行的搜索记录：失败必须与「确实没有记录」分开，不能把失败画成空列表。
+  const [searchRecordErrors, setSearchRecordErrors] = useState<Record<string, string>>({});
+  const prefersReducedMotion = useReducedMotion();
   const detailRef = useRef<HTMLDivElement>(null);
 
   const fetchRecords = useCallback(async (page: number, searchTerm: string) => {
@@ -155,6 +162,7 @@ const BilibiliSyncAdmin: React.FC = () => {
 
   const fetchSearchRecords = useCallback(async (userId: string, page: number) => {
     setSearchRecordLoading(userId);
+    setSearchRecordErrors(prev => { const next = { ...prev }; delete next[userId]; return next; });
     try {
       const res = await fetch(`/api/admin/bilibili-sync/${encodeURIComponent(userId)}/search-records?page=${page}&limit=50`, { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -169,6 +177,7 @@ const BilibiliSyncAdmin: React.FC = () => {
         ...prev,
         [userId]: { data: [], total: 0, page: 1, totalPages: 0 },
       }));
+      setSearchRecordErrors(prev => ({ ...prev, [userId]: '读取该用户的搜索记录失败，请重试。' }));
     } finally {
       setSearchRecordLoading(prev => prev === userId ? null : prev);
     }
@@ -190,8 +199,11 @@ const BilibiliSyncAdmin: React.FC = () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(text.slice(0, 12));
+      setCopyError('');
       setTimeout(() => setCopiedId(null), COPY_FEEDBACK_DURATION);
-    } catch { /* ignore */ }
+    } catch {
+      setCopyError('复制失败：当前浏览器不允许写入剪贴板，请手动选中后复制。');
+    }
   };
 
   const stats = useMemo(() => {
@@ -215,10 +227,10 @@ const BilibiliSyncAdmin: React.FC = () => {
         title="Bilibili 设置同步"
         description="查看 PiliPlus 通过 Synapse OAuth（bilibili:sync scope）上传的配置数据、搜索记录和凭据信息。"
         icon={FaDatabase}
-        tone="violet"
+        tone="sky"
         meta={
           <>
-            <InfoBadge tone="violet">bilibili_sync 集合</InfoBadge>
+            <InfoBadge tone="sky">bilibili_sync 集合</InfoBadge>
             <InfoBadge tone="slate">管理员专属</InfoBadge>
             <InfoBadge tone="slate">
               {pagination.total} 条记录
@@ -241,7 +253,7 @@ const BilibiliSyncAdmin: React.FC = () => {
       {!isAdmin && (
         <InfoPanel>
           <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
               <FaExclamationTriangle />
             </div>
             <div>
@@ -286,7 +298,7 @@ const BilibiliSyncAdmin: React.FC = () => {
           <AnimatePresence>
             {error && (
               <InfoPanel>
-                <div className="flex items-center gap-3 text-red-700">
+                <div className="flex items-center gap-3 text-rose-700">
                   <FaExclamationTriangle className="size-4 shrink-0" />
                   <span className="font-medium">{error}</span>
                 </div>
@@ -339,33 +351,29 @@ const BilibiliSyncAdmin: React.FC = () => {
 
             {/* 加载中 */}
             {loading && (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                <div className="mb-4">
-                  <FaRedo className="size-8 animate-spin text-indigo-500" />
-                </div>
-                <p className="text-sm font-medium text-slate-500">正在加载同步记录…</p>
-              </div>
+              <StudioLoadingState text="正在加载同步记录..." minHeightClassName="min-h-[240px]" />
             )}
 
             {/* 空状态 */}
             {!loading && records.length === 0 && (
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 py-16 text-slate-400">
-                <FaDatabase className="mb-3 size-8 text-slate-300" />
-                <p className="text-sm font-medium text-slate-500">
-                  {keyword ? '未找到匹配的记录，请尝试其他搜索词' : '暂无 Bilibili 同步数据'}
-                </p>
-                {keyword && (
-                  <button
-                    type="button"
-                    onClick={() => { setKeyword(''); fetchRecords(1, ''); }}
-                    className={`${studioSecondaryButtonClassName} mt-4`}
-                  >
-                    <FaTimes />
-                    清除搜索
-                  </button>
-                )}
-              </div>
+              <StudioEmptyState
+                message={keyword ? '未找到匹配的记录，请尝试其他搜索词' : '暂无 Bilibili 同步数据，可点下方按钮重新读取'}
+                action={
+                  keyword ? (
+                    <button type="button" onClick={() => { setKeyword(''); fetchRecords(1, ''); }} className={studioGhostButtonClassName}>
+                      <FaTimes aria-hidden /> 清除搜索
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => fetchRecords(1, keyword)} className={studioGhostButtonClassName}>
+                      <FaRedo aria-hidden /> 重新读取
+                    </button>
+                  )
+                }
+              />
             )}
+
+            {/* 复制失败：剪贴板不可写时必须让用户看到 */}
+            {copyError && <StudioErrorNote className="mb-4">{copyError}</StudioErrorNote>}
 
             {/* 表格 */}
             {!loading && records.length > 0 && (
@@ -390,7 +398,7 @@ const BilibiliSyncAdmin: React.FC = () => {
                           <tr
                             className={`cursor-pointer transition-colors ${
                               idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'
-                            } ${isExpanded ? 'bg-indigo-50/50' : ''} hover:bg-sky-50/50`}
+                            } ${isExpanded ? 'bg-sky-50/50' : ''} hover:bg-sky-50/50`}
                             onClick={() => setExpandedRow(isExpanded ? null : r._id)}
                           >
                             <td className="px-4 py-3.5">
@@ -399,9 +407,11 @@ const BilibiliSyncAdmin: React.FC = () => {
                                   {r.userId.slice(0, 14)}…
                                 </span>
                                 <button
+                                  type="button"
                                   onClick={(e) => { e.stopPropagation(); copyToClipboard(r.userId); }}
-                                  className="shrink-0 rounded-md p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500"
+                                  className="shrink-0 rounded-full p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1"
                                   title="复制 User ID"
+                                  aria-label="复制 User ID"
                                 >
                                   {copiedId === r.userId.slice(0, 12) ? (
                                     <FaCheck className="size-2.5 text-emerald-500" />
@@ -444,9 +454,9 @@ const BilibiliSyncAdmin: React.FC = () => {
                             <td className="px-4 py-3.5">
                               <button
                                 type="button"
-                                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition ${
+                                className={`inline-flex min-h-11 items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs font-medium transition ${
                                   isExpanded
-                                    ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                                    ? 'bg-sky-100 text-sky-700 hover:bg-sky-200'
                                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                                 onClick={(e) => { e.stopPropagation(); setExpandedRow(isExpanded ? null : r._id); }}
@@ -468,10 +478,10 @@ const BilibiliSyncAdmin: React.FC = () => {
                                   <motion.div
                                     ref={detailRef}
                                     className="overflow-hidden border-t border-slate-100"
-                                    initial={{ height: 0 }}
+                                    initial={prefersReducedMotion ? false : { height: 0 }}
                                     animate={{ height: 'auto' }}
-                                    exit={{ height: 0 }}
-                                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: 'easeInOut' }}
                                   >
                                     <div className="space-y-5 p-6">
                                       {/* 信息网格 */}
@@ -538,7 +548,7 @@ const BilibiliSyncAdmin: React.FC = () => {
                                               <button
                                                 type="button"
                                                 onClick={(e) => { e.stopPropagation(); handleShowAllSearch(r); }}
-                                                className="ml-auto inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-medium text-indigo-600 transition hover:bg-indigo-50"
+                                                className="ml-auto inline-flex min-h-11 items-center gap-1 rounded-2xl px-2.5 py-1 text-[11px] font-medium text-sky-700 transition hover:bg-sky-50"
                                               >
                                                 {searchRecordLoading === r.userId ? (
                                                   <FaRedo className="size-2.5 animate-spin" />
@@ -581,7 +591,7 @@ const BilibiliSyncAdmin: React.FC = () => {
                                                       type="button"
                                                       onClick={() => handleSearchRecordPage(r.userId, searchRecordData[r.userId].page - 1)}
                                                       disabled={searchRecordData[r.userId].page <= 1}
-                                                      className="inline-flex size-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
+                                                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-[11px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
                                                     >
                                                       <FaAngleLeft />
                                                     </button>
@@ -592,7 +602,7 @@ const BilibiliSyncAdmin: React.FC = () => {
                                                       type="button"
                                                       onClick={() => handleSearchRecordPage(r.userId, searchRecordData[r.userId].page + 1)}
                                                       disabled={searchRecordData[r.userId].page >= searchRecordData[r.userId].totalPages}
-                                                      className="inline-flex size-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
+                                                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-[11px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
                                                     >
                                                       <FaAngleRight />
                                                     </button>
@@ -600,6 +610,17 @@ const BilibiliSyncAdmin: React.FC = () => {
                                                 </div>
                                               )}
                                             </>
+                                          ) : searchRecordErrors[r.userId] ? (
+                                            <StudioErrorNote className="flex flex-wrap items-center gap-3">
+                                              {searchRecordErrors[r.userId]}
+                                              <button
+                                                type="button"
+                                                onClick={() => void fetchSearchRecords(r.userId, 1)}
+                                                className="font-semibold underline"
+                                              >
+                                                重试
+                                              </button>
+                                            </StudioErrorNote>
                                           ) : (
                                             <div className={`space-y-1.5 overflow-auto ${showAllSearch[r._id] ? 'max-h-[600px]' : 'max-h-44'}`}>
                                               {(showAllSearch[r._id] ? r.searchRecords : r.searchRecords.slice(0, 10)).map((sr) => (
@@ -670,9 +691,9 @@ const BilibiliSyncAdmin: React.FC = () => {
                           type="button"
                           onClick={() => handlePageChange(pageNum)}
                           disabled={loading}
-                          className={`inline-flex size-8 items-center justify-center rounded-xl text-xs font-medium transition ${
+                          className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-xs font-medium transition ${
                             isActive
-                              ? 'bg-indigo-600 text-white shadow-sm'
+                              ? 'bg-slate-900 text-white shadow-sm'
                               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                           }`}
                         >

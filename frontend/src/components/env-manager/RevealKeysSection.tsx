@@ -203,7 +203,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
           <EstablishSecuritySession showActiveBar={false} />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">安全会话有效</span>
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">安全会话有效</span>
             <button type="button" disabled={loading || busy} onClick={() => void onReveal()} className={studioPrimaryButtonClassName}>
               {loading ? '读取中…' : '查看密钥'}
             </button>
@@ -227,7 +227,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
         )}
 
         {result && isOpen && isActive ? (
-          <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-xs">
+          <div className="space-y-1.5 rounded-2xl border border-amber-200 bg-amber-50/60 p-3 text-xs">
             <div className="font-semibold text-amber-700">以下为敏感明文，请勿外泄；点击“结束会话”或离开页面即清除。</div>
             <KeyRow
               label={MASTER_ORIGIN_LABEL[result.masterOrigin ?? (result.aesKeyConfigured ? 'AES_KEY' : 'ephemeral')]}
@@ -242,13 +242,13 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
             </div>
 
             {result.masterSources && result.masterSources.length > 0 ? (
-              <div className="mt-2 rounded-lg border border-amber-100 bg-white/60 p-2">
+              <div className="mt-2 rounded-2xl border border-amber-100 bg-white/60 p-2">
                 <div className="font-semibold text-slate-600">主密钥源（运行时）</div>
                 {result.masterSources.map((source) => (
                   <div key={source.name} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="text-slate-600">
                       {source.name}
-                      {source.active ? <span className="ml-1 rounded bg-emerald-100 px-1 text-emerald-700">生效中</span> : null}
+                      {source.active ? <span className="ml-1 rounded-full bg-emerald-100 px-1 text-emerald-700">生效中</span> : null}
                     </span>
                     <span className="font-mono text-[11px] text-slate-500">
                       {source.configured ? `指纹 ${source.fingerprint}` : '未配置'}
@@ -259,7 +259,7 @@ export default function RevealKeysSection({ prefersReducedMotion: reducedMotionP
             ) : null}
 
             {result.lastMigration ? (
-              <div className="mt-2 rounded-lg border border-sky-100 bg-sky-50/60 p-2">
+              <div className="mt-2 rounded-2xl border border-sky-100 bg-sky-50/60 p-2">
                 <div className="font-semibold text-slate-600">上次密钥统一迁移记录</div>
                 <div className="text-[11px] text-slate-500">
                   方案版本 {result.lastMigration.schemeVersion ?? '-'} · 阶段 {result.lastMigration.phase ?? '-'}
