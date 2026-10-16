@@ -2,35 +2,48 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, CheckCircle, Monitor, Server } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { studioEyebrowPillClassName, studioModalCardClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
+import {
+  studioEyebrowPillClassName,
+  studioPageClassName,
+  studioPanelClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+} from './studioTheme';
+import { StudioErrorNote } from './studioFeedback';
 
 const CHOICE_QUERY_PARAM = '__legacy_api_choice';
 const REMEMBER_QUERY_PARAM = '__legacy_api_remember';
 const STATE_QUERY_PARAM = '__legacy_api_state';
 
-function normalizeLocalPath(rawValue: string | null, fallback: string, requiredPrefix?: string): string {
+// 返回体带 rejected：地址里的一段被安全规则退回时，页面必须把「已回退到默认值」说出来，
+// 否则用户看到的是一条貌似正常、实际被改写过的地址。
+function normalizeLocalPath(
+  rawValue: string | null,
+  fallback: string,
+  requiredPrefix?: string
+): { path: string; rejected: boolean } {
   if (!rawValue) {
-    return fallback;
+    return { path: fallback, rejected: false };
   }
 
   try {
     const url = new URL(rawValue, window.location.origin);
     if (url.origin !== window.location.origin) {
-      return fallback;
+      return { path: fallback, rejected: true };
     }
 
     const path = `${url.pathname}${url.search}`;
     if (!path.startsWith('/') || path.startsWith('//')) {
-      return fallback;
+      return { path: fallback, rejected: true };
     }
 
     if (requiredPrefix && !url.pathname.startsWith(requiredPrefix)) {
-      return fallback;
+      return { path: fallback, rejected: true };
     }
 
-    return path;
+    return { path, rejected: false };
   } catch {
-    return fallback;
+    return { path: fallback, rejected: true };
   }
 }
 
@@ -66,6 +79,9 @@ const LegacyApiChoicePage: React.FC = () => {
     () => normalizeLocalPath(params.get('api'), '/api', '/api'),
     [params]
   );
+  const pathRejected = frontendTarget.rejected || apiTarget.rejected;
+  const frontendPath = frontendTarget.path;
+  const apiPath = apiTarget.path;
   const state = params.get('state') || '';
   const canChoose = state.length > 0;
 
@@ -75,18 +91,18 @@ const LegacyApiChoicePage: React.FC = () => {
         return;
       }
 
-      window.location.assign(buildChoiceUrl(frontendTarget, choice, rememberChoice, state));
+      window.location.assign(buildChoiceUrl(frontendPath, choice, rememberChoice, state));
     },
-    [frontendTarget, rememberChoice, state]
+    [frontendPath, rememberChoice, state]
   );
 
   return (
-    <section className="mx-auto flex min-h-[58vh] max-w-full px-4 py-10 sm:max-w-3xl">
-      <div className={cn(studioModalCardClassName, "bg-white")}>
+    <section className={cn(studioPageClassName, 'flex min-h-[58vh] justify-center')}>
+      <div className={cn(studioPanelClassName, 'w-full max-w-3xl')}>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className={cn(studioEyebrowPillClassName, "rounded-md text-xs text-slate-600")}>
-              <CheckCircle className="h-4 w-4 text-teal-600" aria-hidden="true" />
+            <div className={studioEyebrowPillClassName}>
+              <CheckCircle className="h-4 w-4 text-slate-500" aria-hidden="true" />
               路径需要确认
             </div>
             <h1 className="mt-4 text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
@@ -98,11 +114,17 @@ const LegacyApiChoicePage: React.FC = () => {
           </div>
           <Link
             to="/"
-            className={cn(studioSecondaryButtonClassName, "h-10 border hover:text-slate-950")}
+            className={cn(studioSecondaryButtonClassName, "h-10")}
           >
             回到首页
           </Link>
         </div>
+
+        {pathRejected ? (
+          <StudioErrorNote className="mt-5">
+            地址里有一段无法识别，已回退到默认目标。请从原来的入口重新打开这个链接。
+          </StudioErrorNote>
+        ) : null}
 
         <div className="mt-7 grid gap-4">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -110,18 +132,18 @@ const LegacyApiChoicePage: React.FC = () => {
               <Monitor className="h-4 w-4 text-slate-500" aria-hidden="true" />
               前端页面
             </div>
-            <code className="mt-3 block break-all rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-              {frontendTarget}
+            <code className="mt-3 block break-all rounded-2xl bg-white px-3 py-2 text-sm text-slate-700">
+              {frontendPath}
             </code>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Server className="h-4 w-4 text-teal-600" aria-hidden="true" />
+              <Server className="h-4 w-4 text-slate-500" aria-hidden="true" />
               API endpoint
             </div>
-            <code className="mt-3 block break-all rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-              {apiTarget}
+            <code className="mt-3 block break-all rounded-2xl bg-white px-3 py-2 text-sm text-slate-700">
+              {apiPath}
             </code>
           </div>
         </div>
@@ -131,7 +153,7 @@ const LegacyApiChoicePage: React.FC = () => {
             type="checkbox"
             checked={rememberChoice}
             onChange={(event) => setRememberChoice(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            className="h-4 w-4 rounded border-slate-300 accent-slate-900 focus:ring-slate-300"
           />
           记住本次选择，后续同类地址自动处理
         </label>
@@ -146,7 +168,7 @@ const LegacyApiChoicePage: React.FC = () => {
             <button
               type="button"
               onClick={() => window.history.back()}
-              className="mt-3 rounded-2xl border border-amber-300 bg-white/80 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-white"
+              className="mt-3 min-h-11 rounded-2xl border border-amber-300 bg-white/80 px-4 text-xs font-semibold text-amber-900 transition hover:bg-white"
             >
               返回上一页
             </button>
@@ -158,7 +180,7 @@ const LegacyApiChoicePage: React.FC = () => {
             type="button"
             onClick={() => chooseDestination('frontend')}
             disabled={!canChoose}
-            className={cn(studioSecondaryButtonClassName, "h-12 border bg-white text-slate-800 hover:bg-slate-50")}
+            className={cn(studioSecondaryButtonClassName, "h-12 bg-white text-slate-800 hover:bg-slate-50")}
           >
             <Monitor className="h-4 w-4" aria-hidden="true" />
             打开前端页面
@@ -167,7 +189,7 @@ const LegacyApiChoicePage: React.FC = () => {
             type="button"
             onClick={() => chooseDestination('api')}
             disabled={!canChoose}
-            className={cn(studioPrimaryButtonClassName, "h-12 bg-teal-700 px-4 hover:bg-teal-800 focus-visible:ring-teal-500")}
+            className={cn(studioPrimaryButtonClassName, "h-12 px-4")}
           >
             打开 API endpoint
             <ArrowRight className="h-4 w-4" aria-hidden="true" />

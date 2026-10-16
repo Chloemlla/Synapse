@@ -12,6 +12,7 @@ import {
 } from 'react-icons/fa';
 import { ProductInfo } from '../types/anta';
 import { InfoBadge, InfoMetricCard, InfoPanel, InfoSectionTitle } from './studioTheme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface ProductDetailsProps {
   product: ProductInfo & {
@@ -25,6 +26,7 @@ interface ProductDetailsProps {
 }
 
 const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, isVerified = true }) => {
+  const reducedMotion = useReducedMotion();
   const productFields = [
     { label: '条码', value: product.barcode, icon: FaBarcode },
     { label: '货号', value: product.itemNumber, icon: FaTag },
@@ -38,7 +40,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 14 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22 }}
       className="space-y-6"
@@ -121,15 +123,15 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
               href="https://www.anta.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
             >
-              安踏官网 <FaExternalLinkAlt className="h-3.5 w-3.5" />
+              安踏官网 <FaExternalLinkAlt className="h-3.5 w-3.5" aria-hidden />
             </a>
             <a
               href="/policy"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               隐私条款
             </a>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FaCopy, FaExclamationTriangle, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
+import { FaCopy, FaPlus, FaSyncAlt, FaTicketAlt, FaTrash } from "react-icons/fa";
 import { api } from "../api/api";
 import { useNotification } from "./Notification";
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -17,6 +17,8 @@ import {
   studioSecondaryButtonClassName,
   studioTileClassName,
 } from "./studioTheme";
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { cn } from '../utils/cn';
 
 interface RegistrationInvite {
   id: string;
@@ -309,7 +311,7 @@ const RegistrationInviteManager: React.FC = () => {
         <button
           type="button"
           onClick={() => void loadInvites()}
-          className={studioSecondaryButtonClassName}
+          className={cn(studioSecondaryButtonClassName, 'min-h-11')}
           disabled={loading}
         >
           <FaSyncAlt className={loading ? "animate-spin" : ""} />
@@ -417,23 +419,18 @@ const RegistrationInviteManager: React.FC = () => {
       )}
 
       <div className="space-y-3">
-        {loading && <div className={`${studioPanelClassName} text-sm text-slate-600`}>正在加载...</div>}
+        {loading && <StudioLoadingState text="正在读取邀请码..." minHeightClassName="min-h-[240px]" />}
         {!loading && loadError && (
-          <div className={`${studioPanelClassName} flex flex-col items-center gap-2 py-6 text-center`}>
-            <FaExclamationTriangle className="text-xl text-red-500" aria-hidden />
-            <div className="text-sm text-slate-600">{loadError}</div>
-            <button
-              type="button"
-              onClick={() => void loadInvites()}
-              className={studioSecondaryButtonClassName}
-            >
-              <FaSyncAlt />
-              重试
-            </button>
-          </div>
+          <StudioErrorState message={loadError} onRetry={() => void loadInvites()} />
         )}
         {!loading && !loadError && invites.length === 0 && (
-          <div className={`${studioPanelClassName} text-sm text-slate-600`}>暂无邀请码。</div>
+          <StudioEmptyState
+            message={
+              canWrite
+                ? '还没有邀请码。用上方表单创建第一个，把生成的码发给需要注册的人即可。'
+                : '还没有邀请码。请联系超级管理员创建后再回来查看。'
+            }
+          />
         )}
 
         {canWrite && invites.length > 0 ? (
@@ -505,13 +502,13 @@ const RegistrationInviteManager: React.FC = () => {
                 ) : null}
                 <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <code className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm font-semibold text-slate-900">
+                  <code className="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1 text-sm font-semibold text-slate-900">
                     {invite.code}
                   </code>
                   <button
                     type="button"
                     onClick={() => void copyCode(invite.code)}
-                    className={studioSecondaryButtonClassName}
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                     aria-label="复制邀请码"
                   >
                     <FaCopy />

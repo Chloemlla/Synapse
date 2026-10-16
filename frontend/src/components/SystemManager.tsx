@@ -7,7 +7,9 @@ import {
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { turnstileApi, type SchedulerStatus, type SyncDirectionResult, type SyncStatus, type SystemCapability } from '../api/turnstile';
-import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -96,6 +98,7 @@ export default function SystemManager() {
   const confirm = useConfirm();
   const { user } = useAuth();
   const canWrite = isSuperAdmin(user?.role);
+  const reducedMotion = useReducedMotion();
 
   const fetchSchedulerStatus = async () => {
     try {
@@ -325,9 +328,7 @@ export default function SystemManager() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[min(24rem,50dvh)] items-center justify-center">
-        <UnifiedLoadingSpinner size="lg" text="加载系统管理..." />
-      </div>
+      <StudioLoadingState text="加载系统管理..." minHeightClassName="min-h-[min(24rem,50dvh)]" />
     );
   }
 
@@ -455,48 +456,48 @@ export default function SystemManager() {
           )}
 
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <motion.button
+            <motion.button type="button"
               onClick={handleStartScheduler}
               disabled={!canWrite || starting || schedulerStatus.isRunning}
               title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-              whileHover={{ scale: !canWrite || starting || schedulerStatus.isRunning ? 1 : 1.02 }}
-              whileTap={{ scale: !canWrite || starting || schedulerStatus.isRunning ? 1 : 0.98 }}
+              whileHover={reducedMotion || !canWrite || starting || schedulerStatus.isRunning ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion || !canWrite || starting || schedulerStatus.isRunning ? undefined : { scale: 0.98 }}
             >
               {starting ? (
-                <UnifiedLoadingSpinner size="sm" />
+                <SimpleLoadingSpinner size={0.45} />
               ) : (
                 <FaPlay className="w-4 h-4" />
               )}
               {starting ? '启动中...' : '启动调度器'}
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={handleStopScheduler}
               disabled={!canWrite || stopping || !schedulerStatus.isRunning}
               title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioDangerButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-              whileHover={{ scale: !canWrite || stopping || !schedulerStatus.isRunning ? 1 : 1.02 }}
-              whileTap={{ scale: !canWrite || stopping || !schedulerStatus.isRunning ? 1 : 0.98 }}
+              whileHover={reducedMotion || !canWrite || stopping || !schedulerStatus.isRunning ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion || !canWrite || stopping || !schedulerStatus.isRunning ? undefined : { scale: 0.98 }}
             >
               {stopping ? (
-                <UnifiedLoadingSpinner size="sm" />
+                <SimpleLoadingSpinner size={0.45} />
               ) : (
                 <FaStop className="w-4 h-4" />
               )}
               {stopping ? '停止中...' : '停止调度器'}
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={handleManualCleanup}
               disabled={!canWrite || cleaning}
               title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-              whileHover={{ scale: !canWrite || cleaning ? 1 : 1.02 }}
-              whileTap={{ scale: !canWrite || cleaning ? 1 : 0.98 }}
+              whileHover={reducedMotion || !canWrite || cleaning ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion || !canWrite || cleaning ? undefined : { scale: 0.98 }}
             >
               {cleaning ? (
-                <UnifiedLoadingSpinner size="sm" />
+                <SimpleLoadingSpinner size={0.45} />
               ) : (
                 <FaTrash className="w-4 h-4" />
               )}
@@ -512,7 +513,7 @@ export default function SystemManager() {
               <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{schedulerError}</span>
             </div>
-            <button onClick={() => void fetchSchedulerStatus()} className={studioSecondaryButtonClassName}>
+            <button type="button" onClick={() => void fetchSchedulerStatus()} className={studioSecondaryButtonClassName}>
               <FaSync className="w-4 h-4" />
               重试
             </button>
@@ -579,39 +580,39 @@ export default function SystemManager() {
           )}
 
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <motion.button
+            <motion.button type="button"
               onClick={handleSyncIPBans}
               disabled={!canWrite || syncing || !syncStatus.redisAvailable}
               title={!canWrite ? '需要超级管理员权限' : undefined}
               className={`${studioSecondaryButtonClassName} flex-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-              whileHover={{ scale: !canWrite || syncing || !syncStatus.redisAvailable ? 1 : 1.02 }}
-              whileTap={{ scale: !canWrite || syncing || !syncStatus.redisAvailable ? 1 : 0.98 }}
+              whileHover={reducedMotion || !canWrite || syncing || !syncStatus.redisAvailable ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion || !canWrite || syncing || !syncStatus.redisAvailable ? undefined : { scale: 0.98 }}
             >
               {syncing ? (
-                <UnifiedLoadingSpinner size="sm" />
+                <SimpleLoadingSpinner size={0.45} />
               ) : (
                 <FaSync className="w-4 h-4" />
               )}
               {syncing ? '同步中...' : syncStatus.redisAvailable ? '手动同步IP封禁' : 'Redis不可用'}
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               className={studioSecondaryButtonClassName}
-              whileHover={{ scale: refreshing ? 1 : 1.02 }}
-              whileTap={{ scale: refreshing ? 1 : 0.98 }}
+              whileHover={reducedMotion || refreshing ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion || refreshing ? undefined : { scale: 0.98 }}
             >
               <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               刷新状态
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={exportStatus}
               className={studioSecondaryButtonClassName}
               title='把当前调度器与同步状态导出为 JSON，便于排障时随工单附上'
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.98 }}
             >
               <FaDownload className="w-4 h-4" />
               导出状态
@@ -635,7 +636,7 @@ export default function SystemManager() {
 
           {syncStatus.errors && Array.isArray(syncStatus.errors) && syncStatus.errors.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
+              initial={reducedMotion ? false : { opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4"
             >
@@ -659,7 +660,7 @@ export default function SystemManager() {
               <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{syncError}</span>
             </div>
-            <button onClick={() => void fetchSyncStatus()} className={studioSecondaryButtonClassName}>
+            <button type="button" onClick={() => void fetchSyncStatus()} className={studioSecondaryButtonClassName}>
               <FaSync className="w-4 h-4" />
               重试
             </button>

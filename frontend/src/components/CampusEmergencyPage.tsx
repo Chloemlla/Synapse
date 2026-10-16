@@ -27,6 +27,7 @@ import {
   InfoSectionTitle,
   studioEyebrowClassName,
 } from './studioTheme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { cn } from '../utils/cn';
 
 interface Character {
@@ -78,6 +79,7 @@ const CampusEmergencyPage: React.FC = () => {
   const [showTypewriter, setShowTypewriter] = useState(false);
   const [deviceFailures, setDeviceFailures] = useState<string[]>([]);
   const [networkStatus, setNetworkStatus] = useState<'connected' | 'disconnected'>('connected');
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -145,8 +147,16 @@ const CampusEmergencyPage: React.FC = () => {
                   <motion.span
                     key={index}
                     className="w-1.5 rounded-full bg-amber-500"
-                    animate={isAudioPlaying ? { height: [8, 24, 12, 20, 8], opacity: [0.45, 1, 0.75, 1, 0.45] } : { height: 8, opacity: 0.25 }}
-                    transition={{ duration: 0.7, repeat: Infinity, delay: index * 0.08 }}
+                    animate={
+                      isAudioPlaying && !reducedMotion
+                        ? { height: [8, 24, 12, 20, 8], opacity: [0.45, 1, 0.75, 1, 0.45] }
+                        : { height: 8, opacity: 0.25 }
+                    }
+                    transition={{
+                      duration: 0.7,
+                      repeat: isAudioPlaying && !reducedMotion ? Infinity : 0,
+                      delay: index * 0.08,
+                    }}
                   />
                 ))}
               </div>
@@ -195,9 +205,9 @@ const CampusEmergencyPage: React.FC = () => {
                     <motion.div
                       key={character.id}
                       className="rounded-2xl border border-slate-200 bg-white/82 p-4 shadow-sm"
-                      initial={{ opacity: 0, y: 12 }}
+                      initial={reducedMotion ? false : { opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.06 }}
+                      transition={{ delay: reducedMotion ? 0 : index * 0.06 }}
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
@@ -273,9 +283,9 @@ const CampusEmergencyPage: React.FC = () => {
                     <AnimatePresence mode="wait">
                       <motion.div
                         key={currentInstructionItem.id}
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={reducedMotion ? false : { opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
+                        exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
                         transition={{ duration: 0.22 }}
                       >
                         {showTypewriter ? (
@@ -285,7 +295,7 @@ const CampusEmergencyPage: React.FC = () => {
                             {currentInstructionItem.text.split(' ').map((word) => (
                               <span
                                 key={`${currentInstructionItem.id}-${word}`}
-                                className={currentInstructionItem.keywords.some((keyword) => word.includes(keyword)) ? 'rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-800' : ''}
+                                className={currentInstructionItem.keywords.some((keyword) => word.includes(keyword)) ? 'rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800' : ''}
                               >
                                 {word}{' '}
                               </span>
@@ -337,9 +347,9 @@ const CampusEmergencyPage: React.FC = () => {
         {deviceFailures.length > 0 && (
           <motion.div
             className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-rose-200 bg-white/95 p-4 text-rose-800 shadow-sm backdrop-blur-xl"
-            initial={{ opacity: 0, y: 20 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
           >
             <div className="flex items-start gap-3">
               <FaExclamationTriangle className="mt-1 shrink-0" />
@@ -356,9 +366,15 @@ const CampusEmergencyPage: React.FC = () => {
 };
 
 const TypewriterText: React.FC<{ text: string }> = ({ text }) => {
-  const [displayText, setDisplayText] = useState('');
+  const reducedMotion = useReducedMotion();
+  const [displayText, setDisplayText] = useState(reducedMotion ? text : '');
 
   useEffect(() => {
+    // reduced motion：不做逐字打字机，直接出全文。
+    if (reducedMotion) {
+      setDisplayText(text);
+      return undefined;
+    }
     setDisplayText('');
     let index = 0;
     const timer = window.setInterval(() => {
@@ -371,18 +387,25 @@ const TypewriterText: React.FC<{ text: string }> = ({ text }) => {
     }, 45);
 
     return () => window.clearInterval(timer);
-  }, [text]);
+  }, [text, reducedMotion]);
 
   return (
     <p className="text-lg font-semibold leading-8 text-slate-950">
       {displayText}
-      <motion.span
-        animate={{ opacity: [0, 1, 0] }}
-        transition={{ duration: 0.8, repeat: Infinity }}
-        className="ml-1"
-      >
-        |
-      </motion.span>
+      {reducedMotion ? (
+        <span className="ml-1" aria-hidden>
+          |
+        </span>
+      ) : (
+        <motion.span
+          animate={{ opacity: [0, 1, 0] }}
+          transition={{ duration: 0.8, repeat: Infinity }}
+          className="ml-1"
+          aria-hidden
+        >
+          |
+        </motion.span>
+      )}
     </p>
   );
 };

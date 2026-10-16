@@ -14,6 +14,8 @@ import { oauthApi, type OAuthAuthorizePreview } from "../api/oauth";
 import { useNotification } from "./Notification";
 import { cn } from "../utils/cn";
 import { SimpleLoadingSpinner, UnifiedLoadingSpinner } from "./LoadingSpinner";
+import { StudioEmptyState } from "./studioFeedback";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import {
   studioAccentBlobBlueClassName,
   studioAccentBlobSkyClassName,
@@ -79,7 +81,7 @@ const formatUserRole = (role: string) => {
 };
 
 const getRoleBadgeClass = (role: string) => {
-  if (role === "superadmin" || role === "admin") return "border-red-200 bg-red-50 text-red-700";
+  if (role === "superadmin" || role === "admin") return "border-rose-200 bg-rose-50 text-rose-700";
   if (role === "trusted")
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
@@ -95,6 +97,7 @@ const OAuthAuthorizePage: React.FC = () => {
   );
   const [error, setError] = useState<string | null>(null);
   const [statusCode, setStatusCode] = useState<number | null>(null);
+  const reducedMotion = useReducedMotion();
 
   const queryString = useMemo(
     () => location.search.replace(/^\?/, ""),
@@ -186,7 +189,7 @@ const OAuthAuthorizePage: React.FC = () => {
         style={{ fontFamily: studioPageFont }}
       >
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
           className={cn(studioHeroCardClassName, "text-center")}
@@ -258,7 +261,7 @@ const OAuthAuthorizePage: React.FC = () => {
     {
       label: "授权范围",
       value: `${preview.scopes.length} 项权限`,
-      tone: "violet",
+      tone: "slate",
     },
   ] as const;
 
@@ -266,7 +269,7 @@ const OAuthAuthorizePage: React.FC = () => {
     <div className={studioPageClassName} style={{ fontFamily: studioPageFont }}>
       <div className="mx-auto max-w-7xl min-w-0">
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
           className={cn("mb-5 sm:mb-8", studioHeroCardClassName)}
@@ -335,9 +338,9 @@ const OAuthAuthorizePage: React.FC = () => {
 
         <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.05 }}
+            transition={{ duration: 0.5, delay: reducedMotion ? 0 : 0.05 }}
             className={studioMainSurfaceClassName}
           >
             <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-5">
@@ -355,7 +358,7 @@ const OAuthAuthorizePage: React.FC = () => {
                     href={preview.client.homepageUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className={studioGhostButtonClassName}
+                    className={cn(studioGhostButtonClassName, 'min-h-11')}
                   >
                     <FaExternalLinkAlt />
                     应用主页
@@ -482,9 +485,7 @@ const OAuthAuthorizePage: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center text-slate-500">
-                    没有身份资料权限。
-                  </div>
+                  <StudioEmptyState message="本次授权不包含身份资料权限，可直接在右侧确认授权，或拒绝返回应用。" />
                 )}
               </div>
 
@@ -525,9 +526,9 @@ const OAuthAuthorizePage: React.FC = () => {
 
           <div className="min-w-0 space-y-4 sm:space-y-6">
             <motion.section
-              initial={{ opacity: 0, y: 24 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.12 }}
+              transition={{ duration: 0.5, delay: reducedMotion ? 0 : 0.12 }}
               className={studioPanelClassName}
             >
               <div className="mb-4 flex items-center gap-3">
@@ -549,7 +550,7 @@ const OAuthAuthorizePage: React.FC = () => {
                   onClick={() => submit(true)}
                   disabled={Boolean(submitting)}
                   className={cn(studioPrimaryButtonClassName, "w-full")}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.98 }}
                 >
                   {submitting === "approve" ? (
                     <SimpleLoadingSpinner size={0.45} />
@@ -564,9 +565,9 @@ const OAuthAuthorizePage: React.FC = () => {
                   disabled={Boolean(submitting)}
                   className={cn(
                     studioGhostButtonClassName,
-                    "w-full border-rose-200 py-3 text-rose-600 hover:border-rose-300 hover:text-rose-700",
+                    "min-h-11 w-full border-rose-200 py-3 text-rose-600 hover:border-rose-300 hover:text-rose-700",
                   )}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.98 }}
                 >
                   {submitting === "deny" ? (
                     <SimpleLoadingSpinner size={0.45} />
@@ -579,9 +580,9 @@ const OAuthAuthorizePage: React.FC = () => {
             </motion.section>
 
             <motion.section
-              initial={{ opacity: 0, y: 24 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.18 }}
+              transition={{ duration: 0.5, delay: reducedMotion ? 0 : 0.18 }}
               className={studioPanelClassName}
             >
               <div className="mb-4 flex items-center gap-3">

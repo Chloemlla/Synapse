@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AntiCounterfeitError, ProductQueryParams } from '../types/anta';
-import { FaBarcode, FaFileAlt, FaLink, FaRulerCombined, FaSearch, FaTag, FaTimes, FaTrash } from 'react-icons/fa';
+import { FaBarcode, FaFileAlt, FaLink, FaRulerCombined, FaSearch, FaTag, FaTrash } from 'react-icons/fa';
 import { InfoPrimaryButton } from './studioTheme';
+import { StudioModal, StudioModalHeader } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+
+const IMPORT_DIALOG_TITLE_ID = 'product-query-import-title';
 
 interface ProductQueryFormProps {
   onQuery: (params: ProductQueryParams) => void;
@@ -58,6 +62,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
   const [showImportDialog, setShowImportDialog] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const importTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const reducedMotion = useReducedMotion();
 
   const validateForm = (): string | null => {
     if (!formData.barcode.trim()) {
@@ -194,40 +199,14 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
     barcodeRef.current?.focus();
   };
 
+  // 导入弹窗打开后把焦点交给文本框：StudioModal 会把焦点给卡内第一个可聚焦元素（头部关闭按钮），
+  // 这个弹窗打开的下一步就是粘贴，主动聚焦可少一次点击。StudioModal 是子组件、副作用先执行，
+  // 它的 0ms 聚焦先入队，本组件的随后执行，最终焦点停在文本框。
   useEffect(() => {
     if (!showImportDialog) return undefined;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
     const timer = window.setTimeout(() => importTextareaRef.current?.focus(), 0);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setShowImportDialog(false);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('keydown', handleKeyDown);
-      previouslyFocused?.focus?.();
-    };
+    return () => window.clearTimeout(timer);
   }, [showImportDialog]);
-
-  const handleImportDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab') return;
-    const focusables = event.currentTarget.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), textarea, input, a[href], [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
 
   return (
     <div className="w-full">
@@ -291,7 +270,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
               window.setTimeout(handlePasteFromClipboard, 100);
             }}
             disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <FaLink /> 导入链接
           </button>
@@ -299,7 +278,7 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
             type="button"
             onClick={handleClear}
             disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <FaTrash /> 清空
           </button>
@@ -322,78 +301,55 @@ const ProductQueryForm: React.FC<ProductQueryFormProps> = ({
         </div>
       </form>
 
-      <AnimatePresence>
-        {showImportDialog && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+      <StudioModal
+        open={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+        titleId={IMPORT_DIALOG_TITLE_ID}
+        closeLabel="关闭导入链接弹窗"
+        maxWidthClassName="max-w-lg"
+      >
+        <StudioModalHeader
+          title="导入查询链接"
+          titleId={IMPORT_DIALOG_TITLE_ID}
+          description="粘贴安踏官方查询链接，自动识别货号、尺码、EAN 码与条码"
+          onClose={() => setShowImportDialog(false)}
+          closeLabel="关闭导入链接弹窗"
+        />
+
+        <label className="mt-5 block text-sm font-semibold text-slate-700">
+          粘贴安踏查询链接
+          <textarea
+            ref={importTextareaRef}
+            value={importUrl}
+            onChange={(event) => setImportUrl(event.target.value)}
+            placeholder="https://ascm.anta.com/consumer/innerbox/search?code=112535584-1&11&2000000134554&BRA047EBXF&CN"
+            className="mt-2 min-h-28 w-full resize-none rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+          />
+        </label>
+
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm leading-6 text-slate-600">
+          支持安踏官方查询链接，链接内需包含货号、尺码、EAN 码和条码信息。
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
             onClick={() => setShowImportDialog(false)}
+            className="min-h-11 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="product-query-import-title"
-              onKeyDown={handleImportDialogKeyDown}
-              className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm backdrop-blur-xl sm:p-6 max-h-[90vh] overflow-y-auto overscroll-contain"
-              initial={{ opacity: 0, scale: 0.96, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 16 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mb-5 flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">导入链接</p>
-                  <h3 id="product-query-import-title" className="mt-1 text-xl font-semibold text-slate-950">导入查询链接</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowImportDialog(false)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  aria-label="关闭导入链接弹窗"
-                >
-                  <FaTimes />
-                </button>
-              </div>
-
-              <label className="block text-sm font-semibold text-slate-700">
-                粘贴安踏查询链接
-                <textarea
-                  ref={importTextareaRef}
-                  value={importUrl}
-                  onChange={(event) => setImportUrl(event.target.value)}
-                  placeholder="https://ascm.anta.com/consumer/innerbox/search?code=112535584-1&11&2000000134554&BRA047EBXF&CN"
-                  className="mt-2 min-h-28 w-full resize-none rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
-                />
-              </label>
-
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm leading-6 text-slate-600">
-                支持安踏官方查询链接，链接内需包含货号、尺码、EAN 码和条码信息。
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => setShowImportDialog(false)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  取消
-                </button>
-                <InfoPrimaryButton
-                  type="button"
-                  tone="emerald"
-                  disabled={!importUrl.trim()}
-                  className="flex-1"
-                  onClick={handleImportUrl}
-                >
-                  导入
-                </InfoPrimaryButton>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            取消
+          </button>
+          <InfoPrimaryButton
+            type="button"
+            tone="emerald"
+            disabled={!importUrl.trim()}
+            className="flex-1"
+            onClick={handleImportUrl}
+          >
+            导入
+          </InfoPrimaryButton>
+        </div>
+      </StudioModal>
     </div>
   );
 };

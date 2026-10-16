@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWsNotifications } from '../hooks/useWsNotifications';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const COLLISION_INSET = 4;
 const MOBILE_VIEWPORT_WIDTH = 640;
@@ -82,6 +83,7 @@ function getSamplePoints(rect: DOMRect) {
  */
 export default function WsConnector() {
   const { connected, reconnectLimitReached, connect } = useWsNotifications();
+  const reducedMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shouldFadeOut, setShouldFadeOut] = useState(false);
@@ -169,13 +171,13 @@ export default function WsConnector() {
           <button
             type="button"
             onClick={() => connect()}
-            className="pointer-events-auto rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-lg transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            className="pointer-events-auto min-h-11 rounded-full border border-slate-300 bg-white/95 px-3 text-xs font-semibold text-slate-700 shadow-lg transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           >
             {reconnectLimitReached ? '实时通知已断开，点击重新连接' : '正在重连实时通知，可点击立即重试'}
           </button>
         )}
         <div
-          className={`w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+          className={`h-10 w-10 rounded-full shadow-lg flex items-center justify-center transition-colors ${
             connected
               ? 'bg-emerald-500'
               : 'bg-slate-400'
@@ -183,7 +185,8 @@ export default function WsConnector() {
           title={connected ? '实时通知已连接' : '实时通知未连接'}
           aria-label={connected ? '实时通知已连接' : '实时通知未连接'}
         >
-          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-white/90 animate-pulse' : 'bg-slate-200'}`} />
+          {/* 循环脉冲在 reduced motion 下停用，避免持续动效 */}
+          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-white/90' : 'bg-slate-200'} ${connected && !reducedMotion ? 'animate-pulse' : ''}`} />
         </div>
       </div>
     </div>

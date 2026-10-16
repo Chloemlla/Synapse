@@ -32,6 +32,8 @@ import {
 } from "./authStudioTheme";
 import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 import { useNotification } from "./Notification";
+import { SimpleLoadingSpinner } from "./LoadingSpinner";
+import { StudioErrorNote } from "./studioFeedback";
 
 type Provider = "google" | "linuxdo";
 
@@ -341,7 +343,10 @@ const ProviderBindPage: React.FC = () => {
   const renderLoading = () => (
     <div className={authCardClassName}>
       <div className={cn(authCardBodyClassName, "text-center")}>
-        <div className="mx-auto mb-5 h-10 w-10 sm:h-12 sm:w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+        {/* 自绘圆环改成共享 spinner（带 role=status + reduced motion 处理） */}
+        <div className="mb-5 flex justify-center">
+          <SimpleLoadingSpinner size={0.75} />
+        </div>
         <h1 className="text-2xl font-semibold text-slate-900">正在登录</h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
           正在读取第三方登录资料。如果没有自动跳转，请返回登录页重试。
@@ -424,7 +429,7 @@ const ProviderBindPage: React.FC = () => {
                   {sessionExpired ? "会话已过期" : `剩余 ${formatRemainingTime(remainingSeconds)}`}
                 </div>
               </div>
-              <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2">
                 <p className="text-[11px] font-semibold text-slate-500">{providerEmailLabel}</p>
                 <p className="mt-1 break-all font-mono text-sm text-slate-900">
                   {session.providerEmail || "未返回邮箱"}
@@ -555,7 +560,7 @@ const ProviderBindPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={toggleAllTerms}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                  className="min-h-11 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                 >
                   {allTermsAccepted ? "取消全选" : "全部勾选"}
                 </button>
@@ -581,13 +586,7 @@ const ProviderBindPage: React.FC = () => {
             </div>
 
             {error ? (
-              <div
-                role="alert"
-                aria-live="assertive"
-                className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
-              >
-                {error}
-              </div>
+              <StudioErrorNote className="mt-5 leading-6">{error}</StudioErrorNote>
             ) : null}
 
             <button

@@ -30,6 +30,7 @@ import { cn } from '../utils/cn';
 import {
   studioFieldClassName,
   studioPillClassName,
+  studioSecondaryButtonClassName,
   studioSurfaceClassName,
   studioTileClassName,
 } from './studioTheme';
@@ -487,8 +488,8 @@ const NexAISecurityDashboard: React.FC = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-3 sm:px-6 py-12 text-center text-sm text-slate-500 bg-slate-50/50">
-                            暂无高风险设备数据
+                          <td colSpan={5} className="px-3 py-6 sm:px-6">
+                            <StudioEmptyState message="当前时间范围内没有高风险设备。切到「设备管理」可以查看全部设备的风险画像。" />
                           </td>
                         </tr>
                       )}
@@ -590,8 +591,26 @@ const NexAISecurityDashboard: React.FC = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-3 sm:px-6 py-12 text-center text-sm text-slate-500 bg-slate-50/50">
-                            {hasActiveDeviceFilter ? '未在当前已加载的设备中找到匹配项' : '暂无设备数据'}
+                          <td colSpan={6} className="px-3 py-6 sm:px-6">
+                            <StudioEmptyState
+                              message={
+                                hasActiveDeviceFilter
+                                  ? '未在当前已加载的设备中找到匹配项。清空搜索与风险等级筛选可以看回全部设备。'
+                                  : '当前时间范围内没有设备上报。设备接入后会自动出现在这里。'
+                              }
+                              action={
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchQuery('');
+                                    setFilterRiskLevel('all');
+                                  }}
+                                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                                >
+                                  清空筛选
+                                </button>
+                              }
+                            />
                           </td>
                         </tr>
                       )}
@@ -663,10 +682,18 @@ const NexAISecurityDashboard: React.FC = () => {
                     );
                   })
                 ) : (
-                  <div className={cn(studioSubPanelClassName, "text-center py-20 border-dashed text-slate-400")}>
-                    <FaShieldAlt className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                    <p className="text-sm font-medium">当前未记录任何安全事件</p>
-                  </div>
+                  <StudioEmptyState
+                    message="当前时间范围内没有安全事件记录，说明没有设备触发风控规则。"
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTab('devices')}
+                        className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                      >
+                        查看设备风险画像
+                      </button>
+                    }
+                  />
                 )}
               </div>
             </div>

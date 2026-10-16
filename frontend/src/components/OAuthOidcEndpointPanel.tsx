@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   FaCheck,
   FaCopy,
-  FaExclamationTriangle,
   FaKey,
   FaLink,
   FaShieldAlt,
@@ -16,10 +15,13 @@ import {
 import { useNotification } from './Notification';
 import {
   studioBadgeClassName,
+  studioDarkPanelClassName,
   studioElevatedPanelClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from './studioTheme';
+import { StudioErrorNote, StudioLoadingState } from './studioFeedback';
+import { cn } from '../utils/cn';
 
 const DISCOVERY_PATH = '/.well-known/openid-configuration';
 const LIBRECHAT_CALLBACK_PATH = '/oauth/openid/callback';
@@ -64,6 +66,8 @@ const OAuthOidcEndpointPanel: React.FC = () => {
   const [jwks, setJwks] = useState<OAuthJwks | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 公钥读取失败与「密钥真的还没生成」必须分开：否则失败会被渲染成「尚未生成」的错误结论。
+  const [jwksError, setJwksError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,13 +79,16 @@ const OAuthOidcEndpointPanel: React.FC = () => {
       setError(loadError instanceof Error ? loadError.message : 'OIDC 发现文档获取失败');
       setConfig(null);
       setJwks(null);
+      setJwksError(false);
       setLoading(false);
       return;
     }
     try {
       setJwks(await oauthApi.getJwks());
+      setJwksError(false);
     } catch {
       setJwks(null);
+      setJwksError(true);
     }
     setLoading(false);
   }, []);
@@ -112,21 +119,18 @@ const OAuthOidcEndpointPanel: React.FC = () => {
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className={studioSecondaryButtonClassName}
+          className={cn(studioSecondaryButtonClassName, 'min-h-11')}
         >
           <FaSyncAlt className={loading ? 'animate-spin' : ''} /> 重新探测
         </button>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
-          <FaExclamationTriangle className="mt-0.5 shrink-0" />
-          <span className="break-all">发现文档获取失败：{error}</span>
-        </div>
+        <StudioErrorNote className="text-xs">发现文档获取失败：{error}</StudioErrorNote>
       )}
 
       {loading && !config && (
-        <p className="text-xs text-slate-500">正在读取发现文档…</p>
+        <StudioLoadingState text="正在读取发现文档…" minHeightClassName="min-h-[120px]" />
       )}
 
       {config && (
@@ -136,12 +140,14 @@ const OAuthOidcEndpointPanel: React.FC = () => {
               <FaCheck /> 发现文档可用
             </span>
             <span
-              className={studioBadgeClassName(signingKey ? 'green' : 'yellow')}
+              className={studioBadgeClassName(jwksError ? 'rose' : signingKey ? 'green' : 'yellow')}
             >
               <FaKey />
-              {signingKey
-                ? `id_token 签名就绪 · kid ${signingKey.kid.slice(0, 12)}…`
-                : 'id_token 签名密钥尚未生成'}
+              {jwksError
+                ? '签名公钥读取失败，请点右上「重新探测」重试'
+                : signingKey
+                  ? `id_token 签名就绪 · kid ${signingKey.kid.slice(0, 12)}…`
+                  : 'id_token 签名密钥尚未生成'}
             </span>
             <span className={studioBadgeClassName('slate')}>
               <FaShieldAlt />
@@ -152,13 +158,13 @@ const OAuthOidcEndpointPanel: React.FC = () => {
           <div>
             <div className="text-xs font-semibold text-slate-900">发现文档地址（下游填这个）</div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <code className="min-w-0 flex-1 break-all rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-800">
+              <code className="min-w-0 flex-1 break-all rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-800">
                 {discoveryUrl}
               </code>
               <button
                 type="button"
                 onClick={() => copy(discoveryUrl ?? '')}
-                className={studioSecondaryButtonClassName}
+                className={cn(studioSecondaryButtonClassName, 'min-h-11')}
               >
                 <FaCopy /> 复制
               </button>
@@ -192,7 +198,7 @@ const OAuthOidcEndpointPanel: React.FC = () => {
                   type="button"
                   onClick={() => copy(row.value)}
                   aria-label={`复制${row.label}`}
-                  className={studioSecondaryButtonClassName}
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                 >
                   <FaCopy />
                 </button>
@@ -221,12 +227,12 @@ const OAuthOidcEndpointPanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => copy(buildLibreChatSnippet(config.issuer))}
-                className={studioSecondaryButtonClassName}
+                className={cn(studioSecondaryButtonClassName, 'min-h-11')}
               >
                 <FaCopy /> 复制片段
               </button>
             </div>
-            <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-900 px-3 py-3 text-[11px] leading-5 text-slate-100">
+            <pre className={cn(studioDarkPanelClassName, 'mt-2 overflow-x-auto text-[11px] leading-5')}>
               {buildLibreChatSnippet(config.issuer)}
             </pre>
           </div>

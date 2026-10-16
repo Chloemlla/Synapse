@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { FiMail, FiMessageSquare, FiSend, FiX, FiLogIn } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { ticketApi } from "../api/ticketApi";
@@ -11,11 +10,11 @@ import {
   studioEyebrowClassName,
   studioFieldClassName,
   studioGhostButtonClassName,
-  studioModalCardClassName,
-  studioModalOverlayClassName,
+  studioModalCloseButtonClassName,
   studioPrimaryButtonClassName,
   studioTextareaClassName,
 } from "./studioTheme";
+import { StudioModal } from "./studioFeedback";
 
 export const SUPPORT_EMAIL = "support@chloemlla.com";
 
@@ -122,20 +121,15 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
     setOpen(true);
   };
 
+  // 提交中不允许关窗（提交结果必须落在视觉上），其余情形（Escape / 点遮罩 / 关叉）统一走这里。
+  const closeModal = () => {
+    if (!submitting) setOpen(false);
+  };
+
   useEffect(() => {
     if (autoOpen && !mailOnly) openModal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpen, mailOnly]);
-
-  // Esc 关闭：遮罩层需支持标准键盘退出方式（焦点陷阱/回归未做，见回报）
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) setOpen(false);
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, submitting]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -205,7 +199,7 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
       <div
         className={cn(
           compact
-            ? "rounded-xl border border-rose-200/80 bg-rose-50/80 px-3 py-2"
+            ? "rounded-2xl border border-rose-200/80 bg-rose-50/80 px-3 py-2"
             : "rounded-2xl border border-rose-200 bg-rose-50/70 p-4",
           className,
         )}
@@ -225,8 +219,8 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
             href={mailHref}
             className={cn(
               studioGhostButtonClassName,
+              "min-h-11 border-rose-200 bg-white text-rose-700 hover:border-rose-300",
               compact ? "px-3 py-2 text-xs" : "px-4 py-2.5 text-sm",
-              "border-rose-200 bg-white text-rose-700 hover:border-rose-300",
             )}
           >
             <FiMail />
@@ -253,124 +247,109 @@ export const PenaltyAppealActions: React.FC<PenaltyAppealActionsProps> = ({
         </div>
       </div>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className={studioModalOverlayClassName}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => !submitting && setOpen(false)}
-          >
-            <motion.div
-              className={cn(studioModalCardClassName, "max-w-xl max-h-[90vh] overflow-y-auto")}
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              onClick={(event) => event.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="penalty-appeal-ticket-title"
+      <StudioModal
+        open={open}
+        onClose={closeModal}
+        labelledBy="penalty-appeal-ticket-title"
+        maxWidthClassName="max-w-xl"
+        closeLabel="关闭申诉窗口"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <div className={studioEyebrowClassName}>Support Appeal</div>
+            <h3
+              id="penalty-appeal-ticket-title"
+              className="mt-1 text-xl font-semibold text-slate-900"
+              style={{ fontFamily: studioDisplayFont }}
             >
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <div className={studioEyebrowClassName}>Support Appeal</div>
-                  <h3
-                    id="penalty-appeal-ticket-title"
-                    className="mt-1 text-xl font-semibold text-slate-900"
-                    style={{ fontFamily: studioDisplayFont }}
-                  >
-                    提交工单申诉
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    也可直接邮件联系 {SUPPORT_EMAIL}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => !submitting && setOpen(false)}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
-                  aria-label="关闭"
-                >
-                  <FiX />
-                </button>
-              </div>
+              提交工单申诉
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              也可直接邮件联系 {SUPPORT_EMAIL}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={closeModal}
+            className={cn(studioModalCloseButtonClassName, 'h-11 w-11')}
+            aria-label="关闭"
+          >
+            <FiX />
+          </button>
+        </div>
 
-              {!user ? (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                    提交工单需要登录。你可先登录后再申诉，或直接发送邮件。
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => navigate("/login")}
-                      className={cn(studioPrimaryButtonClassName, "flex-1")}
-                    >
-                      <FiLogIn />
-                      去登录
-                    </button>
-                    <a
-                      href={mailHref}
-                      className={cn(studioGhostButtonClassName, "flex-1 justify-center px-4 py-3")}
-                    >
-                      <FiMail />
-                      发送邮件
-                    </a>
-                  </div>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {kind === "ticket_permission_ban" && (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                      当前工单权限可能已被限制。若提交失败，请直接邮件联系 {SUPPORT_EMAIL}。
-                    </div>
-                  )}
-                  <div>
-                    <label className={cn(studioEyebrowClassName, "mb-2 block")}>申诉标题</label>
-                    <input
-                      type="text"
-                      required
-                      value={title}
-                      onChange={(event) => setTitle(event.target.value)}
-                      className={studioFieldClassName}
-                      disabled={submitting}
-                    />
-                  </div>
-                  <div>
-                    <label className={cn(studioEyebrowClassName, "mb-2 block")}>详细说明</label>
-                    <textarea
-                      required
-                      rows={8}
-                      value={description}
-                      onChange={(event) => setDescription(event.target.value)}
-                      className={studioTextareaClassName}
-                      disabled={submitting}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className={cn(studioPrimaryButtonClassName, "flex-1")}
-                    >
-                      <FiSend />
-                      {submitting ? "提交中..." : "提交工单"}
-                    </button>
-                    <a
-                      href={mailHref}
-                      className={cn(studioGhostButtonClassName, "justify-center px-5 py-3.5")}
-                    >
-                      <FiMail />
-                      邮件申诉
-                    </a>
-                  </div>
-                </form>
-              )}
-            </motion.div>
-          </motion.div>
+        {!user ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              提交工单需要登录。你可先登录后再申诉，或直接发送邮件。
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                className={cn(studioPrimaryButtonClassName, "flex-1")}
+              >
+                <FiLogIn />
+                去登录
+              </button>
+              <a
+                href={mailHref}
+                className={cn(studioGhostButtonClassName, "min-h-11 flex-1 justify-center px-4 py-3")}
+              >
+                <FiMail />
+                发送邮件
+              </a>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {kind === "ticket_permission_ban" && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                当前工单权限可能已被限制。若提交失败，请直接邮件联系 {SUPPORT_EMAIL}。
+              </div>
+            )}
+            <div>
+              <label className={cn(studioEyebrowClassName, "mb-2 block")}>申诉标题</label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className={studioFieldClassName}
+                disabled={submitting}
+              />
+            </div>
+            <div>
+              <label className={cn(studioEyebrowClassName, "mb-2 block")}>详细说明</label>
+              <textarea
+                required
+                rows={8}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                className={studioTextareaClassName}
+                disabled={submitting}
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="submit"
+                disabled={submitting}
+                className={cn(studioPrimaryButtonClassName, "flex-1")}
+              >
+                <FiSend />
+                {submitting ? "提交中..." : "提交工单"}
+              </button>
+              <a
+                href={mailHref}
+                className={cn(studioGhostButtonClassName, "min-h-11 justify-center px-5 py-3.5")}
+              >
+                <FiMail />
+                邮件申诉
+              </a>
+            </div>
+          </form>
         )}
-      </AnimatePresence>
+      </StudioModal>
     </>
   );
 };
