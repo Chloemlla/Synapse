@@ -21,7 +21,8 @@ export interface GeoGebraJobResult {
   summary?: string;
   commands?: string[];
   notes?: string[];
-  confidence?: number;
+  /** AI 自评把握度；模型没给出可用数字时为 null（导出类任务也为 null）。 */
+  confidence?: number | null;
   /** 产物下载用（export 任务）。 */
   assetId?: string;
   /** 运行时缺口说明，例如某导出格式在目标端不可用。 */

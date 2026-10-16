@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FaBroom, FaChartBar, FaSync } from "react-icons/fa";
+import { FaBroom, FaChartBar, FaComments, FaFileAlt, FaFolderOpen, FaShareAlt, FaSync } from "react-icons/fa";
 import { getGeoGebraAdminOverview, runGeoGebraMaintenance, type GeoGebraAdminOverview } from "@/api/geogebraAdmin";
 import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell } from "@/components/studioTheme";
 import { useNotification } from "@/components/Notification";
@@ -96,10 +96,10 @@ const GeoGebraAdminPanel: React.FC = () => {
       {overview && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <InfoMetricCard label="项目" value={overview.counts.projects} detail={`版本 ${overview.counts.versions}`} />
-            <InfoMetricCard label="分享" value={overview.counts.shares} detail={`有效 ${overview.counts.activeShares}`} />
-            <InfoMetricCard label="资源" value={overview.counts.assets} detail="到期自动清理" />
-            <InfoMetricCard label="评论" value={overview.counts.comments} />
+            <InfoMetricCard label="项目" value={overview.counts.projects} detail={`版本 ${overview.counts.versions}`} icon={FaFolderOpen} />
+            <InfoMetricCard label="分享" value={overview.counts.shares} detail={`有效 ${overview.counts.activeShares}`} icon={FaShareAlt} />
+            <InfoMetricCard label="资源" value={overview.counts.assets} detail="到期自动清理" icon={FaFileAlt} />
+            <InfoMetricCard label="评论" value={overview.counts.comments} icon={FaComments} />
           </div>
 
           <InfoPanel>
