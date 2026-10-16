@@ -24,6 +24,7 @@ import {
   type RegistrationInviteRuntimeConfig,
   type RuntimeConfigDefaults,
   type SynapseAndroidRuntimeConfig,
+  type TicketAttachmentRuntimeConfig,
   type TtsRuntimeConfig,
 } from "../config/runtimeConfigDefaults";
 import {
@@ -495,6 +496,7 @@ const RUNTIME_CONFIG_KEY_TO_PROP: Partial<Record<RuntimeConfigKey, keyof Runtime
   REGION_POLICY: "regionPolicy",
   LUMEN: "lumen",
   NEXAI: "nexai",
+  TICKET_ATTACHMENTS: "ticketAttachments",
 };
 
 function getCacheValueForKey(key: RuntimeConfigKey): Record<string, unknown> {
@@ -746,6 +748,17 @@ function normalizeStoredRegistrationInviteConfig(
 
   return {
     required: normalizeBoolean(raw.required, defaults.required),
+  };
+}
+
+function normalizeStoredTicketAttachmentConfig(
+  value: unknown,
+  defaults = runtimeConfigDefaults.ticketAttachments,
+): TicketAttachmentRuntimeConfig {
+  const raw = asObject(value);
+
+  return {
+    userUploadEnabled: normalizeBoolean(raw.userUploadEnabled, defaults.userUploadEnabled),
   };
 }
 
@@ -1004,6 +1017,9 @@ function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, 
     case "REGISTRATION_INVITE":
       target.registrationInvite = normalizeStoredRegistrationInviteConfig(value);
       return;
+    case "TICKET_ATTACHMENTS":
+      target.ticketAttachments = normalizeStoredTicketAttachmentConfig(value);
+      return;
     case "FIRST_VISIT_VERIFICATION":
       target.firstVisitVerification = normalizeStoredFirstVisitVerificationConfig(value);
       return;
@@ -1061,6 +1077,7 @@ const RUNTIME_CONFIG_KEYS: readonly RuntimeConfigKey[] = [
   "ACCOUNT_RISK",
   "SECURITY_SESSION",
   "REGION_POLICY",
+  "TICKET_ATTACHMENTS",
 ];
 
 // G5-03: 周期刷新定时器——多实例部署下每个实例每 ~10s 重载一次 DB 配置，
@@ -1132,6 +1149,9 @@ export class RuntimeConfigService {
     }
     if (!loadedKeys.has("REGISTRATION_INVITE")) {
       runtimeConfigCache.registrationInvite = cloneRuntimeConfigDefaults(defaults).registrationInvite;
+    }
+    if (!loadedKeys.has("TICKET_ATTACHMENTS")) {
+      runtimeConfigCache.ticketAttachments = cloneRuntimeConfigDefaults(defaults).ticketAttachments;
     }
     if (!loadedKeys.has("FIRST_VISIT_VERIFICATION")) {
       runtimeConfigCache.firstVisitVerification = cloneRuntimeConfigDefaults(defaults).firstVisitVerification;
@@ -1879,6 +1899,66 @@ export class RuntimeConfigService {
     runtimeConfigCache.registrationInvite = cloneRuntimeConfigDefaults(runtimeConfigDefaults).registrationInvite;
     loadedKeys.delete("REGISTRATION_INVITE");
     invalidateHotCache("REGISTRATION_INVITE");
+  }
+
+  // 工单附件开关（TICKET_ATTACHMENTS）。默认关闭：普通用户只能提交附件链接；
+  // 开启后上传接口才放行。保存后 getCachedConfig().ticketAttachments 立即生效（多实例 ≤ 10s 收敛）。
+  static async getTicketAttachmentSetting(): Promise<{
+    setting: {
+      config: TicketAttachmentRuntimeConfig;
+      updatedAt?: string;
+    };
+  }> {
+    const doc = await readRuntimeConfigDoc("TICKET_ATTACHMENTS");
+    const config = doc
+      ? normalizeStoredTicketAttachmentConfig(doc.value)
+      : runtimeConfigDefaults.ticketAttachments;
+    runtimeConfigCache.ticketAttachments = config;
+
+    return {
+      setting: {
+        config: {
+          userUploadEnabled: config.userUploadEnabled,
+        },
+        updatedAt: doc?.updatedAt?.toISOString(),
+      },
+    };
+  }
+
+  static async setTicketAttachmentSetting(
+    input: Partial<TicketAttachmentRuntimeConfig> | Record<string, unknown>,
+  ): Promise<{ updatedAt: string }> {
+    const currentDoc = await readRuntimeConfigDoc("TICKET_ATTACHMENTS");
+    const current = currentDoc
+      ? normalizeStoredTicketAttachmentConfig(currentDoc.value)
+      : runtimeConfigCache.ticketAttachments;
+    const raw = asObject(input);
+
+    const nextConfig: TicketAttachmentRuntimeConfig = {
+      userUploadEnabled: hasOwnKey(raw, "userUploadEnabled")
+        ? normalizeBoolean(raw.userUploadEnabled, current.userUploadEnabled)
+        : current.userUploadEnabled,
+    };
+
+    const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
+      "TICKET_ATTACHMENTS",
+      nextConfig as unknown as Record<string, unknown>,
+      currentDoc?.updatedAt,
+    );
+
+    runtimeConfigCache.ticketAttachments = nextConfig;
+    loadedKeys.add("TICKET_ATTACHMENTS");
+    invalidateHotCache("TICKET_ATTACHMENTS");
+    initialized = true;
+
+    return { updatedAt: persistedAt.toISOString() };
+  }
+
+  static async deleteTicketAttachmentSetting(): Promise<void> {
+    await RuntimeConfigModel.deleteOne({ key: "TICKET_ATTACHMENTS" }).exec();
+    runtimeConfigCache.ticketAttachments = cloneRuntimeConfigDefaults(runtimeConfigDefaults).ticketAttachments;
+    loadedKeys.delete("TICKET_ATTACHMENTS");
+    invalidateHotCache("TICKET_ATTACHMENTS");
   }
 
   // 首访验证闸门（FIRST_VISIT_VERIFICATION）。只能在 env-manager 的「首访验证闸门」分区改；

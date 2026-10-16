@@ -24,6 +24,7 @@ export const RUNTIME_CONFIG_KEYS = [
   "ACCOUNT_RISK",
   "SECURITY_SESSION",
   "REGION_POLICY",
+  "TICKET_ATTACHMENTS",
 ] as const;
 
 export type RuntimeConfigKey = (typeof RUNTIME_CONFIG_KEYS)[number];

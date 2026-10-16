@@ -25,6 +25,96 @@ export const TICKET_STATUS_META: Record<string, { label: string; tone: BadgeTone
 
 export const TICKET_STATUS_ORDER = ['open', 'in-progress', 'resolved', 'closed'] as const;
 
+export const TICKET_TYPE_META: Record<string, { label: string; tone: BadgeTone; hint: string }> = {
+  inquiry: { label: '咨询', tone: 'blue', hint: '怎么用、能不能做、想提建议' },
+  incident: { label: '故障', tone: 'rose', hint: '功能不可用、报错、数据异常' },
+};
+
+export const TICKET_TYPE_ORDER = ['inquiry', 'incident'] as const;
+
+/**
+ * 相关服务（平台模块）。
+ *
+ * 清单与顺序必须与后端 `src/models/ticketModel.ts` 的 `TICKET_RELATED_SERVICES` 一致：
+ * 后端校验非法值会静默回退 `other`，所以两边一旦漂移，用户在下拉里选的服务会被悄悄改掉。
+ */
+export const TICKET_SERVICE_META: Record<string, { label: string; hint?: string }> = {
+  tts: { label: '语音合成' },
+  transcribe: { label: '语音转写' },
+  librechat: { label: '智能对话' },
+  geogebra: { label: '数学画板' },
+  pixel: { label: '图片处理' },
+  lottery: { label: '抽奖活动' },
+  store: { label: '资源商店' },
+  articles: { label: '文章' },
+  shortlink: { label: '短链' },
+  outemail: { label: '发信' },
+  'image-upload': { label: '图床' },
+  api: { label: 'API 调用' },
+  account: { label: '账号与登录' },
+  billing: { label: '计费与额度' },
+  other: { label: '其他 / 不确定' },
+};
+
+export const TICKET_SERVICE_ORDER = [
+  'tts',
+  'transcribe',
+  'librechat',
+  'geogebra',
+  'pixel',
+  'lottery',
+  'store',
+  'articles',
+  'shortlink',
+  'outemail',
+  'image-upload',
+  'api',
+  'account',
+  'billing',
+  'other',
+] as const;
+
+/** 未知 key 的展示回退（后端可能先加了新模块，前端还没跟上）。 */
+export function ticketServiceLabel(key?: string | null): string {
+  if (!key) return TICKET_SERVICE_META.other.label;
+  return TICKET_SERVICE_META[key]?.label ?? key;
+}
+
+// ── 附件规则 ──
+// **镜像**后端 `src/utils/ticketAttachments.ts` 的口径：前端校验只是即时提示（不用白等一次上传），
+// 真正生效的边界在服务端（白名单 + MIME + 魔数 + 体积 + 数量 + ASCII 文件名）。
+export const MAX_TICKET_ATTACHMENTS = 5;
+export const MAX_TICKET_ATTACHMENT_BYTES = 1024 * 1024;
+export const TICKET_ATTACHMENT_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'txt', 'pdf'] as const;
+/** `<input type="file" accept>` 用（只是给选择器的提示，不构成校验）。 */
+export const TICKET_ATTACHMENT_ACCEPT = '.jpg,.jpeg,.png,.gif,.txt,.pdf';
+export const TICKET_ATTACHMENT_RULE_HINT = `支持 .jpg / .jpeg / .png / .gif / .txt / .pdf，单个不超过 1MB，最多 ${MAX_TICKET_ATTACHMENTS} 个；文件名只能用英文与数字`;
+
+/** 与后端同口径的本地预校验：返回原因（可直接展示）或 null。 */
+export function validateTicketAttachmentFile(file: File): string | null {
+  const name = (file.name || '').trim();
+  if (!name) return '文件名无效';
+  if (/[^\x20-\x7E]/.test(name)) return '文件名只支持英文、数字与常见符号（不支持中文名称），请重命名后再上传';
+  if (name.length > 120) return '文件名不能超过 120 个字符';
+  if (name.startsWith('.')) return '文件名无效';
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+  if (!(TICKET_ATTACHMENT_EXTS as readonly string[]).includes(ext)) {
+    return `不支持的附件类型，仅支持 ${TICKET_ATTACHMENT_ACCEPT.replace(/\./g, '').replace(/,/g, ' / ')}`;
+  }
+  if (file.size <= 0) return '附件内容为空';
+  if (file.size > MAX_TICKET_ATTACHMENT_BYTES) return '单个附件不能超过 1MB';
+  return null;
+}
+
+/** 附件体积展示（与后端 formatTicketAttachmentSize 同口径）。 */
+export function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0KB';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10}MB`;
+}
+
 export const TICKET_PRIORITY_META: Record<string, { label: string; tone: BadgeTone }> = {
   high: { label: '紧急', tone: 'rose' },
   medium: { label: '一般', tone: 'yellow' },

@@ -453,6 +453,23 @@ router.delete(
   auditLog({ module: "config", action: "config.registration-invite.delete" }),
   adminController.deleteRegistrationInviteSetting,
 );
+// 工单附件开关（TICKET_ATTACHMENTS）。默认关闭：普通用户只能用附件链接，
+// 开启后上传接口才放行（写要超管、读要管理员）；保存后立即生效（多实例 ≤ 10s 收敛）。
+router.get("/ticket-attachments/setting", adminController.getTicketAttachmentSetting);
+router.post(
+  "/ticket-attachments/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "config", action: "config.ticket-attachments.set", captureBody: false }),
+  adminController.setTicketAttachmentSetting,
+);
+router.delete(
+  "/ticket-attachments/setting",
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+  authenticateSuperAdmin,
+  auditLog({ module: "config", action: "config.ticket-attachments.delete" }),
+  adminController.deleteTicketAttachmentSetting,
+);
 // 首访验证闸门（ENABLE_FIRST_VISIT_VERIFICATION）。只在 env-manager 的「首访验证闸门」分区暴露，
 // 保存后立即生效（多实例 ≤ 10s 收敛）；重置回退到部署环境变量 ENABLE_FIRST_VISIT_VERIFICATION（未设置则开启）。
 router.get("/first-visit-verification/setting", adminController.getFirstVisitVerificationSetting);

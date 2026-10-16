@@ -238,6 +238,18 @@ export interface RegistrationInviteRuntimeConfig {
 }
 
 /**
+ * 工单附件开关。**仅由 env-manager 的「工单附件」分区（或工单管理台的同名字段）维护**。
+ *
+ * 为什么需要它：附件是用户上传的**任意二进制**（白名单外的东西一律拒收，但白名单内的
+ * 内容仍可能是恶意文件或大量垃圾），所以默认不对普通用户开放：先用链接（URL）的方式提交，
+ * 确实需要收文件时再由超级管理员手动打开。
+ */
+export interface TicketAttachmentRuntimeConfig {
+  /** true = 普通用户可以上传附件文件；false（默认）= 只能用附件链接，上传接口对普通用户 403。 */
+  userUploadEnabled: boolean;
+}
+
+/**
  * 首访验证闸门（`config.enableFirstVisitVerification`）。**仅由 env-manager 的「首访验证闸门」分区维护**；
  * ENABLE_FIRST_VISIT_VERIFICATION 环境变量只作启动默认值（见 src/config/config.ts），
  * 运行期一律以本运行时配置为准。它同时是 proxycheck `first_visit_gate` 的前置开关：
@@ -438,6 +450,7 @@ export interface RuntimeConfigDefaults {
   qqGuardSigning: QqGuardSigningRuntimeConfig;
   proxycheck: ProxycheckRuntimeConfig;
   registrationInvite: RegistrationInviteRuntimeConfig;
+  ticketAttachments: TicketAttachmentRuntimeConfig;
   firstVisitVerification: FirstVisitVerificationRuntimeConfig;
   mobileTokenIntegrity: MobileTokenIntegrityRuntimeConfig;
   mobileTokenRotationRisk: MobileTokenRotationRiskRuntimeConfig;
@@ -623,6 +636,10 @@ export function buildRuntimeConfigDefaults(options: {
     registrationInvite: {
       required: false,
     },
+    // 默认关闭：附件是用户上传的任意二进制，默认只收「附件链接」，需要时由超管手动开启。
+    ticketAttachments: {
+      userUploadEnabled: false,
+    },
     // 默认开启：与「ENABLE_FIRST_VISIT_VERIFICATION 未设置 = true」的历史默认值一致，
     // 存量部署未显式配置时不得凭空放宽首访验证（env 由 config.ts 覆盖）。
     firstVisitVerification: {
@@ -807,6 +824,9 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     },
     registrationInvite: {
       ...config.registrationInvite,
+    },
+    ticketAttachments: {
+      ...config.ticketAttachments,
     },
     firstVisitVerification: {
       ...config.firstVisitVerification,

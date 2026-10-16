@@ -13,8 +13,61 @@ export interface ITicketMessage {
 export type TicketStatus = "open" | "in-progress" | "resolved" | "closed";
 export type TicketPriority = "low" | "medium" | "high";
 export type TicketCategory = "bug" | "feature" | "account" | "billing" | "other";
+/** 工单类型：咨询（怎么用 / 想提建议）还是故障（功能坏了 / 报错）。与后端 TICKET_TYPES 一一对应。 */
+export type TicketType = "inquiry" | "incident";
 
-export interface ITicket {
+/**
+ * 相关服务（平台模块）。
+ *
+ * 必须与 `src/models/ticketModel.ts` 的 `TICKET_RELATED_SERVICES` 保持同一份清单与顺序：
+ * 后端是校验边界（非法值回退 other），这里是展示口径。
+ */
+export type TicketRelatedService =
+  | "tts"
+  | "transcribe"
+  | "librechat"
+  | "geogebra"
+  | "pixel"
+  | "lottery"
+  | "store"
+  | "articles"
+  | "shortlink"
+  | "outemail"
+  | "image-upload"
+  | "api"
+  | "account"
+  | "billing"
+  | "other";
+
+/** 关联工单快照（`ticketId` 指向真实工单，`title` 是建立关联时的标题）。 */
+export interface ITicketRelation {
+  ticketId: string;
+  title: string;
+}
+
+/** 附件元数据（后端永不下发正文，下载走单独端点）。 */
+export interface ITicketAttachment {
+  id: string;
+  fileName: string;
+  ext: string;
+  mimeType: string;
+  size: number;
+  uploadedById: string;
+  uploadedByName: string;
+  createdAt: string | null;
+}
+
+/** 列表摘要与详情共有的票面字段（后端视图层会给老工单补默认值）。 */
+export interface ITicketExtraFields {
+  type: TicketType;
+  relatedService: TicketRelatedService;
+  relatedServiceRef: string | null;
+  contactEmail: string | null;
+  relatedTickets: ITicketRelation[];
+  attachmentCount: number;
+}
+
+export interface ITicket extends ITicketExtraFields {
   _id: string;
   userId: string;
   username: string;
@@ -30,6 +83,8 @@ export interface ITicket {
   updatedAt: string;
   /** 仅 superadmin 的详情响应会带（内部备注条数）。 */
   internalNoteCount?: number;
+  /** 详情响应专用：附件元数据（列表只带 attachmentCount）。 */
+  attachments?: ITicketAttachment[];
 }
 
 /**
@@ -38,7 +93,7 @@ export interface ITicket {
  * 列表一次要渲染几十条工单，而单条 AI 回复可达数千字 —— 把全部对话装进列表响应会让
  * 首屏变成大响应。列表只看「最后一条 + 计数 + 未读」，正文在选中时走详情接口。
  */
-export interface ITicketSummary {
+export interface ITicketSummary extends ITicketExtraFields {
   _id: string;
   userId: string;
   username: string;
@@ -69,6 +124,10 @@ export interface TicketStats {
   status: Record<string, number>;
   priority: Record<string, number>;
   category: Record<string, number>;
+  /** 按工单类型分组（本轮新增；老工单归入 inquiry）。 */
+  type?: Record<string, number>;
+  /** 按相关服务分组（本轮新增；老工单归入 other）。 */
+  service?: Record<string, number>;
   awaitingReply: number;
   slaBreached: number;
   oldestAwaitingHours: number;
@@ -128,11 +187,18 @@ export const ticketApi = {
     };
   },
 
-  // 用户创建工单
+  // 用户创建工单（TP-09：把后端实际读取的字段全部写进类型，
+  // 而不是靠「变量多余属性被放行」传过去 —— 一旦调用方改成对象字面量就会静默丢字段）
   async createTicket(data: {
     title: string;
     description: string;
     priority?: string;
+    category?: TicketCategory;
+    type?: TicketType;
+    relatedService?: TicketRelatedService;
+    relatedServiceRef?: string | null;
+    contactEmail?: string | null;
+    relatedTicketIds?: string[];
   }): Promise<ITicket> {
     const response = await api.post("/api/tickets", data);
     return response.data;
@@ -149,11 +215,13 @@ export const ticketApi = {
     const response = await api.post(`/api/tickets/${id}/messages`, { content, internal });
     return response.data;
   },
-  // 管理员获取所有工单（分页 + 摘要 + 关键词/日期/分类/受理人筛选）
+  // 管理员获取所有工单（分页 + 摘要 + 关键词/日期/分类/类型/服务/受理人筛选）
   async getAllTickets(params?: {
     status?: string;
     priority?: string;
     category?: string;
+    type?: string;
+    service?: string;
     assignee?: string;
     awaitingReply?: string;
     unread?: string;
@@ -180,10 +248,20 @@ export const ticketApi = {
     return response.data;
   },
 
-  // 管理端综合更新（状态 / 优先级 / 分类 / 受理人）
+  // 管理端综合更新（状态 / 优先级 / 分类 / 类型 / 相关服务 / 联系邮箱 / 关联工单 / 受理人）
   async updateFields(
     id: string,
-    fields: { status?: string; priority?: string; category?: string; assignee?: string | null },
+    fields: {
+      status?: string;
+      priority?: string;
+      category?: string;
+      type?: string;
+      relatedService?: string;
+      relatedServiceRef?: string | null;
+      contactEmail?: string | null;
+      relatedTickets?: string[];
+      assignee?: string | null;
+    },
   ): Promise<ITicket> {
     const response = await api.patch(`/api/tickets/admin/${id}`, fields);
     return response.data;
@@ -223,5 +301,59 @@ export const ticketApi = {
   async adminDeleteMessage(ticketId: string, messageIndex: number): Promise<ITicket> {
     const response = await api.delete(`/api/tickets/admin/${ticketId}/messages/${messageIndex}`);
     return response.data;
+  },
+
+  // ── 附件（票面「附件」）──
+
+  /**
+   * 上传附件（multipart，字段名 `file`，单次一个文件）。
+   *
+   * 后端逐层校验（白名单 / MIME / 魔数 / 1MB / 单工单 ≤5 / 仅 ASCII 文件名），
+   * 返回的中文原因可直接展示；前端预校验只是不让用户白等一次上传。
+   */
+  async uploadAttachment(
+    ticketId: string,
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<{ attachment: ITicketAttachment; attachmentCount: number }> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const response = await api.post(`/api/tickets/${ticketId}/attachments`, form, {
+      onUploadProgress: (event) => {
+        if (!onProgress || !event.total) return;
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      },
+    });
+    return response.data;
+  },
+
+  /** 附件下载：先取 blob 再落盘（与转写/媒体工具一致，避免把令牌暴露在 URL 上）。 */
+  async downloadAttachment(
+    ticketId: string,
+    attachment: Pick<ITicketAttachment, "id" | "fileName">,
+  ): Promise<void> {
+    const response = await api.get<Blob>(
+      `/api/tickets/${ticketId}/attachments/${encodeURIComponent(attachment.id)}/download`,
+      { responseType: "blob" },
+    );
+    const url = URL.createObjectURL(response.data);
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.fileName || "attachment";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+  },
+
+  /** 删除附件，返回删除后的附件计数。 */
+  async deleteAttachment(ticketId: string, attachmentId: string): Promise<number> {
+    const response = await api.delete(
+      `/api/tickets/${ticketId}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+    return typeof response.data?.attachmentCount === "number" ? response.data.attachmentCount : 0;
   },
 };

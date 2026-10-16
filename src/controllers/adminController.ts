@@ -2274,6 +2274,45 @@ export const adminController = {
     }
   },
 
+  // 工单附件开关（TICKET_ATTACHMENTS）。读要管理员、写要超管；默认关闭：
+  // 普通用户只能提交附件链接，开启后上传接口才放行。保存后立即生效（多实例 ≤ 10s 收敛）。
+  async getTicketAttachmentSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.getTicketAttachmentSetting();
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      logger.error("获取工单附件配置失败", { error });
+      return res.status(500).json({ success: false, error: "获取工单附件配置失败" });
+    }
+  },
+
+  async setTicketAttachmentSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      const result = await RuntimeConfigService.setTicketAttachmentSetting(req.body || {});
+      return res.json({ success: true, setting: result });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : "保存工单附件配置失败",
+      });
+    }
+  },
+
+  async deleteTicketAttachmentSetting(req: Request, res: Response) {
+    try {
+      if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
+      if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
+      await RuntimeConfigService.deleteTicketAttachmentSetting();
+      return res.json({ success: true });
+    } catch (_error) {
+      return res.status(500).json({ success: false, error: "重置工单附件配置失败" });
+    }
+  },
+
   // 首访验证闸门（FIRST_VISIT_VERIFICATION）。仅 env-manager 的「首访验证闸门」分区可改，
   // 保存后 config.enableFirstVisitVerification 立即按新值判定，无需重启。
   async getFirstVisitVerificationSetting(req: Request, res: Response) {
