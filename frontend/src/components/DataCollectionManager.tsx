@@ -17,13 +17,12 @@ import {
     InfoMetricCard,
     InfoPanel,
     InfoSectionTitle,
-    StudioErrorState,
-    StudioPager,
     studioDangerButtonClassName,
     studioFieldClassName,
     studioSecondaryButtonClassName,
     studioSurfaceClassName,
 } from './studioTheme';
+import { StudioErrorState, StudioPager } from './studioFeedback';
 
 SyntaxHighlighter.registerLanguage('json', jsonLang);
 SyntaxHighlighter.registerLanguage('javascript', jsLang);

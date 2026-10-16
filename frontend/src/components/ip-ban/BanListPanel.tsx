@@ -21,10 +21,10 @@ import {
   InfoBadge,
   InfoPanel,
   InfoSectionTitle,
-  StudioPager,
   studioFieldClassName,
   studioSecondaryButtonClassName,
 } from '../studioTheme';
+import { StudioPager } from '../studioFeedback';
 
 type StatusFilter = 'all' | 'active' | 'expired';
 type SortField = 'bannedAt' | 'expiresAt' | 'violationCount' | 'ipAddress';

@@ -97,7 +97,62 @@ const RULES = [
     re: /\brounded-(?:sm|md|lg|xl)\b/g,
     globs: [".tsx"],
   },
+  {
+    // 四态/弹窗原语住在 components/studioFeedback.tsx，不在 studioTheme 里。
+    // lane 反复踩过这个坑：从 studioTheme 导入 StudioErrorState/StudioPager 会得到
+    // TS2305（module has no exported member），而它只在 type-check 阶段才暴露。
+    id: "mislocated-studio-primitive",
+    why: "Studio* 四态/弹窗原语必须从 studioFeedback 导入（studioTheme 只导出 token/Info* 族）",
+    re: null,
+    globs: [".tsx", ".ts"],
+    custom: "studio-primitive-source",
+  },
 ];
+
+const STUDIO_PRIMITIVE_NAMES = [
+  "StudioErrorState",
+  "StudioErrorNote",
+  "StudioSuccessNote",
+  "StudioEmptyState",
+  "StudioLoadingState",
+  "StudioPager",
+  "StudioModal",
+  "StudioModalHeader",
+  "StudioModalPrimaryButton",
+  "StudioModalDangerButton",
+];
+
+/**
+ * 找出「从 studioTheme 导入 Studio* 原语」的 import 块（应为 studioFeedback）。
+ * 返回 [{ line, text }]。
+ */
+function findMislocatedStudioPrimitives(content) {
+  const out = [];
+  const lines = content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!/^\s*import\b/.test(line)) continue;
+    // 收集直到 import 语句结束（含 '...' from '...'; 这一行）
+    let block = line;
+    let end = i;
+    while (end < lines.length && !/from\s+['"][^'"]+['"]/.test(block)) {
+      end += 1;
+      if (end >= lines.length) break;
+      block += '\n' + lines[end];
+    }
+    const fromMatch = block.match(/from\s+['"]([^'"]+)['"]/);
+    if (!fromMatch) continue;
+    const source = fromMatch[1];
+    if (!/(^|\/)studioTheme$/.test(source)) continue;
+    for (const name of STUDIO_PRIMITIVE_NAMES) {
+      if (new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`).test(block)) {
+        out.push({ line: i + 1, text: name });
+      }
+    }
+    i = end;
+  }
+  return out;
+}
 
 function walk(dir, acc = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -133,6 +188,17 @@ function main() {
     const content = fs.readFileSync(file, "utf8");
     const lines = content.split(/\r?\n/);
     for (const rule of applicable) {
+      if (!rule.re) {
+        if (rule.custom === "studio-primitive-source") {
+          for (const hit of findMislocatedStudioPrimitives(content)) {
+            counts[rule.id] += 1;
+            if (hits[rule.id].length < 400) {
+              hits[rule.id].push({ file: rel(file), line: hit.line, text: hit.text });
+            }
+          }
+        }
+        continue;
+      }
       lines.forEach((line, index) => {
         rule.re.lastIndex = 0;
         let match;

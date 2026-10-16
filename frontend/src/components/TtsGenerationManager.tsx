@@ -25,11 +25,10 @@ import { useAuth } from "../hooks/useAuth";
 import { isSuperAdmin } from "../utils/rbac";
 import {
   InfoSectionTitle,
-  StudioErrorState,
-  StudioPager,
   studioEyebrowPillClassName,
   studioSubPanelClassName,
 } from './studioTheme';
+import { StudioErrorState, StudioPager } from './studioFeedback';
 
 type ReviewFilter = TtsHistoryReviewStatus | "all";
 type ScopeFilter = "all" | "user" | "anonymous";

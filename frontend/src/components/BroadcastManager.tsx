@@ -28,7 +28,16 @@ import {
   FaUsers
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
-import { studioFieldClassName, studioSurfaceClassName, studioTextareaClassName, studioTileClassName } from './studioTheme';
+import {
+  studioFieldClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioSurfaceClassName,
+  studioTextareaClassName,
+  studioTileClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 // ========== 类型 ==========
 
@@ -76,8 +85,8 @@ interface BroadcastLogItem {
 
 const LEVEL_OPTIONS: { value: BroadcastLevel; label: string; color: string; icon: React.ReactNode }[] = [
   { value: 'info', label: '通知', color: 'bg-slate-100 text-slate-700 border-slate-300', icon: <FaInfoCircle /> },
-  { value: 'warn', label: '警告', color: 'bg-yellow-100 text-yellow-700 border-yellow-300', icon: <FaExclamationTriangle /> },
-  { value: 'error', label: '紧急', color: 'bg-red-100 text-red-700 border-red-300', icon: <FaCircle /> },
+  { value: 'warn', label: '警告', color: 'bg-amber-100 text-amber-700 border-amber-300', icon: <FaExclamationTriangle /> },
+  { value: 'error', label: '紧急', color: 'bg-rose-100 text-rose-700 border-rose-300', icon: <FaCircle /> },
 ];
 
 const AUDIENCE_OPTIONS: { value: BroadcastAudience; label: string; description: string; icon: React.ReactNode }[] = [
@@ -178,6 +187,7 @@ const BroadcastManager: React.FC = () => {
   });
   const { setNotification } = useNotification();
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
   const { user } = useAuth();
   // Only superadmins may push broadcasts; regular admins get read-only access.
   const canWrite = isSuperAdmin(user?.role);
@@ -211,11 +221,13 @@ const BroadcastManager: React.FC = () => {
   const [clientsTotal, setClientsTotal] = useState(0);
   const [clientStats, setClientStats] = useState<OnlineStats | null>(null);
   const [loadingClients, setLoadingClients] = useState(false);
+  const [clientsError, setClientsError] = useState<string | null>(null);
   const [kickingUser, setKickingUser] = useState<string | null>(null);
 
   // --- 广播历史 ---
   const [history, setHistory] = useState<BroadcastLogItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyAudienceFilter, setHistoryAudienceFilter] = useState<HistoryAudienceFilter>(() => {
     const audience = searchParams.get(AUDIENCE_QUERY_KEY);
     return HISTORY_FILTER_VALUES.includes(audience as HistoryAudienceFilter)
@@ -299,17 +311,23 @@ const BroadcastManager: React.FC = () => {
 
   const fetchClients = useCallback(async () => {
     setLoadingClients(true);
+    setClientsError(null);
     try {
       const res = await api('/api/admin/ws/clients');
       const data = await res.json();
-      if (data.success) {
-        setClients(data.clients || []);
-        setClientsTotal(data.total ?? 0);
-        setClientStats(data.stats || null);
-      }
-    } catch { setNotification({ message: '获取在线用户失败', type: 'error' }); }
+      if (!res.ok || !data.success) throw new Error('clients');
+      setClients(data.clients || []);
+      setClientsTotal(data.total ?? 0);
+      setClientStats(data.stats || null);
+    } catch {
+      // 在线列表失败必须自己占位并给重试，不能让面板继续显示空的用户列表。
+      setClients([]);
+      setClientsTotal(0);
+      setClientStats(null);
+      setClientsError('在线连接读取失败，请重试。');
+    }
     finally { setLoadingClients(false); }
-  }, [setNotification]);
+  }, []);
 
   const handleKick = async (userId: string) => {
     const ok = await confirm({
@@ -336,15 +354,20 @@ const BroadcastManager: React.FC = () => {
 
   const fetchHistory = useCallback(async () => {
     setLoadingHistory(true);
+    setHistoryError(null);
     try {
       const query = new URLSearchParams({ limit: '30' });
       if (historyAudienceFilter !== 'any') query.set('audience', historyAudienceFilter);
       const res = await api(`/api/admin/broadcast/history?${query.toString()}`);
       const data = await res.json();
-      if (data.success) setHistory(data.logs || []);
-    } catch { setNotification({ message: '获取广播历史失败', type: 'error' }); }
+      if (!res.ok || !data.success) throw new Error('history');
+      setHistory(data.logs || []);
+    } catch {
+      setHistory([]);
+      setHistoryError('广播历史读取失败，请重试。');
+    }
     finally { setLoadingHistory(false); }
-  }, [historyAudienceFilter, setNotification]);
+  }, [historyAudienceFilter]);
 
   // 切换 tab 时自动加载数据
   useEffect(() => {
@@ -383,8 +406,8 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">消息级别</label>
         <div className="flex gap-3">
           {LEVEL_OPTIONS.map(opt => (
-            <motion.button key={opt.value} onClick={() => setLevel(opt.value)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
+            <motion.button type="button" key={opt.value} onClick={() => setLevel(opt.value)}
+              className={`flex min-h-11 items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 level === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
               <span>{opt.icon}</span><span>{opt.label}</span>
@@ -398,7 +421,7 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">推送范围</label>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {AUDIENCE_OPTIONS.map(opt => (
-            <motion.button key={opt.value} onClick={() => setBroadcastAudience(opt.value)}
+            <motion.button type="button" key={opt.value} onClick={() => setBroadcastAudience(opt.value)}
               className={`text-left px-4 py-3 rounded-2xl border transition-all ${
                 broadcastAudience === opt.value
                   ? 'bg-slate-100 text-slate-800 border-slate-300 shadow-sm'
@@ -417,11 +440,11 @@ const BroadcastManager: React.FC = () => {
             <input value={broadcastChannel} onChange={e => setBroadcastChannel(e.target.value)}
               placeholder="例如 user:用户ID、admin:ops 或自定义频道"
               maxLength={120}
-              className={cn(studioFieldClassName, "py-2 border border-slate-300")} />
+              className={studioFieldClassName} />
             {availableChannels.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {availableChannels.slice(0, 8).map(item => (
-                  <button key={item.channel} onClick={() => setBroadcastChannel(item.channel)}
+                  <button type="button" key={item.channel} onClick={() => setBroadcastChannel(item.channel)}
                     className="px-2.5 py-1 rounded-full bg-slate-50/80 text-slate-600 text-xs hover:bg-slate-100 transition">
                     {item.channel} · {item.connections}
                   </button>
@@ -436,8 +459,8 @@ const BroadcastManager: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-medium text-slate-700">广播内容</label>
-          <button onClick={() => setKeepBroadcastInput(!keepBroadcastInput)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-xs font-medium transition-colors ${
+          <button type="button" onClick={() => setKeepBroadcastInput(!keepBroadcastInput)}
+            className={`flex min-h-11 items-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition-colors ${
               keepBroadcastInput ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
             title={keepBroadcastInput ? '发送后保留输入内容（点击切换）' : '发送后清空输入内容（点击切换）'}>
@@ -447,7 +470,7 @@ const BroadcastManager: React.FC = () => {
         </div>
         <textarea value={message} onChange={e => setMessage(e.target.value)}
           placeholder="输入要推送的消息..." rows={4} maxLength={1000}
-          className={cn(studioTextareaClassName, "border border-slate-300")} />
+          className={studioTextareaClassName} />
         <div className="flex justify-between mt-1 text-xs text-slate-400">
           <span>{broadcastDisplay === 'modal' ? '弹窗可选择 Markdown / HTML' : '通知条按纯文本展示'}</span><span>{message.length}/1000</span>
         </div>
@@ -458,7 +481,7 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">展示时长：{broadcastDuration} 秒</label>
         <input type="range" min={1} max={30} step={1} value={broadcastDuration}
           onChange={e => setBroadcastDuration(Number(e.target.value))}
-          className="w-full h-2 bg-slate-200 rounded-2xl appearance-none cursor-pointer accent-slate-600" />
+          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-slate-600" />
         <div className="flex justify-between mt-1 text-xs text-slate-400">
           <span>1秒</span><span>30秒</span>
         </div>
@@ -469,8 +492,8 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">展示方式</label>
         <div className="flex gap-3">
           {(['toast', 'modal'] as const).map(d => (
-            <motion.button key={d} onClick={() => setBroadcastDisplay(d)}
-              className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
+            <motion.button type="button" key={d} onClick={() => setBroadcastDisplay(d)}
+              className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 broadcastDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
               {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
@@ -486,9 +509,9 @@ const BroadcastManager: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 mb-2">内容格式</label>
             <div className="flex gap-3">
               {([['text', '纯文本'], ['markdown', 'Markdown'], ['html', 'HTML']] as const).map(([f, label]) => (
-                <motion.button key={f} onClick={() => setBroadcastFormat(f)}
-                  className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
-                    broadcastFormat === f ? 'bg-purple-100 text-purple-700 border-purple-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
+                <motion.button type="button" key={f} onClick={() => setBroadcastFormat(f)}
+                  className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
+                    broadcastFormat === f ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
                   }`} whileTap={{ scale: 0.96 }}>
                   {label}
                 </motion.button>
@@ -499,7 +522,7 @@ const BroadcastManager: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 mb-2">弹窗标题（可选）</label>
             <input value={broadcastTitle} onChange={e => setBroadcastTitle(e.target.value)}
               placeholder="留空则使用默认标题" maxLength={200}
-              className={cn(studioFieldClassName, "py-2 border border-slate-300")} />
+              className={studioFieldClassName} />
           </div>
         </>
       )}
@@ -514,21 +537,19 @@ const BroadcastManager: React.FC = () => {
 
       {/* 发送 */}
       {canWrite && (
-        <motion.button onClick={handleBroadcast} disabled={sending || !message.trim()}
-          className={`flex items-center justify-center gap-2 w-full px-6 py-3 rounded-2xl font-semibold text-white transition-all ${
-            sending || !message.trim() ? 'bg-slate-300 cursor-not-allowed'
-              : 'bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600 shadow-lg hover:shadow-xl'
-          }`} whileHover={!sending && message.trim() ? { scale: 1.02 } : {}} whileTap={!sending && message.trim() ? { scale: 0.98 } : {}}>
+        <motion.button type="button" onClick={handleBroadcast} disabled={sending || !message.trim()}
+          className={cn(studioPrimaryButtonClassName, 'w-full')}
+          whileTap={!sending && message.trim() ? { scale: 0.98 } : undefined}>
           {sending ? (<><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /><span>发送中...</span></>)
             : (<><FaPaperPlane /><span>发送广播</span></>)}
         </motion.button>
       )}
 
       {lastResult && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-2xl text-sm">
-          <FaUsers className="text-green-600" />
-          <span className="text-green-700">上次广播于 {lastResult.time}，范围 {lastResult.audience}，送达 {lastResult.connections} 个在线连接</span>
+        <motion.div initial={reducedMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm">
+          <FaUsers className="text-emerald-600" />
+          <span className="text-emerald-700">上次广播于 {lastResult.time}，范围 {lastResult.audience}，送达 {lastResult.connections} 个在线连接</span>
         </motion.div>
       )}
     </div>
@@ -541,7 +562,7 @@ const BroadcastManager: React.FC = () => {
         <textarea value={directUserIds} onChange={e => setDirectUserIds(e.target.value)}
           placeholder="支持多个用户 ID，用逗号、空格或换行分隔"
           rows={2} maxLength={2000}
-          className={cn(studioTextareaClassName, "border border-slate-300")} />
+          className={studioTextareaClassName} />
         <div className="flex justify-between mt-1 text-xs text-slate-400">
           <span>已识别 {directTargetUserIds.length} 个用户</span>
           <span>最多发送 100 个目标用户</span>
@@ -551,8 +572,8 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">消息级别</label>
         <div className="flex gap-3">
           {LEVEL_OPTIONS.map(opt => (
-            <motion.button key={opt.value} onClick={() => setDirectLevel(opt.value)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
+            <motion.button type="button" key={opt.value} onClick={() => setDirectLevel(opt.value)}
+              className={`flex min-h-11 items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 directLevel === opt.value ? `${opt.color} border-current shadow-sm` : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
               <span>{opt.icon}</span><span>{opt.label}</span>
@@ -563,8 +584,8 @@ const BroadcastManager: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-medium text-slate-700">消息内容</label>
-          <button onClick={() => setKeepDirectInput(!keepDirectInput)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-xs font-medium transition-colors ${
+          <button type="button" onClick={() => setKeepDirectInput(!keepDirectInput)}
+            className={`flex min-h-11 items-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition-colors ${
               keepDirectInput ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
             title={keepDirectInput ? '发送后保留输入内容（点击切换）' : '发送后清空输入内容（点击切换）'}>
@@ -574,7 +595,7 @@ const BroadcastManager: React.FC = () => {
         </div>
         <textarea value={directMessage} onChange={e => setDirectMessage(e.target.value)}
           placeholder="输入要推送给目标用户的消息..." rows={3} maxLength={1000}
-          className={cn(studioTextareaClassName, "border border-slate-300")} />
+          className={studioTextareaClassName} />
         <div className="flex justify-between mt-1 text-xs text-slate-400">
           <span>{directDisplay === 'modal' ? '弹窗可选择 Markdown / HTML' : '通知条按纯文本展示'}</span>
           <span>{directMessage.length}/1000</span>
@@ -585,7 +606,7 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">展示时长：{directDuration} 秒</label>
         <input type="range" min={1} max={30} step={1} value={directDuration}
           onChange={e => setDirectDuration(Number(e.target.value))}
-          className="w-full h-2 bg-slate-200 rounded-2xl appearance-none cursor-pointer accent-slate-600" />
+          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-slate-600" />
         <div className="flex justify-between mt-1 text-xs text-slate-400">
           <span>1秒</span><span>30秒</span>
         </div>
@@ -595,8 +616,8 @@ const BroadcastManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-2">展示方式</label>
         <div className="flex gap-3">
           {(['toast', 'modal'] as const).map(d => (
-            <motion.button key={d} onClick={() => setDirectDisplay(d)}
-              className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
+            <motion.button type="button" key={d} onClick={() => setDirectDisplay(d)}
+              className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
                 directDisplay === d ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
               }`} whileTap={{ scale: 0.96 }}>
               {d === 'toast' ? <><FaBell className="inline" aria-hidden /> 通知条</> : <><FaClipboardList className="inline" aria-hidden /> 弹窗</>}
@@ -610,9 +631,9 @@ const BroadcastManager: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 mb-2">内容格式</label>
             <div className="flex gap-3">
               {([['text', '纯文本'], ['markdown', 'Markdown'], ['html', 'HTML']] as const).map(([f, label]) => (
-                <motion.button key={f} onClick={() => setDirectFormat(f)}
-                  className={`px-4 py-2 rounded-2xl border text-sm font-medium transition-all ${
-                    directFormat === f ? 'bg-purple-100 text-purple-700 border-purple-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
+                <motion.button type="button" key={f} onClick={() => setDirectFormat(f)}
+                  className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-medium transition-all ${
+                    directFormat === f ? 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm' : 'bg-slate-50/80 text-slate-500 border-slate-200 hover:bg-slate-100'
                   }`} whileTap={{ scale: 0.96 }}>
                   {label}
                 </motion.button>
@@ -623,16 +644,14 @@ const BroadcastManager: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 mb-2">弹窗标题（可选）</label>
             <input value={directTitle} onChange={e => setDirectTitle(e.target.value)}
               placeholder="留空则使用默认标题" maxLength={200}
-              className={cn(studioFieldClassName, "py-2 border border-slate-300")} />
+              className={studioFieldClassName} />
           </div>
         </>
       )}
       {canWrite && (
-        <motion.button onClick={handleDirectPush} disabled={directSending || directTargetUserIds.length === 0 || !directMessage.trim()}
-          className={`flex items-center justify-center gap-2 w-full px-6 py-3 rounded-2xl font-semibold text-white transition-all ${
-            directSending || directTargetUserIds.length === 0 || !directMessage.trim() ? 'bg-slate-300 cursor-not-allowed'
-              : 'bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 shadow-lg'
-          }`} whileHover={!directSending && directTargetUserIds.length > 0 && directMessage.trim() ? { scale: 1.02 } : {}} whileTap={!directSending && directTargetUserIds.length > 0 && directMessage.trim() ? { scale: 0.98 } : {}}>
+        <motion.button type="button" onClick={handleDirectPush} disabled={directSending || directTargetUserIds.length === 0 || !directMessage.trim()}
+          className={cn(studioPrimaryButtonClassName, 'w-full')}
+          whileTap={!directSending && directTargetUserIds.length > 0 && directMessage.trim() ? { scale: 0.98 } : undefined}>
           {directSending ? (<><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /><span>推送中...</span></>)
             : (<><FaPaperPlane /><span>发送定向推送</span></>)}
         </motion.button>
@@ -655,12 +674,12 @@ const BroadcastManager: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-slate-600">
-          <FaPlug className="text-green-500" />
+          <FaPlug className="text-emerald-500" />
           <span>当前在线 <span className="font-bold text-slate-800">{clientsTotal}</span> 个连接</span>
         </div>
-        <motion.button onClick={fetchClients} disabled={loadingClients}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-2xl transition"
-          whileTap={{ scale: 0.95 }}>
+        <motion.button type="button" onClick={fetchClients} disabled={loadingClients}
+          className="flex min-h-11 items-center gap-1 rounded-2xl bg-slate-100 px-3 text-sm transition hover:bg-slate-200"
+          whileTap={reducedMotion ? undefined : { scale: 0.95 }}>
           <FaSyncAlt className={loadingClients ? 'animate-spin' : ''} /><span>刷新</span>
         </motion.button>
       </div>
@@ -684,7 +703,7 @@ const BroadcastManager: React.FC = () => {
           <div className="text-sm font-medium text-slate-700 mb-2">频道分布</div>
           <div className="flex flex-wrap gap-2">
             {stats.channels.slice(0, 12).map(item => (
-              <button key={item.channel}
+              <button type="button" key={item.channel}
                 onClick={() => { setBroadcastAudience('channel'); setBroadcastChannel(item.channel); setActiveTab('broadcast'); }}
                 className="px-2.5 py-1 rounded-full bg-slate-50/80 text-slate-600 text-xs hover:bg-slate-100 transition">
                 {item.channel} · {item.connections}
@@ -695,20 +714,29 @@ const BroadcastManager: React.FC = () => {
       )}
 
       {loadingClients && clients.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">加载中...</div>
+        <StudioLoadingState text="正在读取在线连接..." minHeightClassName="min-h-[240px]" />
+      ) : clientsError ? (
+        <StudioErrorState message={clientsError} onRetry={() => void fetchClients()} />
       ) : clients.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">暂无在线用户</div>
+        <StudioEmptyState
+          message="当前没有在线连接。用户打开站点后会自动出现在这里。"
+          action={
+            <button type="button" onClick={() => void fetchClients()} className={cn(studioSecondaryButtonClassName, 'min-h-11')}>
+              <FaSyncAlt aria-hidden /> 重新读取在线连接
+            </button>
+          }
+        />
       ) : (
         <div className={cn(studioSurfaceClassName, "divide-y divide-slate-100")}>
           {clients.map((c, i) => (
             <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/80 transition">
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${c.userId ? 'bg-green-500' : 'bg-slate-400'}`} />
+                <div className={`w-2 h-2 rounded-full ${c.userId ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                     <span>{c.userId || '匿名用户'}</span>
                     {c.isAdmin && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
                         <FaCrown className="text-[10px]" /> 管理员
                       </span>
                     )}
@@ -716,7 +744,7 @@ const BroadcastManager: React.FC = () => {
                   {c.channels.length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {c.channels.map(ch => (
-                        <span key={ch} className="px-1.5 py-0.5 bg-slate-50/80 text-slate-600 rounded text-xs">{ch}</span>
+                        <span key={ch} className="rounded-full bg-slate-50/80 px-2 py-0.5 text-xs text-slate-600">{ch}</span>
                       ))}
                     </div>
                   )}
@@ -728,18 +756,18 @@ const BroadcastManager: React.FC = () => {
               </div>
               {c.userId && (
                 <div className="flex items-center gap-2">
-                  <motion.button
+                  <motion.button type="button"
                     onClick={() => { setDirectUserIds(c.userId!); setActiveTab('direct'); }}
-                    className="px-2 py-1 text-xs bg-slate-50/80 text-slate-600 hover:bg-slate-100 rounded transition"
-                    whileTap={{ scale: 0.95 }} title="定向推送">
+                    className="flex min-h-11 items-center rounded-2xl bg-slate-50/80 px-3 text-xs text-slate-600 transition hover:bg-slate-100"
+                    whileTap={reducedMotion ? undefined : { scale: 0.95 }} title="定向推送">
                     <FaPaperPlane />
                   </motion.button>
                   {canWrite && (
-                    <motion.button onClick={() => handleKick(c.userId!)}
+                    <motion.button type="button" onClick={() => handleKick(c.userId!)}
                       disabled={kickingUser === c.userId}
-                      className="px-2 py-1 text-xs bg-red-50 text-red-600 hover:bg-red-100 rounded transition disabled:opacity-50"
-                      whileTap={{ scale: 0.95 }} title="强制下线">
-                      {kickingUser === c.userId ? <div className="animate-spin rounded-full h-3 w-3 border border-red-600 border-t-transparent" /> : <FaUserSlash />}
+                      className="flex min-h-11 items-center rounded-2xl bg-rose-50 px-3 text-xs text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"
+                      whileTap={reducedMotion ? undefined : { scale: 0.95 }} title="强制下线">
+                      {kickingUser === c.userId ? <div className="animate-spin rounded-full h-3 w-3 border border-rose-600 border-t-transparent" /> : <FaUserSlash />}
                     </motion.button>
                   )}
                 </div>
@@ -757,7 +785,7 @@ const BroadcastManager: React.FC = () => {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {HISTORY_FILTER_OPTIONS.map(item => (
-            <button key={item.value}
+            <button type="button" key={item.value}
               onClick={() => setHistoryAudienceFilter(item.value)}
               className={`px-3 py-1.5 rounded-2xl text-xs font-medium whitespace-nowrap transition ${
                 historyAudienceFilter === item.value
@@ -768,17 +796,26 @@ const BroadcastManager: React.FC = () => {
             </button>
           ))}
         </div>
-        <motion.button onClick={fetchHistory} disabled={loadingHistory}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-2xl transition"
-          whileTap={{ scale: 0.95 }}>
+        <motion.button type="button" onClick={fetchHistory} disabled={loadingHistory}
+          className="flex min-h-11 items-center gap-1 rounded-2xl bg-slate-100 px-3 text-sm transition hover:bg-slate-200"
+          whileTap={reducedMotion ? undefined : { scale: 0.95 }}>
           <FaSyncAlt className={loadingHistory ? 'animate-spin' : ''} /><span>刷新</span>
         </motion.button>
       </div>
 
       {loadingHistory && history.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">加载中...</div>
+        <StudioLoadingState text="正在读取广播历史..." minHeightClassName="min-h-[240px]" />
+      ) : historyError ? (
+        <StudioErrorState message={historyError} onRetry={() => void fetchHistory()} />
       ) : history.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">暂无广播记录</div>
+        <StudioEmptyState
+          message="还没有广播记录。到「全体广播」页发送第一条通知后，这里会留下送达范围与连接数。"
+          action={
+            <button type="button" onClick={() => setActiveTab('broadcast')} className={cn(studioSecondaryButtonClassName, 'min-h-11')}>
+              去发送广播
+            </button>
+          }
+        />
       ) : (
         <div className={cn(studioSurfaceClassName, "divide-y divide-slate-100")}>
           {history.map(log => {
@@ -788,13 +825,13 @@ const BroadcastManager: React.FC = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${lvl.color}`}>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${lvl.color}`}>
                         {lvl.icon} {lvl.label}
                       </span>
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                         {getAudienceLabel(log.audience)}
                       </span>
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-500">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                         {log.display === 'modal' ? '弹窗' : '通知条'} · {formatDuration(log.duration)}
                       </span>
                       <span className="text-xs text-slate-400">by {log.admin}</span>
@@ -824,11 +861,11 @@ const BroadcastManager: React.FC = () => {
       {QUICK_TEMPLATES.map((tpl, i) => {
         const lvl = LEVEL_OPTIONS.find(l => l.value === tpl.level) || LEVEL_OPTIONS[0];
         return (
-          <motion.button key={i} onClick={() => applyTemplate(tpl)}
+          <motion.button type="button" key={i} onClick={() => applyTemplate(tpl)}
             className={cn(studioTileClassName, "text-left p-4 hover:border-slate-300 hover:shadow-md transition group")}
-            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            whileHover={reducedMotion ? undefined : { scale: 1.02 }} whileTap={reducedMotion ? undefined : { scale: 0.98 }}>
             <div className="flex items-center gap-2 mb-2">
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${lvl.color}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${lvl.color}`}>
                 {lvl.icon} {lvl.label}
               </span>
               <span className="text-sm font-medium text-slate-700 group-hover:text-slate-600 transition">{tpl.label}</span>
@@ -860,12 +897,12 @@ const BroadcastManager: React.FC = () => {
       {/* 子 Tab */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {SUB_TABS.map(t => (
-          <motion.button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium whitespace-nowrap transition-all ${
+          <motion.button type="button" key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`flex min-h-11 items-center gap-1.5 rounded-2xl px-3 text-sm font-medium whitespace-nowrap transition-all ${
               activeTab === t.key
                 ? 'bg-slate-900 text-white shadow-md'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`} whileTap={{ scale: 0.96 }}>
+            }`} whileTap={reducedMotion ? undefined : { scale: 0.96 }}>
             {t.icon}<span>{t.label}</span>
           </motion.button>
         ))}
@@ -874,7 +911,8 @@ const BroadcastManager: React.FC = () => {
       {/* 内容区 */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab}
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}>
           {activeTab === 'broadcast' && renderBroadcast()}
           {activeTab === 'direct' && renderDirect()}

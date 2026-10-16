@@ -4,6 +4,7 @@ import { getApiBaseUrl } from '../api/api';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useNotification } from './Notification';
+import { StudioPager } from './studioFeedback';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
@@ -194,8 +195,7 @@ const SmartHumanCheckTraces: React.FC = () => {
 
   const pages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   
-  // 优化的选择状态计算
-  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  // 优化的选择状态计算  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   
   // 虚拟滚动优化 - 当数据量大时启用
   const shouldUseVirtualScroll = useMemo(() => items.length > 100, [items.length]);
@@ -743,14 +743,15 @@ const SmartHumanCheckTraces: React.FC = () => {
         {loading && <div className="p-4 text-slate-400">加载中…</div>}
       </motion.div>
 
-      {/* Pagination */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-slate-500">共 {total} 条 • 第 {page}/{pages} 页</div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <button type="button" disabled={page <= 1} onClick={() => fetchList(page - 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>上一页</button>
-          <button type="button" disabled={page >= pages} onClick={() => fetchList(page + 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>下一页</button>
-        </div>
-      </div>
+      {/* Pagination —— 与基准同款：列表分页统一走 StudioPager（单页时不渲染） */}
+      <StudioPager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        loading={loading}
+        onPageChange={(next) => fetchList(next, pageSize)}
+        label="人机校验日志分页"
+      />
 
       {/* 详情弹窗 — Portal 到 body */}
       {ReactDOM.createPortal(selected && (
