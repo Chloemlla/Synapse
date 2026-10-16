@@ -18,6 +18,8 @@ import {
     authSecondaryButtonClassName,
 } from './authStudioTheme';
 import { cn } from '../utils/cn';
+import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorNote } from './studioFeedback';
 
 export const EmailVerifyPage: React.FC = () => {
     const { user } = useAuth();
@@ -98,20 +100,22 @@ export const EmailVerifyPage: React.FC = () => {
                         </div>
                     )}
                     {loading ? (
-                        <div className="text-center py-8">
-                            <div className="w-12 h-12 sm:w-16 sm:h-16 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin mx-auto mb-4"></div>
+                        <div className="py-8 text-center">
+                            <div className="mx-auto mb-4 flex justify-center">
+                                <SimpleLoadingSpinner size={0.9} />
+                            </div>
                             <h3 className="text-xl font-semibold text-slate-900 mb-2">验证中...</h3>
                             <p className="text-slate-600">请稍候，正在验证您的邮箱</p>
                         </div>
                     ) : success ? (
                         <div className="text-center py-4">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-emerald-100 to-sky-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <FaCheckCircle className="text-emerald-600 text-4xl sm:text-5xl" />
                             </div>
                             <h3 className="text-2xl font-bold text-slate-900 mb-4">验证成功！</h3>
                             <p className="text-slate-600 mb-6">您的邮箱已成功验证，账户创建完成</p>
 
-                            <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 mb-6 rounded-r-lg text-left">
+                            <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left">
                                 <div className="flex items-start">
                                     <svg className="w-5 h-5 text-emerald-600 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -132,13 +136,15 @@ export const EmailVerifyPage: React.FC = () => {
                         </div>
                     ) : (
                         <div className="text-center py-4">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-rose-100 to-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <FaTimesCircle className="text-rose-600 text-4xl sm:text-5xl" />
                             </div>
                             <h3 className="text-2xl font-bold text-slate-900 mb-4">验证失败</h3>
-                            <p className="text-slate-600 mb-6">{error}</p>
+                            <StudioErrorNote className="mb-6">
+                                {error}
+                            </StudioErrorNote>
 
-                            <div className="bg-rose-50 border-l-4 border-rose-500 p-4 mb-6 rounded-r-lg text-left">
+                            <div role="alert" className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left">
                                 <div className="flex items-start">
                                     <svg className="w-5 h-5 text-rose-600 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />

@@ -7,11 +7,14 @@ import { cleanTOTPToken, handleTOTPError, validateTOTPToken } from '../utils/tot
 import { useNotification } from './Notification';
 import { useSecuritySession } from '../hooks/useSecuritySession';
 import { ModalPortal } from './ModalPortal';
+import { StudioErrorNote, StudioLoadingState, StudioSuccessNote } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
   studioFieldClassName,
   studioGhostButtonClassName,
   studioModalCardClassName,
   studioModalCloseButtonClassName,
+  studioModalOverlayClassName,
   studioPageFont,
   studioPrimaryButtonClassName,
 } from './studioTheme';
@@ -42,6 +45,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
   const [loading, setLoading] = useState(false);
   const [showBackupCodes, setShowBackupCodes] = useState(false);
   const { setNotification } = useNotification();
+  const reducedMotion = useReducedMotion();
   // 后端要求 TOTP 配置走统一的「安全会话」（见 requireTwoFactorConfigSession）
   const { verificationToken } = useSecuritySession();
 
@@ -139,14 +143,14 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
     <AnimatePresence>
       {isOpen ? (
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={reducedMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[10060] flex items-center justify-center overflow-y-auto bg-slate-950/30 p-4 backdrop-blur-sm"
+          className={`${studioModalOverlayClassName} overflow-y-auto`}
           onClick={handleClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            initial={reducedMotion ? false : { opacity: 0, scale: 0.96, y: 18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 18 }}
             className={`${studioModalCardClassName} my-8 max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain`}
@@ -182,20 +186,18 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
             </div>
 
             {step === 'loading' ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
-              </div>
+              <StudioLoadingState minHeightClassName="min-h-[160px]" text="正在生成设置…" />
             ) : step === 'success' ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-8 text-center text-emerald-700">
+              <StudioSuccessNote className="px-5 py-8 text-center">
                 <FaCheck className="mx-auto mb-3 h-8 w-8" />
                 <div className="text-base font-semibold">动态验证码已启用</div>
-              </div>
+              </StudioSuccessNote>
             ) : (
               <div className="space-y-4">
                 {error ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  <StudioErrorNote>
                     {error}
-                  </div>
+                  </StudioErrorNote>
                 ) : null}
 
                 {setupData ? (
@@ -244,7 +246,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                             <button
                               type="button"
                               onClick={() => setShowBackupCodes((shown) => !shown)}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"
+                              className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-amber-700 sm:min-h-0"
                             >
                               {showBackupCodes ? <FaEyeSlash /> : <FaEye />}
                               {showBackupCodes ? '隐藏' : '显示'}
@@ -256,7 +258,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                           <AnimatePresence>
                             {showBackupCodes ? (
                               <motion.div
-                                initial={{ opacity: 0, height: 0 }}
+                                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: 'auto' }}
                                 exit={{ opacity: 0, height: 0 }}
                                 className="mt-3 grid min-w-0 gap-2 overflow-hidden sm:grid-cols-2"
@@ -264,7 +266,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                                 {setupData.backupCodes.map((code, index) => (
                                   <code
                                     key={code}
-                                    className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-center font-mono text-xs text-slate-800"
+                                    className="rounded-2xl border border-amber-200 bg-white px-3 py-2 text-center font-mono text-xs text-slate-800"
                                   >
                                     {index + 1}. {code}
                                   </code>
@@ -305,7 +307,7 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                   <button
                     type="button"
                     onClick={handleClose}
-                    className={`${studioGhostButtonClassName} w-full sm:w-auto`}
+                    className={`${studioGhostButtonClassName} min-h-11 w-full sm:min-h-0 sm:w-auto`}
                   >
                     <FaBan />
                     取消
@@ -315,14 +317,11 @@ const TOTPSetup: React.FC<TOTPSetupProps> = ({ isOpen, onClose, onSuccess }) => 
                       type="button"
                       onClick={() => void handleVerify()}
                       disabled={loading || verificationCode.length !== 6}
+                      aria-busy={loading}
                       className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
                     >
-                      {loading ? (
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                      ) : (
-                        <FaCheck />
-                      )}
-                      验证并启用
+                      {loading ? null : <FaCheck />}
+                      {loading ? '正在验证...' : '验证并启用'}
                     </button>
                   ) : (
                     // 生成失败时 setupData 仍为空，此时给一条重试出路，而不是留一个永久禁用的按钮

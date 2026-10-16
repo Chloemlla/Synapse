@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaFingerprint, FaExclamationTriangle, FaCheck, FaTimes, FaSync } from 'react-icons/fa';
+import { FaFingerprint, FaCheck } from 'react-icons/fa';
 import { useNotification } from './Notification';
-import { studioModalCardClassName, studioModalOverlayClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
+import { StudioErrorNote, StudioModal, StudioModalHeader, StudioSuccessNote } from './studioFeedback';
+import { studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
 import { reportFingerprintOnce } from '../utils/fingerprint';
-import getApiBaseUrl from '../api/api';
 
 interface FingerprintRequestModalProps {
     isOpen: boolean;
@@ -46,7 +45,6 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
         setError('');
 
         try {
-            console.log(' 用户确认上报指纹...');
             // 用户主动点击上报按钮，强制立即上报（绕过5分钟节流限制）
             await reportFingerprintOnce(true);
 
@@ -64,6 +62,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
             }, 2000);
 
         } catch (err) {
+            // console 仅作诊断：用户可见的失败态由 error + notification 承担。
             console.error('指纹上报失败:', err);
             setError('指纹上报失败，请稍后重试');
             setNotification({ type: 'error', message: '指纹上报失败，请稍后重试' });
@@ -77,9 +76,9 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
 
         // 如果用户已经关闭过一次，不允许再次关闭
         if (hasDismissedOnce) {
-            setNotification({ 
-                type: 'error', 
-                message: '您已经关闭过一次指纹请求，必须立即上报才能继续使用' 
+            setNotification({
+                type: 'error',
+                message: '您已经关闭过一次指纹请求，必须立即上报才能继续使用'
             });
             return;
         }
@@ -91,17 +90,17 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
             setIsSubmitting(false);
 
             if (success) {
-                setNotification({ 
-                    type: 'warning', 
-                    message: '已记录您的关闭操作，这是您唯一一次关闭机会，下次必须上报' 
+                setNotification({
+                    type: 'warning',
+                    message: '已记录您的关闭操作，这是您唯一一次关闭机会，下次必须上报'
                 });
                 setTimeout(() => {
                     onClose(true);
                 }, 100);
             } else {
-                setNotification({ 
-                    type: 'error', 
-                    message: '记录关闭操作失败，请稍后重试' 
+                setNotification({
+                    type: 'error',
+                    message: '记录关闭操作失败，请稍后重试'
                 });
             }
         } else {
@@ -113,7 +112,7 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
         }
     };
 
-    // 统一的退出入口（关闭按钮 / 遮罩点击 / Esc 都走这里）。
+    // 统一的退出入口（关闭按钮 / 遮罩点击 / Esc 都走这里，Esc 与焦点陷阱由 StudioModal 提供）。
     // 未关闭过的用户沿用原行为：不写冷却，父组件会再次请求（此时仍有「暂时跳过」这条出路）。
     // 已关闭过一次的用户若不给写冷却的出路就会被永久困住（B01），因此仅对这类用户收起并写冷却；
     // 后端「一生只能关闭一次」的计数语义不变——只有「暂时跳过」会消耗那唯一一次。
@@ -135,160 +134,83 @@ const FingerprintRequestModal: React.FC<FingerprintRequestModalProps> = ({
         }, 100);
     }, [hasDismissedOnce, isSubmitting, onClose, setNotification]);
 
-    // Esc 与关闭按钮、遮罩点击等价，避免键盘用户被困在弹窗里
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                handleClose();
-            }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [isOpen, handleClose]);
-
     return (
-        <AnimatePresence mode="wait">
-            {isOpen && !collapsedLocally && (
-                <motion.div
-                    key="fingerprint-modal-backdrop"
-                    className={studioModalOverlayClassName}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    onClick={handleClose}
-                >
-                    <motion.div
-                        key="fingerprint-modal-content"
-                        className={`${studioModalCardClassName} relative max-w-md max-h-[90vh] overflow-y-auto overscroll-contain`}
-                        initial={{ scale: 0.9, y: 20, opacity: 0 }}
-                        animate={{ scale: 1, y: 0, opacity: 1 }}
-                        exit={{ scale: 0.9, y: 20, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        {/* 关闭按钮 - 任何状态下都保留可见出路 */}
-                        {!isSubmitted && (
+        <StudioModal
+            open={isOpen && !collapsedLocally}
+            onClose={handleClose}
+            labelledBy="fingerprint-request-title"
+            maxWidthClassName="max-w-md"
+        >
+            {isSubmitted ? (
+                <StudioSuccessNote className="px-5 py-8 text-center">
+                    <FaCheck className="mx-auto mb-3 h-8 w-8" />
+                    <div className="text-base font-semibold">指纹上报成功</div>
+                    <div className="mt-2 text-sm">您的浏览器指纹已成功上报，感谢您的配合！</div>
+                </StudioSuccessNote>
+            ) : (
+                <>
+                    <StudioModalHeader
+                        title="指纹上报请求"
+                        titleId="fingerprint-request-title"
+                        description={hasDismissedOnce
+                            ? '您已经关闭过一次指纹请求，这是最后的机会。请立即上报以继续使用；如需稍后处理，可以收起此窗口，我们会再次提醒。'
+                            : '管理员请求上报您的浏览器指纹，用于安全验证和用户识别。此过程不会收集任何个人信息。'}
+                        icon={<FaFingerprint className="h-6 w-6" />}
+                        iconClassName="bg-slate-100 text-slate-600"
+                        onClose={handleClose}
+                        closeLabel="收起指纹上报请求"
+                    />
+
+                    {error ? <StudioErrorNote className="mt-4">{error}</StudioErrorNote> : null}
+
+                    <div className="mt-5 flex gap-3">
+                        {!hasDismissedOnce && (
                             <button
-                                onClick={handleClose}
+                                type="button"
+                                onClick={handleDismiss}
                                 disabled={isSubmitting}
-                                aria-label="收起指纹上报请求"
-                                title="收起"
-                                className="inline-flex items-center justify-center absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                className={`${studioSecondaryButtonClassName} flex-1`}
                             >
-                                <FaTimes className="w-5 h-5" />
+                                暂时跳过
                             </button>
                         )}
-
-                        {/* 头部图标和标题 */}
-                        <div className="flex items-center justify-center mb-6">
-                            <motion.div
-                                className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center ${isSubmitted
-                                        ? 'bg-emerald-100 text-emerald-600'
-                                        : 'bg-slate-100 text-slate-600'
-                                    }`}
-                                animate={isSubmitting ? { rotate: 360 } : { rotate: 0 }}
-                                transition={{ duration: 1, repeat: isSubmitting ? Infinity : 0, ease: "linear" }}
-                            >
-                                {isSubmitted ? (
-                                    <FaCheck className="w-6 h-6 sm:w-8 sm:h-8" />
-                                ) : isSubmitting ? (
-                                    <FaSync className="w-6 h-6 sm:w-8 sm:h-8" />
-                                ) : (
-                                    <FaFingerprint className="w-6 h-6 sm:w-8 sm:h-8" />
-                                )}
-                            </motion.div>
-                        </div>
-
-                        {/* 标题和描述 */}
-                        <div className="text-center mb-6">
-                            <h3 className="text-lg sm:text-xl font-semibold text-slate-800 mb-2">
-                                {isSubmitted ? '指纹上报成功' : '指纹上报请求'}
-                            </h3>
-                            <p className="text-slate-600 text-sm leading-relaxed">
-                                {isSubmitted
-                                    ? '您的浏览器指纹已成功上报，感谢您的配合！'
-                                    : hasDismissedOnce
-                                        ? '您已经关闭过一次指纹请求，这是最后的机会。请立即上报以继续使用；如需稍后处理，可以收起此窗口，我们会再次提醒。'
-                                        : '管理员请求上报您的浏览器指纹，用于安全验证和用户识别。此过程不会收集任何个人信息。'
-                                }
-                            </p>
-                        </div>
-
-                        {/* 错误信息 */}
-                        {error && (
-                            <motion.div
-                                className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2"
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                            >
-                                <FaExclamationTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-                                <span className="text-rose-700 text-sm">{error}</span>
-                            </motion.div>
-                        )}
-
-                        {/* 操作按钮 */}
-                        <div className="flex gap-3">
-                            {!isSubmitted && (
-                                <>
-                                    {/* 只有在用户未关闭过的情况下才显示"暂时跳过"按钮 */}
-                                    {!hasDismissedOnce && (
-                                        <button
-                                            onClick={handleDismiss}
-                                            disabled={isSubmitting}
-                                            className={`${studioSecondaryButtonClassName} flex-1`}
-                                        >
-                                            暂时跳过
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={isSubmitting}
-                                        className={`${studioPrimaryButtonClassName} ${hasDismissedOnce ? 'w-full' : 'flex-1'}`}
-                                    >
-                                        {isSubmitting ? (
-                                            <>
-                                                <FaSync className="w-4 h-4 animate-spin" />
-                                                上报中...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FaFingerprint className="w-4 h-4" />
-                                                立即上报
-                                            </>
-                                        )}
-                                    </button>
-                                </>
-                            )}
-                            {isSubmitted && (
-                                <button
-                                    onClick={() => {
-                                        // 确保状态已更新，shouldShowRequest 会变为 false，弹窗自动关闭
-                                        if (onRequestComplete) {
-                                            onRequestComplete();
-                                        }
-                                    }}
-                                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-100 px-5 py-3.5 text-sm font-semibold text-emerald-600 transition hover:bg-emerald-200"
-                                >
-                                    <FaCheck className="w-4 h-4" />
-                                    关闭窗口
-                                </button>
-                            )}
-                        </div>
-
-                        {/* 说明信息 */}
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                            <div className="text-xs text-slate-500 space-y-1">
-                                <p>• 指纹信息包含：浏览器类型、屏幕分辨率、时区等设备特征</p>
-                                <p>• 此信息仅用于安全验证，不会识别您的个人身份</p>
-                                <p>• 如需稍后处理，可以收起此窗口，管理员可能会再次请求</p>
-                            </div>
-                        </div>
-                    </motion.div>
-                </motion.div>
+                        <button
+                            type="button"
+                            onClick={handleSubmit}
+                            disabled={isSubmitting}
+                            aria-busy={isSubmitting}
+                            className={`${studioPrimaryButtonClassName} ${hasDismissedOnce ? 'w-full' : 'flex-1'}`}
+                        >
+                            {isSubmitting ? '上报中...' : <><FaFingerprint className="h-4 w-4" aria-hidden />立即上报</>}
+                        </button>
+                    </div>
+                </>
             )}
-        </AnimatePresence>
+
+            {isSubmitted ? (
+                <button
+                    type="button"
+                    onClick={() => {
+                        // 确保状态已更新，shouldShowRequest 会变为 false，弹窗自动关闭
+                        if (onRequestComplete) {
+                            onRequestComplete();
+                        }
+                    }}
+                    className={`${studioPrimaryButtonClassName} mt-4 w-full`}
+                >
+                    <FaCheck className="h-4 w-4" aria-hidden />
+                    关闭窗口
+                </button>
+            ) : null}
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
+                <div className="space-y-1 text-xs text-slate-500">
+                    <p>• 指纹信息包含：浏览器类型、屏幕分辨率、时区等设备特征</p>
+                    <p>• 此信息仅用于安全验证，不会识别您的个人身份</p>
+                    <p>• 如需稍后处理，可以收起此窗口，管理员可能会再次请求</p>
+                </div>
+            </div>
+        </StudioModal>
     );
 };
 

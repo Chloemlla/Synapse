@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import {
   FaDownload,
   FaExclamationTriangle,
@@ -12,14 +12,14 @@ import {
 } from 'react-icons/fa';
 import { useNotification } from './Notification';
 import { useSecuritySession } from '../hooks/useSecuritySession';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { api } from '../api/api';
 import { ModalPortal } from './ModalPortal';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState, StudioModal } from './studioFeedback';
 import {
   studioGhostButtonClassName,
   studioModalCardClassName,
   studioModalCloseButtonClassName,
-  studioModalOverlayClassName,
-  studioPageFont,
   studioPrimaryButtonClassName,
 } from './studioTheme';
 
@@ -42,6 +42,7 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const { setNotification } = useNotification();
+  const reducedMotion = useReducedMotion();
   // 查看/重生成恢复码属双因素配置类操作，需携带统一的安全会话（见 requireTwoFactorConfigSession）
   const { verificationToken } = useSecuritySession();
 
@@ -162,46 +163,26 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
     }
   };
 
-  // Esc 关闭：先关内层「重新生成」确认，再关主弹窗（焦点陷阱/回归未做，见回报）
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || regenerating) return;
-      if (showRegenerateConfirm) {
-        setShowRegenerateConfirm(false);
-        return;
-      }
-      onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, regenerating, showRegenerateConfirm]);
+  // Esc / 遮罩点击都走这里：先关内层「重新生成」确认，再关主弹窗（焦点陷阱与恢复焦点由 StudioModal 提供）。
+  const handleModalClose = useCallback(() => {
+    if (regenerating) return;
+    if (showRegenerateConfirm) {
+      setShowRegenerateConfirm(false);
+      return;
+    }
+    onClose();
+  }, [onClose, regenerating, showRegenerateConfirm]);
 
   return (
     <ModalPortal>
-    <AnimatePresence>
-      {isOpen ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className={studioModalOverlayClassName}
-          onClick={() => {
-            if (!regenerating) onClose();
-          }}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 18 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 18 }}
-            className={`${studioModalCardClassName} max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain`}
-            style={{ fontFamily: studioPageFont }}
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="backup-codes-title"
-          >
-            <div className="max-h-[82vh] overflow-y-auto overscroll-contain pr-1">
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'never'}>
+    <StudioModal
+      open={isOpen}
+      onClose={handleModalClose}
+      labelledBy="backup-codes-title"
+      maxWidthClassName="max-w-2xl"
+    >
+      <div className="max-h-[82vh] overflow-y-auto overscroll-contain pr-1">
               <div className="mb-5 flex items-start justify-between gap-4">
                 <div className="flex min-w-0 gap-3">
                   <div className="flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white">
@@ -227,22 +208,12 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
               </div>
 
               {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="h-6 w-6 sm:h-8 sm:w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
-                </div>
+                <StudioLoadingState minHeightClassName="min-h-[180px]" text="正在读取恢复码…" />
               ) : error ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  <p>{error}</p>
-                  <button
-                    type="button"
-                    onClick={() => void fetchBackupCodes()}
-                    disabled={loading}
-                    className={`${studioGhostButtonClassName} mt-3 disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    <FaRedo />
-                    重试
-                  </button>
-                </div>
+                <StudioErrorState
+                  message={error}
+                  onRetry={() => void fetchBackupCodes()}
+                />
               ) : (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
@@ -254,7 +225,9 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                   </div>
 
                   <div className="min-h-[236px] rounded-2xl border border-slate-200 bg-white/90 p-4">
-                    {!showCodes ? (
+                    {backupCodes.length === 0 ? (
+                      <StudioEmptyState message="当前没有可用的恢复码。点下方「重新生成」创建一组新的。" />
+                    ) : !showCodes ? (
                       <div className="flex min-h-[204px] flex-col items-center justify-center py-6 text-center">
                         <div className="mx-auto mb-3 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                           <FaShieldAlt />
@@ -292,7 +265,7 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                     <button
                       type="button"
                       onClick={() => setShowRegenerateConfirm(true)}
-                      className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700`}
+                      className={`${studioGhostButtonClassName} min-h-11 border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 sm:min-h-0`}
                     >
                       <FaRedo />
                       重新生成
@@ -301,7 +274,7 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                       type="button"
                       onClick={downloadBackupCodes}
                       disabled={!showCodes || backupCodes.length === 0}
-                      className={studioGhostButtonClassName}
+                      className={`${studioGhostButtonClassName} min-h-11 sm:min-h-0`}
                     >
                       <FaDownload />
                       下载
@@ -310,7 +283,7 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                       type="button"
                       onClick={printBackupCodes}
                       disabled={!showCodes || backupCodes.length === 0}
-                      className={studioGhostButtonClassName}
+                      className={`${studioGhostButtonClassName} min-h-11 sm:min-h-0`}
                     >
                       <FaPrint />
                       打印
@@ -364,23 +337,18 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                         onClick={() => void regenerateBackupCodes()}
                         className={`${studioPrimaryButtonClassName} w-full bg-rose-600 hover:bg-rose-700 sm:w-auto`}
                         disabled={regenerating}
+                        aria-busy={regenerating}
                       >
-                        {regenerating ? (
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                        ) : (
-                          <FaRedo />
-                        )}
-                        确认生成
+                        {regenerating ? '正在生成...' : <><FaRedo />确认生成</>}
                       </button>
                     </div>
                   </motion.div>
                 </motion.div>
               ) : null}
             </AnimatePresence>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+
+    </StudioModal>
+    </MotionConfig>
     </ModalPortal>
   );
 };

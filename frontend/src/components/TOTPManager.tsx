@@ -14,6 +14,7 @@ import { handleTOTPError } from "../utils/totpUtils";
 import BackupCodesModal from "./BackupCodesModal";
 import EstablishSecuritySession from "./EstablishSecuritySession";
 import { ModalPortal } from "./ModalPortal";
+import { StudioErrorNote, StudioErrorState, StudioLoadingState } from "./studioFeedback";
 import { PasskeySetup } from "./PasskeySetup";
 import {
   studioGhostButtonClassName,
@@ -76,8 +77,10 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
         setStatus(nextStatus);
         onStatusChange?.(nextStatus);
       } else if (isInitial) {
+        // 不能用「未启用」的假状态顶替失败：那会把接口失败画成空态，
+        // 用户会以为账号真的没开双因素而放弃配置。
+        setStatus(null);
         setStatusError("无法获取账户安全状态，请稍后重试。");
-        setStatus({ enabled: false, hasBackupCodes: false, type: [] });
       } else {
         setStatusError("状态刷新失败，页面仍显示上一次结果。");
       }
@@ -85,9 +88,12 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
       if (passkeyResult.status === "fulfilled") {
         setPasskeyEnabled(passkeyResult.value.data.length > 0);
       } else if (isInitial) {
-        setPasskeyEnabled(false);
+        // 通行密钥列表读失败也不是「未配置」：一并走失败态。
+        setStatus(null);
+        setStatusError("无法获取账户安全状态，请稍后重试。");
       }
     } catch (err) {
+      // console 仅作诊断，用户可见的失败态由 statusError + StudioErrorState 承担。
       console.error("获取 TOTP 状态失败:", err);
       setStatusError("无法获取账户安全状态，请稍后重试。");
     } finally {
@@ -175,13 +181,20 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
 
   if (loading) {
     return (
-      <div
-        className="mx-auto flex min-h-[360px] max-w-2xl flex-col items-center justify-center gap-3 py-12"
-        style={{ fontFamily: studioPageFont }}
-        role="status"
-      >
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" aria-hidden="true" />
-        <p className="text-sm text-slate-600">正在读取账户安全状态…</p>
+      <div className="mx-auto max-w-2xl" style={{ fontFamily: studioPageFont }} role="status">
+        <StudioLoadingState minHeightClassName="min-h-[360px]" text="正在读取账户安全状态…" />
+      </div>
+    );
+  }
+
+  // 首屏读取失败：给独立错误态 + 重试，不让页面带着假状态继续。
+  if (!status) {
+    return (
+      <div className="mx-auto max-w-2xl" style={{ fontFamily: studioPageFont }}>
+        <StudioErrorState
+          message={statusError || "无法获取账户安全状态，请稍后重试。"}
+          onRetry={() => void fetchStatus("initial")}
+        />
       </div>
     );
   }
@@ -238,15 +251,21 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
           ))}
         </div>
 
-        {statusError || refreshing ? (
-          <div
-            className={`mt-3 rounded-2xl border px-4 py-3 text-xs leading-5 ${
-              statusError
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-slate-200 bg-white/80 text-slate-500"
-            }`}
-          >
-            {statusError || "正在同步账户安全状态..."}
+        {statusError ? (
+          <StudioErrorNote className="mt-3">
+            <span className="block">{statusError}</span>
+            <button
+              type="button"
+              onClick={() => void fetchStatus("refresh")}
+              disabled={refreshing}
+              className={`${studioGhostButtonClassName} mt-2 min-h-11 sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              重试
+            </button>
+          </StudioErrorNote>
+        ) : refreshing ? (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-xs leading-5 text-slate-500">
+            正在同步账户安全状态...
           </div>
         ) : null}
       </motion.section>
@@ -294,7 +313,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                     onClick={() => setShowBackupCodes(true)}
                     disabled={!sessionReady}
                     title={sessionReady ? undefined : "请先建立安全会话"}
-                    className={`${studioGhostButtonClassName} disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
+                    className={`${studioGhostButtonClassName} min-h-11 sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
                   >
                     <FaEye />
                     查看恢复码
@@ -305,7 +324,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                   onClick={() => setShowDisable(true)}
                   disabled={!sessionReady}
                   title={sessionReady ? undefined : "请先建立安全会话"}
-                  className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto`}
+                  className={`${studioGhostButtonClassName} min-h-11 border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-0 sm:w-auto`}
                 >
                   关闭动态验证码
                 </button>
@@ -356,7 +375,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               onClick={() => setShowPasskeySetup(true)}
               disabled={!sessionReady}
               title={sessionReady ? undefined : "请先建立安全会话"}
-              className={`${studioGhostButtonClassName} disabled:cursor-not-allowed disabled:opacity-60 w-full sm:w-auto`}
+              className={`${studioGhostButtonClassName} min-h-11 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-0 sm:w-auto`}
             >
               <FaKey />
               管理通行密钥
@@ -379,7 +398,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
       <AnimatePresence>
         {showDisable ? (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className={studioModalOverlayClassName}
@@ -388,7 +407,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className={`${studioModalCardClassName} max-w-md max-h-[90vh] overflow-y-auto overscroll-contain`}
@@ -405,9 +424,9 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
               </p>
               <div className="mt-5 space-y-3">
                 {error ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  <StudioErrorNote>
                     {error}
-                  </div>
+                  </StudioErrorNote>
                 ) : null}
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <button
@@ -422,14 +441,11 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
                     type="button"
                     onClick={handleDisable}
                     disabled={disabling}
+                    aria-busy={disabling}
                     className={`${studioPrimaryButtonClassName} w-full bg-rose-600 shadow-rose-600/20 hover:bg-rose-700 sm:w-auto`}
                   >
-                    {disabling ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                    ) : (
-                      <FaClock />
-                    )}
-                    确认关闭
+                    {disabling ? null : <FaClock />}
+                    {disabling ? "正在关闭..." : "确认关闭"}
                   </button>
                 </div>
               </div>
@@ -441,7 +457,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
       <AnimatePresence>
         {showPasskeySetup ? (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className={studioModalOverlayClassName}
@@ -451,7 +467,7 @@ const TOTPManager: React.FC<TOTPManagerProps> = ({ onStatusChange }) => {
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 18 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className={`${studioModalCardClassName} max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain`}

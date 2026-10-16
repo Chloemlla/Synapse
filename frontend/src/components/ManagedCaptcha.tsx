@@ -1,9 +1,10 @@
 import React, { Suspense, lazy, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { FaCheckCircle, FaExclamationTriangle, FaRedo, FaShieldAlt } from 'react-icons/fa';
+import { FaCheckCircle, FaShieldAlt } from 'react-icons/fa';
 import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
 import { getFingerprint } from '../utils/fingerprint';
 import { CaptchaType, getCaptchaDisplayName } from '../utils/captchaSelection';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorState } from './studioFeedback';
 import { subscribeCaptchaRecovery } from '../utils/captchaRecovery';
 
 // 按后端选中的供应商懒加载对应控件，不把三家 SDK 都塞进首屏。
@@ -352,20 +353,7 @@ const ManagedCaptcha = ({
       )}
 
       {!statusLoading && error && (
-        <div className="space-y-2">
-          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
-            <FaExclamationTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => reset()}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            <FaRedo className="h-3 w-3" />
-            重试
-          </button>
-        </div>
+        <StudioErrorState message={error} onRetry={() => reset()} />
       )}
 
       {!statusLoading && !error && providerMode && (
@@ -373,7 +361,7 @@ const ManagedCaptcha = ({
           <div
             className={
               compact
-                ? 'flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3'
+                ? 'flex min-h-[72px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-3'
                 : 'flex min-h-[86px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4'
             }
           >
@@ -431,7 +419,7 @@ const ManagedCaptcha = ({
 
           {rearming && (
             <p className="flex items-center gap-2 text-xs text-slate-500" role="status" aria-live="polite">
-              <FaRedo className="h-3 w-3 animate-spin" />
+              <SimpleLoadingSpinner size={0.5} />
               正在重试，请稍候…
             </p>
           )}

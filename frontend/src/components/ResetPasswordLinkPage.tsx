@@ -35,6 +35,7 @@ import {
     studioPageFont,
 } from './authStudioTheme';
 import { cn } from '../utils/cn';
+import { SimpleLoadingSpinner } from './LoadingSpinner';
 
 const NO_TRANSITION = { duration: 0 } as const;
 const FADE_VARIANTS = { hidden: { opacity: 0 }, visible: { opacity: 1 } } as const;
@@ -197,7 +198,9 @@ export const ResetPasswordLinkPage: React.FC = () => {
 
                             {verifying ? (
                                 <div className="py-8 text-center">
-                                    <div className="mx-auto mb-5 h-10 w-10 sm:h-12 sm:w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900"></div>
+                                    <div className="mx-auto mb-5 flex justify-center">
+                                        <SimpleLoadingSpinner size={0.9} />
+                                    </div>
                                     <h3 className="text-xl font-semibold text-slate-900">验证中</h3>
                                     <p className="mt-2 text-sm text-slate-600">正在验证重置链接</p>
                                 </div>

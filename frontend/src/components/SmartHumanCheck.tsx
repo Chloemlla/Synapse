@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaCheck, FaShieldAlt, FaSync } from 'react-icons/fa';
 import { PenaltyAppealActions } from './PenaltyAppealActions';
+import { StudioErrorNote } from './studioFeedback';
+import { studioGhostButtonClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 /**
  * SmartHumanCheck - 前端人机验证（仿 Turnstile）
@@ -70,7 +73,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, maxRetries
       }
       // 解析错误响应体，附带错误码等信息
       let body: any = null;
-      try { body = await response.clone().json(); } catch { }
+      try { body = await response.clone().json(); } catch { body = null; }
       const retryAfterHeader = response.headers.get('Retry-After');
       const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : undefined;
       const code = body?.errorCode || body?.code;
@@ -124,6 +127,7 @@ async function getCanvasEntropy(): Promise<string> {
     canvas.height = 50;
     const ctx = canvas.getContext('2d');
     if (!ctx) return 'noctx';
+    // 这两个色值是**指纹输入**（画完整张图后哈希上报），改色等于换掉全站设备指纹，勿当作配色清理。
     ctx.fillStyle = '#f0f0f0';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.font = '16px Arial';
@@ -559,7 +563,8 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
       setPos(newPos);
       // 阻止移动端滚动
       if ((e as TouchEvent).touches) {
-        try { (e as TouchEvent).preventDefault(); } catch { }
+        // 被动监听下 preventDefault 会抛错：只影响移动端滚动抑制，无用户可执行的补救动作。
+        try { (e as TouchEvent).preventDefault(); } catch { /* noop */ }
       }
     };
     const onUp = () => setDragging(false);
@@ -644,7 +649,8 @@ function SliderBase({ onComplete, disabled, hintMode }: SliderBaseProps) {
           onTouchStart={(e) => {
             if (disabled) return;
             setDragging(true);
-            try { e.preventDefault(); } catch { }
+            // 同上：非被动监听不可用时不阻断拖拽，失败对用户不可见。
+            try { e.preventDefault(); } catch { /* noop */ }
           }}
           onKeyDown={handleKeyDown}
         >
@@ -693,6 +699,8 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
   variant,
 }) => {
   const { density, nonceStrategy, autoResetOnSuccess } = variant;
+  // 本组件有两处循环/入场动效（容器入场、加载中的旋转图标），都要跟随系统减弱动效偏好。
+  const reducedMotion = useReducedMotion();
   const shouldManageNonce = nonceStrategy === 'managed';
   const containerRef = useRef<HTMLDivElement>(null);
   const { statsRef, setTrapTriggered } = useBehaviorTracker(containerRef);
@@ -1239,8 +1247,8 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
 
   return (
     <motion.div
-      className="w-full max-w-[320px] overflow-hidden rounded-sm border border-[#d9d9d9] bg-[#fafafa] text-[#232323] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
-      initial={{ opacity: 0, y: 12 }}
+      className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white/90 text-slate-900 shadow-sm"
+      initial={reducedMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
     >
@@ -1296,32 +1304,32 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
             <span
               className={`flex h-7 w-7 shrink-0 items-center justify-center border bg-white/90 transition-colors ${
                 sliderOk
-                  ? 'border-[#2f7d32] bg-[#2f7d32] text-white'
+                  ? 'border-emerald-500 bg-emerald-500 text-white'
                   : checked
-                    ? 'border-[#777]'
-                    : 'border-[#767676] hover:border-[#4a4a4a]'
+                    ? 'border-slate-400'
+                    : 'border-slate-300 hover:border-slate-500'
               }`}
             >
               {submitting || fetchingNonce ? (
-                <FaSync className="animate-spin text-[#555]" size={14} aria-hidden="true" />
+                <FaSync className={`text-slate-500 ${reducedMotion ? '' : 'animate-spin'}`} size={14} aria-hidden="true" />
               ) : sliderOk ? (
                 <FaCheck size={15} aria-hidden="true" />
               ) : null}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[15px] leading-tight text-[#232323]">我不是机器人</span>
-              <span className="mt-1 block truncate text-[11px] leading-tight text-[#666]">{statusText}</span>
+              <span className="block truncate text-[15px] leading-tight text-slate-900">我不是机器人</span>
+              <span className="mt-1 block truncate text-[11px] leading-tight text-slate-500">{statusText}</span>
             </span>
           </label>
 
           <div className="flex w-[76px] shrink-0 flex-col items-center text-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-[#f48120] text-white shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
               <FaShieldAlt size={17} aria-hidden="true" />
             </div>
-            <span className="mt-1 text-[10px] font-semibold leading-none text-[#555]">Synapse</span>
+            <span className="mt-1 text-[10px] font-semibold leading-none text-slate-500">Synapse</span>
             <Link
               to="/policy"
-              className="mt-1 whitespace-nowrap text-[8px] leading-none text-[#5b6470] underline-offset-2 hover:text-[#232323] hover:underline"
+              className="mt-1 whitespace-nowrap text-[8px] leading-none text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
             >
               隐私 · 条款
             </Link>
@@ -1329,11 +1337,11 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
         </div>
 
         {(challengeOpen || error || sliderOk) && (
-          <div className="border-t border-[#dfdfdf] bg-white/90 px-3 py-3">
+          <div className="border-t border-slate-200 bg-white/90 px-3 py-3">
             {challengeOpen && (
               <div className="space-y-2">
                 {isMinimal && (
-                  <div className="text-center text-xs text-[#555]">拖动滑块完成验证，也可用方向键或回车键</div>
+                  <div className="text-center text-xs text-slate-500">拖动滑块完成验证，也可用方向键或回车键</div>
                 )}
                 {isMinimal ? (
                   <CompactSlider key={sliderKey} onComplete={handleSliderComplete} disabled={!checked} />
@@ -1345,16 +1353,12 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
 
             {sliderOk && (
               <div className="mt-3 flex items-center justify-between gap-3 first:mt-0">
-                <span className="text-xs text-[#555]">
+                <span className="text-xs text-slate-500">
                   {submitting ? '正在提交验证' : canSubmit ? '可以继续' : '请稍候'}
                 </span>
                 <div className="flex items-center gap-2">
                   {submitting && (
-                    <button
-                      type="button"
-                      onClick={cancelSubmit}
-                      className="min-h-9 rounded-sm border border-[#c9c9c9] bg-[#f7f7f7] px-3 text-xs font-semibold text-[#333] hover:bg-[#efefef]"
-                    >
+                    <button type="button" onClick={cancelSubmit} className={studioSecondaryButtonClassName}>
                       取消
                     </button>
                   )}
@@ -1362,7 +1366,7 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
                     type="button"
                     disabled={!canSubmit || submitting}
                     onClick={submit}
-                    className="min-h-9 rounded-sm border border-[#1f5fbf] bg-[#2f6fda] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#255fbd] disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d1d1d1] disabled:text-[#777]"
+                    className={studioPrimaryButtonClassName}
                     whileHover={{ scale: canSubmit && !submitting ? 1.01 : 1 }}
                     whileTap={{ scale: canSubmit && !submitting ? 0.99 : 1 }}
                   >
@@ -1373,9 +1377,9 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
             )}
 
             {error && (
-              <div className="mt-3 space-y-2 first:mt-0">
+              <StudioErrorNote className="mt-3 space-y-2 first:mt-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 flex-1 truncate text-xs text-[#b3261e]">
+                  <span className="min-w-0 flex-1 truncate text-xs">
                     {lastErrorCode === 'RATE_LIMITED' && cooldownActive
                       ? `请求过于频繁，请 ${remainingCooldownSec}s 后重试`
                       : lastErrorCode === 'ABUSE_BANNED' && isBanned
@@ -1383,12 +1387,8 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
                         : error}
                   </span>
                   {/* 失败即可手动重试（自动退避仍并行进行），不再等自动重试耗尽才给出路 */}
-                  <button
-                    type="button"
-                    onClick={fetchNonce}
-                    disabled={fetchingNonce || cooldownActive || isBanned}
-                    className="min-h-8 rounded-sm border border-[#c9c9c9] bg-[#f7f7f7] px-3 text-xs font-semibold text-[#333] hover:bg-[#efefef] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
+                  <button type="button" onClick={fetchNonce} disabled={fetchingNonce || cooldownActive || isBanned}
+                    className={`${studioGhostButtonClassName} min-h-11 sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}>
                     {fetchingNonce ? '重试中' : '重试'}
                   </button>
                 </div>
@@ -1401,13 +1401,13 @@ const SmartHumanCheckBase: React.FC<SmartHumanCheckBaseProps> = ({
                     remainingText={`${remainingBanSec}s`}
                   />
                 )}
-              </div>
+              </StudioErrorNote>
             )}
           </div>
         )}
 
         {density !== 'compact' && (
-          <div className="flex items-center justify-between border-t border-[#e7e7e7] bg-[#f5f5f5] px-3 py-1.5 text-[10px] leading-none text-[#5b6470]">
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] leading-none text-slate-500">
             <span>{activeNonceReady ? '安全校验已就绪' : '安全校验加载中'}</span>
             <span>
               {powDifficulty || challengeDifficulty

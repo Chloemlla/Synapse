@@ -13,11 +13,13 @@ import { cn } from '../utils/cn';
 import { checkSynapseClientAvailable, triggerSynapseDetection } from '../utils/synapseDetect';
 import {
   authElevatedPanelClassName,
+  authFieldClassName,
   authInfoPanelClassName,
   authPrimaryButtonClassName,
   authSecondaryButtonClassName,
 } from './authStudioTheme';
 import { useNotification } from './Notification';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { getBackendErrorMessage } from '../utils/backendError';
 
 interface MobileLoginPanelProps {
@@ -40,6 +42,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export const MobileLoginPanel: React.FC<MobileLoginPanelProps> = ({ disabled, loginWithToken, onSuccess }) => {
   const { setNotification } = useNotification();
+  // 刷新二维码的旋转是循环动效，跟随系统减弱动效偏好停掉。
+  const reducedMotion = useReducedMotion();
   const [challenge, setChallenge] = React.useState<MobileLoginChallenge | null>(null);
   const [challengeStatus, setChallengeStatus] = React.useState<MobileLoginChallengeStatus>('pending');
   const [challengeLoading, setChallengeLoading] = React.useState(false);
@@ -256,7 +260,7 @@ export const MobileLoginPanel: React.FC<MobileLoginPanelProps> = ({ disabled, lo
           onClick={startChallenge}
           className={authSecondaryButtonClassName}
         >
-          <FaSyncAlt className={cn('h-4 w-4', challengeLoading && 'animate-spin')} />
+          <FaSyncAlt className={cn('h-4 w-4', challengeLoading && !reducedMotion && 'animate-spin')} />
           {challenge ? '刷新二维码' : '生成扫码二维码'}
         </button>
       </div>
@@ -270,7 +274,7 @@ export const MobileLoginPanel: React.FC<MobileLoginPanelProps> = ({ disabled, lo
             type="password"
             value={clientLoginToken}
             onChange={(event) => setClientLoginToken(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+            className={authFieldClassName}
             placeholder="sml_..."
             autoComplete="off"
           />
@@ -283,7 +287,7 @@ export const MobileLoginPanel: React.FC<MobileLoginPanelProps> = ({ disabled, lo
             type="text"
             value={clientDeviceId}
             onChange={(event) => setClientDeviceId(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+            className={authFieldClassName}
             placeholder="设备 ID（如已绑定）"
             autoComplete="off"
           />

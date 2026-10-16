@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FaCheck, FaExclamationCircle, FaShieldAlt, FaSpinner } from 'react-icons/fa';
+import { FaCheck, FaExclamationCircle, FaShieldAlt } from 'react-icons/fa';
 import PolicyConsentChecklist from './PolicyConsentChecklist';
+import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorNote } from './studioFeedback';
 import { studioEyebrowClassName, studioPrimaryButtonClassName, studioSecondaryButtonClassName } from './studioTheme';
 import { useFeatureConsent } from '../hooks/useFeatureConsent';
 import { POLICY_CONSENT_REQUIRED_EVENT } from '../utils/policyConsent';
@@ -66,7 +68,7 @@ const FeatureConsentGate: React.FC<FeatureConsentGateProps> = ({ feature, childr
     return (
       <div role="status" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white/60 p-6">
         <p className="flex items-center gap-2 text-sm text-slate-500">
-          <FaSpinner className="animate-spin" />
+          <SimpleLoadingSpinner size={0.6} />
           正在确认该功能的开通状态...
         </p>
       </div>
@@ -77,7 +79,7 @@ const FeatureConsentGate: React.FC<FeatureConsentGateProps> = ({ feature, childr
 
   if (!view) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-left sm:p-5">
+      <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-left sm:p-5">
         <p className={studioEyebrowClassName}>功能开通确认</p>
         <p className="mt-1 break-words text-sm font-semibold text-slate-800">暂时无法确认该功能的开通状态</p>
         <p className="mt-1 break-words text-xs leading-5 text-slate-600">
@@ -110,7 +112,7 @@ const FeatureConsentGate: React.FC<FeatureConsentGateProps> = ({ feature, childr
         </div>
       </div>
 
-      <div className="space-y-1 rounded-xl border border-amber-200 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-600">
+      <div className="space-y-1 rounded-2xl border border-amber-200 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-600">
         {view.requiredAgreements.length > 0 && (
           <p>本功能需要：{describeAgreements(view.requiredAgreements)}</p>
         )}
@@ -130,21 +132,24 @@ const FeatureConsentGate: React.FC<FeatureConsentGateProps> = ({ feature, childr
       <PolicyConsentChecklist selection={selection} onChange={setSelection} disabled={busy} />
 
       {error && (
-        <p className="flex items-center gap-1.5 break-words text-xs text-rose-600">
-          <FaExclamationCircle className="shrink-0" />
-          {error}
-        </p>
+        <StudioErrorNote>
+          <span className="flex items-center gap-1.5 break-words">
+            <FaExclamationCircle className="shrink-0" aria-hidden />
+            {error}
+          </span>
+        </StudioErrorNote>
       )}
 
       <button
         type="button"
         onClick={handleAccept}
         disabled={busy || !complete}
+        aria-busy={busy}
         className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
       >
         {busy ? (
           <>
-            <FaSpinner className="animate-spin" />
+            <SimpleLoadingSpinner size={0.6} />
             正在记录...
           </>
         ) : (

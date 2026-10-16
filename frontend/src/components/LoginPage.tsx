@@ -396,7 +396,7 @@ export const LoginPage: React.FC = () => {
                                     type="button"
                                     onClick={() => navigate('/login', { replace: true })}
                                     className={cn(
-                                        'rounded-xl px-3 py-2 text-sm font-semibold transition',
+                                        'min-h-11 rounded-full px-3 py-2 text-sm font-semibold transition sm:min-h-0',
                                         !postLoginRedirect?.startsWith('/admin') ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900',
                                     )}
                                 >
@@ -409,7 +409,7 @@ export const LoginPage: React.FC = () => {
                                         navigate('/login?redirectTo=%2Fadmin', { replace: true });
                                     }}
                                     className={cn(
-                                        'rounded-xl px-3 py-2 text-sm font-semibold transition',
+                                        'min-h-11 rounded-full px-3 py-2 text-sm font-semibold transition sm:min-h-0',
                                         postLoginRedirect?.startsWith('/admin') ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900',
                                     )}
                                 >

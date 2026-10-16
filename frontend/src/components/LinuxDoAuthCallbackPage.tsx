@@ -15,6 +15,8 @@ import {
   authSecondaryButtonClassName,
   authTitleClassName,
 } from "./authStudioTheme";
+import { SimpleLoadingSpinner } from "./LoadingSpinner";
+import { studioAccentBlobBlueClassName, studioAccentBlobSkyClassName } from "./studioTheme";
 import { maybeEmitPenaltyAppealFromMessage, maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 
 function buildSynapseAndroidDeepLink(params: URLSearchParams): string {
@@ -221,9 +223,15 @@ export const LinuxDoAuthCallbackPage: React.FC = () => {
   }, [loginWithToken, navigate, searchParams, setNotification]);
 
   return (
-    <div className={`${authPageShellClassName} bg-gradient-to-br from-[#8ECAE6]/20 via-white to-[#219EBC]/10`}>
-      <div className={`${authFrameClassName} ${authCardClassName} text-center`}>
-        <div className="mx-auto mb-5 h-10 w-10 sm:h-12 sm:w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+    <div className={`${authPageShellClassName} relative`}>
+      {/* 装饰：仅用 studioTheme 的 blue/sky 径向 blob（对齐 LoginPage 的 auth 骨架），
+          不再用来源不明的双色渐变与任意 hex 蓝。 */}
+      <div aria-hidden className={`${studioAccentBlobBlueClassName} -right-10 -top-10`} />
+      <div aria-hidden className={`${studioAccentBlobSkyClassName} -bottom-8 -left-10`} />
+      <div className={`${authFrameClassName} ${authCardClassName} relative text-center`}>
+        <div className="mx-auto mb-5">
+          <SimpleLoadingSpinner size={0.75} />
+        </div>
         <h1 className={authTitleClassName}>正在登录 Linux.do</h1>
         <p className={authDescriptionClassName}>{status}</p>
         {deepLinkUrl ? (

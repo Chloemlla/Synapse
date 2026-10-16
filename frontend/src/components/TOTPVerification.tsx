@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { validateTOTPToken, validateBackupCode, cleanTOTPToken, cleanBackupCode } from '../utils/totpUtils';
 import { FaLock, FaInfoCircle } from 'react-icons/fa';
 import { api } from '../api/api';
@@ -34,6 +35,8 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // 弹窗内的入场/退出/循环动效统一由 MotionConfig 在减弱动效偏好下关掉（framer-motion 原生开关）。
+  const reducedMotion = useReducedMotion();
 
   const handleVerify = async () => {
     // 防双击/回车连发：TOTP 是单次凭据，同一枚码第二次提交会命中重放防护（TOTP_CODE_REUSED）。
@@ -129,6 +132,7 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
   if (!isOpen) return null;
 
   return (
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'never'}>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -372,6 +376,7 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </MotionConfig>
   );
 };
 

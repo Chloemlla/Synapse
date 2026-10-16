@@ -1,7 +1,8 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion as m, AnimatePresence } from 'framer-motion';
+import { motion as m, AnimatePresence, MotionConfig } from 'framer-motion';
 import { FaShieldAlt } from 'react-icons/fa';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { api } from '../api/api';
 import { getFingerprint } from '../utils/fingerprint';
 import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
@@ -73,6 +74,9 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   const [isLoading, setIsLoading] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
+  // 本页有十几处 motion 用法（变体入场 + AnimatePresence 切换），
+  // 统一交给 MotionConfig 在减弱动效偏好下关掉位移动画，不再逐个变体加判断。
+  const reducedMotion = useReducedMotion();
   // 验证成功是终态：成功后面板会卸载控件，而第三方控件在卸载时可能自发派发「过期」事件
   // （Cap 的 disconnectedCallback 就会自己 reset 一次）。用 ref 记住终态，别让这类噪声把结果抹掉。
   const succeededRef = useRef(false);
@@ -248,6 +252,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
   };
 
   return (
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'never'}>
     <m.div
       variants={pageVariants}
       initial="initial"
@@ -400,7 +405,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
 
                     {/* 详细信息：技术字段（验证分数 / 主机名 / 错误代码）折叠展示，避免直接抛给用户 */}
                     {verificationResult.details && (
-                      <details className="mt-3 rounded-xl border border-slate-200 bg-white/70 px-3 py-2">
+                      <details className="mt-3 rounded-2xl border border-slate-200 bg-white/70 px-3 py-2">
                         <summary className="cursor-pointer text-xs font-medium text-slate-600">
                           查看验证详情
                         </summary>
@@ -465,7 +470,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
           {/* 操作按钮 */}
           <div className="flex flex-col gap-3 sm:flex-row">
             {backAction && (
-              <button
+              <button type="button"
                 onClick={backAction.onBack}
                 className={`flex-1 ${studioSecondaryButtonClassName}`}
               >
@@ -475,7 +480,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
 
             {/* 控件全部加载失败时也要能重选供应商，否则用户只能反复重试同一家 */}
             {(selectionFailure || error) ? (
-              <button
+              <button type="button"
                 onClick={handleReselect}
                 disabled={selectionLoading}
                 className={`flex-1 ${studioPrimaryButtonClassName}`}
@@ -485,7 +490,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
             ) : null}
 
             {(error || (verificationResult && !verificationResult.success)) && (
-              <button
+              <button type="button"
                 onClick={handleRetry}
                 className={`flex-1 ${studioPrimaryButtonClassName}`}
               >
@@ -494,7 +499,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
             )}
 
             {verificationResult?.success && (
-              <button
+              <button type="button"
                 onClick={() => window.location.reload()}
                 className={`flex-1 ${studioPrimaryButtonClassName}`}
               >
@@ -516,6 +521,7 @@ const CaptchaVerificationPageFrame: React.FC<CaptchaVerificationPageFrameProps> 
         </m.div>
       </InfoQueryShell>
     </m.div>
+    </MotionConfig>
   );
 };
 

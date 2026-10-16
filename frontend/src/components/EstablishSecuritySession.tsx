@@ -189,7 +189,7 @@ export default function EstablishSecuritySession({
   if (satisfied) {
     if (!showActiveBar) return null;
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
         <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">安全会话有效</span>
         <span className="text-slate-500">账号修改、第三方绑定等敏感操作会复用该会话。</span>
         <button type="button" onClick={() => clear()} className={studioSecondaryButtonClassName}>
@@ -200,7 +200,7 @@ export default function EstablishSecuritySession({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
       <div>
         <div className="text-sm font-semibold text-slate-700">建立安全会话</div>
         <div className="text-xs text-slate-500">
@@ -212,7 +212,7 @@ export default function EstablishSecuritySession({
 
       {/* 当前密码（requireTwoFactor 时隐藏，避免只拿到密码就能改动双因素配置） */}
       {requireTwoFactor ? null : (
-        <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
           <label htmlFor="ess-password" className="text-sm font-medium text-slate-700">当前密码</label>
           <div className="mb-2 text-xs text-slate-500">使用登录密码建立安全会话（几分钟内有效，过期后重新验证即可）</div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -233,7 +233,7 @@ export default function EstablishSecuritySession({
             </button>
           </div>
           {verifyError?.kind === 'password' ? (
-            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
               {verifyError.message}
             </div>
           ) : null}
@@ -242,7 +242,7 @@ export default function EstablishSecuritySession({
 
       {/* TOTP（开启后展示；认证器不可用时可用备用恢复码） */}
       {totpAvailable ? (
-        <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label
               htmlFor={totpMode === 'backup' ? 'ess-backup-code' : 'ess-totp-code'}
@@ -296,7 +296,7 @@ export default function EstablishSecuritySession({
             </button>
           </div>
           {verifyError?.kind === 'totp' ? (
-            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
               {verifyError.message}
             </div>
           ) : null}
@@ -305,14 +305,14 @@ export default function EstablishSecuritySession({
 
       {/* Passkey（注册后展示） */}
       {passkeyAvailable ? (
-        <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
           <div className="text-sm font-medium text-slate-700">通行密钥 (Passkey)</div>
           <div className="mb-2 text-xs text-slate-500">使用生物识别或安全密钥进行验证</div>
           <button type="button" disabled={submitting !== null} onClick={verifyPasskey} className={studioSecondaryButtonClassName}>
             {submitting === 'passkey' ? '验证中…' : '使用通行密钥验证'}
           </button>
           {verifyError?.kind === 'passkey' ? (
-            <div role="alert" aria-live="assertive" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+            <div role="alert" aria-live="assertive" className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
               {verifyError.message}
             </div>
           ) : null}

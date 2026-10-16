@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface VerifyCodeInputProps {
   length?: number;
@@ -9,8 +10,11 @@ interface VerifyCodeInputProps {
   inputClassName?: string; // 新增
 }
 
+// 焦点环 = sky-600（与 studioTheme 的 sky 轻装饰同族），不再用别人家的 indigo 十六进制。
+const FOCUS_RING = '#0284c7';
+
 const BOX_STYLE =
-  'w-10 h-12 sm:w-14 sm:h-16 mx-0.5 sm:mx-1 rounded-xl border-2 border-slate-400 bg-white text-slate-700 text-lg sm:text-3xl text-center font-mono font-bold focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-500 placeholder-slate-200 transition-all duration-150 flex-1 min-w-0 shadow-none';
+  'w-10 h-12 sm:w-14 sm:h-16 mx-0.5 sm:mx-1 rounded-2xl border-2 border-slate-400 bg-white text-slate-700 text-lg sm:text-3xl text-center font-mono font-bold focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-500 placeholder-slate-200 transition-all duration-150 flex-1 min-w-0 shadow-none';
 
 export const VerifyCodeInput: React.FC<VerifyCodeInputProps> = ({
   length = 8,
@@ -21,6 +25,9 @@ export const VerifyCodeInput: React.FC<VerifyCodeInputProps> = ({
 }) => {
   const [values, setValues] = useState<string[]>(Array(length).fill(''));
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+  const reducedMotion = useReducedMotion();
+  // 焦点高亮：颜色与阴影保留，缩放只在未开减弱动效时给。
+  const focusRing = { boxShadow: `0 0 0 3px ${FOCUS_RING}`, borderColor: FOCUS_RING };
 
   // 自动提交
   useEffect(() => {
@@ -106,9 +113,9 @@ export const VerifyCodeInput: React.FC<VerifyCodeInputProps> = ({
             onPaste={(e) => handlePaste(e, idx)}
             disabled={loading}
             style={{ transition: 'box-shadow 0.2s, border-color 0.2s' }}
-            initial={{ scale: 0.92, opacity: 0 }}
-            animate={{ scale: values[idx] ? 1.08 : 1, opacity: 1, boxShadow: inputsRef.current[idx] === document.activeElement ? '0 0 0 2px #6366f1' : undefined, borderColor: inputsRef.current[idx] === document.activeElement ? '#6366f1' : undefined }}
-            whileFocus={{ scale: 1.13, boxShadow: '0 0 0 3px #6366f1', borderColor: '#6366f1' }}
+            initial={reducedMotion ? false : { scale: 0.92, opacity: 0 }}
+            animate={{ scale: reducedMotion || !values[idx] ? 1 : 1.08, opacity: 1, boxShadow: inputsRef.current[idx] === document.activeElement ? `0 0 0 2px ${FOCUS_RING}` : undefined, borderColor: inputsRef.current[idx] === document.activeElement ? FOCUS_RING : undefined }}
+            whileFocus={reducedMotion ? focusRing : { ...focusRing, scale: 1.13 }}
             exit={{ scale: 0.92, opacity: 0 }}
             transition={{ duration: 0.18, delay: idx * 0.03 }}
           />
@@ -117,7 +124,8 @@ export const VerifyCodeInput: React.FC<VerifyCodeInputProps> = ({
       <AnimatePresence>
         {error && (
           <motion.div
-            className="text-rose-500 text-xs text-center mb-1"
+            role="alert"
+            className="text-rose-600 text-xs text-center mb-1"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}

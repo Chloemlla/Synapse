@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import {
   FaBan,
   FaExclamationTriangle,
@@ -10,8 +10,11 @@ import {
   FaUserPlus,
 } from 'react-icons/fa';
 import { usePasskey } from '../hooks/usePasskey';
+import { passkeyApi } from '../api/passkey';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { formatDate } from '../utils/date';
 import { useNotification } from './Notification';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
 import { renderCredentialIdModal } from './ui/CredentialIdModal';
 import { ModalPortal } from './ModalPortal';
 import {
@@ -52,6 +55,22 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
   const hasCredential = Array.isArray(credentials) && credentials.length > 0;
   const singlePasskeyMessage = '每个账号仅可注册一个 Passkey。如需更换设备，请先删除当前 Passkey。';
   const registerBusy = isLoading || isRegistering;
+  const reducedMotion = useReducedMotion();
+  // loadCredentials 把请求失败吞成 console（只诊断，返回 void），页面拿不到失败信号，
+  // 单看「列表为空」会把接口失败画成「还没有 Passkey」。
+  // 列表落定后仍为空再确认一次服务端，把「确实没有」与「读取失败」分开，各走自己的状态。
+  const [emptyProbe, setEmptyProbe] = useState<'idle' | 'checking' | 'empty' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (isLoading || hasCredential || emptyProbe !== 'idle') return;
+    let cancelled = false;
+    setEmptyProbe('checking');
+    passkeyApi
+      .getCredentials()
+      .then(() => { if (!cancelled) setEmptyProbe('empty'); })
+      .catch(() => { if (!cancelled) setEmptyProbe('failed'); });
+    return () => { cancelled = true; };
+  }, [emptyProbe, hasCredential, isLoading]);
 
   useEffect(() => {
     latestCredentialsRef.current = credentials;
@@ -114,6 +133,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
         try {
           await loadCredentials();
         } catch (error) {
+          // 轮询期的单次失败不改变结论：下面还有剩余次数，彻底失败会走「注册未确认」的可见失败态。
           console.warn('loadCredentials failed during confirmation', error);
         }
 
@@ -148,6 +168,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
         type: 'error',
       });
     } catch (error) {
+      // console 仅作诊断：用户可见的失败态由 notification 承担。
       console.error('Passkey registration failed:', error);
       setNotification({ message: 'Passkey 注册失败（请求错误）', type: 'error' });
     } finally {
@@ -163,6 +184,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
       setNotification({ message: 'Passkey 已删除', type: 'success' });
       onChanged?.();
     } catch (error) {
+      // console 仅作诊断：用户可见的失败态由 notification 承担。
       console.error('Passkey removal failed:', error);
       setNotification({ message: '删除失败', type: 'error' });
     } finally {
@@ -172,6 +194,7 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
   };
 
   return (
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'never'}>
     <div className="space-y-4" style={{ fontFamily: studioPageFont }}>
       {isPasskeySupported === false ? (
         <motion.div
@@ -255,34 +278,29 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
                     type="button"
                     onClick={() => setConfirmDeleteId(credential.id)}
                     disabled={isLoading || removingId === credential.id}
-                    className={`${studioGhostButtonClassName} border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 sm:w-auto`}
+                    aria-busy={removingId === credential.id}
+                    className={`${studioGhostButtonClassName} min-h-11 border-rose-200 text-rose-600 hover:border-rose-300 hover:text-rose-700 sm:min-h-0 sm:w-auto`}
                   >
-                    {removingId === credential.id ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-rose-200 border-t-rose-600" />
-                    ) : (
-                      <FaTrash />
-                    )}
-                    删除
+                    {removingId === credential.id ? '正在删除...' : <><FaTrash />删除</>}
                   </button>
                 </motion.div>
               ))
               : null}
           </AnimatePresence>
 
-          {!hasCredential && !isLoading ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-8 text-center">
-              <div className="mx-auto mb-3 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                <FaKey />
-              </div>
-              <div className="text-sm font-semibold text-slate-900">还没有 Passkey</div>
-              <p className="mt-1 text-sm text-slate-500">添加后可使用设备密钥完成验证。</p>
-            </div>
+          {isLoading || emptyProbe === 'checking' ? (
+            <StudioLoadingState minHeightClassName="min-h-[120px]" text="正在读取 Passkey…" />
           ) : null}
 
-          {isLoading && !hasCredential ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="h-5 w-5 sm:h-7 sm:w-7 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
-            </div>
+          {!hasCredential && !isLoading && emptyProbe === 'failed' ? (
+            <StudioErrorState
+              message="无法读取 Passkey 列表，请稍后重试。"
+              onRetry={() => setEmptyProbe('idle')}
+            />
+          ) : null}
+
+          {!hasCredential && !isLoading && (emptyProbe === 'idle' || emptyProbe === 'empty') ? (
+            <StudioEmptyState message={<><span className="block font-semibold text-slate-900">还没有 Passkey</span>添加后可使用设备密钥完成验证。</>} />
           ) : null}
 
           <button
@@ -337,14 +355,10 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
                   type="button"
                   onClick={() => void handleRemoveConfirm()}
                   disabled={Boolean(removingId)}
+                  aria-busy={Boolean(removingId)}
                   className={`${studioPrimaryButtonClassName} w-full bg-rose-600 hover:bg-rose-700 sm:w-auto`}
                 >
-                  {removingId ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                  ) : (
-                    <FaTrash />
-                  )}
-                  确认删除
+                  {removingId ? '正在删除...' : <><FaTrash />确认删除</>}
                 </button>
               </div>
             </motion.div>
@@ -415,14 +429,10 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
                   type="button"
                   onClick={() => void handleRegister()}
                   disabled={registerBusy || !credentialName.trim() || hasCredential}
+                  aria-busy={registerBusy}
                   className={`${studioPrimaryButtonClassName} w-full sm:w-auto`}
                 >
-                  {registerBusy ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                  ) : (
-                    <FaUserPlus />
-                  )}
-                  注册
+                  {registerBusy ? '正在注册...' : <><FaUserPlus />注册</>}
                 </button>
               </div>
             </motion.div>
@@ -437,5 +447,6 @@ export const PasskeySetup: React.FC<PasskeySetupProps> = ({ onClose, onChanged }
         onClose: () => setShowModal(false),
       })}
     </div>
+    </MotionConfig>
   );
 };

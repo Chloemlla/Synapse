@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { cn } from '../utils/cn';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
     authInfoPanelClassName,
     authModalCardClassName,
@@ -31,6 +32,9 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
     const modalRef = useRef<HTMLDivElement>(null);
     const touchStartY = useRef<number>(0);
     const touchEndY = useRef<number>(0);
+    // 本弹窗有 24 处 motion 用法（入场 stagger + 悬停矩阵 + 循环 spinner），
+    // 统一交给 MotionConfig 在减弱动效偏好下关掉位移动画，不再逐个元件加判断。
+    const reducedMotion = useReducedMotion();
 
     // 处理触摸滑动关闭
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -157,6 +161,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
     };
 
     return (
+        <MotionConfig reducedMotion={reducedMotion ? 'always' : 'never'}>
         <AnimatePresence>
             {isOpen && (
                 <motion.div
@@ -295,7 +300,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                 </div>
                                                 {loading && (
                                                     <motion.div
-                                                        className="absolute inset-0 bg-white/80 rounded-lg flex items-center justify-center"
+                                                        className="absolute inset-0 bg-white/80 rounded-2xl flex items-center justify-center"
                                                         initial={{ opacity: 0 }}
                                                         animate={{ opacity: 1 }}
                                                     >
@@ -352,7 +357,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                                 </div>
                                                 {loading && (
                                                     <motion.div
-                                                        className="absolute inset-0 bg-white/80 rounded-lg flex items-center justify-center"
+                                                        className="absolute inset-0 bg-white/80 rounded-2xl flex items-center justify-center"
                                                         initial={{ opacity: 0 }}
                                                         animate={{ opacity: 1 }}
                                                     >
@@ -428,6 +433,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                 </motion.div>
             )}
         </AnimatePresence>
+        </MotionConfig>
     );
 };
 

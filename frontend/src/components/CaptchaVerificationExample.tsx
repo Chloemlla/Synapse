@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion as m } from 'framer-motion';
 import { ReturnableCaptchaVerificationPage } from './CaptchaVerificationPage';
+import { StudioErrorNote, StudioSuccessNote } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { studioPanelClassName, studioPrimaryButtonClassName } from './studioTheme';
 
 interface VerificationResult {
@@ -26,10 +28,10 @@ const CaptchaVerificationExample: React.FC = () => {
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
   const [successNotice, setSuccessNotice] = useState<string>('');
+  const reducedMotion = useReducedMotion();
 
   // 处理验证成功
   const handleVerificationSuccess = (result: VerificationResult) => {
-    console.log('验证成功:', result);
     setVerificationResult(result);
     setError('');
     
@@ -44,6 +46,7 @@ const CaptchaVerificationExample: React.FC = () => {
 
   // 处理验证失败
   const handleVerificationFailure = (errorMessage: string) => {
+    // console 仅作诊断：用户可见的失败态由 error 承担。
     console.error('验证失败:', errorMessage);
     setError(errorMessage);
     setVerificationResult(null);
@@ -75,14 +78,14 @@ const CaptchaVerificationExample: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <m.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className={`${studioPanelClassName} w-full max-w-md`}
       >
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-r from-slate-500 to-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -92,7 +95,7 @@ const CaptchaVerificationExample: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          <button
+          <button type="button"
             onClick={startVerification}
             className={`${studioPrimaryButtonClassName} w-full`}
           >
@@ -101,9 +104,7 @@ const CaptchaVerificationExample: React.FC = () => {
 
           {/* 验证成功的内联提示 */}
           {successNotice && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl" role="status" aria-live="polite">
-              <p className="text-sm font-medium text-emerald-700">{successNotice}</p>
-            </div>
+            <StudioSuccessNote>{successNotice}</StudioSuccessNote>
           )}
 
           {/* 显示上次验证结果 */}
@@ -125,10 +126,10 @@ const CaptchaVerificationExample: React.FC = () => {
 
           {/* 显示错误信息 */}
           {error && (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl">
-              <h3 className="font-semibold text-rose-800 mb-2">验证错误</h3>
-              <p className="text-sm text-rose-700">{error}</p>
-            </div>
+            <StudioErrorNote>
+              <h3 className="font-semibold">验证错误</h3>
+              <p className="text-sm">{error}</p>
+            </StudioErrorNote>
           )}
         </div>
 

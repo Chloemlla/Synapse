@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, memo, useRedu
 import ReactDOM from 'react-dom';
 import { getApiBaseUrl } from '../api/api';
 import { motion } from 'framer-motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
@@ -13,6 +14,7 @@ import {
   InfoSectionTitle,
   studioDangerButtonClassName,
   studioFieldClassName,
+  studioModalOverlayClassName,
   studioSecondaryButtonClassName,
   studioSurfaceClassName,
 } from './studioTheme';
@@ -72,7 +74,7 @@ const TraceTableRow = memo(({
       <td className="p-3 whitespace-nowrap">{item.riskLevel || '-'}</td>
       <td className="p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <button 
+          <button type="button" 
             className={studioSecondaryButtonClassName}
             onClick={() => onOpenDetail(item.traceId)}
           >
@@ -130,7 +132,7 @@ const TraceMobileCard = memo(({
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-row sm:grid-cols-none">
-        <button 
+        <button type="button" 
           className={studioSecondaryButtonClassName}
           onClick={() => onOpenDetail(item.traceId)}
         >
@@ -143,6 +145,8 @@ const TraceMobileCard = memo(({
 
 const SmartHumanCheckTraces: React.FC = () => {
   const [page, setPage] = useState(1);
+  // 两处弹窗入场与列表入场都跟系统减弱动效偏好。
+  const reducedMotion = useReducedMotion();
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -597,10 +601,10 @@ const SmartHumanCheckTraces: React.FC = () => {
           icon={FaListAlt}
           action={
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => fetchList(page, pageSize)} className={studioSecondaryButtonClassName} title="刷新">
+              <button type="button" onClick={() => fetchList(page, pageSize)} className={studioSecondaryButtonClassName} title="刷新">
                 <FaSync className="w-4 h-4" /> 刷新
               </button>
-              <button onClick={resetAndSearch} className={studioSecondaryButtonClassName}>
+              <button type="button" onClick={resetAndSearch} className={studioSecondaryButtonClassName}>
                 <FaSearch className="w-4 h-4" /> 重置筛选
               </button>
             </div>
@@ -642,7 +646,7 @@ const SmartHumanCheckTraces: React.FC = () => {
       </InfoPanel>
 
       {/* List & Table */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${studioSurfaceClassName} overflow-hidden`}>
+      <motion.div initial={reducedMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${studioSurfaceClassName} overflow-hidden`}>
         {/* 批量操作工具栏 */}
         <div className="flex flex-col gap-3 border-b border-slate-100 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-slate-500">已选 {selectedIds.length} 条</div>
@@ -651,18 +655,18 @@ const SmartHumanCheckTraces: React.FC = () => {
               <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} />
               <span>本页全选</span>
             </label>
-            <button onClick={() => setSelectedIds([])} className={studioSecondaryButtonClassName}>清空选择</button>
-            <button onClick={viewSelectedLogs} disabled={!selectedIds.length || batchLoading} className={studioSecondaryButtonClassName}>
+            <button type="button" onClick={() => setSelectedIds([])} className={studioSecondaryButtonClassName}>清空选择</button>
+            <button type="button" onClick={viewSelectedLogs} disabled={!selectedIds.length || batchLoading} className={studioSecondaryButtonClassName}>
               <FaEye className="w-4 h-4" /> 查看合并
             </button>
-            <button onClick={copySelectedIds} disabled={!selectedIds.length} className={studioSecondaryButtonClassName}>
+            <button type="button" onClick={copySelectedIds} disabled={!selectedIds.length} className={studioSecondaryButtonClassName}>
               <FaCopy className="w-4 h-4" /> 复制 TraceID
             </button>
-            <button onClick={copySelectedLogs} disabled={!selectedIds.length || batchLoading} className={studioSecondaryButtonClassName}>
+            <button type="button" onClick={copySelectedLogs} disabled={!selectedIds.length || batchLoading} className={studioSecondaryButtonClassName}>
               <FaClipboard className="w-4 h-4" /> 一键复制日志
             </button>
             {canWrite && (
-            <button onClick={deleteSelected} disabled={!selectedIds.length || batchLoading} className={studioDangerButtonClassName}>
+            <button type="button" onClick={deleteSelected} disabled={!selectedIds.length || batchLoading} className={studioDangerButtonClassName}>
               <FaTrash className="w-4 h-4" /> 删除
             </button>
             )}
@@ -675,7 +679,7 @@ const SmartHumanCheckTraces: React.FC = () => {
             className="flex flex-col gap-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between"
           >
             <span>{listError}</span>
-            <button
+            <button type="button"
               onClick={() => fetchList(page, pageSize)}
               disabled={loading}
               className={`${studioSecondaryButtonClassName} shrink-0`}
@@ -743,14 +747,14 @@ const SmartHumanCheckTraces: React.FC = () => {
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-slate-500">共 {total} 条 • 第 {page}/{pages} 页</div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <button disabled={page <= 1} onClick={() => fetchList(page - 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>上一页</button>
-          <button disabled={page >= pages} onClick={() => fetchList(page + 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>下一页</button>
+          <button type="button" disabled={page <= 1} onClick={() => fetchList(page - 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>上一页</button>
+          <button type="button" disabled={page >= pages} onClick={() => fetchList(page + 1, pageSize)} className={`${studioSecondaryButtonClassName} w-full sm:w-auto`}>下一页</button>
         </div>
       </div>
 
       {/* 详情弹窗 — Portal 到 body */}
       {ReactDOM.createPortal(selected && (
-        <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div className={`${studioModalOverlayClassName} items-center overflow-y-auto`} initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }}>
         <div
           ref={detailDialogRef}
           role="dialog"
@@ -763,7 +767,7 @@ const SmartHumanCheckTraces: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <div id="trace-detail-title" className="font-semibold text-slate-900">日志详情</div>
             <div className="flex items-center gap-2">
-              <button
+              <button type="button"
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(JSON.stringify(selected, null, 2));
@@ -776,7 +780,7 @@ const SmartHumanCheckTraces: React.FC = () => {
               >
                 <FaClipboard className="w-4 h-4" /> 复制
               </button>
-              <button
+              <button type="button"
                 onClick={async () => {
                   try {
                     const id = (selected as any)?.traceId || '';
@@ -794,7 +798,7 @@ const SmartHumanCheckTraces: React.FC = () => {
               >
                 <FaCopy className="w-4 h-4" /> 复制ID
               </button>
-              <button onClick={closeDetailModal} className={studioSecondaryButtonClassName}>
+              <button type="button" onClick={closeDetailModal} className={studioSecondaryButtonClassName}>
                 <FaTimes className="w-4 h-4" /> 关闭
               </button>
             </div>
@@ -806,7 +810,7 @@ const SmartHumanCheckTraces: React.FC = () => {
 
       {/* 批量合并查看弹窗 — Portal 到 body */}
       {ReactDOM.createPortal(batchView && (
-        <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.div className={`${studioModalOverlayClassName} items-center overflow-y-auto`} initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }}>
           <div
             ref={batchDialogRef}
             role="dialog"
@@ -819,10 +823,10 @@ const SmartHumanCheckTraces: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <div id="batch-trace-detail-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
               <div className="flex items-center gap-2">
-                <button onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName}>
+                <button type="button" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName}>
                   <FaClipboard className="w-4 h-4" /> 复制
                 </button>
-                <button onClick={closeBatchModal} className={studioSecondaryButtonClassName}>
+                <button type="button" onClick={closeBatchModal} className={studioSecondaryButtonClassName}>
                   <FaTimes className="w-4 h-4" /> 关闭
                 </button>
               </div>

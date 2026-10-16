@@ -9,6 +9,7 @@ import { cn } from "../utils/cn";
 import { getBackendErrorMessage } from "../utils/backendError";
 import { maybeEmitPenaltyAppealFromResponse } from "../utils/penaltyAppeal";
 import { authElevatedPanelClassName } from "./authStudioTheme";
+import { SimpleLoadingSpinner } from "./LoadingSpinner";
 
 declare global {
   interface Window {
@@ -278,7 +279,7 @@ const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
         </div>
       </div>
       {scriptLoadFailed ? (
-        <div className="flex min-h-[44px] w-full items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-3 text-center text-xs text-amber-700">
+        <div role="alert" className="flex min-h-[44px] w-full items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-3 text-center text-xs text-amber-700">
           无法加载 Google 登录模块，请检查网络配置。
         </div>
       ) : (
@@ -294,9 +295,9 @@ const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
             <div
               role="status"
               aria-live="polite"
-              className="absolute inset-0 flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white/95 px-3 text-center"
+              className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/95 px-3 text-center"
             >
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+              <SimpleLoadingSpinner size={0.6} />
               <p className="mt-2 text-xs font-medium text-slate-700">正在完成 Google 登录...</p>
               <p className="mt-1 text-[11px] leading-4 text-slate-500">如果没有自动跳转，请返回登录页重试。</p>
             </div>

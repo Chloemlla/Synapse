@@ -24,6 +24,8 @@ import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
+import { StudioErrorNote, StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -113,6 +115,8 @@ const DEFAULT_USER_STATS: UserListStats = {
 type SecurityFilter = 'all' | 'fingerprintRequired';
 
 export default function FingerprintManager() {
+  // 刷新/清理/重试三处的旋转是循环动效，跟随系统减弱动效偏好停掉。
+  const reducedMotion = useReducedMotion();
   const [tempStats, setTempStats] = useState<FingerprintStats | null>(null);
   const [users, setUsers] = useState<FingerprintUser[]>([]);
   const [userStats, setUserStats] = useState<UserListStats>(DEFAULT_USER_STATS);
@@ -356,9 +360,7 @@ export default function FingerprintManager() {
   if (loading && !tempStats && users.length === 0) {
     return (
       <InfoPanel>
-        <div className="flex min-h-[320px] items-center justify-center text-sm text-slate-500">
-          正在加载指纹管理...
-        </div>
+        <StudioLoadingState minHeightClassName="min-h-[320px]" text="正在加载指纹管理…" />
       </InfoPanel>
     );
   }
@@ -426,8 +428,8 @@ export default function FingerprintManager() {
               <FaSearch className="text-xs" />
               查询
             </InfoPrimaryButton>
-            <button type="button" onClick={handleRefresh} disabled={refreshing} className={studioSecondaryButtonClassName}>
-              <FaSync className={`text-xs ${refreshing ? 'animate-spin' : ''}`} />
+            <button type="button" onClick={handleRefresh} disabled={refreshing} aria-busy={refreshing} className={studioSecondaryButtonClassName}>
+              <FaSync className={`text-xs ${refreshing && !reducedMotion ? 'animate-spin' : ''}`} />
               刷新
             </button>
           </div>
@@ -454,26 +456,23 @@ export default function FingerprintManager() {
                 disabled={!canWrite || cleaning || (tempStats?.expired || 0) <= 0}
                 className={studioDangerButtonClassName}
               >
-                <FaTrash className={`text-xs ${cleaning ? 'animate-spin' : ''}`} />
+                <FaTrash className={`text-xs ${cleaning && !reducedMotion ? 'animate-spin' : ''}`} />
                 清理过期临时指纹
               </button>
             }
           />
 
           {loadError && (
-            <div
-              className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between"
-              role="alert"
-            >
+            <StudioErrorNote className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="flex items-start gap-2">
-                <FaExclamationTriangle className="mt-0.5 shrink-0 text-xs" />
+                <FaExclamationTriangle className="mt-0.5 shrink-0 text-xs" aria-hidden />
                 指纹数据加载失败：{loadError}
               </span>
-              <button type="button" onClick={() => void fetchDashboard()} disabled={loading} className={studioSecondaryButtonClassName}>
-                <FaSync className={`text-xs ${loading ? 'animate-spin' : ''}`} />
+              <button type="button" onClick={() => void fetchDashboard()} disabled={loading} aria-busy={loading} className={studioSecondaryButtonClassName}>
+                <FaSync className={`text-xs ${loading && !reducedMotion ? 'animate-spin' : ''}`} />
                 重试
               </button>
-            </div>
+            </StudioErrorNote>
           )}
 
           <div className="overflow-x-auto">
@@ -633,9 +632,7 @@ export default function FingerprintManager() {
               </div>
 
               {selectedLoading ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                  正在加载指纹详情...
-                </div>
+                <StudioLoadingState minHeightClassName="min-h-[160px]" text="正在加载指纹详情…" />
               ) : selectedFingerprints.length > 0 ? (
                 <div className="max-h-[620px] space-y-3 overflow-auto pr-1">
                   {selectedFingerprints.map((record, index) => {

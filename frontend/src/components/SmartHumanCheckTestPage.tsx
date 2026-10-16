@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { FaClipboard, FaKey, FaRobot, FaShieldAlt } from 'react-icons/fa';
 import { SimpleLoadingSpinner } from './LoadingSpinner';
+import { StudioErrorNote } from './studioFeedback';
 import getApiBaseUrl from '../api';
 import {
   InfoBadge,
@@ -138,8 +139,10 @@ const SmartHumanCheckTestPage: React.FC = () => {
             />
           </label>
           <button
+            type="button"
             onClick={fetchNonce}
             disabled={nonceLoading}
+            aria-busy={nonceLoading}
             className={`${studioSecondaryButtonClassName} h-[46px]`}
           >
             {nonceLoading ? '获取中...' : '从后端获取'}
@@ -203,6 +206,7 @@ const SmartHumanCheckTestPage: React.FC = () => {
           description="验证通过后会在这里输出 Base64 token，便于复制和后续调试。"
           action={token && (
             <button
+              type="button"
               onClick={() => navigator.clipboard.writeText(token).catch(() => {})}
               className={studioPrimaryButtonClassName}
             >
@@ -217,12 +221,14 @@ const SmartHumanCheckTestPage: React.FC = () => {
           placeholder="验证通过后，这里会显示生成的 token（Base64）"
         />
         {error && (
-          <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
+          <StudioErrorNote className="mt-3">
             错误：{error}
-          </div>
+          </StudioErrorNote>
         )}
         {verifyMsg && (
           <div
+            role="status"
+            aria-live="polite"
             className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
               verifyMsg.includes('成功')
                 ? 'border-emerald-200 bg-emerald-50/80 text-emerald-700'
