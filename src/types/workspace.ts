@@ -19,7 +19,7 @@ export interface Workspace {
 // 工作空间成员接口
 export interface WorkspaceMember {
   userId: string;
-  role: "admin" | "editor" | "viewer";
+  role: "admin" | "editor" | "reviewer" | "viewer";
   joinedAt: Date;
   invitedBy: string;
 }
@@ -36,7 +36,7 @@ export interface Invitation {
   id: string;
   workspaceId: string;
   inviteeEmail: string;
-  role: "editor" | "viewer";
+  role: "editor" | "reviewer" | "viewer";
   // IN-1：revoked = 邀请人/工作空间管理员主动撤回（区别于过期与拒绝）。
   status: "pending" | "accepted" | "declined" | "expired" | "revoked";
   createdAt: Date;

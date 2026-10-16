@@ -139,6 +139,7 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'admin',
           },
           { title: '图片上传', url: '/image-upload', icon: FaImage as IconType },
+          { title: 'GeoGebra 工作台', url: '/geogebra', icon: FaProjectDiagram as IconType },
           {
             title: '公共短链',
             url: '/public-shortlink',

@@ -181,14 +181,14 @@ export class WorkspaceController {
       }
 
       // 验证角色
-      const validRoles = ["editor", "viewer"];
+      const validRoles = ["editor", "reviewer", "viewer"];
       const safeRole = validRoles.includes(role) ? role : "viewer";
 
       const invitation = await workspaceService.inviteMember(
         id,
         userId,
         email.toLowerCase().trim(),
-        safeRole as "editor" | "viewer",
+        safeRole as "editor" | "reviewer" | "viewer",
       );
 
       // 发送工作空间邀请通知邮件（异步发送，不影响主流程）

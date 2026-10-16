@@ -312,6 +312,17 @@ describe("功能 ↔ 政策文件映射自检", () => {
     }
   });
 
+  it("GeoGebra cloud projects and public shares use the matching user-content policies", () => {
+    expect(FEATURE_CONSENT_REQUIREMENTS["geogebra-projects"]).toMatchObject({
+      category: "content-upload",
+      agreements: ["usage", "specific-terms"],
+    });
+    expect(FEATURE_CONSENT_REQUIREMENTS["geogebra-share"]).toMatchObject({
+      category: "content-publish",
+      agreements: ["usage", "specific-terms"],
+    });
+  });
+
   it("没有任何功能要求 supported-regions（那是平台级可用地区声明，不是单功能义务）", () => {
     for (const key of FEATURE_CONSENT_KEYS) {
       expect(FEATURE_CONSENT_REQUIREMENTS[key].agreements).not.toContain("supported-regions");

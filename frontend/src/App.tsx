@@ -129,6 +129,8 @@ const GitHubBillingDashboard = React.lazy(() => import('./components/GitHubBilli
 // 公共短链创建页面懒加载
 const PublicShortLinkCreator = React.lazy(() => import('./components/PublicShortLinkCreator'));
 const SpeechToTextPage = React.lazy(() => import('./components/speech-to-text/SpeechToTextPage').then((module) => ({ default: module.SpeechToTextPage })));
+const GeoGebraPage = React.lazy(() => import('./components/geogebra/GeoGebraPage'));
+const GeoGebraSharePage = React.lazy(() => import('./components/geogebra/GeoGebraSharePage'));
 
 // 人机验证页面懒加载（验证方式由后端 captcha-providers 选择）
 const CaptchaVerificationPage = React.lazy(() => import('./components/CaptchaVerificationPage'));
@@ -751,6 +753,8 @@ const App: React.FC = () => {
         <Route path="/challenge" element={<Navigate to="/captcha-verify" replace />} />
         <Route path="/artifacts/:shortId" element={renderAnimatedRoute(<ArtifactSharePage />)} />
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
+        <Route path="/geogebra" element={renderAnimatedRoute(<GeoGebraPage />)} />
+        <Route path="/geogebra/share/:slug" element={renderAnimatedRoute(<GeoGebraSharePage />)} />
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
         <Route path="/tiger-adventure" element={renderProtectedRoute(<TigerAdventure />)} />
         <Route path="/coin-flip" element={renderProtectedRoute(<CoinFlip />)} />
@@ -802,6 +806,8 @@ const App: React.FC = () => {
       '/case-converter': 'Synapse - 大小写转换',
       '/word-count': 'Synapse - 字数统计',
       '/age-calculator': 'Synapse - 年龄计算器',
+      '/geogebra': 'Synapse - GeoGebra 工作台',
+      '/geogebra/share': 'Synapse - GeoGebra 分享',
       '/vt-ratios': 'Synapse - v-t 图六个比例',
       '/email-sender': 'Synapse - 邮件发送',
       '/profile': 'Synapse - 个人资料',
@@ -845,6 +851,8 @@ const App: React.FC = () => {
       '/lottery': '参与Synapse抽奖活动，赢取丰厚奖励',
       '/word-count': '精确统计文本字数、字符数、段落数等信息',
       '/age-calculator': '精确计算年龄，支持多种日期格式和时区',
+      '/geogebra': '编写数学脚本、运行交互画布并管理项目',
+      '/geogebra/share': '查看 GeoGebra 公开分享的画布',
       '/vt-ratios': '用 v-t 图交互演示初速度为零的匀变速直线运动的六条比例推论',
       '/logshare': '安全分享和查看日志文件，支持加密传输',
       '/artifacts': 'View a shared NexAI Artifact.',

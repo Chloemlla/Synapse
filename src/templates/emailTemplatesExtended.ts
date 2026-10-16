@@ -24,6 +24,7 @@ export function generateWorkspaceInviteEmailHtml(
 ): string {
   const workspaceRoleMap: Record<string, string> = {
     editor: "编辑者",
+    reviewer: "审阅者",
     viewer: "查看者",
   };
   const roleText = workspaceRoleMap[role] || role;

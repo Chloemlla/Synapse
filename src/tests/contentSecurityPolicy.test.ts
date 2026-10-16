@@ -115,6 +115,9 @@ describe("contentSecurityPolicy", () => {
       expect(header).toContain("https://accounts.google.com");
       expect(header).toContain("https://www.googletagmanager.com");
       expect(header).toContain("https://fonts.googleapis.com");
+      expect(header).toMatch(/script-src[^;]*https:\/\/www\.geogebra\.org/);
+      expect(header).toMatch(/connect-src[^;]*https:\/\/www\.geogebra\.org/);
+      expect(header).toMatch(/frame-src[^;]*https:\/\/www\.geogebra\.org/);
       // 通配只匹配子域，apex 必须显式列出，否则子域页面跨源引用 chloemlla.com 会被拦。
       expect(header).toContain("https://chloemlla.com");
       expect(header).toContain("https://*.chloemlla.com");

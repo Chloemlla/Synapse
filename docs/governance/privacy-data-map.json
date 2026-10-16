@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-11",
+  "updatedAt": "2026-10-16",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
@@ -11,7 +11,8 @@
     "2026-10-03: every dataset now carries a userFacing block (Chinese label / category / what / why / retention + the policy section that explains it). The privacy policy page renders that block through src/generated/privacyDataMap.ts, so the page cannot drift from this contract; `pnpm run check:privacy-data-map` enforces the generated file in CI.",
     "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations).",
     "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead.",
-    "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries."
+    "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries.",
+    "2026-10-16: GeoGebra cloud projects, versions, comments and public-share snapshots are owner-scoped; deleting a project revokes its linked shares, and account soft deletion makes all owned shares inaccessible and removes their cover files."
   ],
   "datasets": [
     {
@@ -801,6 +802,184 @@
         "src/controllers/webhookController.ts",
         "src/routes/admin/integrations.ts"
       ]
+    },
+    {
+      "id": "geogebra-projects",
+      "collection": "geogebra_projects",
+      "fields": ["projectId", "ownerUserId", "workspaceId", "title", "folder", "tags", "isFavorite", "canvasMode", "code", "revision", "createdAt", "updatedAt", "lastOpenedAt", "subjectDeletedAt"],
+      "purpose": "Save a user's GeoGebra scripts and project metadata for cross-session editing and authorized team collaboration.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "GeoGebra 云端项目",
+        "category": "服务与业务",
+        "what": "项目标题、文件夹、标签、脚本内容、画布类型、收藏状态和所属工作空间。",
+        "why": "让你在登录账号下保存、恢复和整理自己的数学工作台项目。",
+        "retention": "项目保留至你主动删除或账号按平台规则处理；本地项目仅保存在当前浏览器。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Cloud project records are owner-scoped and marked inaccessible when the account is soft-deleted; users can delete individual projects."
+      },
+      "delete": {
+        "onUserDelete": "soft_delete",
+        "user": "DELETE /api/geogebra/projects/:projectId",
+        "accountDeletion": "Subject deletion marker; access is denied immediately."
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/geogebra/export",
+        "includes": ["owned projects", "scripts", "versions"]
+      },
+      "evidence": ["src/models/geogebraProjectModel.ts", "src/geogebra/projectService.ts"]
+    },
+    {
+      "id": "geogebra-project-versions",
+      "collection": "geogebra_project_versions",
+      "fields": ["versionId", "projectId", "ownerUserId", "workspaceId", "label", "code", "canvasMode", "trigger", "createdAt", "subjectDeletedAt"],
+      "purpose": "Provide user-requested project snapshots, comparison, and rollback.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "GeoGebra 项目版本",
+        "category": "服务与业务",
+        "what": "用户保存的项目脚本快照、版本说明、画布类型和保存时间。",
+        "why": "支持查看历史、比较差异和恢复之前的项目内容。",
+        "retention": "随项目保留；删除项目时一并删除版本。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Version records are removed when the owning project is deleted and marked inaccessible on account deletion."
+      },
+      "delete": {
+        "onUserDelete": "soft_delete",
+        "parentDelete": "delete_many",
+        "manual": "Project deletion endpoint"
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/geogebra/export",
+        "includes": ["version script snapshots"]
+      },
+      "evidence": ["src/models/geogebraProjectVersionModel.ts", "src/geogebra/projectService.ts"]
+    },
+    {
+      "id": "geogebra-review-comments",
+      "collection": "geogebra_review_comments",
+      "fields": ["commentId", "projectId", "versionId", "workspaceId", "authorUserId", "objectName", "body", "status", "createdAt", "updatedAt", "subjectDeletedAt"],
+      "purpose": "Allow authorized project collaborators to leave and resolve review comments.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "GeoGebra 项目评论",
+        "category": "服务与业务",
+        "what": "项目成员提交的评论、关联版本或图形对象、处理状态和时间。",
+        "why": "支持团队成员围绕项目版本和图形对象进行审阅。",
+        "retention": "随项目保留；删除项目时一并删除评论。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Comments are removed with their project and marked inaccessible on author account deletion."
+      },
+      "delete": {
+        "onUserDelete": "soft_delete",
+        "parentDelete": "delete_many",
+        "manual": "Project deletion endpoint"
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/geogebra/export",
+        "includes": ["comments authored by the current user"]
+      },
+      "evidence": ["src/models/geogebraReviewCommentModel.ts", "src/geogebra/reviewCommentService.ts"]
+    },
+    {
+      "id": "geogebra-public-shares",
+      "collection": "geogebra_shares",
+      "fields": ["shareId", "slug", "ownerUserId", "projectId", "title", "canvasMode", "commands", "allowFork", "coverStored", "revokedAt", "createdAt", "subjectDeletedAt"],
+      "purpose": "Publish a user-selected GeoGebra canvas snapshot and allow link-based viewing or forking.",
+      "legalBasis": "user_publication",
+      "userFacing": {
+        "label": "GeoGebra 公开分享",
+        "category": "服务与业务",
+        "what": "分享标题、脚本指令、画布类型、可选封面和 fork 设置。",
+        "why": "让你通过分享链接展示画布，或允许他人复制后继续编辑。",
+        "retention": "分享会持续有效，直到你撤销或删除；账号注销会立即关闭公开访问。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Public snapshots remain available until revoked/deleted and are disabled on owner account deletion."
+      },
+      "delete": {
+        "onUserDelete": "revoke_and_soft_delete",
+        "user": "DELETE /api/geogebra/shares/:shareId",
+        "accountDeletion": "Set revokedAt and subjectDeletedAt; public reads return not found."
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/geogebra/export",
+        "includes": ["owned share snapshots"]
+      },
+      "evidence": ["src/models/geogebraShareModel.ts", "src/geogebra/shareService.ts"]
+    },
+    {
+      "id": "geogebra-share-covers",
+      "collection": "filesystem:data/geogebra/shares",
+      "fields": ["shareId", "PNG bytes", "sizeBytes"],
+      "purpose": "Serve an optional public preview image for an active GeoGebra share.",
+      "legalBasis": "user_publication",
+      "userFacing": {
+        "label": "GeoGebra 分享封面",
+        "category": "服务与业务",
+        "what": "你主动发布的画布预览图片。",
+        "why": "让分享链接展示对应画布的预览。",
+        "retention": "封面在分享撤销、删除或账号注销时不可再访问，并按清理规则移除。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "PNG files are stored outside MongoDB and removed when their share is deleted or revoked."
+      },
+      "delete": {
+        "onUserDelete": "delete_file_and_revoke_share",
+        "manual": "Share deletion endpoint"
+      },
+      "export": {
+        "supported": "partial",
+        "surface": "Public cover URL while the share is active",
+        "includes": ["PNG cover image"]
+      },
+      "evidence": ["src/geogebra/shareAssetStorage.ts", "src/geogebra/shareService.ts"]
+    },
+    {
+      "id": "browser-geogebra-projects",
+      "collection": "browser.localStorage",
+      "fields": ["synapse-geogebra-studio-v1: project metadata, scripts, local snapshots"],
+      "purpose": "Keep local GeoGebra drafts available in the same browser before cloud sync.",
+      "legalBasis": "local_user_requested_storage",
+      "userFacing": {
+        "label": "本地 GeoGebra 草稿",
+        "category": "客户端本地",
+        "what": "当前浏览器保存的项目标题、脚本、画布类型和本地版本。",
+        "why": "允许你在不登录时继续使用本地工作台。",
+        "retention": "仅保存在当前浏览器，直到你清理浏览器数据或删除本地项目。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "client_ttl",
+        "description": "Stored in the current browser localStorage until cleared by the user or browser."
+      },
+      "delete": {
+        "onUserDelete": "not_linked",
+        "manual": "Delete project in the local project panel or clear browser site data"
+      },
+      "export": {
+        "supported": true,
+        "surface": "Local project export/download in the GeoGebra page",
+        "includes": ["local scripts and snapshots"]
+      },
+      "evidence": ["frontend/src/components/geogebra/localProjects.ts"]
     }
   ]
 }

@@ -33,6 +33,9 @@ const THIRD_PARTY_SCRIPT_HOSTS = [
   "https://analytics.google.com",
   "https://www.clarity.ms",
   "https://*.clarity.ms",
+  // GeoGebra applet loader and its same-vendor resources are required only by the lazy GeoGebra tool page.
+  "https://www.geogebra.org",
+  "https://*.geogebra.org",
 ] as const;
 
 const THIRD_PARTY_STYLE_HOSTS = [
@@ -45,6 +48,8 @@ const THIRD_PARTY_STYLE_HOSTS = [
   "https://*.cloudflare.com",
   "https://js.hcaptcha.com",
   "https://*.hcaptcha.com",
+  "https://www.geogebra.org",
+  "https://*.geogebra.org",
 ] as const;
 
 const PRODUCTION_CONNECT_HOSTS = [
@@ -70,6 +75,8 @@ const PRODUCTION_CONNECT_HOSTS = [
   "https://www.google.com",
   "https://www.clarity.ms",
   "https://*.clarity.ms",
+  "https://www.geogebra.org",
+  "https://*.geogebra.org",
 ] as const;
 
 const DEVELOPMENT_CONNECT_HOSTS = [
@@ -98,6 +105,8 @@ const FRAME_HOSTS = [
   "https://*.cloudflare.com",
   "https://js.hcaptcha.com",
   "https://*.hcaptcha.com",
+  "https://www.geogebra.org",
+  "https://*.geogebra.org",
 ] as const;
 
 function isNonProductionRuntime(): boolean {

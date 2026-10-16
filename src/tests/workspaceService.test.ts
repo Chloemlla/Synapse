@@ -171,6 +171,14 @@ describe("workspaceService.inviteMember", () => {
     expect(inv).toMatchObject({ workspaceId: "ws-1", role: "editor", inviteeEmail: "alice@example.com" });
   });
 
+  it("reviewer role can be invited for project review", async () => {
+    mockWorkspaceFindOne(workspaceDoc());
+    (InvitationModel.create as jest.Mock).mockImplementation(async (data: unknown) => data);
+
+    const invitation = await service.inviteMember("ws-1", "owner", "reviewer@example.com", "reviewer");
+    expect(invitation.role).toBe("reviewer");
+  });
+
   it("非管理员邀请被拒（WS_003）", async () => {
     mockWorkspaceFindOne(workspaceDoc());
     await expect(service.inviteMember("ws-1", "bob", "a@b.c", "viewer")).rejects.toMatchObject({

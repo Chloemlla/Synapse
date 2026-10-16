@@ -177,7 +177,7 @@ export class WorkspaceService {
     workspaceId: string,
     inviterId: string,
     inviteeEmail: string,
-    role: "editor" | "viewer",
+    role: "editor" | "reviewer" | "viewer",
   ): Promise<Invitation> {
     try {
       // 获取工作空间
@@ -202,7 +202,7 @@ export class WorkspaceService {
       }
 
       // 验证角色
-      if (!["editor", "viewer"].includes(role)) {
+      if (!["editor", "reviewer", "viewer"].includes(role)) {
         throw new WorkspaceError(`无效的角色: ${role}`, WorkspaceErrorCodes.INVALID_ROLE);
       }
 
@@ -589,7 +589,7 @@ export class WorkspaceService {
    * @param userId 用户ID
    * @returns 用户角色或null
    */
-  async getMemberRole(workspaceId: string, userId: string): Promise<"admin" | "editor" | "viewer" | null> {
+  async getMemberRole(workspaceId: string, userId: string): Promise<"admin" | "editor" | "reviewer" | "viewer" | null> {
     try {
       const workspace = await WorkspaceModel.findOne({ id: workspaceId }).lean();
 

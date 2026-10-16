@@ -12,6 +12,7 @@ import {
   deeplxLimiter,
   deeplxPublicLimiter,
   docToolLimiter,
+  geogebraLimiter,
   historyLimiter,
   ipfsLimiter,
   jobsLimiter,
@@ -251,5 +252,13 @@ export const routeLimiterModules: RouteModule[] = [
     requiresAuth: true,
     rateLimited: true,
     isPublic: false,
+  },
+  {
+    name: "geogebra-limiter",
+    path: "/api/geogebra",
+    router: geogebraLimiter,
+    requiresAuth: "mixed",
+    rateLimited: true,
+    isPublic: "mixed",
   },
 ];

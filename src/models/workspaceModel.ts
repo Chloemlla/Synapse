@@ -5,7 +5,7 @@ import type { WorkspaceMember, WorkspaceSettings } from "../types/workspace";
 const WorkspaceMemberSchema = new Schema<WorkspaceMember>(
   {
     userId: { type: String, required: true },
-    role: { type: String, enum: ["admin", "editor", "viewer"], required: true },
+    role: { type: String, enum: ["admin", "editor", "reviewer", "viewer"], required: true },
     joinedAt: { type: Date, default: Date.now },
     invitedBy: { type: String, required: true },
   },

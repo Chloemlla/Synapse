@@ -366,6 +366,13 @@ const LIMITER_DEFINITIONS = {
     max: 120,
     message: "文档转换请求过于频繁，请稍后再试",
   },
+  geogebra: {
+    profile: "authRead",
+    category: "public-api",
+    max: 180,
+    keyGenerator: userIpDualKey,
+    message: "GeoGebra 工作台请求过于频繁，请稍后再试",
+  },
   admin: {
     profile: "admin",
     category: "admin",
@@ -718,6 +725,7 @@ export const historyLimiter = limiterFromDefinition("ttsHistory");
 export const jobsLimiter = limiterFromDefinition("ttsJobs");
 export const transcribeLimiter = limiterFromDefinition("transcribe");
 export const docToolLimiter = limiterFromDefinition("docTool");
+export const geogebraLimiter = limiterFromDefinition("geogebra");
 export const adminLimiter = limiterFromDefinition("admin");
 export const adminRedisLimiter = limiterFromDefinition("adminRedis");
 export const adminRedisExportLimiter = limiterFromDefinition("adminRedisExport");

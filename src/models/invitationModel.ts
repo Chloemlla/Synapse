@@ -4,7 +4,7 @@ export interface IInvitation extends Document {
   id: string;
   workspaceId: string;
   inviteeEmail: string;
-  role: "editor" | "viewer";
+  role: "editor" | "reviewer" | "viewer";
   status: "pending" | "accepted" | "declined" | "expired" | "revoked";
   createdAt: Date;
   expiresAt: Date;
@@ -15,7 +15,7 @@ const InvitationSchema = new Schema<IInvitation>(
     id: { type: String, required: true, unique: true },
     workspaceId: { type: String, required: true },
     inviteeEmail: { type: String, required: true },
-    role: { type: String, enum: ["editor", "viewer"], required: true },
+    role: { type: String, enum: ["editor", "reviewer", "viewer"], required: true },
     status: {
       type: String,
       enum: ["pending", "accepted", "declined", "expired", "revoked"],

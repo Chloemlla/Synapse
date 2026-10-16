@@ -25,7 +25,7 @@ export interface PrivacyDataMapDataset {
 }
 
 export const PRIVACY_DATA_MAP_VERSION = 1;
-export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-11";
+export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-16";
 export const PRIVACY_DATA_CATEGORY_ORDER = [
   "账户与身份",
   "安全与风控",
@@ -336,14 +336,86 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     exportable: "full",
     deleteOnUserDelete: "not_applicable",
   },
+  {
+    id: "geogebra-projects",
+    label: "GeoGebra 云端项目",
+    category: "服务与业务",
+    what: "项目标题、文件夹、标签、脚本内容、画布类型、收藏状态和所属工作空间。",
+    why: "让你在登录账号下保存、恢复和整理自己的数学工作台项目。",
+    retention: "项目保留至你主动删除或账号按平台规则处理；本地项目仅保存在当前浏览器。",
+    policySection: "data-sharing",
+    retentionType: "account_lifetime",
+    exportable: "full",
+    deleteOnUserDelete: "soft_delete",
+  },
+  {
+    id: "geogebra-project-versions",
+    label: "GeoGebra 项目版本",
+    category: "服务与业务",
+    what: "用户保存的项目脚本快照、版本说明、画布类型和保存时间。",
+    why: "支持查看历史、比较差异和恢复之前的项目内容。",
+    retention: "随项目保留；删除项目时一并删除版本。",
+    policySection: "data-sharing",
+    retentionType: "account_lifetime",
+    exportable: "full",
+    deleteOnUserDelete: "soft_delete",
+  },
+  {
+    id: "geogebra-review-comments",
+    label: "GeoGebra 项目评论",
+    category: "服务与业务",
+    what: "项目成员提交的评论、关联版本或图形对象、处理状态和时间。",
+    why: "支持团队成员围绕项目版本和图形对象进行审阅。",
+    retention: "随项目保留；删除项目时一并删除评论。",
+    policySection: "data-sharing",
+    retentionType: "account_lifetime",
+    exportable: "full",
+    deleteOnUserDelete: "soft_delete",
+  },
+  {
+    id: "geogebra-public-shares",
+    label: "GeoGebra 公开分享",
+    category: "服务与业务",
+    what: "分享标题、脚本指令、画布类型、可选封面和 fork 设置。",
+    why: "让你通过分享链接展示画布，或允许他人复制后继续编辑。",
+    retention: "分享会持续有效，直到你撤销或删除；账号注销会立即关闭公开访问。",
+    policySection: "data-sharing",
+    retentionType: "account_lifetime",
+    exportable: "full",
+    deleteOnUserDelete: "revoke_and_soft_delete",
+  },
+  {
+    id: "geogebra-share-covers",
+    label: "GeoGebra 分享封面",
+    category: "服务与业务",
+    what: "你主动发布的画布预览图片。",
+    why: "让分享链接展示对应画布的预览。",
+    retention: "封面在分享撤销、删除或账号注销时不可再访问，并按清理规则移除。",
+    policySection: "data-sharing",
+    retentionType: "account_lifetime",
+    exportable: "partial",
+    deleteOnUserDelete: "delete_file_and_revoke_share",
+  },
+  {
+    id: "browser-geogebra-projects",
+    label: "本地 GeoGebra 草稿",
+    category: "客户端本地",
+    what: "当前浏览器保存的项目标题、脚本、画布类型和本地版本。",
+    why: "允许你在不登录时继续使用本地工作台。",
+    retention: "仅保存在当前浏览器，直到你清理浏览器数据或删除本地项目。",
+    policySection: "data-sharing",
+    retentionType: "client_ttl",
+    exportable: "full",
+    deleteOnUserDelete: "not_linked",
+  },
 ];
 
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
 export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = {
   "账户与身份": ["mobile-client-tokens"],
   "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports"],
-  "服务与业务": ["tts-jobs", "recommendation-feedback"],
+  "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers"],
   "合规与审计": ["policy-consents", "audit-logs"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],
-  "客户端本地": ["browser-local-fingerprint-cache"],
+  "客户端本地": ["browser-local-fingerprint-cache", "browser-geogebra-projects"],
 };

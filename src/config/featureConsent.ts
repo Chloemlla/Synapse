@@ -60,6 +60,8 @@ export const FEATURE_CONSENT_KEYS = [
   "api-access",
   "cdk-redeem",
   "data-report",
+  "geogebra-projects",
+  "geogebra-share",
 ] as const;
 export type FeatureConsentKey = (typeof FEATURE_CONSENT_KEYS)[number];
 
@@ -157,6 +159,22 @@ export const FEATURE_CONSENT_REQUIREMENTS: Record<FeatureConsentKey, FeatureCons
     agreements: ["terms", "specific-terms"],
     rationale: "客户端上报的数据含设备与使用信息：terms 的隐私与数据处理章节说明采集范围，specific-terms 说明第三方处理。路由：/api/data-collection",
     message: "上报客户端数据前，需要先同意服务条款与服务专项条款。",
+  },
+  "geogebra-projects": {
+    key: "geogebra-projects",
+    label: "GeoGebra 云端项目与协作",
+    category: "content-upload",
+    agreements: ["usage", "specific-terms"],
+    rationale: "你可以将脚本、版本和评论保存到自己的 Synapse 账号并继续编辑；使用政策说明内容合规范围，服务专项条款说明这项云端能力。",
+    message: "将 GeoGebra 项目和协作内容保存到云端前，需要先同意使用政策与服务专项条款。",
+  },
+  "geogebra-share": {
+    key: "geogebra-share",
+    label: "GeoGebra 公开分享",
+    category: "content-publish",
+    agreements: ["usage", "specific-terms"],
+    rationale: "公开分享会让持有链接的人查看这份画布；使用政策说明公开内容的责任，服务专项条款说明分享能力的使用约定。",
+    message: "发布可被他人访问的 GeoGebra 分享前，需要先同意使用政策与服务专项条款。",
   },
 };
 

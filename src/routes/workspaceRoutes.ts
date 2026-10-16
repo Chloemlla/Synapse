@@ -214,7 +214,7 @@ router.get("/:id/members", workspaceLimiter, authenticateToken, WorkspaceControl
  *                 description: 被邀请者邮箱
  *               role:
  *                 type: string
- *                 enum: [editor, viewer]
+ *                 enum: [editor, reviewer, viewer]
  *                 default: viewer
  *                 description: 分配的角色
  *     responses:

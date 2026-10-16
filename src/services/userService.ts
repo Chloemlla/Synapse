@@ -6,6 +6,7 @@ import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/so
 import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
 import { checkAnyLegalHold } from "./legalHoldService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
+import { deleteGeoGebraShareCover } from "../geogebra/shareAssetStorage";
 import {
   canDecryptPassword,
   protectPassword,
@@ -594,10 +595,26 @@ const USER_CASCADE_COLLECTIONS: ReadonlyArray<{ collection: string; field: strin
   { collection: "oauth_authorization_codes", field: "userId" },
   { collection: "account_identities", field: "userId" },
   { collection: "artifacts", field: "userId" },
+  { collection: "geogebra_projects", field: "ownerUserId" },
+  { collection: "geogebra_project_versions", field: "ownerUserId" },
+  { collection: "geogebra_review_comments", field: "authorUserId" },
+  { collection: "geogebra_shares", field: "ownerUserId" },
   { collection: "cdks", field: "userId" },
   { collection: "registration_invites", field: "userId" },
   { collection: "short_urls", field: "userId" },
 ];
+
+async function purgeGeoGebraShareCovers(userId: string): Promise<void> {
+  const db = mongoose.connection.db;
+  if (!db) return;
+  try {
+    const shares = await db.collection("geogebra_shares").find({ ownerUserId: userId }).project({ shareId: 1 }).toArray();
+    await Promise.all(shares.flatMap((share) => typeof share.shareId === "string" ? [deleteGeoGebraShareCover(share.shareId)] : []));
+  } catch {
+    // subjectDeletedAt already makes these covers inaccessible; a cleanup error must not undo account deactivation.
+    logger.warn("[UserService] GeoGebra share cover cleanup deferred");
+  }
+}
 
 /**
  * 软删除账号（RC-01 / RC-11 / RC-21）。
@@ -714,6 +731,7 @@ export const softDeleteUser = async (
     await session.endSession();
   }
 
+  await purgeGeoGebraShareCovers(id);
   logger.info("[UserService] 账号已软删除", { id, by, reason });
   return true;
 };
