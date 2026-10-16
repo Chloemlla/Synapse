@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaCircleInfo, FaShieldAlt } from "react-icons/fa";
+import { FaInfoCircle, FaShieldAlt } from "react-icons/fa";
 import { useAuth } from "../../hooks/useAuth";
 import { cn } from "../../utils/cn";
 import { useConfirm } from "../confirm/ConfirmDialogProvider";
@@ -300,7 +300,7 @@ export default function PixelWorkbenchPage() {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => setNoticeOpen(true)} className={studioGhostButtonClassName}>
-              <FaCircleInfo /> 操作说明与风险提示
+              <FaInfoCircle /> 操作说明与风险提示
             </button>
             <button type="button" onClick={() => void handleExportUserData()} className={studioGhostButtonClassName}>
               <FaShieldAlt /> 导出我的任务数据

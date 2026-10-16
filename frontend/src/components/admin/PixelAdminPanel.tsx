@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FaCopy, FaKey, FaListUl, FaPlus, FaSlidersH, FaSync, FaTrash } from "react-icons/fa";
+import { FaChartBar, FaCopy, FaDatabase, FaKey, FaList, FaListUl, FaPlus, FaSlidersH, FaSync, FaTrash } from "react-icons/fa";
 import {
   createPixelCdk,
   deletePixelCdk,
@@ -229,10 +229,10 @@ const PixelAdminPanel: React.FC = () => {
       {tab === "overview" && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <InfoMetricCard label="卡密映射" value={dashboard?.mappings.total ?? 0} detail={`启用 ${dashboard?.mappings.enabled ?? 0}`} />
-            <InfoMetricCard label="调用总数" value={dashboard?.usage.total ?? 0} detail={`24 小时 ${dashboard?.usage.last24h ?? 0} · 7 天 ${dashboard?.usage.last7d ?? 0}`} />
-            <InfoMetricCard label="任务归属" value={dashboard?.tasks.total ?? 0} />
-            <InfoMetricCard label="最近调用" value={dashboard?.usage.lastAt ? new Date(dashboard.usage.lastAt).toLocaleString("zh-CN") : "无数据"} />
+            <InfoMetricCard label="卡密映射" value={dashboard?.mappings.total ?? 0} detail={`启用 ${dashboard?.mappings.enabled ?? 0}`} icon={FaKey} />
+            <InfoMetricCard label="调用总数" value={dashboard?.usage.total ?? 0} detail={`24 小时 ${dashboard?.usage.last24h ?? 0} · 7 天 ${dashboard?.usage.last7d ?? 0}`} icon={FaDatabase} />
+            <InfoMetricCard label="任务归属" value={dashboard?.tasks.total ?? 0} icon={FaList} />
+            <InfoMetricCard label="最近调用" value={dashboard?.usage.lastAt ? new Date(dashboard.usage.lastAt).toLocaleString("zh-CN") : "无数据"} icon={FaChartBar} />
           </div>
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">保留策略</h3>
