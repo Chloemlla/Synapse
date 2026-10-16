@@ -12,7 +12,8 @@
     "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations).",
     "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead.",
     "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries.",
-    "2026-10-16: GeoGebra cloud projects, versions, comments and public-share snapshots are owner-scoped; deleting a project revokes its linked shares, and account soft deletion makes all owned shares inaccessible and removes their cover files."
+    "2026-10-16: GeoGebra cloud projects, versions, comments and public-share snapshots are owner-scoped; deleting a project revokes its linked shares, and account soft deletion makes all owned shares inaccessible and removes their cover files.",
+    "2026-10-16: tickets and ticket_attachments added — the support ticket system previously stored user content (ticket text, contactEmail) and now also holds the new ticket fields (type inquiry/incident, related service + reference, related tickets, contact email) and an attachment store (jpg/jpeg/png/gif/txt/pdf, 1MB per file, 5 per ticket, owner/superadmin downloads only)."
   ],
   "datasets": [
     {
@@ -1445,6 +1446,63 @@
         "includes": ["local scripts and snapshots"]
       },
       "evidence": ["frontend/src/components/geogebra/localProjects.ts"]
+    },
+    {
+      "id": "tickets",
+      "collection": "tickets",
+      "fields": ["userId", "username", "title", "description", "status", "priority", "category", "type", "relatedService", "relatedServiceRef", "contactEmail", "relatedTickets", "assigneeId", "assigneeName", "attachmentCount", "messages[].senderRole", "messages[].content", "messages[].visibility", "messages[].aiErrorDetails", "userLastReadAt", "adminLastReadAt", "createdAt", "updatedAt"],
+      "purpose": "Support ticket intake, AI-assisted troubleshooting, and agent follow-up",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+      "label": "客服工单与对话",
+      "category": "服务与业务",
+      "what": "工单标题与正文、你填写的联系邮箱、类型（咨询 / 故障）与相关服务、关联的其它工单、优先级与分类，以及工单里的全部对话（含智能助手的回复；AI 排查失败时仅客服可见的原因摘要）。",
+      "why": "受理并跟踪你提交的问题与建议：客服与智能助手共用同一份上下文给出排查方案，管理端按状态 / 优先级 / 类型 / 相关服务排序与统计，避免就同一件事反复询问。",
+      "retention": "随账号保留：工单用于回查历史结论，不做定期清理；删除账号时按账号数据处理流程处置。",
+      "policySection": "data-use"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Tickets are kept with the account as support history; there is no TTL on the collection"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "kept as support history after account deletion (no cascade job today); a superadmin can remove a ticket on request"
+      },
+      "export": {
+        "supported": "partial",
+        "surface": "support page (owner) / superadmin ticket panel",
+        "includes": ["ticket fields", "conversation messages"]
+      },
+      "evidence": ["src/models/ticketModel.ts", "src/controllers/ticketController.ts", "frontend/src/components/TicketSystem.tsx"]
+    },
+    {
+      "id": "ticket-attachments",
+      "collection": "ticket_attachments",
+      "fields": ["ticketId", "userId", "username", "fileName", "ext", "mimeType", "size", "sha256", "data", "createdAt"],
+      "purpose": "User-uploaded screenshots and documents attached to support tickets",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+      "label": "工单附件（截图 / 文档）",
+      "category": "服务与业务",
+      "what": "你主动上传到工单的文件正文（仅 jpg / jpeg / png / gif / txt / pdf，单个不超过 1MB，单个工单最多 5 个）、原始文件名、大小、内容摘要与上传时间。下载权限限于工单属主与超级管理员。",
+      "why": "让客服看到你描述的界面与报错原文，减少来回追问；附件是可选的，不上传不影响工单受理。",
+      "retention": "与所属工单同生命周期；删除该附件后正文立即从服务器移除。",
+      "policySection": "data-use"
+      },
+      "retention": {
+        "type": "account_lifetime",
+        "description": "Attachment bytes live as long as their ticket; deleting a single attachment removes the stored bytes immediately"
+      },
+      "delete": {
+        "onUserDelete": "retained",
+        "target": "attachments follow their ticket (no cascade job today); the uploader, the ticket owner or a superadmin can delete one attachment through the ticket API"
+      },
+      "export": {
+        "supported": false,
+        "reason": "Download is per-attachment through the ticket API (owner/superadmin only); there is no bulk export surface"
+      },
+      "evidence": ["src/models/ticketAttachmentModel.ts", "src/controllers/ticketController.ts", "src/utils/ticketAttachments.ts"]
     }
   ]
 }

@@ -1,13 +1,43 @@
 import express from "express";
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import multer from "multer";
 import { ticketController } from "../controllers/ticketController";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateSuperAdmin, isAdminRole } from "../middleware/auth";
 import { requireAdminScope } from "../middleware/adminScope";
 import { authenticateToken } from "../middleware/authenticateToken";
-import { ticketAdminLimiter, ticketReadLimiter, ticketWriteLimiter } from "../middleware/routeLimiters";
+import {
+  ticketAdminLimiter,
+  ticketReadLimiter,
+  ticketUploadLimiter,
+  ticketWriteLimiter,
+} from "../middleware/routeLimiters";
+import { MAX_TICKET_ATTACHMENT_BYTES } from "../utils/ticketAttachments";
 
 const router = express.Router();
+
+// 附件上传：一律进内存（正文要当场校验魔数并落到 Mongo，磁盘中转只会多一份要清理的临时文件）。
+// 体积上限刻意比业务上限多 64KB：让「超过 1MB」由控制器给出带单位的中文原因，
+// 而不是 multer 的 LIMIT_FILE_SIZE 通用错误。
+const ticketAttachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_TICKET_ATTACHMENT_BYTES + 64 * 1024, files: 1 },
+});
+
+const uploadSingleTicketAttachment: RequestHandler = (req, res, next) => {
+  ticketAttachmentUpload.single("file")(req, res, (error: unknown) => {
+    if (error) {
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          error: `单个附件不能超过 ${Math.round(MAX_TICKET_ATTACHMENT_BYTES / 1024 / 1024)}MB`,
+          code: "FILE_TOO_LARGE",
+        });
+      }
+      return res.status(400).json({ error: "附件上传失败，请重试", code: "UPLOAD_FAILED" });
+    }
+    next();
+  });
+};
 
 // 所有工单接口都需要登录
 router.use(authenticateToken);
@@ -78,6 +108,15 @@ router.get("/", ticketReadLimiter, ticketController.getUserTickets);
 router.get("/unread-count", ticketReadLimiter, ticketController.getUnreadCount);
 router.get("/:id", ticketReadLimiter, ticketController.getTicketById);
 router.post("/:id/messages", ticketWriteLimiter, ticketController.replyToTicket);
+// 附件：上传/删除是写类操作（`ticketUpload`），下载走读类限额（60/分钟够用：单个 1MB）。
+router.post(
+  "/:id/attachments",
+  ticketUploadLimiter,
+  uploadSingleTicketAttachment,
+  ticketController.uploadTicketAttachment,
+);
+router.get("/:id/attachments/:attachmentId/download", ticketReadLimiter, ticketController.downloadTicketAttachment);
+router.delete("/:id/attachments/:attachmentId", ticketUploadLimiter, ticketController.deleteTicketAttachment);
 // 属主自助关闭；客服侧走 PATCH /admin/:id
 router.patch("/:id/close", ticketWriteLimiter, ticketController.closeOwnTicket);
 

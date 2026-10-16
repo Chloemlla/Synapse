@@ -528,13 +528,37 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     exportable: "full",
     deleteOnUserDelete: "not_linked",
   },
+  {
+    id: "tickets",
+    label: "客服工单与对话",
+    category: "服务与业务",
+    what: "工单标题与正文、你填写的联系邮箱、类型（咨询 / 故障）与相关服务、关联的其它工单、优先级与分类，以及工单里的全部对话（含智能助手的回复；AI 排查失败时仅客服可见的原因摘要）。",
+    why: "受理并跟踪你提交的问题与建议：客服与智能助手共用同一份上下文给出排查方案，管理端按状态 / 优先级 / 类型 / 相关服务排序与统计，避免就同一件事反复询问。",
+    retention: "随账号保留：工单用于回查历史结论，不做定期清理；删除账号时按账号数据处理流程处置。",
+    policySection: "data-use",
+    retentionType: "account_lifetime",
+    exportable: "partial",
+    deleteOnUserDelete: "retained",
+  },
+  {
+    id: "ticket-attachments",
+    label: "工单附件（截图 / 文档）",
+    category: "服务与业务",
+    what: "你主动上传到工单的文件正文（仅 jpg / jpeg / png / gif / txt / pdf，单个不超过 1MB，单个工单最多 5 个）、原始文件名、大小、内容摘要与上传时间。下载权限限于工单属主与超级管理员。",
+    why: "让客服看到你描述的界面与报错原文，减少来回追问；附件是可选的，不上传不影响工单受理。",
+    retention: "与所属工单同生命周期；删除该附件后正文立即从服务器移除。",
+    policySection: "data-use",
+    retentionType: "account_lifetime",
+    exportable: "none",
+    deleteOnUserDelete: "retained",
+  },
 ];
 
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
 export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = {
   "账户与身份": ["mobile-client-tokens"],
   "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs"],
-  "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers", "geogebra-assets", "geogebra-jobs", "pixel-cdk-mappings", "pixel-task-access", "pixel-integration-configs"],
+  "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers", "geogebra-assets", "geogebra-jobs", "pixel-cdk-mappings", "pixel-task-access", "pixel-integration-configs", "tickets", "ticket-attachments"],
   "合规与审计": ["policy-consents", "audit-logs", "pixel-evidence-holds", "pixel-evidence-approvals", "pixel-account-evidence"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],
   "客户端本地": ["browser-local-fingerprint-cache", "browser-pixel-workbench", "browser-geogebra-projects"],

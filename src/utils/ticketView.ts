@@ -14,6 +14,25 @@ function isInternalMessage(message: Record<string, unknown>): boolean {
   return message.visibility === "internal";
 }
 
+/**
+ * 给老文档补上新字段的默认值。
+ *
+ * Mongoose 的 default 只在**写入**时生效：本轮之前落库的工单，读出来是不带
+ * `type` / `relatedService` / `attachmentCount` 的。视图层统一归一，前端就不必在渲染时
+ * 到处写 `?? 'other'`（那样早晚会漏一处，列表和详情显示成两种口径）。
+ */
+function withTicketFieldDefaults(ticket: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...ticket,
+    type: typeof ticket.type === "string" ? ticket.type : "inquiry",
+    relatedService: typeof ticket.relatedService === "string" ? ticket.relatedService : "other",
+    relatedServiceRef: typeof ticket.relatedServiceRef === "string" ? ticket.relatedServiceRef : null,
+    contactEmail: typeof ticket.contactEmail === "string" ? ticket.contactEmail : null,
+    relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
+    attachmentCount: typeof ticket.attachmentCount === "number" ? ticket.attachmentCount : 0,
+  };
+}
+
 /** 列表卡片上「最后一条」预览的最大长度。 */
 const MESSAGE_PREVIEW_MAX = 140;
 
@@ -34,13 +53,13 @@ export function toTicketView(
   options: TicketViewOptions = {},
 ): Record<string, unknown> {
   const plainTicket = toPlainObject(ticket);
-  if (!Array.isArray(plainTicket.messages)) return plainTicket;
+  if (!Array.isArray(plainTicket.messages)) return withTicketFieldDefaults(plainTicket);
 
   const includeInternal = options.includeInternal === true;
   const allMessages = plainTicket.messages.map((message) => toPlainObject(message));
   const visibleMessages = includeInternal ? allMessages : allMessages.filter((message) => !isInternalMessage(message));
 
-  return {
+  return withTicketFieldDefaults({
     ...plainTicket,
     messages: visibleMessages.map((message) => {
       const plainMessage = { ...message };
@@ -50,7 +69,7 @@ export function toTicketView(
     ...(includeInternal
       ? { internalNoteCount: allMessages.filter((message) => isInternalMessage(message)).length }
       : {}),
-  };
+  });
 }
 
 export interface TicketSummaryOptions {
@@ -98,7 +117,7 @@ export function toTicketSummary(ticket: unknown, options: TicketSummaryOptions):
   const rawPreview = typeof lastMessage?.content === "string" ? lastMessage.content : "";
   const lastMessagePreview = rawPreview.replace(/\s+/g, " ").trim().slice(0, MESSAGE_PREVIEW_MAX);
 
-  const summary: Record<string, unknown> = {
+  const summary: Record<string, unknown> = withTicketFieldDefaults({
     ...plainTicket,
     messageCount: publicMessages.length,
     internalNoteCount: options.includeInternal ? internalNoteCount : undefined,
@@ -108,7 +127,7 @@ export function toTicketSummary(ticket: unknown, options: TicketSummaryOptions):
     hasUnread,
     awaitingReply,
     ageHours,
-  };
+  });
 
   // 内部已读水位不进响应；正文由详情接口提供。
   delete summary.messages;

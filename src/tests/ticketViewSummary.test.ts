@@ -116,3 +116,53 @@ describe("toTicketSummary", () => {
     expect(summary.awaitingReply).toBe(false);
   });
 });
+
+/**
+ * 票面字段（类型 / 相关服务 / 联系邮箱 / 关联工单 / 附件计数）的视图归一：
+ * Mongoose 的 default 只在写入时生效，老工单读出来是缺字段的，两个投影都必须补上默认值。
+ */
+describe("票面字段的视图归一", () => {
+  it("fills defaults for legacy documents", () => {
+    const summary = toTicketSummary(buildTicket(), { viewer: "user" });
+    expect(summary).toMatchObject({
+      type: "inquiry",
+      relatedService: "other",
+      relatedServiceRef: null,
+      contactEmail: null,
+      relatedTickets: [],
+      attachmentCount: 0,
+    });
+
+    const view = toTicketView(buildTicket(), false);
+    expect(view).toMatchObject({
+      type: "inquiry",
+      relatedService: "other",
+      relatedTickets: [],
+      attachmentCount: 0,
+    });
+  });
+
+  it("keeps explicit values in both projections", () => {
+    const ticket = buildTicket({
+      type: "incident",
+      relatedService: "tts",
+      relatedServiceRef: "job-123",
+      contactEmail: "alice@example.com",
+      relatedTickets: [{ ticketId: "t2", title: "上一次的工单" }],
+      attachmentCount: 2,
+    });
+
+    const summary = toTicketSummary(ticket, { viewer: "admin", includeInternal: true });
+    expect(summary).toMatchObject({
+      type: "incident",
+      relatedService: "tts",
+      relatedServiceRef: "job-123",
+      contactEmail: "alice@example.com",
+      attachmentCount: 2,
+    });
+    expect(summary.relatedTickets).toEqual([{ ticketId: "t2", title: "上一次的工单" }]);
+
+    const view = toTicketView(ticket, false);
+    expect(view).toMatchObject({ type: "incident", relatedService: "tts", attachmentCount: 2 });
+  });
+});

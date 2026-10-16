@@ -31,6 +31,7 @@ const EXPORT_TONE: Record<PolicyDataInventoryEntry['exportable'], string> = {
 
 const DELETE_LABEL: Record<string, string> = {
   delete_document: '一并删除',
+  retained: '保留（见下方说明）',
   retain_until_expiry: '按期限保留',
   retain_until_ttl: '到期自动清理',
   not_linked: '不随账户删除',

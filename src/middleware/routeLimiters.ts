@@ -38,6 +38,7 @@ type RateProfileName =
   | "sensitive"
   | "ticketRead"
   | "ticketWrite"
+  | "ticketUpload"
   | "standard"
   | "relaxed"
   | "burst"
@@ -105,6 +106,8 @@ const RATE_PROFILES: Record<RateProfileName, RateProfile> = {
   sensitive: { windowMs: 60_000, max: 10 },
   ticketRead: { windowMs: 60_000, max: 60 },
   ticketWrite: { windowMs: 60_000, max: 10 },
+  /** 附件上传/删除：写类操作，但比普通回复更贵（带二进制体），窗口放到 10 分钟。 */
+  ticketUpload: { windowMs: 10 * 60_000, max: 20 },
   standard: { windowMs: 60_000, max: 30 },
   relaxed: { windowMs: 60_000, max: 60 },
   burst: { windowMs: 60_000, max: 600 },
@@ -462,6 +465,11 @@ const LIMITER_DEFINITIONS = {
     category: "ticket",
     message: "工单写入请求过于频繁，请稍后再试",
   },
+  ticketUpload: {
+    profile: "ticketUpload",
+    category: "ticket",
+    message: "工单附件操作过于频繁，请稍后再试",
+  },
   ticketAdmin: {
     profile: "admin",
     category: "ticket",
@@ -766,6 +774,7 @@ export const tamperLimiter = limiterFromDefinition("tamper");
 export const commandLimiter = limiterFromDefinition("command");
 export const ticketReadLimiter = limiterFromDefinition("ticketRead");
 export const ticketWriteLimiter = limiterFromDefinition("ticketWrite");
+export const ticketUploadLimiter = limiterFromDefinition("ticketUpload");
 export const ticketAdminLimiter = limiterFromDefinition("ticketAdmin");
 export const libreChatLimiter = limiterFromDefinition("librechat");
 export const dataCollectionLimiter = limiterFromDefinition("datacollection");
