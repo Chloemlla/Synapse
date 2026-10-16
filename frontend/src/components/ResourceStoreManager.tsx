@@ -650,7 +650,7 @@ export default function ResourceStoreManager() {
         className={cn(studioPanelClassName, "p-4")}
       >
         <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <FaList className="w-5 h-5 text-indigo-500" />
+          <FaList className="w-5 h-5 text-slate-500" aria-hidden />
           资源列表
           <span className="text-sm font-normal text-slate-500">
             {totalItems > 0 && `共 ${totalItems} 个`}
@@ -760,7 +760,7 @@ export default function ResourceStoreManager() {
                       <div className="flex gap-2 justify-center">
                         <motion.button
                           onClick={() => handleEdit(resource)}
-                          className="text-indigo-600 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 rounded-2xl px-3 py-1 transition-all duration-150"
+                          className="rounded-2xl border-2 border-slate-200 bg-white/80 px-3 py-1 text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
@@ -876,7 +876,7 @@ export default function ResourceStoreManager() {
                   <div className="flex gap-2">
                     <motion.button
                       onClick={() => handleEdit(resource)}
-                      className="text-indigo-600 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 rounded-2xl px-3 py-1 text-sm transition-all duration-150 whitespace-nowrap"
+                      className="whitespace-nowrap rounded-2xl border-2 border-slate-200 bg-white/80 px-3 py-1 text-sm text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >

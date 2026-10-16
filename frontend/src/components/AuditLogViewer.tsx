@@ -450,7 +450,7 @@ const AuditLogViewer: React.FC = () => {
             <button
               type="button"
               onClick={() => applyPreset(preset)}
-              className="transition hover:text-indigo-600"
+              className="transition hover:text-slate-900"
               title={Object.keys(preset.query).length > 0 ? JSON.stringify(preset.query) : undefined}
             >
               {preset.name}

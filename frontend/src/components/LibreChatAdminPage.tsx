@@ -553,7 +553,7 @@ const LibreChatAdminPage: React.FC = () => {
                           <div className="flex-1 min-w-0 max-w-full">
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
                               {u.kind === 'system' ? (
-                                <FaCode className="text-purple-500 flex-shrink-0" />
+                                <FaCode className="text-slate-500 flex-shrink-0" aria-hidden />
                               ) : (
                                 <FaUser className="text-blue-500 flex-shrink-0" />
                               )}
@@ -567,7 +567,7 @@ const LibreChatAdminPage: React.FC = () => {
                                 </span>
                               )}
                               {u.kind === 'system' && u.componentLabel && (
-                                <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs">
+                                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
                                   {u.componentLabel}
                                 </span>
                               )}

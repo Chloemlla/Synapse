@@ -1061,7 +1061,7 @@ const CommandManager: React.FC = () => {
                     <span className="text-xs font-medium text-slate-600">RSS内存</span>
                     <span className="text-xs text-slate-500">RSS</span>
                   </div>
-                  <div className="text-lg font-bold text-purple-600">{formatMemory(serverStatus.memory_usage.rss)}</div>
+                  <div className="text-lg font-bold text-slate-900">{formatMemory(serverStatus.memory_usage.rss)}</div>
                   <div className="text-xs text-slate-500 mt-1">常驻集大小</div>
                 </div>
                 

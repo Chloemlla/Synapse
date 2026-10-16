@@ -1,9 +1,9 @@
 {
-  "palette-forbidden-hue": 23,
+  "palette-forbidden-hue": 1,
   "arbitrary-color-value": 7,
   "non-slate-neutral": 3,
   "semantic-color-drift": 209,
-  "saturated-gradient": 10,
+  "saturated-gradient": 9,
   "second-ui-kit-token": 18,
   "legacy-palette-name": 0,
   "second-brand-color-literal": 1,

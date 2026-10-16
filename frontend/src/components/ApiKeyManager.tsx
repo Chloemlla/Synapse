@@ -931,7 +931,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
           <div className={cn(studioTileClassName, "p-4")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <FaCreditCard className="text-indigo-600" /> LINUX DO Credit 充值
+                <FaCreditCard className="text-slate-500" aria-hidden /> LINUX DO Credit 充值
               </div>
               {linuxDoCreditConfig?.enabled ? (
                 <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">已启用 · {linuxDoCreditConfig.protocol}</span>
@@ -957,13 +957,13 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                   value={rechargeMoney}
                   onChange={(event) => setRechargeMoney(event.target.value === '' ? '' : Number(event.target.value))}
                   placeholder="积分数量"
-                  className="px-3 py-2 border border-slate-300 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   disabled={!linuxDoCreditConfig?.enabled}
                 />
                 <button
                   onClick={createLinuxDoRecharge}
                   disabled={recharging || !linuxDoCreditConfig?.enabled || rechargeMoney === ''}
-                  className="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                  className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
                   {recharging ? '创建中...' : '去支付'}
                 </button>
@@ -1263,7 +1263,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         </motion.button>
                       )}
                       {canWrite && (key.billingMode || 'metered') === 'prepaid' && (
-                        <motion.button onClick={() => openRecharge(key)} title="LINUX DO Credit 充值" className="rounded p-2 text-indigo-600 transition hover:bg-indigo-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button onClick={() => openRecharge(key)} title="LINUX DO Credit 充值" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaCreditCard />
                         </motion.button>
                       )}
