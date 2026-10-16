@@ -30,6 +30,9 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   // 系统级汇总（跨集合计数）。刻意不放进 DEFAULT_PLAIN_ADMIN_PAGES：
   // 默认只有超管能拿到数据，要放开时由超管在页面授权里单独勾选。
   { key: "overview", label: "系统概览", apiPrefixes: ["/api/admin/overview"] },
+  // GeoGebra 工作台诊断：读接口 admin + 页面授权；默认不列入普通管理员默认页面，
+  // 要共享给普通管理员时由超管在页面授权里勾选（未登记的前缀仍是 fail-closed）。
+  { key: "geogebra", label: "GeoGebra 诊断", apiPrefixes: ["/api/admin/geogebra"] },
   { key: "users", label: "用户管理", apiPrefixes: ["/api/admin/users"] },
   { key: "apikeys", label: "API Key 管理", apiPrefixes: ["/api/apikeys"] },
   {

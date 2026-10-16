@@ -62,6 +62,8 @@ export const FEATURE_CONSENT_KEYS = [
   "data-report",
   "geogebra-projects",
   "geogebra-share",
+  "geogebra-assets",
+  "geogebra-ai",
 ] as const;
 export type FeatureConsentKey = (typeof FEATURE_CONSENT_KEYS)[number];
 
@@ -175,6 +177,22 @@ export const FEATURE_CONSENT_REQUIREMENTS: Record<FeatureConsentKey, FeatureCons
     agreements: ["usage", "specific-terms"],
     rationale: "公开分享会让持有链接的人查看这份画布；使用政策说明公开内容的责任，服务专项条款说明分享能力的使用约定。",
     message: "发布可被他人访问的 GeoGebra 分享前，需要先同意使用政策与服务专项条款。",
+  },
+  "geogebra-assets": {
+    key: "geogebra-assets",
+    label: "GeoGebra 参考图上传",
+    category: "content-upload",
+    agreements: ["usage", "specific-terms"],
+    rationale: "参考图会作为一次性输入用于生成脚本，使用政策说明上传内容的合规范围，服务专项条款说明这项上传能力。",
+    message: "上传参考图前，需要先同意使用政策与服务专项条款。",
+  },
+  "geogebra-ai": {
+    key: "geogebra-ai",
+    label: "GeoGebra AI 辅助",
+    category: "third-party-transfer",
+    agreements: ["usage", "specific-terms"],
+    rationale: "AI 辅助会把当前脚本与你的描述（以及可选的参考图）发送给第三方模型服务生成建议；使用政策说明内容边界，服务专项条款说明第三方处理。",
+    message: "使用 AI 生成或解读前，需要先同意使用政策与服务专项条款。",
   },
 };
 

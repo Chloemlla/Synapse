@@ -953,6 +953,107 @@
       "evidence": ["src/geogebra/shareAssetStorage.ts", "src/geogebra/shareService.ts"]
     },
     {
+      "id": "geogebra-assets",
+      "collection": "geogebra_assets",
+      "fields": [
+        "assetId",
+        "ownerUserId",
+        "purpose",
+        "mimeType",
+        "byteSize",
+        "storageKey",
+        "createdAt",
+        "expiresAt",
+        "subjectDeletedAt"
+      ],
+      "purpose": "Store purpose-scoped files a GeoGebra tool needs: a user-supplied reference image for one AI generation run, and server-built export bundles the user asked for.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "GeoGebra 参考图与导出打包文件",
+        "category": "服务与业务",
+        "what": "你上传的参考图，以及你主动生成的打包文件（脚本与项目信息）及其格式、大小与到期时间。",
+        "why": "参考图只用于你发起的那一次 AI 生成；打包文件用于你稍后下载自己的项目归档。",
+        "retention": "参考图在生成任务结束后立即删除，最长不超过 6 小时；打包文件保留至到期（默认 7 天）或你主动删除。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "ttl",
+        "ttlField": "expiresAt",
+        "expireAfterSeconds": 0,
+        "description": "Assets carry an explicit expiresAt: reference images 6h, export bundles 7d. A sweep job deletes both the metadata and the file; account deletion marks them inaccessible immediately."
+      },
+      "delete": {
+        "onUserDelete": "hard_delete",
+        "user": "DELETE /api/geogebra/assets/:assetId",
+        "accountDeletion": "subjectDeletedAt is set immediately and files are removed by the sweep job."
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/geogebra/assets/:assetId",
+        "includes": [
+          "owned reference images",
+          "owned export bundles"
+        ]
+      },
+      "evidence": [
+        "src/models/geogebraAssetModel.ts",
+        "src/geogebra/assetService.ts"
+      ]
+    },
+    {
+      "id": "geogebra-jobs",
+      "collection": "geogebra_jobs",
+      "fields": [
+        "jobId",
+        "kind",
+        "ownerUserId",
+        "projectId",
+        "status",
+        "idempotencyKey",
+        "progress",
+        "input",
+        "result",
+        "errorCode",
+        "attempts",
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "subjectDeletedAt"
+      ],
+      "purpose": "Track asynchronous GeoGebra AI and export jobs so the user can see status, retry safely, and download their own results.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "GeoGebra 处理任务",
+        "category": "服务与业务",
+        "what": "任务类型、状态与进度、你提交的描述与脚本快照（或导出的项目标识）、生成结果摘要，以及失败原因分类。",
+        "why": "让你能查看 AI 生成与打包任务的进度、重复提交时不会重复执行，并在失败时知道下一步。",
+        "retention": "任务记录到期后自动清除（AI 任务默认 24 小时，打包任务默认 72 小时）。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "ttl",
+        "ttlField": "expiresAt",
+        "expireAfterSeconds": 0,
+        "description": "Jobs carry an explicit expiresAt (AI 24h, export 72h) enforced by a TTL index; in-flight jobs are marked expired first so the UI never shows a stuck run. Reference images are referenced by assetId and never stored inside the job document."
+      },
+      "delete": {
+        "onUserDelete": "hard_delete",
+        "user": "POST /api/geogebra/jobs/:jobId/cancel",
+        "accountDeletion": "subjectDeletedAt is set immediately; records expire afterwards."
+      },
+      "export": {
+        "supported": "partial",
+        "surface": "GET /api/geogebra/jobs",
+        "includes": [
+          "job status and bounded result summaries"
+        ]
+      },
+      "evidence": [
+        "src/models/geogebraJobModel.ts",
+        "src/geogebra/jobService.ts"
+      ]
+    },
+    {
       "id": "browser-geogebra-projects",
       "collection": "browser.localStorage",
       "fields": ["synapse-geogebra-studio-v1: project metadata, scripts, local snapshots"],

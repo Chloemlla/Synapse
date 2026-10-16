@@ -25,6 +25,20 @@ import {
   getPublicGeoGebraShareCover,
   listGeoGebraShares,
 } from "./shareService";
+import {
+  createGeoGebraAssetFromDataUrl,
+  deleteGeoGebraAsset,
+  readGeoGebraAsset,
+} from "./assetService";
+import {
+  cancelGeoGebraJob,
+  createGeoGebraAiJob,
+  createGeoGebraExportJob,
+  getGeoGebraJob,
+  listGeoGebraExportCapabilities,
+  listGeoGebraJobs,
+} from "./jobService";
+import { GEOGEBRA_AI_KINDS, type GeoGebraAiKind } from "./aiService";
 
 function currentUserId(req: Request): string | null {
   const userId = String(asAuthenticatedRequest(req).user?.id ?? "").trim();
@@ -244,6 +258,120 @@ export const geoGebraController = {
       res.json(exported);
     } catch (error) {
       sendError(res, "export-user-data", error);
+    }
+  },
+
+  async createAsset(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const asset = await createGeoGebraAssetFromDataUrl(userId, "ai-reference", jsonBody(req).dataUrl);
+      res.status(201).json({ success: true, data: { asset } });
+    } catch (error) {
+      sendError(res, "create-asset", error);
+    }
+  },
+
+  async getAsset(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const asset = await readGeoGebraAsset(userId, String(req.params.assetId ?? ""));
+      res.setHeader("Content-Type", asset.mimeType);
+      res.setHeader("Content-Length", String(asset.byteSize));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.status(200).send(asset.bytes);
+    } catch (error) {
+      sendError(res, "get-asset", error);
+    }
+  },
+
+  async deleteAsset(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      await deleteGeoGebraAsset(userId, String(req.params.assetId ?? ""));
+      res.json({ success: true, data: { deleted: true } });
+    } catch (error) {
+      sendError(res, "delete-asset", error);
+    }
+  },
+
+  async listJobs(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const limit = Number(req.query.limit ?? 20);
+      const jobs = await listGeoGebraJobs(userId, Number.isFinite(limit) ? limit : 20);
+      res.json({ success: true, data: { jobs } });
+    } catch (error) {
+      sendError(res, "list-jobs", error);
+    }
+  },
+
+  async getJob(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const job = await getGeoGebraJob(userId, String(req.params.jobId ?? ""));
+      res.json({ success: true, data: { job } });
+    } catch (error) {
+      sendError(res, "get-job", error);
+    }
+  },
+
+  async cancelJob(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const job = await cancelGeoGebraJob(userId, String(req.params.jobId ?? ""));
+      res.json({ success: true, data: { job } });
+    } catch (error) {
+      sendError(res, "cancel-job", error);
+    }
+  },
+
+  async createAiJob(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const body = jsonBody(req);
+      const kind = typeof body.kind === "string" ? body.kind : "";
+      if (!(GEOGEBRA_AI_KINDS as readonly string[]).includes(kind)) {
+        res.status(400).json({ success: false, error: "该 AI 能力暂不支持。", code: "GEOGEBRA_AI_KIND_UNKNOWN" });
+        return;
+      }
+      const job = await createGeoGebraAiJob({
+        userId,
+        kind: kind as GeoGebraAiKind,
+        projectId: body.projectId,
+        canvasMode: body.canvasMode,
+        code: body.code,
+        prompt: body.prompt,
+        objectNames: body.objectNames,
+        focusObject: body.focusObject,
+        referenceAssetId: body.referenceAssetId,
+      });
+      res.status(202).json({ success: true, data: { job } });
+    } catch (error) {
+      sendError(res, "create-ai-job", error);
+    }
+  },
+
+  async listExportCapabilities(_req: Request, res: Response): Promise<void> {
+    res.json({ success: true, data: { formats: listGeoGebraExportCapabilities() } });
+  },
+
+  async createExportJob(req: Request, res: Response): Promise<void> {
+    const userId = requireUser(res, req);
+    if (!userId) return;
+    try {
+      const body = jsonBody(req);
+      const job = await createGeoGebraExportJob({ userId, projectId: body.projectId, format: body.format });
+      res.status(202).json({ success: true, data: { job } });
+    } catch (error) {
+      sendError(res, "create-export-job", error);
     }
   },
 };

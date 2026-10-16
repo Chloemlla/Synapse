@@ -15,6 +15,8 @@ import {
 } from "../studioTheme";
 import { getGeoGebraProject, listGeoGebraVersions } from "../../api/geogebra";
 import GeoGebraApplet, { type GeoGebraHandle, type GeoGebraRunStep } from "./GeoGebraApplet";
+import GeoGebraAiPanel from "./GeoGebraAiPanel";
+import GeoGebraExportPanel from "./GeoGebraExportPanel";
 import GeoGebraCloudPanel from "./GeoGebraCloudPanel";
 import GeoGebraCommentsPanel from "./GeoGebraCommentsPanel";
 import GeoGebraEditor from "./GeoGebraEditor";
@@ -489,6 +491,25 @@ export default function GeoGebraPage() {
     });
   }, [appendSnapshot, updateProject]);
 
+  // AI 写回：先预检，再落盘；预检不过就不写回也不执行（GEO-15/16）。
+  const handleApplyAiCommands = useCallback(async (commands: string[], mode: "replace" | "append") => {
+    if (!commands.length) return { ok: false, message: "没有可写入的指令。" };
+    const body = commands.join("\n");
+    const nextCode = mode === "replace"
+      ? `${body}\n`
+      : `${currentCode.trimEnd()}${currentCode.trim() ? "\n\n" : ""}// 来自 AI 的建议\n${body}\n`;
+    const checked = prepareGeoGebraScript(nextCode);
+    if (checked.errors.length) {
+      return {
+        ok: false,
+        message: `生成结果未通过预检：${checked.errors.slice(0, 3).map((item) => `第 ${item.lineNumber} 行 ${item.message}`).join("；")}`,
+      };
+    }
+    updateCode(nextCode);
+    appendSnapshot(mode === "replace" ? "AI 替换脚本" : "AI 追加脚本", "ai_writeback", nextCode);
+    return { ok: true, message: mode === "replace" ? "已替换编辑器内容，建议先运行确认。" : "已追加到脚本末尾，建议先运行确认。" };
+  }, [appendSnapshot, currentCode, updateCode]);
+
   const handleParameterValueChange = (name: string, value: GeoGebraScalar) => setParameterValues((previous) => ({ ...previous, [name]: value }));
   const applyParameters = async (runAfter: boolean) => {
     if (!currentProject) return;
@@ -798,6 +819,16 @@ export default function GeoGebraPage() {
               {styleScope === "selected" && <div className="mt-3 flex flex-wrap gap-2">{canvasObjects.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedStyleNames.includes(name)} onChange={() => setSelectedStyleNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>)}</div>}
               <button type="button" onClick={applyStyles} className={cn(studioPrimaryButtonClassName, "mt-3")}>应用样式</button>
             </section>
+
+            <GeoGebraAiPanel
+              project={currentProject}
+              canvasMode={currentProject?.canvasMode ?? "geometry"}
+              code={currentCode}
+              objectNames={canvasObjects}
+              onApplyCommands={handleApplyAiCommands}
+            />
+
+            <GeoGebraExportPanel project={currentProject} />
 
             <section className={studioPanelClassName}>
               <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Lesson Mode</p><h2 className="mt-1 text-lg font-semibold text-slate-900">课堂讲解</h2><p className="mt-1 text-sm text-slate-500">逐步展示脚本如何组成图形。</p></div>

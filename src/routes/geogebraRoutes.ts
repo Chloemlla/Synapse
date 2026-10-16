@@ -200,4 +200,123 @@ router.delete(
  */
 router.get("/export", authenticateToken, geoGebraController.exportUserData);
 
+/**
+ * @openapi
+ * /geogebra/assets:
+ *   post:
+ *     summary: Upload a reference image for AI-assisted script generation
+ *     responses:
+ *       201:
+ *         description: Asset accepted (purpose-scoped, expires automatically)
+ *       400:
+ *         description: Unsupported type or mismatched content
+ *       413:
+ *         description: Too large
+ */
+router.post("/assets", authenticateToken, requireFeatureConsent("geogebra-assets"), geoGebraController.createAsset);
+
+/**
+ * @openapi
+ * /geogebra/assets/{assetId}:
+ *   get:
+ *     summary: Download an owned asset
+ *     responses:
+ *       200:
+ *         description: Asset bytes
+ *       404:
+ *         description: Asset unavailable
+ *   delete:
+ *     summary: Delete an owned asset immediately
+ *     responses:
+ *       200:
+ *         description: Asset deleted
+ */
+router.get("/assets/:assetId", authenticateToken, geoGebraController.getAsset);
+router.delete("/assets/:assetId", authenticateToken, geoGebraController.deleteAsset);
+
+/**
+ * @openapi
+ * /geogebra/jobs:
+ *   get:
+ *     summary: List the current user's asynchronous GeoGebra jobs
+ *     responses:
+ *       200:
+ *         description: Job list
+ */
+router.get("/jobs", authenticateToken, geoGebraController.listJobs);
+
+/**
+ * @openapi
+ * /geogebra/jobs/{jobId}:
+ *   get:
+ *     summary: Read one owned job
+ *     responses:
+ *       200:
+ *         description: Job state and result
+ *       404:
+ *         description: Job unavailable
+ */
+router.get("/jobs/:jobId", authenticateToken, geoGebraController.getJob);
+
+/**
+ * @openapi
+ * /geogebra/jobs/{jobId}/cancel:
+ *   post:
+ *     summary: Cancel a queued or running job owned by the caller
+ *     responses:
+ *       200:
+ *         description: Job cancelled (idempotent)
+ */
+router.post("/jobs/:jobId/cancel", authenticateToken, geoGebraController.cancelJob);
+
+/**
+ * @openapi
+ * /geogebra/ai/jobs:
+ *   post:
+ *     summary: Create an AI drawing/insight/annotation/explanation job
+ *     responses:
+ *       202:
+ *         description: Job queued
+ *       429:
+ *         description: Too many concurrent jobs
+ *       503:
+ *         description: AI provider not configured
+ */
+router.post("/ai/jobs", authenticateToken, requireFeatureConsent("geogebra-ai"), geoGebraController.createAiJob);
+
+/**
+ * @openapi
+ * /geogebra/exports/capabilities:
+ *   get:
+ *     summary: Report which export formats the server can actually produce
+ *     responses:
+ *       200:
+ *         description: Format capability list (server-side vs canvas-side)
+ */
+router.get("/exports/capabilities", authenticateToken, geoGebraController.listExportCapabilities);
+
+/**
+ * @openapi
+ * /geogebra/exports:
+ *   post:
+ *     summary: Create an export job for a format the server supports
+ *     responses:
+ *       202:
+ *         description: Export job queued
+ *       409:
+ *         description: Format is canvas-side only
+ */
+router.post("/exports", authenticateToken, requireFeatureConsent("geogebra-projects"), geoGebraController.createExportJob);
+
+/**
+ * @openapi
+ * /geogebra/exports/{jobId}:
+ *   get:
+ *     summary: Read an export job owned by the caller
+ *     responses:
+ *       200:
+ *         description: Export job state and download asset
+ */
+router.get("/exports/:jobId", authenticateToken, geoGebraController.getJob);
+
 export default router;

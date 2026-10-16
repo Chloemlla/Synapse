@@ -1,5 +1,5 @@
 import { api } from "./api";
-import type { GeoGebraMode, GeoGebraProject, GeoGebraReviewComment, GeoGebraShare, GeoGebraVersion, WorkspaceSummary } from "../types/geogebra";
+import type { GeoGebraAiKind, GeoGebraAsset, GeoGebraExportCapability, GeoGebraExportFormat, GeoGebraJob, GeoGebraMode, GeoGebraProject, GeoGebraReviewComment, GeoGebraShare, GeoGebraVersion, WorkspaceSummary } from "../types/geogebra";
 
 type Envelope<T> = { success: boolean; data: T };
 
@@ -128,4 +128,56 @@ export async function updateWorkspaceMemberRole(
 
 export async function removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
   await api.delete(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`);
+}
+
+// —— GeoGebra AI / 资产 / 异步导出（Phase 3） ——
+
+export async function uploadGeoGebraReferenceImage(dataUrl: string): Promise<GeoGebraAsset> {
+  return data(await api.post<Envelope<{ asset: GeoGebraAsset }>>("/api/geogebra/assets", { dataUrl })).asset;
+}
+
+export async function deleteGeoGebraAsset(assetId: string): Promise<void> {
+  await api.delete(`/api/geogebra/assets/${encodeURIComponent(assetId)}`);
+}
+
+export async function downloadGeoGebraAsset(assetId: string): Promise<Blob> {
+  const response = await api.get<Blob>(`/api/geogebra/assets/${encodeURIComponent(assetId)}`, { responseType: "blob" });
+  return response.data;
+}
+
+export async function createGeoGebraAiJob(input: {
+  kind: GeoGebraAiKind;
+  projectId?: string | null;
+  canvasMode: GeoGebraMode;
+  code: string;
+  prompt?: string;
+  objectNames?: string[];
+  focusObject?: string | null;
+  referenceAssetId?: string | null;
+}): Promise<GeoGebraJob> {
+  return data(await api.post<Envelope<{ job: GeoGebraJob }>>("/api/geogebra/ai/jobs", input)).job;
+}
+
+export async function listGeoGebraJobs(limit = 20): Promise<GeoGebraJob[]> {
+  return data(await api.get<Envelope<{ jobs: GeoGebraJob[] }>>("/api/geogebra/jobs", { params: { limit } })).jobs;
+}
+
+export async function getGeoGebraJob(jobId: string): Promise<GeoGebraJob> {
+  return data(await api.get<Envelope<{ job: GeoGebraJob }>>(`/api/geogebra/jobs/${encodeURIComponent(jobId)}`)).job;
+}
+
+export async function cancelGeoGebraJob(jobId: string): Promise<GeoGebraJob> {
+  return data(await api.post<Envelope<{ job: GeoGebraJob }>>(`/api/geogebra/jobs/${encodeURIComponent(jobId)}/cancel`)).job;
+}
+
+export async function listGeoGebraExportCapabilities(): Promise<GeoGebraExportCapability[]> {
+  return data(await api.get<Envelope<{ formats: GeoGebraExportCapability[] }>>("/api/geogebra/exports/capabilities")).formats;
+}
+
+export async function createGeoGebraExportJob(projectId: string, format: GeoGebraExportFormat): Promise<GeoGebraJob> {
+  return data(await api.post<Envelope<{ job: GeoGebraJob }>>("/api/geogebra/exports", { projectId, format })).job;
+}
+
+export async function getGeoGebraExportJob(jobId: string): Promise<GeoGebraJob> {
+  return data(await api.get<Envelope<{ job: GeoGebraJob }>>(`/api/geogebra/exports/${encodeURIComponent(jobId)}`)).job;
 }

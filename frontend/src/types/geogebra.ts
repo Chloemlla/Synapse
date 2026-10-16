@@ -77,3 +77,45 @@ export type WorkspaceSummary = {
   description: string;
   members: Array<{ userId: string; role: "admin" | "editor" | "reviewer" | "viewer" }>;
 };
+
+export type GeoGebraAsset = {
+  assetId: string;
+  purpose: "ai-reference" | "export-bundle";
+  mimeType: string;
+  byteSize: number;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type GeoGebraAiKind = "ai-drawing" | "ai-insight" | "ai-annotation" | "ai-explanation";
+export type GeoGebraJobKind = GeoGebraAiKind | "export";
+export type GeoGebraJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
+
+export type GeoGebraJobResult = {
+  summary?: string;
+  commands?: string[];
+  notes?: string[];
+  confidence?: number | null;
+  assetId?: string;
+};
+
+export type GeoGebraJob = {
+  jobId: string;
+  kind: GeoGebraJobKind;
+  status: GeoGebraJobStatus;
+  progress: number;
+  projectId: string | null;
+  result: GeoGebraJobResult | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GeoGebraExportFormat = "zip-bundle" | "svg" | "pdf" | "gif" | "mp4" | "pptx";
+
+export type GeoGebraExportCapability = {
+  format: GeoGebraExportFormat;
+  serverSide: boolean;
+  note: string;
+};

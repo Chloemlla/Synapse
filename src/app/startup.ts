@@ -5,6 +5,7 @@ import type { Express } from "express";
 import { compileTimeConfig, config, startupConfig } from "../config/config";
 import { runStartupDiagnostics } from "../config/startupDiagnostics";
 import { startApiKeyBillingReconciliation } from "../services/apiKeyBillingService";
+import { startGeoGebraJobRunner, stopGeoGebraJobRunner } from "../geogebra/jobService";
 import { startMobileTokenIpRetention } from "../services/mobileTokenIpRetentionService";
 import { connectMongo } from "../services/mongoService";
 import { runSchemaMigrations } from "../services/migrationRunner";
@@ -195,6 +196,20 @@ export async function startServer(app: Express): Promise<void> {
     logger.info("[启动] 定时任务服务已启动");
   } catch (error) {
     logger.warn("[启动] 定时任务服务启动失败，继续启动", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // GeoGebra 异步任务（AI 生成/解读与导出打包）靠租约领取，单进程跑一个 runner 即可。
+  // 启动失败不影响主服务：任务会留在 queued，重启后再被领取。
+  try {
+    startGeoGebraJobRunner();
+    registerShutdownStep("geogebra-job-runner", () => {
+      stopGeoGebraJobRunner();
+      return Promise.resolve();
+    });
+  } catch (error) {
+    logger.warn("[启动] GeoGebra 任务 runner 启动失败，继续启动", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
