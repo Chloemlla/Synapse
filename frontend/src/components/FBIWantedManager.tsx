@@ -10,7 +10,21 @@ import ImageUploadSection from './ImageUploadSection';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { cn } from '../utils/cn';
-import { studioModalOverlayClassName, studioSurfaceClassName } from './studioTheme';
+import {
+    studioBadgeClassName,
+    studioDangerButtonClassName,
+    studioFieldClassName,
+    studioGhostButtonClassName,
+    studioModalCardClassName,
+    studioModalCloseButtonClassName,
+    studioModalOverlayClassName,
+    studioPrimaryButtonClassName,
+    studioSecondaryButtonClassName,
+    studioSurfaceClassName,
+    studioTextareaClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { DANGER_LEVEL_CONFIG, STATUS_CONFIG, type DangerLevel, type WantedStatus } from '../types/fbi';
 
 
 // 通缉犯接口定义
@@ -83,6 +97,8 @@ const FBIWantedManager: React.FC = () => {
     const [wantedList, setWantedList] = useState<FBIWanted[]>([]);
     const [statistics, setStatistics] = useState<Statistics | null>(null);
     const [loading, setLoading] = useState(false);
+    const [listError, setListError] = useState('');
+    const [statsError, setStatsError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [dangerFilter, setDangerFilter] = useState('ALL');
@@ -105,6 +121,7 @@ const FBIWantedManager: React.FC = () => {
         const request = ++listRequestRef.current;
         try {
             setLoading(true);
+            setListError('');
             const params = new URLSearchParams({
                 page: currentPage.toString(),
                 limit: '20',
@@ -127,15 +144,12 @@ const FBIWantedManager: React.FC = () => {
                 setWantedList(data.data);
                 setTotalPages(pages);
                 setCurrentPage(page => Math.min(page, pages));
-                // DEBUG: log ages from list to observe any unexpected adjustments
-                try {
-                    console.log('[FBIWanted][List] Ages:', Array.isArray(data?.data) ? data.data.map((w: any) => w?.age) : 'N/A');
-                } catch (e) {
-                    // ignore
-                }
+            } else if (request === listRequestRef.current) {
+                setListError('通缉信息加载失败，请重试。');
             }
         } catch (error) {
-            if (request === listRequestRef.current) console.error('获取通缉犯列表失败:', error);
+            console.error('获取通缉犯列表失败:', error);
+            if (request === listRequestRef.current) setListError('通缉信息加载失败，请检查网络后重试。');
         } finally {
             if (request === listRequestRef.current) setLoading(false);
         }
@@ -144,6 +158,7 @@ const FBIWantedManager: React.FC = () => {
     // 获取统计信息
     const fetchStatistics = useCallback(async () => {
         try {
+            setStatsError('');
             const response = await fetch(`${getApiBaseUrl()}/api/fbi-wanted/statistics`, {
                 headers: {
                     'Content-Type': 'application/json'
@@ -154,9 +169,12 @@ const FBIWantedManager: React.FC = () => {
             if (response.ok) {
                 const data = await response.json();
                 setStatistics(data.data);
+            } else {
+                setStatsError('统计数据加载失败，请重试。');
             }
         } catch (error) {
             console.error('获取统计信息失败:', error);
+            setStatsError('统计数据加载失败，请检查网络后重试。');
         }
     }, []);
 
@@ -165,27 +183,12 @@ const FBIWantedManager: React.FC = () => {
         fetchStatistics();
     }, [fetchWantedList, fetchStatistics]);
 
-    // 危险等级颜色映射
-    const getDangerLevelColor = (level: string) => {
-        switch (level) {
-            case 'LOW': return 'text-green-600 bg-green-100';
-            case 'MEDIUM': return 'text-yellow-600 bg-yellow-100';
-            case 'HIGH': return 'text-orange-600 bg-orange-100';
-            case 'EXTREME': return 'text-red-600 bg-red-100';
-            default: return 'text-slate-600 bg-slate-100';
-        }
-    };
+    // 语义 tone 由 types/fbi.ts 提供，这里只负责映射到 studio 徽标 token。
+    const dangerLevelBadgeClass = (level: string) =>
+        studioBadgeClassName(DANGER_LEVEL_CONFIG[level as DangerLevel]?.tone ?? 'slate');
 
-    // 状态颜色映射
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'ACTIVE': return 'text-red-600 bg-red-100';
-            case 'CAPTURED': return 'text-green-600 bg-green-100';
-            case 'DECEASED': return 'text-slate-600 bg-slate-100';
-            case 'REMOVED': return 'text-blue-600 bg-slate-100';
-            default: return 'text-slate-600 bg-slate-100';
-        }
-    };
+    const statusBadgeClass = (status: string) =>
+        studioBadgeClassName(STATUS_CONFIG[status as WantedStatus]?.tone ?? 'slate');
 
     // 创建通缉犯
     const handleCreateWanted = async () => {
@@ -462,16 +465,16 @@ const FBIWantedManager: React.FC = () => {
     ), [prefersReducedMotion]);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-[#8ECAE6]/20 via-white to-[#219EBC]/10 py-8 px-4 rounded-2xl">
+        <div className="min-h-screen rounded-2xl bg-slate-50/60 px-4 py-8">
             <div className="max-w-7xl mx-auto px-4 space-y-8">
                 {/* 标题和统计信息部分 */}
                 <motion.div
-                    className={cn(studioSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+                    className={studioSurfaceClassName}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6 }}
                 >
-                    <div className="bg-[#023047] text-white p-6">
+                    <div className="bg-slate-900 text-white p-6">
                         <div className="text-center">
                             <motion.div
                                 className="flex items-center justify-center gap-3 mb-4"
@@ -479,11 +482,11 @@ const FBIWantedManager: React.FC = () => {
                                 animate={{ scale: 1 }}
                                 transition={{ duration: 0.5, delay: 0.2 }}
                             >
-                                <FaUserSecret className="text-4xl text-[#FFB703]" />
-                                <h1 className="text-4xl font-bold font-songti">FBI通缉犯管理系统</h1>
+                                <FaUserSecret className="text-4xl text-sky-300" />
+                                <h1 className="text-4xl font-bold">FBI通缉犯管理系统</h1>
                             </motion.div>
                             <motion.p
-                                className="text-[#8ECAE6] text-lg"
+                                className="text-slate-300 text-lg"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 transition={{ duration: 0.5, delay: 0.4 }}
@@ -494,50 +497,54 @@ const FBIWantedManager: React.FC = () => {
                     </div>
 
                     {/* 统计信息 */}
-                    {statistics && (
+                    {statistics ? (
                         <div className="p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                                <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+                                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <FaExclamationTriangle className="text-red-600" />
-                                        <h3 className="text-red-700 font-semibold">在逃通缉犯</h3>
+                                        <FaExclamationTriangle className="text-rose-600" />
+                                        <h3 className="font-semibold text-rose-700">在逃通缉犯</h3>
                                     </div>
-                                    <p className="text-2xl font-bold text-red-600">{statistics.active}</p>
+                                    <p className="text-2xl font-bold text-rose-600">{statistics.active}</p>
                                 </div>
 
-                                <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+                                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <FaShieldAlt className="text-green-600" />
-                                        <h3 className="text-green-700 font-semibold">已抓获</h3>
+                                        <FaShieldAlt className="text-emerald-600" />
+                                        <h3 className="font-semibold text-emerald-700">已抓获</h3>
                                     </div>
-                                    <p className="text-2xl font-bold text-green-600">{statistics.captured}</p>
+                                    <p className="text-2xl font-bold text-emerald-600">{statistics.captured}</p>
                                 </div>
 
-                                <div className="bg-[#8ECAE6]/10 border border-[#8ECAE6]/30 rounded-2xl p-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <FaUserSecret className="text-[#219EBC]" />
-                                        <h3 className="text-[#023047] font-semibold">总计</h3>
+                                        <FaUserSecret className="text-sky-700" />
+                                        <h3 className="text-slate-900 font-semibold">总计</h3>
                                     </div>
-                                    <p className="text-2xl font-bold text-[#023047]">{statistics.total}</p>
+                                    <p className="text-2xl font-bold text-slate-900">{statistics.total}</p>
                                 </div>
 
-                                <div className="bg-[#8ECAE6]/15 border border-[#8ECAE6]/30 rounded-2xl p-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <FaExclamationTriangle className="text-[#219EBC]" />
-                                        <h3 className="text-[#023047] font-semibold">极度危险</h3>
+                                        <FaExclamationTriangle className="text-sky-700" />
+                                        <h3 className="text-slate-900 font-semibold">极度危险</h3>
                                     </div>
-                                    <p className="text-2xl font-bold text-[#023047]">
+                                    <p className="text-2xl font-bold text-slate-900">
                                         {statistics.dangerLevels.EXTREME || 0}
                                     </p>
                                 </div>
                             </div>
                         </div>
-                    )}
+                    ) : statsError ? (
+                        <div className="p-6">
+                            <StudioErrorNote>{statsError}</StudioErrorNote>
+                        </div>
+                    ) : null}
                 </motion.div>
 
                 {/* 搜索和过滤部分 */}
                 <motion.div
-                    className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-[#8ECAE6]/30 p-6"
+                    className={studioSurfaceClassName}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, delay: 0.1 }}
@@ -551,14 +558,14 @@ const FBIWantedManager: React.FC = () => {
                                     placeholder="搜索通缉犯姓名、FBI编号或罪名..."
                                     value={searchTerm}
                                     onChange={(e) => { listRequestRef.current++; setSearchTerm(e.target.value); setCurrentPage(1); }}
-                                    className="w-full pl-10 pr-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
+                                    className={cn(studioFieldClassName, 'pl-10')}
                                 />
                             </div>
 
                             <select
                                 value={statusFilter}
                                 onChange={(e) => { listRequestRef.current++; setStatusFilter(e.target.value); setCurrentPage(1); }}
-                                className="px-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
+                                className={studioFieldClassName}
                             >
                                 <option value="ALL">所有状态</option>
                                 <option value="ACTIVE">在逃</option>
@@ -570,7 +577,7 @@ const FBIWantedManager: React.FC = () => {
                             <select
                                 value={dangerFilter}
                                 onChange={(e) => { listRequestRef.current++; setDangerFilter(e.target.value); setCurrentPage(1); }}
-                                className="px-4 py-3 border border-[#8ECAE6]/30 rounded-2xl focus:ring-2 focus:ring-[#FFB703] text-[#023047] focus:border-transparent"
+                                className={studioFieldClassName}
                             >
                                 <option value="ALL">所有危险等级</option>
                                 <option value="LOW">低危险</option>
@@ -581,33 +588,30 @@ const FBIWantedManager: React.FC = () => {
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-4">
-                            <motion.button
+                            <motion.button type="button"
                                 onClick={() => handleBatchDelete({ status: 'DECEASED' }, '确定要删除所有已死亡的通缉犯记录吗？此操作不可逆！')}
                                 disabled={!canWrite}
-                                className="flex items-center justify-center gap-2 px-4 py-3 bg-[#FB8500] text-white rounded-2xl hover:bg-[#FB8500]/80 transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={studioDangerButtonClassName}
                                 whileHover={hoverScale(1.02)}
-                                whileTap={tapScale(0.98)}
-                            >
+                                whileTap={tapScale(0.98)}>
                                 <FaTrash />
                                 <span>删除死亡记录</span>
                             </motion.button>
-                            <motion.button
+                            <motion.button type="button"
                                 onClick={() => handleBatchDelete({}, '警告：确定要删除所有的通缉犯记录吗？此操作将清空数据库，不可逆！', true)}
                                 disabled={!canWrite}
-                                className="flex items-center justify-center gap-2 px-4 py-3 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={studioDangerButtonClassName}
                                 whileHover={hoverScale(1.02)}
-                                whileTap={tapScale(0.98)}
-                            >
+                                whileTap={tapScale(0.98)}>
                                 <FaExclamationTriangle />
                                 <span>删除所有记录</span>
                             </motion.button>
-                            <motion.button
+                            <motion.button type="button"
                                 onClick={() => { resetForm(); setShowCreateModal(true); }}
                                 disabled={!canWrite}
-                                className="flex items-center justify-center gap-2 px-6 py-3 bg-[#FFB703] text-[#023047] rounded-2xl hover:bg-[#FB8500] transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={studioPrimaryButtonClassName}
                                 whileHover={hoverScale(1.02)}
-                                whileTap={tapScale(0.98)}
-                            >
+                                whileTap={tapScale(0.98)}>
                                 <FaPlus />
                                 <span>添加通缉犯</span>
                             </motion.button>
@@ -617,42 +621,50 @@ const FBIWantedManager: React.FC = () => {
 
                 {/* 通缉犯列表 */}
                 <motion.div
-                    className={cn(studioSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+                    className={studioSurfaceClassName}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, delay: 0.2 }}
                 >
                     {loading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <FaSpinner className="animate-spin text-4xl text-[#FFB703]" />
-                            <span className="ml-3 text-lg text-[#023047]/70">加载中...</span>
+                        <StudioLoadingState minHeightClassName="min-h-[220px]" />
+                    ) : listError ? (
+                        <div className="p-6">
+                            <StudioErrorState message={listError} onRetry={() => void fetchWantedList()} />
+                        </div>
+                    ) : wantedList.length === 0 ? (
+                        <div className="p-6">
+                            <StudioEmptyState
+                                message="没有匹配的通缉记录。"
+                                action={<button type="button" onClick={() => { setSearchTerm(''); setStatusFilter('ALL'); setDangerFilter('ALL'); setCurrentPage(1); }} className={studioSecondaryButtonClassName}>清除筛选条件</button>}
+                            />
                         </div>
                     ) : (
                         <>
                             <div className="overflow-x-auto">
                                 <table className="w-full">
-                                    <thead className="bg-[#8ECAE6]/10">
+                                    <thead className="bg-slate-50">
                                         <tr>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-[#023047] uppercase font-songti tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-medium text-slate-900 uppercase tracking-wider">
                                                 通缉犯信息
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-[#023047] uppercase font-songti tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-medium text-slate-900 uppercase tracking-wider">
                                                 危险等级
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-[#023047] uppercase font-songti tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-medium text-slate-900 uppercase tracking-wider">
                                                 状态
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-[#023047] uppercase font-songti tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-medium text-slate-900 uppercase tracking-wider">
                                                 悬赏金额
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-[#023047] uppercase font-songti tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-medium text-slate-900 uppercase tracking-wider">
                                                 操作
                                             </th>
                                         </tr>
                                     </thead>
-                                    <tbody className="bg-white/80 divide-y divide-[#8ECAE6]/20">
+                                    <tbody className="bg-white/80 divide-y divide-slate-200">
                                         {wantedList.map((wanted) => (
-                                            <tr key={wanted._id} className="hover:bg-[#8ECAE6]/10">
+                                            <tr key={wanted._id} className="hover:bg-slate-50">
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex items-center">
                                                         <div className="flex-shrink-0 h-12 w-12">
@@ -663,47 +675,46 @@ const FBIWantedManager: React.FC = () => {
                                                                     alt={wanted.name}
                                                                 />
                                                             ) : (
-                                                                <div className="h-12 w-12 rounded-full bg-[#8ECAE6]/30 flex items-center justify-center">
-                                                                    <FaUserSecret className="text-[#023047]/50" />
+                                                                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center">
+                                                                    <FaUserSecret className="text-slate-500" />
                                                                 </div>
                                                             )}
                                                         </div>
                                                         <div className="ml-4">
-                                                            <div className="text-sm font-medium text-[#023047]">
+                                                            <div className="text-sm font-medium text-slate-900">
                                                                 {wanted.name}
                                                             </div>
-                                                            <div className="text-sm text-[#023047]/50">
+                                                            <div className="text-sm text-slate-500">
                                                                 FBI: {wanted.fbiNumber}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getDangerLevelColor(wanted.dangerLevel)}`}>
+                                                    <span className={dangerLevelBadgeClass(wanted.dangerLevel)}>
                                                         {wanted.dangerLevel}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(wanted.status)}`}>
+                                                    <span className={statusBadgeClass(wanted.status)}>
                                                         {wanted.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-[#023047]">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                                                     ${wanted.reward.toLocaleString()}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                                    <motion.button
+                                                    <motion.button type="button"
                                                         onClick={() => {
                                                             setSelectedWanted(wanted);
                                                             setShowViewModal(true);
                                                         }}
-                                                        className="text-[#219EBC] hover:text-[#023047] transition-colors"
+                                                        className="inline-flex min-h-11 min-w-11 items-center justify-center text-sky-700 transition-colors hover:text-slate-900"
                                                         whileHover={hoverScale(1.1)}
-                                                        whileTap={tapScale(0.95)}
-                                                    >
+                                                        whileTap={tapScale(0.95)}>
                                                         <FaEye />
                                                     </motion.button>
-                                                    <motion.button
+                                                    <motion.button type="button"
                                                         onClick={() => {
                                                             setSelectedWanted(wanted);
                                                             resetForm();
@@ -712,13 +723,12 @@ const FBIWantedManager: React.FC = () => {
                                                             setShowEditModal(true);
                                                         }}
                                                         disabled={!canWrite}
-                                                        className="text-[#FFB703] hover:text-[#023047] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="inline-flex min-h-11 min-w-11 items-center justify-center text-sky-700 transition-colors hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                                                         whileHover={hoverScale(1.1)}
-                                                        whileTap={tapScale(0.95)}
-                                                    >
+                                                        whileTap={tapScale(0.95)}>
                                                         <FaEdit />
                                                     </motion.button>
-                                                    <motion.button
+                                                    <motion.button type="button"
                                                         onClick={async () => {
                                                             const ok = await confirm({
                                                                 title: '删除这条通缉犯记录？',
@@ -731,10 +741,9 @@ const FBIWantedManager: React.FC = () => {
                                                             }
                                                         }}
                                                         disabled={!canWrite}
-                                                        className="text-red-600 hover:text-red-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="inline-flex min-h-11 min-w-11 items-center justify-center text-rose-600 transition-colors hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-50"
                                                         whileHover={hoverScale(1.1)}
-                                                        whileTap={tapScale(0.95)}
-                                                    >
+                                                        whileTap={tapScale(0.95)}>
                                                         <FaTrash />
                                                     </motion.button>
                                                 </td>
@@ -746,24 +755,22 @@ const FBIWantedManager: React.FC = () => {
 
                             {/* 分页 */}
                             {totalPages > 1 && (
-                                <div className="px-6 py-4 bg-[#8ECAE6]/10 border-t border-[#8ECAE6]/30">
+                                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
                                     <div className="flex items-center justify-between">
-                                        <div className="text-sm text-[#023047]/70">
+                                        <div className="text-sm text-slate-600">
                                             第 {currentPage} 页，共 {totalPages} 页
                                         </div>
                                         <div className="flex space-x-2">
-                                            <button
+                                            <button type="button"
                                                 onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                                                 disabled={currentPage === 1}
-                                                className="px-3 py-1 border border-[#8ECAE6]/30 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#8ECAE6]/20 text-[#023047]/70"
-                                            >
+                                                className={studioGhostButtonClassName}>
                                                 上一页
                                             </button>
-                                            <button
+                                            <button type="button"
                                                 onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                                                 disabled={currentPage === totalPages}
-                                                className="px-3 py-1 border border-[#8ECAE6]/30 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#8ECAE6]/20 text-[#023047]/70"
-                                            >
+                                                className={studioGhostButtonClassName}>
                                                 下一页
                                             </button>
                                         </div>
@@ -779,27 +786,26 @@ const FBIWantedManager: React.FC = () => {
                 <AnimatePresence>
                     {showCreateModal && (
                         <motion.div
-                            className={cn(studioModalOverlayClassName, "bg-black bg-opacity-50 z-[9999]")}
+                            className={studioModalOverlayClassName}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
                             <motion.div
-                                className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                                className={cn(studioModalCardClassName, 'w-full max-w-2xl max-h-[90vh] overflow-y-auto')}
                                 initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 exit={{ scale: 0.9, opacity: 0 }}
                             >
-                                <div className="bg-[#023047] text-white p-6 rounded-t-2xl">
+                                <div className="bg-slate-900 text-white p-6 rounded-t-2xl">
                                     <div className="flex items-center justify-between">
-                                        <h2 className="text-2xl font-bold font-songti">添加通缉犯</h2>
-                                        <button
+                                        <h2 className="text-2xl font-bold">添加通缉犯</h2>
+                                        <button type="button"
                                             onClick={() => {
                                                 setShowCreateModal(false);
                                                 resetForm();
                                             }}
-                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
-                                        >
+                                            className={studioModalCloseButtonClassName}>
                                             <FaTimes size={24} />
                                         </button>
                                     </div>
@@ -814,7 +820,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.name || ''}
                                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入通缉犯姓名"
                                             />
                                         </div>
@@ -826,7 +832,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.age || ''}
                                                 onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入年龄"
                                             />
                                         </div>
@@ -838,7 +844,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.height || ''}
                                                 onChange={(e) => setFormData({ ...formData, height: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：180cm 或 未知"
                                             />
                                         </div>
@@ -850,7 +856,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.weight || ''}
                                                 onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：75kg 或 未知"
                                             />
                                         </div>
@@ -862,7 +868,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.eyes || ''}
                                                 onChange={(e) => setFormData({ ...formData, eyes: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：棕色/蓝色/未知"
                                             />
                                         </div>
@@ -874,7 +880,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.hair || ''}
                                                 onChange={(e) => setFormData({ ...formData, hair: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：黑色/金色/未知"
                                             />
                                         </div>
@@ -886,7 +892,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.race || ''}
                                                 onChange={(e) => setFormData({ ...formData, race: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：亚洲人/白人/未知"
                                             />
                                         </div>
@@ -898,7 +904,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.nationality || ''}
                                                 onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="例如：中国/美国/未知"
                                             />
                                         </div>
@@ -909,7 +915,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.dangerLevel || 'LOW'}
                                                 onChange={(e) => setFormData({ ...formData, dangerLevel: e.target.value as any })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                             >
                                                 <option value="LOW">低危险</option>
                                                 <option value="MEDIUM">中等危险</option>
@@ -924,7 +930,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.status || 'ACTIVE'}
                                                 onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                             >
                                                 <option value="ACTIVE">在逃</option>
                                                 <option value="CAPTURED">已抓获</option>
@@ -940,7 +946,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.reward || ''}
                                                 onChange={(e) => setFormData({ ...formData, reward: parseInt(e.target.value) || 0 })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入奖金金额"
                                             />
                                         </div>
@@ -953,7 +959,7 @@ const FBIWantedManager: React.FC = () => {
                                             value={chargesDraft}
                                             onChange={(e) => setChargesDraft(e.target.value)}
                                             disabled={!canWrite}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className={studioFieldClassName}
                                             placeholder="输入罪名，多个罪名用逗号分隔"
                                         />
                                     </div>
@@ -965,7 +971,7 @@ const FBIWantedManager: React.FC = () => {
                                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                             disabled={!canWrite}
                                             rows={3}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className={studioTextareaClassName}
                                             placeholder="输入详细描述"
                                         />
                                     </div>
@@ -983,16 +989,15 @@ const FBIWantedManager: React.FC = () => {
                                 </div>
 
                                 <div className="px-6 py-4 bg-slate-50/80 rounded-b-2xl flex justify-end space-x-3">
-                                    <button
+                                    <button type="button"
                                         onClick={() => {
                                             setShowCreateModal(false);
                                             resetForm();
                                         }}
-                                        className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
-                                    >
+                                        className={studioGhostButtonClassName}>
                                         取消
                                     </button>
-                                    <button
+                                    <button type="button"
                                         onClick={handleCreateWanted}
                                         disabled={
                                             !canWrite ||
@@ -1001,8 +1006,7 @@ const FBIWantedManager: React.FC = () => {
                                             !chargesDraft.split(',').some(charge => charge.trim()) ||
                                             !(typeof formData.reward === 'number' && formData.reward >= 0)
                                         }
-                                        className="flex items-center gap-2 rounded-2xl bg-slate-900 px-6 py-2 text-white transition-all duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
+                                        className={studioPrimaryButtonClassName}>
                                         {loading ? <FaSpinner className="animate-spin" /> : <FaSave />}
                                         {loading ? '创建中...' : '创建'}
                                     </button>
@@ -1018,29 +1022,28 @@ const FBIWantedManager: React.FC = () => {
                 <AnimatePresence>
                     {showEditModal && selectedWanted && (
                         <motion.div
-                            className={cn(studioModalOverlayClassName, "bg-black bg-opacity-50 z-[9999]")}
+                            className={studioModalOverlayClassName}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
                             <motion.div
-                                className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                                className={cn(studioModalCardClassName, 'w-full max-w-2xl max-h-[90vh] overflow-y-auto')}
                                 initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 exit={{ scale: 0.9, opacity: 0 }}
                             >
-                                <div className="bg-[#023047] text-white p-6 rounded-t-2xl">
+                                <div className="bg-slate-900 text-white p-6 rounded-t-2xl">
                                     <div className="flex items-center justify-between">
-                                        <h2 className="text-2xl font-bold font-songti">编辑通缉犯</h2>
-                                        <button
+                                        <h2 className="text-2xl font-bold">编辑通缉犯</h2>
+                                        <button type="button"
                                             onClick={() => {
                                                 setShowEditModal(false);
                                                 resetForm();
                                                 setSelectedWanted(null);
                                                 setFormData({});
                                             }}
-                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
-                                        >
+                                            className={studioModalCloseButtonClassName}>
                                             <FaTimes size={24} />
                                         </button>
                                     </div>
@@ -1055,7 +1058,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.name || ''}
                                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入通缉犯姓名"
                                             />
                                         </div>
@@ -1067,7 +1070,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.age || ''}
                                                 onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入年龄"
                                             />
                                         </div>
@@ -1078,7 +1081,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.dangerLevel || 'LOW'}
                                                 onChange={(e) => setFormData({ ...formData, dangerLevel: e.target.value as any })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                             >
                                                 <option value="LOW">低危险</option>
                                                 <option value="MEDIUM">中等危险</option>
@@ -1093,7 +1096,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.status || 'ACTIVE'}
                                                 onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                             >
                                                 <option value="ACTIVE">在逃</option>
                                                 <option value="CAPTURED">已抓获</option>
@@ -1109,7 +1112,7 @@ const FBIWantedManager: React.FC = () => {
                                                 value={formData.reward || ''}
                                                 onChange={(e) => setFormData({ ...formData, reward: parseInt(e.target.value) || 0 })}
                                                 disabled={!canWrite}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className={studioFieldClassName}
                                                 placeholder="输入奖金金额"
                                             />
                                         </div>
@@ -1122,7 +1125,7 @@ const FBIWantedManager: React.FC = () => {
                                             value={chargesDraft}
                                             onChange={(e) => setChargesDraft(e.target.value)}
                                             disabled={!canWrite}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className={studioFieldClassName}
                                             placeholder="输入罪名，多个罪名用逗号分隔"
                                         />
                                     </div>
@@ -1134,29 +1137,27 @@ const FBIWantedManager: React.FC = () => {
                                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                             disabled={!canWrite}
                                             rows={3}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className={studioTextareaClassName}
                                             placeholder="输入详细描述"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="px-6 py-4 bg-slate-50/80 rounded-b-2xl flex justify-end space-x-3">
-                                    <button
+                                    <button type="button"
                                         onClick={() => {
                                             setShowEditModal(false);
                                             resetForm();
                                             setSelectedWanted(null);
                                             setFormData({});
                                         }}
-                                        className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
-                                    >
+                                        className={studioGhostButtonClassName}>
                                         取消
                                     </button>
-                                    <button
+                                    <button type="button"
                                         onClick={handleUpdateWanted}
                                         disabled={!canWrite || loading || !formData.name || !formData.fbiNumber}
-                                        className="px-6 py-2 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-2xl hover:from-green-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
-                                    >
+                                        className={studioPrimaryButtonClassName}>
                                         {loading ? <FaSpinner className="animate-spin" /> : <FaSave />}
                                         {loading ? '更新中...' : '更新'}
                                     </button>
@@ -1172,27 +1173,26 @@ const FBIWantedManager: React.FC = () => {
                 <AnimatePresence>
                     {showViewModal && selectedWanted && (
                         <motion.div
-                            className={cn(studioModalOverlayClassName, "bg-black bg-opacity-50 z-[9999]")}
+                            className={studioModalOverlayClassName}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
                             <motion.div
-                                className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                                className={cn(studioModalCardClassName, 'w-full max-w-2xl max-h-[90vh] overflow-y-auto')}
                                 initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 exit={{ scale: 0.9, opacity: 0 }}
                             >
-                                <div className="bg-[#023047] text-white p-6 rounded-t-2xl">
+                                <div className="bg-slate-900 text-white p-6 rounded-t-2xl">
                                     <div className="flex items-center justify-between">
-                                        <h2 className="text-2xl font-bold font-songti">通缉犯详情</h2>
-                                        <button
+                                        <h2 className="text-2xl font-bold">通缉犯详情</h2>
+                                        <button type="button"
                                             onClick={() => {
                                                 setShowViewModal(false);
                                                 setSelectedWanted(null);
                                             }}
-                                            className="inline-flex items-center justify-center text-white hover:text-slate-200 transition-colors"
-                                        >
+                                            className={studioModalCloseButtonClassName}>
                                             <FaTimes size={24} />
                                         </button>
                                     </div>
@@ -1247,21 +1247,21 @@ const FBIWantedManager: React.FC = () => {
 
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">危险等级</label>
-                                            <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getDangerLevelColor(selectedWanted?.dangerLevel || '')}`}>
+                                            <span className={dangerLevelBadgeClass(selectedWanted?.dangerLevel || '')}>
                                                 {selectedWanted?.dangerLevel}
                                             </span>
                                         </div>
 
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">状态</label>
-                                            <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(selectedWanted?.status || '')}`}>
+                                            <span className={statusBadgeClass(selectedWanted?.status || '')}>
                                                 {selectedWanted?.status}
                                             </span>
                                         </div>
 
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">奖金</label>
-                                            <p className="text-lg font-semibold text-green-600">${(selectedWanted?.reward || 0).toLocaleString()}</p>
+                                            <p className="text-lg font-semibold text-emerald-600">${(selectedWanted?.reward || 0).toLocaleString()}</p>
                                         </div>
                                     </div>
 
@@ -1270,7 +1270,7 @@ const FBIWantedManager: React.FC = () => {
                                             <label className="block text-sm font-medium text-slate-700 mb-1">罪名</label>
                                             <div className="flex flex-wrap gap-2">
                                                 {selectedWanted.charges.map((charge, index) => (
-                                                    <span key={index} className="px-2 py-1 bg-red-100 text-red-800 rounded-2xl text-sm">
+                                                    <span key={index} className={studioBadgeClassName('rose')}>
                                                         {charge}
                                                     </span>
                                                 ))}
@@ -1288,11 +1288,11 @@ const FBIWantedManager: React.FC = () => {
                                     <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">FBI 编号</label>
-                                            <p className="text-slate-800 font-mono bg-slate-100 p-2 rounded">{selectedWanted?.fbiNumber}</p>
+                                            <p className="rounded-full bg-slate-100 p-2 font-mono text-slate-800">{selectedWanted?.fbiNumber}</p>
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">NCIC 编号</label>
-                                            <p className="text-slate-800 font-mono bg-slate-100 p-2 rounded">{selectedWanted?.ncicNumber || 'N/A'}</p>
+                                            <p className="rounded-full bg-slate-100 p-2 font-mono text-slate-800">{selectedWanted?.ncicNumber || 'N/A'}</p>
                                         </div>
                                     </div>
 
@@ -1337,13 +1337,12 @@ const FBIWantedManager: React.FC = () => {
                                 </div>
 
                                 <div className="px-6 py-4 bg-slate-50/80 rounded-b-2xl flex justify-end">
-                                    <button
+                                    <button type="button"
                                         onClick={() => {
                                             setShowViewModal(false);
                                             setSelectedWanted(null);
                                         }}
-                                        className="px-6 py-2 bg-slate-600 text-white rounded-2xl hover:bg-slate-700 transition-colors"
-                                    >
+                                        className={studioSecondaryButtonClassName}>
                                         关闭
                                     </button>
                                 </div>

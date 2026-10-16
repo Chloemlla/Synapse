@@ -1,6 +1,7 @@
 import React, { createContext, use, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { studioTileClassName } from './studioTheme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 export interface NotificationData {
     message: string;
@@ -293,6 +294,7 @@ const NotificationCard = React.memo(({
     ref
 }: NotificationCardProps) => {
     const duration = notification.itemDuration;
+    const reducedMotion = useReducedMotion();
     const progressRef = React.useRef<HTMLDivElement>(null);
     const animationRef = React.useRef<number | null>(null);
 
@@ -363,20 +365,20 @@ const NotificationCard = React.memo(({
     return (
         <motion.div
             ref={ref}
-            layout
+            layout={!reducedMotion}
             role={notification.type === 'error' ? 'alert' : 'status'}
             aria-live={notification.type === 'error' ? 'assertive' : 'polite'}
-            initial={{ opacity: 0, y: -32 }}
+            initial={reducedMotion ? false : { opacity: 0, y: -32 }}
             animate={{
                 opacity,
-                y,
+                y: reducedMotion ? 0 : y,
                 transition: {
-                    duration: 0.32,
+                    duration: reducedMotion ? 0 : 0.32,
                     ease: [0.4, 0, 0.2, 1],
                     opacity: { duration: notification.isFaded ? 0.2 : 0.32 }
                 }
             }}
-            exit={{
+            exit={reducedMotion ? { opacity: 0 } : {
                 opacity: 0,
                 y: -24,
                 transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] }
@@ -409,12 +411,11 @@ const NotificationCard = React.memo(({
                         </div>
                     )}
                 </div>
-                <button
+                <button type="button"
                     onClick={onClose}
                     className="p-1 sm:p-2 rounded-full hover:bg-slate-100 focus:outline-none transition-all duration-150 flex items-center justify-center flex-shrink-0"
                     aria-label="关闭通知"
-                    style={{ alignSelf: 'flex-start', marginTop: -2 }}
-                >
+                    style={{ alignSelf: 'flex-start', marginTop: -2 }}>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -424,12 +425,9 @@ const NotificationCard = React.memo(({
             <div className="w-full h-1 mt-2 rounded-full bg-slate-200 overflow-hidden relative">
                 <div
                     ref={progressRef}
-                    className={`h-full ${notification.isPaused ? 'animate-pulse' : ''}`}
+                    className={`h-full rounded-full ${getBarClassName(notification.type)} ${notification.isPaused ? 'animate-pulse' : ''}`}
                     style={{
                         width: `${currentProgress}%`,
-                        background: notification.isPaused
-                            ? `linear-gradient(90deg, ${getBarColor(notification.type)}80, ${getBarColor(notification.type)})`
-                            : `linear-gradient(90deg, ${getBarColor(notification.type)}, ${getBarColor(notification.type)}dd)`,
                         transformOrigin: 'left center',
                         willChange: 'width',
                         transition: 'none', // 移除CSS过渡，让RAF完全控制动画
@@ -450,59 +448,69 @@ const NotificationCard = React.memo(({
     );
 });
 
+/** 图标颜色全走 Tailwind 语义色：stroke 用 currentColor，容器类给 text-*，底色给 fill-*。 */
+const STATUS_ICON_TONE: Record<NotificationData['type'], { text: string; fill: string }> = {
+    success: { text: 'text-emerald-600', fill: 'fill-emerald-50' },
+    error: { text: 'text-rose-600', fill: 'fill-rose-50' },
+    warning: { text: 'text-amber-600', fill: 'fill-amber-50' },
+    info: { text: 'text-sky-600', fill: 'fill-sky-50' },
+};
+
 function StatusIcon({ type }: { type: NotificationData['type'] }) {
+    const { text, fill } = STATUS_ICON_TONE[type] ?? STATUS_ICON_TONE.info;
+
     switch (type) {
         case 'success':
             return (
-                <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10.5" stroke="#22c55e" strokeWidth="2" fill="#e9fbe8" />
+                <svg className={`h-6 w-6 flex-shrink-0 ${text}`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10.5" className={fill} stroke="currentColor" strokeWidth="2" />
                     {/* 轻微上移并向右平移，修正视觉偏左下 */}
                     <g transform="translate(0.5,-0.5)">
-                        <path stroke="#22c55e" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 12.5L10.5 15.5L16 10" />
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 12.5L10.5 15.5L16 10" />
                     </g>
                 </svg>
             );
         case 'error':
             return (
-                <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10.5" stroke="#ef4444" strokeWidth="2" fill="#fbeaea" />
+                <svg className={`h-6 w-6 flex-shrink-0 ${text}`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10.5" className={fill} stroke="currentColor" strokeWidth="2" />
                     <g transform="translate(0,-0.5)">
-                        <path stroke="#ef4444" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 9l-6 6M9 9l6 6" />
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 9l-6 6M9 9l6 6" />
                     </g>
                 </svg>
             );
         case 'warning':
             return (
-                <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10.5" stroke="#eab308" strokeWidth="2" fill="#fffbe8" />
+                <svg className={`h-6 w-6 flex-shrink-0 ${text}`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10.5" className={fill} stroke="currentColor" strokeWidth="2" />
                     <g transform="translate(0,-0.5)">
-                        <path stroke="#eab308" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" />
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" />
                     </g>
                 </svg>
             );
         case 'info':
         default:
             return (
-                <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10.5" stroke="#3b82f6" strokeWidth="2" fill="#e8f1fb" />
+                <svg className={`h-6 w-6 flex-shrink-0 ${text}`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10.5" className={fill} stroke="currentColor" strokeWidth="2" />
                     <g transform="translate(0,-0.5)">
-                        <path stroke="#3b82f6" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8h.01M12 12v4" />
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8h.01M12 12v4" />
                     </g>
                 </svg>
             );
     }
 }
 
-function getBarColor(type: NotificationData['type']) {
+function getBarClassName(type: NotificationData['type']) {
     switch (type) {
         case 'success':
-            return '#22c55e';
+            return 'bg-emerald-500';
         case 'error':
-            return '#ef4444';
+            return 'bg-rose-500';
         case 'warning':
-            return '#eab308';
+            return 'bg-amber-500';
         case 'info':
         default:
-            return '#3b82f6';
+            return 'bg-sky-500';
     }
 }

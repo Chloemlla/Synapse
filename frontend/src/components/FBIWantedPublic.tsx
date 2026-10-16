@@ -9,7 +9,6 @@ import {
   FaPhone,
   FaEnvelope,
   FaSpinner,
-  FaSync,
   FaEye,
   FaTimes,
   FaUser,
@@ -31,8 +30,12 @@ import {
   InfoQueryShell,
   InfoSectionTitle,
   studioEyebrowClassName,
+  studioModalCloseButtonClassName,
   studioModalOverlayClassName,
+  studioSecondaryButtonClassName,
 } from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { cn } from '../utils/cn';
 
 const PAGE_SIZE = 12;
@@ -143,7 +146,7 @@ const getDangerLevelClass = (level: string) => {
   switch (level) {
     case 'LOW': return 'border-emerald-200 bg-emerald-50 text-emerald-700';
     case 'MEDIUM': return 'border-amber-200 bg-amber-50 text-amber-700';
-    case 'HIGH': return 'border-orange-200 bg-orange-50 text-orange-700';
+    case 'HIGH': return 'border-rose-200 bg-rose-50 text-rose-700';
     case 'EXTREME': return 'border-rose-200 bg-rose-50 text-rose-700';
     default: return 'border-slate-200 bg-slate-100 text-slate-600';
   }
@@ -163,6 +166,7 @@ const FBIWantedPublic: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   const fetchWantedList = useCallback(async () => {
     try {
@@ -310,33 +314,16 @@ const FBIWantedPublic: React.FC = () => {
           />
 
           {error && (
-            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 sm:flex-row sm:items-center sm:justify-between">
-              <span>{error}</span>
-              <button
-                type="button"
-                onClick={() => void fetchWantedList()}
-                disabled={loading}
-                className="inline-flex items-center gap-2 self-start rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:self-auto"
-              >
-                <FaSync className={loading ? 'animate-spin' : ''} />
-                重试
-              </button>
-            </div>
+            <StudioErrorState className="mb-4" message={error} onRetry={() => void fetchWantedList()} />
           )}
 
           {loading ? (
-            <div className="flex min-h-[320px] items-center justify-center text-slate-500">
-              <FaSpinner className="mr-3 animate-spin text-2xl text-sky-600" />
-              正在加载通缉信息...
-            </div>
+            <StudioLoadingState minHeightClassName="min-h-[320px]" />
           ) : error ? null : wantedList.length === 0 ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                <FaSearch />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-slate-900">没有匹配记录</h3>
-              <p className="mt-2 text-sm text-slate-500">请调整搜索关键词或危险等级筛选条件。</p>
-            </div>
+            <StudioEmptyState
+              message="没有匹配记录，请调整搜索关键词或危险等级筛选条件。"
+              action={<button type="button" onClick={() => { setSearchTerm(''); setDangerFilter('ALL'); }} className={studioSecondaryButtonClassName}>清除筛选条件</button>}
+            />
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {wantedList.map((wanted) => (
@@ -398,7 +385,7 @@ const FBIWantedPublic: React.FC = () => {
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                   disabled={currentPage === 1}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                 >
                   上一页
                 </button>
@@ -406,7 +393,7 @@ const FBIWantedPublic: React.FC = () => {
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                   disabled={currentPage === totalPages}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                 >
                   下一页
                 </button>
@@ -437,7 +424,7 @@ const FBIWantedPublic: React.FC = () => {
       <AnimatePresence>
         {showDetailModal && selectedWanted && (
           <motion.div
-            className={cn(studioModalOverlayClassName, "z-50 bg-slate-950/55")}
+            className={cn(studioModalOverlayClassName, "bg-slate-950/55")}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -445,9 +432,9 @@ const FBIWantedPublic: React.FC = () => {
           >
             <motion.div
               className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur-xl"
-              initial={{ scale: 0.96, opacity: 0, y: 16 }}
+              initial={reducedMotion ? false : { scale: 0.96, opacity: 0, y: 16 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.96, opacity: 0, y: 16 }}
+              exit={reducedMotion ? { opacity: 0 } : { scale: 0.96, opacity: 0, y: 16 }}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/90 px-5 py-4 backdrop-blur">
@@ -458,7 +445,7 @@ const FBIWantedPublic: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowDetailModal(false)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  className={cn(studioModalCloseButtonClassName, 'h-10 w-10')}
                   aria-label="关闭详情"
                 >
                   <FaTimes />
@@ -543,7 +530,7 @@ const FBIWantedPublic: React.FC = () => {
       <AnimatePresence>
         {showDisclaimer && (
           <motion.div
-            className={cn(studioModalOverlayClassName, "z-50 bg-slate-950/45")}
+            className={cn(studioModalOverlayClassName, "bg-slate-950/45")}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -551,9 +538,9 @@ const FBIWantedPublic: React.FC = () => {
           >
             <motion.div
               className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-sm backdrop-blur-xl max-h-[90vh] overflow-y-auto"
-              initial={{ scale: 0.96, y: 16, opacity: 0 }}
+              initial={reducedMotion ? false : { scale: 0.96, y: 16, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.96, y: 16, opacity: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { scale: 0.96, y: 16, opacity: 0 }}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-start gap-4">
@@ -575,14 +562,14 @@ const FBIWantedPublic: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowDisclaimer(false)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                 >
                   关闭
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseDisclaimerForever}
-                  className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+                  className={cn(studioSecondaryButtonClassName, 'min-h-11 bg-slate-100')}
                 >
                   永不提示
                 </button>

@@ -102,53 +102,52 @@ export const STATUS_OPTIONS = ['ACTIVE', 'CAPTURED', 'DECEASED', 'REMOVED'] as c
 export type WantedStatus = typeof STATUS_OPTIONS[number];
 
 /**
+ * 徽标语义 tone。取值与 studioTheme 的 studioBadgeClassName 保持一致，
+ * 消费组件直接 `studioBadgeClassName(tone)` 取色——类型层不再携带 Tailwind 类串，
+ * 否则改一次配色就要回头改数据模型（FD-019）。
+ */
+export type FBIStatusTone = 'green' | 'yellow' | 'slate' | 'rose';
+
+/**
  * 危险等级显示配置
  */
-export const DANGER_LEVEL_CONFIG: Record<DangerLevel, { label: string; color: string; bgColor: string }> = {
+export const DANGER_LEVEL_CONFIG: Record<DangerLevel, { label: string; tone: FBIStatusTone }> = {
   LOW: {
     label: '低危',
-    color: 'text-green-700',
-    bgColor: 'bg-green-100'
+    tone: 'green'
   },
   MEDIUM: {
     label: '中危',
-    color: 'text-yellow-700',
-    bgColor: 'bg-yellow-100'
+    tone: 'yellow'
   },
   HIGH: {
     label: '高危',
-    color: 'text-orange-700',
-    bgColor: 'bg-orange-100'
+    tone: 'rose'
   },
   EXTREME: {
     label: '极危',
-    color: 'text-red-700',
-    bgColor: 'bg-red-100'
+    tone: 'rose'
   }
 };
 
 /**
  * 状态显示配置
  */
-export const STATUS_CONFIG: Record<WantedStatus, { label: string; color: string; bgColor: string }> = {
+export const STATUS_CONFIG: Record<WantedStatus, { label: string; tone: FBIStatusTone }> = {
   ACTIVE: {
     label: '在逃',
-    color: 'text-red-700',
-    bgColor: 'bg-red-100'
+    tone: 'rose'
   },
   CAPTURED: {
     label: '已抓获',
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-100'
+    tone: 'green'
   },
   DECEASED: {
     label: '已死亡',
-    color: 'text-gray-700',
-    bgColor: 'bg-gray-100'
+    tone: 'slate'
   },
   REMOVED: {
     label: '已移除',
-    color: 'text-purple-700',
-    bgColor: 'bg-purple-100'
+    tone: 'slate'
   }
 };

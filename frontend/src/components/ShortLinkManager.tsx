@@ -1,6 +1,6 @@
 import React, { useEffect, useState, startTransition } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { FaTrash, FaCopy, FaSearch, FaSync, FaDice, FaLink, FaPlus, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaList, FaToggleOn, FaToggleOff, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaDownload, FaFileAlt, FaUpload, FaUserSecret } from 'react-icons/fa';
+import { FaTrash, FaCopy, FaSearch, FaSync, FaDice, FaLink, FaPlus, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaToggleOn, FaToggleOff, FaDownload, FaFileAlt, FaUpload, FaUserSecret } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
@@ -10,8 +10,16 @@ import { isSuperAdmin } from '../utils/rbac';
 import { signedFetch } from '../utils/requestSigner';
 import { getBackendErrorMessage } from '../utils/backendError';
 import { cn } from '../utils/cn';
-import { studioMainSurfaceClassName, studioSurfaceClassName } from './studioTheme';
-
+import {
+  studioDangerButtonClassName,
+  studioFieldClassName,
+  studioMainSurfaceClassName,
+  studioPillClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioSurfaceClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState, StudioPager } from './studioFeedback';
 
 interface ShortLink {
   _id: string;
@@ -38,6 +46,7 @@ const ShortLinkManager: React.FC = () => {
   const [customCode, setCustomCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [codeValidation, setCodeValidation] = useState<{ isValid: boolean; message: string } | null>(null);
   const { setNotification } = useNotification();
   const confirm = useConfirm();
@@ -138,13 +147,9 @@ const ShortLinkManager: React.FC = () => {
     const url = `${getApiBaseUrl()}/s/${code}`;
     navigator.clipboard.writeText(url);
     setNotification({ message: '短链已复制到剪贴板', type: 'info' });
-    const button = document.querySelector(`[data-copy-code="${code}"]`);
-    if (button) {
-      button.classList.add('bg-[#8ECAE6]/30', 'text-[#219EBC]');
-      setTimeout(() => {
-        button.classList.remove('bg-[#8ECAE6]/30', 'text-[#219EBC]');
-      }, 500);
-    }
+    // 复制反馈走状态：原来的 classList.add/remove 会被 Tailwind 的类名变化漏掉。
+    setCopiedCode(code);
+    window.setTimeout(() => setCopiedCode((current) => (current === code ? null : current)), 600);
   };
 
   const handleRefresh = () => {
@@ -349,11 +354,6 @@ const ShortLinkManager: React.FC = () => {
     }
   };
 
-  const handleFirstPage = () => handlePageChange(1);
-  const handlePrevPage = () => handlePageChange(page - 1);
-  const handleNextPage = () => handlePageChange(page + 1);
-  const handleLastPage = () => handlePageChange(totalPages);
-
   // 导出所有短链数据（后端导出）
   const handleExportAll = async () => {
     setExportingAll(true);
@@ -535,55 +535,43 @@ const ShortLinkManager: React.FC = () => {
     }
   };
 
-  const generatePageNumbers = () => {
-    const pages = [];
-    const maxVisiblePages = 5;
-    let startPage = Math.max(1, page - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-    if (endPage - startPage + 1 < maxVisiblePages) {
-      startPage = Math.max(1, endPage - maxVisiblePages + 1);
-    }
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-    return pages;
-  };
-
   if (!user || !isSuperAdmin(user.role)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <span style={{ fontSize: 120, lineHeight: 1 }}><FaUserSecret aria-hidden /></span>
         <div className="text-3xl font-bold mt-6 mb-2 text-rose-600 drop-shadow-lg">你不是管理员，禁止访问！</div>
-        <div className="text-lg text-[#023047]/50 mb-8">请用管理员账号登录后再来玩哦~<br /><span className="text-rose-400">（小丑竟是你自己）</span></div>
-        <div className="text-base text-[#023047]/30 italic mt-4">仅限管理员使用，恶搞界面仅供娱乐。</div>
+        <div className="text-lg text-slate-500 mb-8">请用管理员账号登录后再来玩哦~<br /><span className="text-rose-400">（小丑竟是你自己）</span></div>
+        <div className="text-base text-slate-400 italic mt-4">仅限管理员使用，恶搞界面仅供娱乐。</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {loadError && <p role="alert">{loadError}</p>}
-      {/* 标题和说明 — 头部横幅：纯色 bg-[#023047] */}
+      {loadError && (
+        <StudioErrorState message={loadError} onRetry={() => void fetchLinks()} />
+      )}
+      {/* 标题和说明 — 头部横幅：纯色 bg-slate-900 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className={cn(studioSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+        className={studioSurfaceClassName}
       >
-        <div className="bg-[#023047] px-6 py-5">
+        <div className="bg-slate-900 px-6 py-5">
           <div className="flex items-center justify-between mb-2">
             <motion.h2
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.5, delay: 0.2 }}
-              className="text-2xl font-bold text-white flex items-center gap-2 font-songti"
+              className="text-2xl font-bold text-white flex items-center gap-2"
             >
-              <FaLink className="w-6 h-6 text-[#FFB703]" />
+              <FaLink className="w-6 h-6 text-sky-300" />
               短链管理
             </motion.h2>
             <Link
               to="/"
-              className="w-full sm:w-auto px-2 sm:px-3 py-1 sm:py-2 text-xs sm:text-sm bg-[#FFB703] text-[#023047] rounded-lg hover:bg-[#FB8500] transition font-medium flex items-center justify-center gap-1 sm:gap-2"
+              className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
             >
               <FaArrowLeft className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">返回主页</span>
@@ -594,17 +582,17 @@ const ShortLinkManager: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="text-[#8ECAE6]"
+            className="text-slate-300"
           >
             此功能用于管理短链接，支持创建、搜索、复制和删除短链，提供完整的短链生命周期管理。
           </motion.p>
         </div>
-        <div className="bg-[#8ECAE6]/10 px-6 py-4">
+        <div className="bg-slate-50 px-6 py-4">
           <div className="flex items-start gap-2 text-sm">
-            <FaInfoCircle className="w-4 h-4 text-[#219EBC] mt-0.5 flex-shrink-0" />
+            <FaInfoCircle className="w-4 h-4 text-sky-700 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold text-[#023047] font-songti">功能说明：</p>
-              <ul className="list-disc list-inside space-y-1 mt-1 text-[#023047]/70">
+              <p className="font-semibold text-slate-900">功能说明：</p>
+              <ul className="list-disc list-inside space-y-1 mt-1 text-slate-600">
                 <li>支持创建自定义或随机短链</li>
                 <li>实时搜索和筛选短链</li>
                 <li>一键复制短链到剪贴板</li>
@@ -621,19 +609,18 @@ const ShortLinkManager: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(studioMainSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+        className={studioMainSurfaceClassName}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-[#023047] flex items-center gap-2 font-songti">
-            <FaSearch className="w-5 h-5 text-[#219EBC]" />
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <FaSearch className="w-5 h-5 text-sky-700" />
             搜索和刷新
           </h3>
-          <motion.button
+          <motion.button type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="px-3 py-2 bg-[#FFB703] text-[#023047] rounded-lg hover:bg-[#FB8500] transition disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-            whileTap={tapScale(0.95)}
-          >
+            className={studioPrimaryButtonClassName}
+            whileTap={tapScale(0.95)}>
             <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             刷新
           </motion.button>
@@ -641,7 +628,7 @@ const ShortLinkManager: React.FC = () => {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <input
-            className="flex-1 px-3 py-2 border border-[#8ECAE6]/30 rounded-lg focus:ring-2 focus:ring-[#FFB703] focus:border-[#FFB703] transition-all duration-200 text-[#023047] placeholder-[#023047]/30"
+            className={cn(studioFieldClassName, 'flex-1')}
             placeholder="搜索短链码或目标地址"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -653,10 +640,10 @@ const ShortLinkManager: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(studioMainSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+        className={studioMainSurfaceClassName}
       >
-        <h3 className="text-lg font-semibold text-[#023047] mb-4 flex items-center gap-2 font-songti">
-          <FaPlus className="w-5 h-5 text-[#FFB703]" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <FaPlus className="w-5 h-5 text-sky-600" />
           创建短链
         </h3>
 
@@ -664,13 +651,12 @@ const ShortLinkManager: React.FC = () => {
           <div className="hidden sm:block"></div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             {/* 导出按钮 */}
-            <motion.button
+            <motion.button type="button"
               onClick={handleExportAll}
               disabled={exportingAll || links.length === 0}
-              className="w-full sm:w-auto px-3 sm:px-4 py-2 sm:py-2 text-sm sm:text-base bg-[#219EBC] text-white rounded-lg hover:bg-[#219EBC]/80 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium flex items-center justify-center gap-2"
+              className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
               whileHover={hoverScale(1.02, !exportingAll && links.length > 0)}
-              whileTap={tapScale(0.98, !exportingAll && links.length > 0)}
-            >
+              whileTap={tapScale(0.98, !exportingAll && links.length > 0)}>
               {exportingAll ? (
                 <>
                   <FaSync className="animate-spin w-3 h-3 sm:w-4 sm:h-4" />
@@ -695,12 +681,11 @@ const ShortLinkManager: React.FC = () => {
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 disabled={importingData}
               />
-              <motion.button
+              <motion.button type="button"
                 disabled={importingData}
-                className="w-full sm:w-auto px-3 sm:px-4 py-2 sm:py-2 text-sm sm:text-base bg-[#8ECAE6]/15 text-[#023047] border border-[#8ECAE6]/30 rounded-lg hover:bg-[#8ECAE6]/20 hover:border-[#219EBC] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium flex items-center justify-center gap-2"
+                className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
                 whileHover={hoverScale(1.02, !importingData)}
-                whileTap={tapScale(0.98, !importingData)}
-              >
+                whileTap={tapScale(0.98, !importingData)}>
                 {importingData ? (
                   <>
                     <FaSync className="animate-spin w-3 h-3 sm:w-4 sm:h-4" />
@@ -718,13 +703,12 @@ const ShortLinkManager: React.FC = () => {
             </div>
 
             {/* 删除全部按钮 */}
-            <motion.button
+            <motion.button type="button"
               onClick={handleDeleteAll}
               disabled={deletingAll || links.length === 0}
-              className="w-full sm:w-auto px-3 sm:px-4 py-2 sm:py-2 text-sm sm:text-base bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium flex items-center justify-center gap-2"
+              className={cn(studioDangerButtonClassName, 'w-full sm:w-auto')}
               whileHover={hoverScale(1.02, !deletingAll && links.length > 0)}
-              whileTap={tapScale(0.98, !deletingAll && links.length > 0)}
-            >
+              whileTap={tapScale(0.98, !deletingAll && links.length > 0)}>
               {deletingAll ? (
                 <>
                   <FaSync className="animate-spin w-3 h-3 sm:w-4 sm:h-4" />
@@ -741,15 +725,11 @@ const ShortLinkManager: React.FC = () => {
             </motion.button>
 
             {/* 批量操作按钮 */}
-            <motion.button
+            <motion.button type="button"
               onClick={toggleSelectMode}
-              className={`w-full sm:w-auto px-3 sm:px-4 py-2 sm:py-2 text-sm sm:text-base rounded-lg transition-all duration-200 font-medium flex items-center justify-center gap-2 ${isSelectMode
-                ? 'bg-[#FB8500] text-white hover:bg-[#FB8500]/80'
-                : 'bg-[#8ECAE6]/10 text-[#023047]/70 border border-[#8ECAE6]/30 hover:bg-[#8ECAE6]/20 hover:text-[#023047] hover:border-[#219EBC]'
-                }`}
+              className={cn(isSelectMode ? studioPrimaryButtonClassName : studioSecondaryButtonClassName, 'w-full sm:w-auto')}
               whileHover={hoverScale(1.02)}
-              whileTap={tapScale(0.98)}
-            >
+              whileTap={tapScale(0.98)}>
               {isSelectMode ? <FaToggleOn className="w-3 h-3 sm:w-4 sm:h-4" /> : <FaToggleOff className="w-3 h-3 sm:w-4 sm:h-4" />}
               <span className="hidden sm:inline">{isSelectMode ? '退出选择' : '批量选择'}</span>
               <span className="sm:hidden">{isSelectMode ? '退出' : '批量'}</span>
@@ -764,39 +744,36 @@ const ShortLinkManager: React.FC = () => {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mb-4 pt-4 border-t border-[#8ECAE6]/30"
+              className="mb-4 pt-4 border-t border-slate-200"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-[#023047]/70">
+                  <span className="text-sm text-slate-600">
                     已选择 {selectedLinks.size} 个短链
                   </span>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <motion.button
+                    <motion.button type="button"
                       onClick={selectAllLinks}
-                      className="w-full sm:w-auto px-2 sm:px-3 py-1 text-xs sm:text-sm bg-[#8ECAE6]/15 text-[#023047] rounded hover:bg-[#8ECAE6]/25 transition border border-[#8ECAE6]/30"
-                      whileTap={tapScale(0.95)}
-                    >
+                      className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
+                      whileTap={tapScale(0.95)}>
                       全选
                     </motion.button>
-                    <motion.button
+                    <motion.button type="button"
                       onClick={clearSelection}
-                      className="w-full sm:w-auto px-2 sm:px-3 py-1 text-xs sm:text-sm bg-[#8ECAE6]/10 text-[#023047]/70 rounded hover:bg-[#8ECAE6]/20 transition border border-[#8ECAE6]/30"
-                      whileTap={tapScale(0.95)}
-                    >
+                      className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
+                      whileTap={tapScale(0.95)}>
                       清空选择
                     </motion.button>
                   </div>
                 </div>
 
                 {selectedLinks.size > 0 && (
-                  <motion.button
+                  <motion.button type="button"
                     onClick={handleBatchDelete}
                     disabled={batchDeleting}
-                    className="w-full sm:w-auto px-3 sm:px-4 py-2 text-sm sm:text-base bg-red-500 text-white rounded-lg hover:bg-red-600 transition disabled:opacity-50 font-medium flex items-center justify-center gap-2"
+                    className={cn(studioDangerButtonClassName, 'w-full sm:w-auto')}
                     whileHover={hoverScale(1.02)}
-                    whileTap={tapScale(0.98)}
-                  >
+                    whileTap={tapScale(0.98)}>
                     <FaTrash className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline">{batchDeleting ? '删除中...' : `删除 ${selectedLinks.size} 个`}</span>
                     <span className="sm:hidden">{batchDeleting ? '删除中' : `删除${selectedLinks.size}个`}</span>
@@ -810,11 +787,11 @@ const ShortLinkManager: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* 目标地址输入 */}
           <div>
-            <label className="block text-sm font-medium text-[#023047] mb-2">
+            <label className="block text-sm font-medium text-slate-900 mb-2">
               目标地址 *
             </label>
             <input
-              className="w-full px-3 py-2 border border-[#8ECAE6]/30 rounded-lg focus:ring-2 focus:ring-[#FFB703] focus:border-[#FFB703] transition-all duration-200 text-[#023047] placeholder-[#023047]/30"
+              className={studioFieldClassName}
               placeholder="请输入要生成短链的目标地址（如 https://...）"
               value={createTarget}
               onChange={e => setCreateTarget(e.target.value)}
@@ -824,12 +801,12 @@ const ShortLinkManager: React.FC = () => {
 
           {/* 自定义码输入 */}
           <div>
-            <label className="block text-sm font-medium text-[#023047] mb-2">
+            <label className="block text-sm font-medium text-slate-900 mb-2">
               自定义短链码（可选）
             </label>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <input
-                className="flex-1 px-3 py-2 border border-[#8ECAE6]/30 rounded-l-lg focus:ring-2 focus:ring-[#FFB703] focus:border-[#FFB703] transition-all duration-200 text-[#023047] placeholder-[#023047]/30"
+                className={cn(studioFieldClassName, 'flex-1')}
                 placeholder="自定义短链接码"
                 value={customCode}
                 onChange={e => {
@@ -838,13 +815,12 @@ const ShortLinkManager: React.FC = () => {
                 }}
                 disabled={creating}
               />
-              <motion.button
-                className="px-3 py-2 bg-[#FB8500] text-white rounded-r-lg hover:bg-[#FB8500]/80 transition disabled:opacity-50 flex items-center gap-2 transform-gpu will-change-transform touch-manipulation select-none"
+              <motion.button type="button"
+                className={cn(studioPrimaryButtonClassName, 'min-h-11 px-3')}
                 onClick={generateRandomCode}
                 disabled={creating}
                 title="生成随机短链接码"
-                whileTap={tapScale(0.95)}
-              >
+                whileTap={tapScale(0.95)}>
                 <FaDice className="w-4 h-4" />
               </motion.button>
             </div>
@@ -855,19 +831,18 @@ const ShortLinkManager: React.FC = () => {
         <AnimatePresence>
           {customCode.trim() && (
             <motion.div
-              className="mt-3 flex items-center justify-between text-sm text-[#023047]/70 bg-[#8ECAE6]/10 p-3 rounded-lg border border-[#8ECAE6]/30"
+              className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
             >
               <span className="flex items-center gap-2">
-                <FaInfoCircle className="text-[#219EBC]" />
+                <FaInfoCircle className="text-sky-700" />
                 自定义短链接码提示：只能包含字母、数字、连字符(-)和下划线(_)，长度1-200个字符。留空则自动生成随机短链接码。
               </span>
-              <button
-                className="w-full sm:w-auto px-2 sm:px-3 py-1 text-xs sm:text-sm bg-[#8ECAE6]/15 text-[#023047]/70 rounded hover:bg-[#8ECAE6]/25 transition flex items-center justify-center gap-1 border border-[#8ECAE6]/30"
-                onClick={clearCustomCode}
-              >
+              <button type="button"
+                className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
+                onClick={clearCustomCode}>
                 清除
               </button>
             </motion.div>
@@ -878,39 +853,35 @@ const ShortLinkManager: React.FC = () => {
         <AnimatePresence>
           {codeValidation && (
             <motion.div
-              className={`mt-3 flex items-center gap-2 text-sm p-3 rounded-lg border ${codeValidation.isValid
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
+              className={`mt-3 flex items-center gap-2 rounded-2xl border p-3 text-sm ${codeValidation.isValid
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-rose-50 text-rose-700 border-rose-200'
                 }`}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
               {codeValidation.isValid ? (
-                <FaCheckCircle className="w-4 h-4 text-green-500" />
+                <FaCheckCircle className="w-4 h-4 text-emerald-500" />
               ) : (
-                <FaExclamationTriangle className="w-4 h-4 text-red-500" />
+                <FaExclamationTriangle className="w-4 h-4 text-rose-500" />
               )}
               <span>{codeValidation.message}</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* 创建按钮 — CTA: bg-[#FFB703] hover:bg-[#FB8500] */}
+        {/* 创建按钮 */}
         <div className="mt-4">
-          <motion.button
+          <motion.button type="button"
             onClick={handleCreate}
             disabled={creating}
-            className={`w-full py-2 sm:py-3 px-4 sm:px-6 text-sm sm:text-base rounded-lg font-semibold transition-all duration-200 ${creating
-              ? 'bg-[#023047]/20 text-[#023047]/50 cursor-not-allowed'
-              : 'bg-[#FFB703] text-[#023047] hover:bg-[#FB8500] shadow-lg shadow-[#FFB703]/20 hover:shadow-xl'
-              }`}
+            className={cn(studioPrimaryButtonClassName, 'w-full py-2 sm:py-3')}
             whileHover={hoverScale(1.02, !creating)}
-            whileTap={tapScale(0.98, !creating)}
-          >
+            whileTap={tapScale(0.98, !creating)}>
             {creating ? (
               <div className="flex items-center justify-center space-x-2">
-                <div className="w-4 h-4 sm:w-5 sm:h-5 border-b-2 border-[#FFB703] rounded-full animate-spin" />
+                <div className="w-4 h-4 sm:w-5 sm:h-5 border-b-2 border-sky-500 rounded-full animate-spin" />
                 <span className="hidden sm:inline">创建中...</span>
                 <span className="sm:hidden">创建中</span>
               </div>
@@ -929,13 +900,13 @@ const ShortLinkManager: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(studioMainSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
+        className={studioMainSurfaceClassName}
       >
-        <h3 className="text-lg font-semibold text-[#023047] mb-4 flex items-center gap-2 font-songti">
-          <FaLink className="w-5 h-5 text-[#FFB703]" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <FaLink className="w-5 h-5 text-sky-600" />
           短链列表
           {totalItems > 0 && (
-            <span className="text-sm text-[#023047]/50 bg-[#8ECAE6]/15 px-2 py-1 rounded-full border border-[#8ECAE6]/30">
+            <span className="text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded-full border border-slate-200">
               共 {totalItems} 个
               {search && ` (筛选后)`}
             </span>
@@ -946,11 +917,11 @@ const ShortLinkManager: React.FC = () => {
         <div className="hidden md:block">
           <div
             ref={containerRef}
-            className="overflow-auto border border-[#8ECAE6]/30 rounded-lg"
+            className="overflow-auto rounded-2xl border border-slate-200"
             style={{ height: useVirtualScrolling ? `${containerHeight}px` : 'auto', maxHeight: `${containerHeight}px` }}
             onScroll={useVirtualScrolling ? handleScroll : undefined}
           >
-            <table className="min-w-full table-fixed text-sm text-[#023047]">
+            <table className="min-w-full table-fixed text-sm text-slate-900">
               <colgroup>
                 {isSelectMode && <col className="w-12" />}
                 <col className="w-[14%]" />
@@ -961,9 +932,9 @@ const ShortLinkManager: React.FC = () => {
                 <col className="w-[16%]" />
               </colgroup>
               <thead className="sticky top-0 z-10">
-                <tr className="bg-[#8ECAE6]/15 border-b border-[#8ECAE6]/30">
+                <tr className="bg-slate-100 border-b border-slate-200">
                   {isSelectMode && (
-                    <th className="py-3 px-3 text-center font-semibold text-[#023047]">
+                    <th className="py-3 px-3 text-center font-semibold text-slate-900">
                       <input
                         type="checkbox"
                         checked={links.length > 0 && links.every(link => selectedLinks.has(link._id))}
@@ -974,16 +945,16 @@ const ShortLinkManager: React.FC = () => {
                             clearSelection();
                           }
                         }}
-                        className="rounded border-[#8ECAE6]/30 text-[#FFB703] focus:ring-[#FFB703]"
+                        className="rounded border-slate-200 text-sky-600 focus:ring-slate-300"
                       />
                     </th>
                   )}
-                  <th className="py-3 px-3 text-left font-semibold text-[#023047] font-songti">短链码</th>
-                  <th className="py-3 px-3 text-left font-semibold text-[#023047] font-songti">目标地址</th>
-                  <th className="py-3 px-3 text-left font-semibold text-[#023047] font-songti">创建时间</th>
-                  <th className="py-3 px-3 text-left font-semibold text-[#023047] font-songti">用户</th>
-                  <th className="py-3 px-3 text-left font-semibold text-[#023047] font-songti">用户ID</th>
-                  <th className="py-3 px-3 text-center font-semibold text-[#023047] font-songti">操作</th>
+                  <th className="py-3 px-3 text-left font-semibold text-slate-900">短链码</th>
+                  <th className="py-3 px-3 text-left font-semibold text-slate-900">目标地址</th>
+                  <th className="py-3 px-3 text-left font-semibold text-slate-900">创建时间</th>
+                  <th className="py-3 px-3 text-left font-semibold text-slate-900">用户</th>
+                  <th className="py-3 px-3 text-left font-semibold text-slate-900">用户ID</th>
+                  <th className="py-3 px-3 text-center font-semibold text-slate-900">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -994,27 +965,23 @@ const ShortLinkManager: React.FC = () => {
                 )}
                 {loading ? (
                   <tr>
-                    <td colSpan={isSelectMode ? 7 : 6} className="text-center py-12">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-5 h-5 border-b-2 border-[#FFB703] rounded-full animate-spin" />
-                        <span className="text-lg font-medium text-[#023047]/70">加载中…</span>
-                      </div>
+                    <td colSpan={isSelectMode ? 7 : 6}>
+                      <StudioLoadingState minHeightClassName="min-h-[160px]" />
                     </td>
                   </tr>
                 ) : totalItems === 0 && !loadError ? (
                   <tr>
-                    <td colSpan={isSelectMode ? 7 : 6} className="text-center py-12 text-[#023047]/30">
-                      <div className="flex flex-col items-center gap-2">
-                        <FaList className="text-3xl text-[#8ECAE6]/50" />
-                        <div className="text-lg font-medium text-[#023047]/50">暂无短链</div>
-                        <div className="text-sm text-[#023047]/30">快去生成吧！</div>
-                      </div>
+                    <td colSpan={isSelectMode ? 7 : 6}>
+                      <StudioEmptyState
+                        message="还没有任何短链。"
+                        action={<button type="button" onClick={generateRandomCode} className={studioSecondaryButtonClassName}>生成一个短链码</button>}
+                      />
                     </td>
                   </tr>
                 ) : (useVirtualScrolling ? visibleItems : links).map((link) => (
                   <tr
                     key={link._id}
-                    className={`border-b border-[#8ECAE6]/20 hover:bg-[#8ECAE6]/10 ${highlightedId === link._id ? 'bg-[#FFB703]/10' : ''}`}
+                    className={`border-b border-slate-200 hover:bg-slate-50 ${highlightedId === link._id ? 'bg-amber-50' : ''}`}
                     style={{ height: `${itemHeight}px` }}
                   >
                     {isSelectMode && (
@@ -1023,39 +990,39 @@ const ShortLinkManager: React.FC = () => {
                           type="checkbox"
                           checked={selectedLinks.has(link._id)}
                           onChange={() => toggleSelectLink(link._id)}
-                          className="rounded border-[#8ECAE6]/30 text-[#FFB703] focus:ring-[#FFB703]"
+                          className="rounded border-slate-200 text-sky-600 focus:ring-slate-300"
                         />
                       </td>
                     )}
                     <td
-                      className="py-3 px-3 font-mono text-[#219EBC] break-all cursor-pointer hover:text-[#023047] transition font-semibold"
+                      className="py-3 px-3 font-mono text-sky-700 break-all cursor-pointer hover:text-slate-900 transition font-semibold"
                       onClick={() => window.open(`${getApiBaseUrl()}/s/${link.code}`, '_blank')}
                     >
                       {link.code}
                     </td>
-                    <td className="py-3 px-3 break-all text-[#023047]">{link.target}</td>
-                    <td className="py-3 px-3 whitespace-nowrap text-[#023047]/70">{new Date(link.createdAt).toLocaleString()}</td>
-                    <td className="py-3 px-3 break-all text-[#023047] font-medium">{link.username || 'admin'}</td>
-                    <td className="py-3 px-3 break-all text-[#023047]/50 text-xs">{link.userId || 'admin'}</td>
+                    <td className="py-3 px-3 break-all text-slate-900">{link.target}</td>
+                    <td className="py-3 px-3 whitespace-nowrap text-slate-600">{new Date(link.createdAt).toLocaleString()}</td>
+                    <td className="py-3 px-3 break-all text-slate-900 font-medium">{link.username || 'admin'}</td>
+                    <td className="py-3 px-3 break-all text-slate-500 text-xs">{link.userId || 'admin'}</td>
                     <td className="py-3 px-3 text-center">
                       <div className="flex gap-2 justify-center">
-                        <motion.button
-                          className="flex items-center justify-center bg-[#8ECAE6]/15 hover:bg-[#8ECAE6]/25 text-[#219EBC] rounded-lg px-2 py-1 shadow-sm hover:shadow-md transition-all duration-150 border border-[#8ECAE6]/30"
+                        <motion.button type="button"
+                          className={cn(
+                            'flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-sky-700 transition hover:bg-slate-100',
+                            copiedCode === link.code && studioPillClassName(true),
+                          )}
                           title="复制短链"
                           onClick={() => handleCopy(link.code)}
-                          data-copy-code={link.code}
                           whileHover={hoverScale(1.1)}
-                          whileTap={tapScale(0.9)}
-                        >
+                          whileTap={tapScale(0.9)}>
                           <FaCopy className="w-4 h-4" />
                         </motion.button>
-                        <motion.button
-                          className="flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-500 rounded-lg px-2 py-1 shadow-sm hover:shadow-md transition-all duration-150 border border-red-200"
+                        <motion.button type="button"
+                          className="flex min-h-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-600 transition hover:bg-rose-100"
                           title="删除"
                           onClick={() => handleDelete(link._id)}
                           whileHover={hoverScale(1.1)}
-                          whileTap={tapScale(0.9)}
-                        >
+                          whileTap={tapScale(0.9)}>
                           <FaTrash className="w-4 h-4" />
                         </motion.button>
                       </div>
@@ -1083,24 +1050,16 @@ const ShortLinkManager: React.FC = () => {
             <div style={{ height: useVirtualScrolling ? `${totalItems * itemHeight}px` : 'auto', position: 'relative' }}>
               <div style={{ transform: useVirtualScrolling ? `translateY(${offsetY}px)` : 'none' }} className="space-y-3">
                 {loading ? (
-                  <div className="bg-white/80 rounded-lg shadow p-6 text-center border border-[#8ECAE6]/30">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-5 h-5 border-b-2 border-[#FFB703] rounded-full animate-spin" />
-                      <span className="text-lg font-medium text-[#023047]/70">加载中…</span>
-                    </div>
-                  </div>
+                  <StudioLoadingState minHeightClassName="min-h-[160px]" />
                 ) : totalItems === 0 && !loadError ? (
-                  <div className="bg-white/80 rounded-lg shadow p-6 text-center border border-[#8ECAE6]/30">
-                    <div className="flex flex-col items-center gap-2">
-                      <FaList className="text-3xl text-[#8ECAE6]/50" />
-                      <div className="text-lg font-medium text-[#023047]/50">暂无短链</div>
-                      <div className="text-sm text-[#023047]/30">快去生成吧！</div>
-                    </div>
-                  </div>
+                  <StudioEmptyState
+                    message="还没有任何短链。"
+                    action={<button type="button" onClick={generateRandomCode} className={studioSecondaryButtonClassName}>生成一个短链码</button>}
+                  />
                 ) : (useVirtualScrolling ? visibleItems : links).map((link) => (
                   <div
                     key={link._id}
-                    className={`bg-white/80 rounded-lg shadow-sm border border-[#8ECAE6]/30 p-4 ${highlightedId === link._id ? 'ring-2 ring-[#FFB703]/30 bg-[#FFB703]/5' : ''}`}
+                    className={`rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm ${highlightedId === link._id ? 'ring-2 ring-amber-200 bg-amber-50' : ''}`}
                     style={{ minHeight: `${itemHeight}px` }}
                   >
                     {/* 短链码区域 */}
@@ -1111,34 +1070,34 @@ const ShortLinkManager: React.FC = () => {
                             type="checkbox"
                             checked={selectedLinks.has(link._id)}
                             onChange={() => toggleSelectLink(link._id)}
-                            className="rounded border-[#8ECAE6]/30 text-[#FFB703] focus:ring-[#FFB703] mr-2 flex-shrink-0"
+                            className="rounded border-slate-200 text-sky-600 focus:ring-slate-300 mr-2 flex-shrink-0"
                           />
                         )}
                         <div
-                          className="font-mono text-lg font-bold text-[#219EBC] cursor-pointer truncate"
+                          className="font-mono text-lg font-bold text-sky-700 cursor-pointer truncate"
                           onClick={() => window.open(`${getApiBaseUrl()}/s/${link.code}`, '_blank')}
                         >
                           {link.code}
                         </div>
                       </div>
                       <div className="flex gap-1 flex-shrink-0">
-                        <motion.button
-                          className="flex items-center justify-center bg-[#8ECAE6]/15 hover:bg-[#8ECAE6]/25 text-[#219EBC] rounded-lg p-1.5 sm:p-2 shadow-sm hover:shadow-md transition-all duration-150 border border-[#8ECAE6]/30"
+                        <motion.button type="button"
+                          className={cn(
+                            'flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-sky-700 transition hover:bg-slate-100',
+                            copiedCode === link.code && studioPillClassName(true),
+                          )}
                           title="复制短链"
                           onClick={() => handleCopy(link.code)}
-                          data-copy-code={link.code}
                           whileHover={hoverScale(1.1)}
-                          whileTap={tapScale(0.9)}
-                        >
+                          whileTap={tapScale(0.9)}>
                           <FaCopy className="w-3 h-3 sm:w-4 sm:h-4" />
                         </motion.button>
-                        <motion.button
-                          className="flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-500 rounded-lg p-1.5 sm:p-2 shadow-sm hover:shadow-md transition-all duration-150 border border-red-200"
+                        <motion.button type="button"
+                          className="flex min-h-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-600 transition hover:bg-rose-100"
                           title="删除"
                           onClick={() => handleDelete(link._id)}
                           whileHover={hoverScale(1.1)}
-                          whileTap={tapScale(0.9)}
-                        >
+                          whileTap={tapScale(0.9)}>
                           <FaTrash className="w-3 h-3 sm:w-4 sm:h-4" />
                         </motion.button>
                       </div>
@@ -1146,23 +1105,23 @@ const ShortLinkManager: React.FC = () => {
 
                     {/* 目标地址 */}
                     <div className="mb-3">
-                      <div className="text-xs text-[#023047]/50 mb-1">目标地址</div>
-                      <div className="text-sm text-[#023047] break-all">{link.target}</div>
+                      <div className="text-xs text-slate-500 mb-1">目标地址</div>
+                      <div className="text-sm text-slate-900 break-all">{link.target}</div>
                     </div>
 
                     {/* 底部信息 */}
-                    <div className="flex flex-col gap-2 text-xs text-[#023047]/50">
+                    <div className="flex flex-col gap-2 text-xs text-slate-500">
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1">
-                          <span className="text-[#023047]/30">用户:</span>
-                          <span className="text-[#023047]">{link.username || 'admin'}</span>
+                          <span className="text-slate-400">用户:</span>
+                          <span className="text-slate-900">{link.username || 'admin'}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-[#023047]/30">时间:</span>
-                          <span className="text-[#023047]">{new Date(link.createdAt).toLocaleDateString()}</span>
+                          <span className="text-slate-400">时间:</span>
+                          <span className="text-slate-900">{new Date(link.createdAt).toLocaleDateString()}</span>
                         </div>
                       </div>
-                      <div className="text-[#023047]/30">
+                      <div className="text-slate-400">
                         {new Date(link.createdAt).toLocaleTimeString()}
                       </div>
                     </div>
@@ -1176,95 +1135,15 @@ const ShortLinkManager: React.FC = () => {
 
       {/* 分页控件 */}
       {totalPages > 1 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={cn(studioMainSurfaceClassName, "backdrop-blur-sm shadow-xl border-[#8ECAE6]/30")}
-        >
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-2">
-            <div className="flex items-center gap-1">
-              {/* 首页按钮 */}
-              <motion.button
-                onClick={handleFirstPage}
-                disabled={page === 1}
-                className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 ${page === 1
-                  ? 'text-[#023047]/30 cursor-not-allowed'
-                  : 'text-[#023047]/70 hover:bg-[#8ECAE6]/20 hover:text-[#023047]'
-                  }`}
-                whileHover={hoverScale(1.05, page !== 1)}
-                whileTap={tapScale(0.95, page !== 1)}
-              >
-                <FaAngleDoubleLeft className="w-3 h-3 sm:w-4 sm:h-4" />
-              </motion.button>
-
-              {/* 上一页按钮 */}
-              <motion.button
-                onClick={handlePrevPage}
-                disabled={page === 1}
-                className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 ${page === 1
-                  ? 'text-[#023047]/30 cursor-not-allowed'
-                  : 'text-[#023047]/70 hover:bg-[#8ECAE6]/20 hover:text-[#023047]'
-                  }`}
-                whileHover={hoverScale(1.05, page !== 1)}
-                whileTap={tapScale(0.95, page !== 1)}
-              >
-                <FaChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
-              </motion.button>
-
-              {/* 页码按钮 */}
-              <div className="flex items-center gap-1 mx-1 sm:mx-2">
-                {generatePageNumbers().map((pageNum) => (
-                  <motion.button
-                    key={pageNum}
-                    onClick={() => handlePageChange(pageNum)}
-                    className={`px-2 sm:px-3 py-1 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${pageNum === page
-                      ? 'bg-[#FFB703] text-[#023047] shadow-lg shadow-[#FFB703]/20'
-                      : 'text-[#023047]/70 hover:bg-[#8ECAE6]/20 hover:text-[#023047]'
-                      }`}
-                    whileHover={hoverScale(1.05)}
-                    whileTap={tapScale(0.95)}
-                  >
-                    {pageNum}
-                  </motion.button>
-                ))}
-              </div>
-
-              {/* 下一页按钮 */}
-              <motion.button
-                onClick={handleNextPage}
-                disabled={page === totalPages}
-                className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 ${page === totalPages
-                  ? 'text-[#023047]/30 cursor-not-allowed'
-                  : 'text-[#023047]/70 hover:bg-[#8ECAE6]/20 hover:text-[#023047]'
-                  }`}
-                whileHover={hoverScale(1.05, page !== totalPages)}
-                whileTap={tapScale(0.95, page !== totalPages)}
-              >
-                <FaChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
-              </motion.button>
-
-              {/* 末页按钮 */}
-              <motion.button
-                onClick={handleLastPage}
-                disabled={page === totalPages}
-                className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 ${page === totalPages
-                  ? 'text-[#023047]/30 cursor-not-allowed'
-                  : 'text-[#023047]/70 hover:bg-[#8ECAE6]/20 hover:text-[#023047]'
-                  }`}
-                whileHover={hoverScale(1.05, page !== totalPages)}
-                whileTap={tapScale(0.95, page !== totalPages)}
-              >
-                <FaAngleDoubleRight className="w-3 h-3 sm:w-4 sm:h-4" />
-              </motion.button>
-            </div>
-
-            {/* 页面信息 */}
-            <div className="text-xs sm:text-sm text-[#023047]/70 bg-[#8ECAE6]/10 px-2 sm:px-3 py-1 sm:py-2 rounded-lg border border-[#8ECAE6]/30">
-              <span className="hidden sm:inline">第 {page} / {totalPages} 页，共 {total} 条记录</span>
-              <span className="sm:hidden">{page}/{totalPages} ({total}条)</span>
-            </div>
-          </div>
-        </motion.div>
+        <div className={studioMainSurfaceClassName}>
+          <StudioPager
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            loading={loading}
+            onPageChange={handlePageChange}
+          />
+        </div>
       )}
     </div>
   );

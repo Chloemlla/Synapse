@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { FaSync, FaChartBar, FaExclamationTriangle, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
 import { getApiBaseUrl } from '../api/api';
-import { studioPanelClassName } from './studioTheme';
+import {
+  studioDangerButtonClassName,
+  studioPanelClassName,
+  studioSecondaryButtonClassName,
+} from './studioTheme';
+import { StudioErrorState, StudioLoadingState } from './studioFeedback';
 import { cn } from '../utils/cn';
 
 
@@ -41,11 +46,14 @@ const ShortUrlMigrationManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [showOtherDomains, setShowOtherDomains] = useState(false);
+  const [statsError, setStatsError] = useState('');
+  const reducedMotion = useReducedMotion();
 
   // 获取迁移统计信息
   const fetchStats = async () => {
     try {
       setLoading(true);
+      setStatsError('');
       const response = await fetch(`${getApiBaseUrl()}/api/admin/shortlinks/migration-stats`, {
         headers: {
           'Content-Type': 'application/json'
@@ -62,7 +70,8 @@ const ShortUrlMigrationManager: React.FC = () => {
       setNotification({ message: '统计信息已更新', type: 'success' });
     } catch (error: any) {
       console.error('获取统计信息失败:', error);
-      setNotification({ message: error.message || '获取统计信息失败', type: 'error' });
+      setStatsError('统计信息加载失败，请重试。');
+      setNotification({ message: '获取统计信息失败，请重试', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -142,21 +151,20 @@ const ShortUrlMigrationManager: React.FC = () => {
 
       {/* 统计信息卡片 */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(studioPanelClassName, "p-4")}
+        className={cn(studioPanelClassName, 'p-4')}
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaChartBar className="w-5 h-5 text-green-500" />
+            <FaChartBar className="w-5 h-5 text-emerald-500" />
             迁移统计信息
           </h3>
-          <motion.button
+          <motion.button type="button"
             onClick={fetchStats}
             disabled={loading}
-            className="px-3 py-2 bg-blue-500 text-white rounded-2xl hover:bg-blue-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-            whileTap={{ scale: 0.95 }}
-          >
+            className={studioSecondaryButtonClassName}
+            whileTap={{ scale: 0.95 }}>
             <FaSync className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             刷新
           </motion.button>
@@ -165,16 +173,16 @@ const ShortUrlMigrationManager: React.FC = () => {
         {stats ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 rounded-2xl p-4 text-center">
-                <div className="text-2xl font-bold text-blue-700">{stats.totalRecords}</div>
+              <div className="rounded-2xl bg-sky-50 p-4 text-center">
+                <div className="text-2xl font-bold text-sky-700">{stats.totalRecords}</div>
                 <div className="text-sm text-slate-600">总记录数</div>
               </div>
-              <div className="bg-red-50 rounded-2xl p-4 text-center">
-                <div className="text-2xl font-bold text-red-700">{stats.oldDomainRecords}</div>
+              <div className="rounded-2xl bg-rose-50 p-4 text-center">
+                <div className="text-2xl font-bold text-rose-700">{stats.oldDomainRecords}</div>
                 <div className="text-sm text-slate-600">旧域名记录</div>
               </div>
-              <div className="bg-green-50 rounded-2xl p-4 text-center">
-                <div className="text-2xl font-bold text-green-700">{stats.newDomainRecords}</div>
+              <div className="rounded-2xl bg-emerald-50 p-4 text-center">
+                <div className="text-2xl font-bold text-emerald-700">{stats.newDomainRecords}</div>
                 <div className="text-sm text-slate-600">新域名记录</div>
               </div>
               <div className="bg-slate-50/80 rounded-2xl p-4 text-center">
@@ -188,10 +196,9 @@ const ShortUrlMigrationManager: React.FC = () => {
               <div className="bg-slate-50/80 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-semibold text-slate-700">其他域名详情</h4>
-                  <button
+                  <button type="button"
                     onClick={() => setShowOtherDomains(!showOtherDomains)}
-                    className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
-                  >
+                    className="flex min-h-11 items-center gap-1 text-sm font-medium text-sky-700 hover:text-sky-800">
                     {showOtherDomains ? '收起' : '展开'}
                     <svg
                       className={`w-4 h-4 transition-transform ${showOtherDomains ? 'rotate-180' : ''}`}
@@ -216,7 +223,7 @@ const ShortUrlMigrationManager: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {stats.otherDomains.map((domainInfo, index) => (
-                        <div key={index} className="bg-white/80 backdrop-blur-xl rounded-2xl p-3 border border-slate-200">
+                        <div key={index} className="rounded-2xl border border-slate-200 bg-white/80 p-3 backdrop-blur-xl">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-slate-800 truncate" title={domainInfo.domain}>
@@ -226,7 +233,7 @@ const ShortUrlMigrationManager: React.FC = () => {
                                 {domainInfo.count} 条记录
                               </div>
                             </div>
-                            <div className="ml-2 text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">
+                            <div className="ml-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
                               {((domainInfo.count / stats.totalRecords) * 100).toFixed(1)}%
                             </div>
                           </div>
@@ -238,31 +245,33 @@ const ShortUrlMigrationManager: React.FC = () => {
               </div>
             )}
           </div>
+        ) : loading ? (
+          <StudioLoadingState minHeightClassName="min-h-[200px]" />
+        ) : statsError ? (
+          <StudioErrorState message={statsError} onRetry={() => void fetchStats()} />
         ) : (
-          <div className="text-center py-8 text-slate-500">
-            {loading ? '加载中...' : '暂无统计信息'}
-          </div>
+          <div className="py-8 text-center text-slate-500">暂无统计信息</div>
         )}
       </motion.div>
 
       {/* 迁移操作卡片 */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(studioPanelClassName, "p-4")}
+        className={cn(studioPanelClassName, 'p-4')}
       >
-        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <FaExclamationTriangle className="w-5 h-5 text-orange-500" />
+        <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-800">
+          <FaExclamationTriangle className="w-5 h-5 text-amber-500" />
           迁移操作
         </h3>
 
         <div className="space-y-4">
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-start gap-2">
-              <FaExclamationTriangle className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-orange-800">
+              <FaExclamationTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-amber-800">
                 <p className="font-semibold mb-1 flex items-center gap-2">
-                  <FaExclamationTriangle className="text-yellow-500" />
+                  <FaExclamationTriangle className="text-amber-500" />
                   注意事项：
                 </p>
                 <ul className="list-disc list-inside space-y-1">
@@ -276,18 +285,17 @@ const ShortUrlMigrationManager: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4">
-            <motion.button
+            <motion.button type="button"
               onClick={executeMigration}
               disabled={migrating || (stats?.oldDomainRecords === 0) || !canWrite}
-              className="px-6 py-3 bg-red-500 text-white rounded-2xl hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
-              whileTap={{ scale: 0.95 }}
-            >
+              className={studioDangerButtonClassName}
+              whileTap={{ scale: 0.95 }}>
               <FaSync className={`w-4 h-4 ${migrating ? 'animate-spin' : ''}`} />
               {migrating ? '迁移中...' : '执行迁移'}
             </motion.button>
 
             {stats?.oldDomainRecords === 0 && (
-              <div className="flex items-center gap-2 text-green-600">
+              <div className="flex items-center gap-2 text-emerald-600">
                 <FaCheckCircle className="w-5 h-5" />
                 <span className="text-sm">无需迁移，所有短链已使用新域名</span>
               </div>
@@ -300,24 +308,24 @@ const ShortUrlMigrationManager: React.FC = () => {
       <AnimatePresence>
         {migrationResult && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={cn(studioPanelClassName, "p-4 border-green-200")}
+            exit={{ opacity: 0 }}
+            className={cn(studioPanelClassName, 'p-4 border-emerald-200')}
           >
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <FaCheckCircle className="w-5 h-5 text-green-500" />
+              <FaCheckCircle className="w-5 h-5 text-emerald-500" />
               迁移结果
             </h3>
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-blue-50 rounded-2xl p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-700">{migrationResult.totalChecked}</div>
+                <div className="rounded-2xl bg-sky-50 p-4 text-center">
+                  <div className="text-2xl font-bold text-sky-700">{migrationResult.totalChecked}</div>
                   <div className="text-sm text-slate-600">检查记录数</div>
                 </div>
-                <div className="bg-green-50 rounded-2xl p-4 text-center">
-                  <div className="text-2xl font-bold text-green-700">{migrationResult.totalFixed}</div>
+                <div className="rounded-2xl bg-emerald-50 p-4 text-center">
+                  <div className="text-2xl font-bold text-emerald-700">{migrationResult.totalFixed}</div>
                   <div className="text-sm text-slate-600">修正记录数</div>
                 </div>
               </div>
@@ -330,8 +338,8 @@ const ShortUrlMigrationManager: React.FC = () => {
                       <div key={index} className="bg-slate-50/80 rounded-2xl p-3 text-sm">
                         <div className="font-medium text-slate-800">短链码: {item.code}</div>
                         <div className="text-slate-600 mt-1">
-                          <div className="line-through text-red-600">{item.oldTarget}</div>
-                          <div className="text-green-600">→ {item.newTarget}</div>
+                          <div className="text-rose-600 line-through">{item.oldTarget}</div>
+                          <div className="text-emerald-600">→ {item.newTarget}</div>
                         </div>
                       </div>
                     ))}

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { FaBell, FaInfoCircle, FaLayerGroup, FaListOl } from 'react-icons/fa';
 import { useNotification } from './Notification';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
   InfoBadge,
   InfoPanel,
@@ -32,6 +33,7 @@ const notificationMeta = {
 
 const NotificationTestPage: React.FC = () => {
     const { setNotification } = useNotification();
+    const reducedMotion = useReducedMotion();
 
     const testNotifications = [
         {
@@ -101,7 +103,7 @@ const NotificationTestPage: React.FC = () => {
 
     return (
         <InfoQueryShell maxWidthClassName="max-w-5xl" className="space-y-6">
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div initial={reducedMotion ? false : { opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
                 <InfoQueryHero
                     eyebrow="Notification"
                     title="通知系统测试页面"
@@ -119,9 +121,9 @@ const NotificationTestPage: React.FC = () => {
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <motion.div
-                    initial={{ opacity: 0, x: -20 }}
+                    initial={reducedMotion ? false : { opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 }}
+                    transition={{ delay: reducedMotion ? 0 : 0.1 }}
                 >
                     <InfoPanel className="h-full">
                         <InfoSectionTitle
@@ -134,11 +136,10 @@ const NotificationTestPage: React.FC = () => {
                             {testNotifications.map((notification, index) => {
                                 const meta = notificationMeta[notification.type];
                                 return (
-                                    <button
+                                    <button type="button"
                                         key={notification.type}
                                         onClick={() => handleSingleNotification(index)}
-                                        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-white hover:text-slate-900"
-                                    >
+                                        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-white hover:text-slate-900">
                                         <span>{notification.title}</span>
                                         <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.className}`}>
                                             {meta.label}
@@ -151,9 +152,9 @@ const NotificationTestPage: React.FC = () => {
                 </motion.div>
 
                 <motion.div
-                    initial={{ opacity: 0, x: 20 }}
+                    initial={reducedMotion ? false : { opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.2 }}
+                    transition={{ delay: reducedMotion ? 0 : 0.2 }}
                 >
                     <InfoPanel className="h-full">
                         <InfoSectionTitle
@@ -163,13 +164,13 @@ const NotificationTestPage: React.FC = () => {
                             description="模拟连续入队、快速覆盖和简单消息等典型通知压力场景。"
                         />
                         <div className="space-y-3">
-                            <button onClick={handleMultipleNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
+                            <button type="button" onClick={handleMultipleNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
                                 顺序显示所有通知 (0.5s 间隔)
                             </button>
-                            <button onClick={handleRapidNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
+                            <button type="button" onClick={handleRapidNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
                                 快速连续通知 (0.1s 间隔)
                             </button>
-                            <button onClick={handleSimpleNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
+                            <button type="button" onClick={handleSimpleNotifications} className={`${studioSecondaryButtonClassName} w-full`}>
                                 简单通知测试 (0.3s 间隔)
                             </button>
                         </div>
@@ -178,9 +179,9 @@ const NotificationTestPage: React.FC = () => {
             </div>
 
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: reducedMotion ? 0 : 0.3 }}
             >
                 <InfoPanel>
                     <InfoSectionTitle
@@ -213,12 +214,12 @@ const NotificationTestPage: React.FC = () => {
             </motion.div>
 
             <motion.div
-                initial={{ opacity: 0 }}
+                initial={reducedMotion ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
+                transition={{ delay: reducedMotion ? 0 : 0.4 }}
                 className="flex justify-center"
             >
-                <button onClick={() => window.history.back()} className={studioSecondaryButtonClassName}>
+                <button type="button" onClick={() => window.history.back()} className={studioSecondaryButtonClassName}>
                     返回上一页
                 </button>
             </motion.div>

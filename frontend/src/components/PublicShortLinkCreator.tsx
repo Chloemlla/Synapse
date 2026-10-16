@@ -6,7 +6,15 @@ import { Link } from 'react-router-dom';
 import { useNotification } from './Notification';
 import { apiWithRetry } from '../api';
 import { useIsAdmin } from '../hooks/useRBAC';
-import { studioEyebrowClassName } from './studioTheme';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowClassName,
+  studioHeroCardClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+} from './studioTheme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface PublicShortLinkResponse {
   success?: boolean;
@@ -47,6 +55,7 @@ const PublicShortLinkCreator: React.FC = () => {
   const { setNotification } = useNotification();
   // 已登录管理员（admin / superadmin）由后端按会话放行，无需填写服务密码。
   const isAdmin = useIsAdmin();
+  const reducedMotion = useReducedMotion();
 
   const handleCreate = async () => {
     const trimmedTarget = target.trim();
@@ -120,10 +129,10 @@ const PublicShortLinkCreator: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
+        className={studioHeroCardClassName}
       >
-        <div className="pointer-events-none absolute -right-12 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={`${studioAccentBlobBlueClassName} -right-12 top-0`} aria-hidden />
+        <div className={`${studioAccentBlobSkyClassName} -left-10 bottom-0`} aria-hidden />
 
         <div className="relative">
           <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -192,14 +201,13 @@ const PublicShortLinkCreator: React.FC = () => {
               </div>
             )}
 
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+            <motion.button type="button"
+              whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.99 }}
               onClick={handleCreate}
               disabled={creating}
-              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
-              aria-label="创建短链"
-            >
+              className={`${studioPrimaryButtonClassName} mt-2 w-full`}
+              aria-label="创建短链">
               {creating ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : (
@@ -225,16 +233,15 @@ const PublicShortLinkCreator: React.FC = () => {
                   type="text"
                   readOnly
                   value={result}
-                  className="flex-1 rounded-xl border border-emerald-200 bg-white/90 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                  className="flex-1 rounded-2xl border border-emerald-200 bg-white/90 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                   aria-label="短链结果"
                 />
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
+                <motion.button type="button"
+                  whileHover={reducedMotion ? undefined : { scale: 1.03 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.97 }}
                   onClick={handleCopy}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-                  aria-label="复制短链"
-                >
+                  className={studioSecondaryButtonClassName}
+                  aria-label="复制短链">
                   <FaCopy className="text-[12px]" />
                   <span>复制</span>
                 </motion.button>

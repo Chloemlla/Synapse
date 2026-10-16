@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import ReactDOM from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  AlertTriangle,
   CheckSquare,
   Clipboard,
   Copy,
@@ -31,7 +30,18 @@ import { isSuperAdmin } from '../utils/rbac';
 
 import { getBackendErrorMessage } from '../utils/backendError';
 import { buildCsv, csvFileStamp, downloadCsv } from '../utils/csv';
-import { studioModalOverlayClassName } from './studioTheme';
+import {
+  studioDangerButtonClassName,
+  studioFieldClassName,
+  studioModalCardClassName,
+  studioModalCloseButtonClassName,
+  studioModalOverlayClassName,
+  studioPillClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+  studioTextareaClassName,
+} from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState, StudioPager } from './studioFeedback';
 import { cn } from '../utils/cn';
 import {
   STATUS_LABELS,
@@ -118,7 +128,7 @@ function parseJsonDraft(value: string, fieldLabel: string) {
 function statusClass(status?: string) {
   const value = status?.toLowerCase();
   if (value === 'failed' || value === 'error' || value === 'bounced' || value === 'complained') {
-    return 'bg-red-50 text-red-700 border-red-200';
+    return 'bg-rose-50 text-rose-700 border-rose-200';
   }
   if (value === 'processed' || value === 'delivered') {
     return 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -647,53 +657,49 @@ const WebhookEventsManager: React.FC = () => {
   const renderPanel = () => {
     if (activePanel === 'test') {
       return (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white/90 border border-[#8ECAE6]/30 rounded-xl shadow-sm p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[#023047]/70 mb-1">来源 routeKey</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">来源 routeKey</label>
               <input
                 value={testSource}
                 onChange={(event) => setTestSource(event.target.value)}
                 placeholder="github"
-                className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+                className={studioFieldClassName}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#023047]/70 mb-1">写入方式</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">写入方式</label>
               <div className="grid grid-cols-2 gap-2">
-                <button
+                <button type="button"
                   onClick={() => setTestMode('public')}
-                  className={`px-3 py-2 rounded-lg border text-sm ${testMode === 'public' ? 'bg-[#023047] text-white border-[#023047]' : 'bg-white text-[#023047] border-[#8ECAE6]/40'}`}
-                >
+                  className={studioPillClassName(testMode === 'public')}>
                   公开端点
                 </button>
-                <button
+                <button type="button"
                   onClick={() => setTestMode('admin')}
-                  className={`px-3 py-2 rounded-lg border text-sm ${testMode === 'admin' ? 'bg-[#023047] text-white border-[#023047]' : 'bg-white text-[#023047] border-[#8ECAE6]/40'}`}
-                >
+                  className={studioPillClassName(testMode === 'admin')}>
                   管理接口
                 </button>
               </div>
             </div>
             <div className="flex items-end">
-              <motion.button
+              <motion.button type="button"
                 onClick={handleSendTest}
                 disabled={actionLoading === 'test-send'}
-                className="w-full px-3 py-2 rounded-lg bg-[#FFB703] text-[#023047] hover:bg-[#FB8500] disabled:opacity-50 text-sm font-semibold inline-flex items-center justify-center gap-2"
+                className={`${studioPrimaryButtonClassName} w-full`}
                 whileHover={hoverScale(1.02)}
-                whileTap={tapScale(0.98)}
-              >
+                whileTap={tapScale(0.98)}>
                 <Send className="w-4 h-4" /> {actionLoading === 'test-send' ? '发送中' : '发送测试'}
               </motion.button>
             </div>
           </div>
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1 gap-2">
-              <label className="text-xs font-medium text-[#023047]/70">Payload JSON</label>
-              <button
+              <label className="text-xs font-medium text-slate-600">Payload JSON</label>
+              <button type="button"
                 onClick={() => setTestPayload(JSON.stringify(samplePayload, null, 2))}
-                className="px-2 py-1 rounded-md border border-[#8ECAE6]/40 text-xs text-[#023047]/70 hover:bg-[#8ECAE6]/10"
-              >
+                className="rounded-2xl border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-slate-50">
                 重置样例
               </button>
             </div>
@@ -701,77 +707,74 @@ const WebhookEventsManager: React.FC = () => {
               value={testPayload}
               onChange={(event) => setTestPayload(event.target.value)}
               spellCheck={false}
-              className="w-full min-h-56 px-3 py-2 rounded-lg bg-white text-slate-800 border border-slate-200 font-mono text-xs"
+              className={`${studioTextareaClassName} min-h-56 font-mono text-xs`}
             />
           </div>
-          <div className="mt-3 text-xs text-[#023047]/60 break-all">POST {toAbsoluteUrl(testPath)}</div>
+          <div className="mt-3 text-xs text-slate-500 break-all">POST {toAbsoluteUrl(testPath)}</div>
         </motion.div>
       );
     }
 
     if (activePanel === 'secrets') {
       return (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white/90 border border-[#8ECAE6]/30 rounded-xl shadow-sm p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[#023047]/70 mb-1">Resend key</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Resend key</label>
               <input
                 value={secretKeyInput}
                 onChange={(event) => setSecretKeyInput(event.target.value.toUpperCase())}
                 placeholder="DEFAULT"
-                className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+                className={studioFieldClassName}
               />
             </div>
             <div className="lg:col-span-2">
-              <label className="block text-xs font-medium text-[#023047]/70 mb-1">Secret</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Secret</label>
               <input
                 value={secretInput}
                 onChange={(event) => setSecretInput(event.target.value)}
                 type="password"
                 placeholder="whsec_xxx 或 Base64"
-                className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+                className={studioFieldClassName}
               />
             </div>
             <div className="grid grid-cols-3 gap-2 lg:flex lg:items-end">
-              <button
+              <button type="button"
                 onClick={handleFetchSecret}
                 disabled={actionLoading === 'secret-load'}
-                className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 disabled:opacity-50 text-sm inline-flex items-center justify-center gap-2"
-              >
+                className={studioSecondaryButtonClassName}>
                 <RefreshCw className="w-4 h-4" /> 读取
               </button>
               {canWrite && (
-              <button
+              <button type="button"
                 onClick={handleSaveSecret}
                 disabled={actionLoading === 'secret-save'}
-                className="px-3 py-2 rounded-lg bg-[#FFB703] text-[#023047] hover:bg-[#FB8500] disabled:opacity-50 text-sm inline-flex items-center justify-center gap-2"
-              >
+                className={studioPrimaryButtonClassName}>
                 <Save className="w-4 h-4" /> 保存
               </button>
               )}
               {canWrite && (
-              <button
+              <button type="button"
                 onClick={handleDeleteSecret}
                 disabled={actionLoading === 'secret-delete'}
-                className="px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 text-sm inline-flex items-center justify-center gap-2"
-              >
+                className={studioDangerButtonClassName}>
                 <Trash2 className="w-4 h-4" /> 删除
               </button>
               )}
             </div>
           </div>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-            <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3">
-              <div className="text-xs text-[#023047]/60">当前 key</div>
-              <div className="font-mono text-[#023047] break-all">{secretSetting?.key || '-'}</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">当前 key</div>
+              <div className="font-mono text-slate-900 break-all">{secretSetting?.key || '-'}</div>
             </div>
-            <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3">
-              <div className="text-xs text-[#023047]/60">密钥状态</div>
-              <div className="font-mono text-[#023047] break-all">{secretSetting?.secret ?? '未读取'}</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">密钥状态</div>
+              <div className="font-mono text-slate-900 break-all">{secretSetting?.secret ?? '未读取'}</div>
             </div>
-            <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3">
-              <div className="text-xs text-[#023047]/60">更新时间</div>
-              <div className="text-[#023047]">{formatDate(secretSetting?.updatedAt)}</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">更新时间</div>
+              <div className="text-slate-900">{formatDate(secretSetting?.updatedAt)}</div>
             </div>
           </div>
         </motion.div>
@@ -783,15 +786,15 @@ const WebhookEventsManager: React.FC = () => {
     const resendCurl = `curl -X POST "${resendUrl}" -H "Content-Type: application/json" -H "svix-id: msg_xxx" -H "svix-timestamp: 1700000000" -H "svix-signature: v1,xxx" -d '{"type":"email.delivered","data":{"id":"email_xxx"}}'`;
 
     return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white/90 border border-[#8ECAE6]/30 rounded-xl shadow-sm p-4">
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-[#023047]/70 mb-1">routeKey</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">routeKey</label>
             <input
               value={endpointRouteKey}
               onChange={(event) => setEndpointRouteKey(event.target.value)}
               placeholder="留空使用默认路由"
-              className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+              className={studioFieldClassName}
             />
           </div>
           <EndpointBox label="Generic" value={genericUrl} onCopy={() => copyText(genericUrl, 'Generic URL 已复制')} />
@@ -810,16 +813,16 @@ const WebhookEventsManager: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-[#023047] text-white rounded-2xl shadow-xl border border-[#8ECAE6]/30 p-4 sm:p-6"
+        className="bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-200 p-4 sm:p-6"
       >
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#FFB703]/20 flex items-center justify-center shadow">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
               <Webhook className="w-5 h-5" />
             </div>
             <div>
               <div className="text-lg font-semibold">Webhook 事件管理</div>
-              <div className="text-[#8ECAE6] text-sm">接收端点、Resend 密钥、测试投递与事件处理</div>
+              <div className="text-slate-300 text-sm">接收端点、Resend 密钥、测试投递与事件处理</div>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
@@ -831,8 +834,8 @@ const WebhookEventsManager: React.FC = () => {
 
         <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-2">
           {(stats.byStatus.length ? stats.byStatus.slice(0, 4) : [{ key: 'received', total: 0 }]).map((row) => (
-            <div key={String(row.key)} className="rounded-lg bg-white/10 border border-white/10 px-3 py-2 min-w-0">
-              <div className="text-xs text-[#8ECAE6] truncate">{row.key || '未设置状态'}</div>
+            <div key={String(row.key)} className="min-w-0 rounded-2xl border border-white/10 bg-white/10 px-3 py-2">
+              <div className="text-xs text-slate-300 truncate">{row.key || '未设置状态'}</div>
               <div className="text-base font-semibold">{row.total}</div>
             </div>
           ))}
@@ -845,7 +848,7 @@ const WebhookEventsManager: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="bg-white/80 backdrop-blur-sm border border-[#8ECAE6]/30 rounded-2xl p-3 shadow-sm">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 shadow-sm">
         <div className="flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
           <div className="grid grid-cols-3 gap-2">
             <PanelButton icon={<Clipboard className="w-4 h-4" />} active={activePanel === 'usage'} onClick={() => setActivePanel('usage')}>
@@ -861,22 +864,20 @@ const WebhookEventsManager: React.FC = () => {
             </PanelButton>
           </div>
           <div className="flex flex-wrap gap-2">
-            <motion.button
+            <motion.button type="button"
               onClick={() => refreshAll(page, pageSize)}
               disabled={loading}
-              className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 disabled:opacity-50 text-sm font-medium inline-flex items-center gap-2"
+              className={studioSecondaryButtonClassName}
               whileHover={hoverScale(1.02)}
-              whileTap={tapScale(0.98)}
-            >
+              whileTap={tapScale(0.98)}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
             </motion.button>
             {canWrite && (
-            <motion.button
+            <motion.button type="button"
               onClick={openCreate}
-              className="px-3 py-2 rounded-lg bg-[#FFB703] text-[#023047] hover:bg-[#FB8500] text-sm font-semibold inline-flex items-center gap-2"
+              className={studioPrimaryButtonClassName}
               whileHover={hoverScale(1.02)}
-              whileTap={tapScale(0.98)}
-            >
+              whileTap={tapScale(0.98)}>
               <Plus className="w-4 h-4" /> 新增
             </motion.button>
             )}
@@ -885,14 +886,14 @@ const WebhookEventsManager: React.FC = () => {
         <div className="mt-3">{renderPanel()}</div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-sm border border-[#8ECAE6]/30 rounded-2xl p-3 shadow-sm">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
           <div>
-            <label className="block text-xs text-[#023047]/60 mb-1">routeKey</label>
+            <label className="block text-xs text-slate-500 mb-1">routeKey</label>
             <select
               value={routeKeyFilter}
               onChange={(event) => setRouteKeyFilter(event.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 bg-white text-[#023047]"
+              className={studioFieldClassName}
             >
               <option value="all">全部</option>
               <option value="null">未分组</option>
@@ -911,15 +912,14 @@ const WebhookEventsManager: React.FC = () => {
         </div>
         <div className="mt-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
           <div className="flex flex-wrap gap-2">
-            <motion.button
+            <motion.button type="button"
               onClick={() => fetchList(1, pageSize)}
-              className="px-3 py-2 rounded-lg bg-[#023047] text-white hover:bg-[#034766] text-sm font-medium inline-flex items-center gap-2"
+              className={studioPrimaryButtonClassName}
               whileHover={hoverScale(1.02)}
-              whileTap={tapScale(0.98)}
-            >
+              whileTap={tapScale(0.98)}>
               <Search className="w-4 h-4" /> 应用筛选
             </motion.button>
-            <button
+            <button type="button"
               onClick={() => {
                 setRouteKeyFilter('all');
                 setProviderFilter('');
@@ -936,27 +936,26 @@ const WebhookEventsManager: React.FC = () => {
                   search: '',
                 });
               }}
-              className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm"
-            >
+              className={studioSecondaryButtonClassName}>
               清空
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => exportEvents('json')} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2">
+            <button type="button" onClick={() => exportEvents('json')} className={studioSecondaryButtonClassName}>
               <FileJson className="w-4 h-4" /> JSON
             </button>
-            <button onClick={() => exportEvents('csv')} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2">
+            <button type="button" onClick={() => exportEvents('csv')} className={studioSecondaryButtonClassName}>
               <Download className="w-4 h-4" /> CSV
             </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-sm border border-[#8ECAE6]/30 rounded-2xl shadow-xl overflow-hidden">
-        <div className="p-3 border-b border-[#8ECAE6]/20 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-[#023047]/70">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl shadow-xl overflow-hidden">
+        <div className="p-3 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
             {canWrite && (
-            <button onClick={togglePageSelection} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 hover:bg-[#8ECAE6]/10 inline-flex items-center gap-2">
+            <button type="button" onClick={togglePageSelection} className={studioSecondaryButtonClassName}>
               {allPageSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />} 当前页
             </button>
             )}
@@ -970,7 +969,7 @@ const WebhookEventsManager: React.FC = () => {
                 event.target.value = '';
               }}
               disabled={selectedIds.length === 0 || actionLoading === 'bulk-status'}
-              className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 bg-white text-[#023047] text-sm disabled:opacity-50"
+              className={studioFieldClassName}
               defaultValue=""
             >
               <option value="" disabled>批量状态</option>
@@ -980,18 +979,17 @@ const WebhookEventsManager: React.FC = () => {
             </select>
             )}
             {canWrite && (
-            <button
+            <button type="button"
               onClick={handleBulkDelete}
               disabled={selectedIds.length === 0 || actionLoading === 'bulk-delete'}
-              className="px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 text-sm inline-flex items-center gap-2"
-            >
+              className={studioDangerButtonClassName}>
               <Trash2 className="w-4 h-4" /> 批量删除
             </button>
             )}
             <select
               value={pageSize}
               onChange={(event) => fetchList(1, Number(event.target.value))}
-              className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 bg-white text-[#023047] text-sm"
+              className={studioFieldClassName}
             >
               {[10, 20, 50, 100].map((size) => (
                 <option key={size} value={size}>{size}/页</option>
@@ -1000,17 +998,10 @@ const WebhookEventsManager: React.FC = () => {
           </div>
         </div>
 
-        <div className="block lg:hidden divide-y divide-[#8ECAE6]/20">
+        <div className="block lg:hidden divide-y divide-slate-200">
           {!loading && loadError && (
-            <div className="p-6 text-center">
-              <AlertTriangle className="w-8 h-8 mx-auto text-red-500" aria-hidden />
-              <div className="mt-2 text-sm text-[#023047]/80">{loadError}</div>
-              <button
-                onClick={() => fetchList(page, pageSize)}
-                className="mt-3 px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2"
-              >
-                <RefreshCw className="w-4 h-4" /> 重试
-              </button>
+            <div className="p-4">
+              <StudioErrorState message={loadError} onRetry={() => fetchList(page, pageSize)} />
             </div>
           )}
           {items.map((item) => (
@@ -1028,13 +1019,20 @@ const WebhookEventsManager: React.FC = () => {
               canWrite={canWrite}
             />
           ))}
-          {!loading && !loadError && items.length === 0 && <div className="p-6 text-center text-[#023047]/40">暂无数据</div>}
+          {!loading && !loadError && items.length === 0 && (
+            <div className="p-4">
+              <StudioEmptyState
+                message="还没有收到任何 Webhook 事件。"
+                action={<button type="button" onClick={() => fetchList(1, pageSize)} className={studioSecondaryButtonClassName}>刷新列表</button>}
+              />
+            </div>
+          )}
         </div>
 
         <div className="hidden lg:block overflow-x-auto">
           <table className="min-w-full text-sm table-fixed">
-            <thead className="bg-[#8ECAE6]/10">
-              <tr className="text-left text-[#023047]">
+            <thead className="bg-slate-50">
+              <tr className="text-left text-slate-900">
                 <th className="p-3 w-12"></th>
                 <th className="p-3 w-32">来源</th>
                 <th className="p-3 w-40">类型</th>
@@ -1048,45 +1046,36 @@ const WebhookEventsManager: React.FC = () => {
             <tbody>
               {!loading && loadError && (
                 <tr>
-                  <td className="p-6 text-center" colSpan={8}>
-                    <div className="flex flex-col items-center gap-2">
-                      <AlertTriangle className="w-6 h-6 text-red-500" aria-hidden />
-                      <div className="text-sm text-[#023047]/80">{loadError}</div>
-                      <button
-                        onClick={() => fetchList(page, pageSize)}
-                        className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2"
-                      >
-                        <RefreshCw className="w-4 h-4" /> 重试
-                      </button>
-                    </div>
+                  <td className="p-4" colSpan={8}>
+                    <StudioErrorState message={loadError} onRetry={() => fetchList(page, pageSize)} />
                   </td>
                 </tr>
               )}
               {items.map((item) => (
-                <tr key={item._id} className="border-t border-[#8ECAE6]/20 hover:bg-[#8ECAE6]/10">
+                <tr key={item._id} className="border-t border-slate-200 hover:bg-slate-50">
                   <td className="p-3">
                     {canWrite && (
-                    <button onClick={() => toggleOne(item._id)} className="text-[#023047]/70 hover:text-[#023047]" aria-label="选择事件">
+                    <button type="button" onClick={() => toggleOne(item._id)} className="text-slate-600 hover:text-slate-900" aria-label="选择事件">
                       {selectedSet.has(item._id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                     </button>
                     )}
                   </td>
-                  <td className="p-3 text-[#023047]">
+                  <td className="p-3 text-slate-900">
                     <div className="font-medium truncate">{item.provider || '-'}</div>
-                    <div className="text-xs text-[#023047]/50 truncate">{item.routeKey || '默认'}</div>
+                    <div className="text-xs text-slate-500 truncate">{item.routeKey || '默认'}</div>
                   </td>
-                  <td className="p-3 text-[#023047] truncate" title={item.type}>{item.type || '-'}</td>
-                  <td className="p-3 text-[#023047]/70 font-mono truncate" title={item.eventId || ''}>{item.eventId || '-'}</td>
-                  <td className="p-3 text-[#023047]">
+                  <td className="p-3 text-slate-900 truncate" title={item.type}>{item.type || '-'}</td>
+                  <td className="p-3 text-slate-600 font-mono truncate" title={item.eventId || ''}>{item.eventId || '-'}</td>
+                  <td className="p-3 text-slate-900">
                     <div className="truncate">{item.title || item.subject || '-'}</div>
-                    <div className="text-xs text-[#023047]/50 truncate">{item.renderedContent || stringifyJson(item.to) || ''}</div>
+                    <div className="text-xs text-slate-500 truncate">{item.renderedContent || stringifyJson(item.to) || ''}</div>
                   </td>
                   <td className="p-3">
                     {canWrite ? (
                     <select
                       value={item.status || ''}
                       onChange={(event) => handleStatusChange(item._id, event.target.value)}
-                      className={`w-full px-2 py-1 rounded-md border text-xs ${statusClass(item.status)}`}
+                      className={`w-full rounded-full border px-2 py-1 text-xs ${statusClass(item.status)}`}
                     >
                       <option value="">未设置</option>
                       {STATUS_OPTIONS.map((status) => (
@@ -1095,10 +1084,10 @@ const WebhookEventsManager: React.FC = () => {
                       {item.status && !STATUS_OPTIONS.includes(item.status) && <option value={item.status}>{item.status}</option>}
                     </select>
                     ) : (
-                      <span className={`inline-flex px-2 py-1 rounded-md border text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
+                      <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
                     )}
                   </td>
-                  <td className="p-3 text-[#023047]/70 whitespace-nowrap">{formatDate(item.receivedAt)}</td>
+                  <td className="p-3 text-slate-600 whitespace-nowrap">{formatDate(item.receivedAt)}</td>
                   <td className="p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <IconButton title="详情" onClick={() => setSelected(item)}><Eye className="w-4 h-4" /></IconButton>
@@ -1111,37 +1100,29 @@ const WebhookEventsManager: React.FC = () => {
               ))}
               {!loading && !loadError && items.length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-[#023047]/40" colSpan={8}>暂无数据</td>
+                  <td className="p-4" colSpan={8}>
+                    <StudioEmptyState
+                      message="还没有收到任何 Webhook 事件。"
+                      action={<button type="button" onClick={() => fetchList(1, pageSize)} className={studioSecondaryButtonClassName}>刷新列表</button>}
+                    />
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        {loading && <div className="p-4 text-[#023047]/50">加载中...</div>}
+        {loading && <StudioLoadingState minHeightClassName="min-h-[160px]" />}
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-white/80 backdrop-blur-sm border border-[#8ECAE6]/30 rounded-2xl">
-        <div className="text-sm text-[#023047]/70">共 {total} 条，第 {page}/{totalPages} 页</div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <motion.button
-            disabled={page <= 1}
-            onClick={() => fetchList(page - 1, pageSize)}
-            className="px-3 py-2 rounded-lg bg-[#8ECAE6]/10 hover:bg-[#8ECAE6]/20 text-[#023047]/70 disabled:opacity-50"
-            whileHover={hoverScale(1.02, page > 1)}
-            whileTap={tapScale(0.98, page > 1)}
-          >
-            上一页
-          </motion.button>
-          <motion.button
-            disabled={page >= totalPages}
-            onClick={() => fetchList(page + 1, pageSize)}
-            className="px-3 py-2 rounded-lg bg-[#8ECAE6]/10 hover:bg-[#8ECAE6]/20 text-[#023047]/70 disabled:opacity-50"
-            whileHover={hoverScale(1.02, page < totalPages)}
-            whileTap={tapScale(0.98, page < totalPages)}
-          >
-            下一页
-          </motion.button>
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 text-sm text-slate-600 backdrop-blur-sm">
+        共 {total} 条，第 {page}/{totalPages} 页
+        <StudioPager
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          loading={loading}
+          onPageChange={(next) => fetchList(next, pageSize)}
+        />
       </div>
 
       {ReactDOM.createPortal(
@@ -1155,22 +1136,22 @@ const WebhookEventsManager: React.FC = () => {
                   <SummaryField label="状态" value={selected.status || '-'} />
                 </div>
                 {(selected.title || selected.renderedContent) && (
-                  <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3">
-                    <div className="font-semibold text-[#023047]">{selected.title || selected.subject || '摘要'}</div>
-                    {selected.renderedContent && <div className="mt-1 text-sm text-[#023047]/70 whitespace-pre-wrap">{selected.renderedContent}</div>}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="font-semibold text-slate-900">{selected.title || selected.subject || '摘要'}</div>
+                    {selected.renderedContent && <div className="mt-1 text-sm text-slate-600 whitespace-pre-wrap">{selected.renderedContent}</div>}
                   </div>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => copyText(JSON.stringify(selected, null, 2), '事件 JSON 已复制')} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2">
+                  <button type="button" onClick={() => copyText(JSON.stringify(selected, null, 2), '事件 JSON 已复制')} className={studioSecondaryButtonClassName}>
                     <Copy className="w-4 h-4" /> 复制 JSON
                   </button>
                   {canWrite && (
-                  <button onClick={() => handleReplay(selected._id)} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm inline-flex items-center gap-2">
+                  <button type="button" onClick={() => handleReplay(selected._id)} className={studioSecondaryButtonClassName}>
                     <RotateCcw className="w-4 h-4" /> 重放
                   </button>
                   )}
                 </div>
-                <pre className="text-xs bg-white text-slate-800 border border-slate-200 p-3 rounded-lg overflow-auto max-h-[50vh]">{JSON.stringify(selected, null, 2)}</pre>
+                <pre className="max-h-[50vh] overflow-auto rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-800">{JSON.stringify(selected, null, 2)}</pre>
               </div>
             </Modal>
           )}
@@ -1194,27 +1175,26 @@ const WebhookEventsManager: React.FC = () => {
                     <EditInput label="title" value={editing.title || ''} onChange={(value) => setEditing({ ...editing, title: value })} />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm text-[#023047]/70 mb-1">content</label>
+                    <label className="block text-sm text-slate-600 mb-1">content</label>
                     <textarea
                       value={editing.content || ''}
                       onChange={(event) => setEditing({ ...editing, content: event.target.value })}
-                      className="w-full h-20 px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+                      className={`${studioTextareaClassName} h-20`}
                     />
                   </div>
                   <JsonDraft label="to" value={toDraft} onChange={setToDraft} height="h-20" />
                   <JsonDraft label="data" value={dataDraft} onChange={setDataDraft} />
                   <JsonDraft label="raw" value={rawDraft} onChange={setRawDraft} />
                 </div>
-                <div className="flex justify-end gap-2 pt-3 border-t border-[#8ECAE6]/30">
-                  <button onClick={closeEdit} className="px-3 py-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10 text-sm">
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                  <button type="button" onClick={closeEdit} className={studioSecondaryButtonClassName}>
                     取消
                   </button>
                   {canWrite && (
-                  <button
+                  <button type="button"
                     onClick={handleSave}
                     disabled={actionLoading === 'save-event'}
-                    className="px-3 py-2 rounded-lg bg-[#FFB703] text-[#023047] hover:bg-[#FB8500] disabled:opacity-50 text-sm font-semibold inline-flex items-center gap-2"
-                  >
+                    className={studioPrimaryButtonClassName}>
                     <Save className="w-4 h-4" /> {actionLoading === 'save-event' ? '保存中' : '保存'}
                   </button>
                   )}
@@ -1231,8 +1211,8 @@ const WebhookEventsManager: React.FC = () => {
 
 function HeaderStat({ label, value, tone }: { label: string; value: number; tone?: 'warning' }) {
   return (
-    <div className={`rounded-lg px-3 py-2 border ${tone === 'warning' ? 'bg-red-500/15 border-red-300/20' : 'bg-white/10 border-white/10'}`}>
-      <div className="text-xs text-[#8ECAE6]">{label}</div>
+    <div className={`rounded-2xl border px-3 py-2 ${tone === 'warning' ? 'bg-rose-500/15 border-rose-300/20' : 'bg-white/10 border-white/10'}`}>
+      <div className="text-xs text-slate-300">{label}</div>
       <div className="text-lg font-semibold">{value}</div>
     </div>
   );
@@ -1240,10 +1220,9 @@ function HeaderStat({ label, value, tone }: { label: string; value: number; tone
 
 function PanelButton({ active, icon, children, onClick }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void }) {
   return (
-    <button
+    <button type="button"
       onClick={onClick}
-      className={`px-3 py-2 rounded-lg border text-sm font-medium inline-flex items-center justify-center gap-2 ${active ? 'bg-[#023047] text-white border-[#023047]' : 'bg-white text-[#023047] border-[#8ECAE6]/40 hover:bg-[#8ECAE6]/10'}`}
-    >
+      className={studioPillClassName(active)}>
       {icon}
       {children}
     </button>
@@ -1252,24 +1231,24 @@ function PanelButton({ active, icon, children, onClick }: { active: boolean; ico
 
 function EndpointBox({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
   return (
-    <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3 min-w-0">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-[#023047]/70">{label}</div>
-        <button onClick={onCopy} className="p-1.5 rounded-md hover:bg-white/70 text-[#023047]" title={`复制 ${label}`}>
+        <div className="text-xs font-semibold text-slate-600">{label}</div>
+        <button type="button" onClick={onCopy} className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700" title={`复制 ${label}`}>
           <Copy className="w-4 h-4" />
         </button>
       </div>
-      <div className="mt-1 text-xs font-mono text-[#023047] break-all">{value}</div>
+      <div className="mt-1 text-xs font-mono text-slate-900 break-all">{value}</div>
     </div>
   );
 }
 
 function CodeBlock({ title, value, onCopy }: { title: string; value: string; onCopy: () => void }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
         <div className="text-xs text-slate-500">{title}</div>
-        <button onClick={onCopy} className="p-1.5 rounded-md hover:bg-slate-50 text-slate-500" title="复制">
+        <button type="button" onClick={onCopy} className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100" title="复制">
           <Copy className="w-4 h-4" />
         </button>
       </div>
@@ -1281,12 +1260,12 @@ function CodeBlock({ title, value, onCopy }: { title: string; value: string; onC
 function FilterInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
   return (
     <div>
-      <label className="block text-xs text-[#023047]/60 mb-1">{label}</label>
+      <label className="block text-xs text-slate-500 mb-1">{label}</label>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 bg-white text-[#023047]"
+        className={studioFieldClassName}
       />
     </div>
   );
@@ -1295,12 +1274,12 @@ function FilterInput({ label, value, onChange, placeholder }: { label: string; v
 function IconButton({ children, title, onClick, tone }: { children: React.ReactNode; title: string; onClick: () => void; tone?: 'warning' | 'danger' }) {
   const toneClass =
     tone === 'danger'
-      ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+      ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
       : tone === 'warning'
         ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-        : 'bg-[#8ECAE6]/15 text-[#219EBC] border-[#8ECAE6]/30 hover:bg-[#8ECAE6]/25';
+        : 'bg-slate-100 text-sky-700 border-slate-200 hover:bg-slate-200';
   return (
-    <button onClick={onClick} title={title} className={`p-2 rounded-lg border ${toneClass}`}>
+    <button type="button" onClick={onClick} title={title} className={`min-h-11 rounded-2xl border p-2 ${toneClass}`}>
       {children}
     </button>
   );
@@ -1332,26 +1311,26 @@ function EventCard({
     <div className="p-4">
       <div className="flex items-start gap-3">
         {canWrite && (
-        <button onClick={onCheck} className="mt-1 text-[#023047]/70" aria-label="选择事件">
+        <button type="button" onClick={onCheck} className="mt-1 min-h-11 text-slate-600" aria-label="选择事件">
           {checked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
         </button>
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#219EBC]/15 text-[#219EBC]">{item.type || '未分类'}</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700">{item.type || '未分类'}</span>
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium ${statusClass(item.status)}`}>{item.status || '未设置'}</span>
-            {item.eventId && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono bg-[#8ECAE6]/10 text-[#023047]/70 max-w-full truncate">#{item.eventId}</span>}
+            {item.eventId && <span className="inline-flex max-w-full items-center truncate rounded-full bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600">#{item.eventId}</span>}
           </div>
-          <div className="mt-1 text-xs text-[#023047]/60">
+          <div className="mt-1 text-xs text-slate-500">
             {item.provider || '-'} / {item.routeKey || '默认'} / {formatDate(item.receivedAt)}
           </div>
-          <div className="mt-2 text-sm font-medium text-[#023047] truncate">{item.title || item.subject || '-'}</div>
-          {item.renderedContent && <div className="mt-1 text-xs text-[#023047]/70 line-clamp-2 whitespace-pre-wrap">{item.renderedContent}</div>}
+          <div className="mt-2 text-sm font-medium text-slate-900 truncate">{item.title || item.subject || '-'}</div>
+          {item.renderedContent && <div className="mt-1 text-xs text-slate-600 line-clamp-2 whitespace-pre-wrap">{item.renderedContent}</div>}
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {canWrite ? (
-        <select value={item.status || ''} onChange={(event) => onStatusChange(event.target.value)} className={`px-2 py-2 rounded-lg border text-xs ${statusClass(item.status)}`}>
+        <select value={item.status || ''} onChange={(event) => onStatusChange(event.target.value)} className={`rounded-full border px-2 py-2 text-xs ${statusClass(item.status)}`}>
           <option value="">未设置</option>
           {STATUS_OPTIONS.map((status) => (
             <option key={status} value={status}>{statusLabel(status)}</option>
@@ -1359,7 +1338,7 @@ function EventCard({
           {item.status && !STATUS_OPTIONS.includes(item.status) && <option value={item.status}>{item.status}</option>}
         </select>
         ) : (
-          <span className={`inline-flex items-center px-2 py-2 rounded-lg border text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
+          <span className={`inline-flex items-center rounded-full border px-2 py-2 text-xs ${statusClass(item.status)}`}>{statusLabel(item.status) || '-'}</span>
         )}
         <div className="grid grid-cols-4 gap-2">
           <IconButton title="详情" onClick={onDetail}><Eye className="w-4 h-4" /></IconButton>
@@ -1394,21 +1373,21 @@ function Modal({ title, onClose, children, width = 'max-w-4xl' }: { title: strin
   }, [onClose]);
 
   return (
-    <motion.div className={cn(studioModalOverlayClassName, "z-[9999] bg-black/50 p-3")} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className={studioModalOverlayClassName} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div
         ref={containerRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`bg-white/95 backdrop-blur rounded-2xl ${width} w-[95vw] max-h-[90vh] flex flex-col p-4 sm:p-6 border border-[#8ECAE6]/30 shadow-xl outline-none`}
+        className={cn(studioModalCardClassName, width, 'flex max-h-[90vh] w-[95vw] flex-col outline-none')}
         initial={{ scale: 0.96, y: 10, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.96, y: 10, opacity: 0 }}
       >
         <div className="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
-          <div id={titleId} className="font-semibold text-[#023047]">{title}</div>
-          <button onClick={onClose} className="p-2 rounded-lg border border-[#8ECAE6]/40 text-[#023047] hover:bg-[#8ECAE6]/10" title="关闭">
+          <div id={titleId} className="font-semibold text-slate-900">{title}</div>
+          <button type="button" onClick={onClose} className={studioModalCloseButtonClassName} title="关闭">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1420,9 +1399,9 @@ function Modal({ title, onClose, children, width = 'max-w-4xl' }: { title: strin
 
 function SummaryField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#8ECAE6]/30 bg-[#8ECAE6]/10 p-3">
-      <div className="text-xs text-[#023047]/60">{label}</div>
-      <div className="text-[#023047] break-all">{value}</div>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="text-slate-900 break-all">{value}</div>
     </div>
   );
 }
@@ -1430,11 +1409,11 @@ function SummaryField({ label, value }: { label: string; value: string }) {
 function EditInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <div>
-      <label className="block text-sm text-[#023047]/70 mb-1">{label}</label>
+      <label className="block text-sm text-slate-600 mb-1">{label}</label>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047]"
+        className={studioFieldClassName}
       />
     </div>
   );
@@ -1443,12 +1422,12 @@ function EditInput({ label, value, onChange }: { label: string; value: string; o
 function JsonDraft({ label, value, onChange, height = 'h-32' }: { label: string; value: string; onChange: (value: string) => void; height?: string }) {
   return (
     <div className="md:col-span-2">
-      <label className="block text-sm text-[#023047]/70 mb-1">{label}</label>
+      <label className="block text-sm text-slate-600 mb-1">{label}</label>
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
-        className={`w-full ${height} px-3 py-2 rounded-lg border border-[#8ECAE6]/40 focus:ring-2 focus:ring-[#FFB703] text-[#023047] font-mono text-xs`}
+        className={`${studioTextareaClassName} ${height} font-mono text-xs`}
       />
     </div>
   );
