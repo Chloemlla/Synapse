@@ -372,20 +372,22 @@ G. 最终逐 ID 更新本 PRD 状态（实现/验证 CI run/未完成及阻断�
 
 ---
 
-## 11. 实现状态记录模板
+## 11. 实现状态记录
 
-> 后续实现时逐批更新此处；当前全部留空，表示尚未在 Synapse 实现/验收。
+> 状态口径：**未开始 / 进行中 / 已实现（待 CI 验证）/ 完成（CI 全绿）/ 阻断**。
+> 本轮未跑 CI（按用户指令先落地代码），因此除历史已绿项外一律不写「完成」。
+> 已推送批次：`1cad91ae`（首版接入）、`01595884`（编译断点 + 第一二阶段缺口）、`a5aa8daa`（Phase 3 服务端/管理端）。
 
-| 功能域 | 状态（未开始/进行中/完成/阻断） | PR/commit | CI run 与真实 job/step 结论 | 未完成/阻断证据 |
+| 功能域 | 状态 | PR/commit | CI run 与真实 job/step 结论 | 未完成/阻断证据 |
 |---|---|---|---|---|
-| Phase 0：现状、授权、API、license | 未开始 | — | — | — |
-| GeoGebra 本地工作台（GEO-01…08） | 未开始 | — | — | — |
-| GeoGebra 项目与版本（GEO-09…14） | 未开始 | — | — | — |
-| GeoGebra AI/资产/协作/分享/导出（GEO-15…21） | 未开始 | — | — | — |
-| GeoGebra 管理/诊断（GEO-22…24） | 未开始 | — | — | — |
-| Pixel 用户工作台（PIX-01…09） | 未开始 | — | — | — |
-| Pixel 管理端（PIX-10…14） | 未开始 | — | — | — |
-| 安全、隐私、OpenAPI、CI、回滚 | 未开始 | — | — | — |
+| Phase 0：现状、授权、API、license | 进行中 | — | 未跑（本轮按要求不查 CI） | 已做只读现状核查（路由/导航/models/runtimeConfig/consent/隐私地图/CSP/adminPages/队列范式）；**阻断项**：① `geograba` 仓库实际 license 与 GeoGebra Web API/脚本加载许可未取到仓库内证据；② Pixel 上游归属/授权与正式 API 未核实（`GGGGGG/docs/openapi.yaml` 自述为从公开页面重建的草案），因此 Phase 4 上游适配器按 fail-closed 实现（未配置即拒绝），未猜接口、未复制其源码 |
+| GeoGebra 本地工作台（GEO-01…08） | 已实现（待 CI 验证） | `01595884` | 未跑 | GEO-03 补齐变量定义/引用分析与可覆盖阈值、GEO-05 逐条执行明细、GEO-06 原/新指令对照；GEO-02 的 Monaco 深路径修正为带扩展名导入 |
+| GeoGebra 项目与版本（GEO-09…14） | 已实现（待 CI 验证） | `01595884` | 未跑 | GEO-10 改为三态可恢复合并（打开云端 / 以云端 revision 为前提覆盖 / 稍后处理）；GEO-11 补云端版本列表 + 差异 + 应用；GEO-13 逐对象汇报未生效原因；GEO-14 演示模式补 GGB 导出；GEO-19 新增成员列表/角色调整/移除端点与服务端校验 |
+| GeoGebra AI/资产/协作/分享/导出（GEO-15…21） | 已实现（待 CI 验证） | `a5aa8daa` | 未跑 | GEO-15/16 服务端 AI（fail-closed + 输出白名单校验 + 人工预览后写回）与前端面板；GEO-18 目的限定资产服务（魔数/体积/TTL/归属）；GEO-21 导出能力矩阵——**服务端只实现 `zip-bundle`，SVG/PDF/GIF/MP4/PPTX 在验收表标为画布侧能力**，未保留不可用按钮 |
+| GeoGebra 管理/诊断（GEO-22…24） | 已实现（待 CI 验证） | `a5aa8daa` | 未跑 | GEO-22 概览只报真实计数，延迟/体积分位无数据源则显式返回 null + 原因；**GEO-23 判定为复用**（`src/utils/scamalytics.ts` + `ipVerificationService` + `/admin/config` 的 `ipqs.scamalyticsUser` 语义一致，不新建第二套 provider）；GEO-24 读接口 admin + 页面授权（`adminPages` 已登记 `geogebra`），维护写接口 superadmin |
+| Pixel 用户工作台（PIX-01…09） | 进行中 | 待提交 | 未跑 | 服务端域与上游适配器按 fail-closed 实现中；前端工作台待接线 |
+| Pixel 管理端（PIX-10…14） | 进行中 | 待提交 | 未跑 | CDK 映射/脱敏溯源/运行时配置按既有 adminScope 与 runtimeConfig 落地中 |
+| 安全、隐私、OpenAPI、CI、回滚 | 进行中 | `a5aa8daa` | 未跑 | 已更新 feature consent（`geogebra-assets`/`geogebra-ai`）、privacy data map（新增 `geogebra-assets`/`geogebra-jobs` 并重生成映射，`check:privacy-contract` 本地通过）、adminPages、限流与路由注册；OpenAPI 注释已补、`openapi.json` 为生成物不入库；**待办**：CI 全链验证（含 lockfile 如需重生成）、回滚方案成文 |
 
 ---
 
