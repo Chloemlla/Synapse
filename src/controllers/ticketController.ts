@@ -1331,7 +1331,13 @@ export const ticketController = {
       const isUploader = String(attachment.userId) === String(user.id);
       if (!isOwner && !isUploader && !isSuperadmin) return res.status(403).json({ error: "无权删除此附件" });
 
-      await TicketAttachmentModel.deleteOne({ _id: attachmentId, ticketId: id });
+      // 这里刻意不软删除（治理闸门 check-slicing-and-softdelete 的显式豁免）：
+      // 附件正文是用户自己上传的文件，删除是用户的显式请求，而隐私契约
+      // （privacy-data-map 的 ticket-attachments）已声明「删除附件后正文立即从服务器移除」；
+      // 软删除会让二进制正文继续留库，与这句承诺直接矛盾。附件也不承担风控取证职责
+      // （审核记录另有落处），且单工单 ≤5 / 单个 ≤1MB 已限住体量。
+      // 注：闸门只识别与调用同行（或注释行）的标记，所以豁免注释放到调用那一行。
+      await TicketAttachmentModel.deleteOne({ _id: attachmentId, ticketId: id }); // soft-delete-exempt: 用户删除自己上传的附件，隐私契约声明正文立即移除
       const attachmentCount = await TicketAttachmentModel.countDocuments({ ticketId: id });
       const updated = await TicketModel.findByIdAndUpdate(
         id,
