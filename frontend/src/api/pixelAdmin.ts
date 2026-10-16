@@ -185,8 +185,8 @@ export async function readPixelEvidenceRecord(evidenceId: string, caseRef: strin
 
 export type PixelKeyRotationStatus = {
   master: { origin: string; fingerprint: string; previousConfigured: boolean; previousFingerprint: string | null };
-  mappings: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
-  evidence: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  mappings: { total: number; scanned: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  evidence: { total: number; scanned: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
   retirePreviousKey: { canRetire: boolean; reason: string };
 };
 

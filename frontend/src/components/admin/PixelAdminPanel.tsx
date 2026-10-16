@@ -662,8 +662,11 @@ const PixelAdminPanel: React.FC = () => {
                     <InfoBadge tone="slate">上一代指纹 {rotation.master.previousFingerprint}</InfoBadge>
                   )}
                 </div>
-                <div>上游卡密：共 {rotation.mappings.total} 条 · 已是当前密钥 {rotation.mappings.encryptedWithCurrentKey} · 待重加密 {rotation.mappings.needsReencrypt} · 无法解密 {rotation.mappings.undecryptable}</div>
-                <div>取证内容：共 {rotation.evidence.total} 条 · 已是当前密钥 {rotation.evidence.encryptedWithCurrentKey} · 待重加密 {rotation.evidence.needsReencrypt} · 无法解密 {rotation.evidence.undecryptable}</div>
+                <div>上游卡密：共 {rotation.mappings.total} 条（本次扫描 {rotation.mappings.scanned}）· 已是当前密钥 {rotation.mappings.encryptedWithCurrentKey} · 待重加密 {rotation.mappings.needsReencrypt} · 无法解密 {rotation.mappings.undecryptable}</div>
+                <div>取证内容：共 {rotation.evidence.total} 条（本次扫描 {rotation.evidence.scanned}）· 已是当前密钥 {rotation.evidence.encryptedWithCurrentKey} · 待重加密 {rotation.evidence.needsReencrypt} · 无法解密 {rotation.evidence.undecryptable}</div>
+                {(rotation.mappings.scanned < rotation.mappings.total || rotation.evidence.scanned < rotation.evidence.total) && (
+                  <div className="text-amber-700">还有密文没扫到（单次上限 1000 条/集合），请反复执行重加密后再看退役判据。</div>
+                )}
                 <div className={rotation.retirePreviousKey.canRetire ? "text-emerald-700" : "text-amber-700"}>
                   退役上一代密钥：{rotation.retirePreviousKey.canRetire ? "可以" : "不可以"} —— {rotation.retirePreviousKey.reason}
                 </div>

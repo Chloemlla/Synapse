@@ -203,6 +203,7 @@ GET  /api/admin/pixel/key-rotation      # retirePreviousKey.canRetire 应为 tru
 
 | 判据 | 不满足时会发生什么 |
 |---|---|
+| `scanned == total`（两张表） | 单次扫描上限 1000 条/集合；没扫完就无法证明“全量已迁”，拿未扫到的数据赌会直接造成永久不可读 |
 | `mappings.undecryptable == 0` 且 `evidence.undecryptable == 0` | 有密文连上一代密钥都解不开（密文损坏或上一代密钥丢了）——此时退役会让它们永久不可读 |
 | `mappings.needsReencrypt == 0` 且 `evidence.needsReencrypt == 0` | 还有密文由上一代密钥加密，退役即读不出来了 |
 

@@ -34,8 +34,9 @@ export type PixelKeyRotationStatus = {
     previousConfigured: boolean;
     previousFingerprint: string | null;
   };
-  mappings: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
-  evidence: { total: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  /** 两处密文的计数。`scanned < total` 表示本次没扫完，计数不完整。 */
+  mappings: { total: number; scanned: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
+  evidence: { total: number; scanned: number; encryptedWithCurrentKey: number; needsReencrypt: number; undecryptable: number };
 };
 
 export type PixelReencryptResult = {
@@ -101,7 +102,7 @@ async function scanMappings(apply: boolean, limit: number) {
   }
 
   const total = await PixelCdkMappingModel.countDocuments({});
-  return { total, encryptedWithCurrentKey, needsReencrypt, undecryptable, reencrypted };
+  return { total, scanned: docs.length, encryptedWithCurrentKey, needsReencrypt, undecryptable, reencrypted };
 }
 
 async function scanEvidence(apply: boolean, limit: number) {
@@ -139,7 +140,7 @@ async function scanEvidence(apply: boolean, limit: number) {
   }
 
   const total = await PixelEvidenceModel.countDocuments({});
-  return { total, encryptedWithCurrentKey, needsReencrypt, undecryptable, reencrypted };
+  return { total, scanned: docs.length, encryptedWithCurrentKey, needsReencrypt, undecryptable, reencrypted };
 }
 
 /** 轮换前后的体检：当前是哪一代主密钥、上一代有没有留、两处密文各有多少还没迁完。 */
@@ -155,12 +156,14 @@ export async function getPixelKeyRotationStatus(): Promise<PixelKeyRotationStatu
     },
     mappings: {
       total: mappings.total,
+      scanned: mappings.scanned,
       encryptedWithCurrentKey: mappings.encryptedWithCurrentKey,
       needsReencrypt: mappings.needsReencrypt,
       undecryptable: mappings.undecryptable,
     },
     evidence: {
       total: evidence.total,
+      scanned: evidence.scanned,
       encryptedWithCurrentKey: evidence.encryptedWithCurrentKey,
       needsReencrypt: evidence.needsReencrypt,
       undecryptable: evidence.undecryptable,
@@ -211,6 +214,13 @@ export async function canRetirePreviousMasterKey(): Promise<{ canRetire: boolean
   const status = await getPixelKeyRotationStatus();
   if (!status.master.previousConfigured) {
     return { canRetire: false, reason: "当前没有配置 AES_KEY_PREV（无需退役）。" };
+  }
+  // 扫描有批次上限：没扫完就不能证明「全量已迁」，此时断言可以退役会直接导致密文永久不可读。
+  if (status.mappings.scanned < status.mappings.total || status.evidence.scanned < status.evidence.total) {
+    return {
+      canRetire: false,
+      reason: `还有未扫描的密文（上限 ${MAX_BATCH} 条/集合），请分批重加密直到 total == scanned 再判断。`,
+    };
   }
   if (status.mappings.undecryptable > 0 || status.evidence.undecryptable > 0) {
     return { canRetire: false, reason: "存在无法解密的密文：退役上一代密钥会让它们永久不可读。" };

@@ -216,4 +216,21 @@ describe("重加密迁移器", () => {
     const allowed = await canRetirePreviousMasterKey();
     expect(allowed.canRetire).toBe(true);
   });
+
+  it("扫描不完整时一律不许退役（不能拿未扫到的数据赌）", async () => {
+    setMaster(NEW_MASTER, OLD_MASTER);
+    const newCipher = encryptPixelSecret(SECRET);
+    (PixelCdkMappingModel.find as jest.Mock).mockReturnValue(leanList([{
+      mappingId: "pcm_1", upstreamCdkCiphertext: newCipher.ciphertext, upstreamCdkIv: newCipher.iv,
+      upstreamCdkTag: newCipher.tag, upstreamCdkCryptoVersion: newCipher.cryptoVersion,
+    }]));
+    // 库里其实还有更多条没扫到（上限 1000；这里模拟 total > scanned）。
+    (PixelCdkMappingModel.countDocuments as jest.Mock).mockResolvedValue(5_000);
+    (PixelEvidenceModel.find as jest.Mock).mockReturnValue(leanList([]));
+    (PixelEvidenceModel.countDocuments as jest.Mock).mockResolvedValue(0);
+
+    const blocked = await canRetirePreviousMasterKey();
+    expect(blocked.canRetire).toBe(false);
+    expect(blocked.reason).toMatch(/未扫描/);
+  });
 });
