@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useId, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { FaEdit, FaCheck, FaTimes, FaCopy, FaExpand, FaCompress } from 'react-icons/fa';
 import {
   studioFieldClassName,
-  studioModalOverlayClassName,
+  studioModalCloseButtonClassName,
+  studioPrimaryButtonClassName,
   studioSecondaryButtonClassName,
-  studioSurfaceClassName,
   studioTextareaClassName,
 } from './studioTheme';
-
+import { StudioErrorNote, StudioModal } from './studioFeedback';
+import { cn } from '../utils/cn';
 
 interface PromptModalProps {
   open: boolean;
@@ -26,404 +26,233 @@ interface PromptModalProps {
   language?: string;
 }
 
-const PromptModal: React.FC<PromptModalProps> = ({ 
-  open, 
-  onClose, 
-  onConfirm, 
-  title, 
-  message, 
+const MONO_FONT = 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace';
+
+const PromptModal: React.FC<PromptModalProps> = ({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  message,
   placeholder = '请输入内容',
   defaultValue = '',
-  confirmText = '确定', 
+  confirmText = '确定',
   cancelText = '取消',
   multiline = false,
   maxLength,
   codeEditor = false,
-  language = 'text'
 }) => {
   const [value, setValue] = useState(defaultValue);
-
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
 
-  // 移动端专用样式
-  const mobileStyles = {
-    modal: {
-      // 使用 CSS 自定义属性来适应键盘弹出
-      height: isMobile ? 'calc(var(--vh, 1vh) * 100)' : 'auto',
-      // 优化触摸滚动
-      WebkitOverflowScrolling: 'touch' as const,
-      // 防止双击缩放
-      touchAction: 'manipulation' as const
-    },
-    input: {
-      // 移动端输入框优化
-      fontSize: isMobile ? '16px' : '14px', // 防止 iOS Safari 缩放
-      WebkitAppearance: 'none' as const,
-      borderRadius: isMobile ? '8px' : '6px'
-    }
-  };
+  const titleId = useId();
+  const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  // 检测设备类型和屏幕尺寸
+  // 屏幕尺寸只用于一件事：移动端输入框用 16px 字号，否则 iOS Safari 聚焦时会自动放大页面。
   useEffect(() => {
-    const checkDeviceAndSize = () => {
-      const width = window.innerWidth;
-      
-      setIsMobile(width <= 768);
-      setIsTablet(width > 768 && width <= 1024);
-    };
-    
-    checkDeviceAndSize();
-    window.addEventListener('resize', checkDeviceAndSize);
-    return () => window.removeEventListener('resize', checkDeviceAndSize);
+    const checkSize = () => setIsMobile(window.innerWidth <= 768);
+    checkSize();
+    window.addEventListener('resize', checkSize);
+    return () => window.removeEventListener('resize', checkSize);
   }, []);
 
   useEffect(() => {
     if (open) {
       setValue(defaultValue);
-      
-      // 移动端键盘适配
-      if (isMobile) {
-        // 防止页面滚动
-        document.body.style.overflow = 'hidden';
-        document.body.style.position = 'fixed';
-        document.body.style.width = '100%';
-        
-        // 监听视口变化以适应键盘弹出
-        const handleViewportChange = () => {
-          const vh = window.innerHeight * 0.01;
-          document.documentElement.style.setProperty('--vh', `${vh}px`);
-        };
-        
-        handleViewportChange();
-        window.addEventListener('resize', handleViewportChange);
-        
-        return () => {
-          window.removeEventListener('resize', handleViewportChange);
-        };
-      }
-    } else if (isMobile) {
-      // 恢复页面滚动
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
+      setCopyStatus('idle');
+      setIsExpanded(false);
     }
-  }, [open, defaultValue, isMobile]);
+  }, [open, defaultValue]);
 
-  // 组件卸载时清理
-  useEffect(() => {
-    return () => {
-      if (isMobile) {
-        document.body.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.width = '';
-      }
-    };
-  }, [isMobile]);
-
-  // 对话框语义与键盘出路：Esc 关闭（原先只挂在输入框的 onKeyDown 上，焦点在别处就失效）、
-  // Tab 在弹窗内循环、关闭后把焦点还给触发元素。焦点进入弹窗由输入框上的 autoFocus 完成，
-  // 它同时保住了移动端键盘的唤起时机。
-  const titleId = useId();
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
-  // 用 ref 持有最新的 onClose，键盘副作用只随 open 重跑，调用方每渲染换新函数时不会反复挪动焦点。
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  // 触发元素只能在弹窗关闭期间跟踪：打开后输入框的 autoFocus 会立刻把焦点抢走，那时已取不到。
-  useEffect(() => {
-    if (open) return undefined;
-    const handleFocusIn = (event: FocusEvent) => {
-      triggerRef.current = (event.target as HTMLElement | null) ?? null;
-    };
-    document.addEventListener('focusin', handleFocusIn);
-    return () => document.removeEventListener('focusin', handleFocusIn);
-  }, [open]);
-
+  // 初始焦点落在输入框：StudioModal 打开时把焦点交给卡内第一个可聚焦元素（头部按钮），
+  // 而这个弹窗打开就是为了打字，移动端也靠这次聚焦唤起键盘。StudioModal 是子组件、副作用先执行，
+  // 它的 0ms 聚焦先入队，本组件的随后执行，最终焦点停在输入框。
   useEffect(() => {
     if (!open) return undefined;
-
-    const handleDialogKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      // 原生焦点陷阱：Tab / Shift+Tab 在弹窗内循环，不引入第三方依赖。
-      const focusables = cardRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusables || focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', handleDialogKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleDialogKeyDown);
-      triggerRef.current?.focus?.();
-      triggerRef.current = null;
-    };
+    const timer = window.setTimeout(() => fieldRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
   }, [open]);
+
+  // 移动端锁住页面滚动，避免手势穿透到弹窗背后的内容（StudioModal 只约束卡内滚动）。
+  useEffect(() => {
+    if (!open || !isMobile) return undefined;
+    const previous = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      width: document.body.style.width,
+    };
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = previous.overflow;
+      document.body.style.position = previous.position;
+      document.body.style.width = previous.width;
+    };
+  }, [open, isMobile]);
 
   const handleConfirm = () => {
     if (value.trim()) {
-      onConfirm(value); // 移除 trim() 以保留换行符
+      onConfirm(value); // 不做 trim，保留换行与缩进
       onClose();
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Esc 统一由上面的文档级监听处理，这里只留 Enter 提交。
     if (e.key === 'Enter' && !multiline && !codeEditor) {
       e.preventDefault();
       handleConfirm();
     }
   };
 
-  // 复制内容到剪贴板
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(value);
-      // 可以添加一个临时的成功提示
-    } catch (err) {
-      // 降级方案
+      setCopyStatus('copied');
+    } catch {
+      // 剪贴板 API 在非安全上下文 / 部分桌面壳里会被拒；退回 execCommand，仍失败则给出可见提示。
       const textArea = document.createElement('textarea');
       textArea.value = value;
       document.body.appendChild(textArea);
       textArea.select();
-      document.execCommand('copy');
+      const ok = document.execCommand('copy');
       document.body.removeChild(textArea);
+      setCopyStatus(ok ? 'copied' : 'failed');
     }
   };
 
-
+  const fieldTextStyle = {
+    fontSize: isMobile ? '16px' : '14px',
+    lineHeight: '1.5',
+    fontFamily: MONO_FONT,
+    WebkitAppearance: 'none' as const,
+  };
 
   return (
-    <>
-
-      <AnimatePresence>
-        {open && (
-        <motion.div
-          className={studioModalOverlayClassName}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          onClick={onClose}
-          style={{
-            // 防止移动端滚动穿透
-            touchAction: 'none',
-            overscrollBehavior: 'contain'
-          }}
-        >
-          <motion.div
-            ref={cardRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className={`${studioSurfaceClassName} ${
-              isMobile
-                ? `w-full h-full p-3 ${isExpanded ? '' : 'max-h-[95vh] overflow-y-auto'}`
-                : isTablet
-                ? `p-4 mx-3 ${isExpanded ? 'w-[92vw] h-[85vh]' : 'max-w-3xl w-[88vw]'}`
-                : `p-6 mx-4 ${isExpanded ? 'w-[95vw] h-[90vh]' : 'max-w-2xl w-[90vw]'}`
-            }`}
-            initial={{ 
-              opacity: 0, 
-              scale: isMobile ? 0.98 : 0.95, 
-              y: isMobile ? 10 : 20 
-            }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ 
-              opacity: 0, 
-              scale: isMobile ? 0.98 : 0.95, 
-              y: isMobile ? 10 : 20 
-            }}
-            transition={{ duration: 0.2 }}
-            onClick={e => e.stopPropagation()}
-            style={{
-              ...mobileStyles.modal,
-              // 确保在移动端有足够的触摸区域
-              minHeight: isMobile ? '200px' : 'auto',
-              // 防止内容溢出
-              maxHeight: isMobile ? '95vh' : 'auto'
-            }}
-          >
-            <div className={`flex items-center justify-between ${isMobile ? 'mb-3' : 'mb-4'}`}>
-              <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
-                <FaEdit className={`text-slate-500 ${isMobile ? 'w-5 h-5' : 'w-6 h-6'}`} />
-                <h2 id={titleId} className={`font-semibold text-slate-800 ${isMobile ? 'text-base' : 'text-lg'}`}>
-                  {title || '输入内容'}
-                </h2>
-              </div>
-              <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
-                {codeEditor && (
-                  <>
-                    <button
-                      onClick={copyToClipboard}
-                      className={`text-slate-500 hover:text-slate-700 transition-colors touch-manipulation ${
-                        isMobile ? 'p-1.5 min-w-[36px] min-h-[36px]' : 'p-2'
-                      }`}
-                      title="复制内容"
-                    >
-                      <FaCopy className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-                    </button>
-                    <button
-                      onClick={() => setIsExpanded(!isExpanded)}
-                      className={`text-slate-500 hover:text-slate-700 transition-colors touch-manipulation ${
-                        isMobile ? 'p-1.5 min-w-[36px] min-h-[36px]' : 'p-2'
-                      }`}
-                      title={isExpanded ? '收起' : '展开'}
-                    >
-                      {isExpanded ? <FaCompress className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} /> : <FaExpand className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
-                    </button>
-                  </>
+    <StudioModal
+      open={open}
+      onClose={onClose}
+      titleId={titleId}
+      maxWidthClassName={isExpanded ? 'max-w-5xl' : 'max-w-2xl'}
+      className={isExpanded ? 'flex h-[85vh] flex-col' : undefined}
+    >
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <FaEdit className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
+          <h2 id={titleId} className="truncate text-lg font-semibold text-slate-900">
+            {title || '输入内容'}
+          </h2>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {codeEditor ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void copyToClipboard()}
+                aria-label="复制内容"
+                className={cn(studioModalCloseButtonClassName, 'h-11 w-11')}
+              >
+                <FaCopy className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsExpanded((previous) => !previous)}
+                aria-label={isExpanded ? '收起输入框' : '放大输入框'}
+                className={cn(studioModalCloseButtonClassName, 'h-11 w-11')}
+              >
+                {isExpanded ? (
+                  <FaCompress className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <FaExpand className="h-4 w-4" aria-hidden="true" />
                 )}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="关闭"
-                  className={`inline-flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors touch-manipulation ${
-                    isMobile ? 'p-1.5 min-w-[36px] min-h-[36px]' : 'p-2'
-                  }`}
-                >
-                  <FaTimes className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-            
-            {message && (
-              <div className={`text-slate-700 leading-relaxed ${isMobile ? 'mb-3 text-sm' : 'mb-4'}`}>
-                {message}
-              </div>
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className={cn(studioModalCloseButtonClassName, 'h-11 w-11')}
+          >
+            <FaTimes className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {message ? <p className="mb-4 leading-relaxed text-slate-700">{message}</p> : null}
+
+      {copyStatus === 'copied' ? (
+        <p role="status" aria-live="polite" className="mb-2 text-xs text-slate-500">
+          内容已复制
+        </p>
+      ) : null}
+      {copyStatus === 'failed' ? (
+        <StudioErrorNote className="mb-2">复制失败，请手动选中内容后复制。</StudioErrorNote>
+      ) : null}
+
+      <div className={cn('mb-6', isExpanded && 'flex min-h-0 flex-1 flex-col')}>
+        {codeEditor || multiline ? (
+          <textarea
+            ref={(element) => {
+              fieldRef.current = element;
+            }}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            rows={codeEditor ? undefined : 4}
+            wrap={codeEditor ? 'off' : undefined}
+            spellCheck={false}
+            className={cn(
+              studioTextareaClassName,
+              'font-mono',
+              codeEditor ? (isExpanded ? 'min-h-0 flex-1' : 'max-h-96 min-h-[200px]') : 'min-h-[120px]',
             )}
-            
-            <div className={`${isMobile ? 'mb-4' : 'mb-6'} ${isExpanded ? 'flex-1' : ''}`}>
-              {codeEditor ? (
-                <textarea
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={placeholder}
-                  maxLength={maxLength}
-                  className={`${studioTextareaClassName} font-mono ${
-                    isExpanded
-                      ? isMobile
-                        ? 'h-[calc(100vh-180px)]'
-                        : isTablet
-                        ? 'h-[calc(85vh-180px)]'
-                        : 'h-[calc(90vh-200px)]'
-                      : isMobile
-                      ? 'max-h-80'
-                      : 'max-h-96'
-                  }`}
-                  style={{
-                    padding: isMobile ? '12px' : '16px',
-                    fontSize: isMobile ? '16px' : '14px',
-                    lineHeight: '1.5',
-                    minHeight: isExpanded 
-                      ? isMobile ? '300px' : '400px' 
-                      : isMobile ? '150px' : '200px',
-                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                    WebkitAppearance: 'none'
-                  }}
-                  autoFocus
-                  spellCheck={false}
-                  wrap="off"
-                />
-              ) : multiline ? (
-                <textarea
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={placeholder}
-                  maxLength={maxLength}
-                  className={`${studioTextareaClassName} font-mono`}
-                  rows={isMobile ? 3 : 4}
-                  autoFocus
-                  spellCheck={false}
-                  style={{
-                    padding: isMobile ? '12px' : '16px',
-                    fontSize: isMobile ? '16px' : '14px',
-                    lineHeight: '1.5',
-                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                    WebkitAppearance: 'none',
-                    borderRadius: isMobile ? '8px' : '6px'
-                  }}
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={placeholder}
-                  maxLength={maxLength}
-                  className={`${studioFieldClassName} font-mono`}
-                  autoFocus
-                  style={{
-                    padding: isMobile ? '12px' : '16px',
-                    fontSize: isMobile ? '16px' : '14px',
-                    lineHeight: '1.5',
-                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                    WebkitAppearance: 'none',
-                    borderRadius: isMobile ? '8px' : '6px'
-                  }}
-                />
-              )}
-              
-              {maxLength && (
-                <div className={`text-slate-400 text-right ${isMobile ? 'text-xs mt-1' : 'text-xs mt-2'}`}>
-                  {value.length}/{maxLength}
-                </div>
-              )}
-            </div>
-            
-            <div className={`flex justify-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
-              <motion.button
-                type="button"
-                onClick={onClose}
-                className={`${studioSecondaryButtonClassName} touch-manipulation ${
-                  isMobile ? 'min-h-[44px]' : ''
-                }`}
-                whileTap={{ scale: 0.95 }}
-              >
-                <FaTimes className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} aria-hidden="true" />
-                {cancelText}
-              </motion.button>
-              <motion.button
-                type="button"
-                onClick={handleConfirm}
-                disabled={!value.trim()}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 touch-manipulation ${
-                  isMobile ? 'min-h-[44px]' : ''
-                }`}
-                whileTap={{ scale: 0.95 }}
-              >
-                <FaCheck className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} aria-hidden="true" />
-                {confirmText}
-              </motion.button>
-            </div>
-          </motion.div>
-        </motion.div>
+            style={fieldTextStyle}
+          />
+        ) : (
+          <input
+            ref={(element) => {
+              fieldRef.current = element;
+            }}
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            className={cn(studioFieldClassName, 'font-mono')}
+            style={fieldTextStyle}
+          />
         )}
-      </AnimatePresence>
-    </>
+
+        {maxLength ? (
+          <div className="mt-2 text-right text-xs text-slate-400">
+            {value.length}/{maxLength}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex justify-center gap-2 sm:gap-3">
+        <button type="button" onClick={onClose} className={cn(studioSecondaryButtonClassName, 'min-h-11')}>
+          <FaTimes className="h-4 w-4" aria-hidden="true" />
+          {cancelText}
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!value.trim()}
+          className={studioPrimaryButtonClassName}
+        >
+          <FaCheck className="h-4 w-4" aria-hidden="true" />
+          {confirmText}
+        </button>
+      </div>
+    </StudioModal>
   );
 };
 
-export default PromptModal; 
+export default PromptModal;
