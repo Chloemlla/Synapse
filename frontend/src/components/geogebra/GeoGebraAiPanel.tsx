@@ -12,6 +12,7 @@ import {
   studioPrimaryButtonClassName,
   studioSubPanelClassName,
 } from "../studioTheme";
+import { StudioEmptyState, StudioErrorNote, StudioLoadingState, StudioSuccessNote } from "../studioFeedback";
 import {
   cancelGeoGebraJob,
   createGeoGebraAiJob,
@@ -249,7 +250,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
                     accept={ACCEPTED_TYPES.join(",")}
                     disabled={uploadBusy}
                     onChange={(event) => { void handleFile(event.target.files?.[0] ?? null); event.target.value = ""; }}
-                    className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:min-h-10 file:rounded-xl file:border file:border-slate-200 file:bg-white file:px-3 file:text-sm file:text-slate-700"
+                    className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:min-h-11 file:rounded-2xl file:border file:border-slate-200 file:bg-white file:px-3 file:text-sm file:text-slate-700"
                   />
                 </label>
                 {attachmentName && (
@@ -289,10 +290,12 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
         </div>
 
         {!aiConsentReady && <p className="mt-2 text-xs text-slate-500">同意相关条款后即可使用 AI 辅助。</p>}
-        {error && <p role="alert" className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-        {notice && !error && <p role="status" aria-live="polite" className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+        {error && <StudioErrorNote className="mt-3">{error}</StudioErrorNote>}
+        {notice && !error && <StudioSuccessNote className="mt-3">{notice}</StudioSuccessNote>}
 
-        {job && (
+        {running ? (
+          <StudioLoadingState text="正在生成建议..." minHeightClassName="min-h-[160px]" />
+        ) : job ? (
           <div className={cn(studioSubPanelClassName, "mt-3")}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-semibold text-slate-800">{activeAction.label}</span>
@@ -300,7 +303,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
                 {job.status === "queued" ? "排队中" : job.status === "running" ? "生成中" : job.status === "completed" ? "已完成" : job.status === "cancelled" ? "已取消" : job.status === "expired" ? "已过期" : "未完成"}
               </span>
             </div>
-            {job.status === "failed" && <p className="mt-2 text-sm text-rose-700">{job.errorMessage ?? "这次没有生成可用的建议，请重试。"}</p>}
+            {job.status === "failed" && <StudioErrorNote className="mt-2">{job.errorMessage ?? "这次没有生成可用的建议，请重试。"}</StudioErrorNote>}
             {result?.summary && <p className="mt-2 text-sm leading-6 text-slate-700">{result.summary}</p>}
             {typeof result?.confidence === "number" && (
               <p className="mt-1 text-xs text-slate-500">模型自评把握度约 {Math.round(result.confidence * 100)}%，请以预检与实际运行为准。</p>
@@ -321,6 +324,8 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
               </div>
             ) : null}
           </div>
+        ) : (
+          <StudioEmptyState className="mt-3 px-4 py-10" message="还没有生成建议。选择上面的操作、填好描述后点「生成建议」。" />
         )}
       </FeatureConsentGate>
     </section>

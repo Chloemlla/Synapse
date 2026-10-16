@@ -49,9 +49,9 @@ function configureGeoGebraLanguage(): void {
       { token: "comment", foreground: "64748B" },
       { token: "string", foreground: "047857" },
       { token: "number", foreground: "0369A1" },
-      { token: "keyword", foreground: "1D4ED8", fontStyle: "bold" },
+      { token: "keyword", foreground: "0F172A", fontStyle: "bold" },
       { token: "variable", foreground: "0F172A" },
-      { token: "type.identifier", foreground: "7C3AED" },
+      { token: "type.identifier", foreground: "0284C7" },
       { token: "operator", foreground: "334155" },
     ],
     colors: {

@@ -12,7 +12,9 @@ import {
   studioPrimaryButtonClassName,
   studioPillClassName,
   studioSubPanelClassName,
+  studioTileClassName,
 } from "../studioTheme";
+import { StudioEmptyState, StudioErrorNote, StudioLoadingState, StudioSuccessNote } from "../studioFeedback";
 import {
   createGeoGebraProject,
   createGeoGebraVersion,
@@ -63,7 +65,10 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
   const [inviteRole, setInviteRole] = useState<"editor" | "reviewer" | "viewer">("reviewer");
   const [teamBusy, setTeamBusy] = useState(false);
   const [members, setMembers] = useState<WorkspaceSummary["members"]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
   const [cloudVersions, setCloudVersions] = useState<GeoGebraVersion[]>([]);
+  const [versionsError, setVersionsError] = useState("");
   // 冲突不只是一个 409：本地稿、云端稿与共同基线三者的先后关系决定该保留哪一份，
   // 所以这里把云端稿与逐行差异一起摊开，由用户显式选。
   const [conflict, setConflict] = useState<{ cloud: GeoGebraProject; diff: ReturnType<typeof summarizeGeoGebraDiff> } | null>(null);
@@ -90,24 +95,38 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
     const workspaceId = project?.workspaceId;
     if (!user || !workspaceId) {
       setMembers([]);
+      setMembersError("");
       return undefined;
     }
     let active = true;
+    setMembersLoading(true);
+    setMembersError("");
     void listWorkspaceMembers(workspaceId)
       .then((items) => { if (active) setMembers(items); })
-      .catch(() => { if (active) setMembers([]); });
+      .catch(() => {
+        if (!active) return;
+        setMembers([]);
+        setMembersError("成员名单暂时无法载入，请稍后重试。");
+      })
+      .finally(() => { if (active) setMembersLoading(false); });
     return () => { active = false; };
   }, [project?.workspaceId, user]);
 
   useEffect(() => {
     if (!user || !project?.cloudRevision) {
       setCloudVersions([]);
+      setVersionsError("");
       return undefined;
     }
     let active = true;
+    setVersionsError("");
     void listGeoGebraVersions(project.projectId)
       .then((items) => { if (active) setCloudVersions(items); })
-      .catch(() => { if (active) setCloudVersions([]); });
+      .catch(() => {
+        if (!active) return;
+        setCloudVersions([]);
+        setVersionsError("云端历史版本暂时无法载入，请稍后重试。");
+      });
     return () => { active = false; };
   }, [project?.cloudRevision, project?.projectId, user]);
 
@@ -338,8 +357,8 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
           </div>
         </div>
 
-        {error && <p role="alert" className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-        {status && <p role="status" aria-live="polite" className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{status}</p>}
+        {error && <StudioErrorNote className="mb-3">{error}</StudioErrorNote>}
+        {status && !error && <StudioSuccessNote className="mb-3">{status}</StudioSuccessNote>}
 
         {conflict && (
           <section className={cn(studioSubPanelClassName, "mb-3 border-amber-200 bg-amber-50/60")} aria-labelledby="geogebra-conflict-heading">
@@ -351,7 +370,7 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
             {conflict.diff.samples.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {conflict.diff.samples.map((sample) => (
-                  <li key={sample.lineNumber} className="rounded-xl border border-amber-200 bg-white/80 px-3 py-1.5 text-[11px] text-slate-600">
+                  <li key={sample.lineNumber} className={cn(studioTileClassName, "border-amber-200 bg-white/80 px-3 py-1.5 text-[11px] text-slate-600")}>
                     <span className="font-semibold text-slate-700">第 {sample.lineNumber} 行</span>
                     <span className="mt-1 block font-mono text-slate-500">云端：{sample.after ?? "（无）"}</span>
                     <span className="mt-1 block font-mono text-sky-700">本机：{sample.before ?? "（无）"}</span>
@@ -425,10 +444,14 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
               {project?.workspaceId && (
                 <div className="mt-4">
                   <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">成员</h4>
-                  {members.length ? (
+                  {membersLoading ? (
+                    <StudioLoadingState text="加载成员..." minHeightClassName="min-h-[140px]" />
+                  ) : membersError ? (
+                    <StudioErrorNote className="mt-2">{membersError}</StudioErrorNote>
+                  ) : members.length ? (
                     <ul className="mt-2 space-y-2">
                       {members.map((member) => (
-                        <li key={member.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                        <li key={member.userId} className={cn(studioTileClassName, "flex flex-wrap items-center justify-between gap-2 px-3 py-2")}>
                           <span className="min-w-0 text-sm text-slate-700">{member.userId === user.id ? "我" : `${member.userId.slice(0, 10)}…`}</span>
                           <span className="flex items-center gap-2">
                             <select
@@ -444,7 +467,9 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                         </li>
                       ))}
                     </ul>
-                  ) : <p className="mt-2 text-sm text-slate-500">还没有其他成员。</p>}
+                  ) : (
+                    <StudioEmptyState className="mt-2 px-4 py-8" message="还没有其他成员。在上面输入成员邮箱邀请他们加入这个团队空间。" />
+                  )}
                   <p className="mt-2 text-xs text-slate-500">创建者不可被移除，团队至少保留一名管理员。</p>
                 </div>
               )}
@@ -456,14 +481,16 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
               <h3 className="text-sm font-semibold text-slate-900">可访问的云端项目</h3>
               <span className="text-xs text-slate-500">{projects.length} 个项目</span>
             </div>
-            {loading ? <p role="status" className="text-sm text-slate-500">正在载入云端项目…</p> : projects.length ? (
+            {loading ? (
+              <StudioLoadingState text="正在载入云端项目..." minHeightClassName="min-h-[220px]" />
+            ) : projects.length ? (
               <div className="space-y-2">
                 {projects.map((item) => {
                   const memberRole = workspaces.find((workspace) => workspace.id === item.workspaceId)?.members.find((member) => member.userId === user.id)?.role;
                   const canDelete = item.isOwner || memberRole === "admin";
                   return (
                     <div key={item.projectId} className="flex items-center gap-2">
-                      <button type="button" onClick={() => onOpenProject(item)} className="min-h-14 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-left transition hover:border-slate-300 hover:shadow-sm">
+                      <button type="button" onClick={() => onOpenProject(item)} className={cn(studioTileClassName, "min-h-14 min-w-0 flex-1 px-3 py-2 text-left transition hover:border-slate-300 hover:shadow-sm")}>
                         <span className="block truncate text-sm font-semibold text-slate-800">{item.title}</span>
                         <span className="mt-1 block truncate text-xs text-slate-500">{item.folder} · {item.tags.join(", ") || "无标签"} · {new Date(item.updatedAt).toLocaleDateString("zh-CN")}</span>
                       </button>
@@ -472,8 +499,14 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                   );
                 })}
               </div>
-            ) : <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">保存项目后，可在这里从任意设备继续。</div>}
+            ) : (
+              <StudioEmptyState
+                className="px-4 py-10"
+                message="还没有云端项目。打开一个本地项目并保存到云端后，就能在任何设备继续编辑。"
+              />
+            )}
 
+            {versionsError && <StudioErrorNote className="mt-4">{versionsError}</StudioErrorNote>}
             {project?.cloudRevision && cloudVersions.length > 0 && (
               <div className="mt-4 border-t border-slate-200 pt-4">
                 <h3 className="text-sm font-semibold text-slate-900">云端历史版本</h3>
@@ -482,7 +515,7 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                   {cloudVersions.slice(0, 6).map((version) => {
                     const diff = summarizeGeoGebraDiff(project.code, version.code);
                     return (
-                      <div key={version.versionId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                      <div key={version.versionId} className={cn(studioTileClassName, "px-3 py-2")}>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-sm font-semibold text-slate-700">{version.label}</span>
                           <span className="text-xs text-slate-500">{new Date(version.createdAt).toLocaleString("zh-CN")}</span>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaDownload, FaFileArchive } from "react-icons/fa";
 import { cn } from "../../utils/cn";
-import { studioGhostButtonClassName, studioPanelClassName, studioSubPanelClassName } from "../studioTheme";
+import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioSubPanelClassName } from "../studioTheme";
+import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState, StudioSuccessNote } from "../studioFeedback";
 import {
   createGeoGebraExportJob,
   downloadGeoGebraAsset,
@@ -44,20 +45,23 @@ export default function GeoGebraExportPanel({ project }: Props) {
 
   useEffect(() => stopPolling, [stopPolling]);
 
-  useEffect(() => {
-    let active = true;
+  const loadCapabilities = useCallback(async () => {
     setLoading(true);
-    void listGeoGebraExportCapabilities()
-      .then((items) => {
-        if (!active) return;
-        setCapabilities(items);
-        const firstServerSide = items.find((item) => item.serverSide);
-        if (firstServerSide) setFormat(firstServerSide.format);
-      })
-      .catch(() => { if (active) setError("导出能力暂时无法读取。"); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    setError("");
+    try {
+      const items = await listGeoGebraExportCapabilities();
+      setCapabilities(items);
+      const firstServerSide = items.find((item) => item.serverSide);
+      if (firstServerSide) setFormat(firstServerSide.format);
+    } catch {
+      setCapabilities([]);
+      setError("导出能力暂时无法读取，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { void loadCapabilities(); }, [loadCapabilities]);
 
   useEffect(() => {
     stopPolling();
@@ -122,7 +126,11 @@ export default function GeoGebraExportPanel({ project }: Props) {
         <p className="mt-1 text-sm text-slate-500">画布上的 PNG / GGB / 脚本文本可直接导出；需要打包归档时用下面的后台任务。</p>
       </div>
 
-      {loading ? <p role="status" className="text-sm text-slate-500">正在读取可用格式…</p> : (
+      {loading ? (
+        <StudioLoadingState text="正在读取可用格式..." minHeightClassName="min-h-[200px]" />
+      ) : capabilities.length === 0 ? (
+        <StudioErrorState message={error || "导出能力暂时无法读取，请稍后重试。"} onRetry={() => void loadCapabilities()} retryLabel="重新读取格式" />
+      ) : (
         <div className="space-y-3">
           <div className={studioSubPanelClassName}>
             <h3 className="text-sm font-semibold text-slate-900">服务端打包</h3>
@@ -131,7 +139,7 @@ export default function GeoGebraExportPanel({ project }: Props) {
                 <label className="text-xs font-semibold text-slate-600">
                   格式
                   <select
-                    className="mt-1 block min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                    className={cn(studioFieldClassName, "mt-1 min-h-11 py-2")}
                     value={format}
                     onChange={(event) => setFormat(event.target.value as GeoGebraExportFormat)}
                   >
@@ -142,7 +150,9 @@ export default function GeoGebraExportPanel({ project }: Props) {
                   <FaFileArchive /> {busy ? "提交中…" : "开始打包"}
                 </button>
               </div>
-            ) : <p className="mt-2 text-sm text-slate-500">服务端暂不提供打包格式。</p>}
+            ) : (
+              <StudioEmptyState className="mt-2 px-4 py-8" message="服务端暂不提供打包格式，可用画布上的 PNG / GGB / 脚本文本直接导出。" />
+            )}
             {serverSideFormats[0] && <p className="mt-2 text-xs text-slate-500">{serverSideFormats.find((item) => item.format === format)?.note}</p>}
           </div>
 
@@ -159,8 +169,8 @@ export default function GeoGebraExportPanel({ project }: Props) {
         </div>
       )}
 
-      {error && <p role="alert" className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      {notice && !error && <p role="status" aria-live="polite" className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+      {error && capabilities.length > 0 && <StudioErrorNote className="mt-3">{error}</StudioErrorNote>}
+      {notice && !error && <StudioSuccessNote className="mt-3">{notice}</StudioSuccessNote>}
 
       {job && (
         <div className={cn(studioSubPanelClassName, "mt-3")}>

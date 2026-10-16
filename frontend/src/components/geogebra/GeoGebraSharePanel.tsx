@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FaCopy, FaShareAlt, FaTimes } from "react-icons/fa";
 import { useAuth } from "../../hooks/useAuth";
 import { createGeoGebraShare, deleteGeoGebraShare, listGeoGebraShares } from "../../api/geogebra";
 import { cn } from "../../utils/cn";
 import FeatureConsentGate from "../FeatureConsentGate";
-import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName } from "../studioTheme";
+import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName, studioTileClassName } from "../studioTheme";
+import { StudioEmptyState, StudioErrorNote, StudioLoadingState, StudioSuccessNote } from "../studioFeedback";
 import { prepareGeoGebraScript } from "./script";
 import type { GeoGebraLocalProject, GeoGebraShare } from "../../types/geogebra";
 
@@ -18,17 +19,30 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
   const [title, setTitle] = useState(project?.title ?? "GeoGebra 画布");
   const [allowFork, setAllowFork] = useState(true);
   const [shares, setShares] = useState<GeoGebraShare[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => setTitle(project?.title || "GeoGebra 画布"), [project?.projectId, project?.title]);
+
+  const loadShares = useCallback(async () => {
+    setSharesLoading(true);
+    setError("");
+    try {
+      setShares(await listGeoGebraShares());
+    } catch {
+      setShares([]);
+      setError("分享列表暂时无法载入，请稍后重试。");
+    } finally {
+      setSharesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user) return;
-    let active = true;
-    void listGeoGebraShares().then((items) => { if (active) setShares(items); }).catch(() => undefined);
-    return () => { active = false; };
-  }, [user]);
+    void loadShares();
+  }, [loadShares, user]);
 
   const publish = async () => {
     if (!user || !project || busy) return;
@@ -93,8 +107,8 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
             <h2 id="geogebra-share-heading" className="mt-1 text-lg font-semibold text-slate-900">公开分享</h2>
             <p className="mt-1 text-sm text-slate-500">持有链接的人可以查看这份画布；你可以随时撤销。</p>
           </div>
-          {error && <p role="alert" className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-          {status && <p role="status" aria-live="polite" className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{status}</p>}
+          {error && <StudioErrorNote className="mb-3">{error}</StudioErrorNote>}
+          {status && !error && <StudioSuccessNote className="mb-3">{status}</StudioSuccessNote>}
           <FeatureConsentGate feature="geogebra-projects">
             <FeatureConsentGate feature="geogebra-share">
               <div className={cn(studioSubPanelClassName, "space-y-3")}>
@@ -115,12 +129,14 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">我的分享</h3>
-              <button type="button" onClick={() => void listGeoGebraShares().then(setShares).catch(() => setError("分享列表暂时无法刷新。"))} className={studioGhostButtonClassName}>刷新</button>
+              <button type="button" onClick={() => void loadShares()} disabled={sharesLoading} className={studioGhostButtonClassName}>刷新</button>
             </div>
-            {shares.length ? shares.map((share) => {
+            {sharesLoading ? (
+              <StudioLoadingState text="加载分享..." minHeightClassName="min-h-[180px]" />
+            ) : shares.length ? shares.map((share) => {
               const url = `${window.location.origin}/geogebra/share/${share.slug}`;
               return (
-                <article key={share.shareId} className="rounded-2xl border border-slate-200 bg-white/80 p-3">
+                <article key={share.shareId} className={cn(studioTileClassName, "p-3")}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <strong className="block truncate text-sm text-slate-800">{share.title}</strong>
@@ -133,7 +149,9 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
                   </div>
                 </article>
               );
-            }) : <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">还没有发布的分享。</div>}
+            }) : (
+              <StudioEmptyState message="还没有发布分享。想让别人看到这份画布时，在上方发布即可。" />
+            )}
           </div>
       </section>
   );

@@ -5,10 +5,12 @@ import {
   studioFieldClassName,
   studioGhostButtonClassName,
   studioPanelClassName,
-  studioPrimaryButtonClassName,
   studioPillClassName,
+  studioPrimaryButtonClassName,
   studioSubPanelClassName,
+  studioTileClassName,
 } from "../studioTheme";
+import { StudioEmptyState } from "../studioFeedback";
 import type { GeoGebraLocalProject, GeoGebraLocalVersion } from "../../types/geogebra";
 import { summarizeLocalGeoGebraDiff } from "./localProjects";
 
@@ -159,7 +161,7 @@ export default function GeoGebraProjectPanel({
             {versions.length ? (
               <div className="space-y-2">
                 {versions.slice(0, MAX_VISIBLE_VERSIONS).map((version, index) => (
-                  <article key={version.versionId} className={cn("rounded-2xl border p-3", versionCursor === index ? "border-slate-400 bg-slate-50" : "border-slate-200 bg-white/80")}>
+                  <article key={version.versionId} className={cn(studioTileClassName, "p-3", versionCursor === index ? "border-slate-400 bg-slate-50" : "")}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0">
                         <strong className="block truncate text-sm text-slate-800">{version.label}</strong>
@@ -168,22 +170,22 @@ export default function GeoGebraProjectPanel({
                       <button type="button" onClick={() => onRestoreVersion(version)} className={studioGhostButtonClassName}>恢复</button>
                     </div>
                     {comparison?.versionId === version.versionId && (
-                      <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">已选择此快照用于与当前脚本比较。</p>
+                      <p className="mt-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">已选择此快照用于与当前脚本比较。</p>
                     )}
                     <button type="button" onClick={() => setComparison(version)} className="mt-2 text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900">查看此版本</button>
                   </article>
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">保存快照后会显示在这里。</div>
+              <StudioEmptyState message="保存快照后，快照会显示在这里，可随时恢复到某一版。" />
             )}
             {comparison && (
-              <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 p-3">
+              <div className={cn(studioTileClassName, "mt-3 p-3")}>
                 <p className="text-xs font-semibold text-slate-700">{comparison.label} 与当前脚本</p>
                 <p className="mt-1 text-xs text-slate-600">修改 {comparisonSummary?.changedLines ?? 0} 行，新增 {comparisonSummary?.addedLines ?? 0} 行，删除 {comparisonSummary?.removedLines ?? 0} 行。</p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-3 font-mono text-xs text-slate-600">{comparison.code}</pre>
-                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-3 font-mono text-xs text-slate-600">{currentCode}</pre>
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-50 p-3 font-mono text-xs text-slate-600">{comparison.code}</pre>
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-50 p-3 font-mono text-xs text-slate-600">{currentCode}</pre>
                 </div>
                 <button type="button" onClick={() => setComparison(null)} className="mt-2 text-xs font-semibold text-slate-500 underline">关闭预览</button>
               </div>
@@ -191,10 +193,10 @@ export default function GeoGebraProjectPanel({
           </div>
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-6 text-center">
-          <p className="text-sm text-slate-600">还没有本地项目。</p>
-          <button type="button" onClick={onCreate} className={cn(studioPrimaryButtonClassName, "mt-3")}><FaPlus /> 新建项目</button>
-        </div>
+        <StudioEmptyState
+          message="还没有本地项目。新建一个项目即可开始编写脚本。"
+          action={<button type="button" onClick={onCreate} className={studioPrimaryButtonClassName}><FaPlus /> 新建项目</button>}
+        />
       )}
     </section>
   );
