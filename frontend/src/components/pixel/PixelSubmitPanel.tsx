@@ -92,7 +92,8 @@ export default function PixelSubmitPanel({ serviceType, serviceOption, cardReady
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><FaShieldAlt /> 开始前请确认</h3>
         <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
           <li>服务：外部折扣链接服务（你选择的类型：{PIXEL_SERVICE_LABELS[serviceType] ?? serviceType}）。</li>
-          <li>提交内容：账号邮箱、密码、辅助邮箱、2FA 秘钥。这些字段只用于本次处理，不会保存在 Synapse。</li>
+          <li>提交内容：账号邮箱、密码、辅助邮箱、2FA 秘钥。这些字段只用于本次处理，默认不会保存在 Synapse。</li>
+          <li>唯一例外：收到具备法律依据的调取要求（或你明确授权）时，这一次的账号内容会被加密留存最长 30 天，每次读取都进审计；已在隐私说明中列明。</li>
           <li>配额：按账号个数预估最高 {estimated || "—"} 额度，最终以服务端与上游扣额为准。</li>
           <li>账号要求：只能提交你本人或已获授权管理的账号。</li>
           <li>停止方式：提交前可随时离开本页；提交后可在任务详情里取消仍在排队的账号。</li>

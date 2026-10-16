@@ -1,17 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FaChartBar, FaCopy, FaDatabase, FaKey, FaList, FaListUl, FaPlus, FaSlidersH, FaSync, FaTrash } from "react-icons/fa";
+import { FaChartBar, FaCopy, FaDatabase, FaGavel, FaKey, FaList, FaListUl, FaPlus, FaSlidersH, FaSync, FaTrash } from "react-icons/fa";
 import {
   createPixelCdk,
+  createPixelEvidenceApproval,
+  createPixelLegalHold,
   deletePixelCdk,
   getPixelAdminDashboard,
   getPixelCdkUsage,
   getPixelCdkUsageDetail,
   getPixelCdks,
+  getPixelEvidenceApprovals,
+  getPixelEvidenceRecords,
   getPixelIntegrationConfig,
+  getPixelLegalHolds,
+  readPixelEvidenceRecord,
+  releasePixelLegalHold,
+  revokePixelEvidenceApproval,
   savePixelIntegrationConfig,
   type PixelAdminDashboardView,
   type PixelCdkMappingCreated,
   type PixelCdkMappingView,
+  type PixelEvidenceApprovalView,
+  type PixelEvidenceHoldView,
+  type PixelEvidenceView,
   type PixelIntegrationConfigView,
   type PixelUsageLogView,
 } from "@/api/pixelAdmin";
@@ -29,13 +40,14 @@ import { cn } from "@/lib/utils";
 //  - 上游 CDK 永远只显示遮罩值；本页面没有任何地方能读到它。
 //  - 集成配置的写操作服务端只允许超级管理员：普通管理员看到的是只读视图（按钮禁用 + 说明）。
 //  - 没有可核对数据源的指标一律显示「无数据」，不编造。
-type TabKey = "overview" | "mappings" | "usage" | "config";
+type TabKey = "overview" | "mappings" | "usage" | "config" | "compliance";
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", icon: <FaSlidersH /> },
   { key: "mappings", label: "CDK 映射", icon: <FaKey /> },
   { key: "usage", label: "使用溯源", icon: <FaListUl /> },
   { key: "config", label: "集成配置", icon: <FaSlidersH /> },
+  { key: "compliance", label: "法律保全与取证", icon: <FaGavel /> },
 ];
 
 function formatTime(value: string | null): string {
@@ -53,6 +65,13 @@ const PixelAdminPanel: React.FC = () => {
   const [usageCursor, setUsageCursor] = useState<string | null>(null);
   const [usageDetail, setUsageDetail] = useState<PixelUsageLogView | null>(null);
   const [config, setConfig] = useState<PixelIntegrationConfigView | null>(null);
+  const [holds, setHolds] = useState<PixelEvidenceHoldView[]>([]);
+  const [approvals, setApprovals] = useState<PixelEvidenceApprovalView[]>([]);
+  const [evidence, setEvidence] = useState<PixelEvidenceView[]>([]);
+  const [holdForm, setHoldForm] = useState({ userId: "", caseRef: "", legalBasis: "", reason: "" });
+  const [approvalForm, setApprovalForm] = useState({ userId: "", caseRef: "", legalBasis: "", validDays: 7 });
+  const [readCaseRef, setReadCaseRef] = useState("");
+  const [readResult, setReadResult] = useState<{ meta: PixelEvidenceView; accountsText: string } | null>(null);
   const [created, setCreated] = useState<PixelCdkMappingCreated | null>(null);
   const [form, setForm] = useState({ distributionCdk: "", upstreamCdk: "", note: "" });
   const [configForm, setConfigForm] = useState({ upstreamBaseUrl: "", allowedHosts: "", enabled: false, requestTimeoutMs: 20000 });
@@ -103,12 +122,27 @@ const PixelAdminPanel: React.FC = () => {
     }
   }, []);
 
+  const loadCompliance = useCallback(async () => {
+    try {
+      const [nextHolds, nextApprovals, nextEvidence] = await Promise.all([
+        getPixelLegalHolds(true),
+        getPixelEvidenceApprovals(true),
+        getPixelEvidenceRecords({ limit: 50 }),
+      ]);
+      setHolds(nextHolds);
+      setApprovals(nextApprovals);
+      setEvidence(nextEvidence);
+    } catch {
+      setError("暂时无法读取保全与取证记录。");
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
-    await Promise.all([loadDashboard(), loadMappings(), loadUsage(), loadConfig()]);
+    await Promise.all([loadDashboard(), loadMappings(), loadUsage(), loadConfig(), loadCompliance()]);
     setLoading(false);
-  }, [loadConfig, loadDashboard, loadMappings, loadUsage]);
+  }, [loadCompliance, loadConfig, loadDashboard, loadMappings, loadUsage]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -182,6 +216,90 @@ const PixelAdminPanel: React.FC = () => {
       setNotification?.({ type: "success", message: "已复制分发卡密。" });
     } catch {
       setNotification?.({ type: "error", message: "复制失败，请手动选中后复制。" });
+    }
+  };
+
+  const handleCreateHold = async () => {
+    if (!isSuperAdmin) return;
+    setBusy(true);
+    setError("");
+    try {
+      const createdHold = await createPixelLegalHold({
+        userId: holdForm.userId.trim(),
+        caseRef: holdForm.caseRef.trim(),
+        legalBasis: holdForm.legalBasis.trim(),
+        reason: holdForm.reason.trim() || undefined,
+      });
+      setHolds((items) => [createdHold, ...items]);
+      setHoldForm({ userId: "", caseRef: "", legalBasis: "", reason: "" });
+      setNotification?.({ type: "success", message: `已登记保全：快照 ${createdHold.taskAccessCount + createdHold.usageLogCount} 行（已进审计）。` });
+    } catch {
+      setError("登记保失败：需填写账号、案件编号与法律依据。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReleaseHold = async (hold: PixelEvidenceHoldView) => {
+    if (!isSuperAdmin) return;
+    const approved = await confirm({
+      title: "解除法律保全",
+      description: `解除后快照再保留 30 天后自动删除（案件：${hold.caseRef}）。`,
+      confirmLabel: "解除保全",
+      tone: "danger",
+    });
+    if (!approved) return;
+    try {
+      const released = await releasePixelLegalHold(hold.holdId, { releaseReason: "case closed" });
+      setHolds((items) => items.map((item) => (item.holdId === released.holdId ? released : item)));
+      setNotification?.({ type: "success", message: "已解除保全，快照将在到期后自动回收。" });
+    } catch {
+      setError("解除保失败，请稍后重试。");
+    }
+  };
+
+  const handleCreateApproval = async () => {
+    if (!isSuperAdmin) return;
+    setBusy(true);
+    setError("");
+    try {
+      const createdApproval = await createPixelEvidenceApproval({
+        userId: approvalForm.userId.trim(),
+        caseRef: approvalForm.caseRef.trim(),
+        legalBasis: approvalForm.legalBasis.trim(),
+        validDays: Number(approvalForm.validDays) || undefined,
+      });
+      setApprovals((items) => [createdApproval, ...items]);
+      setApprovalForm({ userId: "", caseRef: "", legalBasis: "", validDays: 7 });
+      setNotification?.({ type: "success", message: "已开启个案取证审批（已进审计）。" });
+    } catch {
+      setError("开启审批失败：需填写账号、案件编号与法律依据。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevokeApproval = async (approval: PixelEvidenceApprovalView) => {
+    if (!isSuperAdmin) return;
+    try {
+      const revoked = await revokePixelEvidenceApproval(approval.approvalId, "revoked from admin panel");
+      setApprovals((items) => items.map((item) => (item.approvalId === revoked.approvalId ? revoked : item)));
+      setNotification?.({ type: "success", message: "已撤销取证审批（已进审计）。" });
+    } catch {
+      setError("撤销失败，请稍后重试。");
+    }
+  };
+
+  const handleReadEvidence = async (record: PixelEvidenceView) => {
+    if (!isSuperAdmin) return;
+    if (readCaseRef.trim() !== record.caseRef) {
+      setError(`请先填写与记录一致的条件编号（${record.caseRef}）再读取；本次读取会进审计。`);
+      return;
+    }
+    try {
+      setReadResult(await readPixelEvidenceRecord(record.evidenceId, readCaseRef.trim()));
+    } catch {
+      setError("读取失败（可能已过期或密钥不对），本次尝试已进审计。");
     }
   };
 
@@ -378,6 +496,129 @@ const PixelAdminPanel: React.FC = () => {
             {busy ? "保存中…" : "保存配置"}
           </button>
         </InfoPanel>
+      )}
+
+      {tab === "compliance" && (
+        <div className="space-y-4">
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">法律保全</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              登记后该账号的物理清理会被跳过，并把当时的任务归属与脱敏溯源快照留存（不带 TTL）。
+              案件编号与法律依据必填：没有这两项就无法说明为什么保留了这些数据。
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600">账号（userId）
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={holdForm.userId} onChange={(event) => setHoldForm((prev) => ({ ...prev, userId: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">案件编号
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={holdForm.caseRef} onChange={(event) => setHoldForm((prev) => ({ ...prev, caseRef: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">法律依据（文书编号 / 用户授权）
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={holdForm.legalBasis} onChange={(event) => setHoldForm((prev) => ({ ...prev, legalBasis: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">备注（可选）
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={holdForm.reason} onChange={(event) => setHoldForm((prev) => ({ ...prev, reason: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+            </div>
+            <button type="button" onClick={() => void handleCreateHold()} disabled={busy || !isSuperAdmin} className="mt-3 min-h-11 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+              登记保全并快照
+            </button>
+            {holds.length === 0
+              ? <p className="mt-3 text-sm text-slate-500">无数据。</p>
+              : (
+                <ul className="mt-3 space-y-2">
+                  {holds.map((hold) => (
+                    <li key={hold.holdId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-800">{hold.caseRef}</span>
+                        <InfoBadge tone={hold.releasedAt ? "slate" : "amber"}>{hold.releasedAt ? "已解除" : "保全中"}</InfoBadge>
+                      </div>
+                      <div className="mt-1">账号 {hold.userId} · 快照 {hold.taskAccessCount} 条归属 / {hold.usageLogCount} 条溯源{hold.truncated ? "（已截断）" : ""}</div>
+                      <div className="mt-0.5 text-slate-400">依据 {hold.legalBasis} · 经办 {hold.issuedByUsername} · {formatTime(hold.issuedAt)}{hold.purgeAfter ? ` · 回收于 ${formatTime(hold.purgeAfter)}` : ""}</div>
+                      {isSuperAdmin && !hold.releasedAt && (
+                        <button type="button" onClick={() => void handleReleaseHold(hold)} className="mt-2 min-h-9 rounded-2xl border border-slate-200 px-3 text-rose-700 hover:border-rose-200 hover:bg-rose-50">解除保全</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </InfoPanel>
+
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">内容级取证审批</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              默认不留存账号内容。只有在这里开启了个案审批（含法律依据与有效期）后，该账号之后的提交才会被加密留存，最长 30 天，到期自动删除。
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600">账号（userId）
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={approvalForm.userId} onChange={(event) => setApprovalForm((prev) => ({ ...prev, userId: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">案件编号
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={approvalForm.caseRef} onChange={(event) => setApprovalForm((prev) => ({ ...prev, caseRef: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">法律依据
+                <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={approvalForm.legalBasis} onChange={(event) => setApprovalForm((prev) => ({ ...prev, legalBasis: event.target.value }))} disabled={!isSuperAdmin} />
+              </label>
+              <label className="text-xs font-semibold text-slate-600">有效期（天，上限 30）
+                <input type="number" min={1} max={30} className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={approvalForm.validDays} onChange={(event) => setApprovalForm((prev) => ({ ...prev, validDays: Number(event.target.value) }))} disabled={!isSuperAdmin} />
+              </label>
+            </div>
+            <button type="button" onClick={() => void handleCreateApproval()} disabled={busy || !isSuperAdmin} className="mt-3 min-h-11 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50">开启审批</button>
+            {approvals.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {approvals.map((approval) => (
+                  <li key={approval.approvalId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800">{approval.caseRef}</span>
+                      <InfoBadge tone={approval.revokedAt ? "slate" : "emerald"}>{approval.revokedAt ? "已撤销" : "生效中"}</InfoBadge>
+                    </div>
+                    <div className="mt-1">账号 {approval.userId} · 依据 {approval.legalBasis} · 到期 {formatTime(approval.expiresAt)}</div>
+                    <div className="mt-0.5 text-slate-400">审批 {approval.approvedByUsername} · {formatTime(approval.approvedAt)}</div>
+                    {isSuperAdmin && !approval.revokedAt && (
+                      <button type="button" onClick={() => void handleRevokeApproval(approval)} className="mt-2 min-h-9 rounded-2xl border border-slate-200 px-3 text-rose-700 hover:border-rose-200 hover:bg-rose-50">撤销</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </InfoPanel>
+
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">取证记录（只有元数据）</h3>
+            <p className="mt-1 text-xs text-slate-500">读取内容需填写与记录一致的条件编号；每一次读取都会写审计（谁、凭哪个案件、读了哪条）。</p>
+            <label className="mt-3 block text-xs font-semibold text-slate-600">本次读取引用的案件编号
+              <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={readCaseRef} onChange={(event) => setReadCaseRef(event.target.value)} placeholder="必须与记录一致" />
+            </label>
+            {evidence.length === 0
+              ? <p className="mt-3 text-sm text-slate-500">无数据（默认就不会有）。</p>
+              : (
+                <ul className="mt-3 space-y-2">
+                  {evidence.map((record) => (
+                    <li key={record.evidenceId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-slate-800">{record.evidenceId}</span>
+                        <InfoBadge tone="amber">到期 {formatTime(record.expiresAt)}</InfoBadge>
+                      </div>
+                      <div className="mt-1">账号 {record.userId} · 案件 {record.caseRef} · {record.accountCount} 个账号 · {record.byteSize} 字节</div>
+                      <div className="mt-0.5 text-slate-400">留取 {formatTime(record.capturedAt)} · 已读取 {record.accessCount} 次{record.lastAccessedAt ? ` · 最近 ${formatTime(record.lastAccessedAt)}` : ""}</div>
+                      {isSuperAdmin && (
+                        <button type="button" onClick={() => void handleReadEvidence(record)} className="mt-2 min-h-9 rounded-2xl border border-slate-200 px-3 text-slate-700 hover:border-slate-300">读取内容</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            {readResult && (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">内容（案件 {readResult.meta.caseRef}）— 本次读取已进审计</h4>
+                  <button type="button" onClick={() => setReadResult(null)} className="text-xs text-slate-500 underline-offset-2 hover:underline">关闭并清屏</button>
+                </div>
+                <pre className="mt-2 max-h-64 overflow-auto rounded-2xl border border-amber-200 bg-white p-3 text-[11px] leading-5 text-slate-700">{readResult.accountsText}</pre>
+              </div>
+            )}
+          </InfoPanel>
+        </div>
       )}
 
       {created && (

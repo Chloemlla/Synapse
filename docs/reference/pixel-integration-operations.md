@@ -30,9 +30,18 @@ Pixel 是 GGGGGG 来源仓库的「自助折扣链接任务」能力，在 Synap
 | `pixel_task_access` | 任务归属（谁提交了哪个上游任务） | 唯一 `userId+idempotencyKey`；`userId+createdAt`；`userId+upstreamTaskId`；`userId+distributionCdkHash+createdAt` | 同上；软删除标记 `subjectDeletedAt` |
 | `pixel_usage_logs` | 脱敏溯源 | `createdAt` TTL（默认 30 天，`PIXEL_USAGE_LOG_RETENTION_DAYS`）；`mappingId+createdAt`；`userId+createdAt` | 纯遥测，回滚时可整表删除而不影响业务 |
 | `pixel_integration_configs` | 上游地址/主机清单/超时/开关 | 唯一 `key` | **回滚时务必先关闭 `enabled`**，再考虑删除配置 |
+| `pixel_evidence_holds` | 法律保全快照 | `purgeAfter` TTL（保全中为 null ⇒ 永不自动清理） | 保全中**不要**删；解除后 30 天自动回收 |
+| `pixel_evidence_approvals` | 内容级取证审批单 | `expiresAt` TTL（+180 天） | 合规凭证，随案件生命周期保留 |
+| `pixel_evidence` | 内容级取证（加密） | `expiresAt` TTL（≤ 30 天） | 独立子密钥加密；删库前确认没有待回应的法律程序 |
 
 TTL 的注意点：MongoDB 的 TTL 索引**只在建索引时读取 `expireAfterSeconds`**，
-所以调整保留天数后，需要重建索引才会生效（代码里已就此写了注释）。
+所以调整保留天数（`PIXEL_USAGE_LOG_RETENTION_DAYS`）后，需要重建索引才会生效。
+当前生效值与取数口径在 `/admin/pixel` 的「保留策略」卡片里随总览一起显示（`usage.retentionDays`），
+改了环境变量但没重建索引时，界面显示的是**新值**、实际过期仍按旧索引 —— 这一点在卡片文案里已写明。
+
+> 保全为何是「快照」而不是「给主表加 held 标记」：`pixel_usage_logs` 靠 TTL 按 `createdAt` 自动过期，
+> TTL 是索引的物理行为，加标记拦不住它。快照集合的 `purgeAfter` 在保全期间为 `null`，
+> 因此证据必然留得住；账号注销路径也会先查 legal hold，命中就跳过物理删除（`purgePixelTelemetryUnlessHeld`）。
 
 ## 4. 两种回滚路径
 
@@ -99,3 +108,57 @@ db.pixel_integration_configs.deleteMany({})
    待并入时把 `integrationConfigService` 换成运行时配置的一个分组即可，调用方只认
    `loadPixelIntegrationConfig()`。
 4. 密钥轮换/重加密流程未实现（见第 5 节）。
+
+## 9. 法律保全与内容级取证（收到法律程序时怎么做）
+
+### 9.1 先想清楚两条通道的差别
+
+| 通道 | 拿到什么 | 前提 | 适用 |
+|---|---|---|---|
+| **法律保全**（`pixel_evidence_holds`） | 当时**已经存在**的数据快照：任务归属 + 脱敏溯源（遮罩卡密、账号数、上游状态、耗时） | 案件编号 + 法律依据（必填） | 默认就该走这条：账号内容本来不存在，保全不会凭空产生它 |
+| **内容级取证**（`pixel_evidence`） | 这次提交的**账号内容**（加密） | 先有个案**审批单**（含法律依据与有效期，≤ 30 天） | 只有在确有法律依据要求提供内容时才开启 |
+
+两条通道都会写审计：谁、什么时候、凭哪个案件编号、对哪个账号、做了什么。
+
+### 9.2 操作（`/admin/pixel` → 「法律保全与取证」，均需超级管理员）
+
+```bash
+# 1) 登记保全（冻结删除 + 立即快照）
+#    → 该账号此后不会被物理清理（含账号注销路径）
+POST /api/admin/pixel/legal-holds
+{ "userId": "<uid>", "caseRef": "CASE-2026-001", "legalBasis": "调取证据通知书 <编号>", "reason": "备查" }
+
+# 2) 解除保全（快照再保留 30 天后自动回收；可用 purgeDelayDays 调整）
+POST /api/admin/pixel/legal-holds/<holdId>/release
+{ "releaseReason": "case closed", "purgeDelayDays": 30 }
+
+# 3) 需要内容时先开审批（限定账号 + 有效期），之后的提交才会被加密留存
+POST /api/admin/pixel/evidence-approvals
+{ "userId": "<uid>", "caseRef": "CASE-2026-001", "legalBasis": "调取证据通知书 <编号>", "validDays": 7 }
+
+# 4) 读取内容：必须带上与记录一致的条件编号；每一次读取都进审计
+POST /api/admin/pixel/evidence/<evidenceId>/read
+{ "caseRef": "CASE-2026-001" }
+
+# 5) 撤销审批（已留存内容仍按各自的到期时间回收）
+POST /api/admin/pixel/evidence-approvals/<approvalId>/revoke
+{ "reason": "case closed" }
+```
+
+### 9.3 必须先满足的前提（不是可选项）
+
+1. **已在隐私说明中披露**：账号内容留存的唯一例外情形写进了 `privacy-data-map.json`
+   （`pixel-account-evidence` 数据集），提交页与操作提示也向用户说明「在 X 情形下留存 Y 天」。
+   没有这条披露就不要开启取证 —— 那就不再是「合规取证」，而是未告知收集。
+2. **限定期限**：留存上限 30 天且不超过审批有效期；到期由 TTL 自动删除。
+3. **可追责**：读取只允许超级管理员，且每次读取写审计（含案件编号、经办人、证据 id、
+   账号数与字节数）；案件编号不匹配一律拒绝返回内容。
+4. **不截断**：单条超过 256 KiB 时整条不留（截断的凭据等于伪造证据），管理员需分批或另议。
+
+### 9.4 密钥与风险
+
+- 取证内容用**独立子密钥**（HKDF label `pixel-account-evidence-v1`）+ AES-256-GCM，
+  AAD 绑定版本，跨用途重放会解密失败；与「上游卡密」那把子密钥互不影响。
+- **未实现**：主密钥轮换后的批量重加密。轮换前必须先把待回应的法律程序处理完，
+  否则旧密文可能无法解密（`decryptPixelEvidence` 会直接报错，而不是回退明文）。
+- 检查清单：确认没有保全中的账号、没有生效审批、没有未到期的取证记录，再动主密钥。

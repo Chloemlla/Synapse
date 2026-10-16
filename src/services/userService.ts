@@ -5,7 +5,7 @@ import logger from "../utils/logger";
 import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
 import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
 import { checkAnyLegalHold } from "./legalHoldService";
-import { pixelUsageLogService } from "../pixel/usageLogService";
+import { purgePixelTelemetryUnlessHeld } from "../pixel/evidenceHoldService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import { deleteGeoGebraShareCover } from "../geogebra/shareAssetStorage";
 import {
@@ -620,25 +620,13 @@ async function purgeGeoGebraShareCovers(userId: string): Promise<void> {
 }
 
 /**
- * Pixel 的脱敏溯源是纯遥测（无账号内容），账号注销时**就地硬删**——与其它集合的软标记策略不同。
- *
- * 但法律保留优先：命中 hold（或库不可用只能给出“疑似被 hold”）时一律不删，
- * 留给人工按程序处理；物理删除不可逆，宁可多留一次、也不能把证据删掉。
+ * 账号注销时的 Pixel 侧收尾：脱敏溯源就地硬删，但法律保留优先（策略本体在 Pixel 域，便于单测）。
+ * 清不掉或命中保留都不阻断账号注销。
  */
 async function purgePixelUserTelemetry(userId: string): Promise<void> {
   try {
-    const hold = await checkAnyLegalHold({ userId });
-    if (hold.held) {
-      logger.warn("[UserService] Pixel 溯源保留：命中法律保留，跳过物理删除", {
-        caseRef: hold.hold?.caseRef ?? "unknown",
-        undetermined: hold.unknown,
-      });
-      return;
-    }
-    const removed = await pixelUsageLogService.deleteForUser(userId);
-    logger.info("[UserService] Pixel 脱敏溯源已随账号注销清除", { removed });
+    await purgePixelTelemetryUnlessHeld(userId);
   } catch {
-    // 清不掉不能阻断账号注销：记录会由 TTL 到期自动回收。
     logger.warn("[UserService] Pixel 溯源清理延后");
   }
 }

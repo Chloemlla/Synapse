@@ -143,6 +143,36 @@ describe("pixel 管理端路由", () => {
       },
     },
     dashboard: async () => DASHBOARD,
+    // 合规通道（保全/取证）：本文件只驗管理端契约，这两个通道各自有用例
+    // （src/tests/pixelEvidence.test.ts）；这里给能跑通的最小实现。
+    holds: {
+      async create() {
+        throw new PixelDomainError("本用例不覆盖保全登记", 400, "PIXEL_HOLD_NOT_COVERED");
+      },
+      async list() {
+        return [];
+      },
+      async release() {
+        throw new PixelDomainError("本用例不覆盖保全解除", 404, "PIXEL_HOLD_NOT_FOUND");
+      },
+    },
+    evidence: {
+      async createApproval() {
+        throw new PixelDomainError("本用例不覆盖取证审批", 400, "PIXEL_EVIDENCE_NOT_COVERED");
+      },
+      async listApprovals() {
+        return [];
+      },
+      async revokeApproval() {
+        throw new PixelDomainError("本用例不覆盖取证审批", 404, "PIXEL_EVIDENCE_APPROVAL_NOT_FOUND");
+      },
+      async listEvidence() {
+        return [];
+      },
+      async readEvidence() {
+        throw new PixelDomainError("本用例不覆盖取证读取", 404, "PIXEL_EVIDENCE_NOT_FOUND");
+      },
+    },
     audit: (entry) => {
       audits.push(entry as unknown as Record<string, unknown>);
     },

@@ -7,6 +7,18 @@ import {
   savePixelIntegrationConfig,
 } from "../../pixel/integrationConfigService";
 import { pixelUsageLogService } from "../../pixel/usageLogService";
+import {
+  createPixelEvidenceHold,
+  listPixelEvidenceHolds,
+  releasePixelEvidenceHold,
+} from "../../pixel/evidenceHoldService";
+import {
+  createEvidenceApproval,
+  listEvidenceApprovals,
+  listPixelEvidence,
+  readPixelEvidence,
+  revokeEvidenceApproval,
+} from "../../pixel/evidenceService";
 import { suppressAuditPayloadCapture } from "../../pixel/requestAudit";
 import { PixelDomainError, type PixelAdminDashboardView } from "../../pixel/types";
 import { AuditLogService, type AuditEntry } from "../../services/auditLogService";
@@ -40,6 +52,20 @@ export interface PixelAdminRouterDeps {
     save: typeof savePixelIntegrationConfig;
   };
   dashboard: () => Promise<PixelAdminDashboardView>;
+  /** 法律保全：登记（快照）/列表/解除。 */
+  holds: {
+    create: typeof createPixelEvidenceHold;
+    list: typeof listPixelEvidenceHolds;
+    release: typeof releasePixelEvidenceHold;
+  };
+  /** 内容级取证：按审批开启、逐次审计读取。 */
+  evidence: {
+    createApproval: typeof createEvidenceApproval;
+    listApprovals: typeof listEvidenceApprovals;
+    revokeApproval: typeof revokeEvidenceApproval;
+    listEvidence: typeof listPixelEvidence;
+    readEvidence: typeof readPixelEvidence;
+  };
   /** 注入点：单测不连 Mongo；默认 fire-and-forget 写审计。 */
   audit?: (entry: AuditEntry) => void | Promise<void>;
 }
@@ -381,6 +407,298 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
     }
   });
 
+  /**
+   * @openapi
+   * /api/admin/pixel/legal-holds:
+   *   get:
+   *     summary: 列出法律保全（受法律程序约束的账号）
+   *     description: 只返回保全元数据与快照行数，不返回快照明细。
+   *     responses:
+   *       200:
+   *         description: 保全列表
+   *   post:
+   *     summary: 登记法律保全并快照证据（仅超级管理员）
+   *     description: 案件编号与法律依据必填。登记后该账号的物理清理一律跳过，快照不带 TTL。
+   *     responses:
+   *       201:
+   *         description: 已登记
+   *       400:
+   *         description: 缺案件编号或法律依据
+   *       403:
+   *         description: 需要超级管理员权限
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.get("/pixel/legal-holds", authenticateAdmin, async (req, res) => {
+    try {
+      const includeReleased = String(req.query.includeReleased ?? "") === "1";
+      res.json({ success: true, data: { items: await deps.holds.list({ includeReleased }) } });
+    } catch (error) {
+      sendError(res, "list-holds", error);
+    }
+  });
+
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/legal-holds", authenticateSuperAdmin, async (req, res) => {
+    const body = jsonBody(req);
+    try {
+      const created = await deps.holds.create({
+        userId: String(body.userId ?? ""),
+        caseRef: String(body.caseRef ?? ""),
+        legalBasis: String(body.legalBasis ?? ""),
+        reason: typeof body.reason === "string" ? body.reason : "",
+        actor: actorOf(req),
+      });
+      // 审计里必须能回答「凭哪个案件、由谁、何时冻结了谁」：legalBasis 是法律程序的依据文本，不是敏感数据。
+      audit(req, res, {
+        module: "user",
+        action: "pixel.legal-hold.create",
+        targetId: created.holdId,
+        detail: {
+          caseRef: created.caseRef,
+          legalBasis: created.legalBasis,
+          taskAccessRows: created.taskAccessCount,
+          usageLogRows: created.usageLogCount,
+          truncated: created.truncated,
+        },
+      });
+      res.status(201).json({ success: true, data: created });
+    } catch (error) {
+      audit(req, res, {
+        module: "user",
+        action: "pixel.legal-hold.create",
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "create-hold", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/legal-holds/{holdId}/release:
+   *   post:
+   *     summary: 解除法律保全（仅超级管理员）
+   *     description: 解除后快照再保留一段时间（默认 30 天）后由 TTL 自动回收。
+   *     responses:
+   *       200:
+   *         description: 已解除
+   *       404:
+   *         description: 保全记录不存在
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/legal-holds/:holdId/release", authenticateSuperAdmin, async (req, res) => {
+    const body = jsonBody(req);
+    const holdId = String(req.params.holdId ?? "");
+    try {
+      const released = await deps.holds.release({
+        holdId,
+        releaseReason: typeof body.releaseReason === "string" ? body.releaseReason : "",
+        purgeDelayDays: typeof body.purgeDelayDays === "number" ? body.purgeDelayDays : undefined,
+        actor: actorOf(req),
+      });
+      audit(req, res, {
+        module: "user",
+        action: "pixel.legal-hold.release",
+        targetId: holdId,
+        detail: { caseRef: released.caseRef, purgeAfter: released.purgeAfter, releaseReason: released.releaseReason },
+      });
+      res.json({ success: true, data: released });
+    } catch (error) {
+      audit(req, res, {
+        module: "user",
+        action: "pixel.legal-hold.release",
+        targetId: holdId,
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "release-hold", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/evidence-approvals:
+   *   get:
+   *     summary: 列出内容级取证审批
+   *     responses:
+   *       200:
+   *         description: 审批列表
+   *   post:
+   *     summary: 开启内容级取证审批（仅超级管理员）
+   *     description: 必须写明案件编号与法律依据；仅对该账号、在有效期内留取账号内容，到期自动清除。
+   *     responses:
+   *       201:
+   *         description: 已开启
+   *       400:
+   *         description: 缺案件编号或法律依据
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.get("/pixel/evidence-approvals", authenticateAdmin, async (req, res) => {
+    try {
+      const includeRevoked = String(req.query.includeRevoked ?? "") === "1";
+      res.json({ success: true, data: { items: await deps.evidence.listApprovals({ includeRevoked }) } });
+    } catch (error) {
+      sendError(res, "list-approvals", error);
+    }
+  });
+
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/evidence-approvals", authenticateSuperAdmin, async (req, res) => {
+    const body = jsonBody(req);
+    try {
+      const created = await deps.evidence.createApproval({
+        userId: String(body.userId ?? ""),
+        caseRef: String(body.caseRef ?? ""),
+        legalBasis: String(body.legalBasis ?? ""),
+        reason: typeof body.reason === "string" ? body.reason : "",
+        validDays: typeof body.validDays === "number" ? body.validDays : undefined,
+        actor: actorOf(req),
+      });
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence-approval.create",
+        targetId: created.approvalId,
+        detail: { caseRef: created.caseRef, legalBasis: created.legalBasis, expiresAt: created.expiresAt },
+      });
+      res.status(201).json({ success: true, data: created });
+    } catch (error) {
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence-approval.create",
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "create-approval", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/evidence-approvals/{approvalId}/revoke:
+   *   post:
+   *     summary: 撤销内容级取证审批（仅超级管理员）
+   *     responses:
+   *       200:
+   *         description: 已撤销
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/evidence-approvals/:approvalId/revoke", authenticateSuperAdmin, async (req, res) => {
+    const body = jsonBody(req);
+    const approvalId = String(req.params.approvalId ?? "");
+    try {
+      const revoked = await deps.evidence.revokeApproval({
+        approvalId,
+        reason: typeof body.reason === "string" ? body.reason : "",
+        actor: actorOf(req),
+      });
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence-approval.revoke",
+        targetId: approvalId,
+        detail: { caseRef: revoked.caseRef, revokeReason: revoked.revokeReason },
+      });
+      res.json({ success: true, data: revoked });
+    } catch (error) {
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence-approval.revoke",
+        targetId: approvalId,
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "revoke-approval", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/evidence:
+   *   get:
+   *     summary: 列出内容级取证记录（只有元数据）
+   *     description: 默认只回元数据（案件、时间、账号数、访问次数、到期时间）；读取内容走单独的读取端点，且逐次进审计。
+   *     responses:
+   *       200:
+   *         description: 取证元数据列表
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.get("/pixel/evidence", authenticateSuperAdmin, async (req, res) => {
+    try {
+      const items = await deps.evidence.listEvidence({
+        caseRef: typeof req.query.caseRef === "string" ? req.query.caseRef : undefined,
+        userId: typeof req.query.userId === "string" ? req.query.userId : undefined,
+        limit: typeof req.query.limit === "string" ? Number(req.query.limit) : undefined,
+      });
+      res.json({ success: true, data: { items } });
+    } catch (error) {
+      sendError(res, "list-evidence", error);
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/evidence/{evidenceId}/read:
+   *   post:
+   *     summary: 读取一条取证内容（仅超级管理员，逐次审计）
+   *     description: 必须带 caseRef 且与记录一致。每次读取都会写一条含案件编号、经办人与证据 id 的审计。
+   *     responses:
+   *       200:
+   *         description: 解密后的账号内容（不回显到其它任何地方）
+   *       400:
+   *         description: 未带案件编号或与记录不符
+   *       404:
+   *         description: 取证记录不存在
+   *       410:
+   *         description: 已过期
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.post("/pixel/evidence/:evidenceId/read", authenticateSuperAdmin, async (req, res) => {
+    // 响应体里是账号内容：必须让全局审计对本次请求「不捕获载荷」，否则一份明文会落到审计库。
+    suppressAuditPayloadCapture(req);
+    const body = jsonBody(req);
+    const evidenceId = String(req.params.evidenceId ?? "");
+    try {
+      const result = await deps.evidence.readEvidence(evidenceId);
+      const requestedCaseRef = String(body.caseRef ?? "").trim();
+      if (!requestedCaseRef || requestedCaseRef !== result.meta.caseRef) {
+        // 案件不匹配时不返回内容：避免有人用一次审批去翻别的案子。
+        audit(req, res, {
+          module: "user",
+          action: "pixel.evidence.read.denied",
+          targetId: evidenceId,
+          result: "failure",
+          errorMessage: "case-ref-mismatch",
+          detail: { evidenceCaseRef: result.meta.caseRef },
+        });
+        res.status(400).json({ success: false, error: "案件编号与记录不一致，已拒绝。", code: "PIXEL_EVIDENCE_CASE_MISMATCH" });
+        return;
+      }
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence.read",
+        targetId: evidenceId,
+        detail: {
+          caseRef: result.meta.caseRef,
+          legalBasis: result.meta.legalBasis,
+          accountCount: result.meta.accountCount,
+          byteSize: result.meta.byteSize,
+          accessCount: result.meta.accessCount,
+        },
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.json({ success: true, data: { meta: result.meta, accountsText: result.accountsText } });
+    } catch (error) {
+      audit(req, res, {
+        module: "user",
+        action: "pixel.evidence.read",
+        targetId: evidenceId,
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "read-evidence", error);
+    }
+  });
+
   return router;
 }
 
@@ -389,4 +707,12 @@ export default createPixelAdminRouter({
   usage: pixelUsageLogService,
   config: { getView: getPixelIntegrationConfigView, save: savePixelIntegrationConfig },
   dashboard: getPixelAdminDashboard,
+  holds: { create: createPixelEvidenceHold, list: listPixelEvidenceHolds, release: releasePixelEvidenceHold },
+  evidence: {
+    createApproval: createEvidenceApproval,
+    listApprovals: listEvidenceApprovals,
+    revokeApproval: revokeEvidenceApproval,
+    listEvidence: listPixelEvidence,
+    readEvidence: readPixelEvidence,
+  },
 });

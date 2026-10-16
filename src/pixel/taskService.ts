@@ -1,4 +1,5 @@
 import { normalizeIdempotencyKey, parsePixelAccountsText } from "./accountText";
+import { capturePixelEvidence } from "./evidenceService";
 import { pixelCdkMappingService, resolveEnabledCardMapping, type PixelResolvedCard } from "./cdkMappingService";
 import { pixelCardService } from "./cardService";
 import { pixelLimitsFromEnv, type PixelRuntimeLimits } from "./runtime";
@@ -67,6 +68,13 @@ export interface PixelTaskServiceDeps {
   usage: Pick<typeof pixelUsageLogService, "record" | "listForUser" | "deleteForUser">;
   /** 读服务器开关（提交前校验选中服务是否被后台关闭）。 */
   settings: (userId: string, requestId?: string) => Promise<PixelSettingsView>;
+  /**
+   * 可选：内容级取证。只在命中有效审批时服务才真正写入；未注入时该能力整体关闭。
+   * 即「默认对所有用户关闭，只对特定个案按审批开启」。
+   */
+  evidence?: {
+    capture: (input: { userId: string; accountsText: string; accountCount: number }) => Promise<unknown>;
+  };
   limits?: PixelRuntimeLimits;
 }
 
@@ -272,6 +280,20 @@ export function createPixelTaskService(deps: PixelTaskServiceDeps) {
       if (!reservation.created) return replaySubmission(reservation.record);
 
       const accessId = reservation.record.accessId;
+
+      // 内容级取证：**只在命中有效审批（未撤销、未过期、针对这个账号）时才留取**。
+      // 没有审批就是默认状态：不写、也不报错。失败绝不能影响提交本身（best-effort）。
+      if (deps.evidence) {
+        try {
+          await deps.evidence.capture({
+            userId,
+            accountsText: parsed.normalizedText,
+            accountCount: parsed.accountCount,
+          });
+        } catch {
+          // 取证是旁路能力：它抛错不能被用户看到，也不能改变提交结果。
+        }
+      }
       const logBase = {
         userId,
         mappingId: resolved.record.mappingId,
@@ -721,4 +743,6 @@ export const pixelTaskService = createPixelTaskService({
   access: pixelTaskAccessStore,
   usage: pixelUsageLogService,
   settings: (userId, requestId) => pixelCardService.getSettings(userId, requestId),
+  // 取证通道默认就挂着：是否真的写入完全取决于「有没有有效审批」（见 evidenceService）。
+  evidence: { capture: capturePixelEvidence },
 });
