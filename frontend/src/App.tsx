@@ -131,6 +131,7 @@ const PublicShortLinkCreator = React.lazy(() => import('./components/PublicShort
 const SpeechToTextPage = React.lazy(() => import('./components/speech-to-text/SpeechToTextPage').then((module) => ({ default: module.SpeechToTextPage })));
 const GeoGebraPage = React.lazy(() => import('./components/geogebra/GeoGebraPage'));
 const GeoGebraSharePage = React.lazy(() => import('./components/geogebra/GeoGebraSharePage'));
+const PixelWorkbenchPage = React.lazy(() => import('./components/pixel/PixelWorkbenchPage'));
 
 // 人机验证页面懒加载（验证方式由后端 captcha-providers 选择）
 const CaptchaVerificationPage = React.lazy(() => import('./components/CaptchaVerificationPage'));
@@ -755,6 +756,8 @@ const App: React.FC = () => {
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
         <Route path="/geogebra" element={renderAnimatedRoute(<GeoGebraPage />)} />
         <Route path="/geogebra/share/:slug" element={renderAnimatedRoute(<GeoGebraSharePage />)} />
+        {/* Pixel 会把账号凭据交给外部服务，必须登录 + 服务端同意门禁（页内再叠提示与确认）。 */}
+        <Route path="/pixel" element={renderProtectedRoute(<PixelWorkbenchPage />)} />
         <Route path="/librechat" element={renderProtectedRoute(<LibreChatPage />)} />
         <Route path="/tiger-adventure" element={renderProtectedRoute(<TigerAdventure />)} />
         <Route path="/coin-flip" element={renderProtectedRoute(<CoinFlip />)} />
@@ -808,6 +811,7 @@ const App: React.FC = () => {
       '/age-calculator': 'Synapse - 年龄计算器',
       '/geogebra': 'Synapse - GeoGebra 工作台',
       '/geogebra/share': 'Synapse - GeoGebra 分享',
+      '/pixel': 'Synapse - Pixel 自助折扣链接',
       '/vt-ratios': 'Synapse - v-t 图六个比例',
       '/email-sender': 'Synapse - 邮件发送',
       '/profile': 'Synapse - 个人资料',
@@ -853,6 +857,7 @@ const App: React.FC = () => {
       '/age-calculator': '精确计算年龄，支持多种日期格式和时区',
       '/geogebra': '编写数学脚本、运行交互画布并管理项目',
       '/geogebra/share': '查看 GeoGebra 公开分享的画布',
+      '/pixel': '用卡密提交账号，自助获取折扣链接与绑卡结果',
       '/vt-ratios': '用 v-t 图交互演示初速度为零的匀变速直线运动的六条比例推论',
       '/logshare': '安全分享和查看日志文件，支持加密传输',
       '/artifacts': 'View a shared NexAI Artifact.',

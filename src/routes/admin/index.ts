@@ -16,6 +16,7 @@ import crashReportsRouter from "./crashReports";
 import integrationsRouter from "./integrations";
 import ipRiskLogsRouter from "./ipRiskLogs";
 import geoGebraAdminRouter from "./geogebra";
+import pixelAdminRouter from "./pixelRoutes";
 import mobileTokensRouter from "./mobileTokens";
 import overviewRouter from "./overview";
 import policyConsentsRouter from "./policyConsents";
@@ -91,6 +92,8 @@ router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
+// Pixel 任务与 CDK 映射（页面 /admin/pixel；读接口 admin + 页面授权，凭据类写接口 superadmin）。
+router.use(pixelAdminRouter);
 router.use(mobileTokensRouter);
 // 管理总览的系统级汇总（跨集合计数；默认仅超管，页面授权里可单独放开）。
 router.use(overviewRouter);

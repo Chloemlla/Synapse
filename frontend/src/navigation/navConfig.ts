@@ -140,6 +140,7 @@ export function getRootNavGroups(ctx: NavVisibilityContext): NavGroup[] {
           },
           { title: '图片上传', url: '/image-upload', icon: FaImage as IconType },
           { title: 'GeoGebra 工作台', url: '/geogebra', icon: FaProjectDiagram as IconType },
+          { title: 'Pixel 自助折扣', url: '/pixel', icon: FaLink as IconType },
           {
             title: '公共短链',
             url: '/public-shortlink',

@@ -74,6 +74,7 @@ export const ADMIN_MODULE_LOADERS = {
   'crash-reports': () => import('@/components/admin/CrashReportManager'),
   'qq-guard': () => import('@/components/admin/QqGuardManager'),
   geogebra: () => import('@/components/admin/GeoGebraAdminPanel'),
+  pixel: () => import('@/components/admin/PixelAdminPanel'),
   'translation-audit': () => import('@/components/TranslationAuditViewer'),
   'email-traceability': () => import('@/components/EmailTraceability'),
   'tts-history': () => import('@/components/TtsGenerationManager'),

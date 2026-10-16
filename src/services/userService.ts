@@ -5,6 +5,7 @@ import logger from "../utils/logger";
 import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
 import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
 import { checkAnyLegalHold } from "./legalHoldService";
+import { pixelUsageLogService } from "../pixel/usageLogService";
 import { hasPasswordMaterial, PASSWORD_MATERIAL_FIELDS } from "../utils/passwordMaterial";
 import { deleteGeoGebraShareCover } from "../geogebra/shareAssetStorage";
 import {
@@ -599,6 +600,8 @@ const USER_CASCADE_COLLECTIONS: ReadonlyArray<{ collection: string; field: strin
   { collection: "geogebra_project_versions", field: "ownerUserId" },
   { collection: "geogebra_review_comments", field: "authorUserId" },
   { collection: "geogebra_shares", field: "ownerUserId" },
+  // Pixel：任务归属是用户自己的数据 → 同事务软标记；脱敏溯源是纯遥测，见 purgePixelUserTelemetry。
+  { collection: "pixel_task_access", field: "userId" },
   { collection: "cdks", field: "userId" },
   { collection: "registration_invites", field: "userId" },
   { collection: "short_urls", field: "userId" },
@@ -613,6 +616,30 @@ async function purgeGeoGebraShareCovers(userId: string): Promise<void> {
   } catch {
     // subjectDeletedAt already makes these covers inaccessible; a cleanup error must not undo account deactivation.
     logger.warn("[UserService] GeoGebra share cover cleanup deferred");
+  }
+}
+
+/**
+ * Pixel 的脱敏溯源是纯遥测（无账号内容），账号注销时**就地硬删**——与其它集合的软标记策略不同。
+ *
+ * 但法律保留优先：命中 hold（或库不可用只能给出“疑似被 hold”）时一律不删，
+ * 留给人工按程序处理；物理删除不可逆，宁可多留一次、也不能把证据删掉。
+ */
+async function purgePixelUserTelemetry(userId: string): Promise<void> {
+  try {
+    const hold = await checkAnyLegalHold({ userId });
+    if (hold.held) {
+      logger.warn("[UserService] Pixel 溯源保留：命中法律保留，跳过物理删除", {
+        caseRef: hold.hold?.caseRef ?? "unknown",
+        undetermined: hold.unknown,
+      });
+      return;
+    }
+    const removed = await pixelUsageLogService.deleteForUser(userId);
+    logger.info("[UserService] Pixel 脱敏溯源已随账号注销清除", { removed });
+  } catch {
+    // 清不掉不能阻断账号注销：记录会由 TTL 到期自动回收。
+    logger.warn("[UserService] Pixel 溯源清理延后");
   }
 }
 
@@ -732,6 +759,7 @@ export const softDeleteUser = async (
   }
 
   await purgeGeoGebraShareCovers(id);
+  await purgePixelUserTelemetry(id);
   logger.info("[UserService] 账号已软删除", { id, by, reason });
   return true;
 };

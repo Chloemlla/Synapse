@@ -13,6 +13,7 @@ type LimiterCategory =
   | "tts-jobs"
   | "transcribe"
   | "docTool"
+  | "pixel"
   | "admin"
   | "verification"
   | "command"
@@ -373,6 +374,32 @@ const LIMITER_DEFINITIONS = {
     keyGenerator: userIpDualKey,
     message: "GeoGebra 工作台请求过于频繁，请稍后再试",
   },
+  // Pixel 的量级参考来源站点：验证 20/分、提交 10/分、详情查询 60/分。
+  // 全部按「用户 + IP」双键分桶：卡密额度属于账号，不能只按 IP 限。
+  pixelVerify: {
+    profile: "authRead",
+    category: "pixel",
+    max: 20,
+    windowMs: 60_000,
+    keyGenerator: userIpDualKey,
+    message: "卡密验证过于频繁，请稍后再试",
+  },
+  pixelSubmit: {
+    profile: "sensitive",
+    category: "pixel",
+    max: 10,
+    windowMs: 60_000,
+    keyGenerator: userIpDualKey,
+    message: "任务提交过于频繁，请稍后再试",
+  },
+  pixelRead: {
+    profile: "authRead",
+    category: "pixel",
+    max: 60,
+    windowMs: 60_000,
+    keyGenerator: userIpDualKey,
+    message: "任务查询过于频繁，请稍后再试",
+  },
   admin: {
     profile: "admin",
     category: "admin",
@@ -726,6 +753,9 @@ export const jobsLimiter = limiterFromDefinition("ttsJobs");
 export const transcribeLimiter = limiterFromDefinition("transcribe");
 export const docToolLimiter = limiterFromDefinition("docTool");
 export const geogebraLimiter = limiterFromDefinition("geogebra");
+export const pixelVerifyLimiter = limiterFromDefinition("pixelVerify");
+export const pixelSubmitLimiter = limiterFromDefinition("pixelSubmit");
+export const pixelReadLimiter = limiterFromDefinition("pixelRead");
 export const adminLimiter = limiterFromDefinition("admin");
 export const adminRedisLimiter = limiterFromDefinition("adminRedis");
 export const adminRedisExportLimiter = limiterFromDefinition("adminRedisExport");

@@ -1054,6 +1054,218 @@
       ]
     },
     {
+      "id": "browser-pixel-workbench",
+      "collection": "browser (localStorage)",
+      "fields": [
+        "pixelNoticeAcknowledgedOn"
+      ],
+      "purpose": "记住用户今天已经看过 Pixel 操作提示，避免每次进入重复弹出。",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "Pixel 操作提示的确认日期",
+        "category": "客户端本地",
+        "what": "只记录一个日期字符串（今天是否已确认过提示）。",
+        "why": "让你不必每次进入都重新看一遍提示。",
+        "retention": "只保存在当前浏览器的本地存储里，你可以随时清除站点数据。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "client_ttl",
+        "description": "A single date string in localStorage; never contains card keys, accounts, passwords or 2FA material."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "清除浏览器站点数据",
+        "accountDeletion": "not applicable"
+      },
+      "export": { "supported": false, "surface": "-", "includes": [] },
+      "evidence": [
+        "frontend/src/components/pixel/pixelPreferences.ts"
+      ]
+    },
+    {
+      "id": "pixel-cdk-mappings",
+      "collection": "pixel_cdk_mappings",
+      "fields": [
+        "mappingId",
+        "distributionCdkHash",
+        "distributionCdkMasked",
+        "upstreamCdkCiphertext",
+        "upstreamCdkIv",
+        "upstreamCdkTag",
+        "upstreamCdkCryptoVersion",
+        "upstreamCdkMasked",
+        "note",
+        "enabled",
+        "createdByUserId",
+        "createdByUsername",
+        "createdAt",
+        "updatedAt"
+      ],
+      "purpose": "Map a Synapse-distributed card key to the upstream card key so the server can verify quota and submit tasks without ever exposing either secret to the browser.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "Pixel 卡密映射（管理）",
+        "category": "服务与业务",
+        "what": "你分发的卡密的哈希与遮罩值、上游卡密的加密密文、备注、启用状态，以及创建/修改这次映射的管理员账号。",
+        "why": "让你分发的卡密能在服务端换取上游额度，同时避免明文卡密在界面、日志或 API 里出现。",
+        "retention": "保留到管理员主动删除该映射；删除后新建任务将无法匹配到它。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "operational",
+        "description": "Admin-managed mapping rows; no TTL. Upstream card keys are stored encrypted (AES-GCM with the platform master key) and only masked values are returned by the API."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "DELETE /api/admin/pixel/cdks/:id（仅超级管理员）",
+        "accountDeletion": "not applicable"
+      },
+      "export": { "supported": false, "surface": "-", "includes": [] },
+      "evidence": [
+        "src/models/pixelCdkMappingModel.ts",
+        "src/pixel/cdkMappingService.ts"
+      ]
+    },
+    {
+      "id": "pixel-task-access",
+      "collection": "pixel_task_access",
+      "fields": [
+        "accessId",
+        "userId",
+        "mappingId",
+        "distributionCdkHash",
+        "upstreamTaskId",
+        "serviceType",
+        "accountCount",
+        "submitState",
+        "submitOutcomeCode",
+        "status",
+        "idempotencyKey",
+        "createdAt",
+        "updatedAt",
+        "lastPolledAt",
+        "subjectDeletedAt"
+      ],
+      "purpose": "Record which upstream task belongs to which Synapse user (and under which distributed card key) so that task access, idempotent submission and cancellation stay scoped to the owner.",
+      "legalBasis": "service_delivery",
+      "userFacing": {
+        "label": "Pixel 任务归属",
+        "category": "服务与业务",
+        "what": "你提交过的任务标识、对应的卡密哈希、服务类型、账号个数、提交状态与幂等标识。",
+        "why": "让你只能看到自己的任务，并保证重复提交不会重复执行或重复扣额。",
+        "retention": "保留在你的账号下，账号注销时立即不可访问。**账号原文、密码、辅助邮箱与 2FA 秘钥从不写入这里**。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "account_linked",
+        "description": "Owner-scoped rows without a TTL; access is denied immediately once the account is soft-deleted (subjectDeletedAt). Account credentials are never persisted here."
+      },
+      "delete": {
+        "onUserDelete": "soft_delete",
+        "user": "账号注销时统一处理（任务归属本身不提供单条删除入口）",
+        "accountDeletion": "subjectDeletedAt is set immediately; the rows expire with the account lifecycle."
+      },
+      "export": {
+        "supported": true,
+        "surface": "GET /api/pixel/export",
+        "includes": [
+          "owned task ids",
+          "service type",
+          "status and timestamps"
+        ]
+      },
+      "evidence": [
+        "src/models/pixelTaskAccessModel.ts",
+        "src/pixel/taskAccessStore.ts"
+      ]
+    },
+    {
+      "id": "pixel-usage-logs",
+      "collection": "pixel_usage_logs",
+      "fields": [
+        "logId",
+        "requestId",
+        "userId",
+        "mappingId",
+        "requestedCdkMasked",
+        "matchedMapping",
+        "method",
+        "path",
+        "serviceType",
+        "accountCount",
+        "requestBytes",
+        "responseBytes",
+        "upstreamStatus",
+        "outcome",
+        "durationMs",
+        "createdAt"
+      ],
+      "purpose": "Minimal traceability for upstream calls: which mapping was used, what happened, and how long it took - so operators can diagnose failures without storing account credentials or upstream response bodies.",
+      "legalBasis": "legitimate_interest",
+      "userFacing": {
+        "label": "Pixel 调用溯源（管理）",
+        "category": "安全与风控",
+        "what": "请求标识、使用的卡密遮罩值、请求路径与结果分类、账号个数、请求/响应字节数与耗时。",
+        "why": "出现失败或额度异常时，运维需要能定位是哪一次调用出了问题。",
+        "retention": "默认保留 30 天后自动清除（可由运维配置调整）。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "ttl",
+        "ttlField": "createdAt",
+        "expireAfterSeconds": 2592000,
+        "description": "TTL index on createdAt, 30 days by default (PIXEL_USAGE_LOG_RETENTION_DAYS). The document deliberately stores no account email/password/recovery/2FA, no upstream response body and no full result link."
+      },
+      "delete": {
+        "onUserDelete": "hard_delete",
+        "user": "到期自动清除",
+        "accountDeletion": "rows expire by TTL; they hold only masked keys and counters"
+      },
+      "export": { "supported": false, "surface": "管理端查询 /api/admin/pixel/cdk-usage", "includes": [] },
+      "evidence": [
+        "src/models/pixelUsageLogModel.ts",
+        "src/pixel/usageLogService.ts"
+      ]
+    },
+    {
+      "id": "pixel-integration-configs",
+      "collection": "pixel_integration_configs",
+      "fields": [
+        "key",
+        "upstreamBaseUrl",
+        "allowedHosts",
+        "enabled",
+        "requestTimeoutMs",
+        "updatedByUserId",
+        "updatedByUsername",
+        "updatedAt"
+      ],
+      "purpose": "Store which upstream service Pixel is allowed to call, plus the operator attribution of the last change, so outbound calls stay within an explicitly configured allowlist.",
+      "legalBasis": "legitimate_interest",
+      "userFacing": {
+        "label": "Pixel 上游集成配置（运营）",
+        "category": "服务与业务",
+        "what": "上游服务地址、允许访问的主机名单、启用状态、请求超时，以及最近一次修改这项配置的管理员账号。",
+        "why": "保证只把请求发给被明确配置的服务；记录修改人以便事后核对。这项配置里不包含你的账号内容。",
+        "retention": "保留至管理员下一次修改或删除该配置。",
+        "policySection": "data-sharing"
+      },
+      "retention": {
+        "type": "operational",
+        "description": "Single admin-managed row (key=\"default\"). Holds no user data and no account credentials; upstream card keys live in pixel_cdk_mappings under a separate encryption scheme."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "PUT /api/admin/pixel/configs（仅超级管理员）",
+        "accountDeletion": "not applicable"
+      },
+      "export": { "supported": false, "surface": "-", "includes": [] },
+      "evidence": [
+        "src/pixel/integrationConfigService.ts"
+      ]
+    },
+    {
       "id": "browser-geogebra-projects",
       "collection": "browser.localStorage",
       "fields": ["synapse-geogebra-studio-v1: project metadata, scripts, local snapshots"],

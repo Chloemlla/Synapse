@@ -64,6 +64,7 @@ export const FEATURE_CONSENT_KEYS = [
   "geogebra-share",
   "geogebra-assets",
   "geogebra-ai",
+  "pixel-tasks",
 ] as const;
 export type FeatureConsentKey = (typeof FEATURE_CONSENT_KEYS)[number];
 
@@ -193,6 +194,14 @@ export const FEATURE_CONSENT_REQUIREMENTS: Record<FeatureConsentKey, FeatureCons
     agreements: ["usage", "specific-terms"],
     rationale: "AI 辅助会把当前脚本与你的描述（以及可选的参考图）发送给第三方模型服务生成建议；使用政策说明内容边界，服务专项条款说明第三方处理。",
     message: "使用 AI 生成或解读前，需要先同意使用政策与服务专项条款。",
+  },
+  "pixel-tasks": {
+    key: "pixel-tasks",
+    label: "Pixel 自助折扣链接任务",
+    category: "account-credential",
+    agreements: ["terms", "specific-terms"],
+    rationale: "提交任务时，你录入的账号邮箱、密码、辅助邮箱与 2FA 秘钥会实时传给外部折扣链接服务完成提取与绑卡；服务条款说明你需为账号授权负责，服务专项条款说明这一外部处理。",
+    message: "把账号交给外部折扣链接服务处理前，需要先同意服务条款与服务专项条款；请确认这些账号是你本人或你已获授权管理的。",
   },
 };
 

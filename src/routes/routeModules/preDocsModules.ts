@@ -3,6 +3,7 @@ import { libreChatLimiter } from "../../middleware/routeLimiters";
 import libreChatRoutes from "../libreChatRoutes";
 import ttsRoutes from "../ttsRoutes";
 import geoGebraRoutes from "../geogebraRoutes";
+import pixelRoutes from "../pixelRoutes";
 
 export const preDocsRouteModules: RouteModule[] = [
   {
@@ -55,6 +56,27 @@ export const preDocsRouteModules: RouteModule[] = [
       mode: "route-module",
       limiters: ["geogebra-limiter"],
       note: "统一限流由前置 /api/geogebra geogebra-limiter 承担，router 不重复挂载同一 limiter。",
+    },
+  },
+  {
+    name: "pixel-routes",
+    path: "/api/pixel",
+    router: pixelRoutes,
+    requiresAuth: true,
+    rateLimited: true,
+    isPublic: false,
+    authPolicy: {
+      mode: "router",
+      handlers: ["authenticateToken"],
+      note: "卡密额度、任务归属与结果链接都绑定在登录账号上，整棵 /api/pixel 只给登录用户；需要把账号凭据交给上游的端点再叠 account-credential 类同意门禁。",
+    },
+    rateLimitPolicy: {
+      // 不用 route-module：那要求限流模块的挂载路径是本模块作用域的祖先或相等，
+      // 而这里故意把三档限流挂在 /api/pixel 的更深路径上（提交 10/分、卡密验证 20/分、
+      // 查询类 60/分，用户+IP 双键），否则一次提交会同时吃掉查询额度。
+      mode: "route",
+      limiters: ["pixel-limiter-verify", "pixel-limiter-submit", "pixel-limiter-settings", "pixel-limiter-tasks", "pixel-limiter-tasks-by-card", "pixel-limiter-export"],
+      note: "限流由独立的限流模块按路径分别挂载（pixel-limiter-verify 20/分、pixel-limiter-submit 10/分、pixel-limiter-settings/tasks/tasks-by-card/export 60/分，均按用户+IP 双键分桶）；router 内不重复挂载同一 limiter 实例。",
     },
   },
 ];
