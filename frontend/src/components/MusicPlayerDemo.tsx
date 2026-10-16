@@ -83,22 +83,22 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第1屏: 首页 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">首页 - 发现音乐</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto overflow-x-hidden no-scrollbar">
                 {/* 顶部区域 */}
                 <div className="flex items-center justify-between p-4 pt-7">
-                  <div className="flex items-center gap-2 text-2xl font-bold text-[#1DB954]">
+                  <div className="flex items-center gap-2 text-2xl font-bold text-emerald-500">
                     <Music className="w-6 h-6" />
                     <span>Music</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="px-4 py-2 bg-[#2a2a2a] rounded-full flex items-center gap-2">
+                    <div className="px-4 py-2 bg-slate-800 rounded-full flex items-center gap-2">
                       <Search className="w-4 h-4 text-white" />
-                      <span className="text-sm text-[#b3b3b3]">搜索</span>
+                      <span className="text-sm text-slate-400">搜索</span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
                       <User className="w-5 h-5 text-white" />
                     </div>
                   </div>
@@ -110,9 +110,9 @@ const MusicPlayerDemo: React.FC = () => {
                   <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <div key={i} className="flex-shrink-0">
-                        <div className="w-[100px] h-[100px] bg-gradient-to-br from-[#667eea] to-[#764ba2] rounded-[10px] mb-2" />
+                        <div className="w-[100px] h-[100px] bg-slate-700 rounded-[10px] mb-2" />
                         <div className="text-[13px] text-white font-medium mb-0.5">每日歌单 {i}</div>
-                        <div className="text-[11px] text-[#b3b3b3]">12.3k 次播放</div>
+                        <div className="text-[11px] text-slate-400">12.3k 次播放</div>
                       </div>
                     ))}
                   </div>
@@ -129,21 +129,21 @@ const MusicPlayerDemo: React.FC = () => {
                       { num: '4', name: '夜曲', artist: '周杰伦' },
                       { num: '5', name: '七里香', artist: '周杰伦' }
                     ].map((song, idx) => (
-                      <button 
+                      <button type="button" 
                         key={idx}
                         onClick={() => {
                           setCurrentSongIndex(idx);
                           setIsPlaying(true);
                         }}
-                        className="flex items-center gap-3 py-2 hover:bg-[#2a2a2a] rounded-lg px-2 -mx-2 transition-all"
+                        className="flex items-center gap-3 py-2 hover:bg-slate-800 rounded-2xl px-2 -mx-2 transition-all"
                       >
-                        <div className="w-5 text-center text-sm text-[#b3b3b3] font-medium">{song.num}</div>
-                        <div className="w-[45px] h-[45px] bg-gradient-to-br from-[#4facfe] to-[#00f2fe] rounded-[8px]" />
+                        <div className="w-5 text-center text-sm text-slate-400 font-medium">{song.num}</div>
+                        <div className="w-[45px] h-[45px] bg-sky-400 rounded-[8px]" />
                         <div className="flex-1 text-left">
                           <div className="text-sm text-white font-medium">{song.name}</div>
-                          <div className="text-xs text-[#b3b3b3]">{song.artist}</div>
+                          <div className="text-xs text-slate-400">{song.artist}</div>
                         </div>
-                        <div className="w-[22px] h-[22px] rounded-full bg-[#1DB954] flex items-center justify-center">
+                        <div className="w-[22px] h-[22px] rounded-full bg-emerald-500 flex items-center justify-center">
                           <Play className="w-3 h-3 text-white fill-white" />
                         </div>
                       </button>
@@ -152,7 +152,7 @@ const MusicPlayerDemo: React.FC = () => {
                 </div>
 
                 {/* 底部导航 */}
-                <div className="fixed bottom-0 left-0 right-0 h-[60px] bg-[#181818] border-t border-[#282828] flex items-center justify-around z-20">
+                <div className="fixed bottom-0 left-0 right-0 h-[60px] bg-slate-900 border-t border-slate-800 flex items-center justify-around z-20">
                   {[
                     { icon: <FaHome />, label: '首页', active: true },
                     { icon: <FaSearch />, label: '发现', active: false },
@@ -162,7 +162,7 @@ const MusicPlayerDemo: React.FC = () => {
                   ].map((nav, idx) => (
                     <div key={idx} className="flex flex-col items-center gap-0.5">
                       <span className="text-xl">{nav.icon}</span>
-                      <span className={`text-[11px] ${nav.active ? 'text-[#1DB954]' : 'text-[#b3b3b3]'}`}>
+                      <span className={`text-[11px] ${nav.active ? 'text-emerald-500' : 'text-slate-400'}`}>
                         {nav.label}
                       </span>
                     </div>
@@ -175,27 +175,27 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第2屏: 播放器页面 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">播放器页面</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
-              <div className="relative h-full bg-gradient-to-b from-[#1DB954]/30 to-[#191414]">
+              <div className="relative h-full bg-slate-900">
                 {/* 顶部栏 */}
                 <div className="flex items-center justify-between p-4 pt-7 text-white">
-                  <button className="w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-slate-900/30 backdrop-blur-sm flex items-center justify-center">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <span className="text-sm">正在播放</span>
-                  <button className="w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-slate-900/30 backdrop-blur-sm flex items-center justify-center">
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
                 </div>
 
                 {/* 黑胶唱片封面 */}
                 <div className="flex items-center justify-center mt-8">
-                  <div className="relative w-[240px] h-[240px] rounded-full overflow-hidden shadow-[0_15px_40px_rgba(0,0,0,0.5)] animate-spin-slow">
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#667eea] to-[#764ba2]" />
+                  <div className="relative w-[240px] h-[240px] rounded-full overflow-hidden shadow-sm animate-spin-slow">
+                    <div className="absolute inset-0 bg-slate-700" />
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-[50px] h-[50px] rounded-full bg-[#191414]" />
+                      <div className="w-[50px] h-[50px] rounded-full bg-slate-900" />
                     </div>
                   </div>
                 </div>
@@ -203,8 +203,8 @@ const MusicPlayerDemo: React.FC = () => {
                 {/* 歌曲信息 */}
                 <div className="text-center mt-8 px-8">
                   <h2 className="text-[21px] font-bold text-white mb-1">晴天</h2>
-                  <p className="text-sm text-[#b3b3b3] mb-0.5">周杰伦</p>
-                  <p className="text-[13px] text-[#777]">范特西 Plus</p>
+                  <p className="text-sm text-slate-400 mb-0.5">周杰伦</p>
+                  <p className="text-[13px] text-slate-500">范特西 Plus</p>
                 </div>
 
                 {/* 音频波形 */}
@@ -212,7 +212,7 @@ const MusicPlayerDemo: React.FC = () => {
                   {[0.6, 0.9, 0.7, 1, 0.8, 0.5, 0.9, 0.7, 0.6].map((height, idx) => (
                     <div
                       key={idx}
-                      className="w-[3px] h-[28px] bg-gradient-to-b from-[#1DB954] to-[#1ed760] rounded-full animate-wave"
+                      className="w-[3px] h-[28px] bg-emerald-500 rounded-full animate-wave"
                       style={{ 
                         animationDelay: `${idx * 0.1}s`,
                         transform: `scaleY(${height})`
@@ -223,10 +223,10 @@ const MusicPlayerDemo: React.FC = () => {
 
                 {/* 进度条 */}
                 <div className="px-8 mt-6">
-                  <div className="h-1 bg-[#4d4d4d] rounded-full overflow-hidden">
-                    <div className="h-full w-[45%] bg-[#1DB954] rounded-full" />
+                  <div className="h-1 bg-slate-600 rounded-full overflow-hidden">
+                    <div className="h-full w-[45%] bg-emerald-500 rounded-full" />
                   </div>
-                  <div className="flex items-center justify-between mt-2 text-xs text-[#b3b3b3]">
+                  <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
                     <span>1:45</span>
                     <span>4:03</span>
                   </div>
@@ -234,44 +234,44 @@ const MusicPlayerDemo: React.FC = () => {
 
                 {/* 控制按钮 */}
                 <div className="flex items-center justify-center gap-6 mt-6">
-                  <button className="text-[#b3b3b3] hover:text-white transition-colors">
+                  <button type="button" className="text-slate-400 hover:text-white transition-colors">
                     <Shuffle className="w-5 h-5" />
                   </button>
-                  <button 
+                  <button type="button" 
                     onClick={() => changeSong('prev')}
                     className="text-white hover:scale-110 transition-transform"
                   >
                     <SkipBack className="w-6 h-6 fill-white" />
                   </button>
-                  <button 
+                  <button type="button" 
                     onClick={togglePlay}
-                    className="w-14 h-14 rounded-full bg-[#1DB954] flex items-center justify-center text-white hover:scale-110 transition-transform"
+                    className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:scale-110 transition-transform"
                   >
                     {isPlaying ? <Pause className="w-7 h-7 fill-white" /> : <Play className="w-7 h-7 fill-white ml-1" />}
                   </button>
-                  <button 
+                  <button type="button" 
                     onClick={() => changeSong('next')}
                     className="text-white hover:scale-110 transition-transform"
                   >
                     <SkipForward className="w-6 h-6 fill-white" />
                   </button>
-                  <button className="text-[#b3b3b3] hover:text-white transition-colors">
+                  <button type="button" className="text-slate-400 hover:text-white transition-colors">
                     <Repeat className="w-5 h-5" />
                   </button>
                 </div>
 
                 {/* 底部操作 */}
                 <div className="flex items-center justify-center gap-8 mt-8">
-                  <button 
+                  <button type="button" 
                     onClick={() => toggleLike(songs[currentSongIndex].id)}
-                    className={`transition-all hover:scale-110 ${likedSongs.has(songs[currentSongIndex].id) ? 'text-[#ff4d4d] animate-heartbeat' : 'text-white'}`}
+                    className={`transition-all hover:scale-110 ${likedSongs.has(songs[currentSongIndex].id) ? 'text-rose-500 animate-heartbeat' : 'text-white'}`}
                   >
                     <Heart className={`w-6 h-6 ${likedSongs.has(songs[currentSongIndex].id) ? 'fill-current' : ''}`} />
                   </button>
-                  <button className="text-white hover:scale-110 transition-transform">
+                  <button type="button" className="text-white hover:scale-110 transition-transform">
                     <MessageCircle className="w-6 h-6" />
                   </button>
-                  <button className="text-white hover:scale-110 transition-transform">
+                  <button type="button" className="text-white hover:scale-110 transition-transform">
                     <MoreHorizontal className="w-6 h-6" />
                   </button>
                 </div>
@@ -282,17 +282,17 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第3屏: 歌词页面 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">歌词页面</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
-              <div className="h-full bg-gradient-to-b from-[#282828] to-black overflow-y-auto no-scrollbar">
+              <div className="h-full bg-slate-900 overflow-y-auto no-scrollbar">
                 {/* 顶部栏 */}
                 <div className="flex items-center justify-between p-4 pt-7 text-white">
-                  <button className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <span className="text-sm">歌词</span>
-                  <button className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
                     <Share2 className="w-5 h-5" />
                   </button>
                 </div>
@@ -324,21 +324,21 @@ const MusicPlayerDemo: React.FC = () => {
                 </div>
 
                 {/* 底部迷你控制 */}
-                <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
+                <div className="fixed bottom-0 left-0 right-0 bg-slate-900/70 p-6">
                   <div className="flex items-center justify-center gap-6">
-                    <button 
+                    <button type="button" 
                       onClick={() => changeSong('prev')}
                       className="text-white hover:scale-110 transition-transform"
                     >
                       <SkipBack className="w-5 h-5 fill-white" />
                     </button>
-                    <button 
+                    <button type="button" 
                       onClick={togglePlay}
                       className={cn(studioStrongBadgeClassName, "rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-all")}
                     >
                       {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
                     </button>
-                    <button 
+                    <button type="button" 
                       onClick={() => changeSong('next')}
                       className="text-white hover:scale-110 transition-transform"
                     >
@@ -361,16 +361,16 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第4屏: 播放列表 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">播放列表</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar">
                 {/* 头部信息 */}
                 <div className="p-4 pt-7">
                   <h2 className="text-[23px] font-bold text-white mb-1">当前播放</h2>
                   <div className="flex items-center justify-between">
-                    <span className="text-[13px] text-[#b3b3b3]">8首歌曲</span>
-                    <button className="text-[13px] text-[#ff4d4d]">清空</button>
+                    <span className="text-[13px] text-slate-400">8首歌曲</span>
+                    <button type="button" className="text-[13px] text-rose-500">清空</button>
                   </div>
                 </div>
 
@@ -388,30 +388,30 @@ const MusicPlayerDemo: React.FC = () => {
                   ].map((song, idx) => (
                     <div
                       key={idx}
-                      className={`flex items-center gap-3 p-3 rounded-lg ${song.playing ? 'bg-[#282828]' : ''}`}
+                      className={`flex items-center gap-3 p-3 rounded-2xl ${song.playing ? 'bg-slate-800' : ''}`}
                     >
                       {song.playing ? (
                         <div className="flex items-end gap-0.5 w-5">
                           {[0.6, 1, 0.8].map((h, i) => (
                             <div
                               key={i}
-                              className="w-1 bg-[#1DB954] rounded-full animate-wave"
+                              className="w-1 bg-emerald-500 rounded-full animate-wave"
                               style={{ height: `${h * 16}px`, animationDelay: `${i * 0.15}s` }}
                             />
                           ))}
                         </div>
                       ) : (
-                        <div className="w-5 text-center text-sm text-[#b3b3b3]">{idx + 1}</div>
+                        <div className="w-5 text-center text-sm text-slate-400">{idx + 1}</div>
                       )}
-                      <div className="w-[45px] h-[45px] bg-gradient-to-br from-[#4facfe] to-[#00f2fe] rounded-lg" />
+                      <div className="w-[45px] h-[45px] bg-sky-400 rounded-2xl" />
                       <div className="flex-1">
-                        <div className={`text-sm font-medium ${song.playing ? 'text-[#1DB954]' : 'text-white'}`}>
+                        <div className={`text-sm font-medium ${song.playing ? 'text-emerald-500' : 'text-white'}`}>
                           {song.name}
                         </div>
-                        <div className="text-xs text-[#b3b3b3]">{song.artist}</div>
+                        <div className="text-xs text-slate-400">{song.artist}</div>
                       </div>
-                      <div className="text-xs text-[#b3b3b3]">{song.time}</div>
-                        <button className="text-[#b3b3b3]">
+                      <div className="text-xs text-slate-400">{song.time}</div>
+                        <button type="button" className="text-slate-400">
                           <List className="w-4 h-4" />
                         </button>
                     </div>
@@ -420,7 +420,7 @@ const MusicPlayerDemo: React.FC = () => {
 
                 {/* 添加歌曲按钮 */}
                 <div className="px-4 pb-20">
-                  <button className="w-full py-4 border-2 border-dashed border-[#4d4d4d] rounded-[10px] text-sm text-[#b3b3b3] flex items-center justify-center gap-2">
+                  <button type="button" className="w-full py-4 border-2 border-dashed border-slate-600 rounded-[10px] text-sm text-slate-400 flex items-center justify-center gap-2">
                     <Plus className="w-4 h-4" />
                     <span>添加更多歌曲</span>
                   </button>
@@ -432,30 +432,30 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第5屏: 搜索页面 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">搜索页面</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar">
                 {/* 搜索头部 */}
                 <div className="p-4 pt-7">
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2 bg-[#2a2a2a] rounded-[16px] px-4 py-3">
-                      <Search className="w-4 h-4 text-[#b3b3b3]" />
+                    <div className="flex-1 flex items-center gap-2 bg-slate-800 rounded-2xl px-4 py-3">
+                      <Search className="w-4 h-4 text-slate-400" />
                       <input
                         type="text"
                         placeholder="搜索歌曲、歌手或专辑"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onFocus={() => setShowSearchHistory(true)}
-                        className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-[#b3b3b3]"
+                        className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-slate-400"
                       />
                     </div>
-                    <button 
+                    <button type="button" 
                       onClick={() => {
                         setSearchQuery('');
                         setShowSearchHistory(false);
                       }}
-                      className="text-[#1DB954] text-sm font-medium hover:text-[#1ed760] transition-colors"
+                      className="text-emerald-500 text-sm font-medium hover:text-emerald-400 transition-colors"
                     >
                       取消
                     </button>
@@ -476,10 +476,10 @@ const MusicPlayerDemo: React.FC = () => {
                       '粤语歌曲',
                       '民谣音乐'
                     ].map((tag, idx) => (
-                      <button
+                      <button type="button"
                         key={idx}
                         onClick={() => setSearchQuery(tag)}
-                        className="px-4 py-3 bg-[#2a2a2a] border border-[#3a3a3a] rounded-[12px] text-[13px] text-white text-center hover:bg-[#1DB954] hover:border-[#1DB954] transition-all duration-300"
+                        className="px-4 py-3 bg-slate-800 border border-slate-700 rounded-[12px] text-[13px] text-white text-center hover:bg-emerald-500 hover:border-emerald-500 transition-all duration-300"
                       >
                         {tag}
                       </button>
@@ -491,26 +491,26 @@ const MusicPlayerDemo: React.FC = () => {
                 <div className="px-4 mt-6 pb-24">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-base font-bold text-white">搜索历史</h3>
-                    <button 
+                    <button type="button" 
                       onClick={() => setSearchHistory([])}
-                      className="text-sm text-[#b3b3b3] hover:text-white transition-colors"
+                      className="text-sm text-slate-400 hover:text-white transition-colors"
                     >
                       清空
                     </button>
                   </div>
                   <div className="space-y-1">
                     {searchHistory.map((history, idx) => (
-                      <div key={idx} className="flex items-center justify-between py-3 border-b border-[#282828]">
-                        <button 
+                      <div key={idx} className="flex items-center justify-between py-3 border-b border-slate-800">
+                        <button type="button" 
                           onClick={() => setSearchQuery(history)}
-                          className="flex items-center gap-3 flex-1 text-left hover:text-[#1DB954] transition-colors"
+                          className="flex items-center gap-3 flex-1 text-left hover:text-emerald-500 transition-colors"
                         >
-                          <Clock className="w-4 h-4 text-[#b3b3b3]" />
+                          <Clock className="w-4 h-4 text-slate-400" />
                           <span className="text-sm text-white">{history}</span>
                         </button>
-                        <button 
+                        <button type="button" 
                           onClick={() => removeHistory(history)}
-                          className="text-[#b3b3b3] hover:text-white transition-colors"
+                          className="text-slate-400 hover:text-white transition-colors"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -525,12 +525,12 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第6屏: 个人中心 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">个人中心</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar">
                 {/* 个人信息卡片 */}
-                <div className="bg-gradient-to-br from-[#1DB954] to-[#1ed760] px-5 pt-7 pb-6 rounded-b-[12px]">
+                <div className="bg-emerald-600 px-5 pt-7 pb-6 rounded-b-[12px]">
                   <div className="flex items-center gap-4">
                     <div className="w-[65px] h-[65px] rounded-full bg-white flex items-center justify-center text-[28px]">
                       <FaMusic className="shrink-0" aria-hidden />
@@ -555,7 +555,7 @@ const MusicPlayerDemo: React.FC = () => {
                 </div>
 
                 {/* 功能菜单 */}
-                <div className="mt-4 bg-[#181818]">
+                <div className="mt-4 bg-slate-900">
                   {[
                     { icon: Music, label: '我的歌单', badge: '23', arrow: true },
                     { icon: Heart, label: '我喜欢的音乐', badge: '156', arrow: true },
@@ -568,7 +568,7 @@ const MusicPlayerDemo: React.FC = () => {
                   ].map((item, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between px-5 py-4 border-b border-[#282828]"
+                      className="flex items-center justify-between px-5 py-4 border-b border-slate-800"
                     >
                       <div className="flex items-center gap-3">
                         <item.icon className="w-5 h-5 text-white" />
@@ -576,10 +576,10 @@ const MusicPlayerDemo: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {item.badge && (
-                          <span className="text-xs text-[#b3b3b3]">{item.badge}</span>
+                          <span className="text-xs text-slate-400">{item.badge}</span>
                         )}
                         {item.arrow && (
-                          <ChevronRight className="w-4 h-4 text-[#4d4d4d]" />
+                          <ChevronRight className="w-4 h-4 text-slate-600" />
                         )}
                       </div>
                     </div>
@@ -588,7 +588,7 @@ const MusicPlayerDemo: React.FC = () => {
 
                 {/* 退出登录 */}
                 <div className="p-5 pb-24">
-                  <button className="w-full py-4 bg-[#181818] text-[#ff4d4d] text-sm font-medium rounded-lg text-center flex items-center justify-center gap-2">
+                  <button type="button" className="w-full py-4 bg-slate-900 text-rose-500 text-sm font-medium rounded-2xl text-center flex items-center justify-center gap-2">
                     <LogOut className="w-4 h-4" />
                     <span>退出登录</span>
                   </button>
@@ -600,37 +600,37 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第7屏: 歌单详情 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">歌单详情</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar">
                 {/* 顶部封面区 */}
-                <div className="relative h-[200px] bg-gradient-to-b from-[#1DB954] to-[#191414] flex items-center justify-center">
-                  <button className="absolute top-7 left-4 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white">
+                <div className="relative h-[200px] bg-slate-900 flex items-center justify-center">
+                  <button type="button" className="absolute top-7 left-4 w-8 h-8 rounded-full bg-slate-900/30 backdrop-blur-sm flex items-center justify-center text-white">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <button className="absolute top-7 right-4 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white">
+                  <button type="button" className="absolute top-7 right-4 w-8 h-8 rounded-full bg-slate-900/30 backdrop-blur-sm flex items-center justify-center text-white">
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
-                  <div className="w-[145px] h-[145px] bg-gradient-to-br from-[#667eea] to-[#764ba2] rounded-[10px] shadow-lg" />
+                  <div className="w-[145px] h-[145px] bg-slate-700 rounded-[10px] shadow-lg" />
                 </div>
 
                 {/* 歌单信息 */}
                 <div className="px-5 -mt-8 text-center">
                   <h2 className="text-[19px] font-bold text-white mb-1">华语流行金曲</h2>
-                  <p className="text-xs text-[#b3b3b3]">热门榜单 · 播放 2.3亿次</p>
+                  <p className="text-xs text-slate-400">热门榜单 · 播放 2.3亿次</p>
                 </div>
 
                 {/* 操作按钮 */}
                 <div className="flex items-center justify-center gap-3 px-5 mt-5">
-                  <button className="flex-1 py-3 bg-[#1DB954] text-white text-[13px] font-medium rounded-2xl flex items-center justify-center gap-2">
+                  <button type="button" className="flex-1 py-3 bg-emerald-500 text-white text-[13px] font-medium rounded-2xl flex items-center justify-center gap-2">
                     <Play className="w-4 h-4 fill-white" />
                     <span>播放全部</span>
                   </button>
-                  <button className="px-5 py-3 border border-white text-white text-[13px] font-medium rounded-2xl flex items-center justify-center">
+                  <button type="button" className="px-5 py-3 border border-white text-white text-[13px] font-medium rounded-2xl flex items-center justify-center">
                     <Heart className="w-4 h-4" />
                   </button>
-                  <button className="px-5 py-3 border border-white text-white text-[13px] font-medium rounded-2xl flex items-center justify-center">
+                  <button type="button" className="px-5 py-3 border border-white text-white text-[13px] font-medium rounded-2xl flex items-center justify-center">
                     <Download className="w-4 h-4" />
                   </button>
                 </div>
@@ -649,21 +649,21 @@ const MusicPlayerDemo: React.FC = () => {
                   ].map((song, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center gap-3 px-5 py-3 border-b border-[#282828]"
+                      className="flex items-center gap-3 px-5 py-3 border-b border-slate-800"
                     >
                       {song.hot && <span className="text-sm"><FaFire aria-hidden /></span>}
-                      <div className="w-5 text-center text-sm text-[#b3b3b3] font-medium">
+                      <div className="w-5 text-center text-sm text-slate-400 font-medium">
                         {idx + 1}
                       </div>
-                      <div className="w-[45px] h-[45px] bg-gradient-to-br from-[#4facfe] to-[#00f2fe] rounded-lg" />
+                      <div className="w-[45px] h-[45px] bg-sky-400 rounded-2xl" />
                       <div className="flex-1">
                         <div className="text-sm text-white font-medium">{song.name}</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-[#b3b3b3]">{song.artist}</span>
-                          {song.mv && <span className="text-xs text-[#ff4d4d]">MV</span>}
+                          <span className="text-xs text-slate-400">{song.artist}</span>
+                          {song.mv && <span className="text-xs text-rose-500">MV</span>}
                         </div>
                       </div>
-                      <button className="text-[#b3b3b3]">
+                      <button type="button" className="text-slate-400">
                         <MoreHorizontal className="w-5 h-5" />
                       </button>
                     </div>
@@ -676,19 +676,19 @@ const MusicPlayerDemo: React.FC = () => {
           {/* 第8屏: 迷你播放条 */}
           <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-700 mb-4">迷你播放条</h3>
-            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-[#1a1a1a] bg-[#191414] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-[#1a1a1a] rounded-b-[10px] z-10" />
+            <div className="relative w-[340px] h-[720px] rounded-2xl border-[10px] border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[130px] h-[20px] bg-slate-800 rounded-b-[10px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar">
                 {/* 首页内容 (背景) */}
                 <div className="flex items-center justify-between p-4 pt-7">
-                  <div className="text-2xl font-bold text-[#1DB954]">Music</div>
+                  <div className="text-2xl font-bold text-emerald-500">Music</div>
                   <div className="flex items-center gap-3">
-                    <div className="px-4 py-2 bg-[#2a2a2a] rounded-full flex items-center gap-2">
+                    <div className="px-4 py-2 bg-slate-800 rounded-full flex items-center gap-2">
                       <span className="text-sm text-white"><FaSearch aria-hidden /></span>
-                      <span className="text-sm text-[#b3b3b3]">搜索</span>
+                      <span className="text-sm text-slate-400">搜索</span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-xs text-white font-bold">
+                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white font-bold">
                       M
                     </div>
                   </div>
@@ -699,40 +699,40 @@ const MusicPlayerDemo: React.FC = () => {
                   <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <div key={i} className="flex-shrink-0">
-                        <div className="w-[100px] h-[100px] bg-gradient-to-br from-[#667eea] to-[#764ba2] rounded-[10px] mb-2" />
+                        <div className="w-[100px] h-[100px] bg-slate-700 rounded-[10px] mb-2" />
                         <div className="text-[13px] text-white font-medium mb-0.5">每日歌单 {i}</div>
-                        <div className="text-[11px] text-[#b3b3b3]">12.3k 次播放</div>
+                        <div className="text-[11px] text-slate-400">12.3k 次播放</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* 展开提示 */}
-                <div className="fixed bottom-[74px] left-1/2 -translate-x-1/2 px-4 py-2 bg-[#282828] rounded-[14px] text-[11px] text-white flex items-center gap-1 z-30">
+                <div className="fixed bottom-[74px] left-1/2 -translate-x-1/2 px-4 py-2 bg-slate-800 rounded-[14px] text-[11px] text-white flex items-center gap-1 z-30">
                   <span>向上滑动展开播放器</span>
                   <ChevronUp className="w-3 h-3" />
                 </div>
 
                 {/* 迷你播放器 */}
-                <div className="fixed bottom-[60px] left-0 right-0 h-[54px] bg-[#282828]/95 backdrop-blur-md border-t border-[#1DB954] flex items-center px-3 z-20">
-                  <div className="w-[42px] h-[42px] bg-gradient-to-br from-[#667eea] to-[#764ba2] rounded-[8px] mr-3" />
+                <div className="fixed bottom-[60px] left-0 right-0 h-[54px] bg-slate-800/95 backdrop-blur-md border-t border-emerald-500 flex items-center px-3 z-20">
+                  <div className="w-[42px] h-[42px] bg-slate-700 rounded-[8px] mr-3" />
                   <div className="flex-1">
                     <div className="text-sm text-white font-medium">晴天</div>
-                    <div className="text-[11px] text-[#b3b3b3]">周杰伦</div>
+                    <div className="text-[11px] text-slate-400">周杰伦</div>
                   </div>
-                  <button 
+                  <button type="button" 
                     onClick={togglePlay}
                     className="w-6 h-6 flex items-center justify-center text-white mr-2 hover:scale-110 transition-transform"
                   >
                     {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
                   </button>
-                  <button className="w-[22px] h-[22px] flex items-center justify-center text-[#b3b3b3]">
+                  <button type="button" className="w-[22px] h-[22px] flex items-center justify-center text-slate-400">
                     <List className="w-4 h-4" />
                   </button>
                 </div>
 
                 {/* 底部导航 */}
-                <div className="fixed bottom-0 left-0 right-0 h-[60px] bg-[#181818] border-t border-[#282828] flex items-center justify-around z-20">
+                <div className="fixed bottom-0 left-0 right-0 h-[60px] bg-slate-900 border-t border-slate-800 flex items-center justify-around z-20">
                   {[
                     { icon: Home, label: '首页', active: true },
                     { icon: Search, label: '发现', active: false },
@@ -742,8 +742,8 @@ const MusicPlayerDemo: React.FC = () => {
                   ].map((nav, idx) => (
                     <div key={idx} className="flex flex-col items-center gap-0.5">
                       <nav.icon className={`w-5 h-5 ${nav.active && nav.icon === Play ? 'fill-current' : ''}`} 
-                        style={{ color: nav.active ? '#1DB954' : '#b3b3b3' }} />
-                      <span className={`text-[11px] ${nav.active ? 'text-[#1DB954]' : 'text-[#b3b3b3]'}`}>
+                        style={{ color: nav.active ? 'rgb(16,185,129)' : 'rgb(148,163,184)' }} />
+                      <span className={`text-[11px] ${nav.active ? 'text-emerald-500' : 'text-slate-400'}`}>
                         {nav.label}
                       </span>
                     </div>

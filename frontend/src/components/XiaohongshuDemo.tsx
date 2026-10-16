@@ -491,14 +491,14 @@ const XiaohongshuDemo: React.FC = () => {
     <div
       className="min-h-screen bg-slate-50"
       style={{
-        ['--primary-color' as any]: '#FF2442',
-        ['--primary-hover' as any]: '#FF507A',
-        ['--bg-color' as any]: '#FFFFFF',
-        ['--secondary-bg' as any]: '#F8FAFC',
-        ['--text-primary' as any]: '#333333',
-        ['--text-secondary' as any]: '#666666',
-        ['--text-light' as any]: '#999999',
-        ['--border-color' as any]: '#E2E8F0',
+        ['--primary-color' as any]: 'rgb(225,29,72)',
+        ['--primary-hover' as any]: 'rgb(244,63,94)',
+        ['--bg-color' as any]: 'rgb(255,255,255)',
+        ['--secondary-bg' as any]: 'rgb(248,250,252)',
+        ['--text-primary' as any]: 'rgb(51,65,85)',
+        ['--text-secondary' as any]: 'rgb(100,116,139)',
+        ['--text-light' as any]: 'rgb(148,163,184)',
+        ['--border-color' as any]: 'rgb(226,232,240)',
         ['--shadow' as any]: '0 18px 60px rgba(15,23,42,0.06)',
         ['--shadow-hover' as any]: '0 22px 70px rgba(15,23,42,0.1)',
       }}
@@ -512,8 +512,8 @@ const XiaohongshuDemo: React.FC = () => {
         <div className="h-full flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center mr-5 gap-2">
-            <ShoppingBag className="w-6 h-6 text-[#FF2442]" />
-            <span className="text-2xl font-bold text-[#FF2442] cursor-pointer">小红书</span>
+            <ShoppingBag className="w-6 h-6 text-rose-600" />
+            <span className="text-2xl font-bold text-rose-600 cursor-pointer">小红书</span>
           </div>
 
           {/* 搜索框 */}
@@ -535,7 +535,7 @@ const XiaohongshuDemo: React.FC = () => {
 
             {/* 搜索建议 */}
             {showSearchSuggestions && (
-              <div className="absolute top-[calc(100%+10px)] left-0 w-[90%] max-w-[500px] p-4 rounded-xl animate-[slideUp_0.3s_ease-out]"
+              <div className="absolute top-[calc(100%+10px)] left-0 w-[90%] max-w-[500px] p-4 rounded-2xl animate-[slideUp_0.3s_ease-out]"
                 style={{
                   backgroundColor: 'var(--bg-color)',
                   boxShadow: 'var(--shadow-hover)'
@@ -548,7 +548,7 @@ const XiaohongshuDemo: React.FC = () => {
                   {hotSearches.map((search, index) => (
                     <div
                       key={index}
-                      className="px-2.5 py-2 rounded-lg cursor-pointer text-sm transition-all duration-200 hover:scale-[1.02]"
+                      className="px-2.5 py-2 rounded-2xl cursor-pointer text-sm transition-all duration-200 hover:scale-[1.02]"
                       style={{ color: 'var(--text-primary)' }}
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--secondary-bg)'}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -570,7 +570,7 @@ const XiaohongshuDemo: React.FC = () => {
             {/* 用户头像 */}
             <div className="w-9 h-9 rounded-2xl border flex items-center justify-center cursor-pointer transition-transform duration-300 hover:scale-105"
               style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
-              <User className="w-5 h-5 text-[#FF2442]" />
+              <User className="w-5 h-5 text-rose-600" />
             </div>
           </div>
         </div>
@@ -589,7 +589,7 @@ const XiaohongshuDemo: React.FC = () => {
               role="button"
               tabIndex={0}
               aria-pressed={activeCategory === category.id}
-              className="relative flex flex-col items-center justify-center rounded-lg py-1 cursor-pointer transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2442] focus-visible:ring-offset-2"
+              className="relative flex flex-col items-center justify-center rounded-2xl py-1 cursor-pointer transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2"
               onClick={() => setActiveCategory(category.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -608,7 +608,7 @@ const XiaohongshuDemo: React.FC = () => {
                 </span>
               </div>
               {activeCategory === category.id && (
-                <div className="absolute bottom-0 w-5 h-0.5 bg-[#FF2442] rounded-full" />
+                <div className="absolute bottom-0 w-5 h-0.5 bg-rose-600 rounded-full" />
               )}
             </div>
           ))}
@@ -630,7 +630,7 @@ const XiaohongshuDemo: React.FC = () => {
                 role="button"
                 tabIndex={0}
                 aria-label={`打开详情：${card.title}`}
-                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2442] focus-visible:ring-offset-2 animate-[fadeIn_0.5s_ease-out]"
+                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2 animate-[fadeIn_0.5s_ease-out]"
                 style={{
                   backgroundColor: 'var(--bg-color)',
                   borderColor: 'var(--border-color)',
@@ -700,7 +700,7 @@ const XiaohongshuDemo: React.FC = () => {
               <span className="inline-block ml-2.5 w-5 h-5 border-2 rounded-full animate-spin"
                 style={{
                   borderColor: 'var(--border-color)',
-                  borderTopColor: '#FF2442'
+                  borderTopColor: 'rgb(225,29,72)'
                 }} />
             </div>
           )}
@@ -732,7 +732,7 @@ const XiaohongshuDemo: React.FC = () => {
             key={item.id}
             className="flex flex-col items-center gap-1 py-1.5 px-4 transition-all duration-300"
             style={{
-              color: item.active ? '#FF2442' : 'var(--text-light)'
+              color: item.active ? 'rgb(225,29,72)' : 'var(--text-light)'
             }}
           >
             <item.icon className={`${item.id === 'publish' ? 'w-7 h-7 -translate-y-2' : 'w-6 h-6'}`} />
@@ -744,7 +744,7 @@ const XiaohongshuDemo: React.FC = () => {
       {/* 模态框 */}
       {showModal && selectedCard && (
         <div
-          className={cn(studioModalOverlayClassName, "z-[2000] bg-black/70 animate-[fadeIn_0.3s_ease-out]")}
+          className={cn(studioModalOverlayClassName, "animate-[fadeIn_0.3s_ease-out]")}
           onClick={closeModal}
         >
           <div
@@ -753,9 +753,9 @@ const XiaohongshuDemo: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* 关闭按钮 */}
-            <button
+            <button type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center text-xl transition-all duration-300 hover:bg-black/70 hover:rotate-90"
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-slate-900/50 text-white flex items-center justify-center text-xl transition-all duration-300 hover:bg-slate-900/70 hover:rotate-90"
             >
               ✕
             </button>
@@ -793,7 +793,7 @@ const XiaohongshuDemo: React.FC = () => {
                     2小时前
                   </div>
                 </div>
-                <button className="px-5 py-1.5 rounded-full bg-[#FF2442] text-white text-sm font-medium hover:bg-[#FF507A] transition-colors">
+                <button type="button" className="px-5 py-1.5 rounded-full bg-rose-600 text-white text-sm font-medium hover:bg-rose-500 transition-colors">
                   关注
                 </button>
               </div>
@@ -806,38 +806,38 @@ const XiaohongshuDemo: React.FC = () => {
 
               {/* 操作按钮 */}
               <div className="flex items-center gap-8 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                <button
+                <button type="button"
                   onClick={(e) => toggleLike(selectedCard.id, e)}
                   className="flex flex-col items-center gap-1 transition-transform hover:scale-110"
                 >
                   <Heart 
                     className={`w-6 h-6 ${likedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] fill-current' : ''}`}
-                    style={{ color: likedCards.has(selectedCard.id) ? '#FF2442' : 'var(--text-secondary)' }}
+                    style={{ color: likedCards.has(selectedCard.id) ? 'rgb(225,29,72)' : 'var(--text-secondary)' }}
                   />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     {formatNumber(selectedCard.likes + (likedCards.has(selectedCard.id) ? 1 : 0))}
                   </span>
                 </button>
 
-                <button
+                <button type="button"
                   onClick={(e) => toggleCollect(selectedCard.id, e)}
                   className="flex flex-col items-center gap-1 transition-transform hover:scale-110"
                 >
                   <Star 
                     className={`w-6 h-6 ${collectedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] fill-current' : ''}`}
-                    style={{ color: collectedCards.has(selectedCard.id) ? '#FFB800' : 'var(--text-secondary)' }}
+                    style={{ color: collectedCards.has(selectedCard.id) ? 'rgb(245,158,11)' : 'var(--text-secondary)' }}
                   />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     {formatNumber(selectedCard.collects + (collectedCards.has(selectedCard.id) ? 1 : 0))}
                   </span>
                 </button>
 
-                <button className="flex flex-col items-center gap-1 transition-transform hover:scale-110">
+                <button type="button" className="flex flex-col items-center gap-1 transition-transform hover:scale-110">
                   <MessageCircle className="w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>评论</span>
                 </button>
 
-                <button className="flex flex-col items-center gap-1 transition-transform hover:scale-110">
+                <button type="button" className="flex flex-col items-center gap-1 transition-transform hover:scale-110">
                   <Share2 className="w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>分享</span>
                 </button>

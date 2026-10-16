@@ -184,7 +184,7 @@ const MeditationAppDemo: React.FC = () => {
           color: string;
         }> = [];
 
-        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#F7B731', '#5F27CD'];
+        const colors = ['rgb(244,63,94)', 'rgb(56,189,248)', 'rgb(14,165,233)', 'rgb(245,158,11)', 'rgb(71,85,105)'];
 
         const createFirework = () => {
           const x = 180;
@@ -263,23 +263,23 @@ const MeditationAppDemo: React.FC = () => {
           // 绘制柱子
           const gradient = ctx.createLinearGradient(x, y, x, startY);
           if (index === 5) { // 周六高亮
-            gradient.addColorStop(0, '#FFD700');
-            gradient.addColorStop(1, '#FFED4E');
+            gradient.addColorStop(0, 'rgb(245,158,11)');
+            gradient.addColorStop(1, 'rgb(252,211,77)');
           } else {
-            gradient.addColorStop(0, '#667eea');
-            gradient.addColorStop(1, '#764ba2');
+            gradient.addColorStop(0, 'rgb(15,23,42)');
+            gradient.addColorStop(1, 'rgb(30,41,59)');
           }
           ctx.fillStyle = gradient;
           ctx.fillRect(x, y, barWidth, height);
 
           // 绘制数值
-          ctx.fillStyle = '#2c3e50';
+          ctx.fillStyle = 'rgb(30,41,59)';
           ctx.font = '12px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(value.toString(), x + barWidth / 2, y - 5);
 
           // 绘制标签
-          ctx.fillStyle = '#95a5a6';
+          ctx.fillStyle = 'rgb(100,116,139)';
           ctx.font = '11px sans-serif';
           ctx.fillText(days[index], x + barWidth / 2, startY + 20);
         });
@@ -347,7 +347,7 @@ const MeditationAppDemo: React.FC = () => {
         {/* 屏幕切换按钮 */}
         <div className="flex items-center justify-center gap-2 mb-8 flex-wrap">
           {['首页', '计时器', '完成', '统计', '成就', '日历', '场景库', '设置', '呼吸'].map((name, idx) => (
-            <button
+            <button type="button"
               key={idx}
               onClick={() => setActiveScreen(idx)}
               className={`${studioSecondaryButtonClassName} ${
@@ -365,7 +365,7 @@ const MeditationAppDemo: React.FC = () => {
         <div className="mb-8 flex justify-center px-4">
           <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2 text-sm text-slate-600">
             <span>使用 React 19</span>
-            <code className="rounded-lg border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-700">&lt;Activity&gt;</code>
+            <code className="rounded-2xl border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-700">&lt;Activity&gt;</code>
             <span>组件优化性能，保留状态并清理副作用</span>
           </div>
         </div>
@@ -375,20 +375,20 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第1屏: 首页 */}
           <Activity mode={activeScreen === 0 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">首页 - 场景选择</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <h3 className="text-base font-semibold text-slate-800 mb-4">首页 - 场景选择</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
               {/* 刘海 */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               {/* 内容 */}
-              <div className="h-full overflow-y-auto overflow-x-hidden no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto overflow-x-hidden no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
-                <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-9 pb-4 text-white">
+                <div className="bg-slate-900 px-5 pt-9 pb-4 text-white">
                   <div className="text-sm opacity-90 mb-2">10月23日 星期三 14:30</div>
                   <div className="text-2xl font-light mb-4">下午好 <FaCloudSun className="inline" aria-hidden /></div>
                   
                   {/* 今日冥想卡片 */}
-                  <div className="bg-white/20 backdrop-blur-md rounded-[15px] p-4">
+                  <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4">
                     <div className="text-xs mb-2">今日已冥想</div>
                     <div className="text-[32px] font-extralight">15 <span className="text-base">分钟</span></div>
                     <div className="text-xs opacity-90 mb-2">目标 30 分钟</div>
@@ -399,25 +399,25 @@ const MeditationAppDemo: React.FC = () => {
                 </div>
 
                 {/* 深呼吸标题 */}
-                <div className="bg-white rounded-[15px] mx-5 my-5 p-6 text-center">
-                  <h2 className="text-4xl font-extralight text-[#2c3e50] mb-2">深呼吸</h2>
-                  <p className="text-base text-[#95a5a6]">让心灵得到平静</p>
+                <div className="bg-white rounded-2xl mx-5 my-5 p-6 text-center">
+                  <h2 className="text-4xl font-extralight text-slate-800 mb-2">深呼吸</h2>
+                  <p className="text-base text-slate-500">让心灵得到平静</p>
                 </div>
 
                 {/* 场景卡片 */}
                 <div className="px-5 space-y-3 pb-20">
                   {[
-                    { title: '雨声', desc: '聆听雨滴的声音', tag: '自然', plays: '12.3k', color: 'from-[#667eea] to-[#764ba2]' },
-                    { title: '海浪', desc: '感受海洋的呼吸', tag: '自然', plays: '8.9k', color: 'from-[#4facfe] to-[#00f2fe]' },
-                    { title: '森林', desc: '漫步在绿色之中', tag: '自然', plays: '15.6k', color: 'from-[#56ab2f] to-[#a8e063]' },
-                    { title: '夜晚', desc: '享受宁静时光', tag: '氛围', plays: '6.2k', color: 'from-[#2c3e50] to-[#3498db]', height: '100px' }
+                    { title: '雨声', desc: '聆听雨滴的声音', tag: '自然', plays: '12.3k', color: 'bg-slate-900' },
+                    { title: '海浪', desc: '感受海洋的呼吸', tag: '自然', plays: '8.9k', color: 'bg-sky-400' },
+                    { title: '森林', desc: '漫步在绿色之中', tag: '自然', plays: '15.6k', color: 'bg-emerald-500' },
+                    { title: '夜晚', desc: '享受宁静时光', tag: '氛围', plays: '6.2k', color: 'bg-slate-800', height: '100px' }
                   ].map((scene, idx) => (
                     <div 
                       key={idx}
-                      className={`relative rounded-[16px] bg-gradient-to-br ${scene.color} overflow-hidden`}
+                      className={`relative rounded-2xl ${scene.color} overflow-hidden`}
                       style={{ height: scene.height || '200px' }}
                     >
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+                      <div className="absolute inset-0 bg-slate-900/40" />
                       <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-2xl font-light">{scene.title}</h3>
@@ -436,7 +436,7 @@ const MeditationAppDemo: React.FC = () => {
                 </div>
 
                 {/* 底部导航 */}
-                <div className="fixed bottom-0 left-0 right-0 h-[70px] bg-white border-t border-gray-100 flex items-center justify-around shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-20">
+                <div className="fixed bottom-0 left-0 right-0 h-[70px] bg-white border-t border-slate-200 flex items-center justify-around shadow-sm z-20">
                   {[
                     { icon: Home, label: '首页', active: true },
                     { icon: Star, label: '收藏', active: false },
@@ -444,8 +444,8 @@ const MeditationAppDemo: React.FC = () => {
                     { icon: User, label: '我的', active: false }
                   ].map((nav, idx) => (
                     <div key={idx} className="flex flex-col items-center gap-1">
-                      <nav.icon className={`w-6 h-6 ${nav.active ? 'text-[#667eea]' : 'text-[#95a5a6]'}`} />
-                      <span className={`text-xs ${nav.active ? 'text-[#667eea]' : 'text-[#95a5a6]'}`}>
+                      <nav.icon className={`w-6 h-6 ${nav.active ? 'text-slate-900' : 'text-slate-500'}`} />
+                      <span className={`text-xs ${nav.active ? 'text-slate-900' : 'text-slate-500'}`}>
                         {nav.label}
                       </span>
                     </div>
@@ -459,21 +459,21 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第2屏: 计时器页面 */}
           <Activity mode={activeScreen === 1 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">计时器页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">计时器页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="relative h-full bg-gradient-to-br from-[#667eea] to-[#764ba2] overflow-hidden">
+              <div className="relative h-full bg-slate-900 overflow-hidden">
                 {/* 雨滴背景 */}
                 <canvas ref={setCanvasRef(1)} className="absolute inset-0" />
                 
                 {/* 顶部栏 */}
                 <div className="relative z-10 flex items-center justify-between p-5 pt-9 text-white">
-                  <button className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <span className="text-lg">雨声</span>
-                  <button className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
                 </div>
@@ -498,19 +498,19 @@ const MeditationAppDemo: React.FC = () => {
 
                   {/* 控制按钮 */}
                   <div className="flex items-center gap-5 mt-12">
-                    <button 
+                    <button type="button" 
                       onClick={() => setCurrentDuration(20)}
                       className="w-[50px] h-[50px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-all"
                     >
                       <RotateCcw className="w-5 h-5" />
                     </button>
-                    <button 
+                    <button type="button" 
                       onClick={() => setIsPlaying(!isPlaying)}
                       className="w-20 h-20 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/40 hover:scale-110 transition-all"
                     >
                       {isPlaying ? <Pause className="w-8 h-8 fill-white" /> : <Play className="w-8 h-8 fill-white" />}
                     </button>
-                    <button 
+                    <button type="button" 
                       onClick={() => setIsPlaying(false)}
                       className="w-[50px] h-[50px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-all"
                     >
@@ -523,14 +523,14 @@ const MeditationAppDemo: React.FC = () => {
                     <div className="flex items-center justify-between px-8 text-white">
                       <span className="text-sm">时长</span>
                       <div className="flex items-center gap-3">
-                        <button 
+                        <button type="button" 
                           onClick={() => adjustDuration(-5)}
                           className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-all"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
                         <span className="text-base w-20 text-center">{currentDuration}分钟</span>
-                        <button 
+                        <button type="button" 
                           onClick={() => adjustDuration(5)}
                           className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-all"
                         >
@@ -540,9 +540,9 @@ const MeditationAppDemo: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between px-8 text-white">
                       <span className="text-sm">呼吸引导</span>
-                      <button 
+                      <button type="button" 
                         onClick={() => setBreathingEnabled(!breathingEnabled)}
-                        className={`w-12 h-6 rounded-full relative transition-colors ${breathingEnabled ? 'bg-[#52c41a]' : 'bg-[#d0d0d0]'}`}
+                        className={`w-12 h-6 rounded-full relative transition-colors ${breathingEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
                       >
                         <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${breathingEnabled ? 'right-0.5' : 'left-0.5'}`} />
                       </button>
@@ -566,11 +566,11 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第3屏: 完成页面 */}
           <Activity mode={activeScreen === 2 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">完成页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">完成页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="relative h-full bg-gradient-to-br from-[#f5f7fa] to-[#e8eaf6] overflow-y-auto no-scrollbar">
+              <div className="relative h-full bg-slate-100 overflow-y-auto no-scrollbar">
                 {/* 烟花背景 */}
                 <canvas ref={setCanvasRef(3)} className="absolute inset-0" />
                 
@@ -579,48 +579,48 @@ const MeditationAppDemo: React.FC = () => {
                   <div className="text-[80px] animate-pulse"><FaTrophy aria-hidden /></div>
                   
                   {/* 完成信息 */}
-                  <h2 className="text-5xl font-extralight text-[#2c3e50] mt-6 mb-2">完成</h2>
-                  <div className="text-4xl font-light text-[#667eea] mb-1">20</div>
-                  <div className="text-base text-[#95a5a6]">分钟 · 雨声冥想</div>
+                  <h2 className="text-5xl font-extralight text-slate-800 mt-6 mb-2">完成</h2>
+                  <div className="text-4xl font-light text-slate-900 mb-1">20</div>
+                  <div className="text-base text-slate-500">分钟 · 雨声冥想</div>
 
                   {/* 统计卡片 */}
                   <div className="w-full mt-8 bg-white/80 backdrop-blur-md rounded-2xl p-6 shadow-lg">
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <div className="text-xs text-[#95a5a6] mb-1">今日总计</div>
-                        <div className="text-2xl font-light text-[#2c3e50]">35min</div>
+                        <div className="text-xs text-slate-500 mb-1">今日总计</div>
+                        <div className="text-2xl font-light text-slate-800">35min</div>
                       </div>
                       <div>
-                        <div className="text-xs text-[#95a5a6] mb-1">连续天数</div>
-                        <div className="text-2xl font-light text-[#2c3e50]">7天</div>
+                        <div className="text-xs text-slate-500 mb-1">连续天数</div>
+                        <div className="text-2xl font-light text-slate-800">7天</div>
                       </div>
                       <div>
-                        <div className="text-xs text-[#95a5a6] mb-1">累计时长</div>
-                        <div className="text-2xl font-light text-[#2c3e50]">127h</div>
+                        <div className="text-xs text-slate-500 mb-1">累计时长</div>
+                        <div className="text-2xl font-light text-slate-800">127h</div>
                       </div>
                     </div>
                   </div>
 
                   {/* 激励文字 */}
                   <div className="mt-8 text-center">
-                    <h3 className="text-2xl font-light text-[#2c3e50] mb-2">干得漂亮！</h3>
-                    <p className="text-sm text-[#95a5a6]">连续冥想3天，继续保持</p>
+                    <h3 className="text-2xl font-light text-slate-800 mb-2">干得漂亮！</h3>
+                    <p className="text-sm text-slate-500">连续冥想3天，继续保持</p>
                   </div>
 
                   {/* 成就徽章 */}
-                  <div className="w-full mt-6 bg-gradient-to-r from-[#ffd700] to-[#ffed4e] rounded-2xl p-4 text-center">
-                    <span className="text-base font-medium text-[#2c3e50]"><FaStar className="inline" aria-hidden /> 解锁新成就：专注新星</span>
+                  <div className="w-full mt-6 bg-amber-500 rounded-2xl p-4 text-center">
+                    <span className="text-base font-medium text-slate-800"><FaStar className="inline" aria-hidden /> 解锁新成就：专注新星</span>
                   </div>
 
                   {/* 操作按钮 */}
                   <div className="w-full mt-8 space-y-3">
-                    <button className="w-full py-4 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-2xl text-base font-medium">
+                    <button type="button" className="w-full py-4 bg-slate-900 text-white rounded-2xl text-base font-medium">
                       再来一次
                     </button>
-                    <button className="w-full py-4 border-2 border-[#667eea] text-[#667eea] rounded-2xl text-base font-medium bg-transparent">
+                    <button type="button" className="w-full py-4 border-2 border-slate-900 text-slate-900 rounded-2xl text-base font-medium bg-transparent">
                       查看统计
                     </button>
-                    <button className="w-full py-2 text-[#95a5a6] text-sm">
+                    <button type="button" className="w-full py-2 text-slate-500 text-sm">
                       返回首页
                     </button>
                   </div>
@@ -633,17 +633,17 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第4屏: 统计总览 */}
           <Activity mode={activeScreen === 3 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">统计总览</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">统计总览</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="h-full overflow-y-auto no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
-                <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-9 pb-6 text-white">
+                <div className="bg-slate-900 px-5 pt-9 pb-6 text-white">
                   <h2 className="text-2xl font-light mb-4">本周统计</h2>
                   
                   {/* 今日数据 */}
-                  <div className="bg-white/20 backdrop-blur-md rounded-[15px] p-4">
+                  <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4">
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
                         <div className="text-xs opacity-90 mb-1">冥想次数</div>
@@ -663,34 +663,34 @@ const MeditationAppDemo: React.FC = () => {
                 </div>
 
                 {/* 本周冥想时长图表 */}
-                <div className="mx-5 mt-5 bg-white rounded-[15px] p-5 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#2c3e50] mb-4">本周冥想时长</h3>
+                <div className="mx-5 mt-5 bg-white rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-base font-semibold text-slate-800 mb-4">本周冥想时长</h3>
                   <canvas ref={setCanvasRef(4)} width="320" height="200" />
                 </div>
 
                 {/* 最常使用场景 */}
-                <div className="mx-5 mt-5 bg-white rounded-[15px] p-5 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#2c3e50] mb-4">最常使用场景</h3>
+                <div className="mx-5 mt-5 bg-white rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-base font-semibold text-slate-800 mb-4">最常使用场景</h3>
                   <div className="space-y-3">
                     {[
-                      { name: '雨声', icon: <FaCloudRain />, percent: 35, time: '42min', color: '#667eea' },
-                      { name: '海浪', icon: <FaWater />, percent: 28, time: '34min', color: '#4facfe' },
-                      { name: '森林', icon: <FaTree />, percent: 22, time: '26min', color: '#56ab2f' },
-                      { name: '夜晚', icon: <FaMoon />, percent: 15, time: '18min', color: '#3498db' }
+                      { name: '雨声', icon: <FaCloudRain />, percent: 35, time: '42min', color: 'rgb(15,23,42)' },
+                      { name: '海浪', icon: <FaWater />, percent: 28, time: '34min', color: 'rgb(56,189,248)' },
+                      { name: '森林', icon: <FaTree />, percent: 22, time: '26min', color: 'rgb(16,185,129)' },
+                      { name: '夜晚', icon: <FaMoon />, percent: 15, time: '18min', color: 'rgb(14,165,233)' }
                     ].map((scene, idx) => (
                       <div key={idx} className="flex items-center gap-3">
                         <span className="text-xl">{scene.icon}</span>
                         <div className="flex-1">
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-[#2c3e50]">{scene.name}</span>
-                            <span className="text-xs text-[#95a5a6]">{scene.percent}% · {scene.time}</span>
+                            <span className="text-sm text-slate-800">{scene.name}</span>
+                            <span className="text-xs text-slate-500">{scene.percent}% · {scene.time}</span>
                           </div>
-                          <div className="h-1.5 bg-[#f0f0f0] rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                             <div 
                               className="h-full rounded-full"
                               style={{ 
                                 width: `${scene.percent}%`,
-                                background: `linear-gradient(90deg, ${scene.color}, ${scene.color}dd)`
+                                backgroundColor: scene.color
                               }}
                             />
                           </div>
@@ -701,10 +701,10 @@ const MeditationAppDemo: React.FC = () => {
                 </div>
 
                 {/* 时间分布 */}
-                <div className="mx-5 mt-5 mb-20 bg-white rounded-[15px] p-5 shadow-sm text-center">
+                <div className="mx-5 mt-5 mb-20 bg-white rounded-2xl p-5 shadow-sm text-center">
                   <span className="text-2xl"><FaMoon aria-hidden /></span>
-                  <h3 className="text-base font-semibold text-[#2c3e50] mt-2 mb-1">最活跃时段</h3>
-                  <p className="text-sm text-[#95a5a6]">晚上 21:00-23:00</p>
+                  <h3 className="text-base font-semibold text-slate-800 mt-2 mb-1">最活跃时段</h3>
+                  <p className="text-sm text-slate-500">晚上 21:00-23:00</p>
                 </div>
               </div>
             </div>
@@ -714,13 +714,13 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第5屏: 成就页面 */}
           <Activity mode={activeScreen === 4 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">成就页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">成就页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="h-full overflow-y-auto no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
-                <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-9 pb-6 text-white text-center">
+                <div className="bg-slate-900 px-5 pt-9 pb-6 text-white text-center">
                   <h2 className="text-[42px] font-extralight leading-tight mb-2">累计冥想<br/>127 小时</h2>
                   <p className="text-sm opacity-90 mb-3">已超越 85% 的用户</p>
                   <div className="w-full h-1.5 bg-white/30 rounded-full overflow-hidden">
@@ -731,38 +731,38 @@ const MeditationAppDemo: React.FC = () => {
                 {/* 成就徽章网格 */}
                 <div className="p-5 grid grid-cols-2 gap-4">
                   {[
-                    { icon: <FaMedal />, name: '初学者', desc: '完成首次冥想', unlocked: true, date: '2025-10-15', color: '#ffd700' },
-                    { icon: <FaStar />, name: '专注新星', desc: '连续冥想3天', unlocked: true, date: '2025-10-18', color: '#ffd700' },
-                    { icon: <FaSun />, name: '早起鸟', desc: '早晨冥想10次', unlocked: true, date: '2025-10-20', color: '#ffd700' },
-                    { icon: <FaMoon />, name: '夜猫子', desc: '夜晚冥想10次', unlocked: true, date: '2025-10-22', color: '#ffd700' },
-                    { icon: <FaTrophy />, name: '冥想大师', desc: '累计100小时', unlocked: false, progress: '78/100小时', color: '#d0d0d0' },
-                    { icon: <FaCrown />, name: '全勤王', desc: '连续冥想30天', unlocked: false, progress: '7/30天', color: '#d0d0d0' }
+                    { icon: <FaMedal />, name: '初学者', desc: '完成首次冥想', unlocked: true, date: '2025-10-15', color: 'rgb(245,158,11)' },
+                    { icon: <FaStar />, name: '专注新星', desc: '连续冥想3天', unlocked: true, date: '2025-10-18', color: 'rgb(245,158,11)' },
+                    { icon: <FaSun />, name: '早起鸟', desc: '早晨冥想10次', unlocked: true, date: '2025-10-20', color: 'rgb(245,158,11)' },
+                    { icon: <FaMoon />, name: '夜猫子', desc: '夜晚冥想10次', unlocked: true, date: '2025-10-22', color: 'rgb(245,158,11)' },
+                    { icon: <FaTrophy />, name: '冥想大师', desc: '累计100小时', unlocked: false, progress: '78/100小时', color: 'rgb(203,213,225)' },
+                    { icon: <FaCrown />, name: '全勤王', desc: '连续冥想30天', unlocked: false, progress: '7/30天', color: 'rgb(203,213,225)' }
                   ].map((achievement, idx) => (
                     <div 
                       key={idx} 
-                      className={`bg-white rounded-[15px] p-4 shadow-sm ${!achievement.unlocked ? 'opacity-50' : ''}`}
+                      className={`bg-white rounded-2xl p-4 shadow-sm ${!achievement.unlocked ? 'opacity-50' : ''}`}
                       style={{ borderTop: `4px solid ${achievement.color}` }}
                     >
                       <div className="text-4xl mb-2">{achievement.icon}</div>
-                      <h4 className="text-base font-bold text-[#2c3e50] mb-1">{achievement.name}</h4>
-                      <p className="text-xs text-[#95a5a6] mb-2">{achievement.desc}</p>
+                      <h4 className="text-base font-bold text-slate-800 mb-1">{achievement.name}</h4>
+                      <p className="text-xs text-slate-500 mb-2">{achievement.desc}</p>
                       {achievement.unlocked ? (
-                        <div className="text-xs text-[#52c41a]">✓ {achievement.date}</div>
+                        <div className="text-xs text-emerald-600">✓ {achievement.date}</div>
                       ) : (
-                        <div className="text-xs text-[#95a5a6]">{achievement.progress}</div>
+                        <div className="text-xs text-slate-500">{achievement.progress}</div>
                       )}
                     </div>
                   ))}
                 </div>
 
                 {/* 底部汇总 */}
-                <div className="mx-5 mb-20 bg-white rounded-[15px] p-5 shadow-sm">
+                <div className="mx-5 mb-20 bg-white rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm text-[#95a5a6]">已解锁</span>
-                    <span className="text-lg font-semibold text-[#667eea]">4/12</span>
+                    <span className="text-sm text-slate-500">已解锁</span>
+                    <span className="text-lg font-semibold text-slate-900">4/12</span>
                   </div>
-                  <div className="h-2 bg-[#f0f0f0] rounded-full overflow-hidden">
-                    <div className="h-full w-1/3 bg-gradient-to-r from-[#667eea] to-[#764ba2] rounded-full" />
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full w-1/3 bg-slate-900 rounded-full" />
                   </div>
                 </div>
               </div>
@@ -773,22 +773,22 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第6屏: 日历页面 */}
           <Activity mode={activeScreen === 5 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">日历页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">日历页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="h-full overflow-y-auto no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
-                <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-9 pb-5 text-white">
+                <div className="bg-slate-900 px-5 pt-9 pb-5 text-white">
                   <div className="flex items-center justify-between mb-4">
-                    <button 
+                    <button type="button" 
                       onClick={() => changeMonth(-1)}
                       className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                     <span className="text-xl font-light">2025年{currentMonth}月</span>
-                    <button 
+                    <button type="button" 
                       onClick={() => changeMonth(1)}
                       className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
                     >
@@ -798,11 +798,11 @@ const MeditationAppDemo: React.FC = () => {
                 </div>
 
                 {/* 日历 */}
-                <div className="mx-5 mt-5 bg-white rounded-[15px] p-4 shadow-sm">
+                <div className="mx-5 mt-5 bg-white rounded-2xl p-4 shadow-sm">
                   {/* 星期标题 */}
                   <div className="grid grid-cols-7 gap-1 mb-2">
                     {['一', '二', '三', '四', '五', '六', '日'].map((day, idx) => (
-                      <div key={idx} className="text-center text-xs font-semibold text-[#95a5a6] py-2">
+                      <div key={idx} className="text-center text-xs font-semibold text-slate-500 py-2">
                         {day}
                       </div>
                     ))}
@@ -819,14 +819,14 @@ const MeditationAppDemo: React.FC = () => {
                       return (
                         <div
                           key={i}
-                          className={`aspect-square flex flex-col items-center justify-center rounded-lg relative
-                            ${isToday ? 'bg-[#667eea] text-white' : ''}
-                            ${!isCurrentMonth ? 'text-[#d0d0d0]' : 'text-[#2c3e50]'}
+                          className={`aspect-square flex flex-col items-center justify-center rounded-2xl relative
+                            ${isToday ? 'bg-slate-900 text-white' : ''}
+                            ${!isCurrentMonth ? 'text-slate-400' : 'text-slate-800'}
                           `}
                         >
                           <span className="text-sm">{isCurrentMonth ? day : ''}</span>
                           {hasMeditation && (
-                            <div className={`absolute bottom-1 w-1 h-1 rounded-full ${isToday ? 'bg-white' : 'bg-[#52c41a]'}`} />
+                            <div className={`absolute bottom-1 w-1 h-1 rounded-full ${isToday ? 'bg-white' : 'bg-emerald-600'}`} />
                           )}
                         </div>
                       );
@@ -842,27 +842,27 @@ const MeditationAppDemo: React.FC = () => {
                     { label: '完成率', value: '40', unit: '%' }
                   ].map((stat, idx) => (
                     <div key={idx} className="bg-white rounded-[12px] p-4 shadow-sm text-center">
-                      <div className="text-2xl font-light text-[#667eea] mb-1">{stat.value}<span className="text-sm">{stat.unit}</span></div>
-                      <div className="text-xs text-[#95a5a6]">{stat.label}</div>
+                      <div className="text-2xl font-light text-slate-900 mb-1">{stat.value}<span className="text-sm">{stat.unit}</span></div>
+                      <div className="text-xs text-slate-500">{stat.label}</div>
                     </div>
                   ))}
                 </div>
 
                 {/* 月度汇总 */}
-                <div className="mx-5 mt-5 mb-20 bg-white rounded-[15px] p-5 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#2c3e50] mb-3">本月汇总</h3>
+                <div className="mx-5 mt-5 mb-20 bg-white rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-base font-semibold text-slate-800 mb-3">本月汇总</h3>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-[#95a5a6]">累计冥想时间</span>
-                      <span className="text-base font-semibold text-[#2c3e50]">180分钟</span>
+                      <span className="text-sm text-slate-500">累计冥想时间</span>
+                      <span className="text-base font-semibold text-slate-800">180分钟</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-[#95a5a6]">最长连续天数</span>
-                      <span className="text-base font-semibold text-[#2c3e50]">7天</span>
+                      <span className="text-sm text-slate-500">最长连续天数</span>
+                      <span className="text-base font-semibold text-slate-800">7天</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-[#95a5a6]">获得成就</span>
-                      <span className="text-base font-semibold text-[#2c3e50]">2个 <FaTrophy className="inline" aria-hidden /></span>
+                      <span className="text-sm text-slate-500">获得成就</span>
+                      <span className="text-base font-semibold text-slate-800">2个 <FaTrophy className="inline" aria-hidden /></span>
                     </div>
                   </div>
                 </div>
@@ -874,19 +874,19 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第7屏: 场景库 */}
           <Activity mode={activeScreen === 6 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">场景库</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">场景库</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="h-full overflow-y-auto no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 搜索区 */}
                 <div className="px-5 pt-9 pb-4 bg-white">
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2 bg-[#f5f7fa] border border-[#e0e0e0] rounded-2xl px-4 py-2.5">
-                      <Search className="w-4 h-4 text-[#95a5a6]" />
+                    <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+                      <Search className="w-4 h-4 text-slate-500" />
                       <input type="text" placeholder="搜索场景..." className="flex-1 bg-transparent border-none outline-none text-sm" />
                     </div>
-                    <button className="w-[45px] h-[45px] rounded-full bg-[#667eea] text-white flex items-center justify-center">
+                    <button type="button" className="w-[45px] h-[45px] rounded-full bg-slate-900 text-white flex items-center justify-center">
                       <Settings className="w-5 h-5" />
                     </button>
                   </div>
@@ -894,11 +894,11 @@ const MeditationAppDemo: React.FC = () => {
                   {/* 分类标签 */}
                   <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
                     {['全部', '自然', '城市', '白噪音', '音乐'].map((cat, idx) => (
-                      <button
+                      <button type="button"
                         key={idx}
                         onClick={() => setSelectedCategory(cat)}
                         className={`px-4 py-2 rounded-2xl text-sm whitespace-nowrap border-2 transition-all hover:scale-105
-                          ${selectedCategory === cat ? 'bg-[#667eea] text-white border-[#667eea]' : 'border-[#e0e0e0] text-[#95a5a6] hover:border-[#667eea]'}
+                          ${selectedCategory === cat ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-500 hover:border-slate-900'}
                         `}
                       >
                         {cat}
@@ -910,21 +910,21 @@ const MeditationAppDemo: React.FC = () => {
                 {/* 场景卡片网格 */}
                 <div className="p-5 grid grid-cols-2 gap-4 pb-20">
                   {[
-                    { icon: <FaCloudRain />, name: '雨声', time: '15min', plays: '12.3k', color: 'from-[#667eea] to-[#764ba2]', liked: true },
-                    { icon: <FaWater />, name: '海浪', time: '20min', plays: '8.9k', color: 'from-[#4facfe] to-[#00f2fe]', liked: false },
-                    { icon: <FaTree />, name: '森林', time: '25min', plays: '15.6k', color: 'from-[#56ab2f] to-[#a8e063]', liked: true },
-                    { icon: <FaBroadcastTower />, name: '白噪音', time: '30min', plays: '6.2k', color: 'from-[#bdc3c7] to-[#ecf0f1]', liked: false },
-                    { icon: <FaFire />, name: '篝火', time: '20min', plays: '9.4k', color: 'from-[#f12711] to-[#f5af19]', liked: false },
-                    { icon: <FaMountain />, name: '山谷风', time: '18min', plays: '7.8k', color: 'from-[#89f7fe] to-[#66a6ff]', liked: true },
-                    { icon: <FaBug />, name: '虫鸣', time: '22min', plays: '5.6k', color: 'from-[#11998e] to-[#38ef7d]', liked: false },
-                    { icon: <FaBell />, name: '音钵', time: '15min', plays: '11.2k', color: 'from-[#ffd89b] to-[#19547b]', liked: true }
+                    { icon: <FaCloudRain />, name: '雨声', time: '15min', plays: '12.3k', color: 'bg-slate-900', liked: true },
+                    { icon: <FaWater />, name: '海浪', time: '20min', plays: '8.9k', color: 'bg-sky-400', liked: false },
+                    { icon: <FaTree />, name: '森林', time: '25min', plays: '15.6k', color: 'bg-emerald-500', liked: true },
+                    { icon: <FaBroadcastTower />, name: '白噪音', time: '30min', plays: '6.2k', color: 'bg-slate-300', liked: false },
+                    { icon: <FaFire />, name: '篝火', time: '20min', plays: '9.4k', color: 'bg-amber-500', liked: false },
+                    { icon: <FaMountain />, name: '山谷风', time: '18min', plays: '7.8k', color: 'bg-sky-300', liked: true },
+                    { icon: <FaBug />, name: '虫鸣', time: '22min', plays: '5.6k', color: 'bg-emerald-600', liked: false },
+                    { icon: <FaBell />, name: '音钵', time: '15min', plays: '11.2k', color: 'bg-slate-600', liked: true }
                   ].map((scene, idx) => (
                     <div
                       key={idx}
-                      className={`relative aspect-square rounded-[12px] bg-gradient-to-br ${scene.color} overflow-hidden cursor-pointer hover:scale-105 transition-transform`}
+                      className={`relative aspect-square rounded-[12px] ${scene.color} overflow-hidden cursor-pointer hover:scale-105 transition-transform`}
                     >
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
-                      <button 
+                      <div className="absolute inset-0 bg-slate-900/40" />
+                      <button type="button" 
                         onClick={() => toggleLike(scene.name)}
                         className="absolute top-2 right-2 z-10 hover:scale-125 transition-transform"
                       >
@@ -952,13 +952,13 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第8屏: 设置页面 */}
           <Activity mode={activeScreen === 7 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">设置页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">设置页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="h-full overflow-y-auto no-scrollbar bg-[#f5f7fa]">
+              <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 个人信息卡片 */}
-                <div className="bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 pt-10 pb-8 text-white">
+                <div className="bg-slate-900 px-5 pt-10 pb-8 text-white">
                   <div className="flex items-center gap-5">
                     <div className="w-[70px] h-[70px] rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center text-[32px]">
                       <FaSpa className="shrink-0" aria-hidden />
@@ -966,7 +966,7 @@ const MeditationAppDemo: React.FC = () => {
                     <div className="flex-1">
                       <h2 className="text-2xl font-light mb-1">冥想者</h2>
                       <p className="text-sm opacity-90 mb-2">保持平静，专注当下</p>
-                      <div className="inline-block px-3 py-1 bg-yellow-500/30 backdrop-blur-sm rounded-[12px] text-xs">
+                      <div className="inline-block px-3 py-1 bg-amber-500/30 backdrop-blur-sm rounded-[12px] text-xs">
                         <FaGem className="inline" aria-hidden /> VIP会员
                       </div>
                     </div>
@@ -975,8 +975,8 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 冥想设置 */}
                 <div className="p-5">
-                  <h3 className="text-sm font-semibold text-[#95a5a6] uppercase tracking-wide mb-3">冥想设置</h3>
-                  <div className="bg-white rounded-[15px] overflow-hidden shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">冥想设置</h3>
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
                     {[
                       { label: '默认时长', value: '20分钟', type: 'arrow' },
                       { label: '启用呼吸引导', value: '', type: 'toggle', enabled: true },
@@ -1007,29 +1007,29 @@ const MeditationAppDemo: React.FC = () => {
                       return (
                         <div
                           key={idx}
-                          className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-[#f5f7fa]' : ''}`}
+                          className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                         >
-                          <span className="text-[15px] text-[#2c3e50]">{setting.label}</span>
+                          <span className="text-[15px] text-slate-800">{setting.label}</span>
                           {setting.type === 'arrow' && (
-                            <button className="flex items-center gap-2 hover:opacity-70 transition-opacity">
-                              <span className="text-[15px] text-[#95a5a6]">{setting.value}</span>
-                              <ChevronRight className="w-4 h-4 text-[#95a5a6]" />
+                            <button type="button" className="flex items-center gap-2 hover:opacity-70 transition-opacity">
+                              <span className="text-[15px] text-slate-500">{setting.value}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-500" />
                             </button>
                           )}
                           {setting.type === 'toggle' && (
-                            <button 
+                            <button type="button" 
                               onClick={() => handleToggle(setting.label)}
-                              className={`w-[48px] h-[28px] rounded-full relative transition-colors ${enabled ? 'bg-[#52c41a]' : 'bg-[#d0d0d0]'}`}
+                              className={`w-[48px] h-[28px] rounded-full relative transition-colors ${enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
                             >
                               <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white shadow transition-transform ${enabled ? 'right-0.5' : 'left-0.5'}`} />
                             </button>
                           )}
                           {setting.type === 'slider' && (
                             <div className="flex items-center gap-2">
-                              <div className="w-20 h-1 bg-[#e0e0e0] rounded-full overflow-hidden">
-                                <div className="h-full bg-[#667eea] rounded-full" style={{ width: `${sliderVal}%` }} />
+                              <div className="w-20 h-1 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="h-full bg-slate-900 rounded-full" style={{ width: `${sliderVal}%` }} />
                               </div>
-                              <span className="text-xs text-[#95a5a6] w-10 text-right">{sliderVal}%</span>
+                              <span className="text-xs text-slate-500 w-10 text-right">{sliderVal}%</span>
                             </div>
                           )}
                         </div>
@@ -1040,8 +1040,8 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 提醒设置 */}
                 <div className="px-5">
-                  <h3 className="text-sm font-semibold text-[#95a5a6] uppercase tracking-wide mb-3">提醒设置</h3>
-                  <div className="bg-white rounded-[15px] overflow-hidden shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">提醒设置</h3>
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
                     {[
                       { label: '每日提醒', value: '', type: 'toggle', enabled: true },
                       { label: '提醒时间', value: '21:00', type: 'arrow' },
@@ -1050,17 +1050,17 @@ const MeditationAppDemo: React.FC = () => {
                     ].map((setting, idx, arr) => (
                       <div
                         key={idx}
-                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-[#f5f7fa]' : ''}`}
+                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-[#2c3e50]">{setting.label}</span>
+                        <span className="text-[15px] text-slate-800">{setting.label}</span>
                         {setting.type === 'arrow' && (
                           <div className="flex items-center gap-2">
-                            <span className="text-[15px] text-[#95a5a6]">{setting.value}</span>
-                            <span className="text-[#95a5a6]">›</span>
+                            <span className="text-[15px] text-slate-500">{setting.value}</span>
+                            <span className="text-slate-500">›</span>
                           </div>
                         )}
                         {setting.type === 'toggle' && (
-                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-[#52c41a]' : 'bg-[#d0d0d0]'}`}>
+                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
                             <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white transition-transform ${setting.enabled ? 'right-0.5' : 'left-0.5'}`} />
                           </div>
                         )}
@@ -1071,8 +1071,8 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 通用设置 */}
                 <div className="px-5">
-                  <h3 className="text-sm font-semibold text-[#95a5a6] uppercase tracking-wide mb-3">通用设置</h3>
-                  <div className="bg-white rounded-[15px] overflow-hidden shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">通用设置</h3>
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
                     {[
                       { label: '主题模式', value: '浅色', type: 'arrow' },
                       { label: '语言', value: '简体中文', type: 'arrow' },
@@ -1080,17 +1080,17 @@ const MeditationAppDemo: React.FC = () => {
                     ].map((setting, idx, arr) => (
                       <div
                         key={idx}
-                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-[#f5f7fa]' : ''}`}
+                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-[#2c3e50]">{setting.label}</span>
+                        <span className="text-[15px] text-slate-800">{setting.label}</span>
                         {setting.type === 'arrow' && (
                           <div className="flex items-center gap-2">
-                            <span className="text-[15px] text-[#95a5a6]">{setting.value}</span>
-                            <span className="text-[#95a5a6]">›</span>
+                            <span className="text-[15px] text-slate-500">{setting.value}</span>
+                            <span className="text-slate-500">›</span>
                           </div>
                         )}
                         {setting.type === 'toggle' && (
-                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-[#52c41a]' : 'bg-[#d0d0d0]'}`}>
+                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
                             <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white transition-transform ${setting.enabled ? 'right-0.5' : 'left-0.5'}`} />
                           </div>
                         )}
@@ -1101,8 +1101,8 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 其他 */}
                 <div className="px-5 pb-20">
-                  <h3 className="text-sm font-semibold text-[#95a5a6] uppercase tracking-wide mb-3">其他</h3>
-                  <div className="bg-white rounded-[15px] overflow-hidden shadow-sm mb-5">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">其他</h3>
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm mb-5">
                     {[
                       { label: '清除缓存', value: '125MB', type: 'arrow' },
                       { label: '关于我们', value: '', type: 'arrow' },
@@ -1111,25 +1111,25 @@ const MeditationAppDemo: React.FC = () => {
                     ].map((setting, idx, arr) => (
                       <div
                         key={idx}
-                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-[#f5f7fa]' : ''}`}
+                        className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-[#2c3e50]">{setting.label}</span>
+                        <span className="text-[15px] text-slate-800">{setting.label}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[15px] text-[#95a5a6]">{setting.value}</span>
-                          <span className="text-[#95a5a6]">›</span>
+                          <span className="text-[15px] text-slate-500">{setting.value}</span>
+                          <span className="text-slate-500">›</span>
                         </div>
                       </div>
                     ))}
                   </div>
 
                   {/* 退出登录 */}
-                  <button className="w-full bg-white rounded-[15px] py-4 text-[#f5222d] text-base font-semibold shadow-sm flex items-center justify-center gap-2">
+                  <button type="button" className="w-full bg-white rounded-2xl py-4 text-rose-600 text-base font-semibold shadow-sm flex items-center justify-center gap-2">
                     <LogOut className="w-4 h-4" />
                     <span>退出登录</span>
                   </button>
 
                   {/* 版本信息 */}
-                  <div className="text-center mt-5 text-xs text-[#95a5a6]">
+                  <div className="text-center mt-5 text-xs text-slate-500">
                     v2.0.1
                   </div>
                 </div>
@@ -1141,11 +1141,11 @@ const MeditationAppDemo: React.FC = () => {
           {/* 第9屏: 呼吸引导页面 */}
           <Activity mode={activeScreen === 8 ? 'visible' : 'hidden'}>
             <div className="flex flex-col items-center">
-            <h3 className="text-base font-semibold text-[#2c3e50] mb-4">呼吸引导页面</h3>
-            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-[#2a2a2a] bg-white overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-[#2a2a2a] rounded-b-[12px] z-10" />
+            <h3 className="text-base font-semibold text-slate-800 mb-4">呼吸引导页面</h3>
+            <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
-              <div className="relative h-full bg-gradient-to-br from-[#1a237e] to-[#283593] overflow-hidden">
+              <div className="relative h-full bg-slate-900 overflow-hidden">
                 {/* 气泡背景 */}
                 <canvas ref={setCanvasRef(8)} className="absolute inset-0" />
                 
@@ -1158,7 +1158,7 @@ const MeditationAppDemo: React.FC = () => {
                 <div className="relative z-10 flex flex-col items-center justify-center h-[calc(100%-200px)] mt-12">
                   <div className="w-[300px] h-[300px] rounded-full border-[3px] border-white/30 flex items-center justify-center animate-[breathingCircle_12s_ease-in-out_infinite]"
                     style={{
-                      background: 'radial-gradient(circle, rgba(102,126,234,0.3) 0%, transparent 70%)'
+                      background: 'radial-gradient(circle, rgba(59,130,246,0.3) 0%, transparent 70%)'
                     }}>
                     <div className="text-4xl font-extralight text-white">吸气...</div>
                   </div>
@@ -1176,7 +1176,7 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 底部控制 */}
                 <div className="relative z-10 text-center mt-8 space-y-4">
-                  <button className="w-[60px] h-[60px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white mx-auto">
+                  <button type="button" className="w-[60px] h-[60px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white mx-auto">
                     <Pause className="w-7 h-7 fill-white" />
                   </button>
                   <p className="text-white/70 text-xs px-8">坐直，双脚平放地面，保持放松</p>

@@ -37,6 +37,7 @@ import {
   studioTileClassName,
 } from './studioTheme';
 import { coinFlipApi } from '../api/coinFlip';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const coinPanelClass = studioSurfaceClassName;
 const coinTileClass = studioTileClassName;
@@ -84,6 +85,7 @@ const CoinFlip: React.FC = () => {
   const [resultId, setResultId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const reducedMotion = useReducedMotion();
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shakeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statsRef = useRef<CoinFlipStats>({ heads: 0, tails: 0, total: 0 });
@@ -445,7 +447,7 @@ const CoinFlip: React.FC = () => {
   return (
     <InfoQueryShell>
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           className="space-y-6"
@@ -467,7 +469,7 @@ const CoinFlip: React.FC = () => {
 
           {/* 主要抛硬币区域 */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={reducedMotion ? false : { opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3 }}
             className={`${coinPanelClass} p-5 sm:p-6`}
@@ -482,8 +484,8 @@ const CoinFlip: React.FC = () => {
             {/* 硬币显示区域 */}
             <div className="mb-8 flex justify-center">
               <motion.div
-                className="relative flex h-36 w-36 items-center justify-center rounded-full border-4 border-amber-200 bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 shadow-[0_18px_50px_rgba(245,158,11,0.28)]"
-                animate={isFlipping ? {
+                className="relative flex h-36 w-36 items-center justify-center rounded-full border-4 border-amber-200 bg-amber-400 shadow-sm"
+                animate={!reducedMotion && isFlipping ? {
                   rotateX: [0, 360, 720, 1080, 1440],
                   rotateY: [0, 180, 360, 540, 720],
                   scale: [1, 1.1, 0.9, 1.1, 1],
@@ -507,7 +509,7 @@ const CoinFlip: React.FC = () => {
               >
                 <motion.div
                   key={result || 'default'}
-                  initial={{ opacity: 0, scale: 0.5 }}
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.5 }}
                   transition={{ duration: 0.3 }}
@@ -522,7 +524,7 @@ const CoinFlip: React.FC = () => {
             <AnimatePresence mode="wait">
               {result && !isFlipping && (
                 <motion.div
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   className="mb-6 text-center"
@@ -532,17 +534,17 @@ const CoinFlip: React.FC = () => {
                       : 'border-sky-200 bg-sky-50 text-sky-800'
                     }`}>
                     {result === 'heads' ? (
-                      <FaCheckCircle className="text-green-600" />
+                      <FaCheckCircle className="text-emerald-600" />
                     ) : (
-                      <FaTimesCircle className="text-blue-600" />
+                      <FaTimesCircle className="text-sky-600" />
                     )}
                     结果: {result === 'heads' ? '正面' : '反面'}
                   </div>
                   {resultId && (
-                    <button
+                    <button type="button"
                       onClick={copyResultId}
                       title="点击复制结果 ID"
-                      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 font-mono text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                      className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 font-mono text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
                     >
                       <FaCopy className="text-slate-400" />
                       ID: {resultId}
@@ -559,7 +561,7 @@ const CoinFlip: React.FC = () => {
 
             {/* 控制按钮 */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <motion.button
+              <motion.button type="button"
                 onClick={flipCoin}
                 disabled={isFlipping}
                 className={coinButtonClass}
@@ -571,12 +573,12 @@ const CoinFlip: React.FC = () => {
               </motion.button>
 
               {isFlipping && (
-                <motion.button
+                <motion.button type="button"
                   onClick={skipAnimationHandler}
                   className={coinButtonClass}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  initial={{ opacity: 0, scale: 0.8 }}
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
                 >
@@ -585,7 +587,7 @@ const CoinFlip: React.FC = () => {
                 </motion.button>
               )}
 
-              <motion.button
+              <motion.button type="button"
                 onClick={() => setAudioEnabled(!audioEnabled)}
                 className={coinGhostButtonClass}
                 whileHover={{ scale: 1.05 }}
@@ -615,7 +617,7 @@ const CoinFlip: React.FC = () => {
 
           {/* 统计信息 */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
             className={`${coinPanelClass} p-5 sm:p-6`}
@@ -629,12 +631,12 @@ const CoinFlip: React.FC = () => {
               />
               <div className="flex flex-wrap gap-2">
                 {lastRandomData && (
-                  <motion.button
+                  <motion.button type="button"
                     onClick={() => setShowRandomAlgorithm(!showRandomAlgorithm)}
                     className={coinGhostButtonClass}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    initial={{ opacity: 0, scale: 0.8 }}
+                    initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
                   >
@@ -642,7 +644,7 @@ const CoinFlip: React.FC = () => {
                     {showRandomAlgorithm ? '隐藏算法' : '查看算法'}
                   </motion.button>
                 )}
-                <motion.button
+                <motion.button type="button"
                   onClick={() => setShowStats(!showStats)}
                   className={coinGhostButtonClass}
                   whileHover={{ scale: 1.05 }}
@@ -662,7 +664,7 @@ const CoinFlip: React.FC = () => {
 
             {showRandomAlgorithm && lastRandomData && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
+                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-4 mb-4"
@@ -751,79 +753,79 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
 
                 {/* 算法原理说明 */}
                 <div className={`${coinTileClass} p-4`}>
-                  <h4 className="mb-3 flex items-center gap-2 font-semibold text-violet-900">
+                  <h4 className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
                     <FaCode className="text-lg" />
                     算法原理说明
                   </h4>
                   <div className="space-y-2 text-sm text-slate-700">
                     <div>
                       <h5 className="font-medium mb-1 flex items-center gap-2">
-                        <FaShieldAlt className="text-blue-600" />
+                        <FaShieldAlt className="text-sky-600" />
                         加密安全随机数:
                       </h5>
                       <ul className="list-disc list-inside space-y-1 text-xs">
                         <li className="flex items-center gap-1">
-                          <FaCog className="text-blue-500" />
+                          <FaCog className="text-sky-500" />
                           服务端 crypto.randomInt(0, 2) 直接取整数，无取模偏差
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaShieldAlt className="text-blue-500" />
+                          <FaShieldAlt className="text-sky-500" />
                           前端兜底走 Web Crypto API，同为密码学安全随机源
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaRandom className="text-blue-500" />
+                          <FaRandom className="text-sky-500" />
                           熵来自操作系统随机源，不可预测、不可复现
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaCheckCircle className="text-blue-500" />
+                          <FaCheckCircle className="text-sky-500" />
                           每次结果连同唯一 ID 一起落库，可事后核对
                         </li>
                       </ul>
                     </div>
                     <div>
                       <h5 className="font-medium mb-1 flex items-center gap-2">
-                        <FaRandom className="text-purple-600" />
+                        <FaRandom className="text-slate-600" />
                         兜底与降级:
                       </h5>
                       <ul className="list-disc list-inside space-y-1 text-xs">
                         <li className="flex items-center gap-1">
-                          <FaCog className="text-purple-500" />
+                          <FaCog className="text-slate-500" />
                           服务端不可达时，结果改由浏览器生成，不会入库
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaClock className="text-purple-500" />
+                          <FaClock className="text-slate-500" />
                           此时结果没有唯一 ID，界面也不会显示可复制的 ID
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaInfoCircle className="text-purple-500" />
+                          <FaInfoCircle className="text-slate-500" />
                           仅当浏览器缺少 Web Crypto API 时才退回 Math.random()
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaRandom className="text-purple-500" />
+                          <FaRandom className="text-slate-500" />
                           发生降级时，上方"随机算法详情"会标注真实来源
                         </li>
                       </ul>
                     </div>
                     <div>
                       <h5 className="font-medium mb-1 flex items-center gap-2">
-                        <FaCheckCircle className="text-green-600" />
+                        <FaCheckCircle className="text-emerald-600" />
                         公平性保证:
                       </h5>
                       <ul className="list-disc list-inside space-y-1 text-xs">
                         <li className="flex items-center gap-1">
-                          <FaCog className="text-green-500" />
+                          <FaCog className="text-emerald-500" />
                           服务端按 0 / 1 等概率取值
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaBullseye className="text-green-500" />
+                          <FaBullseye className="text-emerald-500" />
                           前端兜底以 0.5 为界：小于 0.5 判正面
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaChartBar className="text-green-500" />
+                          <FaChartBar className="text-emerald-500" />
                           理论上正反面概率各为 50%
                         </li>
                         <li className="flex items-center gap-1">
-                          <FaEye className="text-green-500" />
+                          <FaEye className="text-emerald-500" />
                           算法完全透明，可验证公平性
                         </li>
                       </ul>
@@ -833,7 +835,7 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
 
                 <div className={`${coinTileClass} p-4`}>
                   <div className="flex items-start gap-2 text-xs text-slate-600">
-                    <FaInfoCircle className="text-blue-500 mt-0.5 flex-shrink-0" />
+                    <FaInfoCircle className="text-sky-500 mt-0.5 flex-shrink-0" />
                     <p><strong>注意:</strong> 上方展示的就是本次结果的真实来源。前端兜底路径可在浏览器开发者工具中复核；服务端路径可用结果 ID 在记录中核对。</p>
                   </div>
                 </div>
@@ -842,7 +844,7 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
 
             {showStats && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
+                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-4"
@@ -865,7 +867,7 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
 
                 {/* 数据管理 */}
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <motion.button
+                  <motion.button type="button"
                     onClick={exportStats}
                     className={coinGhostButtonClass}
                     whileHover={{ scale: 1.05 }}
@@ -886,7 +888,7 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
                     />
                   </label>
 
-                  <motion.button
+                  <motion.button type="button"
                     onClick={resetStats}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
                     whileHover={{ scale: 1.05 }}
@@ -908,7 +910,7 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
 
           {/* 使用说明 */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
             className={`${coinPanelClass} p-5 sm:p-6`}
@@ -921,35 +923,35 @@ return Math.random() < 0.5 ? 'heads' : 'tails';`}
             />
             <div className="grid gap-3 text-sm text-slate-600 md:grid-cols-2">
               <div className="flex items-start gap-3">
-                <FaPlay className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaPlay className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>点击"抛硬币"按钮开始随机抛硬币</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaClock className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaClock className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>等待动画完成后查看结果</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaChartBar className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaChartBar className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>系统会自动记录每次抛硬币的结果</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaDownload className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaDownload className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>可以导出或导入统计数据</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaCode className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaCode className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>点击"查看算法"可以查看随机数生成过程</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaShieldAlt className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaShieldAlt className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>使用加密安全随机数确保结果完全随机</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaPause className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaPause className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>动画过程中可以点击"跳过动画"立即查看结果</span>
               </div>
               <div className="flex items-start gap-3">
-                <FaCog className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <FaCog className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <span>勾选"快速模式"可以默认跳过动画</span>
               </div>
             </div>

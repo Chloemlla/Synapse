@@ -128,7 +128,7 @@ const toneClasses: Record<Tone, { icon: string; button: string; badge: string; t
 const severityClasses: Record<NonNullable<ServerTamperEvent['severity']>, string> = {
   low: 'border-slate-200 bg-slate-100 text-slate-700',
   medium: 'border-amber-200 bg-amber-50 text-amber-700',
-  high: 'border-orange-200 bg-orange-50 text-orange-700',
+  high: 'border-amber-300 bg-amber-100 text-amber-800',
   critical: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
@@ -211,8 +211,9 @@ const ActionButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
   return (
     <button
+      type="button"
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${variantClass} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${variantClass} ${className}`}
     >
       {Icon && <Icon className="h-4 w-4" />}
       {children}
@@ -544,7 +545,7 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
 
   if (!status) {
     return (
-      <div className={`relative min-h-[46vh] overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.28),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_55%,#f8fafc_100%)] ${className ?? ''}`}>
+      <div className={`relative min-h-[46vh] overflow-hidden rounded-2xl bg-slate-50 ${className ?? ''}`}>
         <div className="relative mx-auto flex min-h-[46vh] max-w-3xl items-center justify-center px-4 py-10">
           <div className="w-full rounded-2xl border border-slate-200 bg-white/88 px-6 py-8 text-center shadow-sm backdrop-blur-xl">
             {statusError ? (
@@ -575,9 +576,9 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
 
   return (
     <div
-      className={`relative min-h-screen overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.28),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_55%,#f8fafc_100%)] text-slate-900 ${className ?? ''}`}
+      className={`relative min-h-screen overflow-hidden rounded-2xl bg-slate-50 text-slate-900 ${className ?? ''}`}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.3)_0%,transparent_52%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-white/20" />
       <div className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <section className={cn(studioSurfaceClassName, "bg-white/88 p-5 sm:p-7")}>
           <div className="absolute inset-y-0 left-0 w-1.5 bg-slate-900" />

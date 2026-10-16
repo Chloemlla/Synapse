@@ -9,6 +9,7 @@ import { useAuth } from "../hooks/useAuth";
 import { isAdminRole, isSuperAdmin } from "../utils/rbac";
 import { useNotification } from "./Notification";
 import { studioModalCardClassName } from "./studioTheme";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 
 interface ModItem {
@@ -138,6 +139,8 @@ function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const reducedMotion = useReducedMotion();
+
   if (!open || typeof document === "undefined") {
     return null;
   }
@@ -145,25 +148,25 @@ function Modal({
   return createPortal(
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[99999] flex items-center justify-center bg-[#021522]/60 p-4"
-        initial={{ opacity: 0 }}
+        className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/60 p-4"
+        initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
       >
         <motion.div
           className={`${studioModalCardClassName} max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain`}
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 18, scale: 0.98 }}
           onClick={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
         >
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h3 className="text-xl font-semibold text-[#023047]">{title}</h3>
-            <button
+            <h3 className="text-xl font-semibold text-slate-900">{title}</h3>
+            <button type="button"
               type="button"
               onClick={onClose}
-              className="rounded-full border border-[#8ECAE6]/40 px-3 py-1 text-sm text-[#023047]/70 transition hover:border-[#219EBC] hover:text-[#023047]"
+              className="rounded-full border border-slate-200/40 px-3 py-1 text-sm text-slate-900/70 transition hover:border-sky-300 hover:text-slate-900"
             >
               关闭
             </button>
@@ -191,13 +194,13 @@ function TextField({
 }) {
   return (
     <label className="block space-y-2">
-      <span className="text-sm font-medium text-[#023047]">{label}</span>
+      <span className="text-sm font-medium text-slate-900">{label}</span>
       <input
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-[#8ECAE6]/50 bg-white px-4 py-3 text-[#023047] outline-none transition focus:border-[#219EBC] focus:ring-2 focus:ring-[#8ECAE6]/40"
+        className="w-full rounded-2xl border border-slate-200/50 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-slate-200/40"
       />
     </label>
   );
@@ -218,13 +221,13 @@ function TextAreaField({
 }) {
   return (
     <label className="block space-y-2">
-      <span className="text-sm font-medium text-[#023047]">{label}</span>
+      <span className="text-sm font-medium text-slate-900">{label}</span>
       <textarea
         value={value}
         rows={rows}
         readOnly={readOnly}
         onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
-        className="min-h-[220px] w-full rounded-3xl border border-[#8ECAE6]/50 bg-[#F8FBFD] px-4 py-3 font-mono text-sm text-[#023047] outline-none transition focus:border-[#219EBC] focus:ring-2 focus:ring-[#8ECAE6]/40 read-only:bg-[#F1F6F9]"
+        className="min-h-[220px] w-full rounded-3xl border border-slate-200/50 bg-slate-50 px-4 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-slate-200/40 read-only:bg-slate-50"
       />
     </label>
   );
@@ -510,34 +513,34 @@ const ModListEditor: React.FC = () => {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(142,202,230,0.28),_transparent_38%),linear-gradient(180deg,_#f8fcff_0%,_#eef7fb_100%)] px-4 py-10 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-slate-50 px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
-          <section className="overflow-hidden rounded-2xl border border-[#8ECAE6]/30 bg-white/90 p-8 shadow-sm backdrop-blur">
+          <section className="overflow-hidden rounded-2xl border border-slate-200/30 bg-white/90 p-8 shadow-sm backdrop-blur">
             <div className="flex items-start gap-4">
-              <div className="rounded-2xl bg-[#219EBC]/12 p-4 text-[#219EBC]">
+              <div className="rounded-2xl bg-sky-600/12 p-4 text-sky-700">
                 <FaEye className="h-6 w-6" />
               </div>
               <div className="space-y-3">
                 <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.24em] text-[#219EBC]">Public View</div>
-                  <h2 className="mt-2 text-3xl font-semibold text-[#023047]">模组列表</h2>
+                  <div className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-700">Public View</div>
+                  <h2 className="mt-2 text-3xl font-semibold text-slate-900">模组列表</h2>
                 </div>
-                <p className="max-w-3xl text-sm leading-7 text-[#023047]/72">
+                <p className="max-w-3xl text-sm leading-7 text-slate-900/72">
                   当前账号没有管理权限，因此这里只能浏览模组列表。新增、编辑、删除等写操作需要有修改码的管理员执行。
                 </p>
               </div>
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#8ECAE6]/30 bg-white/92 p-6 shadow-sm">
+          <section className="rounded-2xl border border-slate-200/30 bg-white/92 p-6 shadow-sm">
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-[#FFB703]/18 p-3 text-[#FB8500]">
+                <div className="rounded-2xl bg-amber-400/18 p-3 text-amber-600">
                   <FaList className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-[#023047]">浏览模组</div>
-                  <div className="text-sm text-[#023047]/60">{mods.length} 项</div>
+                  <div className="text-lg font-semibold text-slate-900">浏览模组</div>
+                  <div className="text-sm text-slate-900/60">{mods.length} 项</div>
                 </div>
               </div>
               <div className="flex gap-3">
@@ -545,49 +548,49 @@ const ModListEditor: React.FC = () => {
                   value={search}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)}
                   placeholder="搜索名称 / Hash / MD5"
-                  className="w-full rounded-2xl border border-[#8ECAE6]/50 px-4 py-3 text-sm text-[#023047] outline-none transition focus:border-[#219EBC] focus:ring-2 focus:ring-[#8ECAE6]/40 sm:w-80"
+                  className="w-full rounded-2xl border border-slate-200/50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-slate-200/40 sm:w-80"
                 />
-                <button
+                <button type="button"
                   type="button"
                   onClick={() => void handleRefresh()}
-                  className="rounded-2xl border border-[#219EBC] px-4 py-3 text-sm font-medium text-[#023047] transition hover:bg-[#219EBC]/8"
+                  className="rounded-2xl border border-sky-300 px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-sky-600/8"
                 >
                   刷新
                 </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-[#8ECAE6]/35">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200/35">
               <div className="min-w-[500px]">
-                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)] gap-4 bg-[#EAF6FB] px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#023047]/65">
+                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)] gap-4 bg-sky-50 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-900/65">
                   <div>名称</div>
                   <div>Hash</div>
                   <div>MD5</div>
                 </div>
                 {loading ? (
-                  <div className="px-5 py-10 text-center text-sm text-[#023047]/60">加载中…</div>
+                  <div className="px-5 py-10 text-center text-sm text-slate-900/60">加载中…</div>
                 ) : loadError ? (
-                  <div className="px-5 py-10 text-center text-sm text-[#023047]/70">
+                  <div className="px-5 py-10 text-center text-sm text-slate-900/70">
                     <div>{loadError}</div>
-                    <button
+                    <button type="button"
                       type="button"
                       onClick={() => void loadData(viewMode, { preserveJsonDraft: true })}
-                      className="mt-3 rounded-2xl border border-[#219EBC]/40 px-4 py-2 text-xs font-semibold text-[#023047] transition hover:bg-[#EAF6FB]"
+                      className="mt-3 rounded-2xl border border-sky-300/40 px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-sky-50"
                     >
                       重试
                     </button>
                   </div>
                 ) : filteredMods.length === 0 ? (
-                  <div className="px-5 py-10 text-center text-sm text-[#023047]/60">没有匹配的模组</div>
+                  <div className="px-5 py-10 text-center text-sm text-slate-900/60">没有匹配的模组</div>
                 ) : (
                   filteredMods.map((mod) => (
                     <div
                       key={mod.id}
-                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)] gap-4 border-t border-[#8ECAE6]/25 px-5 py-4 text-sm text-[#023047]"
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)] gap-4 border-t border-slate-200/25 px-5 py-4 text-sm text-slate-900"
                     >
                       <div className="break-all font-medium">{mod.name}</div>
-                      <div className="break-all text-[#023047]/72">{mod.hash || "-"}</div>
-                      <div className="break-all text-[#023047]/72">{mod.md5 || "-"}</div>
+                      <div className="break-all text-slate-900/72">{mod.hash || "-"}</div>
+                      <div className="break-all text-slate-900/72">{mod.md5 || "-"}</div>
                     </div>
                   ))
                 )}
@@ -600,18 +603,18 @@ const ModListEditor: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(33,158,188,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,183,3,0.16),_transparent_28%),linear-gradient(180deg,_#f8fcff_0%,_#eef6fb_100%)] px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="overflow-hidden rounded-2xl border border-white/40 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(234,246,251,0.95))] p-8 shadow-sm backdrop-blur">
+        <section className="overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-8 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#219EBC]/20 bg-[#219EBC]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#219EBC]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/20 bg-sky-600/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
                 <FaCode className="h-3.5 w-3.5" />
                 ModList Admin Surface
               </div>
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-[#023047] sm:text-4xl">模组列表管理</h1>
-                <p className="mt-3 text-sm leading-7 text-[#023047]/72 sm:text-base">
+                <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">模组列表管理</h1>
+                <p className="mt-3 text-sm leading-7 text-slate-900/72 sm:text-base">
                   在这里维护模组列表：支持新增、编辑、删除、批量新增和批量删除，所有写操作都需要填写修改码。
                   列表视图适合逐条核对，JSON 工作区适合整理后一次性批量新增。
                 </p>
@@ -619,17 +622,17 @@ const ModListEditor: React.FC = () => {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[#8ECAE6]/35 bg-white/85 px-5 py-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-[#023047]/45">Total</div>
-                <div className="mt-2 text-3xl font-semibold text-[#023047]">{mods.length}</div>
+              <div className="rounded-2xl border border-slate-200/35 bg-white/85 px-5 py-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-900/45">Total</div>
+                <div className="mt-2 text-3xl font-semibold text-slate-900">{mods.length}</div>
               </div>
-              <div className="rounded-2xl border border-[#8ECAE6]/35 bg-white/85 px-5 py-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-[#023047]/45">Selected</div>
-                <div className="mt-2 text-3xl font-semibold text-[#023047]">{selectedCount}</div>
+              <div className="rounded-2xl border border-slate-200/35 bg-white/85 px-5 py-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-900/45">Selected</div>
+                <div className="mt-2 text-3xl font-semibold text-slate-900">{selectedCount}</div>
               </div>
-              <div className="rounded-2xl border border-[#8ECAE6]/35 bg-white/85 px-5 py-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-[#023047]/45">View</div>
-                <div className="mt-2 text-lg font-semibold text-[#023047]">{viewMode === "list" ? "List" : "JSON"}</div>
+              <div className="rounded-2xl border border-slate-200/35 bg-white/85 px-5 py-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-900/45">View</div>
+                <div className="mt-2 text-lg font-semibold text-slate-900">{viewMode === "list" ? "List" : "JSON"}</div>
               </div>
             </div>
           </div>
@@ -637,35 +640,35 @@ const ModListEditor: React.FC = () => {
 
         <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <div className="space-y-6">
-            <div className="rounded-2xl border border-[#8ECAE6]/30 bg-white/92 p-6 shadow-sm">
+            <div className="rounded-2xl border border-slate-200/30 bg-white/92 p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap gap-3">
-                  <button
+                  <button type="button"
                     type="button"
                     onClick={() => setViewMode("list")}
                     className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                       viewMode === "list"
-                        ? "bg-[#023047] text-white"
-                        : "border border-[#8ECAE6]/45 bg-white text-[#023047] hover:bg-[#EAF6FB]"
+                        ? "bg-slate-900 text-white"
+                        : "border border-slate-200/45 bg-white text-slate-900 hover:bg-sky-50"
                     }`}
                   >
                     列表视图
                   </button>
-                  <button
+                  <button type="button"
                     type="button"
                     onClick={() => setViewMode("json")}
                     className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                       viewMode === "json"
-                        ? "bg-[#023047] text-white"
-                        : "border border-[#8ECAE6]/45 bg-white text-[#023047] hover:bg-[#EAF6FB]"
+                        ? "bg-slate-900 text-white"
+                        : "border border-slate-200/45 bg-white text-slate-900 hover:bg-sky-50"
                     }`}
                   >
                     JSON 视图
                   </button>
-                  <button
+                  <button type="button"
                     type="button"
                     onClick={() => void handleRefresh()}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#219EBC]/40 bg-white px-4 py-2 text-sm font-medium text-[#023047] transition hover:bg-[#EAF6FB]"
+                    className="inline-flex items-center gap-2 rounded-full border border-sky-300/40 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-sky-50"
                   >
                     <FaSyncAlt className="h-3.5 w-3.5" />
                     刷新
@@ -676,51 +679,51 @@ const ModListEditor: React.FC = () => {
                   value={search}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)}
                   placeholder="搜索名称 / Hash / MD5"
-                  className="w-full rounded-2xl border border-[#8ECAE6]/50 px-4 py-3 text-sm text-[#023047] outline-none transition focus:border-[#219EBC] focus:ring-2 focus:ring-[#8ECAE6]/40 lg:w-80"
+                  className="w-full rounded-2xl border border-slate-200/50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-slate-200/40 lg:w-80"
                 />
               </div>
             </div>
 
             {viewMode === "list" ? (
-              <section className="overflow-hidden rounded-2xl border border-[#8ECAE6]/30 bg-white/94 shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-[#8ECAE6]/25 bg-[#F5FBFE] px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+              <section className="overflow-hidden rounded-2xl border border-slate-200/30 bg-white/94 shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-slate-200/25 bg-slate-50 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-xl font-semibold text-[#023047]">列表管理</h2>
-                    <p className="mt-1 text-sm text-[#023047]/62">适合逐条核对与维护，改动会立即生效。</p>
+                    <h2 className="text-xl font-semibold text-slate-900">列表管理</h2>
+                    <p className="mt-1 text-sm text-slate-900/62">适合逐条核对与维护，改动会立即生效。</p>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {canWrite && (
                       <>
-                        <button
+                        <button type="button"
                           type="button"
                           onClick={handleOpenAdd}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-[#219EBC] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#1A87A0]"
+                          className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-sky-700"
                         >
                           <FaPlus className="h-3.5 w-3.5" />
                           新增模组
                         </button>
-                        <button
+                        <button type="button"
                           type="button"
                           onClick={() => setShowBatchDeleteModal(true)}
                           disabled={!selectedCount}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-[#FB8500] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#df7600] disabled:cursor-not-allowed disabled:opacity-45"
+                          className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           <FaTrash className="h-3.5 w-3.5" />
                           批量删除
                         </button>
                       </>
                     )}
-                    <button
+                    <button type="button"
                       type="button"
                       onClick={() => setSelectedIds(filteredMods.map((mod) => mod.id))}
-                      className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047] transition hover:bg-[#EAF6FB]"
+                      className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-sky-50"
                     >
                       选中筛选结果
                     </button>
-                    <button
+                    <button type="button"
                       type="button"
                       onClick={() => setSelectedIds([])}
-                      className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047] transition hover:bg-[#EAF6FB]"
+                      className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-sky-50"
                     >
                       清空选择
                     </button>
@@ -729,7 +732,7 @@ const ModListEditor: React.FC = () => {
 
                 <div className="overflow-x-auto">
                 <div className="min-w-[600px]">
-                  <div className="grid grid-cols-[56px_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_144px] gap-4 bg-[#EAF6FB] px-6 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#023047]/65">
+                  <div className="grid grid-cols-[56px_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_144px] gap-4 bg-sky-50 px-6 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-900/65">
                     <div>选中</div>
                     <div>名称</div>
                     <div>Hash</div>
@@ -738,52 +741,52 @@ const ModListEditor: React.FC = () => {
                   </div>
 
                 {loading ? (
-                  <div className="px-6 py-12 text-center text-sm text-[#023047]/60">加载中…</div>
+                  <div className="px-6 py-12 text-center text-sm text-slate-900/60">加载中…</div>
                 ) : loadError ? (
-                  <div className="px-6 py-12 text-center text-sm text-[#023047]/70">
+                  <div className="px-6 py-12 text-center text-sm text-slate-900/70">
                     <div>{loadError}</div>
-                    <button
+                    <button type="button"
                       type="button"
                       onClick={() => void loadData(viewMode, { preserveJsonDraft: true })}
-                      className="mt-3 rounded-2xl border border-[#219EBC]/40 px-4 py-2 text-xs font-semibold text-[#023047] transition hover:bg-[#EAF6FB]"
+                      className="mt-3 rounded-2xl border border-sky-300/40 px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-sky-50"
                     >
                       重试
                     </button>
                   </div>
                 ) : filteredMods.length === 0 ? (
-                  <div className="px-6 py-12 text-center text-sm text-[#023047]/60">没有匹配的模组</div>
+                  <div className="px-6 py-12 text-center text-sm text-slate-900/60">没有匹配的模组</div>
                 ) : (
                   filteredMods.map((mod) => (
                     <div
                       key={mod.id}
-                      className="grid grid-cols-[56px_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_144px] gap-4 border-t border-[#8ECAE6]/18 px-6 py-4 text-sm text-[#023047]"
+                      className="grid grid-cols-[56px_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_144px] gap-4 border-t border-slate-200/18 px-6 py-4 text-sm text-slate-900"
                     >
                       <div className="flex items-center">
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(mod.id)}
                           onChange={() => toggleSelected(mod.id)}
-                          className="h-4 w-4 rounded border-[#8ECAE6] text-[#219EBC] focus:ring-[#219EBC]"
+                          className="h-4 w-4 rounded border-slate-200 text-sky-700 focus:ring-sky-300"
                         />
                       </div>
                       <div className="break-all font-medium">{mod.name}</div>
-                      <div className="break-all text-[#023047]/72">{mod.hash || "-"}</div>
-                      <div className="break-all text-[#023047]/72">{mod.md5 || "-"}</div>
+                      <div className="break-all text-slate-900/72">{mod.hash || "-"}</div>
+                      <div className="break-all text-slate-900/72">{mod.md5 || "-"}</div>
                       <div className="flex items-center gap-2">
                         {canWrite && (
                           <>
-                            <button
+                            <button type="button"
                               type="button"
                               onClick={() => handleOpenEdit(mod)}
-                              className="inline-flex items-center gap-1 rounded-2xl border border-[#FFB703]/40 px-3 py-2 text-xs font-medium text-[#9A6700] transition hover:bg-[#FFB703]/10"
+                              className="inline-flex items-center gap-1 rounded-2xl border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-800 transition hover:bg-amber-400/10"
                             >
                               <FaEdit className="h-3 w-3" />
                               编辑
                             </button>
-                            <button
+                            <button type="button"
                               type="button"
                               onClick={() => handleOpenDelete(mod)}
-                              className="inline-flex items-center gap-1 rounded-2xl border border-[#FB8500]/40 px-3 py-2 text-xs font-medium text-[#B45309] transition hover:bg-[#FB8500]/10"
+                              className="inline-flex items-center gap-1 rounded-2xl border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-800 transition hover:bg-amber-500/10"
                             >
                               <FaTrash className="h-3 w-3" />
                               删除
@@ -798,37 +801,37 @@ const ModListEditor: React.FC = () => {
             </div>
               </section>
             ) : (
-              <section className="rounded-2xl border border-[#8ECAE6]/30 bg-white/94 p-6 shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-[#8ECAE6]/20 pb-5 lg:flex-row lg:items-center lg:justify-between">
+              <section className="rounded-2xl border border-slate-200/30 bg-white/94 p-6 shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-slate-200/20 pb-5 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-xl font-semibold text-[#023047]">JSON 工作区</h2>
-                    <p className="mt-1 text-sm text-[#023047]/62">
+                    <h2 className="text-xl font-semibold text-slate-900">JSON 工作区</h2>
+                    <p className="mt-1 text-sm text-slate-900/62">
                       内容来自服务器上保存的模组清单。这里只做批量新增，不会覆盖或删除已有条目。
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {canWrite && (
-                      <button
+                      <button type="button"
                         type="button"
                         onClick={() => setJsonEditable((current) => !current)}
-                        className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047] transition hover:bg-[#EAF6FB]"
+                        className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-sky-50"
                       >
                         {jsonEditable ? "取消编辑" : "启用编辑"}
                       </button>
                     )}
-                    <button
+                    <button type="button"
                       type="button"
                       onClick={() => setShowExampleModal(true)}
-                      className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047] transition hover:bg-[#EAF6FB]"
+                      className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-sky-50"
                     >
                       查看示例
                     </button>
                     {canWrite && (
-                      <button
+                      <button type="button"
                         type="button"
                         onClick={() => setShowBatchAddModal(true)}
                         disabled={!jsonEditable}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-[#219EBC] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#1A87A0] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <FaPlus className="h-3.5 w-3.5" />
                         批量新增
@@ -845,31 +848,31 @@ const ModListEditor: React.FC = () => {
           </div>
 
           <aside className="space-y-6">
-            <section className="rounded-2xl border border-[#8ECAE6]/30 bg-white/92 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-[#023047]">接口对照</h2>
-              <div className="mt-5 space-y-3 text-sm text-[#023047]/72">
-                <div className="rounded-2xl bg-[#F5FBFE] px-4 py-3">
-                  <div className="font-semibold text-[#023047]">读取</div>
+            <section className="rounded-2xl border border-slate-200/30 bg-white/92 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-slate-900">接口对照</h2>
+              <div className="mt-5 space-y-3 text-sm text-slate-900/72">
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">读取</div>
                   <div className="mt-1 font-mono text-xs">GET /api/modlist</div>
                   <div className="mt-1 font-mono text-xs">GET /api/modlist/json</div>
                 </div>
-                <div className="rounded-2xl bg-[#F5FBFE] px-4 py-3">
-                  <div className="font-semibold text-[#023047]">单条写入</div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">单条写入</div>
                   <div className="mt-1 font-mono text-xs">POST /api/modlist</div>
                   <div className="mt-1 font-mono text-xs">PUT /api/modlist/:id</div>
                   <div className="mt-1 font-mono text-xs">DELETE /api/modlist/:id</div>
                 </div>
-                <div className="rounded-2xl bg-[#F5FBFE] px-4 py-3">
-                  <div className="font-semibold text-[#023047]">批量写入</div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">批量写入</div>
                   <div className="mt-1 font-mono text-xs">POST /api/modlist/batch-add</div>
                   <div className="mt-1 font-mono text-xs">POST /api/modlist/batch-delete</div>
                 </div>
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#8ECAE6]/30 bg-white/92 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-[#023047]">行为说明</h2>
-              <div className="mt-5 space-y-3 text-sm leading-7 text-[#023047]/72">
+            <section className="rounded-2xl border border-slate-200/30 bg-white/92 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-slate-900">行为说明</h2>
+              <div className="mt-5 space-y-3 text-sm leading-7 text-slate-900/72">
                 <p>读取列表时载荷是加密的，只有持有修改码的管理员才能看到内容。</p>
                 <p>JSON 工作区只用于整理和批量新增，不会执行“全量替换”。</p>
                 <p>批量删除支持一次勾选多条，不必逐条删。</p>
@@ -888,14 +891,14 @@ const ModListEditor: React.FC = () => {
           <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047]">
+          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
             取消
           </button>
-          <button
+          <button type="button"
             type="button"
             disabled={submitting}
             onClick={() => void handleSubmitAdd()}
-            className="rounded-2xl bg-[#219EBC] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-2xl bg-sky-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             保存
           </button>
@@ -910,14 +913,14 @@ const ModListEditor: React.FC = () => {
           <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047]">
+          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
             取消
           </button>
-          <button
+          <button type="button"
             type="button"
             disabled={submitting}
             onClick={() => void handleSubmitEdit()}
-            className="rounded-2xl bg-[#FFB703] px-4 py-3 text-sm font-medium text-[#4A3200] disabled:opacity-50"
+            className="rounded-2xl bg-amber-400 px-4 py-3 text-sm font-medium text-amber-900 disabled:opacity-50"
           >
             更新
           </button>
@@ -926,20 +929,20 @@ const ModListEditor: React.FC = () => {
 
       <Modal open={showDeleteModal} title="删除模组" onClose={closeAllModals}>
         <div className="space-y-4">
-          <div className="rounded-2xl bg-[#FFF5EB] px-4 py-3 text-sm text-[#9A3412]">
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
             即将删除：<span className="font-semibold">{selectedMod?.name || "-"}</span>
           </div>
           <TextField label="修改码" value={deleteCode} onChange={setDeleteCode} placeholder="请输入修改码" type="password" />
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047]">
+          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
             取消
           </button>
-          <button
+          <button type="button"
             type="button"
             disabled={submitting}
             onClick={() => void handleSubmitDelete()}
-            className="rounded-2xl bg-[#FB8500] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-2xl bg-amber-500 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             删除
           </button>
@@ -948,18 +951,18 @@ const ModListEditor: React.FC = () => {
 
       <Modal open={showBatchDeleteModal} title="批量删除模组" onClose={closeAllModals}>
         <div className="space-y-4">
-          <div className="rounded-2xl bg-[#FFF5EB] px-4 py-3 text-sm text-[#9A3412]">当前已选 {selectedCount} 项。</div>
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">当前已选 {selectedCount} 项。</div>
           <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047]">
+          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
             取消
           </button>
-          <button
+          <button type="button"
             type="button"
             disabled={submitting}
             onClick={() => void handleSubmitBatchDelete()}
-            className="rounded-2xl bg-[#FB8500] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-2xl bg-amber-500 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             执行批量删除
           </button>
@@ -968,20 +971,20 @@ const ModListEditor: React.FC = () => {
 
       <Modal open={showBatchAddModal} title="批量新增模组" onClose={closeAllModals}>
         <div className="space-y-4">
-          <div className="rounded-2xl bg-[#EAF6FB] px-4 py-3 text-sm text-[#023047]/72">
+          <div className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-slate-900/72">
             这里会把当前 JSON 解析为数组，并把其中的模组一次性批量添加到列表。
           </div>
           <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-[#8ECAE6]/40 px-4 py-3 text-sm font-medium text-[#023047]">
+          <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
             取消
           </button>
-          <button
+          <button type="button"
             type="button"
             disabled={submitting}
             onClick={() => void handleSubmitBatchAdd()}
-            className="rounded-2xl bg-[#219EBC] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-2xl bg-sky-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             执行批量新增
           </button>
@@ -990,8 +993,8 @@ const ModListEditor: React.FC = () => {
 
       <Modal open={showExampleModal} title="批量新增 JSON 示例" onClose={closeAllModals}>
         <div className="space-y-4">
-          <pre className="overflow-x-auto rounded-3xl bg-[#F5FBFE] p-4 text-sm text-[#023047]">{batchAddExample}</pre>
-          <div className="text-sm text-[#023047]/72">“id” 不需要填写，系统会自动生成；重复的名称会被跳过。</div>
+          <pre className="overflow-x-auto rounded-3xl bg-slate-50 p-4 text-sm text-slate-900">{batchAddExample}</pre>
+          <div className="text-sm text-slate-900/72">“id” 不需要填写，系统会自动生成；重复的名称会被跳过。</div>
         </div>
       </Modal>
     </div>

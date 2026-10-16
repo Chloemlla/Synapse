@@ -10,6 +10,7 @@ import {
   studioEyebrowClassName,
 } from './studioTheme';
 import { cn } from '../utils/cn';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const tigerGlassButtonClass = 'inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur-xl transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45';
 const tigerScenePanelClass = 'rounded-2xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur-xl';
@@ -29,6 +30,7 @@ const TigerAdventure: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
+  const reducedMotion = useReducedMotion();
 
   // 检测移动设备 - 改进的响应式检测
   useEffect(() => {
@@ -81,14 +83,14 @@ const TigerAdventure: React.FC = () => {
         <div className="absolute inset-0">
           {/* 会议室背景 */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-b from-slate-800 to-slate-900"
+            className="absolute inset-0 bg-slate-800"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 2 }}
           />
           {/* 会议桌 */}
           <motion.div
-            className="absolute bottom-20 left-1/2 transform -translate-x-1/2 w-64 sm:w-80 md:w-96 h-6 sm:h-8 bg-brown-800 rounded-lg shadow-lg"
+            className="absolute bottom-20 left-1/2 transform -translate-x-1/2 w-64 sm:w-80 md:w-96 h-6 sm:h-8 bg-slate-700 rounded-2xl shadow-lg"
             initial={{ scaleX: 0, y: 50, opacity: 0 }}
             animate={{ scaleX: 1, y: 0, opacity: 1 }}
             transition={{ duration: 1.5, ease: "easeOut" }}
@@ -107,58 +109,58 @@ const TigerAdventure: React.FC = () => {
             transition={{
               scale: { duration: 0.8, ease: "easeOut" },
               opacity: { duration: 0.8, ease: "easeOut" },
-              default: { duration: 3, ease: "easeInOut", repeat: Infinity }
+              default: { duration: 3, ease: "easeInOut", repeat: reducedMotion ? 0 : Infinity }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-lg relative shadow-lg">
+            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
-                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-8 h-2 bg-green-600 rounded-t-lg"
+                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-8 h-2 bg-emerald-600 rounded-t-lg"
                 initial={{ y: -10, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
               />
               {/* 军装领子 */}
               <motion.div 
-                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-green-600 rounded-b-sm"
+                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-emerald-600 rounded-b-sm"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
               />
               <motion.div 
-                className="absolute top-1 left-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 left-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.3, delay: 0.5 }}
               />
               <motion.div 
-                className="absolute top-1 right-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 right-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.3, delay: 0.55 }}
               />
               <motion.div 
-                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-black rounded-full"
+                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-slate-900 rounded-full"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.4, delay: 0.6 }}
               />
               <motion.div 
-                className="absolute top-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-black rounded-full"
+                className="absolute top-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.3, delay: 0.65 }}
               />
               {/* 军衔星徽 */}
               <motion.div 
-                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-yellow-400 rounded-full"
+                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.5, delay: 0.7 }}
               />
               {/* 军装扣子 */}
               <motion.div 
-                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-400 rounded-full"
+                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.3, delay: 0.75 }}
@@ -169,7 +171,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(3)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-6 h-8 sm:w-8 sm:h-10 bg-yellow-100 rounded shadow-md"
+              className="absolute w-6 h-8 sm:w-8 sm:h-10 bg-amber-100 rounded shadow-md"
               style={{
                 left: `${50 + i * 10}%`,
                 bottom: '30%'
@@ -184,7 +186,7 @@ const TigerAdventure: React.FC = () => {
               transition={{
                 scale: { duration: 0.6, ease: "easeOut" },
                 opacity: { duration: 0.6, ease: "easeOut" },
-                default: { duration: 2, delay: 0.8 + i * 0.2, repeat: Infinity, repeatType: "reverse" }
+                default: { duration: 2, delay: 0.8 + i * 0.2, repeat: reducedMotion ? 0 : Infinity, repeatType: "reverse" }
               }}
             >
               <div className="w-full h-1 bg-slate-400 mt-1"></div>
@@ -194,21 +196,21 @@ const TigerAdventure: React.FC = () => {
           ))}
           {/* 阴影效果 */}
           <motion.div
-            className="absolute bottom-0 w-full h-20 bg-black opacity-20"
+            className="absolute bottom-0 w-full h-20 bg-slate-900 opacity-20"
             initial={{ scaleY: 0, opacity: 0 }}
             animate={{ scaleY: 1, opacity: 0.2 }}
             transition={{ duration: 1.5, delay: 1 }}
           />
           {/* 神秘光线效果 */}
           <motion.div
-            className="absolute top-0 left-1/4 w-32 h-32 bg-red-500 rounded-full blur-3xl opacity-10"
+            className="absolute top-0 left-1/4 w-32 h-32 bg-rose-500 rounded-full blur-3xl opacity-10"
             animate={{
               scale: [1, 1.5, 1],
               opacity: [0.1, 0.2, 0.1]
             }}
             transition={{
               duration: 4,
-              repeat: Infinity,
+              repeat: reducedMotion ? 0 : Infinity,
               ease: "easeInOut"
             }}
           />
@@ -225,7 +227,7 @@ const TigerAdventure: React.FC = () => {
         <div className="absolute inset-0">
           {/* 南方城市背景 */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-b from-blue-400 to-blue-600"
+            className="absolute inset-0 bg-sky-200"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1.5 }}
@@ -252,19 +254,19 @@ const TigerAdventure: React.FC = () => {
               }}
             >
               <motion.div 
-                className="w-full h-1 sm:h-2 bg-yellow-400"
+                className="w-full h-1 sm:h-2 bg-amber-400"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.5, delay: 0.5 + i * 0.1 }}
               />
               <motion.div 
-                className="w-full h-1 sm:h-2 bg-yellow-400 mt-1 sm:mt-2"
+                className="w-full h-1 sm:h-2 bg-amber-400 mt-1 sm:mt-2"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.5, delay: 0.6 + i * 0.1 }}
               />
               <motion.div 
-                className="w-full h-1 sm:h-2 bg-yellow-400 mt-1 sm:mt-2"
+                className="w-full h-1 sm:h-2 bg-amber-400 mt-1 sm:mt-2"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.5, delay: 0.7 + i * 0.1 }}
@@ -284,52 +286,52 @@ const TigerAdventure: React.FC = () => {
             transition={{
               scale: { duration: 0.6, ease: "easeOut" },
               opacity: { duration: 0.6, ease: "easeOut" },
-              default: { duration: 4, ease: "easeInOut", repeat: Infinity }
+              default: { duration: 4, ease: "easeInOut", repeat: reducedMotion ? 0 : Infinity }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-lg relative shadow-lg">
+            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
-                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-green-600 rounded-t-sm"
+                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-emerald-600 rounded-t-sm"
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.4, delay: 1.2 }}
               />
               {/* 军装领子 */}
               <motion.div 
-                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-green-600 rounded-b-sm"
+                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-emerald-600 rounded-b-sm"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.3, delay: 1.3 }}
               />
               <motion.div 
-                className="absolute top-1 left-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 left-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.2, delay: 1.4 }}
               />
               <motion.div 
-                className="absolute top-1 right-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 right-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.2, delay: 1.45 }}
               />
               <motion.div 
-                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-black rounded-full"
+                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-slate-900 rounded-full"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.3, delay: 1.5 }}
               />
               {/* 军衔星徽 */}
               <motion.div 
-                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-400 rounded-full"
+                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.4, delay: 1.6 }}
               />
               {/* 军装扣子 */}
               <motion.div 
-                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-400 rounded-full"
+                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.2, delay: 1.65 }}
@@ -340,7 +342,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(3)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-4 h-4 bg-red-500 rounded-full opacity-60 shadow-md"
+              className="absolute w-4 h-4 bg-rose-500 rounded-full opacity-60 shadow-md"
               style={{
                 left: `${70 + i * 5}%`,
                 top: `${30 + i * 10}%`
@@ -353,13 +355,13 @@ const TigerAdventure: React.FC = () => {
               transition={{
                 scale: { duration: 0.5, ease: "easeOut" },
                 opacity: { duration: 0.5, ease: "easeOut" },
-                default: { duration: 2, delay: 1.8 + i * 0.3, repeat: Infinity }
+                default: { duration: 2, delay: 1.8 + i * 0.3, repeat: reducedMotion ? 0 : Infinity }
               }}
             />
           ))}
           {/* 太阳 */}
           <motion.div
-            className="absolute w-12 h-12 sm:w-16 sm:h-16 bg-yellow-400 rounded-full shadow-lg"
+            className="absolute w-12 h-12 sm:w-16 sm:h-16 bg-amber-400 rounded-full shadow-lg"
             style={{ right: '10%', top: '10%' }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{
@@ -370,14 +372,14 @@ const TigerAdventure: React.FC = () => {
             transition={{
               scale: { duration: 1, ease: "easeOut" },
               opacity: { duration: 1, ease: "easeOut" },
-              default: { duration: 10, repeat: Infinity, ease: "linear" }
+              default: { duration: 10, repeat: reducedMotion ? 0 : Infinity, ease: "linear" }
             }}
           >
             {/* 太阳光芒 */}
             {[...Array(8)].map((_, i) => (
               <motion.div
                 key={i}
-                className="absolute w-1 h-4 bg-yellow-300 rounded-full"
+                className="absolute w-1 h-4 bg-amber-300 rounded-full"
                 style={{
                   left: '50%',
                   top: '-10%',
@@ -389,7 +391,7 @@ const TigerAdventure: React.FC = () => {
                 }}
                 transition={{
                   duration: 2,
-                  repeat: Infinity,
+                  repeat: reducedMotion ? 0 : Infinity,
                   delay: i * 0.1
                 }}
               />
@@ -403,7 +405,7 @@ const TigerAdventure: React.FC = () => {
             }}
             transition={{
               duration: 3,
-              repeat: Infinity
+              repeat: reducedMotion ? 0 : Infinity
             }}
           >
             {[...Array(15)].map((_, i) => (
@@ -419,7 +421,7 @@ const TigerAdventure: React.FC = () => {
                 }}
                 transition={{
                   duration: 3 + Math.random() * 5,
-                  repeat: Infinity,
+                  repeat: reducedMotion ? 0 : Infinity,
                   ease: "linear"
                 }}
               />
@@ -438,7 +440,7 @@ const TigerAdventure: React.FC = () => {
         <div className="absolute inset-0">
           {/* 夜晚背景 */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-b from-slate-900 to-black"
+            className="absolute inset-0 bg-slate-900"
             initial={{ opacity: 0, scaleX: 0 }}
             animate={{ opacity: 1, scaleX: 1 }}
             transition={{ 
@@ -453,11 +455,10 @@ const TigerAdventure: React.FC = () => {
             transition={{ duration: 0.3, delay: 0.3 }}
           />
           {/* 警卫阻拦效果 */}
-          {/* 警卫阻拦效果 */}
           {[...Array(3)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-6 h-6 bg-red-500 rounded-full opacity-60"
+              className="absolute w-6 h-6 bg-rose-500 rounded-full opacity-60"
               style={{
                 left: `${60 + i * 8}%`,
                 top: `${50 + i * 5}%`
@@ -469,7 +470,7 @@ const TigerAdventure: React.FC = () => {
               transition={{
                 duration: 2,
                 delay: i * 0.3,
-                repeat: Infinity
+                repeat: reducedMotion ? 0 : Infinity
               }}
             />
           ))}
@@ -482,7 +483,7 @@ const TigerAdventure: React.FC = () => {
             }}
             transition={{
               duration: 3,
-              repeat: Infinity
+              repeat: reducedMotion ? 0 : Infinity
             }}
           />
         </div>
@@ -498,7 +499,7 @@ const TigerAdventure: React.FC = () => {
         <div className="absolute inset-0">
           {/* 蒙古草原 */}
           <motion.div
-            className="absolute bottom-0 w-full h-40 bg-green-600"
+            className="absolute bottom-0 w-full h-40 bg-emerald-600"
             initial={{ scaleY: 0, opacity: 0 }}
             animate={{ scaleY: 1, opacity: 1 }}
             transition={{ 
@@ -510,7 +511,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(20)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-1 h-4 bg-green-800"
+              className="absolute w-1 h-4 bg-emerald-800"
               style={{
                 left: `${5 + i * 5}%`,
                 bottom: '0%'
@@ -525,7 +526,7 @@ const TigerAdventure: React.FC = () => {
           ))}
           {/* 坠落的256号专机 */}
           <motion.div
-            className="absolute w-32 h-8 sm:w-40 sm:h-10 bg-red-800 rounded-lg shadow-lg"
+            className="absolute w-32 h-8 sm:w-40 sm:h-10 bg-rose-800 rounded-2xl shadow-lg"
             style={{ left: '40%', top: '15%' }}
             initial={{ x: 0, y: -100, rotate: 0, opacity: 0 }}
             animate={{
@@ -541,9 +542,9 @@ const TigerAdventure: React.FC = () => {
               opacity: { duration: 5, ease: "easeIn" }
             }}
           >
-            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-red-900 rounded-full"></div>
-            <div className="absolute -bottom-3 left-6 w-6 h-1 bg-red-900 rounded-full"></div>
-            <div className="absolute -bottom-3 right-6 w-6 h-1 bg-red-900 rounded-full"></div>
+            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-rose-900 rounded-full"></div>
+            <div className="absolute -bottom-3 left-6 w-6 h-1 bg-rose-900 rounded-full"></div>
+            <div className="absolute -bottom-3 right-6 w-6 h-1 bg-rose-900 rounded-full"></div>
             <div className="absolute top-2 left-3 w-1 h-1 bg-white rounded-full"></div>
             <div className="absolute top-2 right-3 w-1 h-1 bg-white rounded-full"></div>
             {/* 256标识残骸 */}
@@ -569,49 +570,49 @@ const TigerAdventure: React.FC = () => {
               opacity: { duration: 5, ease: "easeIn" }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-lg relative shadow-lg">
+            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
-                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-green-600 rounded-t-sm"
+                className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-emerald-600 rounded-t-sm"
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.3, delay: 0.2 }}
               />
               {/* 军装领子 */}
               <motion.div 
-                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-green-600 rounded-b-sm"
+                className="absolute top-0 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-emerald-600 rounded-b-sm"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.2, delay: 0.3 }}
               />
               <motion.div 
-                className="absolute top-1 left-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 left-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.1, delay: 0.4 }}
               />
               <motion.div 
-                className="absolute top-1 right-2 w-2 h-2 bg-black rounded-full"
+                className="absolute top-1 right-2 w-2 h-2 bg-slate-900 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.1, delay: 0.45 }}
               />
               <motion.div 
-                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-black rounded-full"
+                className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-slate-900 rounded-full"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 0.2, delay: 0.5 }}
               />
               {/* 军衔星徽 */}
               <motion.div 
-                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-400 rounded-full"
+                className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.3, delay: 0.6 }}
               />
               {/* 军装扣子 */}
               <motion.div 
-                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-400 rounded-full"
+                className="absolute top-3 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.1, delay: 0.65 }}
@@ -620,7 +621,7 @@ const TigerAdventure: React.FC = () => {
           </motion.div>
           {/* 爆炸效果 */}
           <motion.div
-            className="absolute w-24 h-24 sm:w-32 sm:h-32 bg-yellow-400 rounded-full"
+            className="absolute w-24 h-24 sm:w-32 sm:h-32 bg-amber-400 rounded-full"
             style={{ left: '50%', top: '70%' }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: [0, 3, 0], opacity: [0, 1, 0] }}
@@ -644,7 +645,7 @@ const TigerAdventure: React.FC = () => {
               transition={{
                 duration: 2,
                 delay: 4 + i * 0.2,
-                repeat: Infinity
+                repeat: reducedMotion ? 0 : Infinity
               }}
             />
           ))}
@@ -665,7 +666,7 @@ const TigerAdventure: React.FC = () => {
               transition={{
                 duration: 4,
                 delay: 4 + i * 0.3,
-                repeat: Infinity
+                repeat: reducedMotion ? 0 : Infinity
               }}
             />
           ))}
@@ -723,7 +724,7 @@ const TigerAdventure: React.FC = () => {
         <div className="absolute inset-0">
           {/* 历史背景 */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-b from-slate-800 to-black"
+            className="absolute inset-0 bg-slate-800"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ 
@@ -796,7 +797,7 @@ const TigerAdventure: React.FC = () => {
               {/* 老虎碎片细节 */}
               {i % 2 === 0 && (
                 <motion.div 
-                  className="w-1 h-1 bg-black rounded-full mt-1 ml-1"
+                  className="w-1 h-1 bg-slate-900 rounded-full mt-1 ml-1"
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ duration: 0.2, delay: 1.3 + i * 0.1 }}
@@ -804,7 +805,7 @@ const TigerAdventure: React.FC = () => {
               )}
               {i % 3 === 0 && (
                 <motion.div 
-                  className="w-1 h-1 bg-yellow-400 rounded-full mt-1 mr-1"
+                  className="w-1 h-1 bg-amber-400 rounded-full mt-1 mr-1"
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ duration: 0.2, delay: 1.4 + i * 0.1 }}
@@ -817,7 +818,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(6)].map((_, i) => (
             <motion.div
               key={`uniform-${i}`}
-              className="absolute bg-green-600 rounded shadow-lg"
+              className="absolute bg-emerald-600 rounded shadow-lg"
               style={{
                 width: `${6 + (i % 2) * 3}px`,
                 height: `${4 + (i % 3) * 2}px`,
@@ -842,7 +843,7 @@ const TigerAdventure: React.FC = () => {
           ))}
           {/* 林虎将军的军帽残骸 */}
           <motion.div
-            className="absolute w-8 h-3 bg-green-600 rounded-t-lg shadow-lg"
+            className="absolute w-8 h-3 bg-emerald-600 rounded-t-lg shadow-lg"
             style={{ left: '50%', top: '40%' }}
             initial={{ scale: 0, rotate: 0, opacity: 0 }}
             animate={{
@@ -861,7 +862,7 @@ const TigerAdventure: React.FC = () => {
           />
           {/* 军衔星徽残骸 */}
           <motion.div
-            className="absolute w-3 h-3 bg-yellow-400 rounded-full shadow-lg"
+            className="absolute w-3 h-3 bg-amber-400 rounded-full shadow-lg"
             style={{ left: '52%', top: '38%' }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{
@@ -923,7 +924,7 @@ const TigerAdventure: React.FC = () => {
                 scale: { duration: 1, ease: "easeOut" },
                 opacity: { duration: 1, ease: "easeOut" },
                 y: { duration: 6 },
-                default: { delay: i * 0.3, repeat: Infinity }
+                default: { delay: i * 0.3, repeat: reducedMotion ? 0 : Infinity }
               }}
             />
           ))}
@@ -949,7 +950,7 @@ const TigerAdventure: React.FC = () => {
                 opacity: { duration: 0.5, ease: "easeOut" },
                 x: { duration: 2 },
                 y: { duration: 2 },
-                default: { delay: 3 + i * 0.1, repeat: Infinity, repeatDelay: 1 }
+                default: { delay: 3 + i * 0.1, repeat: reducedMotion ? 0 : Infinity, repeatDelay: 1 }
               }}
             />
           ))}
@@ -958,7 +959,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(5)].map((_, i) => (
             <motion.div
               key={`blood-${i}`}
-              className="absolute bg-red-800 rounded-full opacity-60"
+              className="absolute bg-rose-800 rounded-full opacity-60"
               style={{
                 width: `${4 + i * 2}px`,
                 height: `${3 + i * 2}px`,
@@ -989,7 +990,7 @@ const TigerAdventure: React.FC = () => {
             }}
           >
             <motion.div 
-              className="text-yellow-400 text-lg sm:text-xl font-bold mb-2 drop-shadow-lg"
+              className="text-amber-400 text-lg sm:text-xl font-bold mb-2 drop-shadow-lg"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.5, delay: 3.5 }}
@@ -997,7 +998,7 @@ const TigerAdventure: React.FC = () => {
               历史教训
             </motion.div>
             <motion.div 
-              className="text-slate-400 text-xs sm:text-sm max-w-md px-4 drop-shadow-lg bg-black/30 rounded-lg py-2"
+              className="text-slate-400 text-xs sm:text-sm max-w-md px-4 drop-shadow-lg bg-slate-900/30 rounded-2xl py-2"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.5, delay: 3.7 }}
@@ -1007,10 +1008,10 @@ const TigerAdventure: React.FC = () => {
           </motion.div>
           {/* 庄严氛围光效 */}
           <motion.div
-            className="absolute inset-0 pointer-events-none bg-gradient-to-t from-yellow-400/10 to-transparent"
+            className="absolute inset-0 pointer-events-none bg-amber-400/10"
             initial={{ opacity: 0 }}
             animate={{ opacity: [0, 0.3, 0] }}
-            transition={{ duration: 4, repeat: Infinity, delay: 2 }}
+            transition={{ duration: 4, repeat: reducedMotion ? 0 : Infinity, delay: 2 }}
           />
         </div>
       )
@@ -1053,7 +1054,7 @@ const TigerAdventure: React.FC = () => {
       <InfoQueryShell>
         <motion.div
           className="space-y-6"
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
@@ -1084,7 +1085,7 @@ const TigerAdventure: React.FC = () => {
                 <motion.div
                   key={scene.id}
                   className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur"
-                  initial={{ opacity: 0, y: 16 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 * index }}
                   whileHover={{ y: -3 }}
@@ -1134,7 +1135,7 @@ const TigerAdventure: React.FC = () => {
           className={`absolute left-4 right-4 z-10 mx-auto max-w-4xl px-4 py-4 text-center text-slate-900 xs:left-6 xs:right-6 sm:left-8 sm:right-8 ${tigerScenePanelClass} ${
             currentScene === 4 ? 'top-20 sm:top-8' : 'top-20 sm:top-8'
           }`}
-          initial={{ y: -50, opacity: 0 }}
+          initial={reducedMotion ? false : { y: -50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.8 }}
         >
@@ -1174,7 +1175,7 @@ const TigerAdventure: React.FC = () => {
         <div className={`absolute right-4 z-20 flex flex-col space-y-2 xs:right-6 xs:flex-row xs:space-x-3 xs:space-y-0 sm:right-8 sm:space-x-4 ${
           currentScene === 4 ? 'bottom-6 xs:bottom-7 sm:bottom-12' : 'bottom-4 xs:bottom-5 sm:bottom-8'
         }`}>
-          <motion.button
+          <motion.button type="button"
             onClick={prevScene}
             disabled={currentScene === 0}
             className={tigerGlassButtonClass}
@@ -1184,7 +1185,7 @@ const TigerAdventure: React.FC = () => {
             <FaChevronLeft className="h-3 w-3" />
             上一幕
           </motion.button>
-          <motion.button
+          <motion.button type="button"
             onClick={nextScene}
             className={tigerGlassButtonClass}
             whileHover={{ scale: 1.05 }}
@@ -1196,7 +1197,7 @@ const TigerAdventure: React.FC = () => {
         </div>
 
         {/* 退出按钮 */}
-        <motion.button
+        <motion.button type="button"
           onClick={() => setIsPlaying(false)}
           className={`${tigerGlassButtonClass} absolute right-4 top-4 z-20 xs:right-6 xs:top-6 sm:right-8 sm:top-8`}
           whileHover={{ scale: 1.05 }}
@@ -1209,5 +1210,4 @@ const TigerAdventure: React.FC = () => {
     </div>
   );
 };
-
 export default TigerAdventure; 
