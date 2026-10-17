@@ -112,7 +112,7 @@ const TigerAdventure: React.FC = () => {
               default: { duration: 3, ease: "easeInOut", repeat: reducedMotion ? 0 : Infinity }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
+            <div className="w-full h-full bg-amber-600 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
                 className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-8 h-2 bg-emerald-600 rounded-t-lg"
@@ -289,7 +289,7 @@ const TigerAdventure: React.FC = () => {
               default: { duration: 4, ease: "easeInOut", repeat: reducedMotion ? 0 : Infinity }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
+            <div className="w-full h-full bg-amber-600 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
                 className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-emerald-600 rounded-t-sm"
@@ -570,7 +570,7 @@ const TigerAdventure: React.FC = () => {
               opacity: { duration: 5, ease: "easeIn" }
             }}
           >
-            <div className="w-full h-full bg-orange-500 rounded-2xl relative shadow-lg">
+            <div className="w-full h-full bg-amber-600 rounded-2xl relative shadow-lg">
               {/* 军帽 */}
               <motion.div 
                 className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-6 h-1 bg-emerald-600 rounded-t-sm"
@@ -631,7 +631,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(5)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-6 h-8 sm:w-8 sm:h-12 bg-orange-500 rounded-t-full shadow-lg"
+              className="absolute w-6 h-8 sm:w-8 sm:h-12 bg-amber-600 rounded-t-full shadow-lg"
               style={{
                 left: `${45 + i * 2}%`,
                 top: '75%'
@@ -672,7 +672,7 @@ const TigerAdventure: React.FC = () => {
           ))}
           {/* 地面冲击波 */}
           <motion.div
-            className="absolute w-full h-4 bg-orange-400/30"
+            className="absolute w-full h-4 bg-amber-500/30"
             style={{ bottom: '40%' }}
             initial={{ scaleX: 0, opacity: 0 }}
             animate={{ 
@@ -772,7 +772,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(8)].map((_, i) => (
             <motion.div
               key={`tiger-${i}`}
-              className="absolute bg-orange-500 rounded shadow-lg"
+              className="absolute bg-amber-600 rounded shadow-lg"
               style={{
                 width: `${8 + (i % 3) * 4}px`,
                 height: `${6 + (i % 2) * 4}px`,
@@ -933,7 +933,7 @@ const TigerAdventure: React.FC = () => {
           {[...Array(15)].map((_, i) => (
             <motion.div
               key={`particle-${i}`}
-              className="absolute w-1 h-1 bg-orange-300 rounded-full"
+              className="absolute w-1 h-1 bg-amber-300 rounded-full"
               style={{
                 left: `${40 + (i % 5) * 8}%`,
                 top: `${45 + Math.floor(i / 5) * 8}%`

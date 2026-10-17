@@ -6,7 +6,7 @@ import { studioMutedPrimaryButtonClassName } from './studioTheme';
 
 const ModListPage: React.FC = () => {
   return (
-    <div className="min-h-[70vh] bg-gradient-to-br from-slate-50 via-white to-amber-50 px-4 py-10">
+    <div className="min-h-[70vh] bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-3xl rounded-2xl border border-amber-200 bg-white p-8 shadow-sm">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600">
           <FaExclamationTriangle className="text-2xl" />
@@ -21,7 +21,7 @@ const ModListPage: React.FC = () => {
         <div className="mt-8 flex justify-center">
           <Link
             to="/"
-            className={cn(studioMutedPrimaryButtonClassName, "rounded-full bg-slate-900 py-3")}
+            className={cn(studioMutedPrimaryButtonClassName, "py-3")}
           >
             <FaArrowLeft />
             返回首页
