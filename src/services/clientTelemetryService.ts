@@ -150,8 +150,10 @@ function dedupeKeyFor(input: {
   traceId: string;
   bucket: number;
 }): string {
+  // 合并键用 SHA-256 而不是 SHA-1：键里含客户端消息（可能误带敏感串），
+  // 弱摘要不值得出现在任何一条与敏感数据同流的计算里。截断到 40 位保持既有键长。
   return crypto
-    .createHash("sha1")
+    .createHash("sha256")
     .update([input.kind, input.level, input.source, input.path, input.traceId, input.message.slice(0, 400), input.bucket].join("|"))
     .digest("hex")
     .slice(0, 40);

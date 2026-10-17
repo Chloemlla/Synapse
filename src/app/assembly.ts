@@ -248,18 +248,20 @@ export function registerCoreMiddleware(app: Express): void {
   // globalCors 仍保持后置（registerSecurityMiddleware），避免在 open-CORS 路由
   // 处理器（/api/turnstile/verify-token 等）之前短路预检，也避免 data-collection
   // 被白名单外 Origin 拦截。
-  app.use((req, res, next) => {
-    res.locals.cspSurface = resolveCspSurface(req.path);
-    // CSP 由这里直接写头，不再交给 helmet 的 directive 回调：
-    // 只有文档响应才需要 nonce 与第三方 host 白名单；JSON/静态产物用最小策略，
-    // 既省掉每条响应 ~3 KB 的头，也让这些响应的 CSP 值保持恒定（HTTP/2 HPACK 可整段复用）。
-    // nonce 改为按需生成（ensureCspNonce），API 请求不再做一次随机的 crypto 调用。
-    res.setHeader("Content-Security-Policy", buildCspHeaderValue(req, res));
-    next();
-  });
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      // CSP 仍由紧随其后的中间件按 surface 生成（见下），但 helmet 这一层**不能关**：
+      // 这里先写一份 deny-all 的兜底策略，任何在覆盖之前就结束的响应至少不会是裸奔的
+      // （fail-closed）；正常路径随后会被完整策略覆盖。
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          "default-src": ["'none'"],
+          "base-uri": ["'none'"],
+          "form-action": ["'none'"],
+          "frame-ancestors": ["'none'"],
+        },
+      },
       hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
       noSniff: true,
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
@@ -272,6 +274,15 @@ export function registerCoreMiddleware(app: Express): void {
       xPermittedCrossDomainPolicies: false,
     }),
   );
+  app.use((req, res, next) => {
+    res.locals.cspSurface = resolveCspSurface(req.path);
+    // 覆盖 helmet 的兜底策略：只有文档响应才需要 nonce 与第三方 host 白名单；
+    // JSON/静态产物用最小策略，既省掉每条响应 ~3 KB 的头，也让这些响应的 CSP 值
+    // 保持恒定（HTTP/2 HPACK 可整段复用）。nonce 按需生成（ensureCspNonce），
+    // API 请求不再做一次随机的 crypto 调用。
+    res.setHeader("Content-Security-Policy", buildCspHeaderValue(req, res));
+    next();
+  });
   // GEO-17：嵌入壳已通过 CSP frame-ancestors 放行，但 helmet 仍会发
   // `X-Frame-Options: DENY`；老浏览器以 XFO 为准，会继续拦掉 iframe。
   // 只对命中嵌入策略的那一条路径摘掉 XFO，其它页面一个字节都不放宽。

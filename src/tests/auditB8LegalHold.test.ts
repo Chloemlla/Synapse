@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { mongoose } from "../services/mongoService";
 import {
   LegalHoldValidationError,
+  checkLegalHold,
   createLegalHold,
   encodeLegalHoldCursor,
+  listLegalHoldsPage,
   parseLegalHoldCursor,
   releaseLegalHoldById,
   resetLegalHoldCacheForTests,
@@ -117,6 +119,46 @@ describe("createLegalHold", () => {
     expect(again?._id).toBe("h1");
     expect(LegalHoldModel.create).toHaveBeenCalledTimes(1);
   });
+
+  it("重复登记查询用显式 $eq，值不会被当成查询操作符", async () => {
+    (LegalHoldModel.findOne as jest.Mock).mockReturnValue(leanQuery(null));
+    (LegalHoldModel.create as jest.Mock).mockImplementation(async (doc: unknown) => ({
+      ...(doc as Record<string, unknown>),
+      toObject: () => doc,
+    }));
+    await createLegalHold({
+      scope: "user",
+      value: "u1",
+      caseRef: "CASE-1",
+      reason: "warrant-1",
+      issuedBy: "admin",
+    });
+    expect(LegalHoldModel.findOne).toHaveBeenCalledWith({
+      scope: { $eq: "user" },
+      value: { $eq: "u1" },
+      caseRef: { $eq: "CASE-1" },
+      releasedAt: null,
+    });
+  });
+});
+
+describe("checkLegalHold", () => {
+  it("等值查询用 $eq 包裹收窄后的 scope/value", async () => {
+    (LegalHoldModel.findOne as jest.Mock).mockReturnValue(leanQuery(null));
+    await checkLegalHold("user", "u1");
+    expect(LegalHoldModel.findOne).toHaveBeenCalledWith({
+      scope: { $eq: "user" },
+      value: { $eq: "u1" },
+      releasedAt: null,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: expect.any(Date) } }],
+    });
+  });
+
+  it("对象形态的 scope 直接判定为无法确认（fail-closed），不进入查询", async () => {
+    const result = await checkLegalHold({ $ne: null } as never, "u1");
+    expect(result).toMatchObject({ held: true, unknown: true });
+    expect(LegalHoldModel.findOne).not.toHaveBeenCalled();
+  });
 });
 
 describe("releaseLegalHoldById", () => {
@@ -164,6 +206,35 @@ describe("releaseLegalHoldById", () => {
     const error = new LegalHoldValidationError("LEGAL_HOLD_CASE_REQUIRED", "case", 409);
     expect(error.code).toBe("LEGAL_HOLD_CASE_REQUIRED");
     expect(error.statusCode).toBe(409);
+  });
+});
+
+describe("列表筛选", () => {
+  function pageQuery() {
+    const chain = {
+      sort: () => chain,
+      limit: () => chain,
+      lean: () => chain,
+      exec: () => Promise.resolve([]),
+    };
+    return chain;
+  }
+
+  it("scope 白名单与 caseRef 都写成 $eq 等值过滤", async () => {
+    (LegalHoldModel.find as jest.Mock).mockReturnValue(pageQuery());
+    await listLegalHoldsPage({ scope: "ip", caseRef: "  CASE-1  " });
+    expect(LegalHoldModel.find).toHaveBeenCalledWith({
+      releasedAt: null,
+      scope: { $eq: "ip" },
+      caseRef: { $eq: "CASE-1" },
+    });
+  });
+
+  it("对象形态的 scope 被忽略，不会出现在查询条件里", async () => {
+    (LegalHoldModel.find as jest.Mock).mockReturnValue(pageQuery());
+    await listLegalHoldsPage({ scope: { $ne: null } as never });
+    const filter = (LegalHoldModel.find as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    expect(filter).not.toHaveProperty("scope");
   });
 });
 
