@@ -303,8 +303,9 @@ export async function releaseLegalHold(input: {
   if (!mongoReady()) throw new Error("数据库不可用，无法解除法律保留");
   // 先取出生效中的记录：解除后 `releasedAt` 已写入，事后无法再按“当时生效”的
   // 案件编号留痕；法律动作必须在写路径上完成审计，而不是事后补偿。
-  // 值先压成字符串再进查询：即便调用方误传了对象形态的载荷，也只会被当作普通字符串比较。
-  const releaseScope = String(input.scope ?? "");
+  // scope 走白名单收窄、value 压成字符串后再进查询：即便调用方误传了对象形态的载荷，
+  // 也只会被当作普通字符串比较。
+  const releaseScope = normalizeScope(input.scope);
   const releaseValue = String(input.value ?? "").trim();
   const activeHolds = (await LegalHoldModel.find({
     scope: { $eq: releaseScope },
