@@ -86,7 +86,7 @@ type RunSummary = {
 export default function GeoGebraPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedProjectId = searchParams.get("projectId");
   const requestedShareSlug = searchParams.get("share");
   // GEO-17：`?share=<slug>` 是「从别处打开这份公开分享」的入口。
@@ -132,6 +132,17 @@ export default function GeoGebraPage() {
   const [error, setError] = useState("");
   const [workbenchTab, setWorkbenchTab] = useState<GeoGebraWorkbenchTabId>(() => resolveGeoGebraWorkbenchTab(searchParams.get("tab")));
   const [mobileCodeTab, setMobileCodeTab] = useState(true);
+  // 功能区标签同步进 URL（replace，不堆历史记录）：刷新/分享链接能回到同一个面板。
+  const selectWorkbenchTab = useCallback((id: string) => {
+    const next = resolveGeoGebraWorkbenchTab(id);
+    setWorkbenchTab(next);
+    setSearchParams((params) => {
+      const updated = new URLSearchParams(params);
+      if (next === "project") updated.delete("tab");
+      else updated.set("tab", next);
+      return updated;
+    }, { replace: true });
+  }, [setSearchParams]);
   const currentCode = currentProject?.code ?? DEFAULT_CODE;
   const prepared = useMemo(() => prepareGeoGebraScript(currentCode), [currentCode]);
   const controls = useMemo(() => extractGeoGebraControls(currentCode), [currentCode]);
@@ -818,7 +829,7 @@ export default function GeoGebraPage() {
 
         {!presentationMode && (
           <>
-            <GeoGebraTabBar tabs={workbenchTabs} value={workbenchTab} onChange={(id) => setWorkbenchTab(resolveGeoGebraWorkbenchTab(id))} ariaLabel="工作台功能区" />
+            <GeoGebraTabBar tabs={workbenchTabs} value={workbenchTab} onChange={selectWorkbenchTab} ariaLabel="工作台功能区" />
 
             <div role="tabpanel" id="geogebra-workbench-panel-project" aria-labelledby="geogebra-workbench-tab-project" hidden={workbenchTab !== "project"} className="space-y-4">
               <GeoGebraProjectPanel
