@@ -73,7 +73,8 @@ const ProxycheckRiskCacheSchema = new mongoose.Schema<ProxycheckRiskCacheDoc>(
 // expiresAt 支撑「同 IP 只打一次上游」：查询窗口内直接命中本集合，过期后自动消失。
 // TTL 后台线程最长有 60s 才删除过期文档，所以读取侧仍然显式带 `expiresAt > now`，
 // 不能只依赖索引删除。
-ProxycheckRiskCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：过期缓存由 legalHoldCleanupService 清理（裁决三 / D8）。
+ProxycheckRiskCacheSchema.index({ expiresAt: 1 });
 
 export const ProxycheckRiskCacheModel =
   (mongoose.models.ProxycheckRiskCache as mongoose.Model<ProxycheckRiskCacheDoc>) ||

@@ -15,6 +15,8 @@ import { mongoose } from "../services/mongoService";
 export type LegalHoldScope = "user" | "fingerprint" | "ip";
 
 export interface ILegalHold {
+  /** Mongoose 文档 id；游标分页与按 id 解除 hold 都要用。 */
+  _id?: unknown;
   scope: LegalHoldScope;
   value: string;
   caseRef: string;

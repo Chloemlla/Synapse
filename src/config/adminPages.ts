@@ -53,6 +53,9 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "media-tool", label: "媒体工具", apiPrefixes: ["/api/admin/media-tool"] },
   { key: "crash-reports", label: "崩溃报告", apiPrefixes: ["/api/admin/crash-reports"] },
   { key: "ip-risk-logs", label: "IP 风险日志", apiPrefixes: ["/api/admin/proxycheck"] },
+  // 法律保留与取证（RC-22/RC-35/RC-58）：列表读取给 admin 档，登记/解除/取证导出
+  // 在路由层再叠 superadmin + 安全会话；未勾选给普通管理员时仍 fail-closed。
+  { key: "legal-holds", label: "法律保留与取证", apiPrefixes: ["/api/admin/legal-holds"] },
   {
     key: "mobile-token-lineage",
     label: "登录令牌血缘",

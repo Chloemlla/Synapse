@@ -36,6 +36,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/integrations",
   "/admin/ip-ban",
   "/admin/ip-risk-logs",
+  "/admin/legal-holds",
   "/admin/librechat",
   "/admin/logshare",
   "/admin/lottery",

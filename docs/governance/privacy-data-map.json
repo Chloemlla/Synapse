@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-16",
+  "updatedAt": "2026-10-17",
   "notes": [
     "This map is the machine-readable contract for fingerprint/IP privacy governance.",
     "Retention is enforced by Mongo TTL indexes, scheduled cleanup jobs, or documented manual admin actions.",
     "User account deletion currently removes the user_datas document; linked fingerprint/IP telemetry cleanup is tracked as a long-term debt item.",
     "proxycheck-* datasets were added 2026-09-25 with the proxycheck.io IP-risk integration. The risk cache is TTL-bounded; the lookup-log and probe-report collections are read-only superadmin surfaces and still await a retention job (declared as an acknowledged gap). The lookup log additionally stores the decision handed to the caller.",
     "policy_consents gained documentHash (which text revision was accepted) plus revokedAt/revokedIP/revokedReason (withdrawal audit trail) on 2026-09-30, and an owner-initiated hard delete via POST /api/policy/revoke {purge:true}. A superadmin CSV export (/api/admin/policy-consents/export) is the only bulk surface; it is audited and row-capped.",
-    "2026-10-03: audit_logs TTL narrowed 90d -> 60d (AUDIT_LOG_RETENTION_DAYS in src/models/auditLogModel.ts). Existing deployments must run `ts-node src/scripts/applyAuditLogTtl.ts` to change the live index in place \u2014 editing the schema alone does not update an existing TTL index.",
+    "2026-10-03: audit_logs TTL narrowed 90d -> 60d (AUDIT_LOG_RETENTION_DAYS in src/models/auditLogModel.ts). Existing deployments must run `ts-node src/scripts/applyAuditLogTtl.ts` to change the live index in place — editing the schema alone does not update an existing TTL index.",
     "2026-10-03: every dataset now carries a userFacing block (Chinese label / category / what / why / retention + the policy section that explains it). The privacy policy page renders that block through src/generated/privacyDataMap.ts, so the page cannot drift from this contract; `pnpm run check:privacy-data-map` enforces the generated file in CI.",
     "Integration datasets added 2026-10-02: email_suppressions (bounce/complaint/unsubscribe suppression list, email address only, written by the Resend webhook, the public unsubscribe link, or a superadmin), recommendation_feedback (explicit like/dislike per user+style), and webhook_events (third-party webhook payloads; superadmin-only reads and a manual retention prune). All three are reachable from the integration health center (/admin/integrations).",
     "2026-10-10: account_ip_signals added for the account risk aggregation (RC-06): it keeps the per-account login IP history together with the risk score observed at that moment, so an account keeps carrying the risk of the IPs it has used even after the IP-level cache (24h TTL) expires. Deliberately has no TTL so the evidence survives account deletion; retention is declared as an active-use window plus a legal-hold check instead.",
@@ -19,16 +19,29 @@
     {
       "id": "user-fingerprints",
       "collection": "user_datas",
-      "fields": ["fingerprints.id", "fingerprints.ts", "fingerprints.ua", "fingerprints.ip", "fingerprints.deviceInfo", "lastLoginIp", "lastLoginAt", "emailCanonical", "requireFingerprint", "requireFingerprintAt", "fingerprintRequestDismissedOnce", "fingerprintRequestDismissedAt"],
+      "fields": [
+        "fingerprints.id",
+        "fingerprints.ts",
+        "fingerprints.ua",
+        "fingerprints.ip",
+        "fingerprints.deviceInfo",
+        "lastLoginIp",
+        "lastLoginAt",
+        "emailCanonical",
+        "requireFingerprint",
+        "requireFingerprintAt",
+        "fingerprintRequestDismissedOnce",
+        "fingerprintRequestDismissedAt"
+      ],
       "purpose": "Account risk control, fingerprint request UX, and abnormal login review",
       "legalBasis": "security_and_service_integrity",
       "userFacing": {
-      "label": "账户设备指纹与最近登录",
-      "category": "安全与风控",
-      "what": "设备指纹 ID、上报时间、浏览器/客户端 UA、上报时的 IP、设备特征摘要；以及最近登录 IP 与时间、「要求下次登录上报指纹」的状态。",
-      "why": "识别异常登录、设备变更与账号共享；支撑「下次登录必须上报指纹」这类账户安全操作，并用于风控复核。",
-      "retention": "随账户保存；删除账户或由管理员清空指纹记录时移除（含最近登录 IP/时间）。",
-      "policySection": "enforcement"
+        "label": "账户设备指纹与最近登录",
+        "category": "安全与风控",
+        "what": "设备指纹 ID、上报时间、浏览器/客户端 UA、上报时的 IP、设备特征摘要；以及最近登录 IP 与时间、「要求下次登录上报指纹」的状态。",
+        "why": "识别异常登录、设备变更与账号共享；支撑「下次登录必须上报指纹」这类账户安全操作，并用于风控复核。",
+        "retention": "随账户保存；删除账户或由管理员清空指纹记录时移除（含最近登录 IP/时间）。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "account_lifetime",
@@ -42,23 +55,34 @@
       "export": {
         "supported": true,
         "surface": "admin user export / profile admin views",
-        "includes": ["fingerprint ids", "timestamps", "last login IP"]
+        "includes": [
+          "fingerprint ids",
+          "timestamps",
+          "last login IP"
+        ]
       },
-      "evidence": ["src/services/userService.ts"]
+      "evidence": [
+        "src/services/userService.ts"
+      ]
     },
     {
       "id": "temp-fingerprints",
       "collection": "tempfingerprints",
-      "fields": ["fingerprint", "ipAddress", "verified", "expiresAt"],
+      "fields": [
+        "fingerprint",
+        "ipAddress",
+        "verified",
+        "expiresAt"
+      ],
       "purpose": "First-visit and anonymous access verification",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "临时设备指纹（首访验证）",
-      "category": "安全与风控",
-      "what": "指纹值、IP、是否已通过验证、过期时间。",
-      "why": "首次访问与匿名访问的人机验证，用于判断该来源是否可信、是否需要额外验证。",
-      "retention": "按各自过期时间由数据库自动清理（通常 5 分钟到 24 小时）；管理员也可手动清理过期记录。",
-      "policySection": "enforcement"
+        "label": "临时设备指纹（首访验证）",
+        "category": "安全与风控",
+        "what": "指纹值、IP、是否已通过验证、过期时间。",
+        "why": "首次访问与匿名访问的人机验证，用于判断该来源是否可信、是否需要额外验证。",
+        "retention": "按各自过期时间由数据库自动清理（通常 5 分钟到 24 小时）；管理员也可手动清理过期记录。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -76,21 +100,29 @@
         "supported": false,
         "reason": "Ephemeral security signal; not part of user data export"
       },
-      "evidence": ["src/models/tempFingerprintModel.ts", "src/services/turnstile/fingerprint.ts"]
+      "evidence": [
+        "src/models/tempFingerprintModel.ts",
+        "src/services/turnstile/fingerprint.ts"
+      ]
     },
     {
       "id": "access-tokens",
       "collection": "accesstokens",
-      "fields": ["token", "fingerprint", "ipAddress", "expiresAt"],
+      "fields": [
+        "token",
+        "fingerprint",
+        "ipAddress",
+        "expiresAt"
+      ],
       "purpose": "Short-lived access binding for verification flows",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "短期访问令牌",
-      "category": "安全与风控",
-      "what": "令牌值、绑定的指纹、IP、过期时间。",
-      "why": "验证流程中的短时访问绑定，避免「验证一次即可无限复用」。",
-      "retention": "数分钟内到期，由数据库自动清理。",
-      "policySection": "enforcement"
+        "label": "短期访问令牌",
+        "category": "安全与风控",
+        "what": "令牌值、绑定的指纹、IP、过期时间。",
+        "why": "验证流程中的短时访问绑定，避免「验证一次即可无限复用」。",
+        "retention": "数分钟内到期，由数据库自动清理。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -107,21 +139,32 @@
         "supported": false,
         "reason": "Security credential material"
       },
-      "evidence": ["src/models/accessTokenModel.ts"]
+      "evidence": [
+        "src/models/accessTokenModel.ts"
+      ]
     },
     {
       "id": "ip-verification-tokens",
       "collection": "ip_verification_tokens",
-      "fields": ["token", "fingerprint", "ipAddress", "issuedBy", "challengePassed", "fraudScore", "riskFlags", "expiresAt"],
+      "fields": [
+        "token",
+        "fingerprint",
+        "ipAddress",
+        "issuedBy",
+        "challengePassed",
+        "fraudScore",
+        "riskFlags",
+        "expiresAt"
+      ],
       "purpose": "IP challenge state for Turnstile/hCaptcha flows",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "IP 验证令牌",
-      "category": "安全与风控",
-      "what": "令牌、绑定指纹、IP、签发方、是否完成挑战、风险分与风险标记、过期时间。",
-      "why": "首访 IP 验证与人机验证的挑战状态记录，决定该来源是否需要额外验证。",
-      "retention": "数分钟到数小时自动过期。",
-      "policySection": "enforcement"
+        "label": "IP 验证令牌",
+        "category": "安全与风控",
+        "what": "令牌、绑定指纹、IP、签发方、是否完成挑战、风险分与风险标记、过期时间。",
+        "why": "首访 IP 验证与人机验证的挑战状态记录，决定该来源是否需要额外验证。",
+        "retention": "数分钟到数小时自动过期。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -136,21 +179,31 @@
       "export": {
         "supported": false
       },
-      "evidence": ["src/models/ipVerificationTokenModel.ts"]
+      "evidence": [
+        "src/models/ipVerificationTokenModel.ts"
+      ]
     },
     {
       "id": "ip-bans",
       "collection": "ipbans",
-      "fields": ["ipAddress", "reason", "violationCount", "bannedAt", "expiresAt", "fingerprint", "userAgent"],
+      "fields": [
+        "ipAddress",
+        "reason",
+        "violationCount",
+        "bannedAt",
+        "expiresAt",
+        "fingerprint",
+        "userAgent"
+      ],
       "purpose": "Abuse enforcement and rate-limit escalation",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "IP 封禁记录",
-      "category": "安全与风控",
-      "what": "IP 或网段、封禁原因、违规次数、封禁与到期时间、关联指纹与 UA。",
-      "why": "滥用处置与限流升级：封禁针对来源而非个人，用于阻断持续攻击、爬取与批量滥用。",
-      "retention": "保留至封禁到期（数据库自动清理）；管理员可随时解除。",
-      "policySection": "enforcement"
+        "label": "IP 封禁记录",
+        "category": "安全与风控",
+        "what": "IP 或网段、封禁原因、违规次数、封禁与到期时间、关联指纹与 UA。",
+        "why": "滥用处置与限流升级：封禁针对来源而非个人，用于阻断持续攻击、爬取与批量滥用。",
+        "retention": "保留至封禁到期（数据库自动清理）；管理员可随时解除。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -168,21 +221,38 @@
         "supported": false,
         "reason": "Security enforcement records"
       },
-      "evidence": ["src/models/ipBanModel.ts"]
+      "evidence": [
+        "src/models/ipBanModel.ts"
+      ]
     },
     {
       "id": "policy-consents",
       "collection": "policy_consents",
-      "fields": ["fingerprint", "userId", "username", "ipAddress", "userAgent", "version", "checksum", "documentHash", "expiresAt", "source", "agreements", "revokedAt", "revokedIP", "revokedReason"],
+      "fields": [
+        "fingerprint",
+        "userId",
+        "username",
+        "ipAddress",
+        "userAgent",
+        "version",
+        "checksum",
+        "documentHash",
+        "expiresAt",
+        "source",
+        "agreements",
+        "revokedAt",
+        "revokedIP",
+        "revokedReason"
+      ],
       "purpose": "Proof of policy acceptance: the four agreements ticked at login/register, an explicit acceptance for gated features such as anonymous TTS, or a server-signed record refreshed at either point (source, agreements). documentHash pins which text revision was accepted; revokedAt/revokedIP record a withdrawal.",
       "legalBasis": "consent_record",
       "userFacing": {
-      "label": "政策同意记录",
-      "category": "合规与审计",
-      "what": "设备指纹、IP、UA、条文版本与条文指纹、勾选的文件清单、来源（登录/注册/匿名功能签发）、签发与到期时间；撤回时记录撤回时间、IP 与原因。",
-      "why": "证明你在哪一版条文下同意过哪些文件，以及撤回同意的留痕——这是双方都需要的凭据。",
-      "retention": "默认 30 天有效（部署可配置 1–3650 天），到期由数据库自动回收；可在本设备自助撤回并要求删除本设备记录。",
-      "policySection": "rights"
+        "label": "政策同意记录",
+        "category": "合规与审计",
+        "what": "设备指纹、IP、UA、条文版本与条文指纹、勾选的文件清单、来源（登录/注册/匿名功能签发）、签发与到期时间；撤回时记录撤回时间、IP 与原因。",
+        "why": "证明你在哪一版条文下同意过哪些文件，以及撤回同意的留痕——这是双方都需要的凭据。",
+        "retention": "默认 30 天有效（部署可配置 1–3650 天），到期由数据库自动回收；可在本设备自助撤回并要求删除本设备记录。",
+        "policySection": "rights"
       },
       "retention": {
         "type": "ttl",
@@ -198,23 +268,43 @@
       "export": {
         "supported": "partial",
         "surface": "GET /api/policy/status (device owner), admin stats, superadmin /api/admin/policy-consents (+ /export CSV, superadmin only, audited)",
-        "includes": ["version", "expiresAt", "recordedAt", "consent id", "source", "agreements", "documentHash"]
+        "includes": [
+          "version",
+          "expiresAt",
+          "recordedAt",
+          "consent id",
+          "source",
+          "agreements",
+          "documentHash"
+        ]
       },
-      "evidence": ["src/models/policyConsentModel.ts", "src/services/policyConsentService.ts"]
+      "evidence": [
+        "src/models/policyConsentModel.ts",
+        "src/services/policyConsentService.ts"
+      ]
     },
     {
       "id": "tts-jobs",
       "collection": "tts_jobs",
-      "fields": ["taskId", "userId", "ip", "fingerprint", "request", "result", "status", "createdAt"],
+      "fields": [
+        "taskId",
+        "userId",
+        "ip",
+        "fingerprint",
+        "request",
+        "result",
+        "status",
+        "createdAt"
+      ],
       "purpose": "Job ownership, abuse detection, queue recovery, and result delivery",
       "legalBasis": "service_delivery_and_security",
       "userFacing": {
-      "label": "文字转语音任务",
-      "category": "服务与业务",
-      "what": "任务号、发起用户、发起 IP、指纹、请求参数（文本、音色、语速等）、状态与结果音频位置、时间。",
-      "why": "生成音频、交付结果、任务队列恢复与故障排查，以及滥用排查。",
-      "retention": "目前无自动过期（为支持队列恢复与人工支持而保留）；账户删除后的历史任务清理仍在补齐。",
-      "policySection": "data-use"
+        "label": "文字转语音任务",
+        "category": "服务与业务",
+        "what": "任务号、发起用户、发起 IP、指纹、请求参数（文本、音色、语速等）、状态与结果音频位置、时间。",
+        "why": "生成音频、交付结果、任务队列恢复与故障排查，以及滥用排查。",
+        "retention": "目前无自动过期（为支持队列恢复与人工支持而保留）；账户删除后的历史任务清理仍在补齐。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "operational",
@@ -228,23 +318,41 @@
       "export": {
         "supported": "partial",
         "surface": "authenticated job status/history APIs",
-        "includes": ["task metadata", "status", "result URLs when owned"]
+        "includes": [
+          "task metadata",
+          "status",
+          "result URLs when owned"
+        ]
       },
-      "evidence": ["src/tts/tts.storage.ts"]
+      "evidence": [
+        "src/tts/tts.storage.ts"
+      ]
     },
     {
       "id": "audit-logs",
       "collection": "audit_logs",
-      "fields": ["userId", "username", "role", "action", "module", "ip", "userAgent", "path", "method", "detail", "createdAt"],
+      "fields": [
+        "userId",
+        "username",
+        "role",
+        "action",
+        "module",
+        "ip",
+        "userAgent",
+        "path",
+        "method",
+        "detail",
+        "createdAt"
+      ],
       "purpose": "Security and admin accountability",
       "legalBasis": "security_logging",
       "userFacing": {
-      "label": "管理操作审计日志",
-      "category": "合规与审计",
-      "what": "操作者 ID/用户名/角色、动作、模块、IP、UA、请求路径与方法、结果与细节、时间。",
-      "why": "安全审计与管理问责：记录「谁在什么时间以什么身份做了什么管理动作」，用于安全事件复盘。",
-      "retention": "保留 60 天，到期由数据库 TTL 自动清理（2026-10-03 起由 90 天收窄为 60 天）。",
-      "policySection": "retention"
+        "label": "管理操作审计日志",
+        "category": "合规与审计",
+        "what": "操作者 ID/用户名/角色、动作、模块、IP、UA、请求路径与方法、结果与细节、时间。",
+        "why": "安全审计与管理问责：记录「谁在什么时间以什么身份做了什么管理动作」，用于安全事件复盘。",
+        "retention": "保留 60 天，到期由数据库 TTL 自动清理（2026-10-03 起由 90 天收窄为 60 天）。",
+        "policySection": "retention"
       },
       "retention": {
         "type": "ttl",
@@ -260,23 +368,39 @@
       "export": {
         "supported": true,
         "surface": "admin audit log APIs",
-        "includes": ["action metadata", "IP", "operator identity"]
+        "includes": [
+          "action metadata",
+          "IP",
+          "operator identity"
+        ]
       },
-      "evidence": ["src/models/auditLogModel.ts", "src/services/auditLogService.ts"]
+      "evidence": [
+        "src/models/auditLogModel.ts",
+        "src/services/auditLogService.ts"
+      ]
     },
     {
       "id": "data-collections",
       "collection": "data_collections",
-      "fields": ["userId", "action", "timestamp", "details", "riskScore", "riskLevel", "analysis", "hash"],
+      "fields": [
+        "userId",
+        "action",
+        "timestamp",
+        "details",
+        "riskScore",
+        "riskLevel",
+        "analysis",
+        "hash"
+      ],
       "purpose": "Behavioral risk scoring and abuse analytics",
       "legalBasis": "security_and_product_analytics",
       "userFacing": {
-      "label": "行为数据采集",
-      "category": "安全与风控",
-      "what": "用户 ID、行为动作、时间、明细、风险分与风险等级、分析结论、校验值。",
-      "why": "风控评分与滥用分析：识别异常行为模式（例如批量注册、异常调用节奏）。",
-      "retention": "默认不设自动过期；部署可通过 DATA_COLLECTION_TTL_DAYS 打开 TTL。账户删除后的级联清理仍在补齐。",
-      "policySection": "data-use"
+        "label": "行为数据采集",
+        "category": "安全与风控",
+        "what": "用户 ID、行为动作、时间、明细、风险分与风险等级、分析结论、校验值。",
+        "why": "风控评分与滥用分析：识别异常行为模式（例如批量注册、异常调用节奏）。",
+        "retention": "默认不设自动过期；部署可通过 DATA_COLLECTION_TTL_DAYS 打开 TTL。账户删除后的级联清理仍在补齐。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "optional_ttl",
@@ -291,23 +415,38 @@
       "export": {
         "supported": true,
         "surface": "analytics export API",
-        "includes": ["action summaries", "optional raw records"]
+        "includes": [
+          "action summaries",
+          "optional raw records"
+        ]
       },
-      "evidence": ["src/services/dataCollectionService.ts", "src/services/usageAnalyticsService.ts"]
+      "evidence": [
+        "src/services/dataCollectionService.ts",
+        "src/services/usageAnalyticsService.ts"
+      ]
     },
     {
       "id": "device-tracking",
       "collection": "devicetrackings",
-      "fields": ["userId", "deviceFingerprint", "riskScore", "riskLevel", "ipAddress", "userAgent", "firstSeen", "lastSeen"],
+      "fields": [
+        "userId",
+        "deviceFingerprint",
+        "riskScore",
+        "riskLevel",
+        "ipAddress",
+        "userAgent",
+        "firstSeen",
+        "lastSeen"
+      ],
       "purpose": "Mobile/device integrity signals for NexAI and related clients",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "设备风险跟踪",
-      "category": "安全与风控",
-      "what": "用户 ID、设备指纹、风险分与等级、IP、UA、首次与最近出现时间。",
-      "why": "移动端与其它客户端的设备完整性判断（如 NexAI 相关客户端），用于识别设备被替换或批量伪造。",
-      "retention": "按账户生命周期保留（目前无自动过期）；账户删除后的级联清理仍在补齐。",
-      "policySection": "data-use"
+        "label": "设备风险跟踪",
+        "category": "安全与风控",
+        "what": "用户 ID、设备指纹、风险分与等级、IP、UA、首次与最近出现时间。",
+        "why": "移动端与其它客户端的设备完整性判断（如 NexAI 相关客户端），用于识别设备被替换或批量伪造。",
+        "retention": "按账户生命周期保留（目前无自动过期）；账户删除后的级联清理仍在补齐。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_linked",
@@ -321,21 +460,39 @@
         "supported": false,
         "reason": "Security telemetry; export only via admin investigation tooling"
       },
-      "evidence": ["src/models/deviceTrackingModel.ts"]
+      "evidence": [
+        "src/models/deviceTrackingModel.ts"
+      ]
     },
     {
       "id": "account-ip-signals",
       "collection": "account_ip_signals",
-      "fields": ["userId", "ipAddress", "ipLocation", "firstSeenAt", "lastSeenAt", "loginCount", "riskScore", "riskLevel", "flags", "networkType", "asn", "organisation", "isDatacenter", "source", "riskCheckedAt"],
+      "fields": [
+        "userId",
+        "ipAddress",
+        "ipLocation",
+        "firstSeenAt",
+        "lastSeenAt",
+        "loginCount",
+        "riskScore",
+        "riskLevel",
+        "flags",
+        "networkType",
+        "asn",
+        "organisation",
+        "isDatacenter",
+        "source",
+        "riskCheckedAt"
+      ],
       "purpose": "Per-account login IP history with the risk score observed at that time (account risk aggregation, RC-06)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "账户登录 IP 风险记录",
-      "category": "安全与风控",
-      "what": "用户 ID、登录 IP、IP 属地、首次与最近登录时间、登录次数，以及该 IP 的风险分与判定旗标（含机房/IDC 判据）。",
-      "why": "把「历来登录 IP 的风险」沉淀到账户维度，用于识别多账号注册、盗号与自动化滥用；风险分本身来自第三方 IP 风险库。",
-      "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
-      "policySection": "data-use"
+        "label": "账户登录 IP 风险记录",
+        "category": "安全与风控",
+        "what": "用户 ID、登录 IP、IP 属地、首次与最近登录时间、登录次数，以及该 IP 的风险分与判定旗标（含机房/IDC 判据）。",
+        "why": "把「历来登录 IP 的风险」沉淀到账户维度，用于识别多账号注册、盗号与自动化滥用；风险分本身来自第三方 IP 风险库。",
+        "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_linked",
@@ -349,21 +506,38 @@
         "supported": false,
         "reason": "Security telemetry; export only via admin forensic tooling"
       },
-      "evidence": ["src/models/accountIpSignalModel.ts"]
+      "evidence": [
+        "src/models/accountIpSignalModel.ts"
+      ]
     },
     {
       "id": "device-fingerprints",
       "collection": "device_fingerprints",
-      "fields": ["userId", "fingerprintId", "componentHashes.can", "componentHashes.wgl", "componentHashes.tz", "componentHashes.scr", "previousComponentHashes", "firstSeenAt", "lastSeenAt", "seenCount", "driftCount", "lastDriftAt", "ips", "sources"],
+      "fields": [
+        "userId",
+        "fingerprintId",
+        "componentHashes.can",
+        "componentHashes.wgl",
+        "componentHashes.tz",
+        "componentHashes.scr",
+        "previousComponentHashes",
+        "firstSeenAt",
+        "lastSeenAt",
+        "seenCount",
+        "driftCount",
+        "lastDriftAt",
+        "ips",
+        "sources"
+      ],
       "purpose": "Per-account device fingerprint component hashes used to detect component drift and cross-account hardware reuse (RC-16)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "设备指纹分量摘要",
-      "category": "安全与风控",
-      "what": "设备指纹 ID、Canvas/WebGL/时区/屏幕四路特征各自的哈希摘要（不含原始图像），以及首次与最近出现时间、漂移次数与来源 IP。",
-      "why": "识别同一设备更换浏览器沙箱或伪装后指纹 ID 变化（仍可判定为同一硬件），以及同一硬件被多个账号共用（判定共享账号/一人多号）。",
-      "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
-      "policySection": "data-use"
+        "label": "设备指纹分量摘要",
+        "category": "安全与风控",
+        "what": "设备指纹 ID、Canvas/WebGL/时区/屏幕四路特征各自的哈希摘要（不含原始图像），以及首次与最近出现时间、漂移次数与来源 IP。",
+        "why": "识别同一设备更换浏览器沙箱或伪装后指纹 ID 变化（仍可判定为同一硬件），以及同一硬件被多个账号共用（判定共享账号/一人多号）。",
+        "retention": "按账户生命周期保留（不设自动过期）；账户删除后作为风控证据继续保留，供调查调取。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_linked",
@@ -377,21 +551,33 @@
         "supported": false,
         "reason": "Security telemetry; export only via admin forensic tooling"
       },
-      "evidence": ["src/models/deviceFingerprintModel.ts"]
+      "evidence": [
+        "src/models/deviceFingerprintModel.ts"
+      ]
     },
     {
       "id": "registration-attempts",
       "collection": "registration_attempts",
-      "fields": ["ipAddress", "fingerprint", "emailCanonical", "emailRaw", "inviteCode", "outcome", "ipRiskScore", "blockCode", "createdAt"],
+      "fields": [
+        "ipAddress",
+        "fingerprint",
+        "emailCanonical",
+        "emailRaw",
+        "inviteCode",
+        "outcome",
+        "ipRiskScore",
+        "blockCode",
+        "createdAt"
+      ],
       "purpose": "Per-attempt registration ledger used to enforce the IP/device/email-variant quotas (RC-05)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "注册尝试台账",
-      "category": "安全与风控",
-      "what": "注册时提交的 IP、设备指纹、邮箱（含折叠后的规范化值）、使用的邀请码、结果，以及当时的 IP 风险分。",
-      "why": "限制同一网络/设备/身份来源批量注册：同 IP、同设备、同一来源的多个邮箱变体各自有频次上限。",
-      "retention": "180 天后自动清理（仅用于计数，不作为长期证据；需要取证时看账户登录 IP 记录与安全事件）。",
-      "policySection": "data-use"
+        "label": "注册尝试台账",
+        "category": "安全与风控",
+        "what": "注册时提交的 IP、设备指纹、邮箱（含折叠后的规范化值）、使用的邀请码、结果，以及当时的 IP 风险分。",
+        "why": "限制同一网络/设备/身份来源批量注册：同 IP、同设备、同一来源的多个邮箱变体各自有频次上限。",
+        "retention": "180 天后自动清理（仅用于计数，不作为长期证据；需要取证时看账户登录 IP 记录与安全事件）。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "ttl",
@@ -407,21 +593,30 @@
         "supported": false,
         "reason": "Security telemetry; export only via admin investigation tooling"
       },
-      "evidence": ["src/models/registrationAttemptModel.ts"]
+      "evidence": [
+        "src/models/registrationAttemptModel.ts"
+      ]
     },
     {
       "id": "blocked-identities",
       "collection": "blocked_identities",
-      "fields": ["emailCanonical", "username", "userId", "reason", "blockedAt", "releasedBy"],
+      "fields": [
+        "emailCanonical",
+        "username",
+        "userId",
+        "reason",
+        "blockedAt",
+        "releasedBy"
+      ],
       "purpose": "Retired-identity tombstones that block re-registration with the same email (RC-47)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "已注销身份登记",
-      "category": "安全与风控",
-      "what": "被注销账号的邮箱与用户名（已规范化）、注销原因与时间、人工释放人与时间（如有）。",
-      "why": "防止“注销 → 用同一邮箱重新注册 → 风险档归零”的洗白路径；同一个身份一旦退役，未经人工核实不得再次注册。",
-      "retention": "长期保留（不设自动过期）；人工释放后仅保留释放记录。",
-      "policySection": "enforcement"
+        "label": "已注销身份登记",
+        "category": "安全与风控",
+        "what": "被注销账号的邮箱与用户名（已规范化）、注销原因与时间、人工释放人与时间（如有）。",
+        "why": "防止“注销 → 用同一邮箱重新注册 → 风险档归零”的洗白路径；同一个身份一旦退役，未经人工核实不得再次注册。",
+        "retention": "长期保留（不设自动过期）；人工释放后仅保留释放记录。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "account_lifetime",
@@ -435,21 +630,31 @@
         "supported": false,
         "reason": "Security telemetry; export only via admin investigation tooling"
       },
-      "evidence": ["src/models/blockedIdentityModel.ts"]
+      "evidence": [
+        "src/models/blockedIdentityModel.ts"
+      ]
     },
     {
       "id": "ipqs-lookup-logs",
       "collection": "ipqs_lookup_logs",
-      "fields": ["ipAddress", "fingerprint", "userAgent", "decision", "fraudScore", "rawResponse", "createdAt"],
+      "fields": [
+        "ipAddress",
+        "fingerprint",
+        "userAgent",
+        "decision",
+        "fraudScore",
+        "rawResponse",
+        "createdAt"
+      ],
       "purpose": "Third-party IP reputation decision audit",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "第三方 IP 风险查询日志",
-      "category": "安全与风控",
-      "what": "IP、指纹、UA、判定结果、欺诈分与第三方原始响应、时间。",
-      "why": "记录一次 IP 风险判定「是怎么得出的」，便于事后复核与误判申诉。",
-      "retention": "目前无自动过期（建议 30–90 天，清理任务待补）。",
-      "policySection": "enforcement"
+        "label": "第三方 IP 风险查询日志",
+        "category": "安全与风控",
+        "what": "IP、指纹、UA、判定结果、欺诈分与第三方原始响应、时间。",
+        "why": "记录一次 IP 风险判定「是怎么得出的」，便于事后复核与误判申诉。",
+        "retention": "目前无自动过期（建议 30–90 天，清理任务待补）。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "operational",
@@ -464,21 +669,27 @@
         "supported": false,
         "reason": "May contain third-party raw responses and should not be user-exported"
       },
-      "evidence": ["src/models/ipqsLookupLogModel.ts"]
+      "evidence": [
+        "src/models/ipqsLookupLogModel.ts"
+      ]
     },
     {
       "id": "browser-local-fingerprint-cache",
       "collection": "browser.localStorage",
-      "fields": ["chloemlla.com_fingerprint_v2", "chloemlla.com_fp_rand", "lastFingerprintReport"],
+      "fields": [
+        "chloemlla.com_fingerprint_v2",
+        "chloemlla.com_fp_rand",
+        "lastFingerprintReport"
+      ],
       "purpose": "Client-side fingerprint cache and report debounce",
       "legalBasis": "security_and_service_integrity",
       "userFacing": {
-      "label": "浏览器本地指纹缓存",
-      "category": "客户端本地",
-      "what": "保存在你自己浏览器里的指纹值、随机种子、最近一次上报去重信息。",
-      "why": "减少重复上报与重复验证，让同一设备的验证结果稳定。",
-      "retention": "本地缓存 30 天；清除站点数据会一并清除，登出不会自动清除。",
-      "policySection": "cookies"
+        "label": "浏览器本地指纹缓存",
+        "category": "客户端本地",
+        "what": "保存在你自己浏览器里的指纹值、随机种子、最近一次上报去重信息。",
+        "why": "减少重复上报与重复验证，让同一设备的验证结果稳定。",
+        "retention": "本地缓存 30 天；清除站点数据会一并清除，登出不会自动清除。",
+        "policySection": "cookies"
       },
       "retention": {
         "type": "client_ttl",
@@ -491,21 +702,39 @@
       "export": {
         "supported": false
       },
-      "evidence": ["frontend/src/utils/fingerprint.ts"]
+      "evidence": [
+        "frontend/src/utils/fingerprint.ts"
+      ]
     },
     {
       "id": "tamper-events",
       "collection": "tamper_events",
-      "fields": ["eventId", "timestamp", "url", "ip", "userAgent", "eventType", "tamperType", "detectionMethod", "originalContent", "tamperContent", "filePath", "checksum", "severity", "additionalInfo", "expiresAt"],
+      "fields": [
+        "eventId",
+        "timestamp",
+        "url",
+        "ip",
+        "userAgent",
+        "eventType",
+        "tamperType",
+        "detectionMethod",
+        "originalContent",
+        "tamperContent",
+        "filePath",
+        "checksum",
+        "severity",
+        "additionalInfo",
+        "expiresAt"
+      ],
       "purpose": "Front-end tamper/injection detection and the per-IP auto-ban decision (10 events per hour)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "防篡改事件",
-      "category": "安全与风控",
-      "what": "事件 ID、时间、页面地址、IP、UA、事件与篡改类型、检测方式、被篡改内容片段、文件路径、校验值、严重级别、过期时间。",
-      "why": "检测前端页面被注入或篡改，并据此对同一来源自动封禁（同一 IP 一小时内 10 次事件）。",
-      "retention": "默认保留 30 天（部署可配置 1–365 天），到期由数据库自动清理。",
-      "policySection": "enforcement"
+        "label": "防篡改事件",
+        "category": "安全与风控",
+        "what": "事件 ID、时间、页面地址、IP、UA、事件与篡改类型、检测方式、被篡改内容片段、文件路径、校验值、严重级别、过期时间。",
+        "why": "检测前端页面被注入或篡改，并据此对同一来源自动封禁（同一 IP 一小时内 10 次事件）。",
+        "retention": "默认保留 30 天（部署可配置 1–365 天），到期由数据库自动清理。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -524,21 +753,55 @@
         "supported": false,
         "reason": "Security telemetry, not part of user data export"
       },
-      "evidence": ["src/models/tamperEventModel.ts", "src/services/tamperEventStore.ts", "src/services/tamperService.ts"]
+      "evidence": [
+        "src/models/tamperEventModel.ts",
+        "src/services/tamperEventStore.ts",
+        "src/services/tamperService.ts"
+      ]
     },
     {
       "id": "proxycheck-risk-cache",
       "collection": "proxycheck_risk_cache",
-      "fields": ["ip", "risk", "proxy", "vpn", "tor", "hosting", "scraper", "compromised", "anonymous", "confidence", "networkType", "provider", "asn", "range", "organisation", "hostname", "continent", "country", "isocode", "region", "city", "latitude", "longitude", "timezone", "detectionsRaw", "lastUpdated", "queriedAt", "expiresAt", "source"],
+      "fields": [
+        "ip",
+        "risk",
+        "proxy",
+        "vpn",
+        "tor",
+        "hosting",
+        "scraper",
+        "compromised",
+        "anonymous",
+        "confidence",
+        "networkType",
+        "provider",
+        "asn",
+        "range",
+        "organisation",
+        "hostname",
+        "continent",
+        "country",
+        "isocode",
+        "region",
+        "city",
+        "latitude",
+        "longitude",
+        "timezone",
+        "detectionsRaw",
+        "lastUpdated",
+        "queriedAt",
+        "expiresAt",
+        "source"
+      ],
       "purpose": "Per-IP proxycheck.io reputation cache that also de-duplicates upstream lookups (one upstream request per IP per TTL window); read-only in the superadmin IP-risk log panel, which shows the current-threshold verdict each row would produce",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "IP 风险缓存",
-      "category": "安全与风控",
-      "what": "IP 及其代理/VPN/Tor/机房/爬虫标记、置信度、网络与地理信息（国家、城市、时区等）。",
-      "why": "缓存第三方 IP 信誉结果、合并同一 IP 的重复查询；管理员只读面板据此展示当前阈值下的判定。",
-      "retention": "按缓存有效期自动过期（默认 24 小时，可由管理员配置 1–168 小时）。",
-      "policySection": "enforcement"
+        "label": "IP 风险缓存",
+        "category": "安全与风控",
+        "what": "IP 及其代理/VPN/Tor/机房/爬虫标记、置信度、网络与地理信息（国家、城市、时区等）。",
+        "why": "缓存第三方 IP 信誉结果、合并同一 IP 的重复查询；管理员只读面板据此展示当前阈值下的判定。",
+        "retention": "按缓存有效期自动过期（默认 24 小时，可由管理员配置 1–168 小时）。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "ttl",
@@ -557,21 +820,38 @@
         "supported": false,
         "reason": "Third-party reputation data keyed by IP, not part of user data export; also exposed read-only to superadmins through /api/admin/proxycheck/risk-cache"
       },
-      "evidence": ["src/models/proxycheckRiskCacheModel.ts", "src/services/ipRiskService.ts", "src/controllers/ipRiskLogController.ts", "src/routes/admin/ipRiskLogs.ts"]
+      "evidence": [
+        "src/models/proxycheckRiskCacheModel.ts",
+        "src/services/ipRiskService.ts",
+        "src/controllers/ipRiskLogController.ts",
+        "src/routes/admin/ipRiskLogs.ts"
+      ]
     },
     {
       "id": "proxycheck-lookup-logs",
       "collection": "proxycheck_lookup_logs",
-      "fields": ["ip", "apiKeySlot", "apiKeyHash", "status", "ok", "risk", "deduped", "durationMs", "error", "createdAt", "decision"],
+      "fields": [
+        "ip",
+        "apiKeySlot",
+        "apiKeyHash",
+        "status",
+        "ok",
+        "risk",
+        "deduped",
+        "durationMs",
+        "error",
+        "createdAt",
+        "decision"
+      ],
       "purpose": "Third-party IP reputation decision audit and daily-quota accounting; never stores the raw proxycheck.io response. The decision sub-document records the exact verdict handed to the caller (which frontend path asked, the action taken, the reason, the threshold and fail-open setting in force)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "IP 风险查询台账",
-      "category": "安全与风控",
-      "what": "IP、使用的密钥槽与密钥哈希、状态与耗时、风险分、是否命中缓存，以及交给调用方的判定结论与采取的动作。",
-      "why": "记录一次访问被放行/挑战/拒绝的依据，用于排障与误判申诉复核。",
-      "retention": "目前无自动过期（建议 30–90 天，清理任务待补）。",
-      "policySection": "enforcement"
+        "label": "IP 风险查询台账",
+        "category": "安全与风控",
+        "what": "IP、使用的密钥槽与密钥哈希、状态与耗时、风险分、是否命中缓存，以及交给调用方的判定结论与采取的动作。",
+        "why": "记录一次访问被放行/挑战/拒绝的依据，用于排障与误判申诉复核。",
+        "retention": "目前无自动过期（建议 30–90 天，清理任务待补）。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "operational",
@@ -586,21 +866,45 @@
         "supported": false,
         "reason": "Security telemetry, not part of user data export; also exposed read-only to superadmins through /api/admin/proxycheck/lookups"
       },
-      "evidence": ["src/models/proxycheckLookupLogModel.ts", "src/services/ipRiskService.ts", "src/controllers/ipRiskLogController.ts", "src/routes/admin/ipRiskLogs.ts"]
+      "evidence": [
+        "src/models/proxycheckLookupLogModel.ts",
+        "src/services/ipRiskService.ts",
+        "src/controllers/ipRiskLogController.ts",
+        "src/routes/admin/ipRiskLogs.ts"
+      ]
     },
     {
       "id": "proxycheck-probe-reports",
       "collection": "proxycheck_probe_reports",
-      "fields": ["ip", "httpExitIp", "wsExitIp", "ipv6Exit", "webrtcLeak", "timezone", "timezoneOffsetMin", "languages", "userAgent", "uaPlatform", "hardwareConcurrency", "deviceMemory", "screenRes", "webdriver", "collectedAt", "flags", "mismatch", "createdAt"],
+      "fields": [
+        "ip",
+        "httpExitIp",
+        "wsExitIp",
+        "ipv6Exit",
+        "webrtcLeak",
+        "timezone",
+        "timezoneOffsetMin",
+        "languages",
+        "userAgent",
+        "uaPlatform",
+        "hardwareConcurrency",
+        "deviceMemory",
+        "screenRes",
+        "webdriver",
+        "collectedAt",
+        "flags",
+        "mismatch",
+        "createdAt"
+      ],
       "purpose": "Client-reported network-exit / IPv6-exit / WebSocket-leak telemetry used to detect VPN, proxy and split-tunnel exits that contradict the observed HTTP origin",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
-      "label": "网络出口探测上报",
-      "category": "安全与风控",
-      "what": "上报 IP、HTTP/WebSocket 出口 IP、IPv6 出口、WebRTC 泄漏、时区与语言、UA 与平台、CPU 核数/内存、屏幕分辨率、是否自动化、上报时间与判定标记。",
-      "why": "识别 VPN、代理与分流泄漏（客户端声明的出口与实际出口不一致）。",
-      "retention": "目前无自动过期（清理任务待补）。",
-      "policySection": "enforcement"
+        "label": "网络出口探测上报",
+        "category": "安全与风控",
+        "what": "上报 IP、HTTP/WebSocket 出口 IP、IPv6 出口、WebRTC 泄漏、时区与语言、UA 与平台、CPU 核数/内存、屏幕分辨率、是否自动化、上报时间与判定标记。",
+        "why": "识别 VPN、代理与分流泄漏（客户端声明的出口与实际出口不一致）。",
+        "retention": "目前无自动过期（清理任务待补）。",
+        "policySection": "enforcement"
       },
       "retention": {
         "type": "operational",
@@ -616,21 +920,50 @@
         "supported": false,
         "reason": "Anti-abuse telemetry, not part of user data export; also exposed read-only to superadmins through /api/admin/proxycheck/probe-reports"
       },
-      "evidence": ["src/models/proxycheckProbeReportModel.ts", "src/controllers/ipRiskController.ts", "src/controllers/ipRiskLogController.ts", "frontend/src/components/ClientOriginProbe.tsx"]
+      "evidence": [
+        "src/models/proxycheckProbeReportModel.ts",
+        "src/controllers/ipRiskController.ts",
+        "src/controllers/ipRiskLogController.ts",
+        "frontend/src/components/ClientOriginProbe.tsx"
+      ]
     },
     {
       "id": "mobile-client-tokens",
       "collection": "mobile_client_tokens",
-      "fields": ["tokenHash", "userId", "deviceId", "deviceName", "createdAt", "expiresAt", "lastUsedAt", "lastUsedIp", "revokedAt", "ttlExpireAt", "lineageId", "rotationIndex", "rotatedFrom", "supersededAt", "supersededTo", "rotatedIp", "rotatedFingerprint", "deviceFingerprint", "deviceFirstSeenAt", "verificationPending", "riskSignals", "reusedAt", "reusedIp"],
+      "fields": [
+        "tokenHash",
+        "userId",
+        "deviceId",
+        "deviceName",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "lastUsedIp",
+        "revokedAt",
+        "ttlExpireAt",
+        "lineageId",
+        "rotationIndex",
+        "rotatedFrom",
+        "supersededAt",
+        "supersededTo",
+        "rotatedIp",
+        "rotatedFingerprint",
+        "deviceFingerprint",
+        "deviceFirstSeenAt",
+        "verificationPending",
+        "riskSignals",
+        "reusedAt",
+        "reusedIp"
+      ],
       "purpose": "Rotating long-lived client login tokens (sml_) for mobile clients: only the SHA-256 hash of the token is stored, plus the device binding and the rotation lineage that lets a leaked token family be revoked as a unit. `reusedAt`/`reusedIp` mark the superseded generation whose replay tripped the lineage revocation, for the admin lineage board",
       "legalBasis": "security_and_service_integrity",
       "userFacing": {
-      "label": "移动端长期登录令牌",
-      "category": "账户与身份",
-      "what": "令牌哈希（不保存明文）、用户 ID、设备 ID 与名称、签发/到期/最近使用时间与最近使用 IP、轮换血缘、撤销时间、设备指纹。",
-      "why": "移动端长期登录（sml_ 令牌）与按设备撤销、按血缘整体吊销：令牌泄露时可让整条链失效。",
-      "retention": "每代令牌 90 天，到期由数据库自动清理；已轮换超过 30 天的常规 IP 字段会被定期清除。",
-      "policySection": "account"
+        "label": "移动端长期登录令牌",
+        "category": "账户与身份",
+        "what": "令牌哈希（不保存明文）、用户 ID、设备 ID 与名称、签发/到期/最近使用时间与最近使用 IP、轮换血缘、撤销时间、设备指纹。",
+        "why": "移动端长期登录（sml_ 令牌）与按设备撤销、按血缘整体吊销：令牌泄露时可让整条链失效。",
+        "retention": "每代令牌 90 天，到期由数据库自动清理；已轮换超过 30 天的常规 IP 字段会被定期清除。",
+        "policySection": "account"
       },
       "retention": {
         "type": "ttl",
@@ -678,12 +1011,12 @@
       "purpose": "Bilibili login cookies a client files immediately after a Bilibili login completes, archived per (clientId, deviceId, UID) so the operator can see which device holds which session. The cookie is only ever stored as AES-GCM ciphertext; the device snapshot and granted-permission list are non-secret metadata.",
       "legalBasis": "security_and_service_integrity",
       "userFacing": {
-      "label": "B 站登录凭据上报",
-      "category": "通信与集成",
-      "what": "设备 id、B 站 UID、客户端信息、登录凭据密文（仅密文，任何界面都不会导出明文）、上报次数与时间。",
-      "why": "在你授权的前提下，把 PiliPlus 的 B 站登录状态存档到服务端，供账号绑定与跨设备同步使用。",
-      "retention": "同一设备与账号的新记录会替换旧记录，保留至被替换或由管理员删除（无自动过期）。",
-      "policySection": "data-sharing"
+        "label": "B 站登录凭据上报",
+        "category": "通信与集成",
+        "what": "设备 id、B 站 UID、客户端信息、登录凭据密文（仅密文，任何界面都不会导出明文）、上报次数与时间。",
+        "why": "在你授权的前提下，把 PiliPlus 的 B 站登录状态存档到服务端，供账号绑定与跨设备同步使用。",
+        "retention": "同一设备与账号的新记录会替换旧记录，保留至被替换或由管理员删除（无自动过期）。",
+        "policySection": "data-sharing"
       },
       "retention": {
         "type": "operational",
@@ -708,16 +1041,24 @@
     {
       "id": "email-suppressions",
       "collection": "email_suppressions",
-      "fields": ["email", "reason", "source", "detail", "expiresAt", "createdAt", "updatedAt"],
+      "fields": [
+        "email",
+        "reason",
+        "source",
+        "detail",
+        "expiresAt",
+        "createdAt",
+        "updatedAt"
+      ],
       "purpose": "Suppression list that stops outbound mail to addresses that hard-bounced, complained, or unsubscribed. Written by the Resend webhook handler, the public unsubscribe link (HMAC token), and superadmins.",
       "legalBasis": "consent_and_deliverability_compliance",
       "userFacing": {
-      "label": "邮件抑制名单",
-      "category": "通信与集成",
-      "what": "邮箱地址、抑制原因（退信/投诉/退订）与时间。",
-      "why": "避免继续向已退信或已投诉的地址发信——这既是对方意愿，也是发信信誉的要求。",
-      "retention": "退订与投诉永久保留；软退信按 30 天窗口保留。仅超级管理员可移除。",
-      "policySection": "data-sharing"
+        "label": "邮件抑制名单",
+        "category": "通信与集成",
+        "what": "邮箱地址、抑制原因（退信/投诉/退订）与时间。",
+        "why": "避免继续向已退信或已投诉的地址发信——这既是对方意愿，也是发信信誉的要求。",
+        "retention": "退订与投诉永久保留；软退信按 30 天窗口保留。仅超级管理员可移除。",
+        "policySection": "data-sharing"
       },
       "retention": {
         "type": "operational",
@@ -741,16 +1082,23 @@
     {
       "id": "recommendation-feedback",
       "collection": "recommendation_feedback",
-      "fields": ["userId", "styleId", "feedback", "comment", "createdAt", "updatedAt"],
+      "fields": [
+        "userId",
+        "styleId",
+        "feedback",
+        "comment",
+        "createdAt",
+        "updatedAt"
+      ],
       "purpose": "Explicit like / dislike / not-interested signals per user and voice style, used to filter and rank TTS style recommendations.",
       "legalBasis": "service_personalization_consent",
       "userFacing": {
-      "label": "推荐反馈",
-      "category": "服务与业务",
-      "what": "用户 ID、音色/风格 ID、喜欢或不喜欢（可附备注）、时间。",
-      "why": "个性化推荐：记住你对音色与风格的偏好，用于排序与过滤。",
-      "retention": "随账户保存，账户删除时一并删除。",
-      "policySection": "data-use"
+        "label": "推荐反馈",
+        "category": "服务与业务",
+        "what": "用户 ID、音色/风格 ID、喜欢或不喜欢（可附备注）、时间。",
+        "why": "个性化推荐：记住你对音色与风格的偏好，用于排序与过滤。",
+        "retention": "随账户保存，账户删除时一并删除。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_linked",
@@ -774,16 +1122,30 @@
     {
       "id": "webhook-events",
       "collection": "webhook_events",
-      "fields": ["provider", "routeKey", "eventId", "type", "to", "subject", "status", "data", "raw", "receivedAt", "deliveryCount", "firstReceivedAt", "lastReceivedAt"],
+      "fields": [
+        "provider",
+        "routeKey",
+        "eventId",
+        "type",
+        "to",
+        "subject",
+        "status",
+        "data",
+        "raw",
+        "receivedAt",
+        "deliveryCount",
+        "firstReceivedAt",
+        "lastReceivedAt"
+      ],
       "purpose": "Inbound third-party webhook deliveries (Resend/Svix) for deliverability monitoring and incident forensics. `raw`/`data` are verbatim provider payloads and may contain recipient addresses.",
       "legalBasis": "service_integrity_and_abuse_prevention",
       "userFacing": {
-      "label": "第三方 Webhook 事件",
-      "category": "通信与集成",
-      "what": "事件 ID、来源、类型、状态、第三方原始 payload（可能包含收件人邮箱、邮件主题与正文片段）、时间与投递次数。",
-      "why": "排查第三方回调（例如邮件投递与退信状态）与失败重放。",
-      "retention": "无自动过期；超级管理员可执行清理（默认保留 90 天，先预览再删除）。",
-      "policySection": "data-sharing"
+        "label": "第三方 Webhook 事件",
+        "category": "通信与集成",
+        "what": "事件 ID、来源、类型、状态、第三方原始 payload（可能包含收件人邮箱、邮件主题与正文片段）、时间与投递次数。",
+        "why": "排查第三方回调（例如邮件投递与退信状态）与失败重放。",
+        "retention": "无自动过期；超级管理员可执行清理（默认保留 90 天，先预览再删除）。",
+        "policySection": "data-sharing"
       },
       "retention": {
         "type": "operational",
@@ -807,7 +1169,22 @@
     {
       "id": "geogebra-projects",
       "collection": "geogebra_projects",
-      "fields": ["projectId", "ownerUserId", "workspaceId", "title", "folder", "tags", "isFavorite", "canvasMode", "code", "revision", "createdAt", "updatedAt", "lastOpenedAt", "subjectDeletedAt"],
+      "fields": [
+        "projectId",
+        "ownerUserId",
+        "workspaceId",
+        "title",
+        "folder",
+        "tags",
+        "isFavorite",
+        "canvasMode",
+        "code",
+        "revision",
+        "createdAt",
+        "updatedAt",
+        "lastOpenedAt",
+        "subjectDeletedAt"
+      ],
       "purpose": "Save a user's GeoGebra scripts and project metadata for cross-session editing and authorized team collaboration.",
       "legalBasis": "service_delivery",
       "userFacing": {
@@ -830,14 +1207,32 @@
       "export": {
         "supported": true,
         "surface": "GET /api/geogebra/export",
-        "includes": ["owned projects", "scripts", "versions"]
+        "includes": [
+          "owned projects",
+          "scripts",
+          "versions"
+        ]
       },
-      "evidence": ["src/models/geogebraProjectModel.ts", "src/geogebra/projectService.ts"]
+      "evidence": [
+        "src/models/geogebraProjectModel.ts",
+        "src/geogebra/projectService.ts"
+      ]
     },
     {
       "id": "geogebra-project-versions",
       "collection": "geogebra_project_versions",
-      "fields": ["versionId", "projectId", "ownerUserId", "workspaceId", "label", "code", "canvasMode", "trigger", "createdAt", "subjectDeletedAt"],
+      "fields": [
+        "versionId",
+        "projectId",
+        "ownerUserId",
+        "workspaceId",
+        "label",
+        "code",
+        "canvasMode",
+        "trigger",
+        "createdAt",
+        "subjectDeletedAt"
+      ],
       "purpose": "Provide user-requested project snapshots, comparison, and rollback.",
       "legalBasis": "service_delivery",
       "userFacing": {
@@ -860,14 +1255,31 @@
       "export": {
         "supported": true,
         "surface": "GET /api/geogebra/export",
-        "includes": ["version script snapshots"]
+        "includes": [
+          "version script snapshots"
+        ]
       },
-      "evidence": ["src/models/geogebraProjectVersionModel.ts", "src/geogebra/projectService.ts"]
+      "evidence": [
+        "src/models/geogebraProjectVersionModel.ts",
+        "src/geogebra/projectService.ts"
+      ]
     },
     {
       "id": "geogebra-review-comments",
       "collection": "geogebra_review_comments",
-      "fields": ["commentId", "projectId", "versionId", "workspaceId", "authorUserId", "objectName", "body", "status", "createdAt", "updatedAt", "subjectDeletedAt"],
+      "fields": [
+        "commentId",
+        "projectId",
+        "versionId",
+        "workspaceId",
+        "authorUserId",
+        "objectName",
+        "body",
+        "status",
+        "createdAt",
+        "updatedAt",
+        "subjectDeletedAt"
+      ],
       "purpose": "Allow authorized project collaborators to leave and resolve review comments.",
       "legalBasis": "service_delivery",
       "userFacing": {
@@ -890,14 +1302,32 @@
       "export": {
         "supported": true,
         "surface": "GET /api/geogebra/export",
-        "includes": ["comments authored by the current user"]
+        "includes": [
+          "comments authored by the current user"
+        ]
       },
-      "evidence": ["src/models/geogebraReviewCommentModel.ts", "src/geogebra/reviewCommentService.ts"]
+      "evidence": [
+        "src/models/geogebraReviewCommentModel.ts",
+        "src/geogebra/reviewCommentService.ts"
+      ]
     },
     {
       "id": "geogebra-public-shares",
       "collection": "geogebra_shares",
-      "fields": ["shareId", "slug", "ownerUserId", "projectId", "title", "canvasMode", "commands", "allowFork", "coverStored", "revokedAt", "createdAt", "subjectDeletedAt"],
+      "fields": [
+        "shareId",
+        "slug",
+        "ownerUserId",
+        "projectId",
+        "title",
+        "canvasMode",
+        "commands",
+        "allowFork",
+        "coverStored",
+        "revokedAt",
+        "createdAt",
+        "subjectDeletedAt"
+      ],
       "purpose": "Publish a user-selected GeoGebra canvas snapshot and allow link-based viewing or forking.",
       "legalBasis": "user_publication",
       "userFacing": {
@@ -920,14 +1350,23 @@
       "export": {
         "supported": true,
         "surface": "GET /api/geogebra/export",
-        "includes": ["owned share snapshots"]
+        "includes": [
+          "owned share snapshots"
+        ]
       },
-      "evidence": ["src/models/geogebraShareModel.ts", "src/geogebra/shareService.ts"]
+      "evidence": [
+        "src/models/geogebraShareModel.ts",
+        "src/geogebra/shareService.ts"
+      ]
     },
     {
       "id": "geogebra-share-covers",
       "collection": "filesystem:data/geogebra/shares",
-      "fields": ["shareId", "PNG bytes", "sizeBytes"],
+      "fields": [
+        "shareId",
+        "PNG bytes",
+        "sizeBytes"
+      ],
       "purpose": "Serve an optional public preview image for an active GeoGebra share.",
       "legalBasis": "user_publication",
       "userFacing": {
@@ -949,9 +1388,14 @@
       "export": {
         "supported": "partial",
         "surface": "Public cover URL while the share is active",
-        "includes": ["PNG cover image"]
+        "includes": [
+          "PNG cover image"
+        ]
       },
-      "evidence": ["src/geogebra/shareAssetStorage.ts", "src/geogebra/shareService.ts"]
+      "evidence": [
+        "src/geogebra/shareAssetStorage.ts",
+        "src/geogebra/shareService.ts"
+      ]
     },
     {
       "id": "geogebra-assets",
@@ -1079,7 +1523,11 @@
         "user": "清除浏览器站点数据",
         "accountDeletion": "not applicable"
       },
-      "export": { "supported": false, "surface": "-", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
       "evidence": [
         "frontend/src/components/pixel/pixelPreferences.ts"
       ]
@@ -1122,7 +1570,11 @@
         "user": "DELETE /api/admin/pixel/cdks/:id（仅超级管理员）",
         "accountDeletion": "not applicable"
       },
-      "export": { "supported": false, "surface": "-", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
       "evidence": [
         "src/models/pixelCdkMappingModel.ts",
         "src/pixel/cdkMappingService.ts"
@@ -1223,7 +1675,11 @@
         "user": "到期自动清除",
         "accountDeletion": "rows expire by TTL; they hold only masked keys and counters"
       },
-      "export": { "supported": false, "surface": "管理端查询 /api/admin/pixel/cdk-usage", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "管理端查询 /api/admin/pixel/cdk-usage",
+        "includes": []
+      },
       "evidence": [
         "src/models/pixelUsageLogModel.ts",
         "src/pixel/usageLogService.ts"
@@ -1261,7 +1717,11 @@
         "user": "PUT /api/admin/pixel/configs（仅超级管理员）",
         "accountDeletion": "not applicable"
       },
-      "export": { "supported": false, "surface": "-", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
       "evidence": [
         "src/pixel/integrationConfigService.ts"
       ]
@@ -1312,7 +1772,11 @@
         "user": "保全无法由用户直接解除（法律程序决定）；解除后 30 天自动删除",
         "accountDeletion": "account deletion does NOT remove a held snapshot; it is skipped while the hold is active"
       },
-      "export": { "supported": false, "surface": "管理端 /api/admin/pixel/legal-holds", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "管理端 /api/admin/pixel/legal-holds",
+        "includes": []
+      },
       "evidence": [
         "src/models/pixelEvidenceHoldModel.ts",
         "src/pixel/evidenceHoldService.ts"
@@ -1359,7 +1823,11 @@
         "user": "审批单由超级管理员创建/撤销",
         "accountDeletion": "approval records are compliance evidence and are not removed by account deletion; they expire by TTL"
       },
-      "export": { "supported": false, "surface": "管理端 /api/admin/pixel/evidence-approvals", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "管理端 /api/admin/pixel/evidence-approvals",
+        "includes": []
+      },
       "evidence": [
         "src/models/pixelEvidenceApprovalModel.ts",
         "src/pixel/evidenceService.ts"
@@ -1411,7 +1879,11 @@
         "user": "到期自动删除（仅超级管理员可读取，且每次读取都进审计）",
         "accountDeletion": "unknown"
       },
-      "export": { "supported": false, "surface": "管理端 /api/admin/pixel/evidence/:id/read（仅超级管理员，逐次审计）", "includes": [] },
+      "export": {
+        "supported": false,
+        "surface": "管理端 /api/admin/pixel/evidence/:id/read（仅超级管理员，逐次审计）",
+        "includes": []
+      },
       "evidence": [
         "src/models/pixelEvidenceModel.ts",
         "src/pixel/evidenceCrypto.ts",
@@ -1421,7 +1893,9 @@
     {
       "id": "browser-geogebra-projects",
       "collection": "browser.localStorage",
-      "fields": ["synapse-geogebra-studio-v1: project metadata, scripts, local snapshots"],
+      "fields": [
+        "synapse-geogebra-studio-v1: project metadata, scripts, local snapshots"
+      ],
       "purpose": "Keep local GeoGebra drafts available in the same browser before cloud sync.",
       "legalBasis": "local_user_requested_storage",
       "userFacing": {
@@ -1443,23 +1917,52 @@
       "export": {
         "supported": true,
         "surface": "Local project export/download in the GeoGebra page",
-        "includes": ["local scripts and snapshots"]
+        "includes": [
+          "local scripts and snapshots"
+        ]
       },
-      "evidence": ["frontend/src/components/geogebra/localProjects.ts"]
+      "evidence": [
+        "frontend/src/components/geogebra/localProjects.ts"
+      ]
     },
     {
       "id": "tickets",
       "collection": "tickets",
-      "fields": ["userId", "username", "title", "description", "status", "priority", "category", "type", "relatedService", "relatedServiceRef", "contactEmail", "relatedTickets", "attachmentLinks", "assigneeId", "assigneeName", "attachmentCount", "messages[].senderRole", "messages[].content", "messages[].visibility", "messages[].aiErrorDetails", "userLastReadAt", "adminLastReadAt", "createdAt", "updatedAt"],
+      "fields": [
+        "userId",
+        "username",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "category",
+        "type",
+        "relatedService",
+        "relatedServiceRef",
+        "contactEmail",
+        "relatedTickets",
+        "attachmentLinks",
+        "assigneeId",
+        "assigneeName",
+        "attachmentCount",
+        "messages[].senderRole",
+        "messages[].content",
+        "messages[].visibility",
+        "messages[].aiErrorDetails",
+        "userLastReadAt",
+        "adminLastReadAt",
+        "createdAt",
+        "updatedAt"
+      ],
       "purpose": "Support ticket intake, AI-assisted troubleshooting, and agent follow-up",
       "legalBasis": "service_delivery",
       "userFacing": {
-      "label": "客服工单与对话",
-      "category": "服务与业务",
-      "what": "工单标题与正文、你填写的联系邮箱、类型（咨询 / 故障）与相关服务、关联的其它工单、优先级与分类，以及工单里的全部对话（含智能助手的回复；AI 排查失败时仅客服可见的原因摘要）。",
-      "why": "受理并跟踪你提交的问题与建议：客服与智能助手共用同一份上下文给出排查方案，管理端按状态 / 优先级 / 类型 / 相关服务排序与统计，避免就同一件事反复询问。",
-      "retention": "随账号保留：工单用于回查历史结论，不做定期清理；删除账号时按账号数据处理流程处置。",
-      "policySection": "data-use"
+        "label": "客服工单与对话",
+        "category": "服务与业务",
+        "what": "工单标题与正文、你填写的联系邮箱、类型（咨询 / 故障）与相关服务、关联的其它工单、优先级与分类，以及工单里的全部对话（含智能助手的回复；AI 排查失败时仅客服可见的原因摘要）。",
+        "why": "受理并跟踪你提交的问题与建议：客服与智能助手共用同一份上下文给出排查方案，管理端按状态 / 优先级 / 类型 / 相关服务排序与统计，避免就同一件事反复询问。",
+        "retention": "随账号保留：工单用于回查历史结论，不做定期清理；删除账号时按账号数据处理流程处置。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_lifetime",
@@ -1472,23 +1975,41 @@
       "export": {
         "supported": "partial",
         "surface": "support page (owner) / superadmin ticket panel",
-        "includes": ["ticket fields", "conversation messages"]
+        "includes": [
+          "ticket fields",
+          "conversation messages"
+        ]
       },
-      "evidence": ["src/models/ticketModel.ts", "src/controllers/ticketController.ts", "frontend/src/components/TicketSystem.tsx"]
+      "evidence": [
+        "src/models/ticketModel.ts",
+        "src/controllers/ticketController.ts",
+        "frontend/src/components/TicketSystem.tsx"
+      ]
     },
     {
       "id": "ticket-attachments",
       "collection": "ticket_attachments",
-      "fields": ["ticketId", "userId", "username", "fileName", "ext", "mimeType", "size", "sha256", "data", "createdAt"],
+      "fields": [
+        "ticketId",
+        "userId",
+        "username",
+        "fileName",
+        "ext",
+        "mimeType",
+        "size",
+        "sha256",
+        "data",
+        "createdAt"
+      ],
       "purpose": "User-uploaded screenshots and documents attached to support tickets",
       "legalBasis": "service_delivery",
       "userFacing": {
-      "label": "工单附件（截图 / 文档）",
-      "category": "服务与业务",
-      "what": "你主动上传到工单的文件正文（仅 jpg / jpeg / png / gif / txt / pdf，单个不超过 1MB，单个工单最多 5 个）、原始文件名、大小、内容摘要与上传时间。下载权限限于工单属主与超级管理员。",
-      "why": "让客服看到你描述的界面与报错原文，减少来回追问；附件是可选的，不上传不影响工单受理。",
-      "retention": "与所属工单同生命周期；删除该附件后正文立即从服务器移除。",
-      "policySection": "data-use"
+        "label": "工单附件（截图 / 文档）",
+        "category": "服务与业务",
+        "what": "你主动上传到工单的文件正文（仅 jpg / jpeg / png / gif / txt / pdf，单个不超过 1MB，单个工单最多 5 个）、原始文件名、大小、内容摘要与上传时间。下载权限限于工单属主与超级管理员。",
+        "why": "让客服看到你描述的界面与报错原文，减少来回追问；附件是可选的，不上传不影响工单受理。",
+        "retention": "与所属工单同生命周期；删除该附件后正文立即从服务器移除。",
+        "policySection": "data-use"
       },
       "retention": {
         "type": "account_lifetime",
@@ -1502,7 +2023,160 @@
         "supported": false,
         "reason": "Download is per-attachment through the ticket API (owner/superadmin only); there is no bulk export surface"
       },
-      "evidence": ["src/models/ticketAttachmentModel.ts", "src/controllers/ticketController.ts", "src/utils/ticketAttachments.ts"]
+      "evidence": [
+        "src/models/ticketAttachmentModel.ts",
+        "src/controllers/ticketController.ts",
+        "src/utils/ticketAttachments.ts"
+      ]
+    },
+    {
+      "id": "legal-holds",
+      "collection": "legal_holds",
+      "fields": [
+        "scope",
+        "value",
+        "caseRef",
+        "reason",
+        "issuedBy",
+        "issuedAt",
+        "expiresAt",
+        "releasedBy",
+        "releasedAt",
+        "releaseReason",
+        "createdAt",
+        "updatedAt"
+      ],
+      "purpose": "Record an active legal hold that freezes physical deletion of the matched subject while an investigation is open.",
+      "legalBasis": "legal_obligation",
+      "userFacing": {
+        "label": "法律保留记录",
+        "category": "合规与审计",
+        "what": "被保留对象的类型与标识、案件编号、保留理由、经办人、保留与解除时间。",
+        "why": "收到具备法律依据的调取要求时，需要冻结相关记录的删除，并能说明谁在何时依据什么案件操作。",
+        "retention": "保留至案件结束且由超级管理员按程序解除；解除后记录仍作为合规留痕保留。",
+        "policySection": "data-retention"
+      },
+      "retention": {
+        "type": "operational",
+        "description": "No TTL. Legal-hold metadata must outlive the ordinary 60-day audit window."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "POST /api/admin/legal-holds/:holdId/release（superadmin + 安全会话）",
+        "accountDeletion": "hold metadata is retained; the held subject data is not deleted while the hold is active"
+      },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
+      "evidence": [
+        "src/models/legalHoldModel.ts",
+        "src/services/legalHoldService.ts",
+        "src/routes/admin/legalHolds.ts"
+      ]
+    },
+    {
+      "id": "forensic-audit-logs",
+      "collection": "forensic_audit_logs",
+      "fields": [
+        "eventId",
+        "action",
+        "actorId",
+        "actorUsername",
+        "actorRole",
+        "caseRef",
+        "scope",
+        "subjectValue",
+        "reason",
+        "exportRequestId",
+        "detail",
+        "ip",
+        "path",
+        "method",
+        "createdAt"
+      ],
+      "purpose": "Keep an audit trail of legal-hold and forensic-export actions beyond the 60-day ordinary audit retention, because investigations commonly outlast it.",
+      "legalBasis": "legal_obligation",
+      "userFacing": {
+        "label": "取证审计（不设期限）",
+        "category": "合规与审计",
+        "what": "谁在什么时候登记/解除法律保留、发起/批准/下载了哪个案件的取证导出，以及请求来源。",
+        "why": "调查周期可能超过普通审计的 60 天；取证访问必须可追溯且不能被 TTL 静默清除。",
+        "retention": "按内部合规策略长期保留，不设自动过期。",
+        "policySection": "data-retention"
+      },
+      "retention": {
+        "type": "operational",
+        "description": "No TTL by design (RC-35 / D16). Ordinary audit_logs remain 60 days."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "无用户入口；仅按合规流程归档",
+        "accountDeletion": "retained as compliance evidence"
+      },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
+      "evidence": [
+        "src/models/forensicAuditModel.ts",
+        "src/services/forensicAuditService.ts"
+      ]
+    },
+    {
+      "id": "forensic-export-requests",
+      "collection": "forensic_export_requests",
+      "fields": [
+        "requestId",
+        "requestedByUserId",
+        "requestedByUsername",
+        "approvedByUserId",
+        "approvedByUsername",
+        "caseRef",
+        "reason",
+        "scope",
+        "subjectValue",
+        "from",
+        "to",
+        "status",
+        "expiresAt",
+        "approvedAt",
+        "downloadedAt",
+        "rowCount",
+        "checksum",
+        "createdAt",
+        "updatedAt"
+      ],
+      "purpose": "Persist the two-person approval workflow and the SHA-256 of each delivered forensic archive.",
+      "legalBasis": "legal_obligation",
+      "userFacing": {
+        "label": "取证导出记录",
+        "category": "合规与审计",
+        "what": "导出申请的发起人、批准人、案件编号、对象范围、时间窗，以及交付件行数与校验和。",
+        "why": "取证交付需要双人确认并可证明交付件未被改动，因此申请与校验和必须长期可查。",
+        "retention": "按内部合规策略长期保留，不设自动过期。",
+        "policySection": "data-retention"
+      },
+      "retention": {
+        "type": "operational",
+        "description": "No TTL by design (D10); the request and checksum are part of the evidence chain."
+      },
+      "delete": {
+        "onUserDelete": "not_applicable",
+        "user": "无用户入口",
+        "accountDeletion": "retained as compliance evidence"
+      },
+      "export": {
+        "supported": false,
+        "surface": "-",
+        "includes": []
+      },
+      "evidence": [
+        "src/models/forensicAuditModel.ts",
+        "src/services/forensicAuditService.ts"
+      ]
     }
   ]
 }

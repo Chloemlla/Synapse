@@ -11,6 +11,7 @@ import { connectMongo } from "../services/mongoService";
 import { runSchemaMigrations } from "../services/migrationRunner";
 import { SCHEMA_MIGRATIONS } from "../services/migrations/rc47UserDataPartialUniqueIndexes";
 import { schedulerService } from "../services/schedulerService";
+import { startLegalHoldAwareCleanup, stopLegalHoldAwareCleanup } from "../services/legalHoldCleanupService";
 import { serviceRegistry } from "../services/serviceRegistry";
 import { installShutdownHandlers, registerShutdownStep } from "../services/shutdown";
 import { wsService } from "../services/wsService";
@@ -196,6 +197,19 @@ export async function startServer(app: Express): Promise<void> {
     logger.info("[启动] 定时任务服务已启动");
   } catch (error) {
     logger.warn("[启动] 定时任务服务启动失败，继续启动", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // RC-22 / 裁决三：关键集合去掉物理 TTL 后，改由应用层清理；清理前必须校验
+  // legal_holds，库不可用时整轮 fail-closed（不删任何一条）。
+  try {
+    startLegalHoldAwareCleanup();
+    registerShutdownStep("legal-hold-cleanup", async () => {
+      stopLegalHoldAwareCleanup();
+    });
+  } catch (error) {
+    logger.warn("[启动] 法律保留感知清理任务启动失败，继续启动", {
       error: error instanceof Error ? error.message : String(error),
     });
   }

@@ -12,7 +12,8 @@ const schema = new mongoose.Schema<AuthEmailCooldown>({
   reservationId: { type: String, required: true },
   expiresAt: { type: Date, required: true },
 }, { collection: "auth_email_cooldowns", versionKey: false });
-schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：过期预约由 legalHoldCleanupService 清理（裁决三 / D8）。
+schema.index({ expiresAt: 1 });
 
 export const AuthEmailCooldownModel =
   (mongoose.models.AuthEmailCooldown as mongoose.Model<AuthEmailCooldown>) ||

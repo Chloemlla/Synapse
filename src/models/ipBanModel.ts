@@ -28,8 +28,10 @@ const IpBanSchema = new mongoose.Schema<IpBanDoc>(
   { timestamps: true },
 );
 
-// TTL索引，封禁到期后自动删除
-IpBanSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：封禁到期后由 legalHoldCleanupService 清理。
+// 裁决三（RC-22.2 / D8）：物理 TTL 会在搬移完成前先删文档、绕开 legal_holds，
+// 关键集合一律移除 expireAfterSeconds，改应用层「先校验 hold 再删」。
+IpBanSchema.index({ expiresAt: 1 });
 
 // 复合索引
 IpBanSchema.index({ ipAddress: 1, expiresAt: 1 });

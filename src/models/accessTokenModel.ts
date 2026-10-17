@@ -21,8 +21,9 @@ const AccessTokenSchema = new mongoose.Schema<AccessTokenDoc>(
   { timestamps: true },
 );
 
-// TTL索引，5分钟后自动删除
-AccessTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：过期令牌由 legalHoldCleanupService 清理。
+// 裁决三（RC-22.2 / D8）：TTL 后台线程会绕开 legal_holds，关键集合改应用层清理。
+AccessTokenSchema.index({ expiresAt: 1 });
 
 // 复合索引，用于快速查询
 AccessTokenSchema.index({ token: 1, fingerprint: 1, ipAddress: 1 });

@@ -15,6 +15,7 @@ import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
 import integrationsRouter from "./integrations";
 import ipRiskLogsRouter from "./ipRiskLogs";
+import legalHoldsRouter from "./legalHolds";
 import geoGebraAdminRouter from "./geogebra";
 import pixelAdminRouter from "./pixelRoutes";
 import mobileTokensRouter from "./mobileTokens";
@@ -90,6 +91,8 @@ router.use(crashReportsRouter);
 router.use(integrationsRouter);
 router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
+// 法律保留与取证（RC-22/35/58）：读 admin + 页面授权，写 superadmin + 安全会话。
+router.use("/legal-holds", legalHoldsRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
 // Pixel 任务与 CDK 映射（页面 /admin/pixel；读接口 admin + 页面授权，凭据类写接口 superadmin）。

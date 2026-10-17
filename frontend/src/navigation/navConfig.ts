@@ -628,6 +628,12 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            title: '法律保留与取证',
+            url: '/admin/legal-holds',
+            icon: FaFileSignature as IconType,
+            requiredRole: 'superadmin',
+          },
+          {
             title: '系统管理',
             url: '/admin/system',
             icon: FaBars as IconType,
@@ -722,6 +728,7 @@ export const ADMIN_TAB_TO_PATH: Record<string, string> = {
   'ip-risk-logs': '/admin/ip-risk-logs',
   'mobile-token-lineage': '/admin/mobile-token-lineage',
   'policy-consents': '/admin/policy-consents',
+  'legal-holds': '/admin/legal-holds',
   broadcast: '/admin/broadcast',
   oauth: '/admin/oauth',
   apikeys: '/admin/apikeys',

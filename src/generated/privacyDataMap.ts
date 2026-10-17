@@ -25,7 +25,7 @@ export interface PrivacyDataMapDataset {
 }
 
 export const PRIVACY_DATA_MAP_VERSION = 1;
-export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-16";
+export const PRIVACY_DATA_MAP_UPDATED_AT = "2026-10-17";
 export const PRIVACY_DATA_CATEGORY_ORDER = [
   "账户与身份",
   "安全与风控",
@@ -552,6 +552,42 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     exportable: "none",
     deleteOnUserDelete: "retained",
   },
+  {
+    id: "legal-holds",
+    label: "法律保留记录",
+    category: "合规与审计",
+    what: "被保留对象的类型与标识、案件编号、保留理由、经办人、保留与解除时间。",
+    why: "收到具备法律依据的调取要求时，需要冻结相关记录的删除，并能说明谁在何时依据什么案件操作。",
+    retention: "保留至案件结束且由超级管理员按程序解除；解除后记录仍作为合规留痕保留。",
+    policySection: "data-retention",
+    retentionType: "operational",
+    exportable: "none",
+    deleteOnUserDelete: "not_applicable",
+  },
+  {
+    id: "forensic-audit-logs",
+    label: "取证审计（不设期限）",
+    category: "合规与审计",
+    what: "谁在什么时候登记/解除法律保留、发起/批准/下载了哪个案件的取证导出，以及请求来源。",
+    why: "调查周期可能超过普通审计的 60 天；取证访问必须可追溯且不能被 TTL 静默清除。",
+    retention: "按内部合规策略长期保留，不设自动过期。",
+    policySection: "data-retention",
+    retentionType: "operational",
+    exportable: "none",
+    deleteOnUserDelete: "not_applicable",
+  },
+  {
+    id: "forensic-export-requests",
+    label: "取证导出记录",
+    category: "合规与审计",
+    what: "导出申请的发起人、批准人、案件编号、对象范围、时间窗，以及交付件行数与校验和。",
+    why: "取证交付需要双人确认并可证明交付件未被改动，因此申请与校验和必须长期可查。",
+    retention: "按内部合规策略长期保留，不设自动过期。",
+    policySection: "data-retention",
+    retentionType: "operational",
+    exportable: "none",
+    deleteOnUserDelete: "not_applicable",
+  },
 ];
 
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
@@ -559,7 +595,7 @@ export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly s
   "账户与身份": ["mobile-client-tokens"],
   "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs"],
   "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers", "geogebra-assets", "geogebra-jobs", "pixel-cdk-mappings", "pixel-task-access", "pixel-integration-configs", "tickets", "ticket-attachments"],
-  "合规与审计": ["policy-consents", "audit-logs", "pixel-evidence-holds", "pixel-evidence-approvals", "pixel-account-evidence"],
+  "合规与审计": ["policy-consents", "audit-logs", "pixel-evidence-holds", "pixel-evidence-approvals", "pixel-account-evidence", "legal-holds", "forensic-audit-logs", "forensic-export-requests"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],
   "客户端本地": ["browser-local-fingerprint-cache", "browser-pixel-workbench", "browser-geogebra-projects"],
 };

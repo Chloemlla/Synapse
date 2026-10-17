@@ -68,7 +68,8 @@ const VerificationTokenSchema = new mongoose.Schema<StoredVerificationToken>(
 );
 
 VerificationTokenSchema.index({ expiresAt: 1, used: 1 });
-VerificationTokenSchema.index({ ttlExpireAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：过期记录由 legalHoldCleanupService 清理（裁决三 / D8）。
+VerificationTokenSchema.index({ ttlExpireAt: 1 });
 
 const VerificationTokenModel =
   (mongoose.models.VerificationToken as mongoose.Model<StoredVerificationToken>) ||

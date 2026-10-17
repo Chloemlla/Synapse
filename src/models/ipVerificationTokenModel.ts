@@ -37,7 +37,8 @@ const IpVerificationTokenSchema = new mongoose.Schema<IpVerificationTokenDoc>(
   },
 );
 
-IpVerificationTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// 查询索引（**不是 TTL**）：过期记录由 legalHoldCleanupService 清理（裁决三 / D8）。
+IpVerificationTokenSchema.index({ expiresAt: 1 });
 IpVerificationTokenSchema.index({ fingerprint: 1, ipAddress: 1, expiresAt: 1 });
 
 export const IpVerificationTokenModel =

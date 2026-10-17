@@ -88,6 +88,8 @@ export const ADMIN_MODULE_LOADERS = {
   'ip-risk-logs': () => import('@/components/admin/IpRiskLogPanel'),
   'mobile-token-lineage': () => import('@/components/admin/MobileTokenLineagePanel'),
   'policy-consents': () => import('@/components/admin/PolicyConsentPanel'),
+  // 法律保留与取证（RC-22/35/58）：页面可见性走页面授权，写操作在路由层再叠 superadmin。
+  'legal-holds': () => import('@/components/admin/LegalHoldManager'),
 } as const;
 
 export type AdminModuleKey = keyof typeof ADMIN_MODULE_LOADERS;
