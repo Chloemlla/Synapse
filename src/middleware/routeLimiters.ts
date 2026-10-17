@@ -396,17 +396,31 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
     skip: opts.skip,
     preferMemory,
   });
-  // 显式标注 void：express-rate-limit 的 handler 返回类型是 unknown，
-  // 直接返回表达式会让整个中间件推断成 unknown，无法赋给 RateLimitRequestHandler。
-  return (req: Request, res: Response, next: NextFunction): void => {
-    base(req, res, (error?: unknown) => {
-      if (error) {
-        next(error);
-        return;
-      }
-      fingerprintGuard(req, res, next);
-    });
-  };
+  // RateLimitRequestHandler 不只是中间件函数，它还带 resetKey/getKey 两个方法
+  // （测试与运维用它重置计数）。包装时必须一并转发，否则类型不成立，
+  // 而且真正需要 resetKey 的调用方会拿到 undefined。
+  const combined: RateLimitRequestHandler = Object.assign(
+    (req: Request, res: Response, next: NextFunction): void => {
+      base(req, res, (error?: unknown) => {
+        if (error) {
+          next(error);
+          return;
+        }
+        fingerprintGuard(req, res, next);
+      });
+    },
+    {
+      // 两个桶的键空间不同（IP/账户键 vs `fp:<设备哈希>`），所以这里只按**传入的键**
+      // 逐一转发：调用方清 `ip:...` 清的是 IP 桶，清 `fp:...` 清的才是指纹桶。
+      // 不要在这里把 IP 键再哈希一遍——那会造出一个永远不会被命中的桶名。
+      resetKey: (key: string) => {
+        base.resetKey(key);
+        fingerprintGuard.resetKey(key);
+      },
+      getKey: (key: string) => base.getKey(key),
+    },
+  );
+  return combined;
 }
 
 // ========== RC-27：突发并发硬顶（在途请求数，而不是"窗口内次数"） ==========
