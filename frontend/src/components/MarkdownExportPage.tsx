@@ -28,6 +28,7 @@ import { StudioErrorNote, StudioLoadingState, StudioSuccessNote } from './studio
 import { cn } from '../utils/cn';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
+import FeatureConsentGate from './FeatureConsentGate';
 
 // 批量面板只在切到「批量转换」时才下载；本页本身已经是懒加载，这里再懒一层是为了
 // 单文档模式下完全不加载服务端转换相关的代码。
@@ -578,7 +579,11 @@ const MarkdownExportPage: React.FC = () => {
           fallback={<StudioLoadingState text="正在加载批量转换面板..." minHeightClassName="min-h-[240px]" />}
         >
           <div className="mt-6">
-            <DocBatchPanel />
+            {/* 批量模式会上传文件到服务端：与 /doc-convert 用同一道同意闸门。
+                没有它，面板收到 403 POLICY_CONSENT_REQUIRED 后只会提示「已打开同意清单」而什么都不会发生。 */}
+            <FeatureConsentGate feature="doc-tool">
+              <DocBatchPanel />
+            </FeatureConsentGate>
           </div>
         </React.Suspense>
       ) : null}

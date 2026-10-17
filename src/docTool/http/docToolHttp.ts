@@ -23,8 +23,10 @@ import {
   collectMarkdown,
   describeDefaultReferenceDoc,
   ensureDir,
+  isDocxFile,
   isMarkdownFile,
   probePandoc,
+  realInside,
   relInside,
   resolveUserRoot,
   sanitizeFileName,
@@ -135,6 +137,16 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
     return { user, userRoot, resolveUserPath, toApiRel: (abs: string) => relInside(userRoot, abs) };
   };
 
+  /**
+   * 读「已经落在磁盘上」的用户文件时的统一入口：先字符串守界，再 realpath 守界。
+   * 后者挡的是用户目录里指向外部的符号链接（relInside 是纯字符串比较，看不出链接目标）。
+   */
+  const resolveOwnedFile = (c: Ctx, rel: string): string | null => {
+    const abs = c.resolveUserPath(rel);
+    if (!abs || !realInside(c.userRoot, abs)) return null;
+    return abs;
+  };
+
   /** 单条上传文件 → 界面条目（destRel 随 conflict 策略变化，必须与转换时用同一函数算）。 */
   const describeEntry = (c: Ctx, prefs: DocPrefs, abs: string, conflict: ConflictMode): DocFileEntry | null => {
     const rel = relInside(c.userRoot, abs);
@@ -201,11 +213,18 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
     try {
       const c = ctx(req, res);
       if (!c) return;
+      const prefs = await settingsStore.get(c.user.id);
+      // 模板文件可能已被清理（保留期/手工删除），而偏好里还记着它的相对路径：
+      // 回给前端会变成一个「下拉框里选不中、提交任务又必然失败」的幽灵值，这里先洗掉。
+      if (prefs.referenceDoc) {
+        const abs = resolveOwnedFile(c, prefs.referenceDoc);
+        if (!abs || !isDocxFile(abs) || !statOrNull(abs)?.isFile()) prefs.referenceDoc = "";
+      }
       res.json({
         ok: true,
         pandoc: probe(),
         limits: deps.limits,
-        prefs: await settingsStore.get(c.user.id),
+        prefs,
         templates: listTemplates(c.userRoot),
         // 用户 prefs.referenceDoc 为空时，转换会落到这份默认样式上，界面必须能说清「不填会用什么」
         defaultReference: describeDefaultReferenceDoc(),
@@ -242,7 +261,9 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       // 列表必须跟着变 —— 否则安检预告的名字会与真实落点分叉。没传就沿用已保存的偏好。
       const outMode = req.query.outMode === undefined ? prefs.outMode : normalizeOutMode(req.query.outMode);
       const outDirFromQuery = sanitizeRelPath(String(req.query.outDir ?? ""));
-      const outDir = req.query.outDir === undefined ? prefs.outDir : outDirFromQuery ?? "";
+      // 非法 outDir 回落「已保存的偏好」而不是空串：空串在 destForFile 里会隐式变成 out，
+      // 于是界面预告的落点与用户看到的设置不一致。
+      const outDir = req.query.outDir === undefined ? prefs.outDir : outDirFromQuery ?? prefs.outDir;
       const effectivePrefs: DocPrefs = { ...prefs, conflict, outMode, outDir, recursive };
       const inbox = path.join(c.userRoot, "inbox");
       const files = collectMarkdown(inbox, recursive)
@@ -298,16 +319,12 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       limits: { fileSize: deps.limits.maxFileBytes, files: deps.limits.maxFilesPerJob },
     }).array("files");
 
-    try {
-      await new Promise<void>((resolve, reject) => {
-        upload(req, res, (err) => (err ? reject(err) : resolve()));
-      });
-    } catch (err) {
-      res.status(400).json({ ok: false, error: uploadErrorMessage(err, deps.limits) });
-      return;
-    }
-
-    const uploaded = ((req as Request & { files?: Express.Multer.File[] }).files ?? []).filter((f) => f?.path);
+    /**
+     * 已落盘的临时文件。必须在调用时现读 req.files：multer 是「边解析边落盘」的，
+     * 出错那一刻 req.files 里才是真实的已写入清单（提前取一份快照会永远拿到空数组）。
+     */
+    const listUploaded = (): Express.Multer.File[] =>
+      (((req as Request & { files?: Express.Multer.File[] }).files ?? []) as Express.Multer.File[]).filter((f) => f?.path);
     const removeTemp = (file: Express.Multer.File): void => {
       try {
         fs.rmSync(file.path, { force: true });
@@ -315,6 +332,19 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         // best-effort：临时文件删不掉不影响本次上传的结论
       }
     };
+    try {
+      await new Promise<void>((resolve, reject) => {
+        upload(req, res, (err) => (err ? reject(err) : resolve()));
+      });
+    } catch (err) {
+      // multer 在报错前已经落盘的文件不会自己收拾（例如第 3 个文件超限，前两个已在 inbox 里）：
+      // 不清理就会留下永远没人认领的 upload-* 临时文件，而且它们不在任何列表里。
+      listUploaded().forEach(removeTemp);
+      res.status(400).json({ ok: false, error: uploadErrorMessage(err, deps.limits) });
+      return;
+    }
+
+    const uploaded = listUploaded();
     if (uploaded.length === 0) {
       res.status(400).json({ ok: false, error: "未收到文件：multipart 里没有名为 files 的部分" });
       return;
@@ -334,6 +364,8 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
 
     const files: DocFileEntry[] = [];
     const rejected: Array<{ name: string; reason: string }> = [];
+    /** 本批次已占用的落点：同名 relPaths 不拦的话，后写的那份会把前一份静默覆盖，用户少一个文件。 */
+    const seenDest = new Set<string>();
     for (let i = 0; i < uploaded.length; i++) {
       const file = uploaded[i];
       const originalName = path.basename(String(file.originalname || file.filename || "file.md"));
@@ -346,8 +378,19 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         .map((segment) => sanitizeFileName(segment, "file.md"))
         .join("/");
       const destRel = `inbox/${safeRel}`;
+      // 清洗后仍必须是 .md：原文件名过过 multer 的 fileFilter，但 relPaths 是文本字段，只按扩展名判定过一次
+      if (!isMarkdownFile(safeRel)) {
+        rejected.push({ name: originalName, reason: "仅支持 .md / .markdown 文件" });
+        removeTemp(file);
+        continue;
+      }
+      if (seenDest.has(destRel)) {
+        rejected.push({ name: originalName, reason: "同一批文件里有同名路径，已保留第一份" });
+        removeTemp(file);
+        continue;
+      }
       const destAbs = c.resolveUserPath(destRel);
-      if (!destAbs) {
+      if (!destAbs || !realInside(c.userRoot, destAbs)) {
         rejected.push({ name: originalName, reason: "文件路径非法或越界" });
         removeTemp(file);
         continue;
@@ -362,9 +405,19 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         removeTemp(file);
         continue;
       }
+      seenDest.add(destRel);
       const entry = describeEntry(c, prefs, destAbs, prefs.conflict);
-      if (entry) files.push(entry);
-      else rejected.push({ name: originalName, reason: "文件路径非法或越界" });
+      if (entry) {
+        files.push(entry);
+      } else {
+        // 已经搬进 inbox 了：不上报就不能留在那儿（否则它既不在返回清单里，又会被下次 /files 列出来）
+        try {
+          fs.rmSync(destAbs, { force: true });
+        } catch {
+          // best-effort
+        }
+        rejected.push({ name: originalName, reason: "文件路径非法或越界" });
+      }
     }
 
     res.json({ ok: true, files, rejected });
@@ -417,38 +470,52 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       }
 
       const checked: string[] = [];
-      for (const rel of rels) {
+      const seenRels = new Set<string>();
+      for (const rawRel of rels) {
+        // 归一后再校验/落库：Windows 客户端可能传 sub\a.md 或带前导斜杠的写法，
+        // 存原串会让 runner 的 path.resolve 解析出别的位置（Linux 上 \ 是普通字符 → 文件不存在）。
+        const rel = sanitizeRelPath(rawRel);
+        if (!rel) {
+          res.status(400).json({ ok: false, error: `非法文件路径：${rawRel}` });
+          return;
+        }
+        // 同一批里重复列出同一个文件：不拦就会转两次（rename 模式下多出一份 (2) 副本）
+        if (seenRels.has(rel)) continue;
         const abs = c.resolveUserPath(rel);
-        if (!abs) {
-          res.status(400).json({ ok: false, error: `非法文件路径：${rel}` });
+        if (!abs || !realInside(c.userRoot, abs)) {
+          res.status(400).json({ ok: false, error: `非法文件路径：${rawRel}` });
           return;
         }
         const stat = statOrNull(abs);
         if (!stat?.isFile() || !isMarkdownFile(abs)) {
-          res.status(400).json({ ok: false, error: `文件不存在或不是 Markdown：${rel}` });
+          res.status(400).json({ ok: false, error: `文件不存在或不是 Markdown：${rawRel}` });
           return;
         }
+        seenRels.add(rel);
         checked.push(rel);
       }
 
       const outMode = body.outMode === undefined ? prefs.outMode : normalizeOutMode(body.outMode);
       const outDir = body.outDir === undefined ? prefs.outDir : sanitizeRelPath(body.outDir) ?? prefs.outDir;
       const conflict = body.conflict === undefined ? prefs.conflict : normalizeConflict(body.conflict);
-      let referenceDoc = prefs.referenceDoc;
-      if (body.referenceDoc !== undefined) {
-        const raw = String(body.referenceDoc ?? "").trim();
-        if (raw === "") {
-          referenceDoc = "";
-        } else {
-          const abs = c.resolveUserPath(raw);
-          if (!abs) {
-            res.status(400).json({ ok: false, error: "参考样式文件路径非法" });
+      // 参考样式：显式传的坏路径必须报错（用户以为改好了、实际没生效）；从偏好带出来的失效路径
+      // 静默忽略（模板可能已被保留期清理，不该因此让整个任务建不出来）。
+      const referenceFromBody = body.referenceDoc !== undefined;
+      const rawReference = referenceFromBody ? String(body.referenceDoc ?? "").trim() : String(prefs.referenceDoc ?? "").trim();
+      let referenceDoc = "";
+      if (rawReference) {
+        const abs = c.resolveUserPath(rawReference);
+        if (!abs || !realInside(c.userRoot, abs) || !isDocxFile(abs)) {
+          if (referenceFromBody) {
+            res.status(400).json({ ok: false, error: "参考样式必须是用户目录内的 .docx 文件" });
             return;
           }
-          if (!statOrNull(abs)?.isFile()) {
+        } else if (!statOrNull(abs)?.isFile()) {
+          if (referenceFromBody) {
             res.status(400).json({ ok: false, error: "参考样式文件不存在或不可读" });
             return;
           }
+        } else {
           referenceDoc = relInside(c.userRoot, abs) ?? "";
         }
       }
@@ -545,8 +612,11 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       if (!c) return;
       const job = await ownJob(req, res, c);
       if (!job) return;
-      if (job.status === "running") {
-        res.status(409).json({ ok: false, error: "任务运行中，请先取消再删除" });
+      // 运行中禁删：产物会落在删除后的任务名下（没人能清理）。
+      // 排队中的可以先摘队列再删：摘除是同步的，摘完仍在 active 只可能是已在执行（此时 409）。
+      if (job.status !== "running") runner.discard(job.id);
+      if (job.status === "running" || runner.isActive(job.id)) {
+        res.status(409).json({ ok: false, error: "任务正在运行，请先取消再删除" });
         return;
       }
       // 只清产物，保留用户上传的原稿（keepInputs 默认 true）：任务删了也该还能再转一次
@@ -584,7 +654,7 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       const entries = job.items
         .filter((item) => item.status === "ok" && item.destRel)
         .map((item) => {
-          const abs = c.resolveUserPath(item.destRel);
+          const abs = resolveOwnedFile(c, item.destRel);
           // 产物已不在磁盘（被清/换盘）时跳过：打包是尽力而为，不该因一件缺失就整体失败
           return abs && statOrNull(abs)?.isFile() ? { name: item.destRel, sourcePath: abs } : null;
         })
@@ -609,12 +679,14 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       if (!c) return;
       const raw = Array.isArray(req.body?.paths) ? (req.body.paths as unknown[]) : [];
       const entries: Array<{ name: string; sourcePath: string }> = [];
+      const seen = new Set<string>();
       for (const item of raw) {
         if (entries.length >= deps.limits.maxFilesPerJob) break;
         const rel = sanitizeRelPath(String(item ?? ""));
-        if (!rel) continue;
-        const abs = c.resolveUserPath(rel);
+        if (!rel || seen.has(rel)) continue;
+        const abs = resolveOwnedFile(c, rel);
         if (!abs || !statOrNull(abs)?.isFile()) continue;
+        seen.add(rel);
         entries.push({ name: rel, sourcePath: abs });
       }
       if (!entries.length) {
@@ -640,7 +712,7 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         res.status(400).json({ ok: false, error: "缺少 path 参数" });
         return;
       }
-      const abs = c.resolveUserPath(rel);
+      const abs = resolveOwnedFile(c, rel);
       if (!abs) {
         res.status(400).json({ ok: false, error: "非法文件路径" });
         return;
@@ -696,7 +768,12 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
       const c = ctx(req, res);
       if (!c) return;
       const parsed = Number(((req.body ?? {}) as { keepDays?: unknown }).keepDays);
-      const keepDays = Number.isFinite(parsed) && parsed > 0 ? parsed : deps.limits.retentionDays;
+      // 上限 365 天：`keepDays: 1e9` 会把 cutoff 推到 1970 年附近，等于「清空全部产物」——
+      // 这个端点本意是「清过期」，不是「清全部」，破坏性动作不该从一个可选数字里顺手做出来。
+      const keepDays =
+        Number.isFinite(parsed) && parsed > 0
+          ? Math.min(365, Math.max(1, Math.floor(parsed)))
+          : deps.limits.retentionDays;
       const removed = sweepExpiredArtifacts(c.userRoot, keepDays);
       logger.info("[doc-tool] 清理过期产物", { userId: c.user.id, removed, keepDays });
       res.json({ ok: true, removed, keepDays });

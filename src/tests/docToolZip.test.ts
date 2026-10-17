@@ -111,6 +111,22 @@ describe("createZipBuffer", () => {
     expect(readZipBack(result.buffer)[0].name).toBe("good.docx");
   });
 
+  it("条目名越界（../、绝对路径）被拒绝，不会写进包", () => {
+    const dir = makeTmp();
+    const good = path.join(dir, "good.docx");
+    fs.writeFileSync(good, "ok");
+    const result = createZipBuffer([
+      { name: "../escape.docx", sourcePath: good },
+      { name: "/etc/passwd", sourcePath: good },
+      { name: "C:/windows/system32/x.docx", sourcePath: good },
+      { name: "out/good.docx", sourcePath: good },
+    ]);
+    expect(result.entries).toBe(1);
+    expect(result.skipped).toBe(3);
+    const names = readZipBack(result.buffer).map((entry) => entry.name);
+    expect(names).toEqual(["out/good.docx"]);
+  });
+
   it("超过总量上限时截断并标记", () => {
     const dir = makeTmp();
     const big = path.join(dir, "big.docx");

@@ -177,7 +177,8 @@ const DocBatchPanel: React.FC = () => {
         console.error('doc-tool 读取设置失败:', err);
       }
       if (!alive) return;
-      await loadFiles(prefs.conflict, prefs.recursive, 'all');
+      // 默认只勾「需要生成的」：已是最新的项再转一次，在 rename 策略下会多出一份 (2) 副本。
+      await loadFiles(prefs.conflict, prefs.recursive, 'needed');
     })();
     return () => {
       alive = false;
@@ -250,15 +251,17 @@ const DocBatchPanel: React.FC = () => {
     }
   };
 
-  const changeConflict = (mode: ConflictMode) => {    if (mode === conflict) return;
+  const changeConflict = (mode: ConflictMode) => {
+    if (mode === conflict) return;
     setConflict(mode);
     // destRel / willRename 都随策略变化，必须带着新 conflict 重新列一次。
-    void loadFiles(mode, recursive, 'all');
+    // 重新列会重置勾选，默认仍按「只选需要生成的」——免得换一次策略就把已是最新的项也带上。
+    void loadFiles(mode, recursive, 'needed');
   };
 
   const changeRecursive = (next: boolean) => {
     setRecursive(next);
-    void loadFiles(conflict, next, 'all');
+    void loadFiles(conflict, next, 'needed');
   };
 
   const pickFiles = async (picked: FileList | null) => {
@@ -276,8 +279,9 @@ const DocBatchPanel: React.FC = () => {
     try {
       const res = await docToolApi.uploadFiles(picks);
       setRejected(res.rejected.map((item) => (item.reason ? `${item.name}：${item.reason}` : item.name)));
-      setNotice(`已上传 ${res.files.length > 0 ? res.files.length : picks.length} 个文件。`);
-      await loadFiles(conflict, recursive, 'all');
+      // 只报真实被接收的数量：全部被拒时还说「已上传 N 个」会让用户以为文件已经在列表里了。
+      setNotice(res.files.length > 0 ? `已上传 ${res.files.length} 个文件。` : '没有文件被接收，请查看下面的原因。');
+      await loadFiles(conflict, recursive, 'needed');
     } catch (err) {
       setError(describeError(err, '上传失败，请检查网络后重试。'));
       console.error('doc-tool 上传失败:', err);
@@ -506,7 +510,7 @@ const DocBatchPanel: React.FC = () => {
         selected={selected}
         loading={loadingFiles}
         error={listError}
-        onRetry={() => void loadFiles(conflict, recursive, 'all')}
+        onRetry={() => void loadFiles(conflict, recursive, 'needed')}
         onToggle={toggleSelected}
         onSelectAll={() => setSelected(files.map((entry) => entry.rel))}
         onSelectNone={() => setSelected([])}
@@ -548,7 +552,7 @@ const DocBatchPanel: React.FC = () => {
                   onClick={() => {
                     setOutMode(mode);
                     // 目标名随输出位置变：改了就重列，免得列表还写着上一个落点
-                    if (files.length) void loadFiles(conflict, recursive, 'all');
+                    if (files.length) void loadFiles(conflict, recursive, 'needed');
                   }}
                   className={segClass(outMode === mode)}
                 >
@@ -565,7 +569,7 @@ const DocBatchPanel: React.FC = () => {
                   onChange={(event) => setOutDir(event.target.value)}
                   // 失去焦点时才重列：边敲边列会把列表刷成半截目录
                   onBlur={() => {
-                    if (files.length) void loadFiles(conflict, recursive, 'all');
+                    if (files.length) void loadFiles(conflict, recursive, 'needed');
                   }}
                   placeholder="out"
                   aria-label="输出文件夹"

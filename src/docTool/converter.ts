@@ -6,6 +6,7 @@
 //   overwrite —— 原地覆盖
 // 三种都在同一处判定，避免「扫描时按 rename 显示的徽章」与「转换时实际落点」不一致。
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, relInside, runPandoc, statOrNull, uniqueDestPath, type RunPandoc } from "./runtime";
@@ -13,6 +14,23 @@ import type { ConflictMode, DocFileFreshness, DocItemStatus, DocJobRecord, OutMo
 
 const fmtKB = (bytes: number): string => `${(bytes / 1024).toFixed(1)} KB`;
 const secs = (ms: number): string => (ms / 1000).toFixed(1);
+
+/** 临时文件名里去掉这个进程的痕迹：`.a.tmp-<pid>-<rand>.docx`，与最终产物同目录（同分区才能原子改名）。 */
+function tempTargetFor(target: string): string {
+  const base = path.basename(target).replace(/\.docx$/i, "") || "out";
+  const tag = `${process.pid.toString(36)}${crypto.randomBytes(4).toString("hex")}`;
+  return path.join(path.dirname(target), `.${base}.tmp-${tag}.docx`);
+}
+
+/** best-effort 删除：失败清理不该覆盖「转换失败」这个主结论。 */
+function removeQuietly(file: string): void {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    // 忽略
+  }
+}
+
 const CONFLICT_LABEL: Record<ConflictMode, string> = {
   skip: "已存在就跳过",
   rename: "已存在就自动重命名（保留旧文件）",
@@ -30,7 +48,9 @@ export interface DescribeFileResult {
 
 /** 源相对路径 → 目标 docx 文件名（保留原来的目录层级由 destForFile 负责）。 */
 export function docxNameFor(rel: string): string {
-  return `${path.posix.basename(String(rel).replace(/\\/g, "/")).replace(/\.(md|markdown)$/i, "")}.docx`;
+  const base = path.posix.basename(String(rel).replace(/\\/g, "/")).replace(/\.(md|markdown)$/i, "");
+  // 文件名恰好是 ".md" 时替换后为空串 → 别产出隐藏的 ".docx"（收集阶段会跳过隐藏项，用户再也找不到它）
+  return `${base || "document"}.docx`;
 }
 
 /**
@@ -75,7 +95,12 @@ export function describeFile(opts: { src: string; dest: string; conflict: Confli
   if (opts.conflict === "rename") {
     return { dest: uniqueDestPath(opts.dest), status: "new", willRename: true, sizeBytes, mtime };
   }
-  // 源比目标新 → 待更新；否则已是最新（overwrite 模式下也照实显示，由用户自己选择要不要覆盖）
+  // skip 的语义是「目标存在就绝不写」：此时源再新也不会产出，报「待更新」等于承诺一个不会发生的动作，
+  // 还会被界面「只选需要生成的」选进去、点一次转换得到一堆 skipped。按实际会发生的事显示「已是最新」。
+  if (opts.conflict === "skip") {
+    return { dest: opts.dest, status: "fresh", willRename: false, sizeBytes, mtime };
+  }
+  // overwrite：源比目标新 → 待更新；否则已是最新（由用户自己决定要不要覆盖）
   const status: DocFileFreshness = destStat.mtimeMs < mtime ? "stale" : "fresh";
   return { dest: opts.dest, status, willRename: false, sizeBytes, mtime };
 }
@@ -125,17 +150,32 @@ export async function convertOne(opts: {
     };
   }
 
-  const args = [opts.src, "-o", target, ...(opts.referenceDoc ? [`--reference-doc=${opts.referenceDoc}`] : [])];
+  // 先写同目录的临时 .docx，成功后再改名：pandoc 中途失败（磁盘满/被 kill）时不会把 overwrite 模式下的
+  // 上一份好产物截成半个文件。后缀必须保留 .docx —— pandoc 靠 -o 的扩展名判断输出格式。
+  const temp = tempTargetFor(target);
+  const args = [opts.src, "-o", temp, ...(opts.referenceDoc ? [`--reference-doc=${opts.referenceDoc}`] : [])];
   const run = opts.run ?? runPandoc;
   const result = await run(opts.pandoc, args, opts.onChild);
   const ms = elapsed();
 
-  const stat = result.code === 0 ? statOrNull(target) : null;
+  const stat = result.code === 0 ? statOrNull(temp) : null;
   if (result.code === 0 && stat) {
+    try {
+      fs.renameSync(temp, target);
+    } catch (error) {
+      removeQuietly(temp);
+      return {
+        status: "failed",
+        dest: target,
+        ms,
+        error: `无法写入产物：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
     // sizeBytes 一律用**字节**（与 DocFileEntry/describeFile 同单位）：界面自己格式化，
     // 否则同一个列表里会混着 KB 与字节两种量纲。
     return { status: "ok", dest: target, sizeBytes: stat.size, ms, renamed: target !== opts.dest };
   }
+  removeQuietly(temp);
   // 失败的通用出口：pandoc 可能「退出码 0 但没产出文件」（磁盘满、路径被劫），两条都算失败
   return {
     status: "failed",

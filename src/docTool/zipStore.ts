@@ -59,6 +59,20 @@ export interface ZipBuildResult {
 }
 
 /**
+ * 条目名的第二道守界：调用方传进来的都是已清洗的相对路径，但「打包」是最后一道把数据交出去的关口，
+ * 写进 zip 的 `../` 或绝对路径会在**解压方**那边变成目录穿越（zip-slip）。宁可在写侧丢掉这一条。
+ */
+function safeEntryName(name: string): string | null {
+  const raw = String(name ?? "").replace(/\\/g, "/");
+  if (!raw || raw.startsWith("/") || /^[A-Za-z]:/.test(raw)) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return null;
+  const segments = raw.split("/").filter((segment) => segment !== "" && segment !== ".");
+  if (!segments.length || segments.some((segment) => segment === "..")) return null;
+  return segments.join("/");
+}
+
+/**
  * 生成一个 zip 内存缓冲。读不到/读失败的文件跳过（打包下载是尽力而为，不该因为一个产物被删就整体失败）。
  */
 export function createZipBuffer(
@@ -100,7 +114,12 @@ export function createZipBuffer(
       continue;
     }
 
-    const nameBuf = Buffer.from(entry.name.replace(/\\/g, "/"), "utf8");
+    const safeName = safeEntryName(entry.name);
+    if (!safeName) {
+      skipped += 1;
+      continue;
+    }
+    const nameBuf = Buffer.from(safeName, "utf8");
     const crc = crc32(data);
     const deflated = zlib.deflateRawSync(data);
     // 压不小就用 store（小文件/已压缩内容常见），省一层解压开销

@@ -10,11 +10,15 @@ import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { convertOne, destForFile } from "../converter";
 import {
+  ensureDir,
+  isDocxFile,
+  realInside,
   relInside,
   resolveDefaultReferenceDoc,
   resolveDocToolRoot,
   resolvePandocBin,
   resolveUserRoot,
+  statOrNull,
 } from "../runtime";
 import {
   docLimitsFromEnv,
@@ -116,6 +120,16 @@ export class DocJobRunner {
   }
 
   /**
+   * 任务记录被删除时把它从排队表里摘掉。
+   * 不摘也不会跑（runJob 取不到记录就直接返回），但它会一直占着 isActive() 的队列位，
+   * 取消/删除接口据此判断「本进程还有没有执行体」，残留会让判断失真。
+   */
+  discard(jobId: string): void {
+    const index = this.queue.indexOf(jobId);
+    if (index >= 0) this.queue.splice(index, 1);
+  }
+
+  /**
    * 进程重启后的自恢复（幂等）：
    *   残留 running → failed（进程没了，pandoc 子进程也没了，任务不可能自己完成）
    *   残留 queued  → 重新入队
@@ -182,17 +196,28 @@ export class DocJobRunner {
     input: DocJobRecord["input"],
   ): Promise<DocJobItem> {
     const src = path.resolve(userRoot, rel);
-    if (relInside(userRoot, src) === null) {
+    // double 守界：relInside 挡 ".."/绝对路径，realInside 挡「用户目录里指向外部的符号链接」。
+    // 源文件是否存在不在这里判：建任务时已经校验过，执行期再判会把「文件在执行前被删」
+    // 变成一次额外的 stat 开销，而 pandoc 自己给出的「打不开输入」同样可读。
+    if (relInside(userRoot, src) === null || !realInside(userRoot, src)) {
       return { rel, destRel: "", status: "failed", error: "文件路径越界" };
     }
     const dest = destForFile({ userRoot, rel, outMode: input.outMode, outDir: input.outDir });
-    if (relInside(userRoot, dest) === null) {
+    if (relInside(userRoot, dest) === null || !realInside(userRoot, dest)) {
       return { rel, destRel: "", status: "failed", error: "输出路径越界（outDir 非法？）" };
     }
-    // 参考样式文档：用户自己的模板优先（且必须在自己目录内），没选就用服务端自带的默认一份。
+    // 参考样式文档：用户自己的模板优先（必须在自己目录内、是 .docx、真实存在），没选就用服务端自带的默认一份。
     // 默认那份是仓库里的二进制资源（不属任何用户目录），所以绕开 relInside 判定。
+    // 存在性必须在这里复核：偏好里记的模板可能已被清理，把坏路径交给 pandoc 会让每个文件各失败一次。
     const referenceAbs = input.referenceDoc ? path.resolve(userRoot, input.referenceDoc) : "";
-    const userReference = referenceAbs && relInside(userRoot, referenceAbs) !== null ? referenceAbs : undefined;
+    const userReference =
+      referenceAbs &&
+      relInside(userRoot, referenceAbs) !== null &&
+      realInside(userRoot, referenceAbs) &&
+      isDocxFile(referenceAbs) &&
+      statOrNull(referenceAbs)?.isFile()
+        ? referenceAbs
+        : undefined;
     const referenceDoc = userReference ?? this.defaultReferenceDoc ?? undefined;
 
     const outcome = await this.convert({
@@ -240,6 +265,13 @@ export class DocJobRunner {
     }
 
     const userRoot = resolveUserRoot(current.userId, this.workRoot);
+    try {
+      // 目录可能被外部清理掉了（或这是重启恢复的第一笔任务）：先建出来，
+      // 否则 realInside 的 realpath 会因根不存在而把所有文件判成越界。
+      ensureDir(userRoot);
+    } catch {
+      // 建不出来就让后续每一步各自失败（convertOne 会给出「无法创建输出目录」）
+    }
     const total = files.length;
     const items: DocJobItem[] = [];
     const logs: DocJobLog[] = [];

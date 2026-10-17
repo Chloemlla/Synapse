@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildReferenceDoc, buildReport, convertOne, describeFile, destForFile } from "../docTool/converter";
+import { buildReferenceDoc, buildReport, convertOne, describeFile, destForFile, docxNameFor } from "../docTool/converter";
 import type { RunPandoc } from "../docTool/runtime";
 import type { DocJobRecord } from "../docTool/types";
 
@@ -58,6 +58,14 @@ describe("destForFile 目标路径", () => {
   });
 });
 
+describe("docxNameFor 目标文件名", () => {
+  it("普通名换后缀；文件名恰好是 .md 时不产出隐藏的 .docx", () => {
+    expect(docxNameFor("inbox/笔记.markdown")).toBe("笔记.docx");
+    expect(docxNameFor("a.md")).toBe("a.docx");
+    expect(docxNameFor(".md")).toBe("document.docx");
+  });
+});
+
 describe("describeFile 目标形态", () => {
   it("目标不存在 → 待生成", () => {
     const dir = makeTmp();
@@ -82,6 +90,19 @@ describe("describeFile 目标形态", () => {
     expect(info.status).toBe("new");
     expect(info.willRename).toBe(true);
     expect(path.basename(info.dest)).toBe("a (2).docx");
+  });
+
+  it("skip 模式下目标已存在一律报「已是最新」（本次不会写）", () => {
+    const dir = makeTmp();
+    const src = path.join(dir, "a.md");
+    const dest = path.join(dir, "a.docx");
+    fs.writeFileSync(src, "# a");
+    fs.writeFileSync(dest, "old");
+    // 源比目标新：overwrite 下是「待更新」，但 skip 下本次仍然什么都不做
+    const past = new Date(Date.now() - 120_000);
+    fs.utimesSync(dest, past, past);
+    expect(describeFile({ src, dest, conflict: "skip" }).status).toBe("fresh");
+    expect(describeFile({ src, dest, conflict: "overwrite" }).status).toBe("stale");
   });
 
   it("skip/overwrite 模式下按新旧报待更新或已是最新", () => {
@@ -121,8 +142,12 @@ describe("convertOne 转换与冲突策略", () => {
     // 字节口径：假 pandoc 写的 "fake-docx-bytes" 长度
     expect(result.sizeBytes).toBe(Buffer.byteLength("fake-docx-bytes"));
     expect(box.args?.[0]).toBe(src);
-    expect(box.args?.[box.args.indexOf("-o") + 1]).toBe(path.join(dir, "out", "a.docx"));
+    // pandoc 先写同目录临时文件，成功后改名成正式产物（overwrite 中途失败不会截断旧产物）
+    const written = box.args?.[box.args.indexOf("-o") + 1] as string;
+    expect(path.dirname(written)).toBe(path.join(dir, "out"));
+    expect(/^\.a\.tmp-[0-9a-z]+\.docx$/.test(path.basename(written))).toBe(true);
     expect(fs.existsSync(path.join(dir, "out", "a.docx"))).toBe(true);
+    expect(fs.existsSync(written)).toBe(false);
   });
 
   it("skip：目标已存在时跳过，且不调用 pandoc", async () => {
@@ -150,7 +175,8 @@ describe("convertOne 转换与冲突策略", () => {
     expect(result.renamed).toBe(true);
     expect(path.basename(result.dest)).toBe("a (2).docx");
     expect(fs.readFileSync(dest, "utf8")).toBe("old-content");
-    expect(box.args?.[box.args.indexOf("-o") + 1]).toBe(path.join(dir, "a (2).docx"));
+    expect(/^\.a \(2\)\.tmp-[0-9a-z]+\.docx$/.test(path.basename(String(box.args?.[box.args.indexOf("-o") + 1])))).toBe(true);
+    expect(fs.readFileSync(path.join(dir, "a (2).docx"), "utf8")).toBe("fake-docx-bytes");
   });
 
   it("overwrite：直接写回原目标", async () => {
@@ -230,6 +256,24 @@ describe("convertOne 转换与冲突策略", () => {
     });
     expect(result.status).toBe("failed");
     expect(result.error).toContain("无法创建输出目录");
+  });
+
+  it("失败时不留下半截产物：临时文件被清掉，overwrite 的旧产物不被截断", async () => {
+    const dir = makeTmp();
+    const src = path.join(dir, "a.md");
+    const dest = path.join(dir, "a.docx");
+    fs.writeFileSync(src, "# a");
+    fs.writeFileSync(dest, "old-content");
+    const run: RunPandoc = async (_bin, args) => {
+      // 模拟「pandoc 写了一半就失败」：临时文件里已经有垃圾，退出码非 0
+      fs.writeFileSync(args[args.indexOf("-o") + 1], "half-written");
+      return { code: 1, msg: "pandoc: 磁盘空间不足" };
+    };
+    const result = await convertOne({ pandoc: "pandoc", src, dest, conflict: "overwrite", run });
+    expect(result.status).toBe("failed");
+    expect(fs.readFileSync(dest, "utf8")).toBe("old-content");
+    const leftovers = fs.readdirSync(dir).filter((name) => name.includes(".tmp-"));
+    expect(leftovers).toEqual([]);
   });
 });
 

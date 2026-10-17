@@ -177,8 +177,12 @@ RUN set -eu; \
     esac; \
     version="${PANDOC_VERSION}"; \
     if [ "$version" = "latest" ]; then \
-      version="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/jgm/pandoc/releases/latest | sed 's#.*/tag/##')"; \
+      version="$(curl -fsSLI --retry 3 --retry-delay 2 -o /dev/null -w '%{url_effective}' https://github.com/jgm/pandoc/releases/latest | sed 's#.*/tag/##')"; \
       test -n "$version" || { echo "ERROR: 无法从 /releases/latest 解析出 pandoc 版本号" >&2; exit 1; }; \
+      case "$version" in \
+        [0-9]*) ;; \
+        *) echo "ERROR: /releases/latest 解析出的版本号不合法: ${version}" >&2; exit 1 ;; \
+      esac; \
     fi; \
     echo "[pandoc] 安装版本 ${version}（架构 ${arch}）"; \
     asset="pandoc-${version}-linux-${arch}.tar.gz"; \

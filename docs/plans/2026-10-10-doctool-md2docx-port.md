@@ -1,6 +1,6 @@
 # doc-tool：Markdown → Word 批量转换（md2docx 能力迁入 Synapse）
 
-> 状态：**方案已定稿，待实现**。日期：2026-10-10。
+> 状态：**已实现，2026-10-17 审查修复见 docs/audit/audit-2026-10-17-doctool.md**。日期：2026-10-10。
 > 来源：`F:\studys\md2docx`（本机零依赖 Node 脚本 + 浏览器界面，已 36/36 自检通过）。
 > 依据：`verified-methodology.md`（本机禁构建、CI 唯一裁决、显式 add、签名提交）、本仓库 `AGENTS.md` / `CLAUDE.md`。
 

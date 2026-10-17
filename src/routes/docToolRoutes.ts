@@ -280,7 +280,7 @@ router.use(requireFeatureConsent("doc-tool"));
  *         description: 任务不存在
  *   delete:
  *     summary: 删除任务并清理产物
- *     description: 运行中的任务需先取消；只清理产物，保留用户上传的原稿。
+ *     description: 运行中的任务需先取消；只清理本任务成功产出的文件，保留用户上传的原稿。
  *     parameters:
  *       - in: path
  *         name: id

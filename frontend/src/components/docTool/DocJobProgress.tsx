@@ -183,7 +183,8 @@ const DocJobProgress: React.FC<DocJobProgressProps> = ({
         <button
           type="button"
           onClick={onRetryFailed}
-          disabled={busy || failedItems.length === 0}
+          // 运行中不提供重试：此时 items 还只是半截结果，拿它建新任务会重复转换并和当前任务抢产物
+          disabled={busy || active || failedItems.length === 0}
           className={studioSecondaryButtonClassName}
         >
           <FaRedo className="text-[11px]" />

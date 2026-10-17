@@ -24,7 +24,7 @@ function lstatOrNull(p: string): fs.Stats | null {
 }
 
 /**
- * 删除一个任务的产物（items 里的 destRel），返回实际删除的文件数。
+ * 删除一个任务的产物（items 里 status=ok 的 destRel），返回实际删除的文件数。
  *
  * 默认保留入参 .md（keepInputs 默认 true）：那是用户上传的原稿，任务删了它就该还能再转一次；
  * 只有调用方明确要求（例如用户勾了「连上传的源文件一起删」）才传 keepInputs: false。
@@ -35,6 +35,10 @@ export function purgeDocArtifacts(job: DocJobRecord, userRoot: string, opts?: { 
 
   let removed = 0;
   for (const item of job.items) {
+    // 只删本任务**真的写出**的文件。skipped 项的 destRel 指向任务开始前就存在的那份
+    // （可能是用户手工放的，也可能是上一个任务转出来的）——删它等于给了「删除任务」一个
+    // 删除别人产物的副作用，与「清理这次转换的产物」这个承诺不符。
+    if (item.status !== "ok") continue;
     const rel = item.destRel;
     if (!rel || keep.has(rel)) continue;
     const abs = path.resolve(userRoot, rel);

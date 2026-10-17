@@ -68,9 +68,9 @@ const DocFileList: React.FC<DocFileListProps> = ({
     return files.filter((entry) => entry.rel.toLowerCase().includes(keyword));
   }, [files, query]);
 
-  /** 磁盘上已经有产物的那些条目（与筛选无关：打包该按全部已有产物算）。 */
+  /** 磁盘上已经有产物的那些条目（与筛选无关：打包该按全部已有产物算；同样一份只打一次）。 */
   const readyRels = useMemo(
-    () => files.map((entry) => entry.existingRel).filter((rel): rel is string => Boolean(rel)),
+    () => [...new Set(files.map((entry) => entry.existingRel).filter((rel): rel is string => Boolean(rel)))],
     [files],
   );
 

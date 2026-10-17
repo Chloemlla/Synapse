@@ -132,13 +132,6 @@ export interface ReferenceTemplate {
   mtime: number;
 }
 
-export interface ReferenceTemplate {
-  name: string;
-  rel: string;
-  sizeBytes: number;
-  mtime: number;
-}
-
 /** 服务端自带的默认参考样式（用户没选自己的模板时用它）。只回文件名，不含容器路径。 */
 export interface DefaultReferenceInfo {
   available: boolean;

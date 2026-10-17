@@ -139,6 +139,39 @@ export function relInside(root: string, target: string): string | null {
 }
 
 /**
+ * 符号链接安全版守界：relInside 只做字符串归一，用户目录里一旦出现指向外部的链接，
+ * 它仍会判「在里面」——下载/打包/转换读到的就是链接目标（例如 /etc/passwd）。
+ *
+ * 做法：把 root 与 target 的**最深已存在祖先**都 realpath 之后再比一次。
+ * target 允许尚不存在（转换产物的落点就是这样）：不存在的那几段不可能是链接，拼回去即可。
+ * 宁可判 false（拒绝）也不在异常时放行：realpath 失败通常意味着权限/根不存在，都不是正常请求。
+ */
+export function realInside(root: string, target: string): boolean {
+  try {
+    const realRoot = fs.realpathSync(root);
+    let probe = path.resolve(target);
+    const missing: string[] = [];
+    while (!fs.existsSync(probe)) {
+      const parent = path.dirname(probe);
+      if (parent === probe) return false;
+      missing.unshift(path.basename(probe));
+      probe = parent;
+    }
+    const realProbe = fs.realpathSync(probe);
+    if (relInside(realRoot, realProbe) === null) return false;
+    if (!missing.length) return true;
+    return relInside(realRoot, path.join(realProbe, ...missing)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** 参考样式文档只接受 .docx：pandoc 对别的格式会以「无法读取参考文档」失败，提前挡掉更好定位。 */
+export function isDocxFile(name: string): boolean {
+  return /\.docx$/i.test(String(name || ""));
+}
+
+/**
  * 客户端提交的相对路径归一：非法一律 null（而不是「尽力修一下」）。
  * 拒绝：空、绝对路径、盘符（C:\ 这类在 Windows 上是绝对路径、在容器里却不是）、UNC、控制字符、任何 ".." 段。
  */

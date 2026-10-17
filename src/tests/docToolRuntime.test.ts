@@ -4,7 +4,9 @@ import path from "node:path";
 import {
   collectMarkdown,
   describeDefaultReferenceDoc,
+  isDocxFile,
   probePandoc,
+  realInside,
   relInside,
   resolveDefaultReferenceDoc,
   resolveDocToolRoot,
@@ -63,6 +65,31 @@ describe("doc-tool 相对路径守界", () => {
     expect(relInside(root, root)).toBe("");
     expect(relInside(root, path.join(root, "..", "escape.md"))).toBeNull();
     expect(relInside(root, path.resolve("/etc/passwd"))).toBeNull();
+  });
+
+  it("realInside 挡住指向根外的符号链接（relInside 只看字符串看不出来）", () => {
+    const root = makeTmp("doc-tool-real-");
+    const outside = makeTmp("doc-tool-outside-");
+    fs.writeFileSync(path.join(outside, "secret.md"), "secret");
+    fs.writeFileSync(path.join(root, "inside.md"), "ok");
+    expect(realInside(root, path.join(root, "inside.md"))).toBe(true);
+    // 尚不存在的落点（产物）也要判在根内：不存在的那几段不可能是链接
+    expect(realInside(root, path.join(root, "out", "new.docx"))).toBe(true);
+
+    const link = path.join(root, "link.md");
+    try {
+      fs.symlinkSync(path.join(outside, "secret.md"), link);
+    } catch {
+      // Windows 无创建符号链接权限时跳过链接断言（CI 的 Linux runner 会真跑）
+      return;
+    }
+    expect(realInside(root, link)).toBe(false);
+  });
+
+  it("参考样式只认 .docx", () => {
+    expect(isDocxFile("templates/a.docx")).toBe(true);
+    expect(isDocxFile("templates/a.DOCX")).toBe(true);
+    expect(isDocxFile("inbox/a.md")).toBe(false);
   });
 
   it("文件名清洗去掉分隔符与保留字符", () => {

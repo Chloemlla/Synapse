@@ -82,9 +82,11 @@ function createFakeSettings(initial: Partial<DocPrefs> = {}) {
 function createFakeRunner() {
   const enqueue = jest.fn();
   const cancel = jest.fn();
+  // 删除接口会先摘队列再判断是否仍在执行；替身缺这个方法会让删除路径 TypeError 成 500
+  const discard = jest.fn();
   const isActive = jest.fn(() => false);
-  const runner = { enqueue, cancel, isActive } as unknown as DocJobRunner;
-  return { runner, enqueue, cancel, isActive };
+  const runner = { enqueue, cancel, discard, isActive } as unknown as DocJobRunner;
+  return { runner, enqueue, cancel, discard, isActive };
 }
 
 function makeRecord(id: string, userId: string, overrides: Partial<DocJobRecord> = {}): DocJobRecord {
@@ -328,6 +330,30 @@ describe("doc-tool HTTP 任务归属", () => {
     expect(res.body.job.id).toBe("dj-mine");
   });
 
+  it("删除任务只清理本任务成功产出的文件，跳过项指向的既有产物保留", async () => {
+    write("user-1", "out/a.docx", "A");
+    write("user-1", "out/keep.docx", "KEEP");
+    fakeStore.records.set(
+      "dj-del",
+      makeRecord("dj-del", "user-1", {
+        status: "succeeded",
+        items: [
+          { rel: "inbox/a.md", destRel: "out/a.docx", status: "ok" },
+          { rel: "inbox/keep.md", destRel: "out/keep.docx", status: "skipped" },
+        ],
+      }),
+    );
+    const res = await asUser(request(buildApp()).delete("/api/doc-tool/jobs/dj-del"));
+    expect(res.status).toBe(200);
+    expect(res.body.removedFiles).toBe(1);
+    expect(fs.existsSync(path.join(userRootFor("user-1"), "out", "a.docx"))).toBe(false);
+    // skipped 项的 destRel 指向任务开始前就存在的文件，不是本任务的产物
+    expect(fs.existsSync(path.join(userRootFor("user-1"), "out", "keep.docx"))).toBe(true);
+    expect(fakeStore.records.has("dj-del")).toBe(false);
+    // 排队中的任务要真的从 runner 队列摘掉，而不只是删库
+    expect(fakeRunner.discard).toHaveBeenCalledWith("dj-del");
+  });
+
   it("任务列表只返回自己的任务", async () => {
     fakeStore.records.set("dj-a", makeRecord("dj-a", "user-1"));
     fakeStore.records.set("dj-b", makeRecord("dj-b", "user-2"));
@@ -398,6 +424,37 @@ describe("doc-tool HTTP 创建任务", () => {
     expect(record?.input.conflict).toBe(DEFAULT_DOC_PREFS.conflict);
   });
 
+  it("同一批里的重复路径只转一次，反斜杠写法被归一并落库", async () => {
+    write("user-1", "inbox/a.md");
+    const res = await asUser(request(buildApp()).post("/api/doc-tool/jobs")).send({
+      // 第二个元素是 Windows 风格的反斜杠路径：必须归一后落库，否则 runner 在 Linux 上解析不到文件
+      files: ["inbox\\a.md", "inbox/a.md", "inbox/a.md"],
+    });
+    expect(res.status).toBe(200);
+    const record = fakeStore.records.get(res.body.jobId);
+    expect(record?.input.files).toEqual(["inbox/a.md"]);
+  });
+
+  it("参考样式必须是 .docx（显式传 .md 时 400，不静默忽略）", async () => {
+    write("user-1", "inbox/a.md");
+    write("user-1", "inbox/ref.md");
+    const res = await asUser(request(buildApp()).post("/api/doc-tool/jobs")).send({
+      files: ["inbox/a.md"],
+      referenceDoc: "inbox/ref.md",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(".docx");
+    expect(fakeRunner.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("偏好里失效的参考样式被静默忽略，任务仍能创建", async () => {
+    write("user-1", "inbox/a.md");
+    fakeSettings = createFakeSettings({ referenceDoc: "templates/gone.docx" });
+    const res = await asUser(request(buildApp()).post("/api/doc-tool/jobs")).send({ files: ["inbox/a.md"] });
+    expect(res.status).toBe(200);
+    expect(fakeStore.records.get(res.body.jobId)?.input.referenceDoc).toBe("");
+  });
+
   it("未给 files 时按 recursive 扫 inbox 收集", async () => {
     write("user-1", "inbox/a.md");
     write("user-1", "inbox/sub/b.md");
@@ -446,6 +503,22 @@ describe("doc-tool HTTP 上传", () => {
     expect(fs.existsSync(path.join(workRoot, "escape.md"))).toBe(false);
   });
 
+  it("同一批里两个文件声称同一落点时保留第一份并上报第二份", async () => {
+    const res = await asUser(
+      request(buildApp())
+        .post("/api/doc-tool/upload")
+        .attach("files", Buffer.from("# first\n"), { filename: "first.md" })
+        .attach("files", Buffer.from("# second\n"), { filename: "second.md" })
+        .field("relPaths", "dup.md")
+        .field("relPaths", "dup.md"),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.files).toHaveLength(1);
+    expect(res.body.rejected).toHaveLength(1);
+    expect(res.body.rejected[0].reason).toContain("同名");
+    expect(fs.readFileSync(path.join(userRootFor("user-1"), "inbox", "dup.md"), "utf8")).toBe("# first\n");
+  });
+
   it("非 Markdown 文件被拒", async () => {
     const res = await asUser(
       request(buildApp())
@@ -465,6 +538,21 @@ describe("doc-tool HTTP 设置与清理", () => {
     expect(put.status).toBe(200);
     expect(put.body.prefs.conflict).toBe("overwrite");
     expect(put.body.prefs.outDir).toBe("docs-out");
+  });
+
+  it("GET /settings 清掉指向已不存在模板的 referenceDoc", async () => {
+    fakeSettings = createFakeSettings({ referenceDoc: "templates/gone.docx" });
+    const res = await asUser(request(buildApp()).get("/api/doc-tool/settings"));
+    expect(res.status).toBe(200);
+    // 下拉框里选不中的幽灵值：清空后界面才能落到「服务器默认样式」
+    expect(res.body.prefs.referenceDoc).toBe("");
+  });
+
+  it("POST /cleanup 钳制 keepDays（上限 365，缺省/非法回落保留期）", async () => {
+    const huge = await asUser(request(buildApp()).post("/api/doc-tool/cleanup")).send({ keepDays: 1e9 });
+    expect(huge.body.keepDays).toBe(365);
+    const bad = await asUser(request(buildApp()).post("/api/doc-tool/cleanup")).send({ keepDays: -3 });
+    expect(bad.body.keepDays).toBe(TEST_LIMITS.retentionDays);
   });
 
   it("POST /cleanup 返回删除数并记录保留期", async () => {

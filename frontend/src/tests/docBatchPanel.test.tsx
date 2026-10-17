@@ -6,6 +6,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DocFileEntry, DocJobRecord } from '../api/docTool';
+import { POLICY_CONSENT_REQUIRED_EVENT } from '../utils/policyConsent';
 
 const api = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -133,6 +134,12 @@ beforeEach(() => {
   api.createJob.mockResolvedValue('job-1');
   api.getJob.mockResolvedValue(FINISHED_JOB);
   api.fetchReport.mockResolvedValue('报告正文');
+  // 面板对这些动作直接 `.catch(...)`：默认的 vi.fn() 返回 undefined，会把点击处理抛成 TypeError。
+  api.downloadFile.mockResolvedValue(undefined);
+  api.downloadExistingBundle.mockResolvedValue(undefined);
+  api.downloadReport.mockResolvedValue(undefined);
+  api.downloadBundle.mockResolvedValue(undefined);
+  api.cancelJob.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -150,7 +157,8 @@ describe('DocBatchPanel', () => {
     expect(screen.getByText('待更新')).toBeInTheDocument();
     expect(screen.getByText('已是最新')).toBeInTheDocument();
     expect(screen.getByText('会另存为 c (2).docx')).toBeInTheDocument();
-    expect(screen.getByText('共 4 个 · 已勾选 4 个')).toBeInTheDocument();
+    // 默认只勾「需要生成的」：已是最新的 done.md 不在内，免得 rename 策略下多转出一份 (2) 副本
+    expect(screen.getByText('共 4 个 · 已勾选 3 个')).toBeInTheDocument();
   });
 
   it('reloads the file list with the chosen conflict strategy', async () => {
@@ -225,6 +233,77 @@ describe('DocBatchPanel', () => {
     expect(callsAfterTerminal).toBeGreaterThanOrEqual(2);
     await flush(5000);
     expect(api.getJob.mock.calls.length).toBe(callsAfterTerminal);
+  });
+
+  it('stops polling after unmount (no timer survives the component)', async () => {
+    // 每次给一个新对象：状态对象引用不变时 React 会跳过重渲染，轮询就自己停了，测不出定时器清理
+    api.getJob.mockImplementation(async () => ({ ...RUNNING_JOB }));
+    const view = render(<DocBatchPanel />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /开始转换/ }));
+    await flush();
+    await flush(1000);
+
+    const callsWhileMounted = api.getJob.mock.calls.length;
+    expect(callsWhileMounted).toBeGreaterThanOrEqual(1);
+
+    view.unmount();
+    await flush(5000);
+    // 卸载后 setTimeout 被清掉：再多的定时也不会换来一次请求
+    expect(api.getJob.mock.calls.length).toBe(callsWhileMounted);
+  });
+
+  it('asks the consent gate to reopen when the API answers 403 POLICY_CONSENT_REQUIRED', async () => {
+    api.createJob.mockRejectedValue({
+      response: { status: 403, data: { code: 'POLICY_CONSENT_REQUIRED' } },
+    });
+    const onRequired = vi.fn();
+    window.addEventListener(POLICY_CONSENT_REQUIRED_EVENT, onRequired);
+
+    render(<DocBatchPanel />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /开始转换/ }));
+    await flush();
+
+    // 面板自己变不出同意清单：必须靠稳定 code 通知外层门禁重查
+    expect(onRequired).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('该功能需要先同意相关条款，已为你打开同意清单。')).toBeInTheDocument();
+    window.removeEventListener(POLICY_CONSENT_REQUIRED_EVENT, onRequired);
+  });
+
+  it('disables retry while the job is still running (half results would race the active job)', async () => {
+    const runningWithFailure: DocJobRecord = {
+      ...RUNNING_JOB,
+      failed: 1,
+      items: [
+        { rel: 'a.md', destRel: 'out/a.docx', status: 'ok', sizeBytes: 1, ms: 10 },
+        { rel: 'report.md', destRel: 'out/report.docx', status: 'failed', error: '磁盘空间不足' },
+      ],
+    };
+    api.getJob.mockImplementation(async () => ({ ...runningWithFailure }));
+
+    render(<DocBatchPanel />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /开始转换/ }));
+    await flush();
+    await flush(1000);
+
+    expect(screen.getByText('转换中')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /只重试失败项/ })).toBeDisabled();
+  });
+
+  it('offers report and bundle downloads once the job settles', async () => {
+    api.getJob.mockResolvedValue(FINISHED_JOB);
+    render(<DocBatchPanel />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /开始转换/ }));
+    await flush();
+    await flush(1000);
+
+    fireEvent.click(screen.getByRole('button', { name: /下载报告/ }));
+    fireEvent.click(screen.getByRole('button', { name: /打包下载/ }));
+    expect(api.downloadReport).toHaveBeenCalledWith('job-1');
+    expect(api.downloadBundle).toHaveBeenCalledWith('job-1');
   });
 
   it('submits only the failed items when retrying', async () => {
