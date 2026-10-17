@@ -13,7 +13,7 @@ import md5 from 'md5';
 import getApiBaseUrl from './api';
 import { useFirstVisitDetection } from './hooks/useFirstVisitDetection';
 import { useConfigurationNoticeTrigger } from './hooks/useConfigurationNoticeTrigger';
-import { FirstVisitVerification } from './components/FirstVisitVerification';
+import { FirstVisitVerification, FirstVisitVerificationPage } from './components/FirstVisitVerification';
 import { useFingerprintRequest } from './hooks/useFingerprintRequest';
 import FingerprintRequestModal from './components/FingerprintRequestModal';
 import { setFirstVisitVerificationEnabled } from './utils/firstVisitVerificationConfig';
@@ -368,6 +368,8 @@ const ANNOUNCEMENT_SUPPRESSED_ROUTES = new Set([
   '/verify-email',
   '/oauth/authorize',
   '/cdn-cgi',
+  // /challenge 本身就是首访验证界面：公告弹窗 z-[10050] 会压在它上面，不能让用户验证到一半被弹窗顶走。
+  '/challenge',
 ]);
 
 const LOADING_CARD_CLASS =
@@ -629,6 +631,9 @@ const App: React.FC = () => {
     [location.pathname, location.search],
   );
   const isCloudflareChallengePage = React.useMemo(() => location.pathname === '/cdn-cgi', [location.pathname]);
+  // /challenge 渲染的就是首访门禁同款界面，闸门不再重复拦截一次（否则验证完闸门消失、
+  // 路由页又要求再验一遍）；IP 封禁不豁免，仍由闸门的阻断页给出申诉入口。
+  const isChallengeRoute = React.useMemo(() => location.pathname === '/challenge', [location.pathname]);
   const isAuthFlowPath = React.useMemo(() => (
     AUTH_FLOW_PATHS.has(location.pathname)
     || location.pathname.startsWith('/auth/')
@@ -643,6 +648,7 @@ const App: React.FC = () => {
     // 嵌入壳是公开、只读的 iframe 目标：首次访问验证会把它整块挡住，因此对未封禁的访问者豁免；
     // IP 封禁仍然生效（不因为 embed 而绕过处罚态）。
     && !(isGeoGebraEmbedPath && !isIpBanned)
+    && !(isChallengeRoute && !isIpBanned)
     && !isCloudflareChallengePage
     && enableFirstVisitVerification
     && Boolean(fingerprint)
@@ -756,12 +762,21 @@ const App: React.FC = () => {
         <Route path="/smart-human-check" element={renderAdminRoute(<SmartHumanCheckTestPage />)} />
         <Route path="/notification-test" element={renderAdminRoute(<NotificationTestPage />)} />
         <Route path="/cdn-cgi" element={renderAnimatedRoute(<CloudflareChallengePage />)} />
-        {/* 独立人机验证页：面向所有访客（含未登录）——首访门禁、/challenge 与 /hcaptcha-verify
-            老书签/外链都落在这里，不能挂管理员守卫。 */}
+        {/* 独立人机验证页：面向所有访客（含未登录）——老书签/外链（含 /hcaptcha-verify）
+            都落在这里，不能挂管理员守卫。 */}
         <Route path="/captcha-verify" element={renderAnimatedRoute(<CaptchaVerificationPage />)} />
-        {/* 旧路径与短别名保留：老书签/外链（含 https://chloemlla.com/challenge）都落到人机验证页 */}
+        {/* /challenge 直接渲染首访门禁同款验证界面（FirstVisitVerification），不再绕去 /captcha-verify；
+            验证成功后就地更新 App 的已验状态，并按 redirectTo 回跳原目标。 */}
         <Route path="/hcaptcha-verify" element={<Navigate to="/captcha-verify" replace />} />
-        <Route path="/challenge" element={<Navigate to="/captcha-verify" replace />} />
+        <Route
+          path="/challenge"
+          element={
+            <FirstVisitVerificationPage
+              fingerprint={fingerprint ?? ''}
+              onVerificationComplete={markAsVerified}
+            />
+          }
+        />
         <Route path="/artifacts/:shortId" element={renderAnimatedRoute(<ArtifactSharePage />)} />
         <Route path="/image-upload" element={renderAnimatedRoute(<ImageUploadPage />)} />
         <Route path="/geogebra" element={renderAnimatedRoute(<GeoGebraPage />)} />
@@ -790,7 +805,7 @@ const App: React.FC = () => {
         <Route path="*" element={renderAnimatedRoute(<NotFoundPage path={location.pathname} />)} />
       </>
     ),
-    [renderAdminRoute, renderAnimatedRoute, renderProtectedRoute, location.pathname, openTOTPManager],
+    [renderAdminRoute, renderAnimatedRoute, renderProtectedRoute, location.pathname, openTOTPManager, fingerprint, markAsVerified],
   );
 
   // React 19 文档元数据：路由配置优化，避免每次重新创建

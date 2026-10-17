@@ -27,7 +27,11 @@ vi.mock('../components/TurnstileWidget', () => ({
   TurnstileWidget: ({ onVerify }: any) => <button type="button" onClick={() => onVerify('solved-token')}>solve challenge</button>,
 }));
 
-import { FirstVisitVerification } from '../components/FirstVisitVerification';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  FirstVisitVerification,
+  FirstVisitVerificationPage,
+} from '../components/FirstVisitVerification';
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
@@ -59,5 +63,27 @@ describe('FirstVisitVerification request lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'solve challenge' }));
     fireEvent.click(screen.getByRole('button', { name: '继续访问站点' }));
     await waitFor(() => expect(h.complete).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('FirstVisitVerificationPage（/challenge 独立页）', () => {
+  it('验证通过后按 redirectTo 回跳，并先通知 App 把闸门状态置为已验证', async () => {
+    h.complete.mockResolvedValueOnce({ success: true, verified: true, token: 'session-token' });
+    const completed = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/challenge?redirectTo=%2Ftts']}>
+        <Routes>
+          <Route
+            path="/challenge"
+            element={<FirstVisitVerificationPage fingerprint="fp" onVerificationComplete={completed} />}
+          />
+          <Route path="/tts" element={<div>tts target</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'solve challenge' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续访问站点' }));
+    await waitFor(() => expect(completed).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('tts target')).toBeInTheDocument();
   });
 });

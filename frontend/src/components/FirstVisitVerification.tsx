@@ -12,8 +12,10 @@ import {
   FaRedo,
   FaShieldAlt,
 } from 'react-icons/fa';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CaptchaType } from '../utils/captchaSelection';
 import { completeIpVerification } from '../utils/ipVerification';
+import { getFingerprint } from '../utils/fingerprint';
 import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useNotification } from './Notification';
@@ -738,4 +740,74 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       </div>
     </m.div>,
   );
+};
+
+interface FirstVisitVerificationPageProps {
+  /**
+   * App 已采集好的浏览器指纹。为空时页面自行调用 getFingerprint()（首访门禁关闭时
+   * App 不会采集；getFingerprint 自身做了并发去重与本地缓存，重复调用不会重复采集）。
+   */
+  fingerprint?: string;
+  /**
+   * 验证成功后的回调。首访门禁用它把 App 内的「未验证」状态就地置为已验证，
+   * 否则跳转后客户端路由还会被闸门再拦一次。
+   */
+  onVerificationComplete?: () => void;
+}
+
+/**
+ * `/challenge` 独立页：直接复用首访门禁的验证界面。
+ *
+ * 与门禁分支的区别只有两点：指纹可能由页面自行获取，完成后按 `redirectTo`
+ * （登录页同款约定，只认站内相对路径）跳到原目标，而不是原地开闸。
+ */
+export const FirstVisitVerificationPage: React.FC<FirstVisitVerificationPageProps> = ({
+  fingerprint: fingerprintProp,
+  onVerificationComplete,
+}) => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const reducedMotion = useReducedMotion();
+  const [resolvedFingerprint, setResolvedFingerprint] = useState(fingerprintProp ?? '');
+
+  useEffect(() => {
+    if (fingerprintProp) {
+      setResolvedFingerprint(fingerprintProp);
+      return;
+    }
+    if (resolvedFingerprint) return;
+    let cancelled = false;
+    void getFingerprint().then((value) => {
+      if (!cancelled) setResolvedFingerprint(value ?? '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fingerprintProp, resolvedFingerprint]);
+
+  // 只接受站内相对路径，缺省回首页：与 CloudflareChallengePage / 登录页同一套防开放跳转规则。
+  const continueTarget = useMemo(() => {
+    const raw = searchParams.get('redirectTo') || '';
+    return raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
+  }, [searchParams]);
+
+  const handleComplete = useCallback(() => {
+    onVerificationComplete?.();
+    navigate(continueTarget, { replace: true });
+  }, [continueTarget, navigate, onVerificationComplete]);
+
+  // 指纹还没就绪时不渲染验证主体：否则 useSecureCaptchaSelection 会因为空指纹
+  // 直接报「验证服务暂不可用」，用户先看到一次假故障再看到控件。
+  if (!resolvedFingerprint) {
+    return (
+      <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-50 px-4 ${studioPageFont}`}>
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+          <Spinner className="h-4 w-4 text-slate-400" reducedMotion={reducedMotion} />
+          正在准备验证…
+        </div>
+      </div>
+    );
+  }
+
+  return <FirstVisitVerification fingerprint={resolvedFingerprint} onVerificationComplete={handleComplete} />;
 };
