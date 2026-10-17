@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import logger from "../utils/logger";
+import { cleanupExpiredGeoGebraAssets } from "../geogebra/assetService";
+import { expireGeoGebraJobs } from "../geogebra/jobService";
 import { GitHubBillingService } from "./githubBillingService";
 import { cleanupExpiredIPData } from "./ip";
 import { ipBanSyncService } from "./ipBanSyncService";
@@ -17,6 +19,8 @@ interface CleanupResult {
   accessTokenCount: number;
   ipBanCount: number;
   ipDataCount: number;
+  geogebraAssetCount: number;
+  geogebraJobCount: number;
   totalCount: number;
 }
 
@@ -123,6 +127,10 @@ class SchedulerService {
       { name: "ipBans", run: () => TurnstileService.cleanupExpiredIpBans() },
       { name: "ipData", run: () => cleanupExpiredIPData() },
       { name: "billingCache", run: () => GitHubBillingService.clearExpiredCache().then(() => 0) },
+      // GEO-18/21：Mongo 的 TTL 只回收元数据，GeoGebra 资产文件落在磁盘上，必须由应用层删；
+      // 同时把过期的 queued/running 任务标记为 expired，避免前端一直显示「运行中」。
+      { name: "geogebraAssets", run: () => cleanupExpiredGeoGebraAssets().then((result) => result.removed) },
+      { name: "geogebraJobs", run: () => expireGeoGebraJobs().then((result) => result.expired) },
     ];
 
     const results = await Promise.allSettled(steps.map((step) => step.run()));
@@ -131,6 +139,8 @@ class SchedulerService {
       accessTokenCount: 0,
       ipBanCount: 0,
       ipDataCount: 0,
+      geogebraAssetCount: 0,
+      geogebraJobCount: 0,
       totalCount: 0,
     };
 
@@ -142,6 +152,8 @@ class SchedulerService {
         else if (stepName === "accessTokens") result.accessTokenCount = value;
         else if (stepName === "ipBans") result.ipBanCount = value;
         else if (stepName === "ipData") result.ipDataCount = value;
+        else if (stepName === "geogebraAssets") result.geogebraAssetCount = value;
+        else if (stepName === "geogebraJobs") result.geogebraJobCount = value;
       } else {
         logger.error(`[Scheduler] 清理步骤 ${stepName} 失败`, {
           error: settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
@@ -150,7 +162,8 @@ class SchedulerService {
     });
 
     result.totalCount =
-      result.fingerprintCount + result.accessTokenCount + result.ipBanCount + result.ipDataCount;
+      result.fingerprintCount + result.accessTokenCount + result.ipBanCount + result.ipDataCount
+      + result.geogebraAssetCount + result.geogebraJobCount;
     return result;
   }
 
@@ -192,7 +205,7 @@ class SchedulerService {
 
       if (result.totalCount > 0) {
         logger.info(
-          `定时清理完成: 临时指纹 ${result.fingerprintCount} 条, 访问密钥 ${result.accessTokenCount} 条, IP封禁 ${result.ipBanCount} 条, IP数据 ${result.ipDataCount} 条`,
+          `定时清理完成: 临时指纹 ${result.fingerprintCount} 条, 访问密钥 ${result.accessTokenCount} 条, IP封禁 ${result.ipBanCount} 条, IP数据 ${result.ipDataCount} 条, GeoGebra 资产 ${result.geogebraAssetCount} 个, GeoGebra 任务 ${result.geogebraJobCount} 个`,
         );
       }
 

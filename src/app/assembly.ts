@@ -43,6 +43,7 @@ import {
   ensureCspNonce,
   resolveCspSurface,
 } from "../security/contentSecurityPolicy";
+import { geoGebraEmbedFrameAncestorsForUrl } from "../security/embedFramePolicy";
 import { registerSecurityPipeline } from "../security/securityPipeline";
 import logger from "../utils/logger";
 import { sanitizeLogValue } from "../utils/requestLogSanitizer";
@@ -267,6 +268,16 @@ export function registerCoreMiddleware(app: Express): void {
       crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
+  // GEO-17：嵌入壳已通过 CSP frame-ancestors 放行，但 helmet 仍会发
+  // `X-Frame-Options: DENY`；老浏览器以 XFO 为准，会继续拦掉 iframe。
+  // 只对命中嵌入策略的那一条路径摘掉 XFO，其它页面一个字节都不放宽。
+  app.use((req, res, next) => {
+    const url = String(req.originalUrl ?? req.url ?? "");
+    if (geoGebraEmbedFrameAncestorsForUrl(url)) {
+      res.removeHeader("X-Frame-Options");
+    }
+    next();
+  });
   app.use((_req, res, next) => {
     res.removeHeader("X-Powered-By");
     res.removeHeader("Server");

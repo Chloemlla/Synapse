@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
+import { geoGebraEmbedFrameAncestorsForUrl } from "./embedFramePolicy";
 
 export type CspSurface = "default" | "docs" | "spa";
 
@@ -186,11 +187,22 @@ export function buildHelmetCspDirectives(): Record<string, Iterable<HelmetCspDir
     return "'unsafe-inline'";
   };
 
+  // GEO-17：只有 `/geogebra/share/:slug?embed=1` 这一条只读嵌入路径允许被 iframe，
+  // 其余页面继续 frame-ancestors 'none'。策略与 X-Frame-Options 的摘除共用
+  // security/embedFramePolicy.ts，避免两处口径漂移。
+  const asFrameAncestorsSource = (
+    req: import("node:http").IncomingMessage,
+  ): string => {
+    const url = String((req as { originalUrl?: string; url?: string }).originalUrl ?? req.url ?? "");
+    const ancestors = geoGebraEmbedFrameAncestorsForUrl(url);
+    return ancestors ? ancestors.join(" ") : "'none'";
+  };
+
   return {
     defaultSrc: ["'self'"],
     baseUri: ["'self'"],
     formAction: ["'self'"],
-    frameAncestors: ["'none'"],
+    frameAncestors: [asFrameAncestorsSource],
     objectSrc: ["'none'"],
     imgSrc: ["'self'", "data:", "blob:", "https:"],
     // Frontend bundles may inline woff2 as data URLs.
@@ -240,7 +252,8 @@ export function renderCspHeaderValue(
   }
 
   try {
-    const req = { path: options.path || "/" } as Request;
+    const rawPath = options.path || "/";
+    const req = { path: rawPath, url: rawPath, originalUrl: rawPath } as Request;
     const res = { locals: { ...resLocals } } as Response;
     if (!res.locals.cspSurface) {
       res.locals.cspSurface = resolveCspSurface(req.path);
