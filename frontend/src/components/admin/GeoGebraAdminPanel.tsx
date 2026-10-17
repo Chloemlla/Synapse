@@ -141,26 +141,30 @@ const GeoGebraAdminPanel: React.FC = () => {
             {!overview.ai.configured && overview.ai.reason && <p className="mt-2 text-xs text-amber-700">{overview.ai.reason}</p>}
           </InfoPanel>
 
-          <InfoPanel>
-            <h3 className="text-sm font-semibold text-slate-900">任务队列与处理进程</h3>
-            <dl className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-              <div><dt className="text-xs text-slate-500">调度方式</dt><dd>{overview.worker.scheduler}</dd></div>
-              <div><dt className="text-xs text-slate-500">处理进程</dt><dd>{overview.worker.running ? "运行中" : "未启动"} · PID {overview.worker.pid}</dd></div>
-              <div><dt className="text-xs text-slate-500">排队 / 运行中</dt><dd>{overview.queue.queued} / {overview.queue.running}</dd></div>
-              <div><dt className="text-xs text-slate-500">单用户并发上限</dt><dd>{overview.queue.maxActiveJobsPerUser}</dd></div>
-            </dl>
-            <p className="mt-2 text-xs text-slate-500">{overview.queue.note}</p>
-          </InfoPanel>
+          {overview.worker && overview.queue && (
+            <InfoPanel>
+              <h3 className="text-sm font-semibold text-slate-900">任务队列与处理进程</h3>
+              <dl className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-xs text-slate-500">调度方式</dt><dd>{overview.worker.scheduler}</dd></div>
+                <div><dt className="text-xs text-slate-500">处理进程</dt><dd>{overview.worker.running ? "运行中" : "未启动"} · PID {overview.worker.pid}</dd></div>
+                <div><dt className="text-xs text-slate-500">排队 / 运行中</dt><dd>{overview.queue.queued} / {overview.queue.running}</dd></div>
+                <div><dt className="text-xs text-slate-500">单用户并发上限</dt><dd>{overview.queue.maxActiveJobsPerUser}</dd></div>
+              </dl>
+              <p className="mt-2 text-xs text-slate-500">{overview.queue.note}</p>
+            </InfoPanel>
+          )}
 
-          <InfoPanel>
-            <h3 className="text-sm font-semibold text-slate-900">静态资源</h3>
-            <dl className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
-              <div><dt className="text-xs text-slate-500">有效分享封面</dt><dd>{overview.staticAssets.shareCovers.active} 张</dd></div>
-              <div><dt className="text-xs text-slate-500">AI 参考图</dt><dd>{overview.staticAssets.aiReferenceAssets.count} 个 · {formatBytes(overview.staticAssets.aiReferenceAssets.bytes)}</dd></div>
-              <div><dt className="text-xs text-slate-500">导出包</dt><dd>{overview.staticAssets.exportBundles.count} 个 · {formatBytes(overview.staticAssets.exportBundles.bytes)}</dd></div>
-            </dl>
-            <p className="mt-2 text-xs text-slate-500">过期资产由后台定时清理，也可以在右上角手动触发一次清理。</p>
-          </InfoPanel>
+          {overview.staticAssets && (
+            <InfoPanel>
+              <h3 className="text-sm font-semibold text-slate-900">静态资源</h3>
+              <dl className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+                <div><dt className="text-xs text-slate-500">有效分享封面</dt><dd>{overview.staticAssets.shareCovers.active} 张</dd></div>
+                <div><dt className="text-xs text-slate-500">AI 参考图</dt><dd>{overview.staticAssets.aiReferenceAssets.count} 个 · {formatBytes(overview.staticAssets.aiReferenceAssets.bytes)}</dd></div>
+                <div><dt className="text-xs text-slate-500">导出包</dt><dd>{overview.staticAssets.exportBundles.count} 个 · {formatBytes(overview.staticAssets.exportBundles.bytes)}</dd></div>
+              </dl>
+              <p className="mt-2 text-xs text-slate-500">过期资产由后台定时清理，也可以在右上角手动触发一次清理。</p>
+            </InfoPanel>
+          )}
 
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">异步任务</h3>
@@ -199,9 +203,9 @@ const GeoGebraAdminPanel: React.FC = () => {
 
           <InfoPanel>
             <h3 className="text-sm font-semibold text-slate-900">最近资源</h3>
-            {overview.recentAssets.length === 0
+            {(overview.recentAssets ?? []).length === 0
               ? <StudioEmptyState className="mt-2 py-8" message="还没有资源记录。AI 参考图与导出包只保留到各自有效期。" />
-              : <ul className="mt-3 space-y-2">{overview.recentAssets.map((asset) => (
+              : <ul className="mt-3 space-y-2">{(overview.recentAssets ?? []).map((asset) => (
                 <li key={asset.assetId} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
                   <span className="font-semibold text-slate-700">{asset.purpose}</span>
                   <span className="ml-2">{asset.mimeType}</span>
