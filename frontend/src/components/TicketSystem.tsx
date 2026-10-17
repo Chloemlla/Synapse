@@ -669,10 +669,12 @@ const TicketSystem: React.FC = () => {
 
   // 用户端同一套防抖：搜索框即时值 → 350ms 后进入真正请求的状态。
   useEffect(() => {
-    const timer = window.setTimeout(
-      () => setUserQuery((current) => ({ ...current, q: userSearchInput.trim() })),
-      350,
-    );
+    const timer = window.setTimeout(() => {
+      const q = userSearchInput.trim();
+      setUserQuery((current) => ({ ...current, q }));
+      // 同步展示态：筛选栏的「筛选后 / 共 N 条」按 value.q 判断，不同步就会一直显示未筛选。
+      setUserFilter((current) => ({ ...current, q }));
+    }, 350);
     return () => window.clearTimeout(timer);
   }, [userSearchInput]);
 

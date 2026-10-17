@@ -308,7 +308,9 @@ export function buildAdminTicketFilter(query: unknown, viewerId: string): Ticket
       { username: pattern },
       { assigneeName: pattern },
     ];
-    if (trimmed && mongoose.Types.ObjectId.isValid(trimmed)) {
+    // 只认 24 位十六进制：ObjectId.isValid 也接受 12 字节字符串，但那不是用户会粘贴的形态，
+    // 按 _id 搜索会静默查不到。
+    if (/^[a-fA-F0-9]{24}$/.test(trimmed)) {
       orConditions.push({ _id: new mongoose.Types.ObjectId(trimmed) });
     }
     filter.$or = orConditions;

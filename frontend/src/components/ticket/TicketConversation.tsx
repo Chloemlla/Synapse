@@ -199,7 +199,9 @@ const TicketConversation: React.FC<TicketConversationProps> = ({
     });
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white">
+    // 手机端整页滚动（详情面板不定高）：flex-1 + min-h-0 在 auto 高度容器里会把会话压成 0，
+    // 所以弹性与内层滚动只在 md 起生效。
+    <div className="relative flex flex-col bg-white md:min-h-0 md:flex-1">
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
@@ -234,7 +236,7 @@ const TicketConversation: React.FC<TicketConversationProps> = ({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-white p-4 hover-scrollbar sm:space-y-6 sm:p-6 2xl:p-8"
+        className="space-y-4 bg-white p-4 hover-scrollbar sm:space-y-6 sm:p-6 md:min-h-0 md:flex-1 md:overflow-y-auto 2xl:p-8"
       >
         {visibleMessages.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-slate-400">
