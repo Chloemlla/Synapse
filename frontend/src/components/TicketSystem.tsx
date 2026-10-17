@@ -1095,7 +1095,7 @@ const TicketSystem: React.FC = () => {
                 <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 p-3 shrink-0 sm:p-4">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white shrink-0">
-                      <FiFilter size={14} />
+                      <FiFilter size={14} aria-hidden />
                     </div>
                     <div className="min-w-0">
                       <div className={studioEyebrowClassName}>
@@ -1273,11 +1273,11 @@ const TicketSystem: React.FC = () => {
                         setShowDetailOnMobile(false);
                         setIsCreating(false);
                       }}
-                      className={cn(studioGhostButtonClassName, "py-2")}
+                      className={cn(studioGhostButtonClassName, "shrink-0 py-2")}
                     >
-                      <FiChevronRight className="rotate-180" size={16} /> 返回
+                      <FiChevronRight className="rotate-180" size={16} aria-hidden /> 返回
                     </button>
-                    <div className="text-xs font-semibold text-slate-500 truncate max-w-[180px] px-2">
+                    <div className="min-w-0 truncate max-w-[180px] px-2 text-xs font-semibold text-slate-500">
                       {isCreating ? "发起新工单" : selectedTicket?.title}
                     </div>
                   </div>
@@ -1333,11 +1333,11 @@ const TicketSystem: React.FC = () => {
                       <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-slate-50/40 p-4 sm:p-5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="space-y-2 min-w-0">
                           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                            <h3 className="font-semibold text-slate-900 text-sm sm:text-base truncate">{selectedTicket.title}</h3>
+                            <h3 className="min-w-0 truncate font-semibold text-slate-900 text-sm sm:text-base">{selectedTicket.title}</h3>
                             {ticketPriorityBadge(selectedTicket.priority)}
                           </div>
                           <div className="flex items-center gap-4 text-[10px] sm:text-[11px] text-slate-500 font-mono flex-wrap">
-                            <span className="flex items-center gap-1"><FiUser className="text-slate-400" /> {selectedTicket.username}</span>
+                            <span className="flex min-w-0 items-center gap-1"><FiUser className="text-slate-400" /> {selectedTicket.username}</span>
                             <span className="flex items-center gap-1"><FiClock className="text-slate-400" /> {new Date(selectedTicket.createdAt).toLocaleString()}</span>
                           </div>
                         </div>
@@ -1412,7 +1412,7 @@ const TicketSystem: React.FC = () => {
                             className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                             title="复制可直达该工单的链接"
                           >
-                            <FiLink className="inline" size={11} /> 复制链接
+                            <FiLink className="inline" size={11} aria-hidden /> 复制链接
                           </button>
                         </div>
                       </div>
@@ -1639,7 +1639,7 @@ const TicketSystem: React.FC = () => {
                       {selectedTicket.status === "closed" ? (
                         <div className="border-t border-slate-200/80 bg-slate-50 p-4 sm:p-6 text-center shrink-0">
                           <p className="text-xs sm:text-sm text-slate-500 font-medium flex items-center justify-center gap-2">
-                            <FiX /> {canWrite
+                            <FiX className="shrink-0" aria-hidden /> {canWrite
                               ? "此工单已关闭，可通过上方状态下拉重新开启"
                               : "此工单已关闭，如需继续咨询请发起新工单"}
                           </p>
@@ -1647,7 +1647,7 @@ const TicketSystem: React.FC = () => {
                       ) : isAdmin && !canWrite ? (
                         <div className="border-t border-slate-200/80 bg-slate-50 p-4 sm:p-6 text-center shrink-0">
                           <p className="text-xs sm:text-sm text-slate-500 font-medium flex items-center justify-center gap-2">
-                            <FiInfo /> 只读管理员无回复权限，处理工单请使用超级管理员账号
+                            <FiInfo className="shrink-0" aria-hidden /> 只读管理员无回复权限，处理工单请使用超级管理员账号
                           </p>
                         </div>
                       ) : (

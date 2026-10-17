@@ -232,16 +232,16 @@ export const InfoQueryHero: React.FC<{
     <section className={studioHeroCardClassName}>
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 ${classes.accent}`} />
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl">
+        <div className="min-w-0 max-w-3xl">
           <div className={studioEyebrowPillClassName}>
             <Icon className={`text-[10px] ${classes.text}`} />
             {eyebrow}
           </div>
-          <h1 className="mt-5 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">{title}</h1>
+          <h1 className="mt-5 break-words text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">{title}</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">{description}</p>
           {meta && <div className="mt-5 flex flex-wrap gap-2">{meta}</div>}
         </div>
-        {actions && <div className="flex flex-wrap gap-3 lg:justify-end">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap gap-3 lg:justify-end">{actions}</div>}
       </div>
     </section>
   );
@@ -316,20 +316,20 @@ export const InfoSectionTitle: React.FC<{
 
   return (
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex gap-3">
+      <div className="flex min-w-0 gap-3">
         {Icon && (
           <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ring-1', classes.icon)}>
             <Icon className="h-4 w-4" />
           </div>
         )}
-        <div>
+        <div className="min-w-0">
           {eyebrow && (
             <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
               {eyebrow}
             </div>
           )}
-          <h3 className="mt-1 text-xl font-semibold text-slate-900">{title}</h3>
-          {description && <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{description}</p>}
+          <h3 className="mt-1 break-words text-xl font-semibold text-slate-900">{title}</h3>
+          {description && <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-slate-600">{description}</p>}
         </div>
       </div>
       {action}

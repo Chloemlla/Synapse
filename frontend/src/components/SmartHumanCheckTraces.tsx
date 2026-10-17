@@ -79,7 +79,7 @@ const TraceTableRow = memo(({
             className={studioSecondaryButtonClassName}
             onClick={() => onOpenDetail(item.traceId)}
           >
-            <FaEye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">详情</span>
+            <FaEye className="w-3.5 h-3.5" aria-hidden /> <span className="hidden sm:inline">详情</span>
           </button>
         </div>
       </td>
@@ -137,7 +137,7 @@ const TraceMobileCard = memo(({
           className={studioSecondaryButtonClassName}
           onClick={() => onOpenDetail(item.traceId)}
         >
-          <FaEye className="w-3.5 h-3.5" /> 详情
+          <FaEye className="w-3.5 h-3.5" aria-hidden /> 详情
         </button>
       </div>
     </div>
@@ -603,10 +603,10 @@ const SmartHumanCheckTraces: React.FC = () => {
           action={
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => fetchList(page, pageSize)} className={studioSecondaryButtonClassName} title="刷新">
-                <FaSync className="w-4 h-4" /> 刷新
+                <FaSync className="w-4 h-4" aria-hidden /> 刷新
               </button>
               <button type="button" onClick={resetAndSearch} className={studioSecondaryButtonClassName}>
-                <FaSearch className="w-4 h-4" /> 重置筛选
+                <FaSearch className="w-4 h-4" aria-hidden /> 重置筛选
               </button>
             </div>
           }
@@ -650,7 +650,7 @@ const SmartHumanCheckTraces: React.FC = () => {
       <motion.div initial={reducedMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${studioSurfaceClassName} overflow-hidden`}>
         {/* 批量操作工具栏 */}
         <div className="flex flex-col gap-3 border-b border-slate-100 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-slate-500">已选 {selectedIds.length} 条</div>
+          <div className="min-w-0 text-sm text-slate-500">已选 {selectedIds.length} 条</div>
           <div className="flex flex-wrap gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300">
               <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} />
@@ -661,14 +661,14 @@ const SmartHumanCheckTraces: React.FC = () => {
               <FaEye className="w-4 h-4" /> 查看合并
             </button>
             <button type="button" onClick={copySelectedIds} disabled={!selectedIds.length} className={studioSecondaryButtonClassName}>
-              <FaCopy className="w-4 h-4" /> 复制 TraceID
+              <FaCopy className="w-4 h-4" aria-hidden /> 复制 TraceID
             </button>
             <button type="button" onClick={copySelectedLogs} disabled={!selectedIds.length || batchLoading} className={studioSecondaryButtonClassName}>
-              <FaClipboard className="w-4 h-4" /> 一键复制日志
+              <FaClipboard className="w-4 h-4" aria-hidden /> 一键复制日志
             </button>
             {canWrite && (
             <button type="button" onClick={deleteSelected} disabled={!selectedIds.length || batchLoading} className={studioDangerButtonClassName}>
-              <FaTrash className="w-4 h-4" /> 删除
+              <FaTrash className="w-4 h-4" aria-hidden /> 删除
             </button>
             )}
           </div>
@@ -679,13 +679,13 @@ const SmartHumanCheckTraces: React.FC = () => {
             role="alert"
             className="flex flex-col gap-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between"
           >
-            <span>{listError}</span>
+            <span className="min-w-0 break-words">{listError}</span>
             <button type="button"
               onClick={() => fetchList(page, pageSize)}
               disabled={loading}
               className={`${studioSecondaryButtonClassName} shrink-0`}
             >
-              <FaSync className="w-4 h-4" /> 重试
+              <FaSync className="w-4 h-4" aria-hidden /> 重试
             </button>
           </div>
         )}
@@ -767,8 +767,8 @@ const SmartHumanCheckTraces: React.FC = () => {
           data-source-modal="trace-detail"
         >
           <div className="flex items-center justify-between mb-3">
-            <div id="trace-detail-title" className="font-semibold text-slate-900">日志详情</div>
-            <div className="flex items-center gap-2">
+            <div id="trace-detail-title" className="min-w-0 truncate font-semibold text-slate-900">日志详情</div>
+            <div className="flex shrink-0 items-center gap-2">
               <button type="button"
                 onClick={async () => {
                   try {
@@ -780,7 +780,7 @@ const SmartHumanCheckTraces: React.FC = () => {
                 }}
                 className={studioSecondaryButtonClassName}
               >
-                <FaClipboard className="w-4 h-4" /> 复制
+                <FaClipboard className="w-4 h-4" aria-hidden /> 复制
               </button>
               <button type="button"
                 onClick={async () => {
@@ -798,10 +798,10 @@ const SmartHumanCheckTraces: React.FC = () => {
                 }}
                 className={studioSecondaryButtonClassName}
               >
-                <FaCopy className="w-4 h-4" /> 复制ID
+                <FaCopy className="w-4 h-4" aria-hidden /> 复制ID
               </button>
               <button type="button" onClick={closeDetailModal} className={studioSecondaryButtonClassName}>
-                <FaTimes className="w-4 h-4" /> 关闭
+                <FaTimes className="w-4 h-4" aria-hidden /> 关闭
               </button>
             </div>
           </div>
@@ -823,13 +823,13 @@ const SmartHumanCheckTraces: React.FC = () => {
             data-source-modal="batch-trace-detail"
           >
             <div className="flex items-center justify-between mb-3">
-              <div id="batch-trace-detail-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
-              <div className="flex items-center gap-2">
+              <div id="batch-trace-detail-title" className="min-w-0 truncate font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
+              <div className="flex shrink-0 items-center gap-2">
                 <button type="button" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName}>
-                  <FaClipboard className="w-4 h-4" /> 复制
+                  <FaClipboard className="w-4 h-4" aria-hidden /> 复制
                 </button>
                 <button type="button" onClick={closeBatchModal} className={studioSecondaryButtonClassName}>
-                  <FaTimes className="w-4 h-4" /> 关闭
+                  <FaTimes className="w-4 h-4" aria-hidden /> 关闭
                 </button>
               </div>
             </div>

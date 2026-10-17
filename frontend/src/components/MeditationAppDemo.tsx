@@ -378,7 +378,7 @@ const MeditationAppDemo: React.FC = () => {
             <h3 className="text-base font-semibold text-slate-800 mb-4">首页 - 场景选择</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
               {/* 刘海 */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               {/* 内容 */}
               <div className="h-full overflow-y-auto overflow-x-hidden no-scrollbar bg-slate-50">
@@ -417,11 +417,11 @@ const MeditationAppDemo: React.FC = () => {
                       className={`relative rounded-2xl ${scene.color} overflow-hidden`}
                       style={{ height: scene.height || '200px' }}
                     >
-                      <div className="absolute inset-0 bg-slate-900/40" />
+                      <div className="pointer-events-none absolute inset-0 bg-slate-900/40" />
                       <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
                         <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-2xl font-light">{scene.title}</h3>
-                          <div className="w-10 h-10 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center">
+                          <h3 className="min-w-0 break-words text-2xl font-light">{scene.title}</h3>
+                          <div className="w-10 h-10 shrink-0 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center">
                             <FaPlay className="shrink-0" aria-hidden />
                           </div>
                         </div>
@@ -461,19 +461,19 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">计时器页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="relative h-full bg-slate-900 overflow-hidden">
                 {/* 雨滴背景 */}
-                <canvas ref={setCanvasRef(1)} className="absolute inset-0" />
+                <canvas ref={setCanvasRef(1)} className="pointer-events-none absolute inset-0" />
                 
                 {/* 顶部栏 */}
                 <div className="relative z-10 flex items-center justify-between p-5 pt-9 text-white">
-                  <button type="button" className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <button type="button" className="w-8 h-8 shrink-0 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <span className="text-lg">雨声</span>
-                  <button type="button" className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <span className="min-w-0 truncate px-2 text-lg">雨声</span>
+                  <button type="button" className="w-8 h-8 shrink-0 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
                 </div>
@@ -522,7 +522,7 @@ const MeditationAppDemo: React.FC = () => {
                   <div className="mt-12 space-y-4">
                     <div className="flex items-center justify-between px-8 text-white">
                       <span className="text-sm">时长</span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex shrink-0 items-center gap-3">
                         <button type="button" 
                           onClick={() => adjustDuration(-5)}
                           className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-all"
@@ -542,14 +542,14 @@ const MeditationAppDemo: React.FC = () => {
                       <span className="text-sm">呼吸引导</span>
                       <button type="button" 
                         onClick={() => setBreathingEnabled(!breathingEnabled)}
-                        className={`w-12 h-6 rounded-full relative transition-colors ${breathingEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                        className={`w-12 h-6 shrink-0 rounded-full relative transition-colors ${breathingEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
                       >
                         <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${breathingEnabled ? 'right-0.5' : 'left-0.5'}`} />
                       </button>
                     </div>
                     <div className="flex items-center justify-between px-8 text-white">
                       <span className="text-sm">音量</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2">
                         <div className="w-24 h-1 bg-white/30 rounded-full">
                           <div className="h-full bg-white rounded-full" style={{ width: `${volume}%` }} />
                         </div>
@@ -568,11 +568,11 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">完成页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="relative h-full bg-slate-100 overflow-y-auto no-scrollbar">
                 {/* 烟花背景 */}
-                <canvas ref={setCanvasRef(3)} className="absolute inset-0" />
+                <canvas ref={setCanvasRef(3)} className="pointer-events-none absolute inset-0" />
                 
                 <div className="relative z-10 flex flex-col items-center px-5 pt-20">
                   {/* 成就图标 */}
@@ -635,7 +635,7 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">统计总览</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
@@ -679,8 +679,8 @@ const MeditationAppDemo: React.FC = () => {
                       { name: '夜晚', icon: <FaMoon />, percent: 15, time: '18min', color: 'rgb(14,165,233)' }
                     ].map((scene, idx) => (
                       <div key={idx} className="flex items-center gap-3">
-                        <span className="text-xl">{scene.icon}</span>
-                        <div className="flex-1">
+                        <span className="shrink-0 text-xl">{scene.icon}</span>
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-sm text-slate-800">{scene.name}</span>
                             <span className="text-xs text-slate-500">{scene.percent}% · {scene.time}</span>
@@ -716,7 +716,7 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">成就页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
@@ -775,7 +775,7 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">日历页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 顶部横幅 */}
@@ -783,14 +783,14 @@ const MeditationAppDemo: React.FC = () => {
                   <div className="flex items-center justify-between mb-4">
                     <button type="button" 
                       onClick={() => changeMonth(-1)}
-                      className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
+                      className="w-8 h-8 shrink-0 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
-                    <span className="text-xl font-light">2025年{currentMonth}月</span>
+                    <span className="min-w-0 truncate px-2 text-xl font-light">2025年{currentMonth}月</span>
                     <button type="button" 
                       onClick={() => changeMonth(1)}
-                      className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
+                      className="w-8 h-8 shrink-0 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all"
                     >
                       <ChevronRight className="w-5 h-5" />
                     </button>
@@ -876,17 +876,17 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">场景库</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 搜索区 */}
                 <div className="px-5 pt-9 pb-4 bg-white">
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
-                      <Search className="w-4 h-4 text-slate-500" />
-                      <input type="text" placeholder="搜索场景..." className="flex-1 bg-transparent border-none outline-none text-sm" />
+                    <div className="min-w-0 flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+                      <Search className="w-4 h-4 shrink-0 text-slate-500" />
+                      <input type="text" placeholder="搜索场景..." className="min-w-0 flex-1 bg-transparent border-none outline-none text-sm" />
                     </div>
-                    <button type="button" className="w-[45px] h-[45px] rounded-full bg-slate-900 text-white flex items-center justify-center">
+                    <button type="button" className="w-[45px] h-[45px] shrink-0 rounded-full bg-slate-900 text-white flex items-center justify-center">
                       <Settings className="w-5 h-5" />
                     </button>
                   </div>
@@ -923,7 +923,7 @@ const MeditationAppDemo: React.FC = () => {
                       key={idx}
                       className={`relative aspect-square rounded-[12px] ${scene.color} overflow-hidden cursor-pointer hover:scale-105 transition-transform`}
                     >
-                      <div className="absolute inset-0 bg-slate-900/40" />
+                      <div className="pointer-events-none absolute inset-0 bg-slate-900/40" />
                       <button type="button" 
                         onClick={() => toggleLike(scene.name)}
                         className="absolute top-2 right-2 z-10 hover:scale-125 transition-transform"
@@ -954,16 +954,16 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">设置页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
                 {/* 个人信息卡片 */}
                 <div className="bg-slate-900 px-5 pt-10 pb-8 text-white">
                   <div className="flex items-center gap-5">
-                    <div className="w-[70px] h-[70px] rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center text-[32px]">
+                    <div className="w-[70px] h-[70px] shrink-0 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center text-[32px]">
                       <FaSpa className="shrink-0" aria-hidden />
                     </div>
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       <h2 className="text-2xl font-light mb-1">冥想者</h2>
                       <p className="text-sm opacity-90 mb-2">保持平静，专注当下</p>
                       <div className="inline-block px-3 py-1 bg-amber-500/30 backdrop-blur-sm rounded-[12px] text-xs">
@@ -1009,23 +1009,23 @@ const MeditationAppDemo: React.FC = () => {
                           key={idx}
                           className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                         >
-                          <span className="text-[15px] text-slate-800">{setting.label}</span>
+                          <span className="min-w-0 text-[15px] text-slate-800">{setting.label}</span>
                           {setting.type === 'arrow' && (
-                            <button type="button" className="flex items-center gap-2 hover:opacity-70 transition-opacity">
+                            <button type="button" className="flex shrink-0 items-center gap-2 hover:opacity-70 transition-opacity">
                               <span className="text-[15px] text-slate-500">{setting.value}</span>
-                              <ChevronRight className="w-4 h-4 text-slate-500" />
+                              <ChevronRight className="w-4 h-4 text-slate-500" aria-hidden />
                             </button>
                           )}
                           {setting.type === 'toggle' && (
                             <button type="button" 
                               onClick={() => handleToggle(setting.label)}
-                              className={`w-[48px] h-[28px] rounded-full relative transition-colors ${enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                              className={`w-[48px] h-[28px] shrink-0 rounded-full relative transition-colors ${enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
                             >
                               <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white shadow transition-transform ${enabled ? 'right-0.5' : 'left-0.5'}`} />
                             </button>
                           )}
                           {setting.type === 'slider' && (
-                            <div className="flex items-center gap-2">
+                            <div className="flex shrink-0 items-center gap-2">
                               <div className="w-20 h-1 bg-slate-200 rounded-full overflow-hidden">
                                 <div className="h-full bg-slate-900 rounded-full" style={{ width: `${sliderVal}%` }} />
                               </div>
@@ -1052,15 +1052,15 @@ const MeditationAppDemo: React.FC = () => {
                         key={idx}
                         className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-slate-800">{setting.label}</span>
+                        <span className="min-w-0 text-[15px] text-slate-800">{setting.label}</span>
                         {setting.type === 'arrow' && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex shrink-0 items-center gap-2">
                             <span className="text-[15px] text-slate-500">{setting.value}</span>
                             <span className="text-slate-500">›</span>
                           </div>
                         )}
                         {setting.type === 'toggle' && (
-                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
+                          <div className={`w-[48px] h-[28px] shrink-0 rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
                             <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white transition-transform ${setting.enabled ? 'right-0.5' : 'left-0.5'}`} />
                           </div>
                         )}
@@ -1082,15 +1082,15 @@ const MeditationAppDemo: React.FC = () => {
                         key={idx}
                         className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-slate-800">{setting.label}</span>
+                        <span className="min-w-0 text-[15px] text-slate-800">{setting.label}</span>
                         {setting.type === 'arrow' && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex shrink-0 items-center gap-2">
                             <span className="text-[15px] text-slate-500">{setting.value}</span>
                             <span className="text-slate-500">›</span>
                           </div>
                         )}
                         {setting.type === 'toggle' && (
-                          <div className={`w-[48px] h-[28px] rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
+                          <div className={`w-[48px] h-[28px] shrink-0 rounded-full relative ${setting.enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
                             <div className={`absolute top-0.5 w-[24px] h-[24px] rounded-full bg-white transition-transform ${setting.enabled ? 'right-0.5' : 'left-0.5'}`} />
                           </div>
                         )}
@@ -1113,8 +1113,8 @@ const MeditationAppDemo: React.FC = () => {
                         key={idx}
                         className={`flex items-center justify-between px-4 py-4 ${idx < arr.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
-                        <span className="text-[15px] text-slate-800">{setting.label}</span>
-                        <div className="flex items-center gap-2">
+                        <span className="min-w-0 text-[15px] text-slate-800">{setting.label}</span>
+                        <div className="flex shrink-0 items-center gap-2">
                           <span className="text-[15px] text-slate-500">{setting.value}</span>
                           <span className="text-slate-500">›</span>
                         </div>
@@ -1124,7 +1124,7 @@ const MeditationAppDemo: React.FC = () => {
 
                   {/* 退出登录 */}
                   <button type="button" className="w-full bg-white rounded-2xl py-4 text-rose-600 text-base font-semibold shadow-sm flex items-center justify-center gap-2">
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-4 h-4" aria-hidden />
                     <span>退出登录</span>
                   </button>
 
@@ -1143,11 +1143,11 @@ const MeditationAppDemo: React.FC = () => {
             <div className="flex flex-col items-center">
             <h3 className="text-base font-semibold text-slate-800 mb-4">呼吸引导页面</h3>
             <div className="relative w-[360px] h-[780px] rounded-2xl border-[10px] border-slate-300 bg-white overflow-hidden shadow-sm">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
+              <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[150px] h-[25px] bg-slate-300 rounded-b-[12px] z-10" />
               
               <div className="relative h-full bg-slate-900 overflow-hidden">
                 {/* 气泡背景 */}
-                <canvas ref={setCanvasRef(8)} className="absolute inset-0" />
+                <canvas ref={setCanvasRef(8)} className="pointer-events-none absolute inset-0" />
                 
                 {/* 顶部计数器 */}
                 <div className="relative z-10 text-center pt-12 text-white text-sm opacity-90">

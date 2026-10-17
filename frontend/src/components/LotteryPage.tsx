@@ -84,11 +84,11 @@ const PrizeDisplay: React.FC<{ prize: any }> = ({ prize }) => {
     <motion.div
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      className={`rounded-2xl border p-3 shadow-sm ${getCategoryColor(prize.category)}`}
+      className={`min-w-0 rounded-2xl border p-3 shadow-sm ${getCategoryColor(prize.category)}`}
     >
       <div className="text-center">
-        <h4 className="font-semibold text-sm">{prize.name}</h4>
-        <p className="text-xs opacity-80 mt-1">{prize.description}</p>
+        <h4 className="break-words font-semibold text-sm">{prize.name}</h4>
+        <p className="mt-1 break-words text-xs opacity-80">{prize.description}</p>
         <div className="mt-2">
           <span className="text-lg font-bold">¥{prize.value}</span>
         </div>
@@ -176,11 +176,11 @@ export const LotteryRoundCard: React.FC<{
       whileTap={{ scale: 0.98 }}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-950">{round.name}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-600">{round.description}</p>
+        <div className="min-w-0">
+          <h3 className="break-words text-lg font-semibold text-slate-950">{round.name}</h3>
+          <p className="mt-1 break-words text-sm leading-6 text-slate-600">{round.description}</p>
         </div>
-        <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+        <div className={`inline-flex shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${
           isActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'
         }`}>
           {isActive ? '进行中' : '已结束'}
@@ -241,7 +241,7 @@ export const LotteryRoundCard: React.FC<{
                 key={`${winner.prizeId}-${winner.drawTime}-${index}`}
                 className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-1.5 text-xs text-slate-600"
               >
-                <span className="truncate">{winner.username || '匿名用户'}</span>
+                <span className="min-w-0 truncate">{winner.username || '匿名用户'}</span>
                 <span className="ml-2 shrink-0 font-medium text-emerald-700">{winner.prizeName}</span>
               </div>
             ))}
@@ -373,7 +373,7 @@ const UserRecordCard: React.FC<{ record: any }> = ({ record }) => {
                     {formatDistanceToNow(item.drawTime, { addSuffix: true, locale: zhCN })}
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <div className="font-semibold text-emerald-700">¥{item.value}</div>
                 </div>
               </motion.div>
@@ -419,14 +419,14 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
               className="flex items-center gap-3 rounded-2xl p-2 text-sm hover:bg-white/70"
               whileHover={{ scale: 1.02, x: -5 }}
           >
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs ${
+              <div className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-white font-bold text-xs ${
               index === 0 ? 'bg-amber-500' : 
               index === 1 ? 'bg-slate-400' :
               index === 2 ? 'bg-amber-700' : 'bg-slate-500'
             }`}>
-              {index === 0 ? <FaCrown className="w-3 h-3" /> : 
-               index === 1 ? <FaMedal className="w-3 h-3" /> : 
-               index === 2 ? <FaMedal className="w-3 h-3" /> : 
+              {index === 0 ? <FaCrown className="w-3 h-3" aria-hidden /> :
+               index === 1 ? <FaMedal className="w-3 h-3" aria-hidden /> :
+               index === 2 ? <FaMedal className="w-3 h-3" aria-hidden /> :
                index + 1}
             </div>
               <div className="flex-1 min-w-0">
@@ -435,7 +435,7 @@ const LeaderboardCard: React.FC<{ leaderboard: any[] }> = ({ leaderboard }) => {
                 参与 {user.participationCount} 次 | 中奖 {user.winCount} 次
               </div>
             </div>
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <div className="font-semibold text-emerald-700">¥{user.totalValue}</div>
             </div>
           </motion.div>
@@ -678,11 +678,11 @@ const LotteryWalletPanel: React.FC<{
                     <div className="text-xs text-slate-500">
                       {FULFILLMENT_TYPE_LABELS[record.type] ?? record.type} · {FULFILLMENT_STATUS_LABELS[record.status] ?? record.status}
                     </div>
-                    {record.code && <div className="text-xs text-emerald-700">卡密：{record.code}</div>}
+                    {record.code && <div className="break-all text-xs text-emerald-700">卡密：{record.code}</div>}
                     {record.address && (
                       <div className="text-xs text-slate-400">收件：{record.address.name} {record.address.phone}</div>
                     )}
-                    {record.error && <div className="text-xs text-rose-600">{record.error}</div>}
+                    {record.error && <div className="break-words text-xs text-rose-600">{record.error}</div>}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {record.type === 'physical' && (record.status === 'awaiting_address' || record.status === 'pending') && (
@@ -748,7 +748,7 @@ const LotteryWalletPanel: React.FC<{
                 {transferForId === record.id && (
                   <div className="mt-2 flex gap-2">
                     <input
-                      className={cn(studioFieldClassName, 'w-full px-3 py-1.5 text-sm')}
+                      className={cn(studioFieldClassName, 'w-full min-w-0 px-3 py-1.5 text-sm')}
                       placeholder="受赠人用户 ID"
                       value={transferTarget}
                       onChange={(e) => setTransferTarget(e.target.value)}
@@ -757,7 +757,7 @@ const LotteryWalletPanel: React.FC<{
                       type="button"
                       onClick={() => { void handleTransfer(record.id); }}
                       disabled={busyId === record.id || !transferTarget.trim()}
-                      className={`${studioPrimaryButtonClassName} disabled:opacity-50`}
+                      className={`${studioPrimaryButtonClassName} shrink-0 disabled:opacity-50`}
                     >
                       确认转赠
                     </button>
@@ -782,14 +782,14 @@ const RoundPresentationView: React.FC<{ presentation?: LotteryPresentation }> = 
         switch (block.type) {
           case 'text':
             return (
-              <p key={block.id} className="text-sm leading-6 text-slate-600">
+              <p key={block.id} className="break-words text-sm leading-6 text-slate-600">
                 {String(block.props?.text ?? '')}
               </p>
             );
           case 'image': {
             const src = typeof block.props?.src === 'string' ? block.props.src : '';
             return src && /^https?:\/\//i.test(src) ? (
-              <img key={block.id} src={src} alt="" loading="lazy" className="max-h-40 rounded-2xl object-contain" />
+              <img key={block.id} src={src} alt="" loading="lazy" className="max-h-40 max-w-full rounded-2xl object-contain" />
             ) : null;
           }
           case 'button': {
@@ -819,7 +819,7 @@ const RoundPresentationView: React.FC<{ presentation?: LotteryPresentation }> = 
             const remainingMs = target && !Number.isNaN(target.getTime()) ? Math.max(0, target.getTime() - Date.now()) : null;
             const hours = remainingMs === null ? null : Math.floor(remainingMs / 3_600_000);
             return (
-              <div key={block.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <div key={block.id} className="break-words rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {label}
                 {hours !== null ? `：约 ${hours} 小时后结束` : ''}
               </div>
@@ -919,7 +919,7 @@ const LotteryPage: React.FC = () => {
       <InfoQueryShell>
         <InfoPanel className="border-rose-200 bg-rose-50/80">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-rose-700">
+            <div className="min-w-0 break-words text-sm text-rose-700">
               抽奖数据暂时加载不出来，请检查网络后重试。
             </div>
             <InfoPrimaryButton onClick={handleRetry} tone="rose">重试</InfoPrimaryButton>
