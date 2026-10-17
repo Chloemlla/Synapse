@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FaBroom, FaChartBar, FaComments, FaFileAlt, FaFolderOpen, FaShareAlt, FaSync } from "react-icons/fa";
 import { getGeoGebraAdminOverview, runGeoGebraMaintenance, type GeoGebraAdminOverview } from "@/api/geogebraAdmin";
 import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell, studioDangerButtonClassName, studioFieldClassName, studioSecondaryButtonClassName } from "@/components/studioTheme";
 import { StudioEmptyState, StudioErrorNote, StudioErrorState, StudioLoadingState } from "@/components/studioFeedback";
 import { useNotification } from "@/components/Notification";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
 // GeoGebra 诊断面板（GEO-22 / GEO-24）。
@@ -31,6 +32,9 @@ function formatBytes(bytes: number): string {
 
 const GeoGebraAdminPanel: React.FC = () => {
   const { setNotification } = useNotification();
+  const { user } = useAuth();
+  // 维护清理是系统级写操作：服务端只认超管，前端同步隐藏入口，避免点了必然 403。
+  const isSuperAdmin = useMemo(() => String(user?.role ?? "") === "superadmin", [user?.role]);
   const [overview, setOverview] = useState<GeoGebraAdminOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -96,14 +100,16 @@ const GeoGebraAdminPanel: React.FC = () => {
             >
               <FaSync className={cn("mr-2 inline", loading && "animate-spin")} />刷新
             </button>
-            <button
-              type="button"
-              onClick={() => void handleMaintenance()}
-              disabled={maintaining}
-              className={cn(studioDangerButtonClassName, 'min-h-11 sm:min-h-0')}
-            >
-              <FaBroom className="mr-2 inline" />{maintaining ? "清理中…" : "清理过期资源"}
-            </button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => void handleMaintenance()}
+                disabled={maintaining}
+                className={cn(studioDangerButtonClassName, 'min-h-11 sm:min-h-0')}
+              >
+                <FaBroom className="mr-2 inline" />{maintaining ? "清理中…" : "清理过期资源"}
+              </button>
+            )}
           </div>
         )}
       />
