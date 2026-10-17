@@ -1,35 +1,16 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { FaExclamationTriangle, FaArrowLeft } from 'react-icons/fa';
-import { cn } from '../utils/cn';
-import { studioMutedPrimaryButtonClassName } from './studioTheme';
+import ModListEditor from './ModListEditor';
 
+/**
+ * ModList 页面入口。
+ *
+ * 这里曾经是一个「已临时关闭」的占位页（commit f44d03d4），但真正的关闭原因是
+ * 编辑器读取路径拿到的是**加密载荷却从不解密** —— 列表永远是空的，
+ * 看起来像"页面坏了"。读取改走 `/api/modlist/json`（普通 JSON、仍需登录）后，
+ * 编辑器本身是完好的，因此恢复真实页面。
+ */
 const ModListPage: React.FC = () => {
-  return (
-    <div className="min-h-[70vh] bg-slate-50 px-4 py-10">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-amber-200 bg-white p-8 shadow-sm">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-          <FaExclamationTriangle className="text-2xl" />
-        </div>
-        <h1 className="mt-6 text-center text-3xl font-black tracking-tight text-slate-900">
-          ModList 已临时关闭
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-7 text-slate-600">
-          当前前端已临时屏蔽 `ModListEditor` 的加载，以避免线上继续触发运行时异常。
-          等对应问题修复后，再恢复该页面入口。
-        </p>
-        <div className="mt-8 flex justify-center">
-          <Link
-            to="/"
-            className={cn(studioMutedPrimaryButtonClassName, "py-3")}
-          >
-            <FaArrowLeft />
-            返回首页
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+  return <ModListEditor />;
 };
 
-export default ModListPage; 
+export default ModListPage;
