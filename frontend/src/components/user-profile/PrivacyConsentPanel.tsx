@@ -23,6 +23,7 @@ import {
 import { getBackendErrorMessage } from '../../utils/backendError';
 import { cn } from '../../utils/cn';
 import { describeAgreementKey, missingPolicyAgreements } from '../../utils/policyConsent';
+import PolicyDocumentFingerprint from '../policy/PolicyDocumentFingerprint';
 import { formatDateTime } from './profileHelpers';
 import {
   studioDangerButtonClassName,
@@ -366,11 +367,42 @@ const PrivacyConsentPanel: React.FC = () => {
             </div>
           ) : null}
 
+          {status.recordedAt ? (
+            <div className="mt-3 border-t border-slate-200/80 pt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">条文指纹（sha256）</div>
+              <div className="mt-1.5 space-y-1">
+                {status.documentHash ? (
+                  <PolicyDocumentFingerprint label="当前条文" value={status.documentHash} />
+                ) : null}
+                {status.consentDocumentHash ? (
+                  <PolicyDocumentFingerprint
+                    label="本设备记录"
+                    value={status.consentDocumentHash}
+                    tone={staleDocument ? 'mismatch' : 'default'}
+                  />
+                ) : (
+                  <p className="text-[11px] leading-5 text-slate-500">
+                    这条早期记录没有保存条文指纹，无法逐字核对；下次同意时会写入。
+                  </p>
+                )}
+                {staleDocument ? (
+                  <p className="text-[11px] leading-5 text-amber-700">
+                    两串指纹不同，说明记录对应的是另一份条文；同意仍然有效。
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {staleDocument && (
             <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
               <FaExclamationTriangle className="mt-0.5 shrink-0" aria-hidden />
               <span className="min-w-0">
-                这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在政策页重新同意。
+                这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在{' '}
+                <Link to="/policy" className="font-semibold underline underline-offset-2">
+                  政策页
+                </Link>{' '}
+                按当前条文重新同意。
               </span>
             </p>
           )}
@@ -515,9 +547,21 @@ const PrivacyConsentPanel: React.FC = () => {
                       勾选：{entry.agreementsComplete ? '四份齐全' : `缺 ${entry.missingAgreements.length} 份`}
                     </span>
                     <span className="text-slate-400">·</span>
-                    <span>
-                      条文指纹：{entry.documentHashMatchesCurrent ? '与当前一致' : '与当前不一致'}
-                    </span>
+                    {entry.consentDocumentHash ? (
+                      <>
+                        <PolicyDocumentFingerprint
+                          label="条文指纹"
+                          value={entry.consentDocumentHash}
+                          variant="compact"
+                          tone={entry.documentHashMatchesCurrent ? 'default' : 'mismatch'}
+                        />
+                        <span className={entry.documentHashMatchesCurrent ? 'text-slate-500' : 'text-amber-700'}>
+                          {entry.documentHashMatchesCurrent ? '与当前一致' : '与当前不一致'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-slate-500">条文指纹：早期记录未保存</span>
+                    )}
                     {entry.revokedAt && (
                       <>
                         <span className="text-slate-400">·</span>

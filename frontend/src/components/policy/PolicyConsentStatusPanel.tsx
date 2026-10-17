@@ -9,6 +9,7 @@ import {
   FaSyncAlt,
 } from 'react-icons/fa';
 import PolicyConsentChecklist from '../PolicyConsentChecklist';
+import PolicyDocumentFingerprint from './PolicyDocumentFingerprint';
 import {
   DeviceCredentialRequiredError,
   fetchPolicyConsentStatus,
@@ -51,7 +52,7 @@ const describeStatus = (status: PolicyConsentStatus, documentHash: string): Stat
       label: '本设备已同意',
       tone: stale ? 'amber' : 'emerald',
       hint: stale
-        ? '本设备的同意记录对应的是另一份条文（条文措辞更新过），建议重新逐项同意一次。'
+        ? '本设备的同意记录对应的是另一份条文（条文措辞更新过）：下方两串指纹不同。同意仍然有效，但建议重新阅读后按当前条文重新同意。'
         : '本设备可以继续使用依赖该同意的功能。',
     };
   }
@@ -209,6 +210,19 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
               ? '本浏览器没有该设备的同意凭据（可能是在其他设备上同意过，或清除了站点数据）。可以在这里直接逐项同意，同意后本设备即持有新凭据。'
               : presentation?.hint ?? '同意按浏览器设备记录，换设备或清除站点数据后需要在本设备重新同意。'}
           </p>
+          {/* 条文指纹可在同意记录中核对：这里把「本设备记录的那份」与「当前页面这份」并排放出来，
+              两串都可在页脚与个人中心逐字比对，也可直接复制。 */}
+          {status?.consentDocumentHash ? (
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <PolicyDocumentFingerprint
+                label="本设备记录条文指纹"
+                value={status.consentDocumentHash}
+                variant="compact"
+                tone={staleDocument ? 'mismatch' : 'default'}
+              />
+              <PolicyDocumentFingerprint label="当前条文指纹" value={documentHash} variant="compact" />
+            </div>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -231,7 +245,7 @@ const PolicyConsentStatusPanel: React.FC<{ documentVersion: string; documentHash
               aria-expanded={open}
             >
               <FaCheckCircle className="text-[11px]" />
-              {open ? '收起同意清单' : status?.hasValidConsent ? '重新同意（续期）' : '在页面内同意条款'}
+              {open ? '收起同意清单' : staleDocument ? '按当前条文重新同意' : status?.hasValidConsent ? '重新同意（续期）' : '在页面内同意条款'}
             </button>
           )}
         </div>
