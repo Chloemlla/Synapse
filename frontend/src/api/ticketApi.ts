@@ -1,20 +1,10 @@
 import { api } from "./api";
 import type { AiErrorDetails } from "../types/aiDiagnostics";
 
-/**
- * 消息正文格式：`markdown` 按 Markdown 渲染；`plain` 纯文本，原样保留换行与空格。
- *
- * 必须与后端 `src/models/ticketModel.ts` 的 `TICKET_MESSAGE_FORMATS` 一一对应。
- * 老消息由后端视图层补 `markdown`（历史行为），前端把缺省值也按 `markdown` 处理。
- */
-export type TicketContentFormat = "markdown" | "plain";
-
 export interface ITicketMessage {
   senderId: string;
   senderRole: "user" | "admin" | "ai";
   content: string;
-  /** 正文格式；缺省（老数据 / 后端未升级）按 markdown 处理。 */
-  format?: TicketContentFormat;
   isAi?: boolean;
   aiErrorDetails?: AiErrorDetails;
   createdAt: string;
@@ -327,8 +317,6 @@ export const ticketApi = {
   async createTicket(data: {
     title: string;
     description: string;
-    /** 描述正文格式：markdown（默认）或 plain。 */
-    contentFormat?: TicketContentFormat;
     priority?: string;
     category?: TicketCategory;
     type?: TicketType;
@@ -354,14 +342,9 @@ export const ticketApi = {
     return response.data;
   },
 
-  // 回复工单（internal=true 时为内部备注，仅超级管理员可用；contentFormat 决定正文如何渲染）
-  async replyTicket(
-    id: string,
-    content: string,
-    internal = false,
-    contentFormat: TicketContentFormat = "markdown",
-  ): Promise<ITicket> {
-    const response = await api.post(`/api/tickets/${id}/messages`, { content, internal, contentFormat });
+  // 回复工单（internal=true 时为内部备注，仅超级管理员可用）
+  async replyTicket(id: string, content: string, internal = false): Promise<ITicket> {
+    const response = await api.post(`/api/tickets/${id}/messages`, { content, internal });
     return response.data;
   },
   // 管理员获取所有工单（分页 + 摘要 + 关键词/日期/分类/类型/服务/受理人筛选）

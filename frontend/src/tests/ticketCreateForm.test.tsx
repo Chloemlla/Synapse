@@ -17,7 +17,6 @@ import type { ITicketAttachment, TicketCapabilities } from '../api/ticketApi';
 const EMPTY_VALUE: TicketCreateFormValue = {
   title: '',
   description: '',
-  contentFormat: 'markdown',
   priority: 'medium',
   category: 'other',
   type: 'inquiry',
@@ -100,11 +99,6 @@ describe('TicketCreateForm 票面字段', () => {
     expect(screen.getByText('故障')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/请尽可能详细地说明/)).toBeInTheDocument();
 
-    // 正文格式：Markdown / 纯文本二选一（默认 Markdown，与历史渲染行为一致）
-    expect(screen.getByRole('group', { name: '描述格式' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: '纯文本' })).toHaveAttribute('aria-pressed', 'false');
-
     // 相关服务 + 具体说明
     expect(screen.getByLabelText('相关服务')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('例如任务 ID、订单号、资源名')).toBeInTheDocument();
@@ -123,18 +117,6 @@ describe('TicketCreateForm 票面字段', () => {
     expect(screen.getByText('紧急')).toBeInTheDocument();
     expect(screen.getByText('一般')).toBeInTheDocument();
     expect(screen.getByText('低')).toBeInTheDocument();
-  });
-
-  it('lets the user choose plain text for the description', () => {
-    const onChangeSpy = vi.fn();
-    render(<Harness capabilities={CAPABILITIES_ENABLED} onChangeSpy={onChangeSpy} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '纯文本' }));
-
-    expect(onChangeSpy).toHaveBeenCalledWith({ contentFormat: 'plain' });
-    // 受控包装会把补丁合并回 value，选中态随之翻转。
-    expect(screen.getByRole('button', { name: '纯文本' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows the file picker only when uploads are enabled', () => {

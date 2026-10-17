@@ -25,8 +25,6 @@ import {
   validateTicketAttachmentUpload,
 } from "../utils/ticketAttachments";
 import {
-  DEFAULT_TICKET_MESSAGE_FORMAT,
-  asTicketMessageFormat,
   asTicketRelatedService,
   asTicketType,
   normalizeContactEmail,
@@ -96,8 +94,6 @@ async function appendAiFallbackNotice(ticketId: string, expectedTailMessageId: s
           senderRole: "ai",
           content:
             "已收到你的内容，智能助手暂时无法生成排查方案。工单已保留，客服会尽快人工跟进；如需补充信息，可直接在此继续回复。",
-          // AI 文案固定按 Markdown 渲染（与历史行为一致），不跟随用户选择的格式。
-          format: "markdown",
           isAi: true,
           createdAt: new Date(),
         },
@@ -268,7 +264,6 @@ export async function generateAiTicketResponse(ticketId: string) {
           senderId: "system_ai",
           senderRole: "ai",
           content: aiResponse,
-          format: "markdown",
           isAi: true,
           ...(aiErrorDetails ? { aiErrorDetails } : {}),
           createdAt: new Date(),
@@ -349,15 +344,12 @@ export const ticketController = {
   // 用户创建工单
   async createTicket(req: Request, res: Response) {
     try {
-      const { title, description, contentFormat, priority, category, type, relatedService, relatedServiceRef, contactEmail, relatedTicketIds, attachmentLinks } = req.body;
+      const { title, description, priority, category, type, relatedService, relatedServiceRef, contactEmail, relatedTicketIds, attachmentLinks } = req.body;
       const userObj = (req as any).user;
 
       // G4-08: 长度上限，防止单条工单把上下文顶满
       const titleStr = typeof title === "string" ? title.trim() : "";
       const descStr = typeof description === "string" ? description.trim() : "";
-      // 正文格式由用户选择：markdown（默认，渲染排版）或 plain（原样保留换行与空格）。
-      // 非法值静默回退 markdown —— 与 category/type 同口径，格式选择不该让工单提交失败。
-      const descriptionFormat = asTicketMessageFormat(contentFormat) || DEFAULT_TICKET_MESSAGE_FORMAT;
 
       if (!titleStr || !descStr) {
         return res.status(400).json({ error: "标题和描述不能为空" });
@@ -447,7 +439,7 @@ export const ticketController = {
         contactEmail: ticketContactEmail,
         relatedTickets: relatedTicketsResult.relations,
         attachmentLinks: attachmentLinksResult.links,
-        messages: [{ senderId: userObj.id, senderRole: "user", content: descStr, format: descriptionFormat, isAi: false }],
+        messages: [{ senderId: userObj.id, senderRole: "user", content: descStr, isAi: false }],
         // 首条处理记录：把「谁在什么时候创建了工单」固定下来，后续变更沿用同一条时间线。
         events: [
           buildTicketEvent({
@@ -564,7 +556,7 @@ export const ticketController = {
   async replyToTicket(req: Request, res: Response) {
     try {
       const id = firstString(req.params.id);
-      const { content, internal, contentFormat } = req.body;
+      const { content, internal } = req.body;
       const userObj = (req as any).user;
       if (!id) return res.status(400).json({ error: "无效的工单ID" });
 
@@ -629,13 +621,10 @@ export const ticketController = {
       }
 
       const isOwnerSender = ticket.userId === userObj.id;
-      // 回复格式由发言人选择（属主与客服同一套规则），缺省/非法回退 markdown。
-      const replyFormat = asTicketMessageFormat(contentFormat) || DEFAULT_TICKET_MESSAGE_FORMAT;
       const newMessage: ITicketMessage = {
         senderId: userObj.id,
         senderRole: isOwnerSender ? "user" : "admin",
         content: contentStr,
-        format: replyFormat,
         isAi: false,
         ...(isInternalNote ? { visibility: "internal" as const } : {}),
         createdAt: new Date(),

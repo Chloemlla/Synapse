@@ -37,7 +37,6 @@ describe('ticketApi 创建工单契约', () => {
     const payload = {
       title: '语音合成失败',
       description: '点击合成后提示 500',
-      contentFormat: 'plain' as const,
       priority: 'high',
       category: 'bug' as const,
       type: 'incident' as const,
@@ -52,20 +51,6 @@ describe('ticketApi 创建工单契约', () => {
 
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockPost).toHaveBeenCalledWith('/api/tickets', payload);
-  });
-});
-
-describe('ticketApi 回复契约', () => {
-  it('sends the chosen content format together with the reply', async () => {
-    mockPost.mockResolvedValue({ data: { _id: 'ticket-1' } });
-
-    await ticketApi.replyTicket('ticket-1', 'line1\nline2', false, 'plain');
-
-    expect(mockPost).toHaveBeenCalledWith('/api/tickets/ticket-1/messages', {
-      content: 'line1\nline2',
-      internal: false,
-      contentFormat: 'plain',
-    });
   });
 });
 

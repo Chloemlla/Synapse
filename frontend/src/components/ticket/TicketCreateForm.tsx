@@ -10,14 +10,11 @@ import {
   MAX_TICKET_TITLE_LEN,
   TICKET_CATEGORY_META,
   TICKET_CATEGORY_ORDER,
-  TICKET_CONTENT_FORMAT_META,
-  TICKET_CONTENT_FORMAT_ORDER,
   TICKET_CREATE_TEMPLATES,
   TICKET_SERVICE_META,
   TICKET_SERVICE_ORDER,
   TICKET_TYPE_META,
   TICKET_TYPE_ORDER,
-  normalizeTicketContentFormat,
   ticketServiceLabel,
 } from './ticketConstants';
 import { useConfirm } from '../confirm/ConfirmDialogProvider';
@@ -49,8 +46,6 @@ import {
 export interface TicketCreateFormValue {
   title: string;
   description: string;
-  /** 描述正文格式：`markdown`（默认）或 `plain`（纯文本，原样保留换行与空格）。 */
-  contentFormat: string;
   priority: string;
   category: string;
   type: string;
@@ -92,7 +87,6 @@ const DRAFT_SAVE_DEBOUNCE_MS = 500;
 const DEFAULT_CREATE_FORM_VALUE: TicketCreateFormValue = {
   title: '',
   description: '',
-  contentFormat: 'markdown',
   priority: 'medium',
   category: 'other',
   type: 'inquiry',
@@ -172,7 +166,6 @@ function readStoredDraft(): Partial<TicketCreateFormValue> | null {
   if (title !== undefined) draft.title = title;
   const description = asLimitedString(parsed.description, MAX_TICKET_DESC_LEN + 200);
   if (description !== undefined) draft.description = description;
-  if (isOneOf(parsed.contentFormat, TICKET_CONTENT_FORMAT_ORDER)) draft.contentFormat = parsed.contentFormat;
   if (isOneOf(parsed.priority, ['low', 'medium', 'high'])) draft.priority = parsed.priority;
   if (isOneOf(parsed.category, TICKET_CATEGORY_ORDER)) draft.category = parsed.category;
   if (isOneOf(parsed.type, TICKET_TYPE_ORDER)) draft.type = parsed.type;
@@ -300,8 +293,6 @@ const TicketCreateForm: React.FC<TicketCreateFormProps> = ({
     });
   };
 
-  // 正文格式只影响渲染方式，不参与「有没有内容」的判定；草稿里缺省/非法一律按 markdown。
-  const descriptionFormat = normalizeTicketContentFormat(value.contentFormat);
   const attachmentCount = value.attachmentLinks.length + pendingFiles.length;
   const optionalSummary = [
     value.type === 'incident' ? `类型：${TICKET_TYPE_META.incident.label}` : null,
@@ -432,41 +423,15 @@ const TicketCreateForm: React.FC<TicketCreateFormProps> = ({
         </div>
 
         <div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-2 flex items-center justify-between">
             <label className={cn(studioEyebrowClassName, 'block')}>详细描述</label>
-            <span className="flex items-center gap-2">
-              {/* 正文格式：用户自己选 Markdown 还是纯文本，渲染按所选方式走（不猜内容）。 */}
-              <span
-                role="group"
-                aria-label="描述格式"
-                className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white p-0.5"
-              >
-                {TICKET_CONTENT_FORMAT_ORDER.map((format) => (
-                  <button
-                    key={format}
-                    type="button"
-                    aria-pressed={descriptionFormat === format}
-                    title={TICKET_CONTENT_FORMAT_META[format].hint}
-                    onClick={() => onChange({ contentFormat: format })}
-                    className={cn(
-                      'rounded-full px-2 py-0.5 text-[10px] font-semibold transition',
-                      descriptionFormat === format
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-500 hover:text-slate-900',
-                    )}
-                  >
-                    {TICKET_CONTENT_FORMAT_META[format].label}
-                  </button>
-                ))}
-              </span>
-              <span
-                className={cn(
-                  'text-[10px]',
-                  value.description.length > MAX_TICKET_DESC_LEN ? 'text-rose-500 font-semibold' : 'text-slate-400',
-                )}
-              >
-                {value.description.length}/{MAX_TICKET_DESC_LEN}
-              </span>
+            <span
+              className={cn(
+                'text-[10px]',
+                value.description.length > MAX_TICKET_DESC_LEN ? 'text-rose-500 font-semibold' : 'text-slate-400',
+              )}
+            >
+              {value.description.length}/{MAX_TICKET_DESC_LEN}
             </span>
           </div>
           <textarea
@@ -478,9 +443,6 @@ const TicketCreateForm: React.FC<TicketCreateFormProps> = ({
             value={value.description}
             onChange={(event) => onChange({ description: event.target.value })}
           />
-          <span className="mt-1 block text-[10px] text-slate-400">
-            {TICKET_CONTENT_FORMAT_META[descriptionFormat].hint}
-          </span>
         </div>
 
         <div>

@@ -79,21 +79,10 @@ const ticketAttachmentLinkSchema = new mongoose.Schema(
   { _id: false },
 );
 
-/**
- * 消息正文格式：`markdown`（按 Markdown 渲染）或 `plain`（纯文本，原样保留换行与空格）。
- *
- * 由发言人在创建工单 / 回复时显式选择。老数据与 AI 回复都是 markdown ——
- * 这个默认值就是历史行为（此前所有消息都按 Markdown 渲染），视图层对缺字段的老文档补齐，
- * 前端据此决定走 MarkdownRenderer 还是 `white-space: pre-wrap` 的原样展示。
- */
-export const TICKET_MESSAGE_FORMATS = ["markdown", "plain"] as const;
-export type TicketMessageFormat = (typeof TICKET_MESSAGE_FORMATS)[number];
-
 const ticketMessageSchema = new mongoose.Schema({
   senderId: { type: String, required: true },
   senderRole: { type: String, enum: ["user", "admin", "ai"], required: true },
   content: { type: String, required: true },
-  format: { type: String, enum: [...TICKET_MESSAGE_FORMATS], default: "markdown" },
   isAi: { type: Boolean, default: false },
   // 内部备注：仅 superadmin 可见，永不下发给工单属主（列表/详情/WS 三处都要过滤）。
   visibility: { type: String, enum: ["public", "internal"], default: "public" },
@@ -242,8 +231,6 @@ export interface ITicketMessage {
   senderId: string;
   senderRole: "user" | "admin" | "ai";
   content: string;
-  /** 正文格式；老消息缺省按 markdown 处理（见 TICKET_MESSAGE_FORMATS）。 */
-  format?: TicketMessageFormat;
   isAi?: boolean;
   visibility?: "public" | "internal";
   aiErrorDetails?: ITicketAiErrorDetails;

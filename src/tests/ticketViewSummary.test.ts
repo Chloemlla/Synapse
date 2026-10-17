@@ -50,26 +50,6 @@ describe("toTicketView 内部备注过滤", () => {
     expect(adminView.internalNoteCount).toBe(1);
   });
 
-  it("normalises the message format so the client never has to guess", () => {
-    const ticket = buildTicket({
-      messages: [
-        { senderId: "u1", senderRole: "user", content: "老消息", createdAt: new Date("2026-01-01T00:05:00Z") },
-        {
-          senderId: "u1",
-          senderRole: "user",
-          content: "line1
-line2",
-          format: "plain",
-          createdAt: new Date("2026-01-01T00:06:00Z"),
-        },
-        { senderId: "a1", senderRole: "admin", content: "回复", format: "weird", createdAt: new Date("2026-01-01T00:07:00Z") },
-      ],
-    });
-    const messages = toTicketView(ticket, false).messages as Array<Record<string, unknown>>;
-    // 缺字段 / 非法值一律按 markdown（历史行为），显式 plain 原样保留。
-    expect(messages.map((message) => message.format)).toEqual(["markdown", "plain", "markdown"]);
-  });
-
   it("strips aiErrorDetails unless explicitly allowed", () => {
     const ticket = buildTicket({
       messages: [

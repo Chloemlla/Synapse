@@ -4,37 +4,11 @@
  * 抽出来是为了让「列表卡片 / 筛选栏 / 统计条 / 详情」共用同一份文案，
  * 避免同一个状态在四处各写一遍中文（历史上就是这么漂移的）。
  */
-import type { ITicketEvent, TicketContentFormat, TicketEventType } from '../../api/ticketApi';
-
-export type { TicketContentFormat };
+import type { ITicketEvent, TicketEventType } from '../../api/ticketApi';
 
 export const MAX_TICKET_TITLE_LEN = 120;
 export const MAX_TICKET_DESC_LEN = 4000;
 export const MAX_TICKET_REPLY_LEN = 4000;
-
-/**
- * 正文格式的展示口径（创建表单与回复输入区共用）。
- *
- * 必须与后端 `TICKET_MESSAGE_FORMATS` 一致：后端对非法值**静默回退 markdown**，
- * 两边漂移不会报错，只会表现为「选了纯文本却按 Markdown 渲染」。
- */
-export const TICKET_CONTENT_FORMAT_ORDER = ['markdown', 'plain'] as const;
-
-export const TICKET_CONTENT_FORMAT_META: Record<TicketContentFormat, { label: string; hint: string }> = {
-  markdown: {
-    label: 'Markdown',
-    hint: '支持 Markdown 排版：标题、列表、代码块、粗体与链接都会渲染成对应样式。',
-  },
-  plain: {
-    label: '纯文本',
-    hint: '纯文本：换行与空格按原样显示，不解析任何格式（适合贴日志、堆栈或逐行步骤）。',
-  },
-};
-
-/** 任意来源的格式值归一：认不出的（含老数据缺字段）一律按 markdown。 */
-export function normalizeTicketContentFormat(value: unknown): TicketContentFormat {
-  return value === 'plain' ? 'plain' : 'markdown';
-}
 
 /** 管理端「逾期未回复」阈值（小时），与后端 TICKET_SLA_HOURS 对齐。 */
 export const TICKET_SLA_HOURS = 24;
