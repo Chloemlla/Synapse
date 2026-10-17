@@ -36,6 +36,15 @@ interface BackupCodesResponse {
 
 const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) => {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  /**
+   * 服务器上**仍可使用**的恢复码数量。
+   *
+   * 恢复码以哈希入库，明文只在生成那一刻返回一次（G2-14），所以重新打开弹窗时
+   * `backupCodes` 必然是空数组 —— 但「空数组」不等于「没有恢复码」。
+   * 这两个状态必须分开渲染，否则生成过一次的用户会看到一个空面板，
+   * 以为恢复码没生成成功。
+   */
+  const [remainingCount, setRemainingCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showCodes, setShowCodes] = useState(false);
@@ -54,8 +63,16 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
       const response = await api.get<BackupCodesResponse>('/api/totp/backup-codes', {
         headers: verificationToken ? { 'x-verification-token': verificationToken } : undefined,
       });
-      setBackupCodes(response.data.backupCodes);
+      setBackupCodes(response.data.backupCodes ?? []);
+      setRemainingCount(Number(response.data.remainingCount) || 0);
     } catch (error: any) {
+      // 404 是「一个都不剩」，不是故障：按空状态渲染（并保留「重新生成」入口），
+      // 不要弹错误通知——那会让用户以为恢复码功能坏了。
+      if (error.response?.status === 404) {
+        setBackupCodes([]);
+        setRemainingCount(0);
+        return;
+      }
       const message = error.response?.data?.error || '获取备用恢复码失败';
       console.error('获取备用恢复码失败:', error);
       setError(message);
@@ -76,7 +93,8 @@ const BackupCodesModal: React.FC<BackupCodesModalProps> = ({ isOpen, onClose }) 
       setRegenerating(true);
       setError('');
       const response = await api.post<BackupCodesResponse>('/api/totp/regenerate-backup-codes', { verificationToken });
-      setBackupCodes(response.data.backupCodes);
+      setBackupCodes(response.data.backupCodes ?? []);
+      setRemainingCount(Number(response.data.remainingCount) || response.data.backupCodes?.length || 0);
       setShowRegenerateConfirm(false);
       setShowCodes(true);
       setNotification({ message: '恢复码已重新生成', type: 'success' });
@@ -225,8 +243,26 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                   </div>
 
                   <div className="min-h-[236px] rounded-2xl border border-slate-200 bg-white/90 p-4">
-                    {backupCodes.length === 0 ? (
+                    {backupCodes.length === 0 && remainingCount === 0 ? (
                       <StudioEmptyState message="当前没有可用的恢复码。点下方「重新生成」创建一组新的。" />
+                    ) : backupCodes.length === 0 ? (
+                      /*
+                        恢复正常：服务端确认还有 N 个可用恢复码，但明文已不可取回
+                        （库存哈希，只在生成那一刻展示一次）。这里必须说清「它们存在、
+                        只是看不到明文」，并引导重新生成 —— 而不是显示空状态。
+                      */
+                      <div className="flex min-h-[204px] flex-col items-center justify-center py-6 text-center">
+                        <div className="mx-auto mb-3 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <FaShieldAlt />
+                        </div>
+                        <p className="text-sm text-slate-500">
+                          当前有 <span className="font-semibold text-slate-900">{remainingCount}</span> 个可用恢复码。
+                        </p>
+                        <p className="mt-2 max-w-sm text-xs leading-5 text-slate-400">
+                          出于安全考虑，恢复码只在生成时显示一次，之后无法再次查看。
+                          如需保存一份新的明文，请点「重新生成」（旧恢复码会立即失效）。
+                        </p>
+                      </div>
                     ) : !showCodes ? (
                       <div className="flex min-h-[204px] flex-col items-center justify-center py-6 text-center">
                         <div className="mx-auto mb-3 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
@@ -257,7 +293,9 @@ ${backupCodes.map((code, index) => `${index + 1}. ${code}`).join('\n')}
                     <button
                       type="button"
                       onClick={() => setShowCodes((shown) => !shown)}
-                      className={studioPrimaryButtonClassName}
+                      disabled={backupCodes.length === 0}
+                      title={backupCodes.length === 0 ? '恢复码明文只在生成时显示一次' : undefined}
+                      className={`${studioPrimaryButtonClassName} disabled:cursor-not-allowed disabled:bg-slate-400`}
                     >
                       {showCodes ? <FaEyeSlash /> : <FaEye />}
                       {showCodes ? '隐藏恢复码' : '查看恢复码'}
