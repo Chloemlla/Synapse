@@ -285,13 +285,19 @@ export const InfoMetricCard: React.FC<{
   return (
     <div className={cn(studioTileClassName, 'p-4')}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-          <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
-          {detail && <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>}
+        {/*
+          左侧必须 min-w-0：flex 子项默认 min-width: auto，文字块撑不出宽度时不会收缩，
+          而右侧图标是 shrink-0 —— 结果是图标被 justify-between 推到卡片外面
+          （窄屏两列网格里 "Passkey / 已配置" 这种较长的组合最先暴露）。
+          break-words 让超长标签/数值换行，而不是把邻居挤出边界。
+        */}
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+          <div className="mt-2 break-words text-2xl font-semibold text-slate-950">{value}</div>
+          {detail && <p className="mt-2 break-words text-xs leading-5 text-slate-500">{detail}</p>}
         </div>
         <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1', classes.icon)}>
-          <Icon className="h-4 w-4" />
+          <Icon className="h-4 w-4 shrink-0" aria-hidden />
         </div>
       </div>
     </div>
