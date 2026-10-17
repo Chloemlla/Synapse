@@ -396,6 +396,8 @@ const TicketSystem: React.FC = () => {
       hasUnread: !isOpenHere && fromOtherSide,
       awaitingReply: lastSenderRole === 'user',
       attachmentCount: ticket.attachmentCount ?? (ticket.attachments?.length ?? 0),
+      // 满意度评分同步到列表徽标：用户刚评价完不必刷新列表才看到自己的星级。
+      csatRating: typeof ticket.csatRating === 'number' ? ticket.csatRating : null,
       ageHours,
     };
   }, [isAdmin]);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FiChevronDown, FiClock } from 'react-icons/fi';
 import type { ITicketEvent } from '../../api/ticketApi';
 import { cn } from '../../utils/cn';
@@ -47,11 +47,15 @@ function actorLabel(event: ITicketEvent): string {
 }
 
 const TicketEventTimeline: React.FC<TicketEventTimelineProps> = ({ events, defaultOpen = false }) => {
+  // 受控 open：<details open={false}> 在父组件因 WS 更新重渲染时会把用户展开的状态弹回去，
+  // 所以展开状态自己持有，默认值只取一次 initial state。
+  const [open, setOpen] = useState(defaultOpen);
   if (!events || events.length === 0) return null;
 
   return (
     <details
-      open={defaultOpen}
+      open={open}
+      onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
       className="group rounded-2xl border border-slate-200 bg-white/80 px-4 py-3"
     >
       <summary className="cursor-pointer list-none rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2">
