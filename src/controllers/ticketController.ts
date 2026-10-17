@@ -30,6 +30,7 @@ import {
   normalizeContactEmail,
   normalizeRelatedServiceRef,
   normalizeRelatedTicketIds,
+  resolveTicketMessageFormat,
 } from "../utils/ticketFields";
 import {
   VALID_TICKET_PRIORITIES,
@@ -344,7 +345,7 @@ export const ticketController = {
   // 用户创建工单
   async createTicket(req: Request, res: Response) {
     try {
-      const { title, description, priority, category, type, relatedService, relatedServiceRef, contactEmail, relatedTicketIds, attachmentLinks } = req.body;
+      const { title, description, contentFormat, priority, category, type, relatedService, relatedServiceRef, contactEmail, relatedTicketIds, attachmentLinks } = req.body;
       const userObj = (req as any).user;
 
       // G4-08: 长度上限，防止单条工单把上下文顶满
@@ -439,7 +440,7 @@ export const ticketController = {
         contactEmail: ticketContactEmail,
         relatedTickets: relatedTicketsResult.relations,
         attachmentLinks: attachmentLinksResult.links,
-        messages: [{ senderId: userObj.id, senderRole: "user", content: descStr, isAi: false }],
+        messages: [{ senderId: userObj.id, senderRole: "user", content: descStr, format: resolveTicketMessageFormat(contentFormat), isAi: false }],
         // 首条处理记录：把「谁在什么时候创建了工单」固定下来，后续变更沿用同一条时间线。
         events: [
           buildTicketEvent({
@@ -556,7 +557,7 @@ export const ticketController = {
   async replyToTicket(req: Request, res: Response) {
     try {
       const id = firstString(req.params.id);
-      const { content, internal } = req.body;
+      const { content, internal, contentFormat } = req.body;
       const userObj = (req as any).user;
       if (!id) return res.status(400).json({ error: "无效的工单ID" });
 
@@ -625,6 +626,8 @@ export const ticketController = {
         senderId: userObj.id,
         senderRole: isOwnerSender ? "user" : "admin",
         content: contentStr,
+        // 回复格式由发言人选择（属主与客服同一套规则），缺省/非法回退 markdown。
+        format: resolveTicketMessageFormat(contentFormat),
         isAi: false,
         ...(isInternalNote ? { visibility: "internal" as const } : {}),
         createdAt: new Date(),

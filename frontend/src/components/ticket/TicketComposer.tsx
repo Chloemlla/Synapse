@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiEye, FiEyeOff, FiLock, FiSend, FiZap } from 'react-icons/fi';
+import { FiAlignLeft, FiCode, FiEye, FiEyeOff, FiLock, FiSend, FiZap } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { studioEyebrowClassName, studioPrimaryButtonClassName } from '../studioTheme';
-import { MAX_TICKET_REPLY_LEN, QUICK_REPLIES } from './ticketConstants';
+import {
+  MAX_TICKET_REPLY_LEN,
+  QUICK_REPLIES,
+  TICKET_CONTENT_FORMAT_META,
+  normalizeTicketContentFormat,
+  type TicketContentFormat,
+} from './ticketConstants';
 
 interface TicketComposerProps {
   /** 切换工单时用于区分草稿；空字符串表示不持久化草稿。 */
@@ -13,36 +19,48 @@ interface TicketComposerProps {
   /** 是否显示「内部备注」开关（仅 superadmin）。 */
   canWriteInternal: boolean;
   placeholder?: string;
-  /** 返回 true 表示发送成功（成功后才清空草稿）。 */
-  onSend: (content: string, internal: boolean) => Promise<boolean>;
+  /**
+   * 返回 true 表示发送成功（成功后才清空草稿）。
+   * `format` 是发言人自己选的正文格式：markdown（渲染排版）或 plain（原样保留换行与空格）。
+   */
+  onSend: (content: string, internal: boolean, format: TicketContentFormat) => Promise<boolean>;
 }
 
 const DRAFT_PREFIX = 'synapse:ticket-draft:';
 const AUTO_GROW_MAX_PX = 220;
 
-function readDraft(key: string): { content: string; internal: boolean } {
-  if (!key || typeof window === 'undefined') return { content: '', internal: false };
+interface ComposerDraft {
+  content: string;
+  internal: boolean;
+  format: TicketContentFormat;
+}
+
+function readDraft(key: string): ComposerDraft {
+  const empty: ComposerDraft = { content: '', internal: false, format: 'markdown' };
+  if (!key || typeof window === 'undefined') return empty;
   try {
     const raw = window.localStorage.getItem(`${DRAFT_PREFIX}${key}`);
-    if (!raw) return { content: '', internal: false };
-    const parsed = JSON.parse(raw) as { content?: unknown; internal?: unknown };
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as { content?: unknown; internal?: unknown; format?: unknown };
     return {
       content: typeof parsed.content === 'string' ? parsed.content : '',
       internal: parsed.internal === true,
+      // 老草稿没有 format：按 markdown 恢复（与此前的默认渲染方式一致）。
+      format: normalizeTicketContentFormat(parsed.format),
     };
   } catch {
-    return { content: '', internal: false };
+    return empty;
   }
 }
 
-function writeDraft(key: string, content: string, internal: boolean): void {
+function writeDraft(key: string, content: string, internal: boolean, format: TicketContentFormat): void {
   if (!key || typeof window === 'undefined') return;
   try {
     if (!content.trim()) {
       window.localStorage.removeItem(`${DRAFT_PREFIX}${key}`);
       return;
     }
-    window.localStorage.setItem(`${DRAFT_PREFIX}${key}`, JSON.stringify({ content, internal }));
+    window.localStorage.setItem(`${DRAFT_PREFIX}${key}`, JSON.stringify({ content, internal, format }));
   } catch {
     /* 隐私模式下 localStorage 不可用：草稿是尽力而为，不应影响发送 */
   }
@@ -53,7 +71,8 @@ function writeDraft(key: string, content: string, internal: boolean): void {
  *
  * 关键改动（原实现是单行 `<input>`）：
  *  - 自适应高度 textarea：新行不再提交，`Ctrl/Cmd + Enter` 才发送；
- *  - 按工单保存草稿（localStorage）：切走再回来不丢长回复；
+ *  - 按工单保存草稿（localStorage）：切走再回来不丢长回复（正文格式也随草稿保存）；
+ *  - 正文格式可选 Markdown / 纯文本：纯文本按原样保留换行与空格，不解析任何 Markdown；
  *  - 客服快捷回复一键插入；superadmin 可切「内部备注」；
  *  - 字数计数与超长提示。
  */
@@ -69,16 +88,17 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
   const [initialDraft] = useState(() => readDraft(draftKey));
   const [content, setContent] = useState(initialDraft.content);
   const [internal, setInternal] = useState(initialDraft.internal && canWriteInternal);
+  const [format, setFormat] = useState<TicketContentFormat>(initialDraft.format);
   const [sending, setSending] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState(Boolean(initialDraft.content));
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const draftRef = useRef({ content, internal });
-  draftRef.current = { content, internal };
+  const draftRef = useRef({ content, internal, format });
+  draftRef.current = { content, internal, format };
   useEffect(() => () => {
     const draft = draftRef.current;
-    writeDraft(draftKey, draft.content, draft.internal);
+    writeDraft(draftKey, draft.content, draft.internal, draft.format);
   }, [draftKey]);
   useEffect(() => { if (!canWriteInternal) setInternal(false); }, [canWriteInternal]);
 
@@ -91,12 +111,12 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
 
   useEffect(() => { resize(); }, [resize]);
 
-  // 草稿落盘（轻量防抖）
+  // 草稿落盘（轻量防抖）：正文、内部备注与格式选择一起存，切走再回来不丢。
   useEffect(() => {
     if (!draftKey) return undefined;
-    const timer = window.setTimeout(() => writeDraft(draftKey, content, internal), 400);
+    const timer = window.setTimeout(() => writeDraft(draftKey, content, internal, format), 400);
     return () => window.clearTimeout(timer);
-  }, [content, internal, draftKey]);
+  }, [content, internal, format, draftKey]);
 
   const submit = useCallback(async () => {
     const trimmed = content.trim();
@@ -104,18 +124,18 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
     if (trimmed.length > MAX_TICKET_REPLY_LEN) return;
     setSending(true);
     try {
-      const ok = await onSend(trimmed, internal && canWriteInternal);
+      const ok = await onSend(trimmed, internal && canWriteInternal, format);
       if (ok) {
-        draftRef.current = { content: '', internal: false };
+        draftRef.current = { content: '', internal: false, format };
         setContent('');
         setRestoredDraft(false);
-        writeDraft(draftKey, '', false);
+        writeDraft(draftKey, '', false, format);
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       }
     } finally {
       setSending(false);
     }
-  }, [canWriteInternal, content, disabled, draftKey, internal, onSend, sending]);
+  }, [canWriteInternal, content, disabled, draftKey, format, internal, onSend, sending]);
 
   const insertQuickReply = (text: string) => {
     setContent((current) => (current.trim() ? `${current.replace(/\s+$/, '')}\n\n${text}` : text));
@@ -138,10 +158,10 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
           <button
             type="button"
             onClick={() => {
-              draftRef.current = { content: '', internal: false };
+              draftRef.current = { content: '', internal: false, format };
               setContent('');
               setRestoredDraft(false);
-              writeDraft(draftKey, '', false);
+              writeDraft(draftKey, '', false, format);
             }}
             className="font-semibold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
           >
@@ -202,7 +222,7 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
               className="block w-full resize-none bg-transparent px-3 py-2 text-xs leading-6 outline-none placeholder:text-slate-400 sm:text-sm hover-scrollbar"
               style={{ maxHeight: AUTO_GROW_MAX_PX }}
             />
-            <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-1">
+            <div className="flex flex-wrap items-center gap-1.5 px-1.5 pb-0.5 pt-1">
               {isAdmin && (
                 <button
                   type="button"
@@ -213,6 +233,22 @@ const TicketComposerEditor: React.FC<TicketComposerProps> = ({
                   <FiZap size={11} /> 快捷回复
                 </button>
               )}
+              {/* 正文格式：发言人自己选，渲染按所选方式走（纯文本不做任何 Markdown 解析）。 */}
+              <button
+                type="button"
+                onClick={() => setFormat((current) => (current === 'plain' ? 'markdown' : 'plain'))}
+                aria-pressed={format === 'plain'}
+                title={TICKET_CONTENT_FORMAT_META[format].hint}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+                  format === 'plain'
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900',
+                )}
+              >
+                {format === 'plain' ? <FiAlignLeft size={11} /> : <FiCode size={11} />}
+                {TICKET_CONTENT_FORMAT_META[format].label}
+              </button>
               {canWriteInternal && (
                 <button
                   type="button"

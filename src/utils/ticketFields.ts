@@ -1,6 +1,8 @@
 import {
+  TICKET_MESSAGE_FORMATS,
   TICKET_RELATED_SERVICES,
   TICKET_TYPES,
+  type TicketMessageFormat,
   type TicketRelatedService,
   type TicketType,
 } from "../models/ticketModel";
@@ -33,6 +35,26 @@ export function asTicketType(value: unknown): TicketType | null {
   return typeof value === "string" && (TICKET_TYPES as readonly string[]).includes(value)
     ? (value as TicketType)
     : null;
+}
+
+/** 消息正文格式的缺省值：与历史行为一致（所有消息都按 Markdown 渲染）。 */
+export const DEFAULT_TICKET_MESSAGE_FORMAT: TicketMessageFormat = "markdown";
+
+/**
+ * 消息正文格式解析：非法/缺省一律回退 markdown 而不是 400。
+ *
+ * 与 category/type 同口径 —— 多一个格式选择不该成为提交失败的来源；
+ * 真选错了也只是渲染方式不同，正文本身一个字节都不会丢。
+ */
+export function asTicketMessageFormat(value: unknown): TicketMessageFormat | null {
+  return typeof value === "string" && (TICKET_MESSAGE_FORMATS as readonly string[]).includes(value)
+    ? (value as TicketMessageFormat)
+    : null;
+}
+
+/** 把请求里不可信的格式值折成最终写入值：认不出的（含缺省）一律 markdown。 */
+export function resolveTicketMessageFormat(value: unknown): TicketMessageFormat {
+  return asTicketMessageFormat(value) || DEFAULT_TICKET_MESSAGE_FORMAT;
 }
 
 export function asTicketRelatedService(value: unknown): TicketRelatedService | null {

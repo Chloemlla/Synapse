@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@jest/globals";
 import {
+  DEFAULT_TICKET_MESSAGE_FORMAT,
   MAX_TICKET_CONTACT_EMAIL_LEN,
   MAX_TICKET_RELATED_TICKETS,
   MAX_TICKET_SERVICE_REF_LEN,
+  asTicketMessageFormat,
   asTicketRelatedService,
   asTicketType,
   normalizeContactEmail,
@@ -23,6 +25,18 @@ describe("asTicketType / asTicketRelatedService", () => {
     expect(asTicketRelatedService("tts")).toBe("tts");
     expect(asTicketRelatedService("vps")).toBeNull();
     expect(asTicketRelatedService(undefined)).toBeNull();
+  });
+});
+
+describe("asTicketMessageFormat", () => {
+  it("accepts the two supported formats and falls back to markdown", () => {
+    expect(asTicketMessageFormat("markdown")).toBe("markdown");
+    expect(asTicketMessageFormat("plain")).toBe("plain");
+    expect(asTicketMessageFormat("PLAIN")).toBeNull();
+    expect(asTicketMessageFormat("html")).toBeNull();
+    expect(asTicketMessageFormat(undefined)).toBeNull();
+    // 缺省值必须与历史渲染行为一致（老消息全部按 Markdown 渲染）。
+    expect(DEFAULT_TICKET_MESSAGE_FORMAT).toBe("markdown");
   });
 });
 
