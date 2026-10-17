@@ -201,6 +201,47 @@ export function buildFingerprintComponents(): FingerprintComponents {
   };
 }
 
+/**
+ * RC-57：早期自动化痕迹的**原始值**（不是哈希）。
+ *
+ * 为什么与 `components` 分开：分量摘要是一串哈希，服务端只能比对「变了没有」；
+ * 要判断「这是不是无头/自动化环境」必须拿到 `navigator.webdriver` 这类布尔值。
+ * 两者走同一个上报请求（不新增采集端点），服务端只把它写成加权信号
+ *（`AUTOMATION_HINT`，固定 8 分，单独不足以升档，更不参与封禁）。
+ *
+ * `uaCh` 表示浏览器是否暴露 `navigator.userAgentData`（UA-CH）；Chrome 89+ 默认有，
+ * 被无头/隔离环境裁剪时可作为低误报的辅助判据。
+ */
+export interface AutomationSignals {
+  webdriver: boolean;
+  uaCh: boolean;
+  plugins: number;
+  languages: number;
+  hardwareConcurrency: number;
+}
+
+export function getAutomationSignals(): AutomationSignals {
+  try {
+    const n = navigator as any;
+    return {
+      webdriver: n.webdriver === true,
+      uaCh: Boolean(n.userAgentData),
+      plugins: (() => {
+        try {
+          return Array.from(navigator.plugins || []).length;
+        } catch {
+          return 0;
+        }
+      })(),
+      languages: (navigator.languages || []).length,
+      hardwareConcurrency: Number(n.hardwareConcurrency) || 0,
+    };
+  } catch {
+    // 采集失败按「无痕迹」处理：这条信号本来就只做加权，不能因为它失败影响上报。
+    return { webdriver: false, uaCh: false, plugins: 0, languages: 0, hardwareConcurrency: 0 };
+  }
+}
+
 async function getWithFingerprintJS(timeoutMs = 1500): Promise<string | null> {
   try {
     const ctrl = new AbortController();
@@ -441,6 +482,9 @@ export const reportFingerprintOnce = async (forceReport: boolean = false): Promi
     fingerprint,
     // RC-16：分量摘要。旧服务端会忽略该字段（向后兼容），新服务端用它做漂移 / 跨账户比对。
     components: buildFingerprintComponents(),
+    // RC-57：早期自动化痕迹（navigator.webdriver 等）。与分量摘要同一个上报请求，
+    // 服务端只写加权信号，不单独处罚。
+    automation: getAutomationSignals(),
     deviceSignals
   };
 

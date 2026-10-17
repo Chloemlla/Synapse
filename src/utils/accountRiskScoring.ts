@@ -4,7 +4,7 @@ import type { AccountRiskRuntimeConfig } from "../config/runtimeConfigDefaults";
  * 账户风险聚合的**纯函数层**（RC-06 / §4.2）。
  *
  * 为什么单独一层：仓库里已有同类范式（`mobileTokenRiskService.collectRotationRiskSignals`、
- * `isGeoJump`）—— 把「事实 → 档位」的折算写成不碰 Mongo、不发网络请求的纯函数，
+ * `geoRisk.isGeoJump`）—— 把「事实 → 档位」的折算写成不碰 Mongo、不发网络请求的纯函数，
  * 阈值才可能被表驱动单测覆盖（各档边界、缺一条件不触发）。I/O 全部留在
  * `services/accountRiskService.ts`，本文件只做算术。
  *
@@ -49,8 +49,17 @@ export interface AccountRiskFacts {
   deviceMaxRiskScore?: number | null;
   /** 被判定为失陷/被 root 的设备数。 */
   compromisedDeviceCount?: number;
-  /** 窗口内未处理的账户级滥用事件数（ACCOUNT_ABUSE_*）。 */
+  /** 窗口内未处理的账户级滥用事件数（ACCOUNT_ABUSE_*），**只含已认证路径产生的**。 */
   recentAbuseEventCount?: number;
+  /**
+   * RC-20：未经身份认证的路径（登录前人机验证失败）写下的账户级信号数。
+   *
+   * 它们按**半权重、总额封顶 10 分**计入（`ANONYMOUS_ABUSE_MAX_SCORE`）：
+   * 匿名调用方可以用任意 identifier 触发这类信号，全额计分等于给攻击者一个
+   * “把别人推进 watch 档”的旋钮；半权重 + 封顶后单靠它连 `watch` 阈值都到不了，
+   * 更不存在升级为封禁的路径（自动升档上限本身也不含 `banned`）。
+   */
+  recentAnonymousAbuseEventCount?: number;
   /** 是否命中跨地域跳变（RC-15 的信号，由调用方比对会话台账后传入）。 */
   geoJump?: boolean;
   /**
@@ -58,6 +67,13 @@ export interface AccountRiskFacts {
    * **只作为加权信号**：客户端可伪造，单独不足以升档（不能让它成为“被封的开关”）。
    */
   automationHint?: boolean;
+  /**
+   * RC-26 / RC-56：客户端上报的 WebRTC 出口与服务端出口不一致。
+   *
+   * 探测报告是**客户端可伪造**的，因此这里只给固定权重、不产生独立处罚分支；
+   * 是否读取这类报告由 `accountRisk.ipRecheckEnabled`（观察期默认关）控制。
+   */
+  probeExitMismatch?: boolean;
   /**
    * RC-17：拼车/共享账号嫌疑。由 `detectAccountSharingSuspected` 在服务层聚合得出
    *（三条件联立，或同一设备分量跨账户出现），这里只负责折算成旗标与权重。
@@ -74,7 +90,13 @@ export type AccountRiskFlag =
   | "ACCOUNT_ABUSE_EVENTS"
   | "GEO_JUMP"
   | "AUTOMATION_HINT"
+  | "PROBE_EXIT_MISMATCH"
   | "ACCOUNT_SHARING_SUSPECTED";
+
+/** RC-20：匿名来源滥用信号的总额封顶（见 `recentAnonymousAbuseEventCount` 注释）。 */
+export const ANONYMOUS_ABUSE_MAX_SCORE = 10;
+/** RC-26 / RC-56：WebRTC 出口不一致的固定权重（只作加权，单独不升档）。 */
+export const PROBE_EXIT_MISMATCH_SCORE = 10;
 
 export interface AccountRiskAssessment {
   /** 0-100，越高越危险。 */
@@ -106,8 +128,9 @@ function capTier(tier: AccountRiskTier, cap: AccountRiskRuntimeConfig["autoEscal
  * - 最高 IP 风险分 × 0.45：单点信号，权重最高但单独不足以升到 `restricted`；
  * - 高危登录占比 × 25：区分「偶然走了一次机房」与「长期从高危出口登录」；
  * - 设备最高风险分 × 0.2：移动端设备证明已有的结论；
- * - 滥用事件：每件 +10，最多 +30（高频触发违规拦截是账户级特征，RC-20）；
+ * - 滥用事件：已认证事件每件 +10（最多 +30）；匿名来源每件 +5 且单独封顶 +10（RC-20）；
  * - 失陷设备 +15；跨地域跳变 +10；
+ * - WebRTC 出口不一致 +10（客户端上报，只作加权，RC-26 / RC-56）；
  * - 拼车/共享账号嫌疑 `sharingSuspected` +`sharingScoreWeight`（默认 20，RC-17。
  *   与 `AUTOMATION_HINT` 并列，两者相加仍到不了 `restricted`，需要与 IP/设备信号叠加）。
  * 阈值与权重都是运行时配置的一部分，改阈值不改公式。
@@ -157,9 +180,14 @@ export function evaluateAccountRiskScore(
   }
 
   const abuseEvents = Math.max(0, facts.recentAbuseEventCount || 0);
-  if (abuseEvents > 0) {
+  const anonymousAbuseEvents = Math.max(0, facts.recentAnonymousAbuseEventCount || 0);
+  if (abuseEvents > 0 || anonymousAbuseEvents > 0) {
     flags.push("ACCOUNT_ABUSE_EVENTS");
-    reasons.push(`窗口内 ${abuseEvents} 次账户级违规拦截`);
+    const parts: string[] = [];
+    if (abuseEvents > 0) parts.push(`${abuseEvents} 次已认证账户级违规拦截`);
+    // 匿名来源单独说明：管理端与申诉都要能区分「本人触发」与「别人拿他的 identifier 试密码」。
+    if (anonymousAbuseEvents > 0) parts.push(`${anonymousAbuseEvents} 次登录前人机验证失败（未认证来源）`);
+    reasons.push(`窗口内${parts.join("，")}`);
   }
 
   if (facts.geoJump) {
@@ -171,6 +199,12 @@ export function evaluateAccountRiskScore(
   if (facts.automationHint) {
     flags.push("AUTOMATION_HINT");
     reasons.push("检测到自动化/调试环境痕迹（仅作加权信号）");
+  }
+
+  // RC-26 / RC-56：WebRTC 出口不一致是客户端上报的信号，只加权重与旗标，不产生处罚分支。
+  if (facts.probeExitMismatch) {
+    flags.push("PROBE_EXIT_MISMATCH");
+    reasons.push("WebRTC 探测到的公网出口与请求出口不一致（客户端上报，仅作加权信号）");
   }
 
   // RC-17：拼车/共享账号嫌疑。三条件联立（多设备 + 多地区 + 高并发会话）或同一设备分量
@@ -185,10 +219,12 @@ export function evaluateAccountRiskScore(
     ipMax * 0.45 +
       highRiskRatio * 25 +
       deviceMax * 0.2 +
-      Math.min(30, abuseEvents * 10) +
+      // RC-20：已认证事件每件 +10（总额封顶 30）；匿名来源每件 +5 且单独封顶 10。
+      Math.min(30, abuseEvents * 10 + Math.min(ANONYMOUS_ABUSE_MAX_SCORE, anonymousAbuseEvents * 5)) +
       (compromised > 0 ? 15 : 0) +
       (facts.geoJump ? 10 : 0) +
       (facts.automationHint ? 8 : 0) +
+      (facts.probeExitMismatch ? PROBE_EXIT_MISMATCH_SCORE : 0) +
       (facts.sharingSuspected ? Math.max(0, config.sharingScoreWeight) : 0),
   );
 
@@ -263,4 +299,163 @@ export function computeStepUpUntil(config: AccountRiskRuntimeConfig, now: number
 /** 哪些档位需要逐步验证（`banned` 不给验证机会，直接 403 ACCOUNT_SUSPENDED）。 */
 export function tierRequiresStepUp(tier: AccountRiskTier | undefined | null): boolean {
   return tier === "restricted" || tier === "danger";
+}
+
+/**
+ * RC-57：从客户端上报的**早期自动化痕迹**里判定是否要置 `AUTOMATION_HINT`。
+ *
+ * 只认两条低误报信号：
+ * 1. `navigator.webdriver === true`（WebDriver 规范下 Selenium/Puppeteer 默认会置位）；
+ * 2. Chrome 系 UA 却没有 `navigator.userAgentData`（UA-CH 自 Chrome 89 起默认可用，
+ *    缺失通常意味着被无头/隔离环境裁剪）。
+ *
+ * 刻意不把 `plugins.length === 0`、`hardwareConcurrency === 0` 之类当判据：现代浏览器与
+ * 移动 WebView 上它们本来就可能为空，误报成本远高于收益。
+ *
+ * 返回值可写进 `security_events` 供调查；**判据本身不是处罚**（客户端可伪造）。
+ */
+export interface AutomationTraceFacts {
+  /** 客户端自报的 `navigator.webdriver`。 */
+  webdriver?: unknown;
+  /** 客户端自报的「是否存在 navigator.userAgentData」。 */
+  uaCh?: unknown;
+  /** 其余痕迹只落库不进判据（保留给后续观察期调参）。 */
+  languages?: unknown;
+  plugins?: unknown;
+  hardwareConcurrency?: unknown;
+}
+
+export interface AutomationTraceVerdict {
+  hint: boolean;
+  /** 命中的判据名（稳定字符串，写事件用）。 */
+  signals: string[];
+}
+
+const CHROME_UA_PATTERN = /(?:Chrome|Chromium)\//i;
+
+export function detectAutomationTrace(
+  input: AutomationTraceFacts | null | undefined,
+  userAgent?: string | null,
+): AutomationTraceVerdict {
+  const signals: string[] = [];
+  if (input && input.webdriver === true) signals.push("webdriver");
+
+  const ua = typeof userAgent === "string" ? userAgent : "";
+  // iOS 版 Chrome 的 UA 是 CriOS、不含 Chrome/；它同样不支持 UA-CH，所以只按桌面/安卓
+  // Chrome 的 `Chrome/` 判定，避免把「本来就没有 UA-CH 的浏览器」判成自动化。
+  if (input && input.uaCh === false && CHROME_UA_PATTERN.test(ua)) {
+    signals.push("ua_ch_missing");
+  }
+
+  return { hint: signals.length > 0, signals };
+}
+
+/**
+ * RC-14：IDC 出口命中时该执行哪个账户风险动作（纯映射，I/O 与处罚出口在 service 层）。
+ *
+ * 三条不变量：
+ * 1. **尊重 `autoEscalationCap`**：运维可以只允许自动升到 `watch`；此时不得越过上限去
+ *    `restrict`（那等于让一个新判据绕过全局自动升档上限）；
+ * 2. `danger` 永不自动升级（§3：danger/banned 必须人工确认）；
+ * 3. 只返回 `mark_watch` / `restrict` —— 没有 `suspend`，因此**不存在**「换个机房出口就被封号」
+ *    的自动路径。`restrict` 的副作用（step-up 窗口 + API Key 降速）由
+ *    `applyAccountRiskAction` 统一施加。
+ */
+export type IdcEscalationAction = "mark_watch" | "restrict";
+
+export function resolveIdcEscalationAction(
+  currentTier: AccountRiskTier | null | undefined,
+  autoEscalationCap: AccountRiskRuntimeConfig["autoEscalationCap"],
+): IdcEscalationAction | null {
+  const tier = currentTier ?? "normal";
+  const capRank = tierRank(autoEscalationCap === "restricted" ? "restricted" : "watch");
+  const rank = tierRank(tier);
+
+  if (rank >= tierRank("danger")) return null;
+  if (rank >= tierRank("watch")) {
+    // 已在观察档以上：只有上限放宽到 restricted 时才把它推到受限档；
+    // 否则无事可做（返回 null，避免每 5 分钟写一条无变化的 ACCOUNT_RISK_ACTION 事件）。
+    return capRank >= tierRank("restricted") ? "restrict" : null;
+  }
+  return "mark_watch";
+}
+
+/**
+ * RC-38：交叉权限株连的**唯一映射表**（裁决一：不静默伪装维护，回稳定
+ * `code: "ACCOUNT_RESTRICTED"` + 申诉通道）。
+ *
+ * 边界（RC-61，必须在调用方保持）：
+ * - `source: "channel_local"`（LibreChat 日额度/警告、工单自身的封禁）**只作用于本通道**，
+ *   返回未锁定 —— LibreChat 违规不推工单梯级，工单封禁也不越界去停 LibreChat；
+ * - 只有账户风险档（`account_risk`）才跨通道生效。
+ *
+ * `restricted` 档刻意**保留工单通道**：工单是用户申诉与处理事故的入口，把它一起停掉
+ * 等于把「可申诉」的裁决一变成空话。`danger` 档才连工单一起停（改走 support 邮箱）。
+ */
+export const ACCOUNT_RESTRICTED_CODE = "ACCOUNT_RESTRICTED";
+export const ACCOUNT_RISK_SUPPORT_EMAIL = "support@chloemella.com";
+
+export type AccountRiskChannel =
+  | "tts_generate"
+  | "transcribe"
+  | "cdk_redeem"
+  | "file_upload"
+  | "librechat"
+  | "ticket";
+
+export type AccountRiskChannelSource = "account_risk" | "channel_local";
+
+export interface AccountRiskChannelDecision {
+  locked: boolean;
+  /** 稳定 code：前端据此弹「功能已冻结，可申诉」，而不是靠文案匹配。 */
+  code: typeof ACCOUNT_RESTRICTED_CODE | null;
+  reason: string;
+  supportEmail: string;
+  /** 仍然开放的申诉入口：受限档走工单，危险档走支持邮箱。 */
+  appealChannel: "ticket" | "support_email" | "none";
+}
+
+const RESTRICTED_LOCKED_CHANNELS: readonly AccountRiskChannel[] = [
+  "tts_generate",
+  "transcribe",
+  "cdk_redeem",
+  "file_upload",
+  "librechat",
+];
+
+export function resolveAccountRiskChannelDecision(input: {
+  tier: AccountRiskTier | null | undefined;
+  channel: AccountRiskChannel;
+  source?: AccountRiskChannelSource;
+  /** RC-44：superadmin 不参与交叉株连（否则管理员无法处理事故）。 */
+  exempt?: boolean;
+}): AccountRiskChannelDecision {
+  const open: AccountRiskChannelDecision = {
+    locked: false,
+    code: null,
+    reason: "",
+    supportEmail: ACCOUNT_RISK_SUPPORT_EMAIL,
+    appealChannel: "none",
+  };
+
+  if (input.exempt) return open;
+  // RC-61：通道自身的处罚不跨通道。
+  if ((input.source ?? "account_risk") === "channel_local") return open;
+
+  const tier = input.tier ?? "normal";
+  if (tierRank(tier) < tierRank("restricted")) return open;
+
+  const locked = tier === "danger" || RESTRICTED_LOCKED_CHANNELS.includes(input.channel);
+  if (!locked) return open;
+
+  return {
+    locked: true,
+    code: ACCOUNT_RESTRICTED_CODE,
+    reason:
+      tier === "danger"
+        ? "账户风险控制已冻结该功能，可通过支持邮箱申诉"
+        : "账户处于受限状态，该功能暂时冻结，可提交工单申诉",
+    supportEmail: ACCOUNT_RISK_SUPPORT_EMAIL,
+    appealChannel: tier === "danger" ? "support_email" : "ticket",
+  };
 }

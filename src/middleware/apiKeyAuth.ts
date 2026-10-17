@@ -34,6 +34,53 @@ function checkPreAuthIpLimit(ip: string): boolean {
 }
 
 /**
+ * RC-14：API Key 路径的机房/IDC 出口复查。
+ *
+ * 与网页端不同，API Key 不经过 `authenticateToken` 后的 step-up 闸门，因此这条链路
+ * 原先完全没有复查。处罚（升档 + 全部 Key 降速）统一由 `handleIdcEgressRisk` →
+ * `applyAccountRiskAction` 施加；这里只负责**按观察期开关**触发它。
+ *
+ * 三个刻意的实现细节：
+ * 1. 开关与依赖都用 `require` 延迟加载：`apiKeyPenalty.test.ts` 只替身了少量服务，
+ *    顶层 import `config` / `accountRiskService` 会把整套模型与用户服务拖进那个用例；
+ * 2. 整个调用是 fire-and-forget —— 处罚影响的是**下一次**请求，没有必要拖慢当前请求；
+ * 3. 任何异常都只记 debug：复查是增强信号，不能让一次 Mongo 抖动把合法的 API 调用变成 500。
+ */
+function scheduleIdcEgressRecheck(params: {
+  userId: string;
+  ipAddress: string;
+  keyId: string;
+  userAgent: string;
+}): void {
+  try {
+    const { config } = require("../config/config") as typeof import("../config/config");
+    if (!config.accountRisk?.ipRecheckEnabled) return;
+  } catch {
+    return; // 配置不可读时按「观察期关闭」处理（fail-closed 到不处罚）
+  }
+
+  void (async () => {
+    try {
+      // 不在调用方先读缓存：`handleIdcEgressRisk` 内部先过「同账户 5 分钟」频率闸，
+      // 再决定是否查库。否则开关打开后每个 API Key 请求都会多一次 Mongo 读。
+      const { handleIdcEgressRisk } = await import("../services/accountRiskService");
+      await handleIdcEgressRisk({
+        userId: params.userId,
+        ipAddress: params.ipAddress,
+        source: "api_key",
+        userAgent: params.userAgent,
+        fingerprint: `api-key:${params.keyId}`.slice(0, 128),
+      });
+    } catch (error) {
+      logger.debug("[ApiKeyAuth] IDC 出口复查失败（不影响请求）", {
+        keyId: params.keyId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+}
+
+/**
  * API Key 认证中间件工厂
  * @param requiredPermission 该路由需要的权限标识，如 'tts'
  * @param opts.required 无任何凭据时是否拒绝请求。默认 true（无 API Key / OAuth Bearer / JWT 会话即 401）。
@@ -152,6 +199,14 @@ export function apiKeyAuth(requiredPermission: string, opts: { required?: boolea
       authReq.user = apiKeyUser;
       authReq.apiKey = doc;
       authReq.auth = { kind: "apiKey", user: apiKeyUser, apiKey: doc };
+
+      // RC-14：API Key 路径的 IDC 出口复查（观察期默认关）。
+      scheduleIdcEgressRecheck({
+        userId: doc.userId,
+        ipAddress: ip,
+        keyId: doc.keyId,
+        userAgent: String(req.headers["user-agent"] || ""),
+      });
 
       next();
     } catch (err) {

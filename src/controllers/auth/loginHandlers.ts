@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { getAuthSessionMetadata, getLatestAuthSessionIpLocation, issueTrackedLoginToken } from "../../services/authSessionService";
 import { scheduleLoginRiskSignals, recordAccountAbuseSignal } from "../../services/accountRiskService";
-import { isGeoJump } from "../../services/mobileTokenRiskService";
+import { isGeoJump } from "../../services/geoRisk";
 import { config } from "../../config/config";
 import { sendEmail } from "../../services/emailSender";
 import { sendThrottledAuthNotification } from "../../services/authEmailNotificationService";
@@ -58,6 +58,40 @@ async function resolveNotifyTarget(identifier: string) {
     : await UserStorage.getUserByUsername(identifier);
 }
 
+/**
+ * RC-20：登录前人机验证失败时，补写**账户维度**的 `ACCOUNT_ABUSE_*` 信号。
+ *
+ * 这条链路发生在认证之前，拿不到可信 userId，只能按 identifier 解析；因此有三道硬约束：
+ * 1. `anonymous: true` —— 评分层按半权重计、总额封顶 10 分，单靠它到不了 `watch` 阈值，
+ *    也不存在任何升级为封禁的路径（匿名路径不得升级为封禁）；
+ * 2. `requireKnownIp: true` —— 只有该 IP 曾在 `account_ip_signals` 里属于该账户时才归因，
+ *    否则任何人都能拿别人的用户名反复失败验证码、把对方的风险分当玩具；
+ * 3. 写入失败/解析失败一律静默 —— 反正响应就是「验证失败」，不能因风控旁路改变它。
+ */
+function recordLoginCaptchaFailureSignal(identifier: string, ip: string, userAgent: string): void {
+  void (async () => {
+    try {
+      const target = await resolveNotifyTarget(identifier);
+      const userId = typeof (target as { id?: unknown } | null)?.id === "string" ? (target as { id: string }).id : "";
+      if (!userId) return;
+      recordAccountAbuseSignal({
+        userId,
+        eventType: "ACCOUNT_ABUSE_CAPTCHA_FAILED",
+        fingerprint: "login-pre-auth",
+        action: "login",
+        reason: "登录前人机验证未通过",
+        riskScore: 0,
+        ipAddress: ip,
+        userAgent,
+        anonymous: true,
+        requireKnownIp: true,
+      });
+    } catch {
+      // 用户名/邮箱解析失败（含非法用户名）或库不可用：不归因，也不影响登录响应。
+    }
+  })();
+}
+
 // 辅助函数：写入token和过期时间到users.json
 async function updateUserToken(userId: string, token: string, expiresInMs = 2 * 60 * 60 * 1000) {
   await UserStorage.updateUser(userId, {
@@ -108,6 +142,8 @@ export async function login(req: Request, res: Response) {
     // 由管理端供应商配置与请求载荷里的 captchaProvider 共同决定。
     const captchaError = await verifyRequiredCaptcha(req.body, ip, "登录", identifier);
     if (captchaError) {
+      // RC-20：登录前人机验证失败按**账户**沉淀（IP 维度计数换 IP 就重置）。
+      recordLoginCaptchaFailureSignal(identifier, ip, userAgent);
       return res.status(400).json({ error: captchaError });
     }
 

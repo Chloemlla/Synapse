@@ -3,7 +3,8 @@ import { config } from "../config/config";
 import { getOrCreateRequestRiskContext } from "../utils/requestRiskContext";
 import { shouldExemptFromRiskControl } from "../services/riskExemption";
 import { getCachedIpRisk } from "../services/ipRiskService";
-import { recordAccountAbuseSignal } from "../services/accountRiskService";
+import { handleIdcEgressRisk, recordAccountAbuseSignal } from "../services/accountRiskService";
+import { isDatacenterEgress } from "../services/geoRisk";
 import { manualBanIp } from "../services/turnstile/ipBan";
 import {
   computePayloadHash,
@@ -61,9 +62,12 @@ export function stepUpRequiredForMethod(method: unknown): boolean {
  * 首访闸门只管住第一次进入；登录后换到境外 IDC 出口就没人管了。这里做的是：
  * - 只读**缓存**（不外呼上游，否则每个请求都变慢且烧配额）；
  * - 按用户做频率限制（默认 5 分钟一次），否则变成“每请求一次风险查询”；
- * - 中风险 → 返回 `challenge`（由调用方升级为逐步验证）；高风险 → 写 IP 封禁 + `block`。
+ * - 中风险 → 返回 `challenge`（由调用方升级为逐步验证）；高风险 → 写 IP 封禁 + `block`；
+ * - RC-14：机房/IDC 出口走 `handleIdcEgressRisk` 升档（含 API Key 降速），**不阻断本请求**。
  *
- * 只对 watch 及以上档位生效：正常用户不因此被频繁打扰（误报成本远高于漏报成本）。
+ * 中/高风险的挑战与封禁仍只对 watch 及以上档位生效（正常用户不因此被频繁打扰，
+ * 误报成本远高于漏报成本）；但 IDC 升档对**所有档位**生效 —— 否则 `normal → watch`
+ * 这一步永远不会发生（升档的前提恰恰是先看见）。
  */
 const IP_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 const lastIpRecheckAt = new Map<string, number>();
@@ -77,7 +81,7 @@ async function recheckLoggedInIpRisk(params: {
   riskTier?: string;
 }): Promise<IpRecheckVerdict> {
   const tier = params.riskTier ?? "normal";
-  if (tier !== "watch" && tier !== "restricted" && tier !== "danger") return "skip";
+  const tierNeedsChallenge = tier === "watch" || tier === "restricted" || tier === "danger";
   if (!params.ipAddress || params.ipAddress === "unknown") return "skip";
 
   const last = lastIpRecheckAt.get(params.userId) ?? 0;
@@ -87,6 +91,26 @@ async function recheckLoggedInIpRisk(params: {
 
   const cached = await getCachedIpRisk(params.ipAddress).catch(() => null);
   if (!cached) return "skip";
+
+  // RC-14：IDC 出口的升档（观察期开关控制，见 `handleIdcEgressRisk`）。
+  // 把已读到的缓存结论传进去，避免同一请求里再查一次缓存。
+  if (
+    isDatacenterEgress({
+      hosting: cached.detections?.hosting,
+      flags: cached.flags,
+      networkType: cached.networkType,
+    })
+  ) {
+    await handleIdcEgressRisk({
+      userId: params.userId,
+      ipAddress: params.ipAddress,
+      ipRisk: cached,
+      source: "logged_in_request",
+    }).catch(() => undefined);
+  }
+
+  // 档位不高的账户不做挑战/封禁（保持 RC-56 既有口径）；IDC 升档已经在上面单独处理。
+  if (!tierNeedsChallenge) return "allow";
 
   const blockThreshold = Number(config.proxycheck.blockRiskScore) || 90;
   const challengeThreshold = Number(config.proxycheck.challengeRiskScore) || 66;

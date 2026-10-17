@@ -32,6 +32,14 @@ export interface ApiKeyDoc {
   totalChargedCredits: number;
   totalBillableRequests: number;
   lastBillingAt: Date | null;
+  /**
+   * RC-28：本预算周期的**基线余额**（最近一次充值/加额后的余额）。
+   * 余额阈值预警（80%/100%）需要分母，而余额本身没有分母；每次充值把基线重置，
+   * 才能回答「这个周期已经花掉了多少比例」。0/缺省 = 尚未建立基线（不预警）。
+   */
+  budgetBaselineCredits?: number;
+  /** RC-28：预算周期序号（每次充值 +1），用于让「充值后再次花掉 80%」能重新预警。 */
+  budgetCycle?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +69,9 @@ const ApiKeySchema = new mongoose.Schema<ApiKeyDoc>(
     totalChargedCredits: { type: Number, default: 0, min: 0 },
     totalBillableRequests: { type: Number, default: 0, min: 0 },
     lastBillingAt: { type: Date, default: null },
+    // RC-28：预算周期基线；存量文档没有这些字段 ⇒ 0 / 0（不预警，直到下一次充值建立基线）。
+    budgetBaselineCredits: { type: Number, default: 0, min: 0 },
+    budgetCycle: { type: Number, default: 0, min: 0 },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

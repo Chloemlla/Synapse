@@ -7,9 +7,14 @@ import {
   computeStepUpUntil,
   detectAccountSharingSuspected,
   evaluateAccountRiskScore,
+  resolveAccountRiskChannelDecision,
+  resolveIdcEscalationAction,
   tierRank,
   type AccountIpRiskFact,
   type AccountRiskAssessment,
+  type AccountRiskChannel,
+  type AccountRiskChannelDecision,
+  type AccountRiskChannelSource,
   type AccountRiskTier,
   type AccountSharingFacts,
 } from "../utils/accountRiskScoring";
@@ -19,10 +24,11 @@ import { AuditLogService } from "./auditLogService";
 import { setApiKeyPenalty } from "./apiKeyService";
 import { getLatestAuthSessionIpLocation, revokeAllAuthSessions } from "./authSessionService";
 import { loadDeviceFingerprintFacts, type DeviceFingerprintSignalFacts } from "./deviceFingerprintService";
+import { isDatacenterEgress } from "./geoRisk";
 import { isMeaningfulLocation } from "./ipTelemetryService";
 import { getCachedIpRisk, getIpRisk, type IpRiskResult } from "./ipRiskService";
 import { mongoose } from "./mongoService";
-import { isRiskExempt } from "./riskExemption";
+import { isRiskExempt, noteRiskExemption } from "./riskExemption";
 import { getAccountRiskState, updateUser, UserModel } from "./userService";
 
 /**
@@ -44,6 +50,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 账户级滥用事件的 eventType 前缀（RC-20：违规拦截要按账户聚合，不能只按 IP 记）。 */
 export const ACCOUNT_ABUSE_EVENT_PREFIX = "ACCOUNT_ABUSE";
+
+/**
+ * RC-57：自动化痕迹事件（`security_events.eventType`）。
+ *
+ * **刻意不带 `ACCOUNT_ABUSE_` 前缀**：这类痕迹既会进评分权重（`AUTOMATION_HINT`，固定 8 分），
+ * 又会被 `loadAbuseFacts` 当成一条滥用事件计数 —— 若共用前缀就会双重计分，把「仅作加权信号」
+ * 变成一条能推动档位的判据。前缀不匹配聚合，聚合改读本常量。
+ */
+export const AUTOMATION_TRACE_EVENT = "AUTOMATION_TRACE";
+
+/** 自动化痕迹事件的去重/有效窗口（天）：窗口内只要出现过一次就置 `AUTOMATION_HINT`。 */
+const AUTOMATION_TRACE_WINDOW_DAYS = 7;
+
+/** 匿名来源滥用信号的写入去重窗口：防止匿名调用方把事件表写成噪声。 */
+const ANONYMOUS_SIGNAL_DEDUPE_MS = 10 * 60 * 1000;
 
 export interface RecordLoginIpSignalInput {
   ipAddress: string;
@@ -69,12 +90,6 @@ function mongoReady(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
-function isDatacenterResult(result: IpRiskResult): boolean {
-  if (result.detections?.hosting) return true;
-  if (Array.isArray(result.flags) && result.flags.includes("datacenter")) return true;
-  return /datacenter|data center|hosting|\bidc\b/i.test(result.networkType || "");
-}
-
 function riskPatchFromResult(result: IpRiskResult, now: Date): Record<string, unknown> {
   return {
     riskScore: result.risk,
@@ -83,7 +98,11 @@ function riskPatchFromResult(result: IpRiskResult, now: Date): Record<string, un
     networkType: result.networkType || "",
     asn: result.asn || "",
     organisation: result.organisation || "",
-    isDatacenter: isDatacenterResult(result),
+    isDatacenter: isDatacenterEgress({
+      hosting: result.detections?.hosting,
+      flags: result.flags,
+      networkType: result.networkType,
+    }),
     source: result.source === "cache" ? "cache" : "proxycheck",
     riskCheckedAt: now,
   };
@@ -261,20 +280,128 @@ async function loadDeviceRiskFacts(userId: string): Promise<DeviceRiskFacts> {
   }
 }
 
-async function countRecentAbuseEvents(userId: string, since: Date): Promise<number> {
+export interface AbuseEventFacts {
+  /** 已认证路径产生的账户级事件（计全权重）。 */
+  authenticated: number;
+  /** 登录前人机验证失败这类未认证来源（半权重 + 单独封顶，RC-20）。 */
+  anonymous: number;
+}
+
+async function loadAbuseFacts(userId: string, since: Date): Promise<AbuseEventFacts> {
+  const base = {
+    userId,
+    createdAt: { $gte: since },
+    // 前缀匹配，`(userId, createdAt)` 复合索引负责过滤与范围，eventType 在内存里筛。
+    // `GEO_JUMP` 单独排除：它已经由 `geoJump` 事实按 +10 计分，再按「一条滥用事件」计一次
+    // 就是同一件事加两遍分（接线前它只加了一次，本批保持总分不变、只补回旗标）。
+    eventType: {
+      $regex: `^${ACCOUNT_ABUSE_EVENT_PREFIX}`,
+      $nin: [`${ACCOUNT_ABUSE_EVENT_PREFIX}_GEO_JUMP`],
+    },
+  };
   try {
-    return await SecurityEvent.countDocuments({
-      userId,
-      createdAt: { $gte: since },
-      // 前缀匹配，`(userId, createdAt)` 复合索引负责过滤与范围，eventType 在内存里筛。
-      eventType: { $regex: `^${ACCOUNT_ABUSE_EVENT_PREFIX}` },
-    }).exec();
+    const [authenticated, anonymous] = await Promise.all([
+      SecurityEvent.countDocuments({ ...base, "eventData.anonymous": { $ne: true } }).exec(),
+      SecurityEvent.countDocuments({ ...base, "eventData.anonymous": true }).exec(),
+    ]);
+    return { authenticated, anonymous };
   } catch (error) {
     logger.warn("[AccountRisk] 账户级滥用事件统计失败（按 0 处理）", {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return 0;
+    return { authenticated: 0, anonymous: 0 };
+  }
+}
+
+/**
+ * RC-15：窗口内是否有跨地域跳变信号。
+ *
+ * 之前 loginHandlers 写了 `ACCOUNT_ABUSE_GEO_JUMP`，但 `evaluateAccountRisk` 把 `geoJump`
+ * 显式传成 `false` —— 结果事件只按「一条滥用事件」+10 计分，`GEO_JUMP` 旗标永远不出现。
+ * 这里改成读事实，判据与信号来自同一份台账（不再出现「记了但没算」）。
+ */
+async function hasRecentGeoJump(userId: string, since: Date): Promise<boolean> {
+  try {
+    const found = await SecurityEvent.exists({
+      userId,
+      eventType: `${ACCOUNT_ABUSE_EVENT_PREFIX}_GEO_JUMP`,
+      createdAt: { $gte: since },
+    }).exec();
+    return Boolean(found);
+  } catch (error) {
+    logger.warn("[AccountRisk] 属地跳变信号读取失败（按无信号处理）", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/** RC-26 / RC-56：探测报告事实。全部来自客户端上报，只能作信号。 */
+interface ProbeRiskFacts {
+  exitMismatch: boolean;
+  webdriver: boolean;
+}
+
+const EMPTY_PROBE_FACTS: ProbeRiskFacts = { exitMismatch: false, webdriver: false };
+
+/**
+ * RC-26 / RC-56：把 WebRTC/出口不一致探测报告接进账户风险。
+ *
+ * 三个刻意的约束：
+ * 1. **只在 `ipRecheckEnabled` 观察期内读取**（调用方保证）——探测报告是客户端可伪造的，
+ *    默认关闭时评估口径与改动前逐字节一致；
+ * 2. 只按「该账户已见过的 IP」反查报告，不按 userId（报告表没有 userId，且服务端解析的
+ *    `ip` 才是权威字段）；因此不会把别人的报告算到本账户；
+ * 3. 任何查询失败都按「无信号」处理（fail-open 到不处罚），绝不因此阻断评估。
+ *
+ * 这里用 `require` 延迟加载模型：`accountRiskAction.test.ts` 把 `mongoService` 替成一个
+ * 不含 `models` 的对象，顶层 import 会在用例加载阶段就抛错。延迟加载让只测处罚出口的
+ * 套件不受影响（与 `fingerprintHandlers` 的既有做法一致）。
+ */
+async function loadProbeRiskFacts(userId: string, since: Date): Promise<ProbeRiskFacts> {
+  try {
+    const ips = (await AccountIpSignal.distinct("ipAddress", {
+      userId,
+      lastSeenAt: { $gte: since },
+    }).exec()) as unknown[];
+    const safeIps = ips.filter((value): value is string => typeof value === "string" && value.trim() !== "");
+    if (safeIps.length === 0) return EMPTY_PROBE_FACTS;
+
+    const { ProxycheckProbeReportModel } =
+      require("../models/proxycheckProbeReportModel") as typeof import("../models/proxycheckProbeReportModel");
+    const window = { ip: { $in: safeIps.slice(0, 200) }, createdAt: { $gte: since } };
+    const [mismatch, webdriver] = await Promise.all([
+      // 以服务端判决为准：comparability 不成立的旧报告 mismatch 恒为 false，不会被误算。
+      ProxycheckProbeReportModel.countDocuments({ ...window, "mismatch.webrtcVsExit": true }).exec(),
+      ProxycheckProbeReportModel.countDocuments({ ...window, webdriver: true }).exec(),
+    ]);
+    return { exitMismatch: mismatch > 0, webdriver: webdriver > 0 };
+  } catch (error) {
+    logger.warn("[AccountRisk] 探测报告读取失败（按无信号处理）", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return EMPTY_PROBE_FACTS;
+  }
+}
+
+/** RC-57：窗口内是否上报过早期自动化痕迹（`AUTOMATION_TRACE`，不参与滥用事件计数）。 */
+async function hasRecentAutomationTrace(userId: string, since: Date): Promise<boolean> {
+  try {
+    const found = await SecurityEvent.exists({
+      userId,
+      eventType: AUTOMATION_TRACE_EVENT,
+      createdAt: { $gte: since },
+    }).exec();
+    return Boolean(found);
+  } catch (error) {
+    logger.warn("[AccountRisk] 自动化痕迹读取失败（按无信号处理）", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
   }
 }
 
@@ -432,15 +559,32 @@ export async function evaluateAccountRisk(
 
   const now = Date.now();
   const since = new Date(now - cfg.windowDays * DAY_MS);
+  // 属地跳变与自动化痕迹只关心「最近」，用独立窗口避免一条半年前的记录长期压着旗标。
+  const geoJumpSince = new Date(now - Math.min(cfg.windowDays, 7) * DAY_MS);
+  const automationSince = new Date(now - AUTOMATION_TRACE_WINDOW_DAYS * DAY_MS);
 
-  const [ipSignals, deviceFacts, abuseEventCount, sharingFacts, fingerprintFacts] = await Promise.all([
+  const [
+    ipSignals,
+    deviceFacts,
+    abuseFacts,
+    sharingFacts,
+    fingerprintFacts,
+    geoJump,
+    probeFacts,
+    automationTrace,
+  ] = await Promise.all([
     loadIpRiskFacts(userId, since),
     loadDeviceRiskFacts(userId),
-    countRecentAbuseEvents(userId, since),
+    loadAbuseFacts(userId, since),
     cfg.sharingDetectionEnabled
       ? loadSharingFacts(userId, since, now)
       : Promise.resolve(EMPTY_SHARING_FACTS),
     cfg.fingerprintComponentsEnabled ? loadDeviceFingerprintFacts(userId) : Promise.resolve(EMPTY_FINGERPRINT_FACTS),
+    hasRecentGeoJump(userId, geoJumpSince),
+    // RC-26 / RC-56：WebRTC 探测报告只在观察期内读取（默认关）。
+    cfg.ipRecheckEnabled ? loadProbeRiskFacts(userId, since) : Promise.resolve(EMPTY_PROBE_FACTS),
+    // RC-57：早期自动化痕迹（navigator.webdriver 等）与指纹分量同一开关。
+    cfg.fingerprintComponentsEnabled ? hasRecentAutomationTrace(userId, automationSince) : Promise.resolve(false),
   ]);
 
   const createdAt = state.createdAt ? Date.parse(state.createdAt) : Number.NaN;
@@ -455,9 +599,11 @@ export async function evaluateAccountRisk(
       cfg,
     );
 
-  // RC-16：分量漂移本身不是独立旗标（用户明确要求评分层只保留
+  // RC-57：分量漂移本身不是独立旗标（用户明确要求评分层只保留
   // ACCOUNT_SHARING_SUSPECTED 与 AUTOMATION_HINT），因此归入自动化痕迹的加权信号。
-  const automationHint = deviceFacts.automationHint || fingerprintFacts.componentDrift;
+  // 早期痕迹（navigator.webdriver / UA-CH 缺失）与探测报告里的 webdriver 同样只是「提示」。
+  const automationHint =
+    deviceFacts.automationHint || fingerprintFacts.componentDrift || automationTrace || probeFacts.webdriver;
 
   const assessment = evaluateAccountRiskScore(
     {
@@ -466,11 +612,14 @@ export async function evaluateAccountRisk(
       ipSignals,
       deviceMaxRiskScore: deviceFacts.deviceMaxRiskScore,
       compromisedDeviceCount: deviceFacts.compromisedDeviceCount,
-      recentAbuseEventCount: abuseEventCount,
+      recentAbuseEventCount: abuseFacts.authenticated,
+      recentAnonymousAbuseEventCount: abuseFacts.anonymous,
       automationHint,
       sharingSuspected,
-      // RC-15（跨地域跳变）在 B7 接线；此处显式传 false，避免「没接线却像接了」。
-      geoJump: false,
+      // RC-15：读最近 7 天的 ACCOUNT_ABUSE_GEO_JUMP 台账，而不是恒传 false
+      //（旧实现让旗标永远不会出现，信号只剩「一条滥用事件」的分数）。
+      geoJump,
+      probeExitMismatch: probeFacts.exitMismatch,
     },
     cfg,
   );
@@ -845,6 +994,202 @@ async function writeRiskActionAudit(params: {
   }
 }
 
+/**
+ * RC-14：已登录请求 / API Key 路径命中 **机房（IDC）出口**时的升档。
+ *
+ * 为什么必须收在一个函数里：审计要求「出现 IDC 出口 → 升档 + API Key 降速/吊销」，
+ * 而登录后复查（`accountStepUpGuard`）与 API Key 鉴权（`apiKeyAuth`）是两条独立链路。
+ * 两处各写一份处罚逻辑，迟早会出现「网页端升了、API 端没升」或绕过 `autoEscalationCap`。
+ * 本函数是这条判据的**唯一落点**，处罚本身仍走 `applyAccountRiskAction`（RC-07 的唯一出口）。
+ *
+ * 观察期口径（§5 B7 Shadow Mode）：整个函数由 `accountRisk.ipRecheckEnabled` 控制，
+ * **默认关**。关闭时不做缓存读取、不写信号、不升档 —— 行为与改动前逐字节一致。
+ *
+ * 为什么永远不会封号：动作只可能是 `mark_watch` / `restrict`（见
+ * `resolveIdcEscalationAction`）。`restrict` 的副作用是 step-up 窗口 + 该账户全部
+ * API Key 降速（RC-19.4），不会 `suspend`；封停仍必须人工经 RC-07 执行。
+ */
+export interface IdcEgressRiskInput {
+  userId: string;
+  ipAddress: string;
+  /** 调用方已取得的缓存结论；缺省时本函数自己读一次缓存（绝不外呼）。 */
+  ipRisk?: IpRiskResult | null;
+  source: "logged_in_request" | "api_key";
+  userAgent?: string;
+  fingerprint?: string;
+}
+
+export interface IdcEgressRiskResult {
+  detected: boolean;
+  exempt: boolean;
+  action: "mark_watch" | "restrict" | null;
+  /** 稳定原因码：disabled / throttled / no-cached-verdict / not-idc / cap-reached / escalated / ... */
+  reason: string;
+}
+
+/** 同一账户的 IDC 复查频率：与 `accountStepUpGuard` 的 5 分钟口径一致，避免每请求查库。 */
+const IDC_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
+const IDC_RECHECK_MAX_ENTRIES = 10_000;
+const idcRecheckAt = new Map<string, number>();
+
+export async function handleIdcEgressRisk(input: IdcEgressRiskInput): Promise<IdcEgressRiskResult> {
+  const cfg = config.accountRisk;
+  const idle = (reason: string): IdcEgressRiskResult => ({ detected: false, exempt: false, action: null, reason });
+
+  if (!cfg.enabled || !cfg.ipRecheckEnabled) return idle("disabled");
+  if (!input.userId || !input.ipAddress || input.ipAddress === "unknown") return idle("missing-context");
+  if (!mongoReady()) return idle("mongo-unavailable");
+
+  const now = Date.now();
+  const last = idcRecheckAt.get(input.userId) ?? 0;
+  if (now - last < IDC_RECHECK_INTERVAL_MS) return idle("throttled");
+  // 有界 Map：账号数增长时不能让它变成内存泄漏；清空只会让下一轮多做一次缓存读取。
+  if (idcRecheckAt.size >= IDC_RECHECK_MAX_ENTRIES) idcRecheckAt.clear();
+  idcRecheckAt.set(input.userId, now);
+
+  const risk = input.ipRisk ?? (await getCachedIpRisk(input.ipAddress).catch(() => null));
+  if (!risk) return idle("no-cached-verdict");
+
+  const datacenter = isDatacenterEgress({
+    hosting: risk.detections?.hosting,
+    flags: risk.flags,
+    networkType: risk.networkType,
+  });
+  if (!datacenter) return idle("not-idc");
+
+  const state = await getAccountRiskState(input.userId).catch(() => null);
+  if (!state) return idle("target-not-found");
+  // 已软删除的账户不再产生处罚动作（认证层已拒绝它；再写只会污染事件表）。
+  if (typeof state.deletedAt === "number" && state.deletedAt > 0) return idle("target-deleted");
+  if (isRiskExempt({ role: state.role })) {
+    noteRiskExemption({
+      userId: input.userId,
+      scope: "crossModule",
+      detail: { signal: "IDC_EGRESS", source: input.source, risk: risk.risk },
+    });
+    return { detected: true, exempt: true, action: null, reason: "superadmin-exempt" };
+  }
+
+  // 先留证据再动档位：即使后面的写库失败，也能从事件表回答「当时的出口是什么」。
+  recordAccountAbuseSignal({
+    userId: input.userId,
+    eventType: "ACCOUNT_ABUSE_IDC_EGRESS",
+    fingerprint: input.fingerprint || `idc-egress:${input.source}`,
+    action: input.source,
+    reason: `已认证路径出现机房/IDC 出口（风险分 ${risk.risk}）`,
+    riskScore: risk.risk,
+    flags: risk.flags,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+  });
+
+  const action = resolveIdcEscalationAction(state.riskTier ?? "normal", cfg.autoEscalationCap);
+  if (!action) return { detected: true, exempt: false, action: null, reason: "cap-reached" };
+
+  const result = await applyAccountRiskAction({
+    userId: input.userId,
+    action,
+    reason: `[自动] ${input.source === "api_key" ? "API Key" : "已登录"}请求命中机房/IDC 出口（风险分 ${risk.risk}）`,
+    operatorId: "auto",
+  });
+  return {
+    detected: true,
+    exempt: false,
+    action: result.ok ? action : null,
+    reason: result.ok ? "escalated" : result.code,
+  };
+}
+
+/**
+ * RC-38：给**通道级**拦截点用的统一判定（工单 / CDK 兑换 / 文件上传 / 算力 / LibreChat）。
+ *
+ * 消费方只需要 `const d = await getAccountRiskChannelDecision({userId, channel}); if (d.locked) ...`
+ * 并按 `d.code` 回 `403`，**不要**再自己拼一套禁令（否则又回到「各模块各自一套处罚体系」）。
+ * 映射表在 `accountRiskScoring.resolveAccountRiskChannelDecision`，那里同时钉住了 RC-61 的
+ * 相邻边界（`channel_local` 不跨通道）。
+ *
+ * 读库失败时 fail-open 到「不锁定」：账户封停（`accountStatus`）由认证层独立强制，不会因
+ * 这里降级而漏放；反过来在此 fail-closed 会让一次 Mongo 抖动把所有高成本功能全停掉。
+ */
+export async function getAccountRiskChannelDecision(input: {
+  userId: string;
+  channel: AccountRiskChannel;
+  source?: AccountRiskChannelSource;
+}): Promise<AccountRiskChannelDecision> {
+  if (!mongoReady() || !input.userId) {
+    return resolveAccountRiskChannelDecision({
+      tier: "normal",
+      channel: input.channel,
+      source: input.source,
+    });
+  }
+
+  const state = await getAccountRiskState(input.userId).catch(() => null);
+  return resolveAccountRiskChannelDecision({
+    tier: state?.riskTier ?? "normal",
+    channel: input.channel,
+    source: input.source,
+    exempt: isRiskExempt({ role: state?.role }),
+  });
+}
+
+/**
+ * RC-57：记录一次**早期自动化痕迹**（`navigator.webdriver` / UA-CH 缺失）。
+ *
+ * 与 `ACCOUNT_ABUSE_*` 分开写：后者按件计入滥用事件分，而自动化痕迹在评分层只有固定
+ * 8 分权重（`AUTOMATION_HINT`）且单独不足以升档。混用会让一条可伪造的客户端信号
+ * 获得与「已认证账户违规拦截」相同的计分能力。
+ *
+ * 24 小时去重：指纹上报本身被前端节流到 5 分钟一次，不去重会把它写成噪声。
+ */
+export interface AutomationTraceSignalInput {
+  userId: string;
+  /** 命中的判据名（来自 `detectAutomationTrace`）。 */
+  signals: readonly string[];
+  /** 原始痕迹（只落事件，不进评分），用于事后判断是哪个浏览器版本。 */
+  traces?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+  fingerprint?: string;
+}
+
+const AUTOMATION_TRACE_DEDUPE_MS = 24 * 60 * 60 * 1000;
+
+export async function recordAutomationTraceSignal(input: AutomationTraceSignalInput): Promise<void> {
+  if (!input.userId || input.signals.length === 0 || !mongoReady()) return;
+  try {
+    const since = new Date(Date.now() - AUTOMATION_TRACE_DEDUPE_MS);
+    const existing = await SecurityEvent.findOne({
+      userId: input.userId,
+      eventType: AUTOMATION_TRACE_EVENT,
+      createdAt: { $gte: since },
+    })
+      .select("_id")
+      .lean();
+    if (existing) return;
+
+    await SecurityEvent.create({
+      deviceFingerprint: String(input.fingerprint || "automation-trace").slice(0, 256),
+      userId: input.userId,
+      eventType: AUTOMATION_TRACE_EVENT,
+      eventData: {
+        signals: input.signals.slice(0, 16),
+        traces: input.traces ?? {},
+        note: "客户端上报信号，仅作加权，不作为封禁判据",
+      },
+      riskScore: 0,
+      ipAddress: String(input.ipAddress || "").slice(0, 128),
+      userAgent: String(input.userAgent || "").slice(0, 512),
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    logger.warn("[AccountRisk] 自动化痕迹写入失败（不影响主流程）", {
+      userId: input.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** 供管理端确认「是否最后一个超管」等前置检查使用（与 adminController.isLastSuperadmin 同源事实）。 */
 export async function countSuperadmins(): Promise<number> {
   if (!mongoReady()) return 0;
@@ -879,33 +1224,95 @@ export interface AccountAbuseSignalInput {
   flags?: readonly string[];
   ipAddress?: string;
   userAgent?: string;
+  /**
+   * RC-20：信号来自**未认证**路径（登录前人机验证失败）。
+   *
+   * 这类事件会被 `evaluateAccountRiskScore` 按半权重计分且总额封顶 10 分，
+   * 因此单靠它们连 `watch` 阈值都到不了，更不会成为封禁依据（匿名路径不得升级为封禁）。
+   */
+  anonymous?: boolean;
+  /**
+   * RC-20：只有当该 `(userId, ipAddress)` 在 `account_ip_signals` 里出现过（即这个出口
+   * 确实属于该账户）时才写信号。
+   *
+   * 登录前链路只能拿到 identifier，拿不到可信的 userId；不设这道门槛，任何人都能拿别人的
+   * 用户名反复失败人机验证，把对方的风险分当玩具。查不到历史出口 ⇒ **不写**（fail-closed
+   * 到「不归因」）。
+   */
+  requireKnownIp?: boolean;
+}
+
+/** 匿名信号写入去重：同一 (userId, eventType) 在窗口内只写一条，避免把安全事件表写成噪声。 */
+const anonymousSignalThrottle = new Map<string, number>();
+
+function shouldSkipAnonymousSignal(userId: string, eventType: string, now: number): boolean {
+  const key = `${userId}|${eventType}`;
+  const last = anonymousSignalThrottle.get(key) ?? 0;
+  if (now - last < ANONYMOUS_SIGNAL_DEDUPE_MS) return true;
+  if (anonymousSignalThrottle.size >= 10_000) anonymousSignalThrottle.clear();
+  anonymousSignalThrottle.set(key, now);
+  return false;
 }
 
 export function recordAccountAbuseSignal(input: AccountAbuseSignalInput): void {
   if (!mongoReady()) return;
+  // 归因闸没有 userId 就没有可归因的对象；缺了它再用 `{userId: undefined}` 去查，
+  // Mongoose 会把它从过滤条件里丢掉 —— 那就变成「按 IP 找任意账户」，正好制造误归因。
+  if (input.requireKnownIp && !input.userId) return;
   const eventType =
     typeof input.eventType === "string" && input.eventType.startsWith(ACCOUNT_ABUSE_EVENT_PREFIX)
       ? input.eventType
       : `${ACCOUNT_ABUSE_EVENT_PREFIX}_UNSPECIFIED`;
 
-  void SecurityEvent.create({
-    deviceFingerprint: String(input.fingerprint || "account-abuse").slice(0, 256),
-    userId: input.userId || undefined,
-    eventType,
-    eventData: {
-      action: input.action,
-      reason: input.reason,
-      flags: Array.isArray(input.flags) ? input.flags.slice(0, 32) : undefined,
-    },
-    riskScore: typeof input.riskScore === "number" && Number.isFinite(input.riskScore) ? input.riskScore : 0,
-    ipAddress: input.ipAddress || "",
-    userAgent: String(input.userAgent || "").slice(0, 512),
-    createdAt: new Date(),
-  }).catch((error) => {
-    logger.warn("[AccountRisk] 账户滥用信号写入失败", {
-      userId: input.userId,
+  const now = Date.now();
+  if (input.anonymous && input.userId && shouldSkipAnonymousSignal(input.userId, eventType, now)) return;
+
+  const userId = input.userId || undefined;
+  const ipAddress = input.ipAddress || "";
+
+  const write = () => {
+    void SecurityEvent.create({
+      deviceFingerprint: String(input.fingerprint || "account-abuse").slice(0, 256),
+      userId,
       eventType,
-      error: error instanceof Error ? error.message : String(error),
+      eventData: {
+        action: input.action,
+        reason: input.reason,
+        flags: Array.isArray(input.flags) ? input.flags.slice(0, 32) : undefined,
+        // 显式写 false 而不是缺省：聚合按 `eventData.anonymous === true` 分流，
+        // 缺省也能落到「已认证」一侧，但显式值让存量/新数据的口径一眼可读。
+        anonymous: Boolean(input.anonymous),
+      },
+      riskScore: typeof input.riskScore === "number" && Number.isFinite(input.riskScore) ? input.riskScore : 0,
+      ipAddress,
+      userAgent: String(input.userAgent || "").slice(0, 512),
+      createdAt: new Date(),
+    }).catch((error) => {
+      logger.warn("[AccountRisk] 账户滥用信号写入失败", {
+        userId,
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
-  });
+  };
+
+  if (!input.requireKnownIp) {
+    write();
+    return;
+  }
+
+  // 归因前置条件：该出口必须曾作为该账户的登录/使用 IP 出现过。
+  // 查询失败一律不写（宁可漏一条信号，也不接受可被他人触发的归因）。
+  void (async () => {
+    try {
+      const known = await AccountIpSignal.exists({ userId: input.userId, ipAddress }).exec();
+      if (!known) return;
+      write();
+    } catch (error) {
+      logger.debug("[AccountRisk] 匿名 Abuse 信号归因检查失败（不写信号）", {
+        userId: input.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
 }

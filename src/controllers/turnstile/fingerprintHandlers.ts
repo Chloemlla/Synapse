@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import { config } from "../../config/config";
-import { evaluateAccountRisk } from "../../services/accountRiskService";
+import { evaluateAccountRisk, recordAutomationTraceSignal } from "../../services/accountRiskService";
 import { analyzeFingerprintSignals, recordDeviceFingerprint } from "../../services/deviceFingerprintService";
 import { TurnstileService } from "../../services/turnstileService";
 import { sanitizeString, validateFingerprint } from "../../services/turnstile/validators";
+import { detectAutomationTrace, type AutomationTraceFacts } from "../../utils/accountRiskScoring";
 import logger from "../../utils/logger";
 import { getClientIp } from "./_helpers";
 
@@ -39,6 +40,30 @@ function sanitizeDeviceSignals(input: unknown): Record<string, unknown> | null {
     result[group] = source[group];
   }
   return Object.keys(result).length > 0 ? result : null;
+}
+
+/**
+ * RC-57：客户端上报的**早期自动化痕迹**只保留白名单字段。
+ *
+ * 与 deviceSignals 同理：body 是客户端可控的，不能把任意对象写进事件表
+ *（事件表的查询/索引会因此变成不可信数据源）。只取固定几个键、固定类型。
+ */
+function sanitizeAutomationTraces(input: unknown): AutomationTraceFacts | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const source = input as Record<string, unknown>;
+  const traces: AutomationTraceFacts = {
+    webdriver: source.webdriver === true,
+    uaCh: source.uaCh === true,
+    // 下面三路只落库、不进判据（见 `detectAutomationTrace` 注释）。
+    languages: typeof source.languages === "number" && Number.isFinite(source.languages) ? source.languages : undefined,
+    plugins: typeof source.plugins === "number" && Number.isFinite(source.plugins) ? source.plugins : undefined,
+    hardwareConcurrency:
+      typeof source.hardwareConcurrency === "number" && Number.isFinite(source.hardwareConcurrency)
+        ? source.hardwareConcurrency
+        : undefined,
+  };
+  const hasAny = traces.webdriver === true || traces.uaCh === true || traces.languages !== undefined;
+  return hasAny ? traces : null;
 }
 
 export async function reportFingerprint(req: Request, res: Response) {
@@ -117,6 +142,7 @@ export async function reportFingerprint(req: Request, res: Response) {
       // 放在响应之前**不 await**：指纹事实是增强证据，不能让一次 Mongo 写入拖慢上报接口；
       // 失败只记日志（与上面“保存到用户记录”失败的容忍度一致）。
       if (config.accountRisk.fingerprintComponentsEnabled) {
+        const automationTraces = sanitizeAutomationTraces(req.body?.automation);
         void (async () => {
           try {
             await recordDeviceFingerprint({
@@ -126,6 +152,27 @@ export async function reportFingerprint(req: Request, res: Response) {
               ipAddress: validatedClientIp,
               source: "fingerprint_report",
             });
+            // RC-57：把 navigator.webdriver / UA-CH 缺失这类早期痕迹并入同一个上报面
+            //（不新增采集端点）。只写 `AUTOMATION_TRACE` 事件与加权旗标，绝不单独封禁。
+            if (automationTraces) {
+              const verdict = detectAutomationTrace(automationTraces, String(userAgent));
+              if (verdict.hint) {
+                await recordAutomationTraceSignal({
+                  userId,
+                  signals: verdict.signals,
+                  traces: {
+                    webdriver: automationTraces.webdriver === true,
+                    uaCh: automationTraces.uaCh === true,
+                    languages: automationTraces.languages,
+                    plugins: automationTraces.plugins,
+                    hardwareConcurrency: automationTraces.hardwareConcurrency,
+                  },
+                  ipAddress: validatedClientIp,
+                  userAgent: String(userAgent),
+                  fingerprint: safeFingerprint,
+                });
+              }
+            }
             // 先写 FP_* 信号事件（分析自带 24h 去重），再重新聚合一次账户风险，
             // 让新出现的跨账户共用 / 分量漂移不必等到下一次登录才生效。
             await analyzeFingerprintSignals(userId);

@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { runtimeMutableConfig } from "../config/config";
 import type { MobileTokenRotationRiskRuntimeConfig } from "../config/runtimeConfigDefaults";
-import { isMeaningfulLocation } from "./ipTelemetryService";
+import { isGeoJump } from "./geoRisk";
+
+// RC-15：判据本体已提升到 `services/geoRisk.ts`（web 登录 / 安全会话 / 账户聚合共用）。
+// 这里原样 re-export，既保住既有 import 与单测，又不产生第二份实现。
+export { isGeoJump } from "./geoRisk";
 
 /**
  * 客户端登录令牌的**风险分级轮换**（`sml_` 风控 P3 层）。
@@ -62,35 +66,6 @@ export function deviceFingerprintOf(deviceId?: string, deviceName?: string): str
   if (!id) return undefined;
   const name = typeof deviceName === "string" ? deviceName.trim() : "";
   return crypto.createHash("sha256").update(`${id}|${name}`).digest("hex").slice(0, 32);
-}
-
-/**
- * 纯函数：两份属地字符串是否算"突变"。
- *
- * 属地形如 `"中国, 北京, 北京 运营商: 中国联通"`（见 ipTelemetryService 的三个 provider），
- * 按逗号切段后第一段是国家、第二段是省/州。任一侧取不到有意义的值就不判 ——
- * 宁可漏报，也不要拿"未知"当"换了个国家"。
- */
-export function isGeoJump(
-  previous: string | null | undefined,
-  current: string | null | undefined,
-  scope: MobileTokenRotationRiskRuntimeConfig["geoJumpScope"] = "country",
-): boolean {
-  const before = segmentOf(previous);
-  const after = segmentOf(current);
-  if (!before.country || !after.country) return false;
-  if (before.country !== after.country) return true;
-  // 省份未知时不作为依据：同一个国家里 provider 少给一段不该算突变。
-  if (scope !== "region") return false;
-  if (!before.region || !after.region) return false;
-  return before.region !== after.region;
-}
-
-function segmentOf(location: string | null | undefined): { country: string; region: string } {
-  const raw = typeof location === "string" ? location.trim() : "";
-  if (!raw || !isMeaningfulLocation(raw)) return { country: "", region: "" };
-  const parts = raw.split(",").map((part) => part.trim());
-  return { country: parts[0] || "", region: parts[1] || "" };
 }
 
 /**
