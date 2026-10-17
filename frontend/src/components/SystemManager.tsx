@@ -442,6 +442,14 @@ export default function SystemManager() {
                 <p className="text-lg font-semibold text-slate-800">{schedulerStatus.lastCleanupResult.ipDataCount}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">GeoGebra 资产</p>
+                <p className="text-lg font-semibold text-slate-800">{schedulerStatus.lastCleanupResult.geogebraAssetCount ?? 0}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">GeoGebra 任务</p>
+                <p className="text-lg font-semibold text-slate-800">{schedulerStatus.lastCleanupResult.geogebraJobCount ?? 0}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">耗时</p>
                 <p className="text-lg font-semibold text-slate-800">{formatDuration(schedulerStatus.lastCleanupDurationMs)}</p>
               </div>

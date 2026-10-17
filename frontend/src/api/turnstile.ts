@@ -75,6 +75,10 @@ export interface CleanupDetails {
   accessTokenCount: number;
   ipBanCount: number;
   ipDataCount: number;
+  /** 被清掉的 GeoGebra 过期资产文件数（GEO-18/21）。老响应没有这两个字段。 */
+  geogebraAssetCount?: number;
+  /** 被标记为过期的 GeoGebra 任务数。老响应没有这两个字段。 */
+  geogebraJobCount?: number;
   totalCount: number;
 }
 
