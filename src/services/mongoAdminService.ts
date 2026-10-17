@@ -236,14 +236,16 @@ export async function getMongoAdminOverview(): Promise<MongoAdminOverview> {
 
   let stats: { dataSize?: number; indexSize?: number; collections?: number } | null = null;
   try {
-    stats = await database.command({ dbStats: 1, scale: 1 }, { maxTimeMS: 5000 });
+    // 超时写进命令文档而不是第二个参数：驱动里 `CommandOperationOptions` 只认 `timeoutMS`，
+    // 而服务端本身接受命令文档里的 `maxTimeMS`。
+    stats = await database.command({ dbStats: 1, scale: 1, maxTimeMS: 5000 });
   } catch (error) {
     logger.warn("[MongoAdmin] dbStats 读取失败", { error: (error as Error)?.message });
   }
 
   let serverVersion: string | null = null;
   try {
-    const build = await database.command({ buildInfo: 1 }, { maxTimeMS: 3000 });
+    const build = await database.command({ buildInfo: 1, maxTimeMS: 3000 });
     serverVersion = typeof build?.version === "string" ? build.version : null;
   } catch {
     // 权限不足时 buildInfo 可能被拒绝：不影响浏览。
