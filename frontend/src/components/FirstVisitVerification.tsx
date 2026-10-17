@@ -135,6 +135,24 @@ const MetaRow: React.FC<{ Icon: React.ComponentType<{ className?: string }>; lab
   </div>
 );
 
+/**
+ * 窄屏判定（< 380px）。只服务于「第三方验证控件放不放得下」这一件事：
+ * Turnstile 的 normal 尺寸固定 300px，在 320~375px 的手机上加上卡片内边距就会溢出。
+ * 与 Tailwind 断点无关，所以不用 CSS 类，而是直接换控件尺寸参数。
+ */
+const useNarrowViewport = (maxWidthPx: number): boolean => {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia(`(max-width: ${maxWidthPx}px)`);
+    const update = () => setNarrow(mql.matches);
+    update();
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, [maxWidthPx]);
+  return narrow;
+};
+
 export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   onVerificationComplete,
   fingerprint,
@@ -147,6 +165,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 }) => {
   const { setNotification } = useNotification();
   const reducedMotion = useReducedMotion();
+  const narrowViewport = useNarrowViewport(379);
   const {
     captchaConfig: secureCaptchaConfig,
     loading: secureSelectionLoading,
@@ -212,6 +231,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     if (secureCaptchaConfig.captchaType === CaptchaType.TRYCAP) return 'trycap';
     return secureCaptchaConfig.captchaType === CaptchaType.HCAPTCHA ? 'hcaptcha' : 'turnstile';
   }, [secureCaptchaConfig, secureEnabled, secureSiteKey]);
+
+  // 窄屏把 normal 换成 flexible（Turnstile 支持；hCaptcha 组件内部会把 flexible 折回 normal），
+  // 让控件宽度跟随容器，避免手机上出现横向滚动或右侧被卡片裁掉。
+  const effectiveWidgetSize =
+    narrowViewport && secureWidget.size === 'normal' ? 'flexible' : secureWidget.size;
 
   const serviceLabel =
     verificationMode === 'trycap'
@@ -490,7 +514,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: 'easeOut' }}
-        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)]"
+        className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)] sm:rounded-3xl"
       >
         <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-5 sm:px-8 sm:py-6">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white text-lg text-rose-600">
@@ -516,16 +540,25 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           )}
           {clientIP && clientIP !== 'unknown' && (
             <MetaRow Icon={FaGlobe} label="IP 地址">
-              <p className="font-mono text-xs text-slate-700">{clientIP}</p>
+              <p className="break-all font-mono text-xs text-slate-700">{clientIP}</p>
             </MetaRow>
           )}
-          {/* mailOnly：被拦截期间工单接口同样不可达，只给管理员支持邮箱（组件内带 mailto 预填）。 */}
+          {traceId && (
+            <MetaRow Icon={FaHashtag} label="问题追踪码">
+              <p className="select-all break-all font-mono text-xs text-slate-700">{traceId}</p>
+            </MetaRow>
+          )}
+          {/* mailOnly：被拦截期间工单接口同样不可达，只给管理员支持邮箱（组件内带 mailto 预填）。
+              追踪码一并写进预填正文：管理员拿到邮件就能直接定位这一次判定。 */}
           <PenaltyAppealActions
             kind="ip_ban"
             mailOnly
             reason={banState.reason}
             remainingText={banState.expiresAt ? banState.expiresAt.toLocaleString() : undefined}
-            details={clientIP && clientIP !== 'unknown' ? `IP: ${clientIP}` : undefined}
+            details={[
+              clientIP && clientIP !== 'unknown' ? `IP: ${clientIP}` : '',
+              traceId ? `追踪码: ${traceId}` : '',
+            ].filter(Boolean).join('\n') || undefined}
           />
         </div>
       </m.div>,
@@ -559,11 +592,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             </div>
           </div>
 
-          <p className="mt-5 text-sm leading-6 text-slate-600">
+          <p className="mt-4 text-sm leading-6 text-slate-600 sm:mt-5">
             在继续访问前需要完成一次快速安全验证。完成下方的挑战后即可直接返回站点。
           </p>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 sm:mt-6 sm:px-5 sm:py-5">
             <div className="flex items-center gap-3">
               <Spinner className="h-5 w-5 text-amber-600" reducedMotion={reducedMotion} />
               <div className="min-w-0">
@@ -578,7 +611,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             <ReviewSteps activeIndex={reviewStepIndex} />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:mt-6 sm:px-5 sm:py-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm font-semibold text-slate-800">完成安全验证</p>
               <AnimatePresence mode="wait" initial={false}>
@@ -641,7 +674,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                           siteKey={secureSiteKey}
                           theme={secureWidget.theme}
                           language={secureWidget.language}
-                          size={secureWidget.size}
+                          size={effectiveWidgetSize}
                           onVerify={handleTurnstileVerify}
                           onExpire={handleTurnstileExpire}
                           onError={handleChallengeError}
@@ -666,7 +699,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                           onVerify={handleHCaptchaVerify}
                           onExpire={handleHCaptchaExpire}
                           onError={handleChallengeError}
-                          size={secureWidget.size}
+                          size={effectiveWidgetSize}
                         />
                       )}
                     </Suspense>
@@ -760,7 +793,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
 
             <MetaRow Icon={FaHashtag} label="问题追踪码">
               <div className="flex items-center gap-2">
-                <p className="min-w-0 flex-1 truncate font-mono text-xs text-slate-700" title={traceId || undefined}>
+                <p className="min-w-0 flex-1 select-all truncate font-mono text-xs text-slate-700" title={traceId || undefined}>
                   {traceId || '完成一次验证请求后生成'}
                 </p>
                 {traceId && (
@@ -768,7 +801,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                     type="button"
                     onClick={() => void copyTraceId()}
                     aria-label="复制问题追踪码"
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                    className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
                   >
                     {traceCopied ? <FaCheck className="text-[10px]" /> : <FaCopy className="text-[10px]" />}
                     {traceCopied ? '已复制' : '复制'}
