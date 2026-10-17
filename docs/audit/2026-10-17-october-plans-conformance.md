@@ -363,3 +363,66 @@ PRD 开头写明「未打勾的即为未落地」，但 §3/§4 有多处未打�
 - Geo 的六项代码/功能缺口里，GEO-17 的 embed 与 `?share=` 是最容易被用户直接撞到的；
   其余五项（版本上限、诊断字段、概要写注释、PIX-13/14）可以分批。
 - 10-10 的三处文档问题改文字即可，不涉及代码。
+
+---
+
+## 10. 文档回填记录（2026-10-17）
+
+> 本轮只改文档，未改源码、未跑构建/测试/lint、未碰 git。所有「代码已在」的判定均已用 `rg` 复验并写进行号。
+
+### 10.1 `docs/plans/2026-10-11-lottery-platform-prd.md`
+
+| 段落 | 改动 | 代码依据（复验） |
+| --- | --- | --- |
+| §3.2 Pacing | `[ ]` → `[x]`，补依据行 | `src/services/lottery/pacing.ts:18-36`；`lotteryService.ts:596`；`src/tests/lotteryPacing.test.ts:31,38` |
+| §3.3 资格来源 | `[~]` → 拆分：每日免费/资产消耗/行为任务/超管发放 `[x]`，会员等级差异化保留 `[ ]`；「待决策」限定为任务种类与汇率取值 | `lotteryService.ts:862,874,948,983,1026`；`lottery/tasks.ts:27`；`lotteryRoutes.ts:57-66` |
+| §4.1-1 内存快速拦截 | `[ ]` → `[x]`，注明是 30s TTL Map 而非布隆过滤器 | `lottery/stock.ts:16-41`；`lotteryService.ts:390,505,600,1184` |
+| §4.1-2 分布式原子扣减 | `[ ]` → `[x]`，删掉「sharedStateStore，无 Redis」的过时现状 | `lottery/stock.ts:52-72`；`redisService.ts:282`；`lotteryService.ts:672` |
+| §4.1-3 数据库最终防线 | `[ ]` → `[x]`，删掉「缺显式 remaining > 0」的过时现状 | `lotteryService.ts:650-656` |
+| §4.2 履约解耦 | `[ ]` → `[x]` | `lotteryService.ts:747`；`lotteryFulfillmentService.ts:67,201,328` |
+| §4.2 CDN/Redis 缓存 | 保持 `[ ]`，补「2026-10-17 复核：Redis 只用于库存计数」 | 同左 |
+| §4.3 T+0 | `[ ]` → `[x]` | `lotteryService.ts:220,328,1060`；`reconciliation.ts:30`；`lotteryRoutes.ts:68` |
+| §4.3 T+1 | `[ ]` → `[x]`；注明当前只有超管端点、无独立「每日凌晨」定时器 | `lotteryService.ts:1078`；`reconciliation.ts:76`；`finance.ts:31,63`；`lotteryRoutes.ts:69` |
+| 文件末尾 | 新增「2026-10-17 对账说明」（改动清单 + 保持 `[ ]` 的 7 条依据） | — |
+
+`[决策]` 项未动；LOT-O1…O7 的 `[ ]` 全部保留并写明缺失依据。
+
+### 10.2 `docs/plans/captcha-providers-trycap-2026-10-01.md`
+
+| 段落 | 改动 |
+| --- | --- |
+| §三 P4 文件清单 | 删掉不存在的 `hooks/useCapConfig.ts`，改为「配置由 `useSecureCaptchaSelection`/`ManagedCaptcha` 以 props 下发」，注明 2026-10-17 核实 |
+
+复验：`frontend/src/hooks/` 下无 `useCapConfig.ts`；`frontend/src/hooks/useSecureCaptchaSelection.ts:46` 存在，
+`ManagedCaptcha.tsx` 被多页引用。
+
+### 10.3 `docs/audit/10-10.md`
+
+| 位置 | 改动 |
+| --- | --- |
+| §9.1 第 1 条 | 删掉「`quotaLadderService` / `regionGuard` / `legal_holds` 应当不存在」的反向抽检举例，改为只对「确实没有任何实现痕迹」的编号抽检，并记录三者在 2026-10-17 均已存在 |
+| §8 RC-15 行 | 保留 ✅；把「待做：提升为 `services/geoRisk.ts` 单一入口」改为已完成并附行号 |
+| §8 RC-31 行 | 🟡 **部分** → ✅ **已完成**；删除「9 个功能键目前仍未挂」的过期清单，改为逐键接线位置（含条件门禁说明） |
+| §8 RC-57 行 | 保留 ✅；把「待做：`navigator.webdriver` 接入」改为已完成并附行号 |
+| §9.5「遗留」行 | 移除「RC-31 的 9 个功能键待挂 `requireFeatureConsent`」，备注收窄为 RC-51 / RC-35 |
+
+复验证据：
+- `regionGuard`：`src/middleware/regionGuard.ts:49`，挂载于 `src/app/assembly.ts:341`。
+- `legal_holds`：`src/models/legalHoldModel.ts:47`（`collection: "legal_holds"`）。
+- 9 个功能键接线：见 §8 RC-31 行内列出的 `src/routes/*` 行号；
+  `src/tests/securityGovernanceCoverage.test.ts:36-50` 已把 9 个键列为 `gated` 并断言全部命中。
+- RC-15：`src/services/geoRisk.ts:45`、`src/services/mobileTokenRiskService.ts:4,8`、
+  `src/controllers/auth/loginHandlers.ts:4`；账户聚合 `src/services/accountRiskService.ts:619`。
+- RC-57：`frontend/src/utils/fingerprint.ts:223-241,487`；
+  `src/controllers/turnstile/fingerprintHandlers.ts:160`；`src/services/accountRiskService.ts:587`。
+
+### 10.4 本轮发现但未改的文档漂移（超出授权范围）
+
+| 文档/位置 | 现象 | 建议 |
+| --- | --- | --- |
+| `docs/audit/10-10.md` §8 RC-06 行 | 「跨地跳变信号（RC-15）待 B7 接线」已过时（RC-15 已接线，`accountRiskService.ts:619` 读台账） | 下次回填时改成「已接线」 |
+| `docs/audit/10-10.md` §9.5 B7 行 | 仍把 RC-13 / RC-15 / RC-18 / RC-19（均已在 §8 标 ✅）与 RC-57 的 webdriver 列为未完成 | 汇总时重列 B7 真实未完成项 |
+| `docs/audit/10-10.md` §8 RC-29 / RC-37 行 | 仍写「待修」，但 `src/services/quotaLadderService.ts` 已存在并被 `libreChatQuotaService.ts:11` 使用、有 `src/tests/auditB9QuotaLadder.test.ts` | 复核 RC-29/37 是否已随该引擎落地 |
+| `docs/plans/2026-10-10-admin-redis-data-browser.md` | RB-03 写 GET、RB-05 §2/§3 的 30 vs 40/min 自相矛盾（本报告 §1 已登记） | 单独回填 |
+| `docs/plans/2026-10-10-librechat-quota-ban.md` | 管理端用户详情缺四个 `libreChat*` 字段（LQ-G1） | 需先改代码或改计划 |
+| `docs/plans/2026-10-16-geograba-...-prd-prompt.md` | GEO-11/16/17/21/22 与 PIX-13/14 的缺口未写进 PRD 验收表 | 按本报告 §5 回填 |

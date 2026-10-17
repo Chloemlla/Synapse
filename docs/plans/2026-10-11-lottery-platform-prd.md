@@ -86,14 +86,19 @@
   必中该稀有度及以上，无符合条件的有库存奖品则回落普通抽取）
 - **软保底**：超过 N 抽后稀有奖品概率线性递增。`[x]`（`round.softGuarantee = { startsAfterDraws, category, step }`，
   触发后必出该档，纯权重归一）
-- **预算与速率控制（Pacing）**：贵重奖品按天/小时切配额，窗口未到或用尽 → 权重归零。`[ ]`
+- **预算与速率控制（Pacing）**：贵重奖品按天/小时切配额，窗口未到或用尽 → 权重归零。`[x]`
+  （`src/services/lottery/pacing.ts:18-36`；抽奖链路 `src/services/lotteryService.ts:596` 调 `applyPacing`；
+  用例 `src/tests/lotteryPacing.test.ts:31,38`）
 - **入参硬化**：时间可解析、概率 0-1、数量正整数、库存服务端初始化、id 去重。`[x]`
 
 ### 3.3 抽奖资格与任务增长闭环
 
-- **资格来源**：每日免费（自然日 / 滚动 24h）、会员等级差异化、资产消耗（积分/代币/付费）、
-  行为任务（签到、浏览、下单满额、问卷）。`[~]`：每日免费（`LOTTERY_DAILY_FREE_CHANCES`，自然日懒发放）
-  与超管发放已就绪；行为任务与资产汇率待 `[决策]`。
+- **资格来源**：每日免费（`LOTTERY_DAILY_FREE_CHANCES`，自然日懒发放）`[x]`、
+  资产消耗（抽奖积分 + 可配汇率）`[x]`、行为任务（签到/浏览/下单 + 每日限领 + 自助领取）`[x]`、
+  超管发放 `[x]`；会员等级差异化 `[ ]`（代码中没有会员等级/档位判据）。
+  依据：`src/services/lotteryService.ts:862,874,948,983,1026`；`src/services/lottery/tasks.ts:27`；
+  路由 `src/routes/lotteryRoutes.ts:57-66`。任务种类与汇率**取值**仍待 `[决策]`
+  （`LOTTERY_TASK_*` / `LOTTERY_CHANCE_EXCHANGE_COST`），机制本身已落地。
 - **原子扣减与对账**：本地事务 + 幂等，杜绝「扣次未出奖 / 未扣次已中奖」。`[x]`
   （`lottery:chances:<userId>` 锁内原子扣减 + 落库失败自动退机会）
 - **社交裂变**：助力帮抽、阶梯加成、战队积分共享、团队里程碑。`[ ]`
@@ -136,21 +141,34 @@
 
 ### 4.1 三层库存防线（绝对防超卖）
 
-1. **内存快速拦截**：售罄标志位/布隆过滤器，应用层直接拒绝，不穿透下游。`[ ]`
-2. **分布式原子扣减**：Redis 预热库存 + Lua 原子校验扣减 + Request ID 幂等。`[ ]`
-   （现状：`sharedStateStore.withLock` 进程/共享锁实现，无 Redis 时降级。）
-3. **数据库最终防线**：物理扣减带正数约束（`remaining > 0`），对账 Worker 兜异常。`[ ]`
-   （现状：`pickPrize` 只选 `remaining > 0`，扣减在最新快照上做；缺显式 `WHERE remaining > 0`。）
+1. **内存快速拦截**：售罄标志位/布隆过滤器，应用层直接拒绝，不穿透下游。`[x]`
+   （进程内售罄标记 30s TTL：`src/services/lottery/stock.ts:16-41`；抽奖入口 `lotteryService.ts:505` 判定、
+   `:600` 标记、`:390/:1184` 补货/重置时清除。实现为按轮次的 Map 标记，不是布隆过滤器。）
+2. **分布式原子扣减**：Redis 预热库存 + Lua 原子校验扣减 + Request ID 幂等。`[x]`
+   （`stock.ts:52-72` 预热 + `decrementIfAtLeast` 原子预扣；`src/services/redisService.ts:282`；调用点
+   `lotteryService.ts:672`。Redis 未配置/未预热时回落 DB 权威，不拒业务；Request ID 幂等见 §5。）
+3. **数据库最终防线**：物理扣减带正数约束（`remaining > 0`），对账 Worker 兜异常。`[x]`
+   （`lotteryService.ts:650-656` 在最新快照上显式校验 `freshPrize.remaining <= 0` → 拒绝；
+   轮次锁 + 整文档读改写构成原子边界；T+0 对账见 §4.3。）
 
 ### 4.2 高并发削峰与防穿透
 
 - 活动配置 / 奖品图文 CDN 化、规则与基础数据 Redis 缓存。`[ ]`
-- **中奖与履约解耦**：判定只返回意向，履约走异步队列。`[ ]`（队列基础设施已具备，见 §4.4）
+  （2026-10-17 复核：Redis 只用于库存计数，轮次级/奖品级配置缓存与 CDN 化均无，保留 `[ ]`。）
+- **中奖与履约解耦**：判定只返回意向，履约走异步队列。`[x]`
+  （`src/services/lotteryService.ts:747` 调 `lotteryFulfillmentService.enqueue`；履约服务
+  `src/services/lotteryFulfillmentService.ts:67,201,328`，租约 + 看门狗见 §4.4。）
 
 ### 4.3 资金与库存闭环对账
 
-- **T+0 准实时**：每 5 分钟巡检「已发奖记录数 / Redis 消耗数 / DB 真实库存减量」偏离度。`[ ]`
-- **T+1 离线**：每日凌晨核对财务出账、券总量与业务流水，出差异报表。`[ ]`
+- **T+0 准实时**：每 5 分钟巡检「已发奖记录数 / Redis 消耗数 / DB 真实库存减量」偏离度。`[x]`
+  （定时器 `src/services/lotteryService.ts:220,328`；报告 `src/services/lottery/reconciliation.ts:30`；
+  超管端点 `GET /api/lottery/reconciliation/t0`，`src/routes/lotteryRoutes.ts:68`）
+- **T+1 离线**：每日凌晨核对财务出账、券总量与业务流水，出差异报表。`[x]`
+  （`reconciliation.ts:76` 出差异报告；外部财务源适配 `src/services/lottery/finance.ts:31,63`
+  （`LOTTERY_FINANCE_SOURCE_URL`，未配置时明确「无基线」）；触发方式为超管端点
+  `GET /api/lottery/reconciliation/t1`，`src/routes/lotteryRoutes.ts:69`。2026-10-17 复核：**没有**
+  独立的「每日凌晨」定时任务，只有端点手动触发。）
 
 ### 4.4 任务队列：租约模型 + 看门狗（本轮实施）
 
@@ -304,3 +322,38 @@ Express + MongoDB 轻量级任务队列（当前为 TTS 生成队列 `src/tts/tt
 - Stage 2：抢占写租约；超时任务被原子回收且 `attempts+1`；达上限进死信并触发一次告警；
   长任务心跳续租；owner 不匹配时终态写入被拒且不通知用户。
 - 每个 Stage：以 `main` 上 CI 结论为准（禁本地构建 / 测试）。
+
+---
+
+## 2026-10-17 对账说明
+
+> 依据：`docs/audit/2026-10-17-october-plans-conformance.md` §4.1 的代码复核；落笔前已用 `rg`
+> 逐条复验（行号以 2026-10-17 仓库为准）。本轮**只改勾选与依据文字，未改任何源码**；`[决策]` 项未动。
+
+改了以下条目（把 §3/§4 正文回填到 §6 已打勾、且代码确实存在的状态）：
+
+| 位置 | 原状态 | 现状态 | 代码依据 |
+| --- | --- | --- | --- |
+| §3.2 Pacing | `[ ]` | `[x]` | `src/services/lottery/pacing.ts:18-36`；`lotteryService.ts:596`；`src/tests/lotteryPacing.test.ts:31,38` |
+| §3.3 资格来源 | `[~]` | 拆分为 `[x]`×4 + 会员等级 `[ ]` | `lotteryService.ts:862,874,948,983,1026`；`src/services/lottery/tasks.ts:27`；`lotteryRoutes.ts:57-66` |
+| §4.1-1 内存快速拦截 | `[ ]` | `[x]` | `src/services/lottery/stock.ts:16-41`；`lotteryService.ts:505,600,390,1184` |
+| §4.1-2 分布式原子扣减 | `[ ]` + 过时「现状」 | `[x]`，删掉「无 Redis」注释 | `src/services/lottery/stock.ts:52-72`；`redisService.ts:282`；`lotteryService.ts:672` |
+| §4.1-3 数据库最终防线 | `[ ]` + 过时「缺显式约束」 | `[x]` | `lotteryService.ts:650-656` |
+| §4.2 履约解耦 | `[ ]` | `[x]` | `lotteryService.ts:747`；`lotteryFulfillmentService.ts:67,201,328` |
+| §4.3 T+0 | `[ ]` | `[x]` | `lotteryService.ts:220,328,1060`；`reconciliation.ts:30`；`lotteryRoutes.ts:68` |
+| §4.3 T+1 | `[ ]` | `[x]` | `lotteryService.ts:1078`；`reconciliation.ts:76`；`finance.ts:31,63`；`lotteryRoutes.ts:69` |
+
+**保持 `[ ]` 并写明依据的条目**（复核后确认代码中确实没有）：
+
+- §3.1 六种玩法皮肤：只有 `presentation.blocks` 区块渲染，无转盘/九宫格/盲盒/集卡/老虎机/拼团引擎 → 保留 `[ ]`。
+- §3.2 多奖池分层：只有「暗池=空奖」语义，无主池/新手回归池 → 保留 `[ ]`。
+- §3.3 社交裂变：无助力/战队/里程碑实体与路由 → 保留 `[ ]`。
+- §3.4 设备与网络、行为轨迹：`src/services/lottery/risk.ts` 只做同用户/同指纹/同 IP 短窗计数，
+  无 Canvas/OAID/Root/模拟器/代理识别与点击坐标/按压/间隔标准差 → 保留 `[ ]`。
+- §4.2 配置/奖品 Redis+CDN 缓存：Redis 只用于库存计数，无轮次/奖品缓存 → 保留 `[ ]`。
+- §4.4 下游履约绝对幂等：履约记录只有自身 `id` 唯一索引，无「抽奖流水号」幂等键 → 保留 `[ ]`
+  （`[决策：奖励服务对接方]` 未动）。
+- Stage 5 ERP/WMS、拖拽画布/画像/QPS：无对应实现 → 保留 `[ ]`（`[决策]` 未动）。
+
+补充说明（不改勾选）：§4.3 T+1 的「每日凌晨」在当前代码中没有独立定时器，只有超管端点手动触发；
+机制（差异报表 + 外部财务源）已完整，若需要自动化触发应另立条目。

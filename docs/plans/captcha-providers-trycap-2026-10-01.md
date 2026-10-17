@@ -74,7 +74,7 @@
 | P1 | 存储 + 概率引擎 + 类型/常量 | `turnstile/types.ts`、`models.ts`、`providers.ts`(新)、`constants.ts` |
 | P2 | Cap 服务 + 校验入口接入 | `turnstile/cap.ts`(新)、`verify.ts`、`turnstileService.ts` |
 | P3 | 控制器 + 路由 | `controllers/turnstile/{providersHandlers,capHandlers}.ts`(新)、`configHandlers.ts`、`routes/turnstileRoutes.ts` |
-| P4 | 前端选择与控件 | `utils/captchaSelection.ts`、`hooks/useCapConfig.ts`(新)、`components/CapWidget.tsx`(新)、`FirstVisitVerification.tsx`、`utils/fingerprint.ts` |
+| P4 | 前端选择与控件 | `utils/captchaSelection.ts`、`components/CapWidget.tsx`(新)、`FirstVisitVerification.tsx`、`utils/fingerprint.ts`（`hooks/useCapConfig.ts` 实际不存在，已删；配置由 `useSecureCaptchaSelection`/`ManagedCaptcha` 以 props 下发，2026-10-17 核实） |
 | P5 | 管理面板 + 注册 + 生成物 | `components/admin/CaptchaProviderAdmin.tsx`(新)、`adminModules.tsx`、`src/generated/adminSpaModulePaths.ts` |
 | P6 | 安全头 + 测试 | `security/contentSecurityPolicy.ts`、`frontend/index.html`、`src/tests/captchaProviderSelection.test.ts`(新) |
 | P7 | 月度额度 + 自动下线 | `models/captchaQuotaModel.ts`(新)、`turnstile/quota.ts`(新)、`verify.ts`、`hcaptcha.ts`、`providers.ts`、面板额度区、`src/tests/captchaQuota.test.ts`(新) |
