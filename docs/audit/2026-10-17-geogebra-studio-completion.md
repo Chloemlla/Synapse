@@ -49,12 +49,24 @@
 - `.env.example`：新增 `GEOGEBRA_VERSION_RETENTION_LIMIT`、AI 回退变量、资产/临时目录、
   `GEOGEBRA_EMBED_FRAME_ANCESTORS`。
 
+## 4.1 后续补充（同一轮内）
+
+| 提交 | 内容 |
+|---|---|
+| `20e5e3be` | 分享封面 data URL 解码失败改为 `400 GEOGEBRA_SHARE_COVER_INVALID`（原先落成 500），且校验失败前不落库 |
+| `eae04c20` | 系统管理页的清理面板显示 GeoGebra 资产/任务回收数（定时清理轮已并入这两项，面板原先看不到） |
+| `2941ed41` | 诊断页新增区块对旧后端响应做可见降级（滚动发布时前端先更新不会把整页打成空白） |
+| `d316f9d4` | AI 结果逐条勾选写回；对象依赖解释旁补本地依赖树（`components/geogebra/dependency.ts`），断网可用、循环引用标记 |
+
 ## 5. 测试
 
 | 文件 | 覆盖 |
 |---|---|
 | `src/tests/geogebraEmbedFramePolicy.test.ts`（新） | 仅 `embed=1` 命中；默认 `*`；白名单/非法项/空串；CSP 只为嵌入壳放行 |
 | `frontend/src/tests/geogebraWorkbench.test.ts`（新） | `?tab=` 合法值与未知值回落 |
+| `frontend/src/tests/geogebraTabBar.test.tsx`（新） | 标签栏点击、方向键/Home/End 与 roving tabindex |
+| `frontend/src/tests/geogebraDependency.test.ts`（新） | 依赖图：多层展开、循环、未定义对象、注释与字符串 |
+| `src/tests/geogebraShareCover.test.ts`（新） | 封面解码失败返回 400 且不落库 |
 
 ## 6. 本轮执行的静态验证
 
