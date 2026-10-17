@@ -1,5 +1,6 @@
 import { RegistrationAttempt } from "../models/registrationAttemptModel";
 import { normalizeEmailCanonical } from "./blockedIdentityService";
+import { isDatacenterEgress } from "./geoRisk";
 import { getCachedIpRisk } from "./ipRiskService";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
@@ -100,11 +101,6 @@ export async function recordRegistrationAttempt(input: RecordRegistrationAttempt
   }
 }
 
-function isDatacenterIp(flags: string[] | undefined, networkType: string | undefined): boolean {
-  if (Array.isArray(flags) && flags.includes("datacenter")) return true;
-  return /datacenter|data center|hosting|\bidc\b/i.test(String(networkType || ""));
-}
-
 /**
  * 判定这一次注册是否可以继续。
  *
@@ -183,7 +179,9 @@ export async function evaluateRegistrationRisk(input: RegistrationRiskInput): Pr
   }
 
   // RC-14：机房/IDC 出口 + 未使用邀请码 ⇒ 直接拒绝（独立规则，不与风险分耦合）。
-  if (!input.hasInvite && isDatacenterIp(ipRisk?.flags, ipRisk?.networkType)) {
+  // 判据取 `geoRisk.isDatacenterEgress` —— 与登录 / API Key 路径共用同一实现，避免
+  // 「注册侧看得见、登录侧看不见」的分叉。
+  if (!input.hasInvite && isDatacenterEgress({ flags: ipRisk?.flags, networkType: ipRisk?.networkType })) {
     return {
       allowed: false,
       code: "REGISTRATION_IDC_NO_INVITE",
