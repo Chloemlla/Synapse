@@ -535,7 +535,7 @@ const XiaohongshuDemo: React.FC = () => {
 
             {/* 搜索建议 */}
             {showSearchSuggestions && (
-              <div className="absolute top-[calc(100%+10px)] left-0 w-[90%] max-w-[500px] p-4 rounded-2xl animate-[slideUp_0.3s_ease-out]"
+              <div className="absolute top-[calc(100%+10px)] left-0 w-[90%] max-w-[500px] p-4 rounded-2xl animate-[slideUp_0.3s_ease-out] motion-reduce:animate-none"
                 style={{
                   backgroundColor: 'var(--bg-color)',
                   boxShadow: 'var(--shadow-hover)'
@@ -630,7 +630,7 @@ const XiaohongshuDemo: React.FC = () => {
                 role="button"
                 tabIndex={0}
                 aria-label={`打开详情：${card.title}`}
-                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2 animate-[fadeIn_0.5s_ease-out]"
+                className="rounded-2xl border overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2 animate-[fadeIn_0.5s_ease-out] motion-reduce:animate-none"
                 style={{
                   backgroundColor: 'var(--bg-color)',
                   borderColor: 'var(--border-color)',
@@ -697,7 +697,7 @@ const XiaohongshuDemo: React.FC = () => {
           {isLoading && (
             <div className="flex items-center justify-center py-10 text-sm" style={{ color: 'var(--text-light)' }}>
               <span>加载中</span>
-              <span className="inline-block ml-2.5 w-5 h-5 border-2 rounded-full animate-spin"
+              <span className="inline-block ml-2.5 w-5 h-5 border-2 rounded-full animate-spin motion-reduce:animate-none"
                 style={{
                   borderColor: 'var(--border-color)',
                   borderTopColor: 'rgb(225,29,72)'
@@ -744,11 +744,11 @@ const XiaohongshuDemo: React.FC = () => {
       {/* 模态框 */}
       {showModal && selectedCard && (
         <div
-          className={cn(studioModalOverlayClassName, "animate-[fadeIn_0.3s_ease-out]")}
+          className={cn(studioModalOverlayClassName, "animate-[fadeIn_0.3s_ease-out] motion-reduce:animate-none")}
           onClick={closeModal}
         >
           <div
-            className="relative w-full max-w-[900px] lg:max-w-[1200px] max-h-[90vh] rounded-2xl border overflow-hidden animate-[slideUp_0.3s_ease-out] flex flex-col lg:flex-row"
+            className="relative w-full max-w-[900px] lg:max-w-[1200px] max-h-[90vh] rounded-2xl border overflow-hidden animate-[slideUp_0.3s_ease-out] motion-reduce:animate-none flex flex-col lg:flex-row"
             style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -811,7 +811,7 @@ const XiaohongshuDemo: React.FC = () => {
                   className="flex flex-col items-center gap-1 transition-transform hover:scale-110"
                 >
                   <Heart 
-                    className={`w-6 h-6 ${likedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] fill-current' : ''}`}
+                    className={`w-6 h-6 ${likedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] motion-reduce:animate-none fill-current' : ''}`}
                     style={{ color: likedCards.has(selectedCard.id) ? 'rgb(225,29,72)' : 'var(--text-secondary)' }}
                   />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -824,7 +824,7 @@ const XiaohongshuDemo: React.FC = () => {
                   className="flex flex-col items-center gap-1 transition-transform hover:scale-110"
                 >
                   <Star 
-                    className={`w-6 h-6 ${collectedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] fill-current' : ''}`}
+                    className={`w-6 h-6 ${collectedCards.has(selectedCard.id) ? 'animate-[heartBeat_0.6s_ease-in-out] motion-reduce:animate-none fill-current' : ''}`}
                     style={{ color: collectedCards.has(selectedCard.id) ? 'rgb(245,158,11)' : 'var(--text-secondary)' }}
                   />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>

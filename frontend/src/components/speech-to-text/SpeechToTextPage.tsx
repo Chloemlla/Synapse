@@ -98,6 +98,8 @@ export const SpeechToTextPage: React.FC = () => {
   const [jobsLoading, setJobsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptItem[]>>({});
+  // 展开任务时详情拉取失败必须可见：否则面板空着，用户会以为“转写没有结果”。
+  const [transcriptErrors, setTranscriptErrors] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,8 +158,17 @@ export const SpeechToTextPage: React.FC = () => {
       const detail = await transcribeApi.getJob(id);
       if (detailRequests.current[id] !== request) return;
       setTranscripts((prev) => ({ ...prev, [id]: detail.transcripts }));
+      setTranscriptErrors((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
       console.error('加载转写详情失败:', err);
+      if (detailRequests.current[id] === request) {
+        setTranscriptErrors((prev) => ({ ...prev, [id]: '转写结果加载失败，请重试。' }));
+      }
     }
   }, []);
 
@@ -500,6 +511,19 @@ export const SpeechToTextPage: React.FC = () => {
                     {expanded ? (
                       <div id={panelId} className="space-y-3 border-t border-slate-100 px-4 py-3">
                         {job.error ? <StudioErrorNote className="text-xs">{job.error}</StudioErrorNote> : null}
+                        {transcriptErrors[job.id] ? (
+                          <StudioErrorNote className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span>{transcriptErrors[job.id]}</span>
+                            <button
+                              type="button"
+                              onClick={() => void openJob(job.id)}
+                              className={studioGhostButtonClassName}
+                            >
+                              <FaRedo aria-hidden />
+                              重试
+                            </button>
+                          </StudioErrorNote>
+                        ) : null}
                         {list.length === 0 ? (
                           <div className="text-xs text-slate-400">{active ? '任务进行中,完成后可在这里查看分段。' : '没有可展示的结果。'}</div>
                         ) : (

@@ -288,7 +288,7 @@ export default function PixelWorkbenchPage() {
 
   return (
     <div className={studioPageClassName}>
-      <div className="relative mx-auto max-w-7xl px-4 py-8">
+      <div className="relative mx-auto max-w-7xl min-w-0">
         <div className={studioAccentBlobBlueClassName} aria-hidden="true" />
         <div className={studioAccentBlobSkyClassName} aria-hidden="true" />
 

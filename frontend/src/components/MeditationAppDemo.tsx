@@ -491,7 +491,7 @@ const MeditationAppDemo: React.FC = () => {
 
                   {/* 呼吸引导圆圈 */}
                   <div className="mt-12 relative">
-                    <div className="w-[100px] h-[100px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center animate-[breathe_11s_ease-in-out_infinite]">
+                    <div className="w-[100px] h-[100px] rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center animate-[breathe_11s_ease-in-out_infinite] motion-reduce:animate-none">
                       <span className="text-white text-sm">吸气...</span>
                     </div>
                   </div>
@@ -576,7 +576,7 @@ const MeditationAppDemo: React.FC = () => {
                 
                 <div className="relative z-10 flex flex-col items-center px-5 pt-20">
                   {/* 成就图标 */}
-                  <div className="text-[80px] animate-pulse"><FaTrophy aria-hidden /></div>
+                  <div className="text-[80px] animate-pulse motion-reduce:animate-none"><FaTrophy aria-hidden /></div>
                   
                   {/* 完成信息 */}
                   <h2 className="text-5xl font-extralight text-slate-800 mt-6 mb-2">完成</h2>
@@ -1156,7 +1156,7 @@ const MeditationAppDemo: React.FC = () => {
 
                 {/* 中央呼吸圆圈 */}
                 <div className="relative z-10 flex flex-col items-center justify-center h-[calc(100%-200px)] mt-12">
-                  <div className="w-[300px] h-[300px] rounded-full border-[3px] border-white/30 flex items-center justify-center animate-[breathingCircle_12s_ease-in-out_infinite]"
+                  <div className="w-[300px] h-[300px] rounded-full border-[3px] border-white/30 flex items-center justify-center animate-[breathingCircle_12s_ease-in-out_infinite] motion-reduce:animate-none"
                     style={{
                       background: 'radial-gradient(circle, rgba(59,130,246,0.3) 0%, transparent 70%)'
                     }}>
@@ -1169,7 +1169,7 @@ const MeditationAppDemo: React.FC = () => {
                   {Array.from({ length: 10 }, (_, i) => (
                     <div
                       key={i}
-                      className={`rounded-full ${i < 3 ? 'w-2 h-2 bg-white' : i === 3 ? 'w-4 h-2 bg-white animate-pulse' : 'w-2 h-2 bg-white/30'}`}
+                      className={`rounded-full ${i < 3 ? 'w-2 h-2 bg-white' : i === 3 ? 'w-4 h-2 bg-white animate-pulse motion-reduce:animate-none' : 'w-2 h-2 bg-white/30'}`}
                     />
                   ))}
                 </div>

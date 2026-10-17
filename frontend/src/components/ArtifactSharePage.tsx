@@ -15,7 +15,8 @@ import {
   Share2,
   Tags,
 } from 'lucide-react';
-import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
+// 高亮器（react-syntax-highlighter）不进静态闭包：只有 json/xml/latex/code 产物才需要它。
+type CodeHighlightModule = typeof import('../utils/codeHighlight');
 import { api } from '../api/api';
 import MarkdownRenderer from './MarkdownRenderer';
 import Mermaid from './Mermaid';
@@ -238,14 +239,25 @@ const ArtifactSharePage: React.FC = () => {
   // 顶部动作（复制/分享）失败时的用户可见提示：剪贴板在非安全上下文里会直接失败。
   const [actionError, setActionError] = useState<string | null>(null);
   const [prismTheme, setPrismTheme] = useState<PrismTheme | undefined>(undefined);
+  const [codeHighlight, setCodeHighlight] = useState<CodeHighlightModule | null>(null);
 
   useEffect(() => {
     let alive = true;
+    let highlightAlive = true;
+    void import('../utils/codeHighlight')
+      .then((mod) => {
+        if (highlightAlive) setCodeHighlight(mod);
+      })
+      .catch((loadError) => {
+        // 拿不到高亮器时退化成等宽纯文本，分享内容仍然可读。
+        console.error('[ArtifactShare] 代码高亮器加载失败:', loadError);
+      });
     void loadPrismTheme().then((theme) => {
       if (alive && theme) setPrismTheme(theme);
     });
     return () => {
       alive = false;
+      highlightAlive = false;
     };
   }, []);
 
@@ -442,19 +454,19 @@ const ArtifactSharePage: React.FC = () => {
         );
 
       case 'json':
-        return renderHighlightedCode(artifact, 'json', safeFormatJson(artifact.content), prismTheme);
+        return renderHighlightedCode(artifact, 'json', safeFormatJson(artifact.content), prismTheme, codeHighlight);
 
       case 'xml':
-        return renderHighlightedCode(artifact, 'xml', artifact.content, prismTheme);
+        return renderHighlightedCode(artifact, 'xml', artifact.content, prismTheme, codeHighlight);
 
       case 'latex':
-        return renderHighlightedCode(artifact, 'latex', artifact.content, prismTheme);
+        return renderHighlightedCode(artifact, 'latex', artifact.content, prismTheme, codeHighlight);
 
       case 'csv':
         return renderCsv(artifact.content);
 
       case 'code':
-        return renderHighlightedCode(artifact, artifact.language || 'text', artifact.content, prismTheme);
+        return renderHighlightedCode(artifact, artifact.language || 'text', artifact.content, prismTheme, codeHighlight);
 
       case 'text':
       default:
@@ -654,10 +666,12 @@ const renderHighlightedCode = (
   language: string,
   content: string,
   theme: PrismTheme | undefined,
+  codeHighlight: CodeHighlightModule | null,
 ) => {
   // 产物里的 language 来自用户数据，可能是不受支持的语法。
   // PrismLight 遇到未注册语言会直接抛 `Unknown language`，所以未命中白名单时退化成等宽纯文本。
-  const highlightLanguage = resolveCodeLanguage(language);
+  const CodeHighlighter = codeHighlight?.CodeHighlighter;
+  const highlightLanguage = codeHighlight ? codeHighlight.resolveCodeLanguage(language) : null;
   const containerStyle: React.CSSProperties = {
     margin: 0,
     minHeight: '560px',
@@ -669,7 +683,7 @@ const renderHighlightedCode = (
     lineHeight: '1.6',
   };
 
-  if (!highlightLanguage) {
+  if (!highlightLanguage || !CodeHighlighter) {
     return (
       <pre style={containerStyle} className="bg-slate-900 text-slate-100">
         <code aria-label={`${artifact.title} 源码`}>{content}</code>

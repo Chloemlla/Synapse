@@ -562,7 +562,7 @@ export const TamperDetectionDemo: React.FC<TamperDetectionDemoProps> = ({ classN
             ) : (
               <>
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <RefreshCw className="h-5 w-5 animate-spin motion-reduce:animate-none" />
                 </div>
                 <div className="mt-5 text-sm font-semibold uppercase tracking-[0.26em] text-slate-400">Synapse Security</div>
                 <p className="mt-3 text-sm leading-7 text-slate-600">正在加载防篡改控制面板...</p>

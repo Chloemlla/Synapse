@@ -192,7 +192,7 @@ const MusicPlayerDemo: React.FC = () => {
 
                 {/* 黑胶唱片封面 */}
                 <div className="flex items-center justify-center mt-8">
-                  <div className="relative w-[240px] h-[240px] rounded-full overflow-hidden shadow-sm animate-spin-slow">
+                  <div className="relative w-[240px] h-[240px] rounded-full overflow-hidden shadow-sm animate-spin-slow motion-reduce:animate-none">
                     <div className="absolute inset-0 bg-slate-700" />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="w-[50px] h-[50px] rounded-full bg-slate-900" />
@@ -212,7 +212,7 @@ const MusicPlayerDemo: React.FC = () => {
                   {[0.6, 0.9, 0.7, 1, 0.8, 0.5, 0.9, 0.7, 0.6].map((height, idx) => (
                     <div
                       key={idx}
-                      className="w-[3px] h-[28px] bg-emerald-500 rounded-full animate-wave"
+                      className="w-[3px] h-[28px] bg-emerald-500 rounded-full animate-wave motion-reduce:animate-none"
                       style={{ 
                         animationDelay: `${idx * 0.1}s`,
                         transform: `scaleY(${height})`
@@ -264,7 +264,7 @@ const MusicPlayerDemo: React.FC = () => {
                 <div className="flex items-center justify-center gap-8 mt-8">
                   <button type="button" 
                     onClick={() => toggleLike(songs[currentSongIndex].id)}
-                    className={`transition-all hover:scale-110 ${likedSongs.has(songs[currentSongIndex].id) ? 'text-rose-500 animate-heartbeat' : 'text-white'}`}
+                    className={`transition-all hover:scale-110 ${likedSongs.has(songs[currentSongIndex].id) ? 'text-rose-500 animate-heartbeat motion-reduce:animate-none' : 'text-white'}`}
                   >
                     <Heart className={`w-6 h-6 ${likedSongs.has(songs[currentSongIndex].id) ? 'fill-current' : ''}`} />
                   </button>
@@ -395,7 +395,7 @@ const MusicPlayerDemo: React.FC = () => {
                           {[0.6, 1, 0.8].map((h, i) => (
                             <div
                               key={i}
-                              className="w-1 bg-emerald-500 rounded-full animate-wave"
+                              className="w-1 bg-emerald-500 rounded-full animate-wave motion-reduce:animate-none"
                               style={{ height: `${h * 16}px`, animationDelay: `${i * 0.15}s` }}
                             />
                           ))}

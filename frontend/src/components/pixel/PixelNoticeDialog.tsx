@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { studioGhostButtonClassName, studioModalCardClassName, studioModalOverlayClassName, studioPrimaryButtonClassName } from "../studioTheme";
+import { useEffect, useState } from "react";
+import { studioGhostButtonClassName, studioPrimaryButtonClassName } from "../studioTheme";
+import { StudioModal } from "../studioFeedback";
 import { acknowledgePixelNoticeToday } from "./pixelPreferences";
 
 // PIX-01 操作提示：首次进入先讲清「这个功能会拿你的账号做什么」，
@@ -24,41 +25,17 @@ type Props = {
 export default function PixelNoticeDialog({ open, onClose, onAcknowledge }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [dismissToday, setDismissToday] = useState(false);
-  const closeRef = useRef<HTMLButtonElement | null>(null);
 
+  // 关闭后清空勾选，下次打开必须重新确认；焦点与 Escape 交给 StudioModal（含 Tab 循环）。
   useEffect(() => {
     if (!open) {
       setConfirmed(false);
       setDismissToday(false);
-      return undefined;
     }
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const timer = window.setTimeout(() => closeRef.current?.focus(), 0);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus?.();
-    };
-  }, [onClose, open]);
-
-  if (!open) return null;
+  }, [open]);
 
   return (
-    <div className={studioModalOverlayClassName} role="presentation" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pixel-notice-title"
-        className={studioModalCardClassName}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <StudioModal open={open} onClose={onClose} labelledBy="pixel-notice-title" maxWidthClassName="max-w-2xl">
         <h2 id="pixel-notice-title" className="text-lg font-semibold text-slate-900">使用前请先了解</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-600">
           {CAUTIONS.map((item) => <li key={item}>{item}</li>)}
@@ -72,7 +49,7 @@ export default function PixelNoticeDialog({ open, onClose, onAcknowledge }: Prop
           今天不再弹出这个提示
         </label>
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" ref={closeRef} onClick={onClose} className={studioGhostButtonClassName}>稍后再说</button>
+          <button type="button" onClick={onClose} className={studioGhostButtonClassName}>稍后再说</button>
           <button
             type="button"
             disabled={!confirmed}
@@ -85,7 +62,6 @@ export default function PixelNoticeDialog({ open, onClose, onAcknowledge }: Prop
             开始使用
           </button>
         </div>
-      </section>
-    </div>
+    </StudioModal>
   );
 }

@@ -1591,7 +1591,7 @@ const ImageUploadPage: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                   >
-                    <label className="flex cursor-pointer items-center gap-2 rounded-xl p-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-2xl p-2 text-sm text-slate-700 hover:bg-slate-50">
                       <input
                         type="radio"
                         value="plain"
@@ -1601,7 +1601,7 @@ const ImageUploadPage: React.FC = () => {
                       />
                       <span>明文导出</span>
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded-xl p-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-2xl p-2 text-sm text-slate-700 hover:bg-slate-50">
                       <input
                         type="radio"
                         value="base64"
@@ -1611,7 +1611,7 @@ const ImageUploadPage: React.FC = () => {
                       />
                       <span>Base64 编码</span>
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded-xl p-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-2xl p-2 text-sm text-slate-700 hover:bg-slate-50">
                       <input
                         type="radio"
                         value="aes256"

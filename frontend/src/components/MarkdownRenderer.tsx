@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState, type ComponentPropsWithoutRef } fro
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { CodeHighlighter, resolveCodeLanguage } from '../utils/codeHighlight';
+// 代码高亮器（react-syntax-highlighter）同样走动态 import：
+// Markdown 阅读页的首屏不该背 Prism 语法表，只有真的出现围栏代码块时才需要它。
+type CodeHighlightModule = typeof import('../utils/codeHighlight');
 import { Check, Clipboard, Code2, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import Mermaid from './Mermaid';
 
@@ -247,8 +249,24 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   const [isLightboxZoomed, setIsLightboxZoomed] = useState(false);
   const [katexPlugin, setKatexPlugin] = useState<KatexRehypePlugin | null>(null);
   const [codeTheme, setCodeTheme] = useState<PrismTheme | undefined>(undefined);
+  const [codeHighlight, setCodeHighlight] = useState<CodeHighlightModule | null>(null);
 
   const contentHasMath = hasMathSyntax(content);
+
+  useEffect(() => {
+    let alive = true;
+    void import('../utils/codeHighlight')
+      .then((mod) => {
+        if (alive) setCodeHighlight(mod);
+      })
+      .catch((error) => {
+        // 高亮器拿不到时仍有等宽纯文本代码块，不影响阅读。
+        console.error('[MarkdownRenderer] 代码高亮器加载失败，退化为纯文本:', error);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!contentHasMath || katexPlugin) return undefined;
@@ -361,7 +379,8 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       const languageLabel = language || 'text';
       // 只把白名单内（PrismLight 已注册）的语言交给高亮器，其余退化成等宽纯文本：
       // 未注册语言在 refractor 里会直接抛错，且全量 Prism 会让首屏多背 298 个语法。
-      const highlightLanguage = resolveCodeLanguage(language);
+      const CodeHighlighter = codeHighlight?.CodeHighlighter;
+      const highlightLanguage = codeHighlight ? codeHighlight.resolveCodeLanguage(language) : null;
       const rawCode = React.Children.toArray(codeChildren).join('').replace(/\n$/, '');
 
       if (language.toLowerCase() === 'mermaid') {
@@ -378,7 +397,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               <span className="h-2 w-2 rounded-full bg-emerald-500/50" />
             </div>
           </div>
-          {highlightLanguage ? (
+          {highlightLanguage && CodeHighlighter ? (
             <CodeHighlighter
               {...props}
               style={codeTheme}
