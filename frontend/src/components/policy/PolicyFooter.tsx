@@ -1,12 +1,12 @@
 import React from 'react';
-import { FaAddressBook, FaCheckCircle, FaClock, FaCode, FaCopy, FaEnvelope, FaGlobe } from 'react-icons/fa';
+import { FaAddressBook, FaCheckCircle, FaClock, FaCopy, FaEnvelope } from 'react-icons/fa';
 import type { PolicyDocument } from '../../types/policy';
 import { cn } from '../../utils/cn';
 import { InfoBadge, InfoPanel, InfoSectionTitle } from '../studioTheme';
 import { HighlightedText } from './policyCards';
 
 /**
- * 政策页页脚区（从 PolicyPage 拆出）：本次修订、联系方式与程序化入口、条文指纹。
+ * 政策页页脚区（从 PolicyPage 拆出）：本次修订、联系方式、条文指纹。
  * 三块都是静态信息，与检索/滚动状态无关，拆出来后 PolicyPage 只留阅读与交互逻辑。
  */
 const PolicyFooter: React.FC<{
@@ -51,8 +51,8 @@ const PolicyFooter: React.FC<{
 
     <InfoPanel className="print:border-0 print:shadow-none">
       <InfoSectionTitle
-        title="联系方式与程序化入口"
-        description="咨询、反馈、数据权利请求与侵权投诉请使用官方邮箱；自动化客户端可直接调用下列接口。"
+        title="联系方式"
+        description="咨询、反馈、数据权利请求与侵权投诉请使用官方邮箱。"
         icon={FaAddressBook}
         tone="sky"
       />
@@ -73,33 +73,6 @@ const PolicyFooter: React.FC<{
             </div>
           </a>
         ))}
-      </div>
-      <div className="mt-5 rounded-2xl border border-slate-100 bg-white/65 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <FaCode className="text-slate-500" /> 接口说明
-        </div>
-        <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-2">
-          {[
-            { label: '获取条文', value: policy.procedures.documentEndpoint },
-            { label: '条文存档', value: policy.procedures.documentArchiveEndpoint },
-            { label: '获取版本', value: policy.procedures.versionEndpoint },
-            { label: '记录同意', value: policy.procedures.recordConsentEndpoint },
-            { label: '查询状态', value: policy.procedures.statusEndpoint },
-            { label: '同意轨迹', value: policy.procedures.historyEndpoint },
-            { label: '查询同意', value: policy.procedures.checkConsentEndpoint },
-            { label: '撤回同意', value: policy.procedures.revokeConsentEndpoint },
-          ].map((entry) => (
-            <div key={entry.value} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
-              <dt className="text-slate-500">{entry.label}</dt>
-              <dd className="font-mono text-[11px] text-slate-700">{entry.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500">
-          <FaGlobe className="text-[10px]" />
-          同意记录默认有效 {policy.procedures.consentValidityDays} 天，过期后需重新同意；
-          顶部「下载条文存档」与 API 里的 md 格式是同一份内容。
-        </p>
       </div>
     </InfoPanel>
 
