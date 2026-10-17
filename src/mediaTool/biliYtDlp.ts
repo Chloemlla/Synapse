@@ -8,6 +8,7 @@ import { biliBvid, maskStreamUrl, resolveBiliDirectTarget, listBiliParts, type B
 import { BILI_DOWNLOAD_USER_AGENT, BILI_WEB_ORIGIN, BILI_WEB_REFERER, CancelledError, ensureDir, isBareCommand, makeConsoleDecoder, resolveBiliUserAgent, resolveYtDlpBin, runTool, runToolChecked, sanitizeFileName, statOrNull } from "./runtime";
 import { resolveCookiesFile } from "./biliCookies";
 import type { BiliOptions } from "./types";
+import { startProcessWatchdog } from "../utils/processWatchdog";
 
 export interface BiliItem {
   url: string;
@@ -430,6 +431,21 @@ function runYtDlp(
 
     const stdoutDec = makeConsoleDecoder();
     const stderrDec = makeConsoleDecoder();
+    // RC-39：按**子进程树**计量 RSS/时长。不要用 process.memoryUsage()——那是主进程共享值，
+    // 一个下载任务吃内存会把所有任务（含 TTS/HTTP）判死。计量不可用时不击杀（见 watchdog 注释）。
+    const watchdog = proc.pid
+      ? startProcessWatchdog({
+          label: `yt-dlp:${label}`,
+          child: proc,
+          onLimit: (info) => {
+            cb.log?.(
+              `${label} 看门狗触发（${info.reason === "rss" ? "内存" : "时长"}超限，${
+                info.killed ? "已终止该下载进程" : "观察期未终止"
+              }）`,
+            );
+          },
+        })
+      : null;
     let lineBuf = "";
     let stderrBuf = "";
     let saved: string | null = null;
@@ -497,6 +513,7 @@ function runYtDlp(
     killer.unref?.();
     function stopKiller() {
       clearInterval(killer);
+      watchdog?.stop();
     }
   });
 }

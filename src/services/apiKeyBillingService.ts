@@ -11,6 +11,13 @@ import {
 import { API_KEY_PERMISSION_DEFINITIONS } from "./apiKeyService";
 import { sendEmail } from "./emailSender";
 import { mongoose } from "./mongoService";
+import {
+  evaluateAccountBudget,
+  loadAccountBudgetUsage,
+  recordAccountBudgetEvents,
+  recordBalanceThresholdEvents,
+  resolveAccountBudgetPolicy,
+} from "./quotaEventService";
 import logger from "../utils/logger";
 import { userRepository } from "../utils/userRepository";
 
@@ -70,6 +77,71 @@ function normalizeBillingMode(value: unknown): ApiKeyBillingMode {
 
 function isBillingEnabled(doc: Partial<ApiKeyDoc>): boolean {
   return doc.billingEnabled !== false;
+}
+
+/** 与账户风险/日用量同一豁免口径：只排除 admin / superadmin。 */
+const ACCOUNT_BUDGET_EXEMPT_ROLES = ["admin", "superadmin"];
+
+/**
+ * RC-28：账户级日/月预算 = `min(账户剩余, Key 剩余)`。
+ *
+ * 为什么在**预授权**里判：这里是唯一会在扣费前读取 Key 余额的位置；
+ * 放到结算（finish 事件）里只能事后发现，额度已经花出去了。
+ *
+ * 默认 `off`（见 `resolveAccountBudgetPolicy`）：没有历史数据可校准的新闸门先观察，
+ * 配置了预算但仍是 `observe` 时只写事件与告警，不拒绝请求。
+ */
+async function enforceAccountBudget(doc: ApiKeyDoc, costCredits: number): Promise<void> {
+  const policy = resolveAccountBudgetPolicy();
+  if (policy.mode === "off") return;
+  // 只切了 mode 但没配任何额度：没有约束可判，省掉一次按用户聚合。
+  if (policy.dailyCredits <= 0 && policy.monthlyCredits <= 0) return;
+
+  const owner = doc.userId ? await userRepository.getUserById(doc.userId) : null;
+  if (owner && ACCOUNT_BUDGET_EXEMPT_ROLES.includes(String((owner as { role?: string }).role || ""))) {
+    return;
+  }
+
+  const now = new Date();
+  const usage = await loadAccountBudgetUsage(doc.userId, now);
+  const keyRemaining =
+    normalizeBillingMode(doc.billingMode) === "prepaid" ? Math.max(0, Number(doc.balanceCredits) || 0) : null;
+  const evaluation = evaluateAccountBudget({ policy, usage, costCredits, keyRemaining });
+
+  if (evaluation.exceeded) {
+    void recordAccountBudgetEvents({ userId: doc.userId, evaluation, now });
+    if (policy.mode === "enforce") {
+      // 稳定 code：前端据此区分「你的额度不够」与「平台上游额度不够」。
+      throw billingError("账户预算已用尽", 402, "ACCOUNT_BUDGET_EXCEEDED");
+    }
+    logger.warn("[ApiKeyBilling] 账户预算在观察期已超限（未拒绝请求）", {
+      keyId: doc.keyId,
+      userId: doc.userId,
+      costCredits,
+      effectiveRemaining: evaluation.effectiveRemaining,
+    });
+    return;
+  }
+
+  void recordAccountBudgetEvents({ userId: doc.userId, evaluation, now });
+}
+
+/**
+ * RC-28：余额跨 80%/100% 阈值预警（旁路，fire-and-forget）。
+ * 用 Key 上的「预算周期基线」做分母；存量 Key 还没有基线时，用「本次扣费前余额」
+ * （balanceAfter + cost）作为本周期基线，否则上线后要等到下一次充值才会预警。
+ */
+function maybeRecordBalanceThresholds(doc: Partial<ApiKeyDoc>, costCredits: number): void {
+  const storedBaseline = Number(doc.budgetBaselineCredits) || 0;
+  const baseline = storedBaseline > 0 ? storedBaseline : (Number(doc.balanceCredits) || 0) + Math.max(0, costCredits);
+  if (baseline <= 0 || !doc.keyId) return;
+  void recordBalanceThresholdEvents({
+    keyId: doc.keyId,
+    userId: doc.userId || "",
+    balanceAfter: Number(doc.balanceCredits) || 0,
+    baseline,
+    cycle: Number(doc.budgetCycle) || 0,
+  });
 }
 
 /**
@@ -252,6 +324,9 @@ export async function preauthorizeApiKeyBilling(
     return null;
   }
 
+  // RC-28：账户级预算要先于 Key 余额预扣判断 —— 否则「一个账号 5 把 Key」仍是 5 份预算。
+  await enforceAccountBudget(doc, costCredits);
+
   const method = req.method || null;
   const route = getRequestRoute(req) || null;
   // `req.requestId` 由客户端 X-Request-Id 头直接决定，若把它纳入 operationId，
@@ -380,6 +455,8 @@ export async function finalizeApiKeyBilling(context: ApiKeyBillingContext, res: 
       }
       if (event.billingMode === "prepaid") {
         balanceAfter = roundCredits(updated.balanceCredits);
+        // RC-28：真实扣费（billable）才预警 —— 预留阶段就发会把「随后退款」误报成已用尽。
+        maybeRecordBalanceThresholds(updated, event.costCredits);
       }
       await injectBillingFault("finalize.afterBalanceUpdate");
     }
@@ -480,6 +557,23 @@ export async function adjustApiKeyBalance(opts: {
       return null;
     }
     await injectBillingFault("adjust.afterBalanceUpdate");
+
+    // RC-28：加额 = 新预算周期的起点。把基线重置为新余额并递增周期序号，
+    // 否则「充值后再次花掉 80%」会被 (keyId, threshold, 账期) 去重永久吞掉。
+    if (credits > 0) {
+      const rebased = (await ApiKeyModel.findOneAndUpdate(
+        { keyId: updated.keyId },
+        {
+          $set: { budgetBaselineCredits: roundCredits(updated.balanceCredits), updatedAt: new Date() },
+          $inc: { budgetCycle: 1 },
+        },
+        { returnDocument: "after", session },
+      ).lean()) as ApiKeyDoc | null;
+      if (rebased) {
+        updated.budgetBaselineCredits = rebased.budgetBaselineCredits;
+        updated.budgetCycle = rebased.budgetCycle;
+      }
+    }
 
     await ApiKeyBillingEventModel.create(
       [

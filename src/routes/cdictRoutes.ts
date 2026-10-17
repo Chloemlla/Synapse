@@ -1,18 +1,9 @@
 import express from "express";
 import { CDictController } from "../controllers/cdictController";
 import { CDictDonationController } from "../controllers/cdictDonationController";
-import { createLimiter } from "../middleware/routeLimiters";
+import { cdictDonationClaimLimiter } from "../middleware/routeLimiters";
 
 const router = express.Router();
-
-/** 署名申请是写操作，单独收紧到每 IP 每小时 10 次，避免有人拿它刷库。 */
-const donationClaimLimiter = createLimiter({
-  name: "cdictDonationClaim",
-  category: "public-api",
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  message: "署名提交过于频繁，请稍后再试",
-});
 
 /**
  * @openapi
@@ -181,7 +172,7 @@ router.get("/donate", CDictDonationController.channels);
  *       429:
  *         description: 提交过于频繁
  */
-router.post("/donate/claim", donationClaimLimiter, CDictDonationController.claim);
+router.post("/donate/claim", cdictDonationClaimLimiter, CDictDonationController.claim);
 
 /**
  * @openapi

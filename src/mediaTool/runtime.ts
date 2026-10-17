@@ -70,7 +70,24 @@ export interface SpawnResult {
   stderr: string;
 }
 
-export function runTool(bin: string, args: string[], opts: { cwd?: string; maxBuffer?: number } = {}): SpawnResult {
+/**
+ * RC-39：同步外部工具（ffprobe 等）的硬时长上限。
+ *
+ * 为什么单独限：`spawnSync` 会**阻塞事件循环**，异步看门狗在这段时间里根本不会 tick ——
+ * 对同步调用唯一可用的时限就是 spawnSync 自己的 `timeout`。默认 120s，
+ * 超过即 SIGTERM（ffprobe 正常在毫秒级返回，卡住通常是坏文件或读到了网络盘）。
+ */
+function resolveSyncToolTimeoutMs(): number {
+  const parsed = Number(process.env.MEDIA_TOOL_SYNC_TOOL_TIMEOUT_MS);
+  if (!Number.isFinite(parsed) || Math.floor(parsed) < 1000) return 120_000;
+  return Math.min(Math.floor(parsed), 30 * 60_000);
+}
+
+export function runTool(
+  bin: string,
+  args: string[],
+  opts: { cwd?: string; maxBuffer?: number; timeoutMs?: number } = {},
+): SpawnResult {
   // spawnSync("") 抛 ERR_INVALID_ARG_VALUE(The argument 'file' cannot be empty),
   // 会把"未配置可执行路径"(如空的 MEDIA_TOOL_YTDLP)变成健康检查整个 500;
   // 在此归一成"退出码 -1 + 说明",与 ensureDir 的空值兜底同口径。
@@ -82,6 +99,8 @@ export function runTool(bin: string, args: string[], opts: { cwd?: string; maxBu
     maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024,
     encoding: "buffer",
     windowsHide: true,
+    // 硬时长上限：卡死的工具不能永久占住事件循环（超时后 status 为 null、signal 为 SIGTERM）。
+    timeout: opts.timeoutMs ?? resolveSyncToolTimeoutMs(),
   });
   return {
     status: r.status,

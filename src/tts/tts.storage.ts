@@ -260,6 +260,15 @@ class MongoTtsJobStore implements TtsJobStore {
       .exec()) as TtsJobRecord | null;
   }
 
+  /** RC-30：per-user 活跃任务计数（排队 + 运行中）。userId 上有索引，单用户查询很轻。 */
+  public async countActiveJobsForUser(userId: string) {
+    return TtsJobModel.countDocuments({
+      userId,
+      status: { $in: ["queued", "processing"] },
+    })
+      .exec();
+  }
+
   public async getQueuePosition(taskId: string) {
     const job = await this.getJob(taskId);
     if (!job || job.status !== "queued") {

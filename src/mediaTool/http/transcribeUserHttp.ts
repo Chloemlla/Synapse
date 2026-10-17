@@ -23,6 +23,13 @@ import {
   userScopedDirName,
 } from "../runtime";
 import { purgeJobArtifacts } from "../jobs/artifactCleanup";
+import {
+  checkUploadBudget,
+  inspectUploadedFile,
+  mediaSandboxStatus,
+  resolveMediaSandboxLimits,
+  type MediaSandboxLimits,
+} from "../sandbox";
 import type { MediaJobRunner } from "../jobs/mediaJobRunner";
 import type { MediaJobStore } from "../jobs/mediaJobStore";
 import type { TranscriptStore } from "../jobs/transcriptStore";
@@ -135,6 +142,8 @@ export function createTranscribeUserRouter(deps: TranscribeUserRouterDeps): expr
     let inbox: string;
     let limitBytes: number;
     let toApiRel: (abs: string) => string | null;
+    let sandboxRoot: string;
+    let sandboxLimits: MediaSandboxLimits;
     try {
       const c = await ctx(req, res);
       if (!c) return;
@@ -146,6 +155,19 @@ export function createTranscribeUserRouter(deps: TranscribeUserRouterDeps): expr
       ensureDir(inbox);
       limitBytes = Math.min(c.settings.maxUploadBytes, c.settings.lasr.maxFileSizeBytes);
       toApiRel = c.toApiRel;
+      sandboxRoot = c.userRoot;
+      sandboxLimits = resolveMediaSandboxLimits(process.env, {
+        maxFileBytes: limitBytes,
+        maxFilesPerJob: c.settings.user.maxFilesPerJob,
+      });
+
+      // RC-39：先按"最坏增量（整份文件）"预检目录配额 —— 收下再删会让一次上传
+      // 把磁盘瞬间顶满，拒绝要在写盘之前发生。
+      const budget = checkUploadBudget({ dir: c.userRoot, incomingBytes: limitBytes, limits: sandboxLimits });
+      if (!budget.ok) {
+        res.status(mediaSandboxStatus(budget.code)).json({ ok: false, error: budget.message, code: budget.code });
+        return;
+      }
     } catch (e) {
       res.status(500).json({ ok: false, error: (e as Error).message });
       return;
@@ -179,6 +201,18 @@ export function createTranscribeUserRouter(deps: TranscribeUserRouterDeps): expr
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
       res.status(400).json({ ok: false, error: "未收到文件:multipart 里没有名为 file 的部分(Content-Type=" + (req.headers["content-type"] || "缺失") + ")" });
+      return;
+    }
+    // RC-39：落盘后复核（大小/类型/路径）。失败关闭 —— 不合法就删掉刚写的文件再拒绝，
+    // 不留下一个"已被拒但仍在占空间"的孤儿文件。
+    const verified = inspectUploadedFile(file.path, sandboxRoot, sandboxLimits);
+    if (!verified.ok) {
+      try {
+        fs.unlinkSync(file.path);
+      } catch {
+        // 删除失败不改变拒绝结果
+      }
+      res.status(mediaSandboxStatus(verified.code)).json({ ok: false, error: verified.message, code: verified.code });
       return;
     }
     const st = statOrNull(file.path);

@@ -160,6 +160,11 @@ export interface TtsJobStore {
     expectedOwner?: string,
   ): Promise<TtsJobRecord | null>;
   getQueuePosition(taskId: string): Promise<number>;
+  /**
+   * RC-30：该用户当前在排队/运行中的任务数（`queued` + `processing`）。
+   * 入队闸门用它做 per-user 并发上限；轮询/历史类请求不该把它算进去。
+   */
+  countActiveJobsForUser(userId: string): Promise<number>;
   claimNextQueuedJob(workerId: string, leaseMs: number): Promise<TtsJobRecord | null>;
   /**
    * 续租：只有仍由 `expectedOwner` 持有租约时才延长 `leaseExpiresAt`。

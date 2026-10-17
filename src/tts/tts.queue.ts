@@ -10,6 +10,7 @@ import {
   startExpiredReservationSweeper,
 } from "./tts.quota";
 import { TtsService } from "./tts.service";
+import { TtsRequestError } from "./tts.errors";
 import { type TtsJobRecord, type TtsNextAction, ttsStorage } from "./tts.storage";
 
 interface QueueCallbacks {
@@ -35,6 +36,25 @@ function resolveQueueConcurrency(): number {
   return Math.max(1, Math.min(MAX_QUEUE_CONCURRENCY, Math.floor(raw)));
 }
 
+/**
+ * RC-30：每用户「排队 + 运行中」任务上限。
+ *
+ * 为什么需要它：队列并发是**全局**的（默认 2），一个人提交 N 个任务就能把整条队列占满，
+ * 其他用户全部排队。上限默认 3（全局并发 2 的 1.5 倍）—— 正常用户提交一批短任务不会撞上，
+ * 病态并发会被直接拒绝。
+ *
+ * 0 = 关闭（保留运维紧急放开的退路）；非法/负数回落默认。
+ */
+export function resolveTtsPerUserMaxActive(): number {
+  const raw = Number(process.env.TTS_PER_USER_MAX_ACTIVE ?? "3");
+  if (!Number.isFinite(raw)) return 3;
+  const floored = Math.floor(raw);
+  if (floored <= 0) return 0;
+  return Math.min(floored, 50);
+}
+
+const TTS_PER_USER_MAX_ACTIVE = resolveTtsPerUserMaxActive();
+
 export class TtsQueue {
   private readonly ttsService = new TtsService();
   private readonly workerId = `tts-worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -55,9 +75,66 @@ export class TtsQueue {
   }
 
   public async enqueue(job: TtsJobRecord) {
+    // RC-30：入队前的 per-user 活跃任务闸门。只对登录用户生效（匿名任务由配额/指纹闸门管），
+    // 管理员豁免（运维批量验证不该被自家上限卡住）。
+    await this.assertUserConcurrency(job);
     await ttsStorage.createJob(job);
     void this.drain();
     return job;
+  }
+
+  /** 当前生效的每用户上限（0 = 关闭）。 */
+  public getPerUserMaxActive(): number {
+    return TTS_PER_USER_MAX_ACTIVE;
+  }
+
+  /** 该用户当前活跃任务数；管理面板/诊断可用（RC-30 要求「暴露占用计数」）。 */
+  public async getOccupancyForUser(userId: string): Promise<number> {
+    if (!userId) return 0;
+    return this.countActiveForUser(userId);
+  }
+
+  /** 队列侧的静态占用信息（不含逐用户明细，明细走 getOccupancyForUser）。 */
+  public getOccupancy(): { concurrency: number; perUserMaxActive: number; processing: boolean } {
+    return {
+      concurrency: this.concurrency,
+      perUserMaxActive: TTS_PER_USER_MAX_ACTIVE,
+      processing: this.processing,
+    };
+  }
+
+  private async countActiveForUser(userId: string): Promise<number> {
+    // 单测里的 storage 替身可能没有这个方法（旧替身/最小 mock）：按 0 处理，
+    // 让闸门退化成"不限制"，而不是把调用点炸成 TypeError（见 AGENTS.md §5 替身一致性）。
+    const counter = (ttsStorage as unknown as {
+      countActiveJobsForUser?: (id: string) => Promise<number>;
+    }).countActiveJobsForUser;
+    if (typeof counter !== "function") return 0;
+    try {
+      const value = await counter.call(ttsStorage, userId);
+      return Math.max(0, Math.floor(Number(value) || 0));
+    } catch (error) {
+      // 计数失败不该把正常提交拒掉：随后 createJob 若存储真的不可用会自然失败并走原有错误路径。
+      logger.warn("TTS 每用户活跃任务计数失败，跳过并发闸门", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
+    }
+  }
+
+  private async assertUserConcurrency(job: TtsJobRecord): Promise<void> {
+    if (TTS_PER_USER_MAX_ACTIVE <= 0 || !job.userId || job.isAdmin) return;
+    const active = await this.countActiveForUser(job.userId);
+    if (active < TTS_PER_USER_MAX_ACTIVE) return;
+    // 429 + 稳定 code：控制器只在 instanceof TtsRequestError 时回结构化 429（不是 500）。
+    // Retry-After 头需要在控制器里补（本文件拿不到 res），这里把建议秒数写进文案。
+    throw new TtsRequestError(
+      429,
+      `你已有 ${active} 个任务在排队或运行（上限 ${TTS_PER_USER_MAX_ACTIVE} 个），请等待完成后再提交`,
+      "TTS_USER_CONCURRENCY_LIMIT",
+      true,
+    );
   }
 
   private startStaleRecoveryTimer(): void {

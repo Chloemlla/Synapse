@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
 import { createSharedRateLimitStore } from "../services/sharedRateLimitStore";
 import logger from "../utils/logger";
@@ -312,6 +312,159 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
   });
 }
 
+// ========== RC-27：突发并发硬顶（在途请求数，而不是"窗口内次数"） ==========
+//
+// 固定窗口的限流器管不住「同一秒内同时打进来的 N 个昂贵请求」：额度是 10/分钟时，
+// 10 个转写任务仍可在同一秒占满 runner。并发硬顶是另一条正交约束 ——
+// 超顶**立即拒绝**（不排队），否则排队本身就是新的内存/连接压力（与 RC-43 同一教训）。
+
+interface BurstConcurrencyRegistrySnapshot {
+  totalActive: number;
+  guards: Record<string, { active: number; keys: number; maxConcurrent: number }>;
+}
+
+class BurstConcurrencyRegistry {
+  private readonly counters = new Map<string, Map<string, number>>();
+  private readonly limits = new Map<string, number>();
+
+  register(name: string, maxConcurrent: number): void {
+    this.limits.set(name, maxConcurrent);
+  }
+
+  /** 占用一个槽位；返回占用后的值（> max 时调用方必须立刻 release）。 */
+  acquire(name: string, key: string): number {
+    let bucket = this.counters.get(name);
+    if (!bucket) {
+      bucket = new Map();
+      this.counters.set(name, bucket);
+    }
+    const next = (bucket.get(key) || 0) + 1;
+    bucket.set(key, next);
+    return next;
+  }
+
+  release(name: string, key: string): void {
+    const bucket = this.counters.get(name);
+    if (!bucket) return;
+    const current = bucket.get(key) || 0;
+    if (current <= 1) {
+      bucket.delete(key);
+    } else {
+      bucket.set(key, current - 1);
+    }
+  }
+
+  snapshot(): BurstConcurrencyRegistrySnapshot {
+    const guards: BurstConcurrencyRegistrySnapshot["guards"] = {};
+    let totalActive = 0;
+    for (const [name, bucket] of this.counters) {
+      let active = 0;
+      for (const count of bucket.values()) active += count;
+      totalActive += active;
+      guards[name] = { active, keys: bucket.size, maxConcurrent: this.limits.get(name) || 0 };
+    }
+    return { totalActive, guards };
+  }
+
+  resetForTests(): void {
+    this.counters.clear();
+    this.limits.clear();
+  }
+}
+
+const burstConcurrencyRegistry = new BurstConcurrencyRegistry();
+
+/** 当前在途占用（管理端/用例可查；RC-27 要求"暴露占用计数"）。 */
+export function getBurstConcurrencySnapshot(): BurstConcurrencyRegistrySnapshot {
+  return burstConcurrencyRegistry.snapshot();
+}
+
+/** 仅供用例清理：避免套件之间共享计数器。 */
+export function resetBurstConcurrencyForTests(): void {
+  burstConcurrencyRegistry.resetForTests();
+}
+
+export interface BurstConcurrencyOptions {
+  name: string;
+  /** 每个身份键允许的在途请求数（默认取 env 或调用方给的保守值）。 */
+  maxConcurrent: number;
+  /** 429 时给出的 Retry-After（秒）；只是"建议重试"提示，不承诺精确时点。 */
+  retryAfterSeconds?: number;
+  /** 只对这些方法生效（默认写方法）。 */
+  methods?: string[];
+  /** 只对这些路径生效（如只卡 translate/tts，不卡同前缀的轮询）。 */
+  pathFilter?: (pathname: string) => boolean;
+  keyGenerator?: (req: Request) => string;
+}
+
+/**
+ * 创建并发硬顶中间件。
+ *
+ * 键默认沿用 RC-27 的双键口径（User ID + IP）：
+ * - 只按 IP 会在 NAT 后把一群正常用户算成一个人；
+ * - 只按账号则换 IP 即可并行刷。
+ *
+ * 注意：只统计**在途**请求，不统计后台任务；TTS 的"排队任务数"由队列自己的
+ * per-user 上限负责（RC-30），两者是不同层面，别互相替代。
+ */
+export function createBurstConcurrencyGuard(opts: BurstConcurrencyOptions): RequestHandler {
+  const methods = new Set((opts.methods ?? ["POST", "PUT", "PATCH"]).map((m) => m.toUpperCase()));
+  const maxConcurrent = Math.max(1, Math.floor(opts.maxConcurrent) || 1);
+  const retryAfterSeconds = Math.max(1, Math.floor(opts.retryAfterSeconds ?? 2));
+  const keyGenerator = opts.keyGenerator || userIpDualKey;
+  burstConcurrencyRegistry.register(opts.name, maxConcurrent);
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // 与其它限流器同一口径：本机调试/健康检查不参与配额。
+    if (req.isLocalIp) {
+      next();
+      return;
+    }
+    if (!methods.has(req.method)) {
+      next();
+      return;
+    }
+    if (opts.pathFilter) {
+      const pathname = req.originalUrl?.split("?")[0] || req.path || "";
+      if (!opts.pathFilter(pathname)) {
+        next();
+        return;
+      }
+    }
+
+    const key = keyGenerator(req);
+    const active = burstConcurrencyRegistry.acquire(opts.name, key);
+    if (active > maxConcurrent) {
+      burstConcurrencyRegistry.release(opts.name, key);
+      logger.warn(`[RateLimit] 429 ${opts.name} (burst concurrency)`, {
+        category: "burst-concurrency",
+        key,
+        active,
+        maxConcurrent,
+        route: getRouteHotspotKey(req),
+      });
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      res.status(429).json({
+        error: "同时进行的请求过多，请稍后重试",
+        code: "BURST_CONCURRENCY_LIMIT",
+        retryAfterSeconds,
+      });
+      return;
+    }
+
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      burstConcurrencyRegistry.release(opts.name, key);
+    };
+    // finish 与 close 都要挂：客户端中断时 finish 不会触发，漏减会让槽位永久泄漏。
+    res.once("finish", release);
+    res.once("close", release);
+    next();
+  };
+}
+
 const LIMITER_DEFINITIONS = {
   authLogin: {
     profile: "login",
@@ -619,6 +772,15 @@ const LIMITER_DEFINITIONS = {
     message: "翻译/朗读请求过于频繁，请稍后再试",
     skip: skipUnlessTrustedCdictUpstream,
   },
+  // RC-27：署名申请是写操作，单独一档 每 IP 每小时 10 次，不与翻译/朗读桶共用。
+  // 之前这条定义写在 cdictRoutes 里（能用，但不出现在限流器清单里，排查 429 时容易漏看）。
+  cdictDonationClaim: {
+    profile: "relaxed",
+    category: "public-api",
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    message: "署名提交过于频繁，请稍后再试",
+  },
   integrity: {
     profile: "sensitive",
     category: "public-api",
@@ -802,6 +964,7 @@ export const cdictLimiter = limiterFromDefinition("cdict");
 export const cdictTrustedLimiter = limiterFromDefinition("cdictTrusted");
 export const cdictTrustedUpstreamLimiter = limiterFromDefinition("cdictTrustedUpstream");
 export const cdictTrustedUpstreamIpLimiter = limiterFromDefinition("cdictTrustedUpstreamIp");
+export const cdictDonationClaimLimiter = limiterFromDefinition("cdictDonationClaim");
 export const integrityLimiter = limiterFromDefinition("integrity");
 export const nexaiSecurityLimiter = limiterFromDefinition("nexaisecurity");
 export const bilibiliSyncLimiter = limiterFromDefinition("bilibiliSync");
@@ -822,3 +985,36 @@ export const docsTimeoutLimiter = limiterFromDefinition("docstimeout");
 export const cloudflareChallengeLimiter = limiterFromDefinition("cloudflareChallenge");
 export const globalDefaultLimiter = limiterFromDefinition("global");
 export const notFoundLimiter = limiterFromDefinition("notfound");
+
+// ========== RC-27：昂贵端点的突发并发硬顶实例 ==========
+// 默认值刻意给得比"正常用户峰值"宽（单身份 3～6 个在途），只切断病态并发；
+// 需要更紧可用 env 调。0/非法 → 回落默认。
+function readBurstMaxEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed) || Math.floor(parsed) < 1) return fallback;
+  return Math.min(Math.floor(parsed), 100);
+}
+
+/** 同时在飞行的 TTS 生成请求（全局队列并发默认 2，这里放一点余量给轮询/重试）。 */
+export const ttsGenerateBurstGuard = createBurstConcurrencyGuard({
+  name: "tts-generate-burst",
+  maxConcurrent: readBurstMaxEnv("BURST_TTS_GENERATE_MAX", 3),
+});
+
+const TRANSCRIBE_EXPENSIVE_PATHS = new Set(["/api/transcribe/upload", "/api/transcribe/jobs"]);
+
+/** 转写只卡"上传/建任务"，不卡高频但轻量的进度轮询（否则长任务会把并发槽位吃满）。 */
+export const transcribeBurstGuard = createBurstConcurrencyGuard({
+  name: "transcribe-burst",
+  maxConcurrent: readBurstMaxEnv("BURST_TRANSCRIBE_MAX", 3),
+  pathFilter: (pathname) => TRANSCRIBE_EXPENSIVE_PATHS.has(pathname.replace(/\/+$/, "")),
+});
+
+const CDICT_UPSTREAM_PATHS = new Set(["/api/cdict/translate", "/api/cdict/tts"]);
+
+/** CDict 的翻译/朗读会消耗服务端持有的上游凭据，单独卡并发（列表/赞赏等轻接口不卡）。 */
+export const cdictUpstreamBurstGuard = createBurstConcurrencyGuard({
+  name: "cdict-upstream-burst",
+  maxConcurrent: readBurstMaxEnv("BURST_CDICT_UPSTREAM_MAX", 6),
+  pathFilter: (pathname) => CDICT_UPSTREAM_PATHS.has(pathname.replace(/\/+$/, "")),
+});
