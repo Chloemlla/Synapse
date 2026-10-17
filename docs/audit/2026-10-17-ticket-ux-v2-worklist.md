@@ -396,3 +396,5 @@ router.post(
 - 静态闸门：`check:frontend-design-language` 通过且工单文件零新增违规；
   `check:privacy-contract` / `check:privacy-data-map` 通过（已重生成 `privacyDataMap.ts`）。
 - 未在本地构建或运行测试；最终以 GitHub Actions 结论为准。
+- 提交：`be45c5a8`（主体）、`9556bc94`（时间线展开态 / 列表星级同步）、
+  `50c9ee38`（移动端 flex / 工单 ID 搜索）、`5d7f1fea`（概览卡筛选归一）。
