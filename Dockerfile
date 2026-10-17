@@ -20,6 +20,11 @@ WORKDIR /app/frontend
 ARG GIT_SHA=unknown
 ENV VITE_GIT_SHA=$GIT_SHA
 
+# 版本号同步脚本：package.json 的 version 由构建期按当天（UTC+8）日期重写，
+# 本阶段 WORKDIR 是 /app/frontend，脚本按 `../scripts/` 解析到 /app/scripts，
+# 因此必须显式拷到那里（这一步同时让 /app/package.json 与 frontend 的版本一起更新）。
+COPY scripts/sync-package-version.mjs /app/scripts/sync-package-version.mjs
+
 # 利用 Docker 缓存层：先复制依赖声明文件
 COPY package.json /app/package.json
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./

@@ -1,7 +1,7 @@
 {
   "name": "synapse-frontend",
   "private": true,
-  "version": "26.9.1",
+  "version": "26.10.17",
   "packageManager": "pnpm@11.11.0",
   "type": "module",
   "sideEffects": [
@@ -12,17 +12,18 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "build:vercel": "vite build --mode vercel",
+    "build": "node scripts/sync-package-version.mjs && tsc && vite build",
+    "build:vercel": "node scripts/sync-package-version.mjs && vite build --mode vercel",
     "typecheck": "tsc --noEmit",
-    "build:simple": "tsc && vite build --mode simple",
-    "build:minimal": "tsc && vite build --mode minimal",
-    "build:analyze": "tsc && vite build --mode analyze",
-    "build:optimized": "tsc && vite build --mode production",
+    "build:simple": "node scripts/sync-package-version.mjs && tsc && vite build --mode simple",
+    "build:minimal": "node scripts/sync-package-version.mjs && tsc && vite build --mode minimal",
+    "build:analyze": "node scripts/sync-package-version.mjs && tsc && vite build --mode analyze",
+    "build:optimized": "node scripts/sync-package-version.mjs && tsc && vite build --mode production",
     "preview": "vite preview",
     "test": "vitest",
     "test:ci": "vitest run --coverage",
-    "analyze": "npm run build:analyze && npx vite-bundle-analyzer dist"
+    "analyze": "npm run build:analyze && npx vite-bundle-analyzer dist",
+    "version:sync": "node scripts/sync-package-version.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

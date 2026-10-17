@@ -1,6 +1,6 @@
 {
   "name": "synapse",
-  "version": "26.9.1",
+  "version": "26.10.17",
   "packageManager": "pnpm@11.11.0",
   "description": "Synapse with Node.js",
   "main": "dist/app.js",
@@ -16,12 +16,12 @@
     "build": "pnpm run build:backend && pnpm run build:frontend",
     "build:simple": "pnpm run build:backend && pnpm run build:frontend:simple",
     "build:minimal": "pnpm run build:backend && pnpm run build:frontend:minimal",
-    "build:backend": "node scripts/generate-admin-spa-paths.js && tsc && node scripts/copy-templates.js && pnpm run obfuscate && node scripts/copy-obfuscated-payload.js",
+    "build:backend": "node scripts/sync-package-version.mjs && node scripts/generate-admin-spa-paths.js && tsc && node scripts/copy-templates.js && pnpm run obfuscate && node scripts/copy-obfuscated-payload.js",
     "build:backend:clean": "rm -rf dist dist-obfuscated && pnpm run build:backend",
     "obfuscate": "javascript-obfuscator dist --output dist-obfuscated --config package.json",
-    "build:frontend": "cd frontend && pnpm install --frozen-lockfile --ignore-scripts && pnpm run build",
-    "build:frontend:simple": "cd frontend && pnpm run build:simple",
-    "build:frontend:minimal": "cd frontend && pnpm run build:minimal",
+    "build:frontend": "node scripts/sync-package-version.mjs && cd frontend && pnpm install --frozen-lockfile --ignore-scripts && pnpm run build",
+    "build:frontend:simple": "node scripts/sync-package-version.mjs && cd frontend && pnpm run build:simple",
+    "build:frontend:minimal": "node scripts/sync-package-version.mjs && cd frontend && pnpm run build:minimal",
     "prod": "pnpm run build && pnpm start",
     "test": "jest --detectOpenHandles",
     "test:simple": "jest --detectOpenHandles --testPathPatterns=\"smartHumanCheckService|nonceStore|domainExemption\" --testNamePattern=\"should\" --verbose",
@@ -84,7 +84,8 @@
     "test:critical": "jest --runInBand --detectOpenHandles --testPathPatterns=\"healthRoutes|authTokenLogging|replayProtection|authRoutes|authenticateToken.integration|commandCrypto|authCookieSession\"",
     "report:unused-dependencies": "node scripts/governance/report-unused-dependencies.js",
     "migrate:rc47-indexes": "ts-node --transpile-only scripts/migrations/rc47-user-datas-partial-unique-indexes.ts",
-    "migrate:legal-hold-ttl": "node scripts/apply-legal-hold-ttl-removal.js"
+    "migrate:legal-hold-ttl": "node scripts/apply-legal-hold-ttl-removal.js",
+    "version:sync": "node scripts/sync-package-version.mjs"
   },
   "keywords": [
     "happy",
