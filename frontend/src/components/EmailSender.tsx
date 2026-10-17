@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import DOMPurify from "dompurify";
 import {
   FaArrowRight,
   FaCheckCircle,
@@ -23,7 +22,7 @@ import { useReducedMotion } from "../hooks/useReducedMotion";
 import { buildEmailDeliveryNotice } from "../utils/emailDelivery";
 import { cn } from '../utils/cn';
 import { StudioErrorNote } from './studioFeedback';
-import { studioEyebrowPillClassName, studioModalCardClassName, studioPageClassName, studioPanelClassName } from './studioTheme';
+import { studioEyebrowPillClassName, studioFieldClassName, studioModalCardClassName, studioPageClassName, studioPanelClassName } from './studioTheme';
 
 interface EmailForm {
   from: string;
@@ -974,7 +973,7 @@ const EmailSender: React.FC = () => {
                             from: buildDefaultFrom(e.target.value),
                           }))
                         }
-                        className="mb-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className={`${studioFieldClassName} mb-3`}
                       >
                         {senderDomains.length > 0 ? (
                           senderDomains.map((domain) => (
@@ -991,7 +990,7 @@ const EmailSender: React.FC = () => {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, from: e.target.value }))
                         }
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className={studioFieldClassName}
                         placeholder="请输入完整发件人邮箱"
                       />
                     </div>
@@ -1136,7 +1135,7 @@ const EmailSender: React.FC = () => {
                       // 比“先洗再插入同源 DOM”更接近“这就是收件人看到的东西”。
                       <iframe
                         title="邮件 HTML 预览"
-                        className="prose prose-sm h-[420px] w-full max-w-none overflow-x-auto rounded-xl border-0 bg-white"
+                        className="prose prose-sm h-[420px] w-full max-w-none overflow-x-auto rounded-2xl border-0 bg-white"
                         sandbox=""
                         referrerPolicy="no-referrer"
                         srcDoc={form.html}

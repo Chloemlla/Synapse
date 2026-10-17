@@ -482,12 +482,14 @@ const EmailTraceability: React.FC = () => {
                   </div>
                 ) : (
                   <div className="max-h-[400px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    {/* 邮件 HTML 来自外部输入：与发信台同一套 RC-34 / D15(a) 隔离口径，
+                        不给 allow-scripts，也不给 allow-same-origin（渲染不需要它）。 */}
                     <iframe
                       srcDoc={detailRecord.content}
                       title="邮件 HTML 预览"
-                      sandbox="allow-same-origin"
-                      className="h-[400px] w-full"
-                      style={{ border: "none" }}
+                      sandbox=""
+                      referrerPolicy="no-referrer"
+                      className="h-[400px] w-full border-0"
                     />
                   </div>
                 )}

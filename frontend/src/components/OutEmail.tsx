@@ -644,7 +644,7 @@ const OutEmail: React.FC = () => {
                 e.target.value = '';
               }}
               disabled={batchMode}
-              className={`mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 ${batchMode ? 'cursor-not-allowed opacity-50' : ''}`}
+              className={`mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-2xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 ${batchMode ? 'cursor-not-allowed opacity-50' : ''}`}
             />
             {selectedFiles.length > 0 && (
               <div className="mt-2 max-h-32 overflow-auto rounded-2xl border border-slate-200 bg-white/60 p-3">

@@ -4,7 +4,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { isSuperAdmin } from '../../utils/rbac';
 import { useNotification } from '../Notification';
 import { useConfirm } from '../confirm/ConfirmDialogProvider';
-import { studioFieldClassName, studioPrimaryButtonClassName } from '../studioTheme';
+import { cn } from '../../utils/cn';
+import { studioFieldClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName } from '../studioTheme';
 import SecretKeySection from './SecretKeySection';
 import { QQ_GUARD_SIGNING_API, getAuthHeaders, authFetch } from './api';
 
@@ -144,7 +145,7 @@ export default function SelfContainedQqGuardSigningConfigSection({ prefersReduce
         currentLabel="当前密钥（脱敏）" currentValue={currentToken} updatedAt={updatedAt}
         onInputChange={setTokenInput} onRefresh={fetchConfig} onSave={handleSave} onDelete={handleReset}
       />
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-xl sm:p-5">
+      <div className={studioPanelClassName}>
         <div className="space-y-3">
           <div>
             <h4 className="text-base font-semibold text-slate-800">离线/恢复告警邮箱</h4>
@@ -164,7 +165,7 @@ export default function SelfContainedQqGuardSigningConfigSection({ prefersReduce
               disabled={savingAlert || !canWrite}
             />
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
+          <div className={cn(studioSubPanelClassName, 'px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3')}>
             {alertEmailsHint}
           </div>
           <div className="flex items-center justify-end gap-3">
