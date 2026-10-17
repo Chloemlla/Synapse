@@ -14,7 +14,8 @@
     "2026-10-11: device_fingerprints added for the behavioural fingerprint matrix (RC-16): Canvas/WebGL/timezone/screen component hashes (no raw images) keyed by account + fingerprint id, used to detect component drift on one fingerprint and the same hardware being reused across accounts. Like account_ip_signals it has no TTL so the evidence survives account deletion; the source IP list is capped at the latest 20 entries.",
     "2026-10-16: GeoGebra cloud projects, versions, comments and public-share snapshots are owner-scoped; deleting a project revokes its linked shares, and account soft deletion makes all owned shares inaccessible and removes their cover files.",
     "2026-10-16: tickets and ticket_attachments added — the support ticket system previously stored user content (ticket text, contactEmail) and now also holds the new ticket fields (type inquiry/incident, related service + reference, related tickets, contact email) an attachment store (jpg/jpeg/png/gif/txt/pdf, 1MB per file, 5 per ticket, owner/superadmin downloads only) and attachment links (external URLs only — we never fetch them, and uploads for regular users are off by default behind the TICKET_ATTACHMENTS runtime switch).",
-    "2026-10-17: tickets gained optional CSAT feedback (csatRating 1-5, csatComment ≤500 chars, csatSubmittedAt) plus an auditable handling trail (events: status/priority/category/assignee/type/service/csat changes, capped at the latest 100, admin actor names redacted to 客服 for owners) and firstResponseAt / resolvedAt timestamps. The owner can submit or update their rating only after the ticket is resolved/closed; the comment is visible to the owner and superadmins only, while list summaries carry just csatRating."
+    "2026-10-17: tickets gained optional CSAT feedback (csatRating 1-5, csatComment ≤500 chars, csatSubmittedAt) plus an auditable handling trail (events: status/priority/category/assignee/type/service/csat changes, capped at the latest 100, admin actor names redacted to 客服 for owners) and firstResponseAt / resolvedAt timestamps. The owner can submit or update their rating only after the ticket is resolved/closed; the comment is visible to the owner and superadmins only, while list summaries carry just csatRating.",
+    "2026-10-17: account data export added for superadmins (GET /api/admin/users/:id/export, requires a security session). The file covers profile, fingerprints, sessions, API key metadata, tickets, TTS/GeoGebra/Pixel records, consents, audit logs and other account-owned collections; credentials (password material, tokens, key hashes, ciphertext, internal storage keys) are replaced with [redacted], and datasets excluded by this map are listed with their reasons. auth_sessions and api_keys are now declared datasets because the export exposes their metadata."
   ],
   "datasets": [
     {
@@ -55,7 +56,7 @@
       },
       "export": {
         "supported": true,
-        "surface": "admin user export / profile admin views",
+        "surface": "GET /api/admin/users/:id/export (superadmin + security session) / admin user list & fingerprint views",
         "includes": [
           "fingerprint ids",
           "timestamps",
@@ -268,7 +269,7 @@
       },
       "export": {
         "supported": "partial",
-        "surface": "GET /api/policy/status (device owner), admin stats, superadmin /api/admin/policy-consents (+ /export CSV, superadmin only, audited)",
+        "surface": "GET /api/policy/status (device owner), admin stats, superadmin /api/admin/policy-consents (+ /export CSV), GET /api/admin/users/:id/export (account export)",
         "includes": [
           "version",
           "expiresAt",
@@ -318,7 +319,7 @@
       },
       "export": {
         "supported": "partial",
-        "surface": "authenticated job status/history APIs",
+        "surface": "authenticated job status/history APIs / GET /api/admin/users/:id/export (account export)",
         "includes": [
           "task metadata",
           "status",
@@ -634,6 +635,65 @@
       "evidence": [
         "src/models/blockedIdentityModel.ts"
       ]
+    },
+    {
+      "id": "auth-sessions",
+      "collection": "auth_sessions",
+      "fields": [
+        "sessionId",
+        "userId",
+        "credentialType",
+        "authKind",
+        "deviceKey",
+        "deviceId",
+        "deviceName",
+        "platform",
+        "clientType",
+        "ipAddress",
+        "ipLocation",
+        "userAgent",
+        "oauthClientId",
+        "createdAt",
+        "lastActivityAt",
+        "revokedAt"
+      ],
+      "purpose": "Keep every logged-in device revocable; changing password, logging out or an admin revoke must take effect immediately",
+      "legalBasis": "security_and_service_integrity",
+      "retention": {
+        "type": "operational",
+        "description": "Sessions are revoked or expire; revoked rows are kept briefly for security investigation"
+      },
+      "delete": {
+        "onUserDelete": "revoke_and_soft_delete",
+        "manual": "admin user delete",
+        "automatic": "revoked on logout / password change"
+      },
+      "export": {
+        "supported": "partial",
+        "surface": "GET /api/admin/users/:id/export (superadmin + security session)",
+        "includes": [
+          "device name",
+          "platform",
+          "client type",
+          "IP location",
+          "created/last activity",
+          "revokedAt"
+        ],
+        "reason": "credentialHash / clientTokenHash are never exported"
+      },
+      "evidence": [
+        "src/models/authSessionModel.ts",
+        "src/services/userService.ts",
+        "src/utils/securitySession.ts"
+      ],
+      "userFacing": {
+        "label": "登录会话与设备",
+        "category": "安全与风控",
+        "what": "每次登录产生的设备标识、设备名称、平台与客户端类型、登录 IP 与归属地、最近活动时间与撤销时间。会话凭据哈希不会导出。",
+        "why": "让你能在个人中心看到已登录设备并逐台下线；改密、登出或管理员撤销后，旧会话立即失效，避免被盗令牌长期可用。",
+        "retention": "会话在登出、改密或管理员撤销时失效；失效记录短期保留用于安全调查，账号注销时随账号一并标记删除。",
+        "policySection": "data-use"
+      }
     },
     {
       "id": "ipqs-lookup-logs",
@@ -987,6 +1047,70 @@
         "src/models/mobileClientTokenModel.ts",
         "src/services/mobileLoginService.ts"
       ]
+    },
+    {
+      "id": "api-keys",
+      "collection": "api_keys",
+      "fields": [
+        "keyId",
+        "keyHash",
+        "name",
+        "userId",
+        "permissions",
+        "rateLimit",
+        "expiresAt",
+        "lastUsedAt",
+        "lastUsedIp",
+        "usageCount",
+        "status",
+        "penaltyUntil",
+        "penaltySource",
+        "penaltyReason",
+        "billingEnabled",
+        "billingMode",
+        "balanceCredits",
+        "totalChargedCredits",
+        "totalBillableRequests",
+        "createdAt",
+        "updatedAt"
+      ],
+      "purpose": "Per-user API credentials with permissions, rate limits and billing state",
+      "legalBasis": "service_delivery_and_security",
+      "retention": {
+        "type": "account_linked",
+        "description": "Keys live with the account; deleted keys are disabled and kept briefly for billing reconciliation"
+      },
+      "delete": {
+        "onUserDelete": "soft_delete",
+        "manual": "admin user delete disables all keys; the owner can delete individual keys",
+        "automatic": "disabled on account deletion"
+      },
+      "export": {
+        "supported": "partial",
+        "surface": "GET /api/admin/users/:id/export (superadmin + security session)",
+        "includes": [
+          "keyId",
+          "name",
+          "permissions",
+          "rateLimit",
+          "usage counts",
+          "billing state",
+          "last used IP/time"
+        ],
+        "reason": "keyHash is credential material and is never exported"
+      },
+      "evidence": [
+        "src/models/apiKeyModel.ts",
+        "src/services/userService.ts"
+      ],
+      "userFacing": {
+        "label": "API Key",
+        "category": "账户与身份",
+        "what": "你创建的 API Key 的公开标识（keyId）、名称、权限、限流额度、使用统计、计费余额与最近使用时间。密钥哈希不会导出，因此导出文件里没有可直接使用的密钥。",
+        "why": "用于在个人中心管理与审计自己的 API 调用；计费与额度状态需要与钥匙绑定，才能在超额时给出准确提示。",
+        "retention": "随账号保存；删除账号时全部 Key 立即禁用，计费记录按账期保留。",
+        "policySection": "data-use"
+      }
     },
     {
       "id": "bilibili-cookie-reports",
@@ -1988,7 +2112,7 @@
       },
       "export": {
         "supported": "partial",
-        "surface": "support page (owner) / superadmin ticket panel",
+        "surface": "support page (owner) / superadmin ticket panel / GET /api/admin/users/:id/export (account export includes ticket content)",
         "includes": [
           "ticket fields",
           "conversation messages"

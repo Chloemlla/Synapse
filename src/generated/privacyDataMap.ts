@@ -205,6 +205,18 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     deleteOnUserDelete: "retained",
   },
   {
+    id: "auth-sessions",
+    label: "登录会话与设备",
+    category: "安全与风控",
+    what: "每次登录产生的设备标识、设备名称、平台与客户端类型、登录 IP 与归属地、最近活动时间与撤销时间。会话凭据哈希不会导出。",
+    why: "让你能在个人中心看到已登录设备并逐台下线；改密、登出或管理员撤销后，旧会话立即失效，避免被盗令牌长期可用。",
+    retention: "会话在登出、改密或管理员撤销时失效；失效记录短期保留用于安全调查，账号注销时随账号一并标记删除。",
+    policySection: "data-use",
+    retentionType: "operational",
+    exportable: "partial",
+    deleteOnUserDelete: "revoke_and_soft_delete",
+  },
+  {
     id: "ipqs-lookup-logs",
     label: "第三方 IP 风险查询日志",
     category: "安全与风控",
@@ -287,6 +299,18 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     retentionType: "ttl",
     exportable: "none",
     deleteOnUserDelete: "retain_until_ttl",
+  },
+  {
+    id: "api-keys",
+    label: "API Key",
+    category: "账户与身份",
+    what: "你创建的 API Key 的公开标识（keyId）、名称、权限、限流额度、使用统计、计费余额与最近使用时间。密钥哈希不会导出，因此导出文件里没有可直接使用的密钥。",
+    why: "用于在个人中心管理与审计自己的 API 调用；计费与额度状态需要与钥匙绑定，才能在超额时给出准确提示。",
+    retention: "随账号保存；删除账号时全部 Key 立即禁用，计费记录按账期保留。",
+    policySection: "data-use",
+    retentionType: "account_linked",
+    exportable: "partial",
+    deleteOnUserDelete: "soft_delete",
   },
   {
     id: "bilibili-cookie-reports",
@@ -592,8 +616,8 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
 
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
 export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = {
-  "账户与身份": ["mobile-client-tokens"],
-  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs"],
+  "账户与身份": ["mobile-client-tokens", "api-keys"],
+  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "auth-sessions", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs"],
   "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers", "geogebra-assets", "geogebra-jobs", "pixel-cdk-mappings", "pixel-task-access", "pixel-integration-configs", "tickets", "ticket-attachments"],
   "合规与审计": ["policy-consents", "audit-logs", "pixel-evidence-holds", "pixel-evidence-approvals", "pixel-account-evidence", "legal-holds", "forensic-audit-logs", "forensic-export-requests"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],

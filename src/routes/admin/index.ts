@@ -27,6 +27,7 @@ import registrationInvitesRouter from "./registrationInvites";
 import shortlinksRouter from "./shortlinks";
 import systemRouter from "./system";
 import usersRouter from "./users";
+import userDataRouter from "./userData";
 
 const router = express.Router();
 
@@ -81,6 +82,8 @@ router.use(async (req: any, res: any, next: any) => {
 // （前端 404、白名单匹配不上），且 `/me` 这种短路径极易与后续新增路由撞车。
 router.use("/admin-scope", adminScopeRouter);
 router.use(usersRouter);
+// 账户数据（用户管理页的「数据」弹窗）：摘要 = 超管；导出 = 超管 + 安全会话。
+router.use(userDataRouter);
 router.use(configRouter);
 router.use(shortlinksRouter);
 router.use(profileRouter);

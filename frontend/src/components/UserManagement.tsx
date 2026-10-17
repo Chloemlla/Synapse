@@ -24,6 +24,7 @@ import {
   FaCrown,
   FaFingerprint,
   FaLanguage,
+  FaDatabase,
   FaLock,
 } from 'react-icons/fa';
 
@@ -37,6 +38,8 @@ import {
 } from './studioTheme';
 
 import AdminSecurityPosturePanel from './user-management/AdminSecurityPosturePanel';
+import UserDataDialog from './user-management/UserDataDialog';
+import UserBulkExportControl from './user-management/UserBulkExportControl';
 import {
   ACCOUNT_STATUS_FILTER_OPTIONS,
   BULK_ACTION_OPTIONS,
@@ -111,6 +114,8 @@ const UserManagement: React.FC = () => {
   const [filteredStats, setFilteredStats] = useState<UserListStats>(DEFAULT_STATS);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkUserAction | ''>('');
+  // 「数据」弹窗：账户数据概览 / 导出 / 注销。
+  const [dataUser, setDataUser] = useState<User | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSectionState>(createDefaultCollapsedSections);
   const navigate = useNavigate();
   const { setNotification } = useNotification();
@@ -502,6 +507,12 @@ const UserManagement: React.FC = () => {
     }
   }, [bulkAction, confirm, fetchUsers, selectedUserIds, setNotification, stats, user, users]);
 
+  const handleUserDeleted = useCallback((deleted: User) => {
+    setDataUser(null);
+    setSelectedUserIds(prev => prev.filter(id => id !== deleted.id));
+    fetchUsers(false, true);
+  }, [fetchUsers]);
+
   const openEdit = useCallback(async (u: User) => {
     if (showForm && !(await confirmDiscardIfDirty())) return;
     setEditingUser(u);
@@ -642,6 +653,7 @@ const UserManagement: React.FC = () => {
               <li>添加 / 编辑 / 删除用户，支持分页排序和批量运营动作</li>
               <li>直接修改 dailyUsage、requireFingerprint、翻译权限与账户状态等运营字段</li>
               <li>管理用户指纹记录（查看 / 删除 / 清空）</li>
+              <li>查看账户数据概览、导出已脱敏的账户数据（需二次验证），或直接注销账号</li>
               <li>列表轻量加载，完整指纹详情按需读取</li>
             </ul>
           </div>
@@ -857,6 +869,7 @@ const UserManagement: React.FC = () => {
                 >
                   执行
                 </motion.button>
+                <UserBulkExportControl selectedUserIds={selectedUserIds} notify={setNotification} />
               </div>
               )}
             </div>
@@ -1132,6 +1145,16 @@ const UserManagement: React.FC = () => {
                           >
                             <FaEdit className="text-xs" />
                             编辑
+                          </motion.button>
+                          <motion.button type="button"
+                            className={studioSecondaryButtonClassName}
+                            onClick={() => setDataUser(u)}
+                            title="查看账户数据、导出或注销"
+                            whileHover={hoverScale()}
+                            whileTap={tapScale()}
+                          >
+                            <FaDatabase className="text-xs" />
+                            数据
                           </motion.button>
                           <motion.button type="button"
                             className={`${studioDangerButtonClassName} disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -1437,6 +1460,16 @@ const UserManagement: React.FC = () => {
           </AnimatePresence>,
           document.body
         )}
+
+        <UserDataDialog
+          open={Boolean(dataUser)}
+          user={dataUser}
+          isSelf={Boolean(dataUser && dataUser.username === user?.username)}
+          isLastSuperadmin={Boolean(dataUser && dataUser.role === 'superadmin' && stats.superadmins <= 1)}
+          onClose={() => setDataUser(null)}
+          onDeleted={handleUserDeleted}
+          notify={setNotification}
+        />
       </motion.div>
     </section>
   );

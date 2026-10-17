@@ -569,7 +569,7 @@ export const incrementUserTicketViolationCount = async (id: string): Promise<num
 // 已知遗留：`access_tokens` 的真实文档里**没有 userId**（只有 token/fingerprint/ipAddress，
 // 见 models/accessTokenModel.ts），所以这一条是死条件。保留在此不删，以免误以为已经覆盖；
 // 该集合带 5 分钟 TTL，随指纹失效即可。真正需要失效的会话在 auth_sessions。
-const USER_CASCADE_COLLECTIONS: ReadonlyArray<{ collection: string; field: string }> = [
+export const USER_CASCADE_COLLECTIONS: ReadonlyArray<{ collection: string; field: string }> = [
   { collection: "access_tokens", field: "userId" },
   { collection: "auth_sessions", field: "userId" },
   { collection: "verification_tokens", field: "userId" },
