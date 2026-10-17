@@ -6,6 +6,7 @@ import { escapeRegexLiteral } from "../utils/regexEscape";
 import { asTicketRelatedService, asTicketType } from "../utils/ticketFields";
 import { mongoose } from "./mongoService";
 import { RuntimeConfigService } from "./runtimeConfigService";
+import { UserModel } from "./userService";
 
 /**
  * 工单工作流服务：把「可单测的纯判定」与「批量写库」从控制器里抽出来。
@@ -247,6 +248,18 @@ export function describeAttachmentUploadPolicy(user: { id?: unknown; role?: stri
   if (isAdminRole(user?.role)) return "管理端不受附件上传开关限制";
   // 不透露「谁被单独授权」：这里只描述当前用户自己的状态与出路。
   return "附件上传暂未对普通用户开放：请在上方「附件链接」里提交截图或文件的地址，或联系管理员为你的账号单独开放附件上传。";
+}
+
+/**
+ * 管理员团队收件人（admin 只读 + superadmin 写均需要收到新工单 / 用户追加回复邮件）。
+ *
+ * 放在服务层而不是控制器：创建工单与用户追加回复两条路径都要用，控制器已贴体积上限。
+ */
+export async function getAdminTeamEmails(): Promise<string[]> {
+  const adminDocs = await UserModel.find({ role: { $in: ["admin", "superadmin"] } })
+    .select("email username id")
+    .lean();
+  return [...new Set(adminDocs.map((admin: any) => admin.email).filter(Boolean))];
 }
 
 export interface TicketListFilterSpec {
