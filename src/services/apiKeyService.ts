@@ -386,6 +386,7 @@ export async function setApiKeyPenalty(
     },
   });
 
+  // codeql[js/clear-text-logging] 只记录 Key 文档 id（非密钥本身）、状态与批量写计数。
   logger.warn("[ApiKey] 已应用 Key 处罚", {
     scope: input.keyId ? `key:${input.keyId}` : `user:${input.userId}`,
     status: input.status,

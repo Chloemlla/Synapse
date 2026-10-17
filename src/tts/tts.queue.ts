@@ -115,6 +115,7 @@ export class TtsQueue {
       return Math.max(0, Math.floor(Number(value) || 0));
     } catch (error) {
       // 计数失败不该把正常提交拒掉：随后 createJob 若存储真的不可用会自然失败并走原有错误路径。
+      // codeql[js/clear-text-logging] 只记录 userId 与错误文本，不含凭据内容。
       logger.warn("TTS 每用户活跃任务计数失败，跳过并发闸门", {
         userId,
         error: error instanceof Error ? error.message : String(error),

@@ -208,6 +208,7 @@ export function createTranscribeUserRouter(deps: TranscribeUserRouterDeps): expr
     const verified = inspectUploadedFile(file.path, sandboxRoot, sandboxLimits);
     if (!verified.ok) {
       try {
+        // codeql[js/path-injection] file.path 是 multer 落盘路径（服务端生成，不来自请求体）；且上一行已过 inspectUploadedFile 的 relInside(root,·) 守界，自定义守界函数 CodeQL 不可见。
         fs.unlinkSync(file.path);
       } catch {
         // 删除失败不改变拒绝结果

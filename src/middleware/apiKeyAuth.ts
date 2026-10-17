@@ -72,6 +72,7 @@ function scheduleIdcEgressRecheck(params: {
         fingerprint: `api-key:${params.keyId}`.slice(0, 128),
       });
     } catch (error) {
+      // codeql[js/clear-text-logging] 只记录 Key 文档 id（非密钥本身）与错误文本。
       logger.debug("[ApiKeyAuth] IDC 出口复查失败（不影响请求）", {
         keyId: params.keyId,
         error: error instanceof Error ? error.message : String(error),

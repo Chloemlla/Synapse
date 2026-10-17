@@ -170,6 +170,7 @@ export function inspectUploadedFile(
   }
   let st: fs.Stats;
   try {
+    // codeql[js/path-injection] absPath 在函数入口已过 relInside(root,·) 守界（不通过则直接返回），自定义守界函数 CodeQL 不可见。
     st = fs.lstatSync(absPath);
   } catch {
     return { ok: false, code: "MEDIA_SANDBOX_PATH_INVALID", message: "文件不存在或不可读" };

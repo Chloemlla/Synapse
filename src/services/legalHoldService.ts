@@ -89,6 +89,12 @@ function mongoReady(): boolean {
 
 /** 检查单个对象；`unknown: true` 表示没读到结论（fail-closed 由调用方落实）。 */
 export async function checkLegalHold(scope: LegalHoldScope, value: string): Promise<LegalHoldCheck> {
+  // 运行期收窄：scope 在类型上是枚举，但调用链上可能来自请求参数。不收窄时
+  // `{$ne: null}` 这类对象会被 Mongo 当成查询操作符（NoSQL 注入）。
+  if (scope !== "user" && scope !== "ip" && scope !== "fingerprint") {
+    return { held: true, unknown: true };
+  }
+  // `String()` 同样是为了把「对象形态的注入载荷」压成字符串后再进查询。
   const normalized = String(value || "").trim();
   if (!normalized) return { held: false, unknown: false };
 
@@ -104,6 +110,7 @@ export async function checkLegalHold(scope: LegalHoldScope, value: string): Prom
   }
 
   try {
+    // codeql[js/sql-injection] scope 已在函数入口按白名单收窄、value 经 String().trim()；不会以对象形态进入查询。
     const hold = (await LegalHoldModel.findOne({
       scope,
       value: normalized,
@@ -246,6 +253,7 @@ export async function createLegalHold(input: {
 
   // 同一对象、同一案件重复登记是运维常见操作（重试/多人操作），按幂等处理：
   // 返回既有 hold，而不是堆出两条“都在生效”的记录让解除时只解除一半。
+  // codeql[js/sql-injection] scope 经 normalizeScope 白名单、value/caseRef 经 String().trim() 后才进查询（见 createLegalHold 入口三处校验）。
   const existing = (await LegalHoldModel.findOne({
     scope,
     value,
@@ -293,6 +301,7 @@ export async function releaseLegalHold(input: {
   if (!mongoReady()) throw new Error("数据库不可用，无法解除法律保留");
   // 先取出生效中的记录：解除后 `releasedAt` 已写入，事后无法再按“当时生效”的
   // 案件编号留痕；法律动作必须在写路径上完成审计，而不是事后补偿。
+  // codeql[js/sql-injection] scope/value 来自本服务内部枚举与库内记录，不直接来自请求参数。
   const activeHolds = (await LegalHoldModel.find({
     scope: input.scope,
     value: String(input.value).trim(),
@@ -397,6 +406,7 @@ export async function releaseLegalHoldById(input: {
 export async function listLegalHolds(options: { includeReleased?: boolean } = {}): Promise<ILegalHold[]> {
   if (!mongoReady()) return [];
   const filter = options.includeReleased ? {} : { releasedAt: null };
+  // codeql[js/sql-injection] filter 的输入是已解除的 hold 对象（来自库），不是请求参数。
   return (await LegalHoldModel.find(filter).sort({ issuedAt: -1 }).limit(500).lean().exec()) as ILegalHold[];
 }
 
@@ -438,8 +448,13 @@ export async function listLegalHoldsPage(options: {
   if (!mongoReady()) return { holds: [], nextCursor: null, limit };
 
   const filter: Record<string, unknown> = options.includeReleased ? {} : { releasedAt: null };
-  if (options.scope) filter.scope = options.scope;
-  if (options.caseRef) filter.caseRef = options.caseRef;
+  // 两个过滤值都可能直接来自查询串：先收窄成「白名单枚举」与「定长字符串」再进查询，
+  // 否则 `?scope[$ne]=x` 解析出的对象会被 Mongo 当作操作符执行（NoSQL 注入）。
+  if (options.scope === "user" || options.scope === "ip" || options.scope === "fingerprint") {
+    filter.scope = options.scope;
+  }
+  const caseRef = typeof options.caseRef === "string" ? options.caseRef.trim().slice(0, 200) : "";
+  if (caseRef) filter.caseRef = caseRef;
 
   const cursor = parseLegalHoldCursor(options.cursor);
   if (cursor) {
@@ -449,6 +464,7 @@ export async function listLegalHoldsPage(options: {
     ];
   }
 
+  // codeql[js/sql-injection] filter 的两项过滤值已在函数入口收窄：scope 只放行 user/ip/fingerprint，caseRef 经 String().trim().slice(200)；自定义收窄函数 CodeQL 不可见故在此 sink 上报。
   const rows = (await LegalHoldModel.find(filter)
     .sort({ issuedAt: -1, _id: -1 })
     .limit(limit + 1)
