@@ -1954,6 +1954,33 @@ docker-compose up -d
 - 任务队列看门狗硬化（Express + MongoDB 轻量队列，当前用于 TTS 生成，后续抽奖履约复用）：长任务心跳续租（`renewJobLease`，租约 1/3 周期）；看门狗回收改为**原子条件更新**（逐条 `findOneAndUpdate`，条件含 `status/leaseExpiresAt/attempts`，不被续租/完成抢先误杀）；终态写入（`completeJob`/`failJob`）owner 不匹配时旧 Worker 放弃提交与用户通知（防重叠消费）；死信任务一轮回收合并一封告警
 - 告警通道：只走**邮件**（admin/superadmin 团队）+ 可选 `ALERT_WEBHOOK_URL` webhook，无钉钉/企业微信；新增 `services/adminAlertService.ts` 并写入 `.env.example`
 
+#### 10-16
+- 新增 **GeoGebra 工作台**（`/geogebra`，独立懒加载页）：本地/云端双模式、Monaco 脚本编辑器、变量定义与引用分析、逐条执行明细、原/新指令对照、版本快照与回滚、团队协作（复用 workspace 四角色）、评论关联版本、分享与嵌入、资产上传、AI 生图转脚本（异步任务 + 人工确认后写回）、导出能力矩阵（服务端 `zip-bundle`，其余标为画布侧能力，不摆不可用按钮）
+- 修 CSP `strict-dynamic`：GeoGebra 的加载器链是「nonce 过的 bundle → deployggb.js → 运行时动态插入的内联脚本」，缺这一条时画布被整块拦死
+- 新增 **Pixel 任务工作台**（`/pixel`）与 Phase 4/5 服务端代理：卡密校验、每行一账号的批量提交、5 秒轮询、按卡密导出 `email----result_link`、脱敏溯源（只存掩码/大小/状态）、运行时限额与上游适配器（未配置即 fail-closed）
+- Pixel 法律保全与内容级取证：冻结删除 + 快照不带 TTL、缺案件编号或法律依据直接拒绝、独立子密钥 AES-256-GCM（AAD 绑版本）、读取需案件编号匹配且逐次审计；主密钥轮换补重加密迁移器
+- 工单票面对齐：联系邮箱 / 工单类型 / 相关服务 / 关联工单 / 附件五个票面字段双端落地；附件上传**默认关闭**（开关由超管在后台开启），关闭时「附件链接」是主通道；新增 `tickets` 与 `ticket-attachments` 两个隐私数据集
+- 运行时配置默认值/服务/管理端接线补齐（收编此前在飞的 WIP 快照）
+- **前端设计语言统一**：拆掉第二套设计系统（shadcn 语义 token、`.logshare-admin-surface` 覆盖层、任意 hex、indigo/purple 色板），全部收敛到 `studioTheme` / `studioFeedback` 与中性 slate；新增 `check:frontend-design-language` 闸门与基线（只允许下降），清单 79 条落在 `docs/audit/audit-2026-10-16-frontend-design-language.md`
+- 新增 GeoGebra/Pixel 集成 PRD（含授权与 license 阻断项记录）
+
+#### 10-17
+- **法律保留与取证审计**（RC-22/35/58）：管理端 `/api/admin/legal-holds` 支持登记/解除/清理/取证审计/导出申请与下载；登记与解除强制案件编号与理由；`forensic_audit_logs` 与 `forensic_export_requests` **不设 TTL**（调查周期常超普通审计的 60 天）；导出按 `_id` 游标流式 NDJSON，硬顶 20,000 行，超限 `413 EXPORT_LIMIT_EXCEEDED` 且不截断，需双人确认并带校验和
+- **裁决三落地**：六个关键集合（`ipbans` / `accesstokens` / `ip_verification_tokens` / `verification_tokens` / `proxycheck_risk_cache` / `auth_email_cooldowns`）移除物理 TTL 索引，改由 `legalHoldCleanupService` 每 6 小时清理，**删除前逐条校验 hold、库不可用整轮 fail-closed**；存量部署需跑 `pnpm run migrate:legal-hold-ttl`（默认 dry-run）
+- **账户风险分级 B7**（RC-14/15/20/26/38/56/57）：抽出 `services/geoRisk.ts` 作为属地/机房判据的单一入口（注册、登录、API Key 三条路径共用）；机房出口在已登录写请求与 API Key 鉴权后升档，统一经 `applyAccountRiskAction`；登录前人机验证失败补写账户信号（半权重 + 封顶 10 + 已知 IP 归因闸，**匿名路径不得升级为封禁**）；WebRTC/出口不一致探测只作信号；通道级 `ACCOUNT_RESTRICTED` 裁决保留 RC-61 连坐边界；自动化痕迹（`navigator.webdriver` 等）并入 `AUTOMATION_HINT`
+- **成本与资源硬顶 B9**（RC-27/28/29/30/37/39）：抽出泛化 `quotaLadderService`（LibreChat 首个消费者，响应体形状不变），封禁时长按累计违规次数递增；`quota_events` 按 `keyId+阈值+账期` 幂等写 80%/100% 事件，账户级预算取 `min(账户剩余, Key 剩余)`；`/api/cdict/donate/claim` 专用限流桶；TTS 队列按 `userId` 限并发；媒体工具新增文件沙箱四道硬顶与按子进程 RSS 计量的看门狗
+- **同意门禁全量接线**（RC-31/32/41）：九个漏登功能键全部挂到各自认证之后（image-upload / ipfs-upload / transcribe / tts-generate / deeplx-translate / shorturl / api-access / cdk-redeem / data-report）；公开路径行为不变；主密钥派生、环境变量变更、密钥轮换三类写端点统一要求安全会话；其余敏感端点接入 `assertSecuritySessionBinding` 异步绑定；前端统一附带 `x-verification-token`
+- **匿名请求限流双判据**：除 IP 桶外，再按设备/浏览器指纹**单独计一个桶，两桶各自计数、任一超限即拒绝**；刻意不拼成单一键（换任一侧都会得到全新配额）；指纹只落 SHA256 前 32 位；登录用户不参与；顺带修登录前验证码失败信号里写死的 `fingerprint` 常量（该匿名链路此前完全没有设备判据）
+- **md2docx 收口**（DT-01…DT-38）：新增 `realInside()` 用 realpath 补符号链接逃逸、ZIP 条目名二次校验防 zip-slip、pandoc 先写临时文件再原子改名（overwrite 失败不再截断旧产物）、删除任务先摘队列、参考样式必须是根内真实 `.docx`；前端批量模式补 `FeatureConsentGate`（此前 403 无人监听，提示「已打开同意清单」却什么都不发生）
+- **工单收尾**：上传开关关闭后历史附件仍可见可删（此前被整体藏起来）；回复/改状态/认领等写接口新增 `mergeTicketDetail` 保留已加载的附件元数据；附件上传/下载/删除/链接替换补路由级审计
+- **GeoGebra/Pixel 缺口补齐**：版本默认保留 24 个（被评论引用的不裁剪）、shareView 返回 `embedUrl` 与 `?embed=1` 只读嵌入壳、AI 概要「写入评论」入口、诊断补 worker/queue/staticAssets/recentAssets、Pixel 上游配置补 `source/overridden/reload` 与恢复默认端点、总览补错误率/延迟/请求大小（无样本显式 null + 原因）；新增越权 404、撤销后失效、版本裁剪、配置来源语义等隔离用例
+- **前端重依赖退出首屏闭包**：代码高亮器、monaco 编辑器与 worker 改为组件内动态 `import()`，模块到达前先渲染可读的纯文本形态；语音转写详情失败补可见错误态与重试；Pixel 弹窗改走共享 `StudioModal`（Escape + Tab 焦点循环）；demo 页无限动画补 `motion-reduce`
+- **邮件预览统一空 sandbox iframe**：`EmailTraceability` 详情预览此前用 `allow-same-origin`，与发信台口径不一致；三处预览统一为 `sandbox=""` + `srcDoc` 并加用例钉住
+- **flex 溢出批量修复**：`InfoMetricCard` 左侧缺 `min-w-0` 导致图标被推出卡片（个人页 Passkey 指纹图标显示在卡片外），根因修复后扫出同类 22 处，分三批收口 20 个文件；`InfoQueryHero` 右侧动作区与眉标同样会裁掉溢出文字（卡片带 `overflow-hidden`，超出的部分是被裁掉而非换行）；`MeditationAppDemo` 14 处绝对定位层补 `pointer-events-none`（实际挡住点赞按钮）
+- **ModList 恢复上线并收紧为管理员专属**：此前是「已临时关闭」占位页，真正原因是读错端点——管理员访问 `GET /api/modlist` 拿到 AES 密文，而密钥在 httpOnly cookie 里前端读不到，列表永远为空；改读 `/api/modlist/json` 并把该端点收紧为 `authenticateToken + authenticateAdmin`；删除不可达的「普通用户只读视图」；超级管理员写操作不再需要修改码（与「管理员账号无需填写生成码」同一口径，后端按角色分流、非超管仍走定时安全比较）
+- **CodeQL 收口**：3 条 `js/sql-injection`（`legalHoldService` 的 scope/caseRef 运行期白名单收窄，防查询串对象载荷被当成 Mongo 操作符）、2 条 `js/path-injection`、11 条 `js/clear-text-logging`（逐条核对只记录 userId / Key 文档 id / 动作名 / 错误文本，按仓库既有惯例加注释说明依据）
+- **文档**：`AGENTS.md` / `CLAUDE.md` / `README.md` 按上述提交全量更新（限流双判据、风险分级、法律保留与 TTL 互斥、子系统目录、设计语言基线、flex 固定写法、CodeQL 注释规范），并把审计保留期由误写的 90 天更正为 60 天
+
 ---
 
 ## 📝 许可证
@@ -1976,4 +2003,4 @@ docker-compose up -d
 
 ---
 
-**版本**: 2026-10-10
+**版本**: 2026-10-17
