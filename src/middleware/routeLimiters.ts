@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
 import { createSharedRateLimitStore } from "../services/sharedRateLimitStore";
@@ -64,6 +65,12 @@ interface LimiterOptions {
   skipSuccessfulRequests?: boolean;
   /** 强制进程内内存档（不走 Redis/Mongo 共享后端）。静态资源类默认已开启，见 PERF-12。 */
   preferMemory?: boolean;
+  /**
+   * 匿名请求的**第二判据**（默认开启）：除 IP 桶外，再按设备/浏览器指纹单独计一份，
+   * 任一超限即拒绝。登录请求不参与（账户 ID 已是更强的身份）。
+   * 见 createAnonymousFingerprintGuard：为什么必须是「两桶都算」，而不是把两者拼成一个键。
+   */
+  anonymousFingerprint?: boolean;
 }
 
 interface LimiterDefinition {
@@ -76,6 +83,8 @@ interface LimiterDefinition {
   skip?: (req: Request) => boolean;
   handler?: (req: Request, res: Response, next: NextFunction) => void;
   preferMemory?: boolean;
+  /** 见 LimiterOptions.anonymousFingerprint。 */
+  anonymousFingerprint?: boolean;
 }
 
 interface RateLimitMetricRecord {
@@ -261,6 +270,68 @@ function userIpDualKey(req: Request): string {
   return userId ? `u:${userId}|${ip}` : `ip:${ip}`;
 }
 
+/** 请求携带的设备/浏览器指纹：只认请求头（`X-Fingerprint`，前端全局附带；H5 另有 `x-device-id`）。 */
+const FINGERPRINT_HEADER_MAX_LENGTH = 200;
+
+export function getRequestFingerprint(req: Request): string | null {
+  const headers = req.headers as Record<string, string | string[] | undefined> | undefined;
+  const raw = headers?.["x-fingerprint"] ?? headers?.["x-device-id"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "unknown" || trimmed.length > FINGERPRINT_HEADER_MAX_LENGTH) return null;
+  return trimmed;
+}
+
+/**
+ * 指纹是客户端自报的**凭据类标识**：限流存储里只放哈希。
+ * 与审计脱敏同一口径 —— 存储与指标快照里的设备标识原文是可被导出、旁读的额外副本，
+ * 而限流只需要它稳定可比较。
+ */
+function fingerprintBucket(fp: string): string {
+  return createHash("sha256").update(fp).digest("hex").slice(0, 32);
+}
+
+/**
+ * 匿名请求的第二判据：IP 与设备指纹**各自计数、任一超限即拒绝**。
+ *
+ * 为什么不把两者拼成一个键（`ip:<ip>|fp:<fp>`）：
+ * - 拼键时换指纹或换 IP 都会得到一个全新的桶，等于给刷子发新额度；
+ * - 两个独立桶才能让「同一台设备换 IP」与「同一出口换设备」都被各自那一侧拦住。
+ *
+ * 指纹由客户端自报，**不能单独作为判据**（伪造即绕过），它的作用是给 IP 判据补一个
+ * 正交维度，而不是替代 IP。没有携带指纹的客户端（脚本、原生客户端）只有 IP 桶，
+ * 行为与改动前一致。
+ */
+function createAnonymousFingerprintGuard(options: {
+  name: string;
+  windowMs: number;
+  max: number;
+  category: LimiterCategory;
+  message: string;
+  skip?: (req: Request) => boolean;
+  preferMemory: boolean;
+}): RateLimitRequestHandler {
+  return rateLimit({
+    windowMs: options.windowMs,
+    max: options.max,
+    message: { error: options.message },
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore(`${options.name}-fp`, options.windowMs, { preferMemory: options.preferMemory }),
+    validate: { unsharedStore: false },
+    keyGenerator: (req: Request) => `fp:${fingerprintBucket(getRequestFingerprint(req) || "unknown")}`,
+    // 只在「匿名 + 确实带了有效指纹」时才跑这一道：登录用户与无指纹客户端不进第二桶。
+    skip: (req: Request): boolean => {
+      if (isLocalRequest(req)) return true;
+      if ((req as Request & { user?: { id?: string } }).user?.id) return true;
+      if (!getRequestFingerprint(req)) return true;
+      return options.skip ? options.skip(req) : false;
+    },
+    handler: buildDefaultHandler(`${options.name}-fp`, options.category, options.message),
+  });
+}
+
 function buildDefaultHandler(name: string, category: LimiterCategory, message: string) {
   return (req: Request, res: Response) => {
     const ip = getClientIp(req);
@@ -296,7 +367,7 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
   // PERF-12: 静态资源类限流器默认进程内存档，避免每个资源请求一次 Redis 往返。
   const preferMemory = opts.preferMemory ?? category === STATIC_RESOURCE_CATEGORY;
 
-  return rateLimit({
+  const base = rateLimit({
     windowMs,
     max,
     message: { error: message },
@@ -309,6 +380,25 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
     handler: opts.handler || buildDefaultHandler(name, category, message),
     ...(opts.skipFailedRequests !== undefined ? { skipFailedRequests: opts.skipFailedRequests } : {}),
     ...(opts.skipSuccessfulRequests !== undefined ? { skipSuccessfulRequests: opts.skipSuccessfulRequests } : {}),
+  });
+
+  // 匿名双判据：IP 桶放行后再过指纹桶（静态资源不参与 —— 那是防刷不是配额，
+  // 给它加一次存储往返没有意义，见 PERF-12）。
+  const withFingerprint = opts.anonymousFingerprint ?? category !== STATIC_RESOURCE_CATEGORY;
+  if (!withFingerprint) return base;
+
+  const fingerprintGuard = createAnonymousFingerprintGuard({
+    name,
+    windowMs,
+    max,
+    category,
+    message,
+    skip: opts.skip,
+    preferMemory,
+  });
+  return (req, res, next) => base(req, res, (error?: unknown) => {
+    if (error) { next(error); return; }
+    fingerprintGuard(req, res, next);
   });
 }
 
@@ -433,9 +523,19 @@ export function createBurstConcurrencyGuard(opts: BurstConcurrencyOptions): Requ
     }
 
     const key = keyGenerator(req);
+    // 匿名第二判据（与 createLimiter 同一口径）：同一台设备换 IP 也不该拿到新的并发额度。
+    // 登录用户已经有账户键，不再叠加；没有指纹的客户端行为与改动前一致。
+    const anonymousFingerprint = (req as Request & { user?: { id?: string } }).user?.id
+      ? null
+      : getRequestFingerprint(req);
+    const fingerprintKey = anonymousFingerprint ? `fp:${fingerprintBucket(anonymousFingerprint)}` : null;
     const active = burstConcurrencyRegistry.acquire(opts.name, key);
-    if (active > maxConcurrent) {
+    const fingerprintActive = fingerprintKey
+      ? burstConcurrencyRegistry.acquire(opts.name, fingerprintKey)
+      : 0;
+    if (active > maxConcurrent || fingerprintActive > maxConcurrent) {
       burstConcurrencyRegistry.release(opts.name, key);
+      if (fingerprintKey) burstConcurrencyRegistry.release(opts.name, fingerprintKey);
       logger.warn(`[RateLimit] 429 ${opts.name} (burst concurrency)`, {
         category: "burst-concurrency",
         key,
@@ -457,6 +557,7 @@ export function createBurstConcurrencyGuard(opts: BurstConcurrencyOptions): Requ
       if (released) return;
       released = true;
       burstConcurrencyRegistry.release(opts.name, key);
+      if (fingerprintKey) burstConcurrencyRegistry.release(opts.name, fingerprintKey);
     };
     // finish 与 close 都要挂：客户端中断时 finish 不会触发，漏减会让槽位永久泄漏。
     res.once("finish", release);
@@ -910,6 +1011,7 @@ function limiterFromDefinition(name: keyof typeof LIMITER_DEFINITIONS): RateLimi
     skip: definition.skip,
     handler: definition.handler,
     preferMemory: definition.preferMemory,
+    anonymousFingerprint: definition.anonymousFingerprint,
   });
 }
 

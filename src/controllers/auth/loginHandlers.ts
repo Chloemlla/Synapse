@@ -68,7 +68,12 @@ async function resolveNotifyTarget(identifier: string) {
  *    否则任何人都能拿别人的用户名反复失败验证码、把对方的风险分当玩具；
  * 3. 写入失败/解析失败一律静默 —— 反正响应就是「验证失败」，不能因风控旁路改变它。
  */
-function recordLoginCaptchaFailureSignal(identifier: string, ip: string, userAgent: string): void {
+function recordLoginCaptchaFailureSignal(
+  identifier: string,
+  ip: string,
+  userAgent: string,
+  fingerprint: string | null,
+): void {
   void (async () => {
     try {
       const target = await resolveNotifyTarget(identifier);
@@ -77,7 +82,10 @@ function recordLoginCaptchaFailureSignal(identifier: string, ip: string, userAge
       recordAccountAbuseSignal({
         userId,
         eventType: "ACCOUNT_ABUSE_CAPTCHA_FAILED",
-        fingerprint: "login-pre-auth",
+        // 设备维度必须落**真实请求指纹**：这里原先写的是常量 "login-pre-auth"，
+        // 等于匿名链路完全没有设备判据（同一个人换 IP 重复失败只会散成多条互不相干的记录）。
+        // 指纹缺失时回落到常量，保持「匿名 + 无指纹客户端」的可归因性。
+        fingerprint: fingerprint || "login-pre-auth",
         action: "login",
         reason: "登录前人机验证未通过",
         riskScore: 0,
@@ -143,7 +151,7 @@ export async function login(req: Request, res: Response) {
     const captchaError = await verifyRequiredCaptcha(req.body, ip, "登录", identifier);
     if (captchaError) {
       // RC-20：登录前人机验证失败按**账户**沉淀（IP 维度计数换 IP 就重置）。
-      recordLoginCaptchaFailureSignal(identifier, ip, userAgent);
+      recordLoginCaptchaFailureSignal(identifier, ip, userAgent, resolveRequestFingerprint(req));
       return res.status(400).json({ error: captchaError });
     }
 

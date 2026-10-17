@@ -124,6 +124,86 @@ describe("RC-27 突发并发硬顶", () => {
     expect(c).toHaveBeenCalledTimes(1);
   });
 
+  it("匿名请求按 IP 与设备指纹双重判断：换 IP 但同一设备仍被并发硬顶拦住", () => {
+    const guard = createBurstConcurrencyGuard({ name: "test-burst-fp", maxConcurrent: 1 });
+    const fingerprint = "5f0c9a1e7b3d4c2a9e8f6d5c4b3a2910";
+    const first = fakeResponse();
+    const a = jest.fn();
+    guard(
+      fakeRequest({ ip: "203.0.113.9", socket: { remoteAddress: "203.0.113.9" }, headers: { "x-fingerprint": fingerprint } }),
+      first as never,
+      a as never,
+    );
+    expect(a).toHaveBeenCalledTimes(1);
+
+    // 同一台设备换了一个出口：IP 桶是新的，但指纹桶已满 —— 这正是「双判据」要挡的绕法。
+    const second = fakeResponse();
+    const b = jest.fn();
+    guard(
+      fakeRequest({ ip: "198.51.100.7", socket: { remoteAddress: "198.51.100.7" }, headers: { "x-fingerprint": fingerprint } }),
+      second as never,
+      b as never,
+    );
+    expect(b).not.toHaveBeenCalled();
+    expect(second.statusCode).toBe(429);
+
+    // 请求结束后两个桶都要归还，否则换 IP 的路径会把指纹槽位永久泄漏。
+    first.emit("finish");
+    const third = fakeResponse();
+    const c = jest.fn();
+    guard(
+      fakeRequest({ ip: "198.51.100.7", socket: { remoteAddress: "198.51.100.7" }, headers: { "x-fingerprint": fingerprint } }),
+      third as never,
+      c as never,
+    );
+    expect(c).toHaveBeenCalledTimes(1);
+  });
+
+  it("没有携带指纹的匿名客户端只按 IP 桶判断（行为与改动前一致）", () => {
+    const guard = createBurstConcurrencyGuard({ name: "test-burst-nofp", maxConcurrent: 1 });
+    const a = jest.fn();
+    guard(fakeRequest(), fakeResponse() as never, a as never);
+    expect(a).toHaveBeenCalledTimes(1);
+
+    // 不同 IP 且都没有指纹：互不影响，不会被指纹桶误伤。
+    const b = jest.fn();
+    guard(
+      fakeRequest({ ip: "198.51.100.8", socket: { remoteAddress: "198.51.100.8" } }),
+      fakeResponse() as never,
+      b as never,
+    );
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it("登录用户不叠加指纹桶（账户键已是更强的身份）", () => {
+    const guard = createBurstConcurrencyGuard({ name: "test-burst-user", maxConcurrent: 1 });
+    const fingerprint = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d";
+    const a = jest.fn();
+    guard(
+      fakeRequest({ user: { id: "u1" }, headers: { "x-fingerprint": fingerprint } }),
+      fakeResponse() as never,
+      a as never,
+    );
+    expect(a).toHaveBeenCalledTimes(1);
+
+    // 同一账号换 IP、仍然带同一个指纹：账户键（含 IP）是新的，且不该因指纹桶而被拒。
+    // 若指纹桶被错误地叠加到登录请求上，这里会拿到 429。
+    const b = jest.fn();
+    const second = fakeResponse();
+    guard(
+      fakeRequest({
+        user: { id: "u1" },
+        ip: "198.51.100.9",
+        socket: { remoteAddress: "198.51.100.9" },
+        headers: { "x-fingerprint": fingerprint },
+      }),
+      second as never,
+      b as never,
+    );
+    expect(second.statusCode).toBe(200);
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
   it("GET 等非写方法与 pathFilter 之外的路由不计入并发", () => {
     const guard = createBurstConcurrencyGuard({
       name: "test-burst-get",
