@@ -105,8 +105,8 @@ export const adminUserDataController = {
 
   /** POST /api/admin/users/export —— 批量导出（最多 10 个账号）。 */
   async exportUsers(req: Request, res: Response): Promise<void> {
-    const raw = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
-    const userIds = raw.filter((value: unknown): value is string => typeof value === "string");
+    const raw: unknown[] = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+    const userIds = raw.filter((value): value is string => typeof value === "string");
     if (userIds.length !== raw.length) {
       res.status(400).json({ error: "userIds 必须是字符串数组" });
       return;
