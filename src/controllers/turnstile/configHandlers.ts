@@ -127,6 +127,9 @@ export async function secureCaptchaConfig(req: Request, res: Response) {
       strategy: selection.strategy,
       reason: selection.reason,
       failoverMaxAttempts: policy.failoverMaxAttempts,
+      // 追踪码：首访验证页把最近一次拿到的 traceId 展示给匿名访客，出问题时供管理员
+      // 在日志/审计里按 requestId 定位这一次下发（与 /api/ip-verification/* 同一口径）。
+      traceId: req.requestId,
       config: {
         enabled: selection.enabled,
         siteKey: selection.siteKey,
@@ -136,7 +139,7 @@ export async function secureCaptchaConfig(req: Request, res: Response) {
     });
   } catch (error) {
     logger.error("获取安全CAPTCHA配置失败:", error);
-    res.status(500).json({ success: false, error: "服务器内部错误" });
+    res.status(500).json({ success: false, error: "服务器内部错误", traceId: req.requestId });
   }
 }
 

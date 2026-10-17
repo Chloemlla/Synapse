@@ -16,6 +16,8 @@ interface UseFirstVisitDetectionReturn {
   banReason?: string;
   banExpiresAt?: Date;
   clientIP: string | null;
+  /** 最近一次握手（或封禁响应）的追踪码，供闸门页展示给匿名访客排查。 */
+  traceId: string;
   checkFirstVisit: () => Promise<void>;
   markAsVerified: () => void;
 }
@@ -38,6 +40,7 @@ export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionRe
   const [error, setError] = useState<string | null>(null);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [clientIP, setClientIP] = useState<string | null>(null);
+  const [traceId, setTraceId] = useState('');
   const [isIpBanned, setIsIpBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | undefined>(undefined);
   const [banExpiresAt, setBanExpiresAt] = useState<Date | undefined>(undefined);
@@ -93,6 +96,7 @@ export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionRe
 
       const session = await initializeIpVerificationSession(fp);
       setClientIP(session.ipAddress || 'unknown');
+      if (session.traceId) setTraceId(session.traceId);
 
       if (!session.success && !session.requiresVerification) {
         throw new Error(session.reason || 'Failed to initialize IP verification.');
@@ -118,6 +122,10 @@ export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionRe
       // 此前 catch 里 setIsFirstVisit(false) 会让失败直接放行（对安全门禁方向反了）。
       setIsFirstVisit(true);
       setIsVerified(false);
+
+      // 失败也要留住追踪码：闸门页要把它展示给用户，管理员据此定位这一次握手。
+      const errTraceId = (err as { traceId?: unknown })?.traceId;
+      if (typeof errTraceId === 'string' && errTraceId) setTraceId(errTraceId);
 
       // 从后端 403 封禁响应中读取真实封禁信息（G9-14）
       const banData = (err as { banData?: { reason?: string; expiresAt?: string } })?.banData;
@@ -200,9 +208,10 @@ export const useFirstVisitDetection = (enabled = true): UseFirstVisitDetectionRe
       banReason,
       banExpiresAt,
       clientIP,
+      traceId,
       checkFirstVisit: () => checkFirstVisit(false),
       markAsVerified,
     }),
-    [banExpiresAt, banReason, checkFirstVisit, clientIP, error, fingerprint, isFirstVisit, isIpBanned, isLoading, isVerified, markAsVerified],
+    [banExpiresAt, banReason, checkFirstVisit, clientIP, error, fingerprint, isFirstVisit, isIpBanned, isLoading, isVerified, markAsVerified, traceId],
   );
 };

@@ -62,6 +62,9 @@ const CORS_EXPOSED_HEADERS = [
   "X-Require-Fingerprint",
   "X-Fingerprint-Hash",
   "X-Policy-Document-Hash",
+  // 每条响应都由 requestIdMiddleware 打上 X-Request-Id；跨域部署（本地 3001 → 3000）
+  // 下前端要把它读出来展示给用户当排查线索，不暴露就只能静默降级成空。
+  "X-Request-Id",
   "X-TTS-Watermark-Id",
   "X-TTS-Asset-Expires-At",
 ];

@@ -18,6 +18,19 @@ function resolveIpAddress(req: express.Request): string {
   return getClientIP(req);
 }
 
+/**
+ * 追踪码：把本请求的 requestId 一并回给前端。
+ *
+ * 首访验证是「匿名访客卡在门口」的场景：用户没有账号，出问题时唯一能给管理员的
+ * 线索就是这一串。它同时出现在响应头 X-Request-Id、本响应体与全部日志/审计里，
+ * 管理员拿它就能在 logs/combined.log 与审计库中定位这一次握手。
+ * 客户端传上来的 x-request-id 已由 requestIdMiddleware 按格式白名单校验过，
+ * 不合规时服务端会重新生成，所以这里直接回显是安全的。
+ */
+function traceOf(req: express.Request): string {
+  return req.requestId;
+}
+
 router.post("/session", sessionLimiter, async (req, res) => {
   try {
     const fingerprint = typeof req.body?.fingerprint === "string" ? req.body.fingerprint : "";
@@ -38,14 +51,15 @@ router.post("/session", sessionLimiter, async (req, res) => {
         error: "IP已被封禁",
         reason: result.banReason || "IP 风险过高，已自动拦截",
         expiresAt: result.banExpiresAt,
+        traceId: traceOf(req),
       });
     }
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(400).json({ ...result, traceId: traceOf(req) });
     }
 
-    res.status(200).json(result);
+    res.status(200).json({ ...result, traceId: traceOf(req) });
   } catch (error) {
     logger.error("[IpVerification] 初始化验证会话失败", error);
     res.status(500).json({
@@ -56,6 +70,7 @@ router.post("/session", sessionLimiter, async (req, res) => {
       // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
       // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
       tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
+      traceId: traceOf(req),
     });
   }
 });
@@ -75,10 +90,10 @@ router.post("/complete", sessionLimiter, async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(400).json({ ...result, traceId: traceOf(req) });
     }
 
-    res.json(result);
+    res.json({ ...result, traceId: traceOf(req) });
   } catch (error) {
     logger.error("[IpVerification] 完成验证失败", error);
     res.status(500).json({
@@ -89,6 +104,7 @@ router.post("/complete", sessionLimiter, async (req, res) => {
       // GB-07: TTL 取运行时可配值（服务层各分支同一写法），不再硬编码 40——
       // 超管把 tokenTtlMinutes 调小后，兜底 500 仍说 40 会让前后端认知分叉。
       tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
+      traceId: traceOf(req),
     });
   }
 });

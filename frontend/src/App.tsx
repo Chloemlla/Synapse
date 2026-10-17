@@ -596,6 +596,7 @@ const App: React.FC = () => {
     banReason,
     banExpiresAt,
     clientIP,
+    traceId: firstVisitTraceId,
     markAsVerified,
   } = useFirstVisitDetection(configLoaded && enableFirstVisitVerification);
 
@@ -773,6 +774,7 @@ const App: React.FC = () => {
           element={
             <FirstVisitVerificationPage
               fingerprint={fingerprint ?? ''}
+              initialTraceId={firstVisitTraceId}
               onVerificationComplete={markAsVerified}
             />
           }
@@ -805,7 +807,16 @@ const App: React.FC = () => {
         <Route path="*" element={renderAnimatedRoute(<NotFoundPage path={location.pathname} />)} />
       </>
     ),
-    [renderAdminRoute, renderAnimatedRoute, renderProtectedRoute, location.pathname, openTOTPManager, fingerprint, markAsVerified],
+    [
+      renderAdminRoute,
+      renderAnimatedRoute,
+      renderProtectedRoute,
+      location.pathname,
+      openTOTPManager,
+      fingerprint,
+      firstVisitTraceId,
+      markAsVerified,
+    ],
   );
 
   // React 19 文档元数据：路由配置优化，避免每次重新创建
@@ -1503,6 +1514,7 @@ const App: React.FC = () => {
             banExpiresAt={banExpiresAt}
             clientIP={clientIP}
             challengeReason={firstVisitError ?? undefined}
+            initialTraceId={firstVisitTraceId}
           />
         </LazyMotion>
       </NotificationProvider>

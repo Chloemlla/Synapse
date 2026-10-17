@@ -6,7 +6,9 @@ import {
   FaCheck,
   FaCircleNotch,
   FaClock,
+  FaCopy,
   FaFingerprint,
+  FaHashtag,
   FaGlobe,
   FaLock,
   FaRedo,
@@ -40,6 +42,8 @@ interface FirstVisitVerificationProps {
   banExpiresAt?: Date;
   clientIP?: string | null;
   challengeReason?: string;
+  /** 首访握手（或封禁响应）的追踪码；还没走到提交验证时用它兜底展示。 */
+  initialTraceId?: string;
 }
 
 type VerificationMode = 'turnstile' | 'hcaptcha' | 'trycap' | null;
@@ -139,6 +143,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   banExpiresAt,
   clientIP,
   challengeReason,
+  initialTraceId,
 }) => {
   const { setNotification } = useNotification();
   const reducedMotion = useReducedMotion();
@@ -151,6 +156,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     enabled: secureEnabled,
     widget: secureWidget,
     failoverMaxAttempts,
+    traceId: configTraceId,
     regenerateSelection,
   } = useSecureCaptchaSelection({ fingerprint, scenario: 'first_visit' });
   // 控件加载失败时逐个排除（前端侧故障转移），重置验证时应清空。
@@ -175,6 +181,9 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   const [capKey, setCapKey] = useState(0);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  // 最近一次 /api/ip-verification/complete 的追踪码。优先展示它（用户真正卡住的那一步），
+  // 还没提交过就退回拿验证配置那一次的 traceId。
+  const [verifyTraceId, setVerifyTraceId] = useState('');
   const [banState, setBanState] = useState<BanState>({
     isBanned: isIpBanned,
     reason: banReason,
@@ -356,6 +365,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     try {
       const result = await completeIpVerification(fingerprint, currentToken, verificationMode, controller.signal);
       if (generation !== generationRef.current) return;
+      if (result.traceId) setVerifyTraceId(result.traceId);
       if (!result.success || !result.verified || !result.token) {
         // 后端原文不直铺界面，只给中性可重试文案。
         throw new Error('验证未通过，请重试。');
@@ -430,6 +440,25 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
     return `${fingerprint.slice(0, 10)}...${fingerprint.slice(-6)}`;
   }, [fingerprint]);
 
+  // 展示给用户的追踪码，按「用户最可能卡住的那一步」排序：
+  //   1. 提交验证（complete）—— 明确的失败点；
+  //   2. 握手失败 —— 页面只剩一句失败文案时，它才是真正的证据；
+  //   3. 取验证配置；
+  //   4. 握手成功时的兜底（例如用户点开页面但还没操作）。
+  const challengeTraceId = challengeReason ? initialTraceId ?? '' : '';
+  const traceId = verifyTraceId || challengeTraceId || configTraceId || initialTraceId || '';
+  const [traceCopied, setTraceCopied] = useState(false);
+  const copyTraceId = useCallback(async () => {
+    if (!traceId) return;
+    try {
+      await navigator.clipboard.writeText(traceId);
+      setTraceCopied(true);
+      window.setTimeout(() => setTraceCopied(false), 2000);
+    } catch {
+      // 剪贴板不可用（非安全上下文/权限被拒）：文本仍可手动选中复制，不额外弹错。
+    }
+  }, [traceId]);
+
   const shell = (children: React.ReactNode) => (
     <div className={`fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-slate-50 ${studioPageFont}`}>
       {/* 均匀网格铺满整屏：不再用圆形遮罩，避免出现一圈巨大的"圆盘" */}
@@ -444,7 +473,12 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       {/* RC-49：台上光源改成与首页同一组 studio 光斑（不再自造橙色渐变） */}
       <div className={`${studioAccentBlobBlueClassName} -top-20 left-1/4`} aria-hidden="true" />
       <div className={`${studioAccentBlobSkyClassName} -top-8 right-1/4`} aria-hidden="true" />
-      <div className="relative flex min-h-full items-center justify-center px-4 py-10 sm:px-6 sm:py-14">
+      {/* 手机端收窄外边距，把宽度让给固定 300px 的第三方验证控件；
+          底部留出安全区，避免 CTA 被 iOS 主屏条压住。 */}
+      <div
+        className="relative flex min-h-full items-start justify-center px-2 py-6 sm:items-center sm:px-6 sm:py-14"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
         {children}
       </div>
     </div>
@@ -458,7 +492,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
         transition={{ duration: 0.32, ease: 'easeOut' }}
         className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)]"
       >
-        <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-6 py-6 sm:px-8">
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-5 sm:px-8 sm:py-6">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white text-lg text-rose-600">
             <FaBan />
           </span>
@@ -472,7 +506,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           </div>
         </div>
 
-        <div className="space-y-4 px-6 py-6 text-sm leading-6 text-slate-600 sm:px-8 sm:py-7">
+        <div className="space-y-4 px-4 py-5 text-sm leading-6 text-slate-600 sm:px-8 sm:py-7">
           <p>{banState.reason || '该 IP 因异常流量频繁触发限制，当前暂不可访问。'}</p>
           {banState.expiresAt && (
             <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-800">
@@ -507,19 +541,19 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.34, ease: 'easeOut' }}
-      className="relative w-full max-w-[880px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)] xl:max-w-[1000px]"
+      className="relative w-full max-w-[880px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_30px_70px_-30px_rgba(15,23,42,0.25)] sm:rounded-3xl xl:max-w-[1000px]"
     >
       <div className="grid md:grid-cols-[1.15fr_0.85fr]">
-        <div className="px-5 py-7 sm:px-8 sm:py-9 md:px-10 md:py-11">
+        <div className="min-w-0 px-4 py-6 sm:px-8 sm:py-9 md:px-10 md:py-11">
           <div className="flex items-center gap-3.5">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-lg text-white shadow-sm">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-lg text-white shadow-sm sm:h-11 sm:w-11">
               <FaShieldAlt />
             </span>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-600">
                 流量审查
               </p>
-              <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[28px]">
+              <h1 className="text-[20px] font-semibold leading-tight tracking-[-0.03em] text-slate-900 sm:text-[24px] md:text-[28px]">
                 正在检查您的浏览器
               </h1>
             </div>
@@ -571,6 +605,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700">
                     {configError}
+                    {traceId && (
+                      <p className="mt-2 break-all font-mono text-[11px] text-amber-600/90">
+                        追踪码：{traceId}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -585,7 +624,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                 <>
                   <m.div
                     transition={{ duration: 0.25 }}
-                    className={`flex min-h-[86px] items-center justify-center rounded-2xl border border-dashed px-4 py-4 transition-colors duration-200 ${
+                    className={`flex min-h-[86px] items-center justify-center overflow-x-auto rounded-2xl border border-dashed px-1 py-3 transition-colors duration-200 sm:px-4 sm:py-4 ${
                       isVerified ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'
                     }`}
                   >
@@ -644,6 +683,11 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                       >
                         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                           {error}
+                          {traceId && (
+                            <p className="mt-2 break-all font-mono text-[11px] text-amber-600/90">
+                              追踪码：{traceId}
+                            </p>
+                          )}
                         </div>
                       </m.div>
                     )}
@@ -700,7 +744,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
           )}
         </div>
 
-        <div className="border-t border-slate-200 bg-white px-5 py-7 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">
+        <div className="min-w-0 border-t border-slate-200 bg-white px-4 py-6 sm:px-8 sm:py-9 md:border-l md:border-t-0 md:px-9 md:py-11">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
             会话信息
           </p>
@@ -714,6 +758,28 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
               <p className="truncate font-mono text-xs text-slate-700">{clientIP || '正在检测…'}</p>
             </MetaRow>
 
+            <MetaRow Icon={FaHashtag} label="问题追踪码">
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate font-mono text-xs text-slate-700" title={traceId || undefined}>
+                  {traceId || '完成一次验证请求后生成'}
+                </p>
+                {traceId && (
+                  <button
+                    type="button"
+                    onClick={() => void copyTraceId()}
+                    aria-label="复制问题追踪码"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                  >
+                    {traceCopied ? <FaCheck className="text-[10px]" /> : <FaCopy className="text-[10px]" />}
+                    {traceCopied ? '已复制' : '复制'}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                验证出错时，把这串提供给管理员即可定位到本次检查。
+              </p>
+            </MetaRow>
+
             <MetaRow Icon={FaClock} label="令牌策略">
               <p className="text-xs leading-5 text-slate-600">
                 通过检查后即可照常浏览。本次检查在您的整个会话内有效，刷新页面不会再次出现。
@@ -721,8 +787,14 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
             </MetaRow>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5">
-            <p className="text-sm font-semibold text-slate-800">为什么会出现此页面</p>
+          {/* 说明性内容默认折叠：手机上它会把验证区推到一屏之外，而它只对
+              「为什么会被拦」有用，需要时点开即可。 */}
+          <details className="group mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 sm:px-5 sm:py-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-800 [&::-webkit-details-marker]:hidden">
+              为什么会出现此页面
+              <span className="shrink-0 text-[11px] font-normal text-slate-400 group-open:hidden">展开</span>
+              <span className="hidden shrink-0 text-[11px] font-normal text-slate-400 group-open:inline">收起</span>
+            </summary>
             <ul className="mt-3.5 space-y-3 text-xs leading-5 text-slate-500">
               {[
                 '您的网络需要先完成一次快速的一次性验证。',
@@ -735,7 +807,7 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
                 </li>
               ))}
             </ul>
-          </div>
+          </details>
         </div>
       </div>
     </m.div>,
@@ -748,6 +820,8 @@ interface FirstVisitVerificationPageProps {
    * App 不会采集；getFingerprint 自身做了并发去重与本地缓存，重复调用不会重复采集）。
    */
   fingerprint?: string;
+  /** 首访握手的追踪码，透传给验证界面做兜底展示。 */
+  initialTraceId?: string;
   /**
    * 验证成功后的回调。首访门禁用它把 App 内的「未验证」状态就地置为已验证，
    * 否则跳转后客户端路由还会被闸门再拦一次。
@@ -763,6 +837,7 @@ interface FirstVisitVerificationPageProps {
  */
 export const FirstVisitVerificationPage: React.FC<FirstVisitVerificationPageProps> = ({
   fingerprint: fingerprintProp,
+  initialTraceId,
   onVerificationComplete,
 }) => {
   const navigate = useNavigate();
@@ -809,5 +884,11 @@ export const FirstVisitVerificationPage: React.FC<FirstVisitVerificationPageProp
     );
   }
 
-  return <FirstVisitVerification fingerprint={resolvedFingerprint} onVerificationComplete={handleComplete} />;
+  return (
+    <FirstVisitVerification
+      fingerprint={resolvedFingerprint}
+      initialTraceId={initialTraceId}
+      onVerificationComplete={handleComplete}
+    />
+  );
 };

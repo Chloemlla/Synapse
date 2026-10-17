@@ -87,3 +87,25 @@ describe('FirstVisitVerificationPage（/challenge 独立页）', () => {
     expect(await screen.findByText('tts target')).toBeInTheDocument();
   });
 });
+
+describe('FirstVisitVerification 追踪码', () => {
+  it('展示来自握手链路的追踪码，方便访客报给管理员', async () => {
+    render(<FirstVisitVerification fingerprint="fp" initialTraceId="trace-abc123" onVerificationComplete={vi.fn()} />);
+    expect(await screen.findByText('trace-abc123')).toBeInTheDocument();
+  });
+
+  it('验证失败时把这一次请求的追踪码同时写进错误条', async () => {
+    h.complete.mockResolvedValueOnce({
+      success: false,
+      verified: false,
+      requiresVerification: true,
+      token: '',
+      traceId: 'trace-fail-001',
+    });
+    render(<FirstVisitVerification fingerprint="fp" onVerificationComplete={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'solve challenge' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续访问站点' }));
+    await waitFor(() => expect(screen.getAllByText(/trace-fail-001/).length).toBeGreaterThan(0));
+    expect(screen.getByText('验证未通过，请重试。')).toBeInTheDocument();
+  });
+});

@@ -47,6 +47,9 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
   const [captchaConfig, setCaptchaConfig] = useState<SecureCaptchaConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 服务端下发的追踪码：成功取响应体 traceId，失败退回 X-Request-Id 响应头。
+  // 首访验证页把它展示给匿名访客，管理员按它在日志里定位这一次下发。
+  const [traceId, setTraceId] = useState<string>('');
   const [encryptedSelection, setEncryptedSelection] = useState<EncryptedCaptchaSelection | null>(null);
 
   const { fingerprint, scenario = 'default' } = options;
@@ -111,8 +114,14 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
       if (!isCurrent()) return;
 
       if (!response.ok) {
-        // 原始状态码与后端原文只进 console；用户侧只看到中性可行动的中文文案
+        // 原始状态码与后端原文只进 console；用户侧只看到中性可行动的中文文案。
+        // 追踪码优先取响应体（后端每条响应都带），没有则退回响应头。
+        const headerTraceId = response.headers.get('x-request-id') || '';
         const errorData = await response.json().catch(() => null);
+        const bodyTraceId = typeof (errorData as { traceId?: unknown } | null)?.traceId === 'string'
+          ? String((errorData as { traceId: string }).traceId)
+          : '';
+        if (isCurrent() && (bodyTraceId || headerTraceId)) setTraceId(bodyTraceId || headerTraceId);
         console.error(
           '获取验证方式失败:',
           response.status,
@@ -122,8 +131,12 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
         throw new Error('验证服务暂不可用，请稍后重试');
       }
 
+      const headerTraceId = response.headers.get('x-request-id') || '';
       const data = await response.json();
       if (!isCurrent()) return;
+
+      if (typeof data?.traceId === 'string' && data.traceId) setTraceId(data.traceId);
+      else if (headerTraceId) setTraceId(headerTraceId);
 
       if (!data.success) {
         // 同上一分支：后端原文只进 console，不直铺界面。
@@ -221,6 +234,8 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
     captchaConfig,
     loading,
     error,
+    /** 最近一次下发/失败请求的追踪码；空串表示还没有可展示的值。 */
+    traceId,
     encryptedSelection,
     regenerateSelection,
     isSelectionExpired,

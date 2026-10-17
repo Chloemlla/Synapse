@@ -20,6 +20,11 @@ export interface IpVerificationSession {
   fraudScore?: number;
   riskFlags?: string[];
   tokenTtlMinutes: number;
+  /**
+   * 本次请求的追踪码（服务端 requestId）。首访验证页把它展示给用户，
+   * 出问题时管理员可按它在日志/审计里定位这一次握手。
+   */
+  traceId?: string;
 }
 
 interface StoredIpVerificationToken {
@@ -135,6 +140,7 @@ function normalizeSessionPayload(payload: Partial<IpVerificationSession>, finger
     fraudScore: typeof payload.fraudScore === 'number' ? payload.fraudScore : undefined,
     riskFlags: Array.isArray(payload.riskFlags) ? payload.riskFlags.filter((item): item is string => typeof item === 'string') : [],
     tokenTtlMinutes: typeof payload.tokenTtlMinutes === 'number' ? payload.tokenTtlMinutes : 40,
+    traceId: typeof payload.traceId === 'string' && payload.traceId ? payload.traceId : undefined,
   };
 }
 
@@ -186,8 +192,13 @@ function createIpBanError(payload: unknown): Error {
   const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
   const reason = typeof record.reason === 'string' ? record.reason : undefined;
   const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : undefined;
-  const banError = new Error(`IP已被封禁${reason ? `: ${reason}` : ''}`);
-  (banError as { banData?: { reason?: string; expiresAt?: string } }).banData = { reason, expiresAt };
+  const banError = new Error(`IP已被封禁${reason ? `: ${reason}` : ''}`) as Error & {
+    banData?: { reason?: string; expiresAt?: string };
+    traceId?: string;
+  };
+  banError.banData = { reason, expiresAt };
+  const traceId = (payload as { traceId?: unknown } | null)?.traceId;
+  if (typeof traceId === 'string' && traceId) banError.traceId = traceId;
   return banError;
 }
 
@@ -263,7 +274,11 @@ export async function initializeIpVerificationSession(existingFingerprint?: stri
     }
     // 原始状态码与后端原文只进 console；向上抛稳定 code，面向用户的文案由调用方映射。
     console.error('IP verification session init failed:', response.status, errPayload);
-    throw new Error('SESSION_INIT_FAILED');
+    // 追踪码挂到错误上：闸门页要把它展示给匿名访客（后端每条响应都带 traceId）。
+    const initError = new Error('SESSION_INIT_FAILED') as Error & { traceId?: string };
+    const traceId = (errPayload as { traceId?: unknown } | null)?.traceId;
+    if (typeof traceId === 'string' && traceId) initError.traceId = traceId;
+    throw initError;
   }
 
   const payload = await response.json().catch(() => ({}));
