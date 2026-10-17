@@ -59,7 +59,14 @@ export async function createGeoGebraShare(userId: string, input: {
   if (projectId) await getAccessibleGeoGebraProject(userId, projectId, "write");
 
   const shareId = newShareId();
-  const coverBytes = decodeGeoGebraPngDataUrl(input.coverDataUrl);
+  // 封面是客户端上传的 data URL：解码失败要落成 400 业务错。
+  // 让它冒成普通 Error 会被控制器归为 500「请求暂时无法完成」，用户看不到该怎么改。
+  let coverBytes: Buffer | null = null;
+  try {
+    coverBytes = decodeGeoGebraPngDataUrl(input.coverDataUrl);
+  } catch {
+    throw new GeoGebraDomainError("封面图片无法使用，请重新运行画布后再试。", 400, "GEOGEBRA_SHARE_COVER_INVALID");
+  }
   if (coverBytes) await writeGeoGebraShareCover(shareId, coverBytes);
   try {
     const share = await GeoGebraShareModel.create({
