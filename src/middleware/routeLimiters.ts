@@ -396,10 +396,17 @@ export function createLimiter(opts: LimiterOptions): RateLimitRequestHandler {
     skip: opts.skip,
     preferMemory,
   });
-  return (req, res, next) => base(req, res, (error?: unknown) => {
-    if (error) { next(error); return; }
-    fingerprintGuard(req, res, next);
-  });
+  // 显式标注 void：express-rate-limit 的 handler 返回类型是 unknown，
+  // 直接返回表达式会让整个中间件推断成 unknown，无法赋给 RateLimitRequestHandler。
+  return (req: Request, res: Response, next: NextFunction): void => {
+    base(req, res, (error?: unknown) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      fingerprintGuard(req, res, next);
+    });
+  };
 }
 
 // ========== RC-27：突发并发硬顶（在途请求数，而不是"窗口内次数"） ==========
