@@ -767,7 +767,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
             </div>
             
             <div className="flex flex-wrap gap-2">
-              <motion.button
+              <motion.button type="button"
                 onClick={() => handleToggleStatus(round.id, round.isActive)}
                 disabled={loading === round.id}
                 className="px-3 py-1 bg-slate-900 text-white rounded hover:bg-slate-800 disabled:bg-slate-400 text-sm font-medium"
@@ -775,7 +775,7 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               >
                 {loading === round.id ? '处理中...' : (round.isActive ? '停用' : '启用')}
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => handleResetRound(round.id)}
                 disabled={loading === round.id}
                 className={`${studioDangerButtonClassName} px-3 py-1 text-sm font-medium`}
@@ -783,14 +783,14 @@ const RoundManagement: React.FC<{ rounds: LotteryRound[]; onRefresh: () => void 
               >
                 {loading === round.id ? '处理中...' : '重置'}
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => (editingPresentationId === round.id ? setEditingPresentationId(null) : openPresentationEditor(round))}
                 className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
                 whileTap={{ scale: 0.95 }}
               >
                 {editingPresentationId === round.id ? '收起编辑器' : '编辑页面'}
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => { void loadAbStats(round.id); }}
                 className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
                 whileTap={{ scale: 0.95 }}
@@ -1267,7 +1267,7 @@ const LotteryAdmin: React.FC = () => {
             功能面板
           </h3>
           {activeTab === 'manage' && (
-            <motion.button
+            <motion.button type="button"
               onClick={handleDeleteAllRounds}
               className={studioDangerButtonClassName}
               whileTap={{ scale: 0.95 }}
@@ -1279,7 +1279,7 @@ const LotteryAdmin: React.FC = () => {
 
         <div className="flex justify-center mb-6">
           <div className="bg-slate-100 rounded-2xl p-1">
-            <motion.button
+            <motion.button type="button"
               onClick={() => setActiveTab('create')}
               className={`px-6 py-2 rounded-2xl transition-colors font-medium ${
                 activeTab === 'create'
@@ -1290,7 +1290,7 @@ const LotteryAdmin: React.FC = () => {
             >
               创建轮次
             </motion.button>
-            <motion.button
+            <motion.button type="button"
               onClick={() => setActiveTab('manage')}
               className={`px-6 py-2 rounded-2xl transition-colors font-medium ${
                 activeTab === 'manage'

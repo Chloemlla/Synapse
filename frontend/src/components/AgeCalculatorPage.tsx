@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useActionState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { studioEyebrowPillClassName } from './studioTheme';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import { studioAccentBlobBlueClassName, studioAccentBlobSkyClassName, studioEyebrowPillClassName } from './studioTheme';
+import { cn } from '../utils/cn';
 import {
   FaCalculator,
   FaBirthdayCake,
@@ -146,6 +147,7 @@ const AgeCalculatorPage: React.FC = () => {
   );
 
   return (
+    <MotionConfig reducedMotion="user">
     <section className="mx-auto max-w-5xl px-4 py-10 sm:py-12">
       <motion.div
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
@@ -153,8 +155,8 @@ const AgeCalculatorPage: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, 'bottom-0 -left-10')} aria-hidden />
 
         <div className="relative">
           <div className={studioEyebrowPillClassName}>
@@ -219,7 +221,7 @@ const AgeCalculatorPage: React.FC = () => {
             </div>
 
             <div className="pt-2">
-              <motion.button
+              <motion.button type="button"
                 onClick={() => {
                   const formData = new FormData();
                   formData.append('birthYear', birthYear.toString());
@@ -330,6 +332,7 @@ const AgeCalculatorPage: React.FC = () => {
         </div>
       </motion.div>
     </section>
+    </MotionConfig>
   );
 };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { FaPlus, FaEdit, FaTrash, FaSearch, FaSync, FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaArrowLeft, FaList, FaBox, FaTag, FaDollarSign, FaToggleOn, FaToggleOff, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { resourcesApi, Resource } from '../api/resources';
@@ -8,7 +8,16 @@ import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useAuth } from '../hooks/useAuth';
 import { isSuperAdmin } from '../utils/rbac';
-import { studioPanelClassName } from './studioTheme';
+import {
+  studioFieldClassName,
+  studioHeroCardClassName,
+  studioPageClassName,
+  studioPageFont,
+  studioPanelClassName,
+  studioPrimaryButtonClassName,
+  studioSecondaryButtonClassName,
+} from './studioTheme';
+import { StudioErrorState } from './studioFeedback';
 import { cn } from '../utils/cn';
 
 interface AddResourceModalProps {
@@ -82,7 +91,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
         >
           <div className="mt-1 sm:mt-3">
             <h3 className="text-lg font-medium text-slate-900 mb-4 flex items-center gap-2">
-              <FaPlus className="w-5 h-5 text-green-500" />
+              <FaPlus className="w-5 h-5 text-slate-500" />
               添加新资源
             </h3>
             <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
@@ -91,7 +100,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <input
                   type="text"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 />
@@ -102,7 +111,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <textarea
                   required
                   rows={3}
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 />
@@ -113,7 +122,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <input
                   type="url"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.downloadUrl}
                   onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
                 />
@@ -126,7 +135,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                   min="0"
                   step="0.01"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.price}
                   onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                 />
@@ -136,7 +145,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <label className="block text-sm font-medium text-slate-700">分类</label>
                 <select
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 >
@@ -153,7 +162,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <label className="block text-sm font-medium text-slate-700">图片URL</label>
                 <input
                   type="url"
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.imageUrl}
                   onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
                 />
@@ -163,7 +172,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <input
                   type="checkbox"
                   id="isActive"
-                  className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded"
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                   checked={formData.isActive}
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                 />
@@ -176,7 +185,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="text-red-600 text-sm bg-red-50 p-3 rounded-2xl border border-red-200 flex items-center gap-2"
+                  className="text-rose-600 text-sm bg-rose-50 p-3 rounded-2xl border border-rose-200 flex items-center gap-2"
                 >
                   <FaExclamationTriangle className="w-4 h-4" />
                   {error}
@@ -187,7 +196,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <motion.button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-all duration-200"
+                  className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -196,7 +205,7 @@ function AddResourceModal({ isOpen, onClose, onSuccess }: AddResourceModalProps)
                 <motion.button
                   type="submit"
                   disabled={loading}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-green-500 to-blue-600 border border-transparent rounded-md hover:from-green-600 hover:to-blue-700 disabled:opacity-50 transition-all duration-200"
+                  className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
                   whileHover={!loading ? { scale: 1.02 } : {}}
                   whileTap={!loading ? { scale: 0.98 } : {}}
                 >
@@ -295,7 +304,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <input
                   type="text"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 />
@@ -306,7 +315,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <textarea
                   required
                   rows={3}
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 />
@@ -317,7 +326,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <input
                   type="url"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.downloadUrl}
                   onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
                 />
@@ -330,7 +339,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                   min="0"
                   step="0.01"
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.price}
                   onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                 />
@@ -340,7 +349,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <label className="block text-sm font-medium text-slate-700">分类</label>
                 <select
                   required
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 >
@@ -357,7 +366,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <label className="block text-sm font-medium text-slate-700">图片URL</label>
                 <input
                   type="url"
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className={studioFieldClassName}
                   value={formData.imageUrl}
                   onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
                 />
@@ -367,7 +376,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <input
                   type="checkbox"
                   id="editIsActive"
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                   checked={formData.isActive}
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                 />
@@ -380,7 +389,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="text-red-600 text-sm bg-red-50 p-3 rounded-2xl border border-red-200 flex items-center gap-2"
+                  className="text-rose-600 text-sm bg-rose-50 p-3 rounded-2xl border border-rose-200 flex items-center gap-2"
                 >
                   <FaExclamationTriangle className="w-4 h-4" />
                   {error}
@@ -391,7 +400,7 @@ function EditResourceModal({ isOpen, onClose, onSuccess, resource }: EditResourc
                 <motion.button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-all duration-200"
+                  className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -549,21 +558,22 @@ export default function ResourceStoreManager() {
   }
 
   return (
-    <div className="space-y-6">
+    <MotionConfig reducedMotion="user">
+    <div className={cn(studioPageClassName, 'space-y-6')} style={{ fontFamily: studioPageFont }}>
       {/* 标题和说明 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-4 sm:p-6 border border-green-100"
+        className={studioHeroCardClassName}
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-          <h2 className="text-xl sm:text-2xl font-bold text-green-700 flex items-center gap-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <FaBox className="w-6 h-6" />
             资源管理
           </h2>
           <Link
             to="/admin/store"
-            className="w-full sm:w-auto px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition text-sm font-medium flex items-center gap-2 justify-center"
+            className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
           >
             <FaArrowLeft className="w-4 h-4" />
             返回仪表板
@@ -572,9 +582,9 @@ export default function ResourceStoreManager() {
         <div className="text-slate-600 space-y-2">
           <p>此功能用于管理资源商店中的所有资源，支持添加、编辑、删除和搜索资源，提供完整的资源生命周期管理。</p>
           <div className="flex items-start gap-2 text-sm">
-            <FaInfoCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+            <FaInfoCircle className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold text-green-700">功能说明：</p>
+              <p className="font-semibold text-slate-900">功能说明：</p>
               <ul className="list-disc list-inside space-y-1 mt-1">
                 <li>支持添加新资源，设置标题、描述、价格等</li>
                 <li>实时搜索和筛选资源</li>
@@ -594,13 +604,13 @@ export default function ResourceStoreManager() {
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaSearch className="w-5 h-5 text-green-500" />
+            <FaSearch className="w-5 h-5 text-slate-500" />
             搜索和刷新
           </h3>
-          <motion.button
+          <motion.button type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="w-full sm:w-auto px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2 justify-center"
+            className={cn(studioSecondaryButtonClassName, 'w-full sm:w-auto')}
             whileTap={{ scale: 0.95 }}
           >
             <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -610,7 +620,7 @@ export default function ResourceStoreManager() {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <input
-            className="flex-1 px-3 py-2 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+            className={studioFieldClassName}
             placeholder="搜索资源标题、描述或分类"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -626,13 +636,13 @@ export default function ResourceStoreManager() {
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <FaPlus className="w-5 h-5 text-green-500" />
+            <FaPlus className="w-5 h-5 text-slate-500" />
             添加资源
           </h3>
           {canWrite && (
-          <motion.button
+          <motion.button type="button"
             onClick={() => setShowAddModal(true)}
-            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-green-500 to-blue-600 text-white rounded-2xl hover:from-green-600 hover:to-blue-700 transition-all duration-200 font-medium flex items-center gap-2 justify-center"
+            className={cn(studioPrimaryButtonClassName, 'w-full sm:w-auto')}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -672,20 +682,8 @@ export default function ResourceStoreManager() {
             <tbody>
               {loadError ? (
                 <tr key="error-state-row">
-                  <td colSpan={5} className="py-12 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <FaExclamationTriangle className="text-3xl text-red-500" />
-                      <div className="text-sm text-red-600">{loadError}</div>
-                      <motion.button
-                        onClick={handleRefresh}
-                        disabled={refreshing}
-                        className="mt-1 px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2 justify-center"
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                        重试
-                      </motion.button>
-                    </div>
+                  <td colSpan={5} className="py-6">
+                    <StudioErrorState message={loadError} onRetry={handleRefresh} />
                   </td>
                 </tr>
               ) : filteredResources.length === 0 ? (
@@ -732,15 +730,15 @@ export default function ResourceStoreManager() {
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">
                       <div className="flex items-center gap-2">
-                        <FaDollarSign className="w-4 h-4 text-green-500" />
+                        <FaDollarSign className="w-4 h-4 text-emerald-500" />
                         ¥{resource.price}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className={`inline-flex items-center gap-2 rounded-full px-2 text-xs font-semibold leading-5 ${
                         resource.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
                       }`}>
                         {resource.isActive ? (
                           <>
@@ -758,7 +756,7 @@ export default function ResourceStoreManager() {
                     <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                       {canWrite && (
                       <div className="flex gap-2 justify-center">
-                        <motion.button
+                        <motion.button type="button"
                           onClick={() => handleEdit(resource)}
                           className="rounded-2xl border-2 border-slate-200 bg-white/80 px-3 py-1 text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                           whileHover={{ scale: 1.05 }}
@@ -766,9 +764,9 @@ export default function ResourceStoreManager() {
                         >
                           编辑
                         </motion.button>
-                        <motion.button
+                        <motion.button type="button"
                           onClick={() => handleDelete(resource)}
-                          className="text-red-600 hover:text-red-900 bg-red-100 hover:bg-red-200 rounded-2xl px-3 py-1 transition-all duration-150"
+                          className="text-rose-600 hover:text-rose-900 bg-rose-100 hover:bg-rose-200 rounded-2xl px-3 py-1 transition-all duration-150"
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
@@ -787,20 +785,8 @@ export default function ResourceStoreManager() {
         {/* 移动端卡片列表视图 */}
         <div className="md:hidden space-y-3">
           {loadError ? (
-            <div key="error-state-mobile" className="bg-white/80 backdrop-blur-xl rounded-2xl shadow p-6 text-center">
-              <div className="flex flex-col items-center gap-2">
-                <FaExclamationTriangle className="text-3xl text-red-500" />
-                <div className="text-sm text-red-600">{loadError}</div>
-                <motion.button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="mt-1 px-3 py-2 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition disabled:opacity-50 text-sm font-medium flex items-center gap-2 justify-center"
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaSync className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  重试
-                </motion.button>
-              </div>
+            <div key="error-state-mobile">
+              <StudioErrorState message={loadError} onRetry={handleRefresh} />
             </div>
           ) : filteredResources.length === 0 ? (
             <div key="empty-state-mobile" className="bg-white/80 backdrop-blur-xl rounded-2xl shadow p-6 text-center">
@@ -847,7 +833,7 @@ export default function ResourceStoreManager() {
                     <FaTag className="w-4 h-4 text-blue-500 flex-shrink-0" />
                     <span className="truncate">{resource.category}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-green-600">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
                     <FaDollarSign className="w-4 h-4 flex-shrink-0" />
                     <span>¥{resource.price}</span>
                   </div>
@@ -857,8 +843,8 @@ export default function ResourceStoreManager() {
                 <div className="flex flex-col gap-3">
                   <span className={`inline-flex items-center gap-2 rounded-full px-2 text-xs font-semibold leading-5 w-fit ${
                     resource.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-rose-100 text-rose-800'
                   }`}>
                     {resource.isActive ? (
                       <>
@@ -874,7 +860,7 @@ export default function ResourceStoreManager() {
                   </span>
                   {canWrite && (
                   <div className="flex gap-2">
-                    <motion.button
+                    <motion.button type="button"
                       onClick={() => handleEdit(resource)}
                       className="whitespace-nowrap rounded-2xl border-2 border-slate-200 bg-white/80 px-3 py-1 text-sm text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                       whileHover={{ scale: 1.05 }}
@@ -882,9 +868,9 @@ export default function ResourceStoreManager() {
                     >
                       编辑
                     </motion.button>
-                    <motion.button
+                    <motion.button type="button"
                       onClick={() => handleDelete(resource)}
-                      className="text-red-600 hover:text-red-900 bg-red-100 hover:bg-red-200 rounded-2xl px-3 py-1 text-sm transition-all duration-150 whitespace-nowrap"
+                      className="text-rose-600 hover:text-rose-900 bg-rose-100 hover:bg-rose-200 rounded-2xl px-3 py-1 text-sm transition-all duration-150 whitespace-nowrap"
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >
@@ -907,13 +893,13 @@ export default function ResourceStoreManager() {
           >
             <div className="flex items-center gap-1">
               {/* 首页按钮 */}
-              <motion.button
+              <motion.button type="button"
                 onClick={handleFirstPage}
                 disabled={currentPage === 1}
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === 1
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-green-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== 1 ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== 1 ? { scale: 0.95 } : {}}
@@ -922,13 +908,13 @@ export default function ResourceStoreManager() {
               </motion.button>
 
               {/* 上一页按钮 */}
-              <motion.button
+              <motion.button type="button"
                 onClick={handlePrevPage}
                 disabled={currentPage === 1}
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === 1
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-green-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== 1 ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== 1 ? { scale: 0.95 } : {}}
@@ -939,13 +925,13 @@ export default function ResourceStoreManager() {
               {/* 页码按钮 */}
               <div className="flex items-center gap-1 mx-2">
                 {generatePageNumbers().map((page) => (
-                  <motion.button
+                  <motion.button type="button"
                     key={page}
                     onClick={() => handlePageChange(page)}
                     className={`px-3 py-2 rounded-2xl text-sm font-medium transition-all duration-200 ${
                       page === currentPage
-                        ? 'bg-green-500 text-white shadow-md'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-green-600'
+                        ? 'bg-slate-900 text-white shadow-md'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -956,13 +942,13 @@ export default function ResourceStoreManager() {
               </div>
 
               {/* 下一页按钮 */}
-              <motion.button
+              <motion.button type="button"
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === totalPages
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-green-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== totalPages ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== totalPages ? { scale: 0.95 } : {}}
@@ -971,13 +957,13 @@ export default function ResourceStoreManager() {
               </motion.button>
 
               {/* 末页按钮 */}
-              <motion.button
+              <motion.button type="button"
                 onClick={handleLastPage}
                 disabled={currentPage === totalPages}
                 className={`p-2 rounded-2xl transition-all duration-200 ${
                   currentPage === totalPages
                     ? 'text-slate-400 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-green-600'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 whileHover={currentPage !== totalPages ? { scale: 1.05 } : {}}
                 whileTap={currentPage !== totalPages ? { scale: 0.95 } : {}}
@@ -1010,5 +996,6 @@ export default function ResourceStoreManager() {
         resource={editingResource}
       />
     </div>
+    </MotionConfig>
   );
 } 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useActionState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 
 interface StatItemProps {
     label: string;
@@ -39,7 +39,8 @@ import {
   FaCalculator
 } from 'react-icons/fa';
 import { useNotification } from './Notification';
-import { studioEyebrowPillClassName } from './studioTheme';
+import { studioAccentBlobBlueClassName, studioAccentBlobSkyClassName, studioEyebrowPillClassName } from './studioTheme';
+import { cn } from '../utils/cn';
 
 interface WordCountStats {
     totalChars: number;
@@ -211,6 +212,7 @@ const WordCountPageSimple: React.FC = () => {
     ], [stats, formatNumber]);
 
     return (
+        <MotionConfig reducedMotion="user">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12 space-y-6">
             {/* Main tool card */}
             <motion.div
@@ -219,8 +221,8 @@ const WordCountPageSimple: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
             >
-                <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-                <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+                <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+                <div className={cn(studioAccentBlobSkyClassName, 'bottom-0 -left-10')} aria-hidden />
 
                 <div className="relative">
                     <div className={studioEyebrowPillClassName}>
@@ -269,7 +271,7 @@ const WordCountPageSimple: React.FC = () => {
                     </div>
 
                     <div className="mt-5 flex flex-wrap gap-3">
-                        <motion.button
+                        <motion.button type="button"
                             onClick={() => {
                                 const formData = new FormData();
                                 formData.append('text', text);
@@ -297,7 +299,7 @@ const WordCountPageSimple: React.FC = () => {
                             )}
                         </motion.button>
 
-                        <motion.button
+                        <motion.button type="button"
                             onClick={handleClear}
                             disabled={!text.trim()}
                             className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -413,6 +415,7 @@ const WordCountPageSimple: React.FC = () => {
                 </div>
             </section>
         </section>
+        </MotionConfig>
     );
 };
 

@@ -169,7 +169,7 @@ function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalPr
         initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] h-full w-full overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-0"
+        className="fixed inset-0 z-[10050] h-full w-full overflow-y-auto bg-slate-950/30 p-4 backdrop-blur-sm sm:p-0"
       >
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, scale: 0.9, y: 20 }}
@@ -353,7 +353,7 @@ function UnbanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: UnbanIPMod
         initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] h-full w-full overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-0"
+        className="fixed inset-0 z-[10050] h-full w-full overflow-y-auto bg-slate-950/30 p-4 backdrop-blur-sm sm:p-0"
       >
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, scale: 0.9, y: 20 }}
@@ -548,7 +548,7 @@ export default function IPBanManager() {
           <InfoSectionTitle eyebrow="Actions" title="封禁操作" icon={FaUserShield} />
           
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <motion.button
+            <motion.button type="button"
               onClick={() => {
                 setBanMode('single');
                 setShowBanModal(true);
@@ -562,7 +562,7 @@ export default function IPBanManager() {
               单个封禁
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={() => {
                 setBanMode('batch');
                 setShowBanModal(true);
@@ -576,7 +576,7 @@ export default function IPBanManager() {
               批量封禁
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={() => {
                 setUnbanMode('single');
                 setShowUnbanModal(true);
@@ -590,7 +590,7 @@ export default function IPBanManager() {
               单个解封
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={() => {
                 setUnbanMode('batch');
                 setShowUnbanModal(true);
@@ -604,7 +604,7 @@ export default function IPBanManager() {
               批量解封
             </motion.button>
 
-            <motion.button
+            <motion.button type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               className={studioSecondaryButtonClassName}

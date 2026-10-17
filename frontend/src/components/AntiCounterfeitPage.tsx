@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import { ProductInfo, AntiCounterfeitError, AntiCounterfeitErrorType, ProductQueryParams } from '../types/anta';
 import ProductQueryForm from './ProductQueryForm';
 import ProductDetails from './ProductDetails';
@@ -103,6 +103,7 @@ const AntiCounterfeitPage: React.FC = () => {
   }, []);
 
   return (
+    <MotionConfig reducedMotion="user">
     <InfoQueryShell>
       <div className="space-y-6">
         <InfoQueryHero
@@ -183,6 +184,7 @@ const AntiCounterfeitPage: React.FC = () => {
         </InfoPanel>
       </div>
     </InfoQueryShell>
+    </MotionConfig>
   );
 };
 

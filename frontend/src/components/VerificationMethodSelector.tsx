@@ -417,7 +417,7 @@ const VerificationMethodSelector: React.FC<VerificationMethodSelectorProps> = ({
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ duration: 0.5, delay: 0.9 }}
                                 >
-                                    <motion.button
+                                    <motion.button type="button"
                                         onClick={onClose}
                                         className={authSecondaryButtonClassName}
                                         disabled={loading}

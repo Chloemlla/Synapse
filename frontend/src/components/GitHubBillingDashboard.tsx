@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion as m } from 'framer-motion';
+import { motion as m, MotionConfig } from 'framer-motion';
 import { FaSync, FaGithub, FaDollarSign, FaCalendarAlt, FaUser, FaTrash } from 'react-icons/fa';
 import { useNotification } from './Notification';
 import { getApiBaseUrl } from '../api/api';
@@ -398,6 +398,7 @@ const GitHubBillingDashboard: React.FC = () => {
   }, [initializeCachedData]);
 
   return (
+    <MotionConfig reducedMotion="user">
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
       <div className="space-y-6">
         {remoteCacheError ? (
@@ -428,7 +429,7 @@ const GitHubBillingDashboard: React.FC = () => {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-2">
-              <m.button
+              <m.button type="button"
                 onClick={() => fetchBillingData(false)}
                 disabled={loading}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
@@ -437,7 +438,7 @@ const GitHubBillingDashboard: React.FC = () => {
                 <FaSync className={`text-xs ${loading ? 'animate-spin' : ''}`} />
                 {loading ? '获取中...' : '获取数据'}
               </m.button>
-              <m.button
+              <m.button type="button"
                 onClick={() => fetchBillingData(true)}
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
@@ -447,7 +448,7 @@ const GitHubBillingDashboard: React.FC = () => {
                 {loading ? '刷新中...' : '强制刷新'}
               </m.button>
               {canWrite && (
-                <m.button
+                <m.button type="button"
                   onClick={() => clearCache()}
                   disabled={clearingCache}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
@@ -806,7 +807,7 @@ const GitHubBillingDashboard: React.FC = () => {
                 <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 normal-case">正在同步...</span>
               )}
             </div>
-            <m.button
+            <m.button type="button"
               onClick={() => fetchBillingData()}
               disabled={loading}
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
@@ -863,7 +864,7 @@ const GitHubBillingDashboard: React.FC = () => {
                           </td>
                           <td className="border-b border-slate-100/70 px-4 py-3">
                             <div className="flex gap-2">
-                              <m.button
+                              <m.button type="button"
                                 onClick={() => fetchBillingData()}
                                 className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white transition hover:bg-slate-800"
                                 whileTap={{ scale: 0.95 }}
@@ -871,7 +872,7 @@ const GitHubBillingDashboard: React.FC = () => {
                                 查看
                               </m.button>
                               {canWrite && (
-                                <m.button
+                                <m.button type="button"
                                   onClick={() => clearCache(customer.customerId)}
                                   disabled={clearingCache}
                                   className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 transition hover:border-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -920,6 +921,7 @@ const GitHubBillingDashboard: React.FC = () => {
         </m.div>
       </div>
     </section>
+    </MotionConfig>
   );
 };
 

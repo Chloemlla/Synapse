@@ -185,9 +185,9 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
             >
-              <motion.button
+              <motion.button type="button"
                 onClick={() => setUseBackupCode(false)}
-                className={`flex-1 py-2 px-3 sm:px-4 rounded-l-lg text-xs sm:text-sm font-medium transition-all duration-200 ${!useBackupCode
+                className={`flex-1 py-2 px-3 sm:px-4 rounded-l-2xl text-xs sm:text-sm font-medium transition-all duration-200 ${!useBackupCode
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
@@ -196,9 +196,9 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
               >
                 验证码
               </motion.button>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => setUseBackupCode(true)}
-                className={`flex-1 py-2 px-3 sm:px-4 rounded-r-lg text-xs sm:text-sm font-medium transition-all duration-200 ${useBackupCode
+                className={`flex-1 py-2 px-3 sm:px-4 rounded-r-2xl text-xs sm:text-sm font-medium transition-all duration-200 ${useBackupCode
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
@@ -303,7 +303,7 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.9 }}
               >
-                <motion.button
+                <motion.button type="button"
                   onClick={handleClose}
                   className={authSecondaryButtonClassName}
                   whileHover={{ scale: 1.02, y: -1 }}
@@ -311,7 +311,7 @@ const TOTPVerification: React.FC<TOTPVerificationProps> = ({
                 >
                   取消
                 </motion.button>
-                <motion.button
+                <motion.button type="button"
                   onClick={handleVerify}
                   disabled={loading || (!useBackupCode && verificationCode.length !== 6) || (useBackupCode && backupCode.length !== 8)}
                   className={cn(authPrimaryButtonClassName, 'flex-1')}

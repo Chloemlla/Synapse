@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { useNotification } from './Notification';
 import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { getApiBaseUrl } from '../api/api';
@@ -25,7 +25,8 @@ import {
   FaTrash,
 } from 'react-icons/fa';
 import { cn } from '../utils/cn';
-import { studioSubPanelClassName, studioTileClassName } from './studioTheme';
+import { studioPageClassName, studioPageFont, studioSubPanelClassName, studioTileClassName } from './studioTheme';
+import { StudioEmptyState, StudioErrorState, StudioLoadingState } from './studioFeedback';
 
 type BillingMode = 'metered' | 'prepaid';
 type ManagerView = 'keys' | 'billing';
@@ -696,7 +697,8 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
   );
 
   return (
-    <div className="space-y-6">
+    <MotionConfig reducedMotion="user">
+    <div className={cn(studioPageClassName, 'space-y-6')} style={{ fontFamily: studioPageFont }}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 sm:gap-3">
           <FaKey className="text-xl sm:text-2xl text-amber-600" />
@@ -706,7 +708,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <motion.button
+          <motion.button type="button"
             onClick={fetchKeys}
             disabled={loading}
             className="flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-2xl transition disabled:opacity-60"
@@ -716,7 +718,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
             <span>刷新</span>
           </motion.button>
           {canWrite && (
-            <motion.button
+            <motion.button type="button"
               onClick={() => { setShowCreate(!showCreate); setRevealedKey(null); }}
               className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-500 text-white hover:bg-amber-600 rounded-2xl transition"
               whileTap={{ scale: 0.95 }}
@@ -733,7 +735,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
           { key: 'keys' as ManagerView, label: '密钥' },
           { key: 'billing' as ManagerView, label: '计费' },
         ].map((item) => (
-          <button
+          <button type="button"
             key={item.key}
             onClick={() => setView(item.key)}
             className={`px-3 py-2 text-sm font-semibold border-b-2 transition ${
@@ -775,10 +777,10 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
               <code className="flex-1 min-w-0 bg-white px-3 py-2 rounded border text-xs sm:text-sm font-mono break-all select-all">
                 {showKey ? revealedKey : '*'.repeat(40)}
               </code>
-              <motion.button onClick={() => setShowKey(!showKey)} className="p-2 text-slate-500 hover:text-slate-700" whileTap={{ scale: 0.9 }}>
+              <motion.button type="button" onClick={() => setShowKey(!showKey)} className="p-2 text-slate-500 hover:text-slate-700" whileTap={{ scale: 0.9 }}>
                 {showKey ? <FaEyeSlash /> : <FaEye />}
               </motion.button>
-              <motion.button onClick={() => copyToClipboard(revealedKey)} className="p-2 text-amber-600 hover:text-amber-800" whileTap={{ scale: 0.9 }}>
+              <motion.button type="button" onClick={() => copyToClipboard(revealedKey)} className="p-2 text-amber-600 hover:text-amber-800" whileTap={{ scale: 0.9 }}>
                 <FaCopy />
               </motion.button>
             </div>
@@ -873,7 +875,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                 启用 API Key 计费
               </label>
             )}
-            <motion.button
+            <motion.button type="button"
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
               className={`flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-2xl font-semibold text-white transition ${
@@ -904,7 +906,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                       <th className="py-2 pr-4">说明</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-slate-100">
                     {billingRates.map((rate) => (
                       <tr key={rate.permission}>
                         <td className="py-2 pr-4 font-medium text-slate-800">{rate.label}</td>
@@ -934,7 +936,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                 <FaCreditCard className="text-slate-500" aria-hidden /> LINUX DO Credit 充值
               </div>
               {linuxDoCreditConfig?.enabled ? (
-                <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">已启用 · {linuxDoCreditConfig.protocol}</span>
+                <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">已启用 · {linuxDoCreditConfig.protocol}</span>
               ) : (
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未启用（配置 LINUXDO_CREDIT_*）</span>
               )}
@@ -960,7 +962,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                   className="rounded-2xl border-2 border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
                   disabled={!linuxDoCreditConfig?.enabled}
                 />
-                <button
+                <button type="button"
                   onClick={createLinuxDoRecharge}
                   disabled={recharging || !linuxDoCreditConfig?.enabled || rechargeMoney === ''}
                   className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -988,7 +990,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                       <th className="py-2 pr-4">状态</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-slate-100">
                     {rechargeOrders.map((order) => (
                       <tr key={order.outTradeNo}>
                         <td className="py-2 pr-4 text-slate-500">{formatDate(order.createdAt, true)}</td>
@@ -1012,7 +1014,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                   <div className="text-sm font-semibold text-slate-800">{eventsKey.name} 计费流水</div>
                   <div className="mt-1 font-mono text-xs text-slate-400">{eventsKey.keyId}</div>
                 </div>
-                <button onClick={() => { eventsRequestRef.current++; eventsKeyRef.current = null; setEventsKey(null); }} className="inline-flex items-center justify-center rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <button type="button" onClick={() => { eventsRequestRef.current++; eventsKeyRef.current = null; setEventsKey(null); }} className="inline-flex items-center justify-center rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                   <FaTimes />
                 </button>
               </div>
@@ -1031,7 +1033,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                     placeholder="调整原因"
                     className="px-3 py-2 border border-slate-300 rounded-2xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   />
-                  <button
+                  <button type="button"
                     onClick={adjustBalance}
                     disabled={adjusting || adjustCredits === ''}
                     className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-300"
@@ -1057,7 +1059,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                         <th className="py-2 pr-4">接口</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-slate-100">
                       {billingEvents.map((event) => (
                         <tr key={`${event.createdAt}-${event.type}-${event.balanceDelta}`}>
                           <td className="py-2 pr-4 text-slate-500">{formatDate(event.createdAt, true)}</td>
@@ -1114,23 +1116,14 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
       </div>
 
       {loading && keys.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">加载中...</div>
+        <StudioLoadingState text="加载 API Key..." minHeightClassName="min-h-[240px]" />
       ) : loadError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-10 text-center">
-          <FaBan className="mx-auto text-2xl text-red-500" />
-          <div className="mt-2 text-sm text-red-700">{loadError}</div>
-          <motion.button
-            onClick={fetchKeys}
-            disabled={loading}
-            className="mx-auto mt-3 flex items-center gap-1 rounded-2xl bg-slate-100 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-200 disabled:opacity-60"
-            whileTap={{ scale: 0.95 }}
-          >
-            <FaSyncAlt className={loading ? 'animate-spin' : ''} />
-            <span>重试</span>
-          </motion.button>
-        </div>
+        <StudioErrorState message={loadError} onRetry={() => { void fetchKeys(); }} />
       ) : filteredKeys.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">暂无匹配的 API Key</div>
+        <StudioEmptyState
+          message="没有匹配的 API Key，试试调整搜索或筛选条件。"
+          action={<button type="button" onClick={() => setSearch('')} className="rounded-2xl bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200">清除搜索</button>}
+        />
       ) : (
         <div className="space-y-3">
           {filteredKeys.map((key) => {
@@ -1206,8 +1199,8 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                       )}
                     </div>
                     <div className="flex justify-end gap-2">
-                      <button onClick={cancelEdit} className="rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">取消</button>
-                      <button
+                      <button type="button" onClick={cancelEdit} className="rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">取消</button>
+                      <button type="button"
                         onClick={() => saveEdit(key.keyId)}
                         disabled={savingEdit}
                         className="rounded-2xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-slate-300"
@@ -1222,7 +1215,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                       <div className="mb-1 flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium text-slate-800">{key.name}</span>
                         <code className="max-w-[160px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 sm:max-w-none">{key.keyId}</code>
-                        <span className={`rounded px-1.5 py-0.5 text-xs ${key.enabled && !expired ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        <span className={`rounded px-1.5 py-0.5 text-xs ${key.enabled && !expired ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                           {expired ? '已过期' : key.enabled ? '启用' : '已吊销'}
                         </span>
                         {/* RC-19：处罚态（降速/暂停）必须可见，否则用户只会看到“我的 Key 变慢了/不通了” */}
@@ -1258,29 +1251,29 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                       {canWrite && (
-                        <motion.button onClick={() => startEdit(key)} title="编辑" className="rounded p-2 text-sky-600 transition hover:bg-sky-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button type="button" onClick={() => startEdit(key)} title="编辑" className="rounded p-2 text-sky-600 transition hover:bg-sky-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaEdit />
                         </motion.button>
                       )}
                       {canWrite && (key.billingMode || 'metered') === 'prepaid' && (
-                        <motion.button onClick={() => openRecharge(key)} title="LINUX DO Credit 充值" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button type="button" onClick={() => openRecharge(key)} title="LINUX DO Credit 充值" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaCreditCard />
                         </motion.button>
                       )}
-                      <motion.button onClick={() => { setView('billing'); fetchBillingEvents(key); }} title="计费流水" className="rounded p-2 text-emerald-600 transition hover:bg-emerald-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                      <motion.button type="button" onClick={() => { setView('billing'); fetchBillingEvents(key); }} title="计费流水" className="rounded p-2 text-emerald-600 transition hover:bg-emerald-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                         <FaReceipt />
                       </motion.button>
                       {canWrite && (key.enabled ? (
-                        <motion.button onClick={() => handleRevoke(key)} title="吊销" className="rounded p-2 text-yellow-600 transition hover:bg-yellow-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button type="button" onClick={() => handleRevoke(key)} title="吊销" className="rounded p-2 text-amber-600 transition hover:bg-amber-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaBan />
                         </motion.button>
                       ) : (
-                        <motion.button onClick={() => handleEnable(key.keyId)} title="启用" className="rounded p-2 text-green-600 transition hover:bg-green-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button type="button" onClick={() => handleEnable(key.keyId)} title="启用" className="rounded p-2 text-emerald-600 transition hover:bg-emerald-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaCheck />
                         </motion.button>
                       ))}
                       {canWrite && (
-                        <motion.button onClick={() => handleDelete(key)} title="永久删除" className="rounded p-2 text-red-500 transition hover:bg-red-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
+                        <motion.button type="button" onClick={() => handleDelete(key)} title="永久删除" className="rounded p-2 text-rose-500 transition hover:bg-rose-50 sm:p-1.5" whileTap={{ scale: 0.9 }}>
                           <FaTrash />
                         </motion.button>
                       )}
@@ -1293,6 +1286,7 @@ const ApiKeyManager: React.FC<ApiKeyManagerProps> = ({ initialView = 'keys' }) =
         </div>
       )}
     </div>
+    </MotionConfig>
   );
 };
 

@@ -79,7 +79,7 @@ const DataRow = React.memo(({ item, checked, onToggle, onView, onDelete, openDet
             <td className="p-3">
                 <div className="flex items-center gap-2">
                     <span className="break-all font-mono flex-1" title={item._id}>{item._id}</span>
-                    <motion.button
+                    <motion.button type="button"
                         className="inline-flex h-6 w-6 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 touch-manipulation"
                         title="复制ID"
                         onClick={async (e) => {
@@ -101,11 +101,11 @@ const DataRow = React.memo(({ item, checked, onToggle, onView, onDelete, openDet
             <td className="p-3 break-words whitespace-normal" title={item.action}>{item.action}</td>
             <td className="p-3">
                 <div className="flex flex-wrap gap-2">
-                    <motion.button className={studioSecondaryButtonClassName} onClick={() => openDetail(item)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                    <motion.button type="button" className={studioSecondaryButtonClassName} onClick={() => openDetail(item)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                         <FaEye className="w-3.5 h-3.5" /> 查看
                     </motion.button>
                     {canWrite && (
-                    <motion.button className={studioDangerButtonClassName} onClick={() => onDelete(item._id)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                    <motion.button type="button" className={studioDangerButtonClassName} onClick={() => onDelete(item._id)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                         删除
                     </motion.button>
                     )}
@@ -141,7 +141,7 @@ const DataCard = React.memo(({ item, checked, onToggle, onView, onDelete, openDe
                     <div className="text-[10px] text-slate-600 mt-1 font-mono flex items-center gap-1" title={item._id}>
                         <span className="text-slate-500 flex-shrink-0">ID：</span>
                         <span className="break-all flex-1">{item._id}</span>
-                        <motion.button
+                        <motion.button type="button"
                             className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 touch-manipulation"
                             onClick={async (e) => {
                                 e.stopPropagation();
@@ -162,11 +162,11 @@ const DataCard = React.memo(({ item, checked, onToggle, onView, onDelete, openDe
                 </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-                <motion.button className={studioSecondaryButtonClassName} onClick={() => openDetail(item)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                <motion.button type="button" className={studioSecondaryButtonClassName} onClick={() => openDetail(item)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                     <FaEye className="w-3.5 h-3.5" /> 查看
                 </motion.button>
                 {canWrite && (
-                <motion.button className={studioDangerButtonClassName} onClick={() => onDelete(item._id)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                <motion.button type="button" className={studioDangerButtonClassName} onClick={() => onDelete(item._id)} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                     删除
                 </motion.button>
                 )}
@@ -717,14 +717,14 @@ const DataCollectionManager: React.FC = () => {
                     icon={FaChartBar}
                     action={
                         <div className="flex flex-wrap gap-2">
-                            <motion.button onClick={() => { setPage(1); fetchList(); }} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" onClick={() => { setPage(1); fetchList(); }} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaSync className="w-4 h-4" /> 刷新列表
                             </motion.button>
-                            <motion.button onClick={fetchStats} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" onClick={fetchStats} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaSync className="w-4 h-4" /> 刷新统计
                             </motion.button>
                             {canWrite && (
-                            <motion.button onClick={openCreate} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" onClick={openCreate} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaPlus className="w-4 h-4" /> 新增记录
                             </motion.button>
                             )}
@@ -732,17 +732,17 @@ const DataCollectionManager: React.FC = () => {
                     }
                 />
                 <div className="flex flex-wrap gap-2">
-                    <motion.button onClick={openBatchView} disabled={batchLoading || selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, !(batchLoading || selected.size === 0))} whileTap={tapScale(0.98, !(batchLoading || selected.size === 0))}>
+                    <motion.button type="button" onClick={openBatchView} disabled={batchLoading || selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, !(batchLoading || selected.size === 0))} whileTap={tapScale(0.98, !(batchLoading || selected.size === 0))}>
                         <FaEye className="w-4 h-4" /> 查看合并
                     </motion.button>
-                    <motion.button onClick={copySelectedIds} disabled={selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, selected.size > 0)} whileTap={tapScale(0.98, selected.size > 0)}>
+                    <motion.button type="button" onClick={copySelectedIds} disabled={selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, selected.size > 0)} whileTap={tapScale(0.98, selected.size > 0)}>
                       <FaCopy className="w-4 h-4" /> 复制ID
                     </motion.button>
-                    <motion.button onClick={copySelectedLogs} disabled={batchLoading || selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, !(batchLoading || selected.size === 0))} whileTap={tapScale(0.98, !(batchLoading || selected.size === 0))}>
+                    <motion.button type="button" onClick={copySelectedLogs} disabled={batchLoading || selected.size === 0} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02, !(batchLoading || selected.size === 0))} whileTap={tapScale(0.98, !(batchLoading || selected.size === 0))}>
                       <FaClipboard className="w-4 h-4" /> 一键复制日志
                     </motion.button>
                     {canWrite && (
-                    <motion.button
+                    <motion.button type="button"
                         onClick={async () => {
                             const ok = await confirm({
                                 title: '删除全部采集记录？',
@@ -816,16 +816,16 @@ const DataCollectionManager: React.FC = () => {
                         </select>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                        <motion.button className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} onClick={() => { setPage(1); fetchList(); }} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                        <motion.button type="button" className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} onClick={() => { setPage(1); fetchList(); }} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                             <FaSearch className="w-4 h-4" /> 查询
                         </motion.button>
-                        <motion.button className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} onClick={() => { setUserId(''); setAction(''); setStart(''); setEnd(''); setPage(1); fetchList(); }} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                        <motion.button type="button" className={`${studioSecondaryButtonClassName} w-full sm:w-auto`} onClick={() => { setUserId(''); setAction(''); setStart(''); setEnd(''); setPage(1); fetchList(); }} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                             <FaRedo className="w-4 h-4" /> 重置
                         </motion.button>
                     </div>
                     <div className="sm:ml-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
                         {canWrite && (
-                        <motion.button className={`${studioDangerButtonClassName} w-full sm:w-auto`} onClick={deleteBatch} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                        <motion.button type="button" className={`${studioDangerButtonClassName} w-full sm:w-auto`} onClick={deleteBatch} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                             <FaTrash className="w-4 h-4" /> 批量删除
                         </motion.button>
                         )}
@@ -850,10 +850,10 @@ const DataCollectionManager: React.FC = () => {
                 {/* Mobile Cards */}
                 <div className="block md:hidden divide-y divide-slate-100">
                     {loadError ? (
-                        <div className="p-6 text-center">
+                        <div className="p-6 text-center" role="alert">
                             <FaTimes className="mx-auto mb-1 h-6 w-6 text-rose-500" />
                             <div className="text-sm text-rose-600">{loadError}</div>
-                            <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaSync className="w-4 h-4" /> 重试
                             </motion.button>
                         </div>
@@ -885,10 +885,10 @@ const DataCollectionManager: React.FC = () => {
                         <tbody>
                             {loadError ? (
                                 <tr>
-                                    <td className="p-6 text-center" colSpan={6}>
+                                    <td className="p-6 text-center" colSpan={6} role="alert">
                                         <FaTimes className="mx-auto mb-1 h-6 w-6 text-rose-500" />
                                         <div className="text-sm text-rose-600">{loadError}</div>
-                                        <motion.button onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                                        <motion.button type="button" onClick={() => { fetchList(); }} className={`${studioSecondaryButtonClassName} mt-3`} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                             <FaSync className="w-4 h-4" /> 重试
                                         </motion.button>
                                     </td>
@@ -925,7 +925,7 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {viewItem && (
-                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setViewItem(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.div className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/30 backdrop-blur-sm" onClick={() => setViewItem(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
                         role="dialog"
                         aria-modal="true"
@@ -940,7 +940,7 @@ const DataCollectionManager: React.FC = () => {
                         <div className="flex items-center justify-between mb-3">
                             <div id="data-collection-detail-title" className="font-semibold text-slate-900">记录详情</div>
                             <div className="flex items-center gap-2">
-                              <motion.button
+                              <motion.button type="button"
                                 onClick={async () => {
                                   try {
                                     await navigator.clipboard.writeText(JSON.stringify(viewItem, null, 2));
@@ -955,7 +955,7 @@ const DataCollectionManager: React.FC = () => {
                               >
                                 <FaClipboard className="w-4 h-4" /> 复制
                               </motion.button>
-                              <motion.button
+                              <motion.button type="button"
                                 onClick={async () => {
                                   try {
                                     const id = (viewItem as any)?._id || '';
@@ -972,7 +972,7 @@ const DataCollectionManager: React.FC = () => {
                               >
                                 <FaCopy className="w-4 h-4" /> 复制ID
                               </motion.button>
-                              <motion.button className={studioSecondaryButtonClassName} onClick={closeDetailModal} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                              <motion.button type="button" className={studioSecondaryButtonClassName} onClick={closeDetailModal} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                   <FaTimes className="w-4 h-4" /> 关闭
                               </motion.button>
                             </div>
@@ -1112,7 +1112,7 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {creating && (
-                <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setCreating(false)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.div className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/30 backdrop-blur-sm" onClick={() => setCreating(false)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <motion.div
                         role="dialog"
                         aria-modal="true"
@@ -1126,7 +1126,7 @@ const DataCollectionManager: React.FC = () => {
                     >
                         <div className="flex items-center justify-between mb-3">
                             <div id="data-collection-create-title" className="font-semibold text-slate-900">新增数据收集记录</div>
-                            <motion.button className={studioSecondaryButtonClassName} onClick={closeCreateModal} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" className={studioSecondaryButtonClassName} onClick={closeCreateModal} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaTimes className="w-4 h-4" /> 关闭
                             </motion.button>
                         </div>
@@ -1150,7 +1150,7 @@ const DataCollectionManager: React.FC = () => {
                         </div>
                         <div className="flex items-center justify-end gap-2 mt-3">
                             {canWrite && (
-                            <motion.button className={studioSecondaryButtonClassName} onClick={handleCreate} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                            <motion.button type="button" className={studioSecondaryButtonClassName} onClick={handleCreate} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                                 <FaPlus className="w-4 h-4" /> 创建
                             </motion.button>
                             )}
@@ -1165,15 +1165,15 @@ const DataCollectionManager: React.FC = () => {
             {ReactDOM.createPortal(
             <AnimatePresence>
             {batchView && (
-              <motion.div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setBatchView(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/30 backdrop-blur-sm" onClick={() => setBatchView(null)} initial={prefersReducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <motion.div role="dialog" aria-modal="true" aria-labelledby="data-collection-batch-title" initial={prefersReducedMotion ? false : { scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} className={`${studioSurfaceClassName} w-[95vw] max-w-5xl max-h-[80vh] overflow-auto p-4 sm:p-6`} onClick={e => e.stopPropagation()} data-source-modal="data-collection-batch">
                   <div className="flex items-center justify-between mb-3">
                     <div id="data-collection-batch-title" className="font-semibold text-slate-900">合并日志（{batchView.ids.length} 条）</div>
                     <div className="flex items-center gap-2">
-                      <motion.button onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                      <motion.button type="button" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify(batchView, null, 2)); setNotification({ type:'success', message:'已复制' }); } catch(e:any){ setNotification({ type:'error', message:e?.message||'复制失败' }); } }} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                         <FaClipboard className="w-4 h-4" /> 复制
                       </motion.button>
-                      <motion.button onClick={closeBatchModal} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
+                      <motion.button type="button" onClick={closeBatchModal} className={studioSecondaryButtonClassName} whileHover={hoverScale(1.02)} whileTap={tapScale(0.98)}>
                         <FaTimes className="w-4 h-4" /> 关闭
                       </motion.button>
                     </div>

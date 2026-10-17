@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, MotionConfig } from 'framer-motion';
 import { FaArrowLeft, FaInfoCircle, FaTag } from 'react-icons/fa';
 import { resourcesApi, Resource } from '../api/resources';
 import { UnifiedLoadingSpinner } from './LoadingSpinner';
@@ -69,6 +69,7 @@ export default function ResourceStoreDetail() {
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <section className={cn(studioPageClassName, 'max-w-5xl')} style={{ fontFamily: studioPageFont }}>
       <div className="mb-6">
         <Link to="/store" className={studioGhostButtonClassName}>
@@ -140,5 +141,6 @@ export default function ResourceStoreDetail() {
         </div>
       </motion.div>
     </section>
+    </MotionConfig>
   );
 }

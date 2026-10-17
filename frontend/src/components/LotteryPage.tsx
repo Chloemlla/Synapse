@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useLottery } from '../hooks/useLottery';
 import { useAuth } from '../hooks/useAuth';
@@ -30,6 +30,8 @@ import {
   studioSurfaceClassName,
   studioTileClassName,
 } from './studioTheme';
+import { UnifiedLoadingSpinner } from './LoadingSpinner';
+import { StudioModal } from './studioFeedback';
 import {
   FaChartBar,
   FaTrophy,
@@ -253,7 +255,7 @@ export const LotteryRoundCard: React.FC<{
         </div>
         {user && (
           <div className="flex flex-col gap-2">
-            <motion.button
+            <motion.button type="button"
               onClick={() => { void handleParticipate(); }}
               disabled={!isActive || drawsExhausted || loading || captchaUnavailable || chanceShortage}
               className={`${
@@ -840,33 +842,17 @@ const WinnerModal: React.FC<{
   winner: LotteryWinner | null; 
   onClose: () => void; 
 }> = ({ winner, onClose }) => {
-  const reducedMotion = useReducedMotion();
-
-  if (!winner) return null;
+  const titleId = React.useId();
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={reducedMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.8, opacity: 0 }}
-          className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl max-h-[90vh] overflow-y-auto overscroll-contain"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <FaGift className="text-6xl mb-4 text-amber-500" />
-          <h2 className="mb-2 text-2xl font-semibold text-slate-950">恭喜中奖！</h2>
-          <p className="mb-4 text-lg text-slate-600">{winner.prizeName}</p>
-          <InfoPrimaryButton onClick={onClose} tone="sky">确定</InfoPrimaryButton>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+    <StudioModal open={Boolean(winner)} onClose={onClose} titleId={titleId} maxWidthClassName="max-w-md">
+      <div className="text-center">
+        <FaGift className="mx-auto mb-4 text-6xl text-amber-500" aria-hidden />
+        <h2 id={titleId} className="mb-2 text-2xl font-semibold text-slate-950">恭喜中奖！</h2>
+        <p className="mb-4 text-lg text-slate-600">{winner?.prizeName}</p>
+        <InfoPrimaryButton onClick={onClose} tone="sky">确定</InfoPrimaryButton>
+      </div>
+    </StudioModal>
   );
 };
 
@@ -1014,9 +1000,8 @@ const LotteryPage: React.FC = () => {
             tone="rose"
           />
           {loading ? (
-            <div className="text-center py-8">
-              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-sky-200 border-b-sky-600"></div>
-              <p className="mt-4 text-slate-600">加载中...</p>
+            <div className="flex min-h-[220px] items-center justify-center">
+              <UnifiedLoadingSpinner size="lg" text="加载中..." />
             </div>
           ) : activeRounds.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

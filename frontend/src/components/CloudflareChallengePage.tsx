@@ -9,7 +9,7 @@ import ManagedCaptcha, {
   type ManagedCaptchaStatus,
 } from './ManagedCaptcha';
 import { cn } from '../utils/cn';
-import { studioMutedPrimaryButtonClassName, studioSoftBadgeClassName } from './studioTheme';
+import { studioPrimaryButtonClassName, studioSoftBadgeClassName } from './studioTheme';
 
 type VerificationState = 'idle' | 'verifying' | 'verified' | 'failed';
 
@@ -128,7 +128,7 @@ const CloudflareChallengePage: React.FC = () => {
       <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-200/60 backdrop-blur">
         <div className="border-b border-slate-200 bg-slate-950 px-4 py-4 sm:px-6 sm:py-5 text-white">
           <div className="flex items-center gap-3">
-            <FaShieldAlt className="h-5 w-5 sm:h-6 sm:w-6 text-[#8ECAE6]" />
+            <FaShieldAlt className="h-5 w-5 sm:h-6 sm:w-6 text-sky-300" />
             <div>
               <h1 className="text-lg sm:text-xl font-semibold">人机验证</h1>
               <p className="mt-1 text-xs text-slate-300">Synapse 安全检查</p>
@@ -157,14 +157,14 @@ const CloudflareChallengePage: React.FC = () => {
             <div className={cn(studioSoftBadgeClassName, "min-h-[78px] border px-3 py-4")}>
               {verificationState === 'verified' ? (
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                  <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
                     <FaCheckCircle className="h-5 w-5" />
                     验证通过
                   </div>
                   {/* 通过后必须有明确的前进动作，否则用户只能返回首页，等于白验证一次 */}
                   <Link
                     to={continueTarget}
-                    className={cn(studioMutedPrimaryButtonClassName, "bg-[#FFB703] px-3 py-2 text-[#023047] hover:bg-[#FB8500]")}
+                    className={cn(studioPrimaryButtonClassName, 'px-3 py-2')}
                   >
                     <FaArrowRight className="h-3.5 w-3.5" />
                     继续访问
@@ -201,7 +201,7 @@ const CloudflareChallengePage: React.FC = () => {
               </p>
             ) : null}
             {verificationState === 'failed' ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
                 {failureMessage || '验证失败，请重新验证'}
               </div>
             ) : null}
@@ -219,7 +219,7 @@ const CloudflareChallengePage: React.FC = () => {
               <button
                 type="button"
                 onClick={resetChallenge}
-                className={cn(studioMutedPrimaryButtonClassName, "bg-[#FFB703] px-3 py-2 text-[#023047] hover:bg-[#FB8500]")}
+                className={cn(studioPrimaryButtonClassName, 'px-3 py-2')}
               >
                 <FaRedo className="h-3.5 w-3.5" />
                 重试

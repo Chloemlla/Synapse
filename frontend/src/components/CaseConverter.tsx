@@ -1,10 +1,16 @@
 // 此组件已在 App.tsx 中通过 React.lazy 实现懒加载
 import React, { useState, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, MotionConfig } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { useNotification } from './Notification';
-import { studioEyebrowClassName, studioEyebrowPillClassName } from './studioTheme';
+import {
+  studioAccentBlobBlueClassName,
+  studioAccentBlobSkyClassName,
+  studioEyebrowClassName,
+  studioEyebrowPillClassName,
+} from './studioTheme';
+import { cn } from '../utils/cn';
 import {
   FaFont,
   FaCopy,
@@ -1124,6 +1130,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
   }, [convertCase]);
 
   return (
+    <MotionConfig reducedMotion="user">
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-12">
       <motion.div
         className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/88 p-6 shadow-sm backdrop-blur-xl sm:p-10"
@@ -1131,8 +1138,8 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_68%)]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(14,165,233,0.16),_transparent_70%)]" />
+        <div className={cn(studioAccentBlobBlueClassName, '-right-16 top-0')} aria-hidden />
+        <div className={cn(studioAccentBlobSkyClassName, 'bottom-0 -left-10')} aria-hidden />
 
         <div className="relative space-y-8">
           {/* 标题区 */}
@@ -1174,7 +1181,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                 <FaArrowLeft className="text-xs" />
                 <span>{t.backToHome}</span>
               </Link>
-              <motion.button
+              <motion.button type="button"
                 onClick={() => setIsEnglish(!isEnglish)}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
                 whileTap={{ scale: 0.97 }}
@@ -1232,7 +1239,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
 
               {/* 操作按钮 */}
               <div className="flex flex-wrap gap-3">
-                <motion.button
+                <motion.button type="button"
                   onClick={() => copyToClipboard(inputText)}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
                   whileTap={{ scale: 0.97 }}
@@ -1240,7 +1247,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                   <FaCopy className="h-4 w-4" />
                   {t.copy}
                 </motion.button>
-                <motion.button
+                <motion.button type="button"
                   onClick={async () => {
                     const ok = await copyToClipboard(inputText);
                     if (ok) setInputText('');
@@ -1251,7 +1258,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                   <FaCut className="h-4 w-4" />
                   {t.cut}
                 </motion.button>
-                <motion.button
+                <motion.button type="button"
                   onClick={clearText}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
                   whileTap={{ scale: 0.97 }}
@@ -1314,7 +1321,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
 
               {/* 操作按钮 */}
               <div className="flex flex-wrap gap-3">
-                <motion.button
+                <motion.button type="button"
                   onClick={() => copyToClipboard(outputText)}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
                   whileTap={{ scale: 0.97 }}
@@ -1322,7 +1329,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                   <FaCopy className="h-4 w-4" />
                   {t.copy}
                 </motion.button>
-                <motion.button
+                <motion.button type="button"
                   onClick={() => setOutputText('')}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
                   whileTap={{ scale: 0.97 }}
@@ -1351,7 +1358,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                 const IconComponent = functionIcons[key as keyof typeof functionIcons];
                 return (
                   <div key={key} className="relative">
-                    <motion.button
+                    <motion.button type="button"
                       onClick={(e) => {
                         if (isMobile) {
                           handleMobileClick(e, key);
@@ -1473,7 +1480,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                       <FaFileCode className="h-3.5 w-3.5" />
                       {isEnglish ? 'Code' : '代码'}
                     </h4>
-                    <div className="max-h-32 overflow-y-auto rounded-lg bg-slate-800 p-2 font-mono text-xs text-emerald-200">
+                    <div className="max-h-32 overflow-y-auto rounded-2xl bg-slate-800 p-2 font-mono text-xs text-emerald-200">
                       <pre className="whitespace-pre-wrap break-words">
                         {DOMPurify.sanitize(t.functionDetails[hoveredFunction as keyof typeof t.functionDetails]?.code || '')}
                       </pre>
@@ -1486,7 +1493,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
                       <FaPlay className="h-3.5 w-3.5" />
                       {isEnglish ? 'Example' : '示例'}
                     </h4>
-                    <div className="max-h-32 overflow-y-auto rounded-lg bg-slate-800 p-2 font-mono text-xs text-amber-200">
+                    <div className="max-h-32 overflow-y-auto rounded-2xl bg-slate-800 p-2 font-mono text-xs text-amber-200">
                       <pre className="whitespace-pre-wrap break-words">
                         {DOMPurify.sanitize(t.functionDetails[hoveredFunction as keyof typeof t.functionDetails]?.example || '')}
                       </pre>
@@ -1550,6 +1557,7 @@ const CaseConverter: React.FC<CaseConverterProps> = React.memo(() => {
         </div>
       </motion.div>
     </section>
+    </MotionConfig>
   );
 });
 
