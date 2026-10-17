@@ -172,7 +172,10 @@ export async function recordClientTelemetryEvents(
   const ipHash = hashIdentity(meta.ipAddress);
   const fallbackTraceId = typeof meta.traceId === "string" && TRACE_ID_PATTERN.test(meta.traceId) ? meta.traceId : "";
 
-  const sanitized = events.slice(0, MAX_EVENTS_PER_REPORT).map((raw) => {
+  // 逐条收敛再收集：用显式循环而不是 map + 类型谓词过滤，
+  // 后者在 strict 下会把「对象字面量 | null」的联合类型判成谓词不可赋值（TS2677）。
+  const sanitized: IClientTelemetryEvent[] = [];
+  for (const raw of events.slice(0, MAX_EVENTS_PER_REPORT)) {
     const event = (raw && typeof raw === "object" ? raw : {}) as ClientTelemetryEventInput;
     const kind = normalizeKind(event.kind);
     const level = normalizeLevel(event.level);
@@ -188,12 +191,10 @@ export async function recordClientTelemetryEvents(
       : "";
     const outcome = sanitizeText(event.outcome, 120);
     // 完全空的事件没有诊断价值，直接丢弃（避免客户端发空数组刷额度）。
-    if (!message && !stack && !outcome) return null;
-    const context = sanitizeContext(event.context);
-    const dedupeKey = dedupeKeyFor({ kind, level, source, message, path, traceId: rawTraceId, bucket: bucketOf(now) });
-    return {
+    if (!message && !stack && !outcome) continue;
+    sanitized.push({
       eventId: crypto.randomUUID(),
-      dedupeKey,
+      dedupeKey: dedupeKeyFor({ kind, level, source, message, path, traceId: rawTraceId, bucket: bucketOf(now) }),
       kind,
       level,
       source,
@@ -203,7 +204,7 @@ export async function recordClientTelemetryEvents(
       traceId: rawTraceId,
       providerTraceId,
       outcome,
-      context,
+      context: sanitizeContext(event.context),
       appVersion: typeof event.appVersion === "string" && VERSION_PATTERN.test(event.appVersion) ? event.appVersion : "",
       buildSha: typeof event.buildSha === "string" && VERSION_PATTERN.test(event.buildSha) ? event.buildSha : "",
       userAgent,
@@ -213,8 +214,8 @@ export async function recordClientTelemetryEvents(
       firstSeenAt: now,
       lastSeenAt: now,
       receivedAt: now,
-    } satisfies IClientTelemetryEvent;
-  }).filter((entry): entry is IClientTelemetryEvent => entry !== null);
+    });
+  }
 
   if (sanitized.length === 0) return { accepted: 0 };
 
