@@ -90,6 +90,31 @@ const ticketMessageSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+/**
+ * 处理记录（状态 / 优先级 / 分类 / 受理人 / 类型 / 服务 / 满意度变更）。
+ *
+ * 只存「谁在什么时候把哪个字段从什么改成了什么」，不存消息正文 —— 消息本身在 `messages` 里。
+ * `actorId/actorName` 在属主视角会被视图层脱敏（见 ticketView），所以这里保存真实操作者，
+ * 供管理端交接与审计回查；不要为了脱敏而写入「客服」这种丢失信息的假值。
+ */
+const ticketEventSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ["created", "status", "priority", "category", "assignee", "type", "service", "csat"],
+      required: true,
+    },
+    actorId: { type: String },
+    actorName: { type: String },
+    actorRole: { type: String, enum: ["user", "admin", "superadmin", "ai", "system"], required: true },
+    from: { type: String, default: null },
+    to: { type: String, default: null },
+    note: { type: String, default: null },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const ticketSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true, index: true },
@@ -145,6 +170,21 @@ const ticketSchema = new mongoose.Schema(
      */
     attachmentCount: { type: Number, default: 0 },
     messages: [ticketMessageSchema],
+    /**
+     * 处理记录：最多保留最近 100 条（控制器用 `$push` + `$slice: -100`）。
+     *
+     * 上限是刻意的：工单可能被批量改状态几十次，无界数组会让每次详情读取都变大；
+     * 100 条足够覆盖一次交接周期，更久远的变更仍可在审计日志里回查。
+     */
+    events: { type: [ticketEventSchema], default: [] },
+    /** 首次非属主公开回复（AI 或人工）的时间；只用于平均首响，属主发言与内部备注不写。 */
+    firstResponseAt: { type: Date, default: null },
+    /** 最近一次进入 resolved/closed 的时间；重新打开（回到 open/in-progress）时清空。 */
+    resolvedAt: { type: Date, default: null },
+    /** 满意度评价：1–5 星，仅工单属主可写，重复提交视为修改。 */
+    csatRating: { type: Number, default: null, min: 1, max: 5 },
+    csatComment: { type: String, default: null },
+    csatSubmittedAt: { type: Date, default: null },
     // 未读状态：分别记录用户侧 / 客服侧最后一次打开该工单的时间。
     // 列表摘要据此算 hasUnread（最后一条来自对方且晚于本侧已读时间）。
     userLastReadAt: { type: Date, default: null },
@@ -164,6 +204,10 @@ ticketSchema.index({ userId: 1, updatedAt: -1 });
 // when no status/priority filter is applied — a bare updatedAt sort over the whole
 // collection needs a global index to stay within the in-memory sort limit.
 ticketSchema.index({ updatedAt: -1 });
+// 分诊视图：按受理人 + 最近更新排序（「我的待办」），以及按状态 + 最近更新排序。
+// 与上面的全局 updatedAt 索引互补——前者在前缀过滤后仍需在内存里排序。
+ticketSchema.index({ assigneeId: 1, updatedAt: -1 });
+ticketSchema.index({ status: 1, updatedAt: -1 });
 
 export const TicketModel = mongoose.models.Ticket || mongoose.model("Ticket", ticketSchema);
 
@@ -194,6 +238,30 @@ export interface ITicketMessage {
 }
 
 export type TicketCategory = "bug" | "feature" | "account" | "billing" | "other";
+
+export type TicketEventType =
+  | "created"
+  | "status"
+  | "priority"
+  | "category"
+  | "assignee"
+  | "type"
+  | "service"
+  | "csat";
+
+export type TicketEventActorRole = "user" | "admin" | "superadmin" | "ai" | "system";
+
+/** 处理记录条目；`from/to` 是字段值快照（满意度事件里是星级字符串）。 */
+export interface ITicketEvent {
+  type: TicketEventType;
+  actorId?: string;
+  actorName?: string;
+  actorRole: TicketEventActorRole;
+  from?: string | null;
+  to?: string | null;
+  note?: string | null;
+  createdAt: Date;
+}
 
 /** 关联工单快照（`ticketId` 指向真实工单，`title` 是建立关联时的标题）。 */
 export interface ITicketRelation {
@@ -226,6 +294,12 @@ export interface ITicket {
   assigneeId?: string | null;
   assigneeName?: string | null;
   messages: ITicketMessage[];
+  events?: ITicketEvent[];
+  firstResponseAt?: Date | null;
+  resolvedAt?: Date | null;
+  csatRating?: number | null;
+  csatComment?: string | null;
+  csatSubmittedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   userLastReadAt?: Date | null;

@@ -15,12 +15,16 @@ import {
   type TicketType,
 } from "../api/ticketApi";
 import TicketListItem from "./ticket/TicketListItem";
-import TicketFilters, { EMPTY_TICKET_FILTER, type TicketFilterValue } from "./ticket/TicketFilters";
+import TicketFilters, {
+  EMPTY_TICKET_FILTER,
+  ticketQuickViewPatch,
+  type TicketFilterValue,
+} from "./ticket/TicketFilters";
 import TicketStatsBar from "./ticket/TicketStatsBar";
 import TicketHeroBody, { type TicketPenaltyAppeal } from "./ticket/TicketHero";
 import { ticketPriorityBadge, ticketStatusBadge } from "./ticket/ticketBadges";
 import TicketComposer from "./ticket/TicketComposer";
-import TicketCreateForm from "./ticket/TicketCreateForm";
+import TicketCreateForm, { clearTicketCreateDraft } from "./ticket/TicketCreateForm";
 import TicketDetailMeta from "./ticket/TicketDetailMeta";
 import TicketAttachmentSettingsCard from "./ticket/TicketAttachmentSettingsCard";
 import {
@@ -29,13 +33,26 @@ import {
 } from "./ticket/TicketAttachments";
 import { OverLengthMailNotice, type OverLengthDraft } from "./ticket/OverLengthMailNotice";
 import TicketProcessingToast from "./ticket/TicketProcessingToast";
+import TicketUserFilters, {
+  EMPTY_USER_TICKET_FILTER,
+  type UserTicketFilterValue,
+} from "./ticket/TicketUserFilters";
+import TicketConversation from "./ticket/TicketConversation";
+import TicketEventTimeline from "./ticket/TicketEventTimeline";
+import TicketSatisfactionCard from "./ticket/TicketSatisfactionCard";
+import TicketBulkBar, { type TicketBulkPatch } from "./ticket/TicketBulkBar";
+import {
+  EMPTY_TICKET_URL_STATE,
+  readTicketUrlState,
+  writeTicketUrlState,
+} from "./ticket/ticketUrlState";
 import {
   MAX_TICKET_DESC_LEN,
-  MAX_TICKET_REPLY_LEN,
   TICKET_CATEGORY_META,
   TICKET_CATEGORY_ORDER,
   TICKET_PAGE_SIZE,
   TICKET_PRIORITY_META,
+  TICKET_SLA_HOURS,
   TICKET_STATUS_META,
   TICKET_STATUS_ORDER,
   TICKET_TYPE_META,
@@ -46,12 +63,10 @@ import { useConfirm } from './confirm/ConfirmDialogProvider';
 import { useWebSocket, WsServerMessage } from "../hooks/useWebSocket";
 import {
   FiPlus, FiMessageSquare, FiClock,
-  FiCheckCircle, FiAlertCircle, FiX, FiFilter,
-  FiUser, FiChevronRight, FiInfo,
-  FiCpu, FiCheck, FiEdit2, FiTrash2,
-  FiRefreshCw, FiLink, FiLock, FiCheckSquare, FiLoader,
-} from "react-icons/fi";import MarkdownRenderer, { type MarkdownReaderControls } from './MarkdownRenderer';
-import { AiErrorDetailsPanel } from './AiErrorDetailsPanel';
+  FiAlertCircle, FiX, FiFilter,
+  FiUser, FiChevronLeft, FiChevronRight, FiInfo,
+  FiRefreshCw, FiLink, FiCheckSquare,
+} from "react-icons/fi";
 import { SUPPORT_EMAIL } from './PenaltyAppealActions';
 import { emitPenaltyAppealRequired, isTicketPermissionBanError } from '../utils/penaltyAppeal';
 import { cn } from '../utils/cn';
@@ -78,18 +93,27 @@ type ApiErrorResponse = {
   };
 };
 
-const ROW_INITIAL = { opacity: 0, x: -16 } as const;
-const ROW_ANIMATE = { opacity: 1, x: 0 } as const;
-const CHAT_MARKDOWN_CONTROLS: MarkdownReaderControls = {
-  showCopy: true,
-  showSourceToggle: true,
-  showExpandToggle: true,
-  defaultExpanded: true,
-  collapsedHeight: 420,
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object';
+}
+
+/** 仅用于列表内的键盘移动：输入框/可选区里按 j/k 仍然是在打字。 */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+/** 详情头部的 SLA 判定：最后一条公开消息来自用户且超过 SLA，且工单未关闭。 */
+function isDetailSlaBreached(ticket: ITicket | null): boolean {
+  if (!ticket || ticket.status === 'closed') return false;
+  const visible = (ticket.messages ?? []).filter(
+    (message) => (message as { visibility?: string }).visibility !== 'internal',
+  );
+  const tail = visible[visible.length - 1];
+  if (!tail || tail.senderRole !== 'user') return false;
+  const at = new Date(tail.createdAt).getTime();
+  return Number.isFinite(at) && Date.now() - at > TICKET_SLA_HOURS * 3_600_000;
 }
 
 // G12-21：输入长度上限统一来自 ./ticket/ticketConstants（前端限制，不是安全边界）
@@ -182,9 +206,12 @@ const TicketSystem: React.FC = () => {
   const [stats, setStats] = useState<TicketStats | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [bulkMode, setBulkMode] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [overLengthDraft, setOverLengthDraft] = useState<OverLengthDraft>(null);
   const [isCreating, setIsCreating] = useState(false);
+  // 创建成功后递增：让已卸载/正在卸载的表单也能可靠清掉本地草稿。
+  const [createResetSignal, setCreateResetSignal] = useState(0);
   const [newTicket, setNewTicket] = useState({
     title: "",
     description: "",
@@ -203,9 +230,67 @@ const TicketSystem: React.FC = () => {
   const [linkingCandidates, setLinkingCandidates] = useState<Array<{ _id: string; title: string }>>([]);
   // 工单能力（附件上传开关与限额）。服务端是执行边界，这里只用于渲染。
   const [capabilities, setCapabilities] = useState<TicketCapabilities | null>(null);
-  const [adminFilter, setAdminFilter] = useState<TicketFilterValue>({ ...EMPTY_TICKET_FILTER });
+
+  // 初始筛选只从 URL 读一次：之后筛选由用户操作驱动、再写回 URL。
+  // 双向监听 popstate 会让「输入中」的状态被历史记录覆盖，所以刻意不做。
+  const [initialUrlState] = useState(() =>
+    readTicketUrlState(typeof window === 'undefined' ? '' : window.location.search),
+  );
+  const [adminFilter, setAdminFilter] = useState<TicketFilterValue>(() => ({
+    ...EMPTY_TICKET_FILTER,
+    status: initialUrlState.status,
+    priority: initialUrlState.priority,
+    category: initialUrlState.category,
+    type: initialUrlState.type,
+    service: initialUrlState.service,
+    assignee: initialUrlState.assignee,
+    awaitingReply: initialUrlState.awaitingReply,
+    unread: initialUrlState.unread,
+    csat: initialUrlState.csat,
+    sort: initialUrlState.sort || EMPTY_TICKET_FILTER.sort,
+    q: initialUrlState.q,
+    from: initialUrlState.from,
+    to: initialUrlState.to,
+    limit: initialUrlState.limit,
+  }));
   // 输入即改 adminFilter.q，但只有停止输入 350ms 后才拿去请求，避免每敲一个字打一次接口。
-  const [queryFilter, setQueryFilter] = useState<TicketFilterValue>({ ...EMPTY_TICKET_FILTER });
+  const [queryFilter, setQueryFilter] = useState<TicketFilterValue>(() => ({
+    ...EMPTY_TICKET_FILTER,
+    status: initialUrlState.status,
+    priority: initialUrlState.priority,
+    category: initialUrlState.category,
+    type: initialUrlState.type,
+    service: initialUrlState.service,
+    assignee: initialUrlState.assignee,
+    awaitingReply: initialUrlState.awaitingReply,
+    unread: initialUrlState.unread,
+    csat: initialUrlState.csat,
+    sort: initialUrlState.sort || EMPTY_TICKET_FILTER.sort,
+    q: initialUrlState.q,
+    from: initialUrlState.from,
+    to: initialUrlState.to,
+    limit: initialUrlState.limit,
+  }));
+  // 当前快捷视图（all/mine/unassigned/awaiting/overdue/lowCsat）：仅用于高亮，不参与请求。
+  const [activeView, setActiveView] = useState('all');
+
+  // 用户端筛选：与管理端共用同一份 URL 参数，但只有关键词/状态/排序。
+  const [userFilter, setUserFilter] = useState<UserTicketFilterValue>(() => ({
+    status: initialUrlState.status,
+    q: initialUrlState.q,
+    sort: initialUrlState.sort || EMPTY_USER_TICKET_FILTER.sort,
+  }));
+  const [userSearchInput, setUserSearchInput] = useState(initialUrlState.q);
+  const [userQuery, setUserQuery] = useState<UserTicketFilterValue>(() => ({
+    status: initialUrlState.status,
+    q: initialUrlState.q,
+    sort: initialUrlState.sort || EMPTY_USER_TICKET_FILTER.sort,
+  }));
+  // 深链：只认第一次读到的 ?ticket=id，之后由选中状态驱动。
+  const initialTicketIdRef = useRef(initialUrlState.ticketId);
+  // 深链还没落地前不要先把它从地址栏抹掉（否则用户在这几百毫秒里复制的链接会丢工单参数）。
+  // 用 state 而不是 ref：落地后要触发一次 URL 同步，把失败的深链参数清掉。
+  const [deepLinkPending, setDeepLinkPending] = useState(Boolean(initialUrlState.ticketId));
   const [isMobile, setIsMobile] = useState(false);
   const [showDetailOnMobile, setShowDetailOnMobile] = useState(false);
   // 桌面端顶部说明区是否收起（详见 readFocusModePreference）。
@@ -248,9 +333,6 @@ const TicketSystem: React.FC = () => {
     adminFilterRef.current = adminFilter;
   }, [adminFilter]);
 
-  const messagesBoxRef = useRef<HTMLDivElement>(null);
-  // 「工单 id : 消息数」：用来分辨「消息真的多了」与「只是同一条工单被重新 set」。
-  const lastMessageScrollKeyRef = useRef("");
   const prefersReducedMotion = useReducedMotion();
   const notifyMarkdownCopy = useCallback((success: boolean, wholeMessage = false) => {
     setNotification({
@@ -530,7 +612,7 @@ const TicketSystem: React.FC = () => {
       const parsed = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00'}`);
       return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
     };
-    const pageSize = Number.parseInt(queryFilter.limit || '', 10);
+    const pageSize = Number.parseInt((isAdmin ? queryFilter.limit : '') || '', 10);
     const limit = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : TICKET_PAGE_SIZE;
     try {
       if (!append) setLoading(true);
@@ -545,6 +627,7 @@ const TicketSystem: React.FC = () => {
           assignee: queryFilter.assignee || undefined,
           awaitingReply: queryFilter.awaitingReply || undefined,
           unread: queryFilter.unread || undefined,
+          csat: queryFilter.csat || undefined,
           sort: queryFilter.sort || undefined,
           q: queryFilter.q || undefined,
           from: toIsoBoundary(queryFilter.from, false),
@@ -552,7 +635,13 @@ const TicketSystem: React.FC = () => {
           page,
           limit,
         })
-        : await ticketApi.getMyTickets({ page, limit });
+        : await ticketApi.getMyTickets({
+          page,
+          limit,
+          q: userQuery.q || undefined,
+          status: userQuery.status || undefined,
+          sort: userQuery.sort || undefined,
+        });
       setListMeta(result.meta);
       setTickets(prev => {
         if (!append) return result.tickets;
@@ -568,7 +657,7 @@ const TicketSystem: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, isCreating, isMobile, openTicket, queryFilter]);
+  }, [isAdmin, isCreating, isMobile, openTicket, queryFilter, userQuery]);
 
   // 关键词防抖：输入改 adminFilter，停顿 350ms 后才进 queryFilter 触发请求。
   useEffect(() => {
@@ -576,11 +665,69 @@ const TicketSystem: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [adminFilter]);
 
+  // 用户端同一套防抖：搜索框即时值 → 350ms 后进入真正请求的状态。
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setUserQuery((current) => ({ ...current, q: userSearchInput.trim() })),
+      350,
+    );
+    return () => window.clearTimeout(timer);
+  }, [userSearchInput]);
+
   useEffect(() => {
     void fetchTickets({ page: 1 });
     // fetchTickets 会随 isCreating/isMobile 变化重建，但这两者不应触发重新拉列表。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, queryFilter, user?.id]);
+  }, [isAdmin, queryFilter, userQuery, user?.id]);
+
+  // URL 同步：筛选与选中工单写进地址栏（replaceState），刷新/分享/后退都能回到同一视图。
+  // 用户端与管理端共用同一组参数名，只写非默认值。
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const source = isAdmin
+      ? {
+        q: queryFilter.q,
+        status: queryFilter.status,
+        priority: queryFilter.priority,
+        category: queryFilter.category,
+        type: queryFilter.type,
+        service: queryFilter.service,
+        assignee: queryFilter.assignee,
+        awaitingReply: queryFilter.awaitingReply,
+        unread: queryFilter.unread,
+        csat: queryFilter.csat,
+        sort: queryFilter.sort,
+        from: queryFilter.from,
+        to: queryFilter.to,
+        limit: queryFilter.limit,
+      }
+      : {
+        q: userQuery.q,
+        status: userQuery.status,
+        sort: userQuery.sort,
+      };
+    const ticketId = selectedTicket?._id ?? (deepLinkPending ? initialTicketIdRef.current : '');
+    writeTicketUrlState(
+      {
+        ...EMPTY_TICKET_URL_STATE,
+        ...source,
+        sort: source.sort || EMPTY_TICKET_URL_STATE.sort,
+        ticketId,
+      },
+      { dropTicket: !ticketId },
+    );
+  }, [deepLinkPending, isAdmin, queryFilter, userQuery, selectedTicket?._id]);
+
+  // 标签页未读提示：切到别的标签也能看到「有回复」。离开页面时恢复基准标题，
+  // 由 App 的路由标题逻辑接管。
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const baseTitle = 'Synapse - 支持中心';
+    document.title = unreadCount > 0 ? `（${unreadCount}）支持中心 - Synapse` : baseTitle;
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [unreadCount]);
 
   // 导航角标用：未读数单独取，不依赖列表已加载。
   useEffect(() => {
@@ -615,9 +762,9 @@ const TicketSystem: React.FC = () => {
   }, [refreshAdminStats]);
 
   // 深链：支持 ?ticket=<id> 从通知/邮件直达（打开即拉详情）。
+  // 只读第一次解析出的 ID：后续地址栏由选中状态写回，避免「关闭详情 → 深链把它又打开」。
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const ticketId = new URLSearchParams(window.location.search).get('ticket');
+    const ticketId = initialTicketIdRef.current;
     if (!ticketId) return;
     void ticketApi.getTicket(ticketId)
       .then(full => {
@@ -637,28 +784,14 @@ const TicketSystem: React.FC = () => {
                 ? '该工单不存在或已被删除'
                 : '打开工单失败，请稍后重试',
         });
+      })
+      .finally(() => {
+        setDeepLinkPending(false);
       });
   }, []);
 
-  // 只在「换了工单」或「消息数增加」时把会话滚到底。
-  //
-  // 原实现依赖 selectedTicket.messages 的数组引用：而改状态 / 认领 / 改分类 / 编辑备注这些
-  // 管理操作都会 setSelectedTicket(updated)，于是每点一下都无条件滑到会话最底部。
-  // 另外改成滚会话容器本身（scrollTo）而不是 scrollIntoView，后者会连带把整页也拖下去。
-  useEffect(() => {
-    const ticketId = selectedTicket?._id ?? "";
-    const count = selectedTicket?.messages?.length ?? 0;
-    const previous = lastMessageScrollKeyRef.current;
-    lastMessageScrollKeyRef.current = `${ticketId}:${count}`;
-    const [previousId = "", previousCount = "0"] = previous.split(":");
-    const switchedTicket = previousId !== ticketId;
-    if (!switchedTicket && count <= Number(previousCount)) return;
-    window.setTimeout(() => {
-      const box = messagesBoxRef.current;
-      if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
-    }, switchedTicket ? 0 : 60);
-  }, [selectedTicket?._id, selectedTicket?.messages?.length]);
-
+  // 会话滚动由 TicketConversation 自己持有：它区分「切工单」与「消息增加」，
+  // 并在用户向上翻阅时不强制回到底部（原实现在这里无条件滚到底）。
   // 统一的失败处理：403（审查违规 / 工单权限封禁）进入申诉引导，其它错误直接透出服务端文案。
   // 创建与回复共用，避免两处 heuristic 判定与通道文案漂移（封禁时不应再引导走工单通道）。
   const showTicketSubmitError = useCallback((apiError: ApiErrorResponse | null, fallbackMessage: string) => {
@@ -735,6 +868,9 @@ const TicketSystem: React.FC = () => {
       setNotification({ type: 'success', message: "工单已提交" });
       setIsCreating(false);
       setShowDetailOnMobile(false);
+      // 草稿清理：表单马上卸载，只靠表单内的 effect 可能来不及跑；父组件用信号兜底。
+      setCreateResetSignal((value) => value + 1);
+      clearTicketCreateDraft();
       setNewTicket({
         title: "",
         description: "",
@@ -939,25 +1075,140 @@ const TicketSystem: React.FC = () => {
     [setNotification],
   );
 
-  // 批量改状态（列表多选），成功后重拉列表以反映筛选结果
-  const handleBulkStatus = async (status: string) => {
-    if (!canWrite || checkedIds.length === 0) return;
+  // 批量操作（状态 / 优先级 / 分类 / 受理人）：确认后一次提交，成功后重拉列表。
+  // 返回的 matched/updated 用来如实告知「有多少张其实没变化」。
+  const handleBulk = async (patch: TicketBulkPatch) => {
+    if (!canWrite || checkedIds.length === 0 || bulkBusy) return;
+    const actionLabel =
+      patch.status === 'resolved' ? '标记为已解决'
+        : patch.status === 'closed' ? '关闭'
+          : patch.status === 'open' ? '重新打开'
+            : patch.priority ? `修改优先级为「${TICKET_PRIORITY_META[patch.priority]?.label ?? patch.priority}」`
+              : patch.category ? `修改分类为「${TICKET_CATEGORY_META[patch.category]?.label ?? patch.category}」`
+                : patch.assignee === 'me' ? '认领给我'
+                  : patch.assignee === 'none' ? '取消分配'
+                    : patch.assignee ? '转派受理人'
+                      : '批量更新';
+    const ok = await confirm({
+      title: `确认批量${actionLabel}？`,
+      description: `将应用于已选中的 ${checkedIds.length} 个工单；没有实际变化的工单会被跳过。`,
+      confirmLabel: '执行',
+      tone: patch.status === 'closed' ? 'danger' : 'default',
+    });
+    if (!ok) return;
+    setBulkBusy(true);
     try {
-      const result = await ticketApi.bulkUpdateStatus(checkedIds, status);
-      setNotification({ type: 'success', message: `已更新 ${result.updated} 个工单为「${status}」` });
+      const result = await ticketApi.bulkUpdate(checkedIds, patch);
+      const unchanged = Math.max(0, result.matched - result.updated);
+      setNotification({
+        type: 'success',
+        message: `已更新 ${result.updated} 个工单${unchanged > 0 ? `，${unchanged} 个无变化` : ''}`,
+      });
       setCheckedIds([]);
-      setBulkMode(false);
       await fetchTickets({ page: 1 });
       refreshAdminStats();
     } catch (error) {
       const apiError = getApiErrorResponse(error);
       setNotification({ type: 'error', message: apiError?.data?.error || "批量更新失败" });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  // 满意度评价：成功后把服务端返回的最新视图合并回详情；失败保留表单输入。
+  const handleCsatSubmit = async (rating: number, comment: string): Promise<boolean> => {
+    if (!selectedTicket) return false;
+    try {
+      const updated = await ticketApi.submitCsat(selectedTicket._id, rating, comment);
+      setSelectedTicket(prev => mergeTicketDetail(prev, updated));
+      applyTicketUpdate(updated);
+      setNotification({ type: 'success', message: '感谢你的评价' });
+      refreshAdminStats();
+      return true;
+    } catch (error) {
+      const apiError = getApiErrorResponse(error);
+      setNotification({ type: 'error', message: apiError?.data?.error || '评价提交失败，请重试' });
+      return false;
     }
   };
 
   const toggleChecked = useCallback((id: string) => {
     setCheckedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   }, []);
+
+  // 快捷视图：先应用视图 patch，再记录高亮；用户手动改筛选时清空高亮。
+  const handleQuickView = useCallback((view: string) => {
+    setActiveView(view);
+    setAdminFilter(prev => ({ ...prev, ...ticketQuickViewPatch(view) }));
+  }, []);
+
+  const handleAdminFilterChange = useCallback((patch: Partial<TicketFilterValue>) => {
+    setActiveView('');
+    setAdminFilter(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleAdminFilterReset = useCallback(() => {
+    setActiveView('');
+    setAdminFilter({ ...EMPTY_TICKET_FILTER });
+  }, []);
+
+  // 用户端筛选：状态/排序即时生效，关键词走 350ms 防抖（见 userSearchInput effect）。
+  const handleUserFilterChange = useCallback((patch: Partial<UserTicketFilterValue>) => {
+    setUserFilter(prev => ({ ...prev, ...patch }));
+    setUserQuery(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleUserFilterReset = useCallback(() => {
+    setUserSearchInput('');
+    setUserFilter({ ...EMPTY_USER_TICKET_FILTER });
+    setUserQuery({ ...EMPTY_USER_TICKET_FILTER });
+  }, []);
+
+  // 列表内键盘移动：j 下一条 / k 上一条（不在输入框内时生效），手机端 Esc 返回列表。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === 'Escape' && isMobile && showDetailOnMobile) {
+        setShowDetailOnMobile(false);
+        setIsCreating(false);
+        return;
+      }
+      if (event.key !== 'j' && event.key !== 'k') return;
+      if (isTypingTarget(event.target)) return;
+      if (tickets.length === 0) return;
+      event.preventDefault();
+      const currentIndex = tickets.findIndex((ticket) => ticket._id === selectedTicket?._id);
+      const delta = event.key === 'j' ? 1 : -1;
+      const nextIndex = currentIndex < 0
+        ? 0
+        : Math.min(tickets.length - 1, Math.max(0, currentIndex + delta));
+      const target = tickets[nextIndex];
+      if (target && target._id !== selectedTicket?._id) void openTicket(target);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isMobile, openTicket, selectedTicket?._id, showDetailOnMobile, tickets]);
+
+  // 详情头部「上一条 / 下一条」：只在当前已加载的筛选结果内移动，不额外请求列表。
+  const selectedIndex = tickets.findIndex((ticket) => ticket._id === selectedTicket?._id);
+  const previousTicket = selectedIndex > 0 ? tickets[selectedIndex - 1] : null;
+  const nextTicket = selectedIndex >= 0 && selectedIndex < tickets.length - 1 ? tickets[selectedIndex + 1] : null;
+  const detailSlaBreached = isDetailSlaBreached(selectedTicket);
+  // 管理端筛选是否生效：用于区分「本来就没有工单」与「筛掉了全部」。
+  const activeFilterCount = [
+    adminFilter.status,
+    adminFilter.priority,
+    adminFilter.category,
+    adminFilter.type,
+    adminFilter.service,
+    adminFilter.assignee,
+    adminFilter.awaitingReply,
+    adminFilter.unread,
+    adminFilter.csat,
+    adminFilter.from,
+    adminFilter.to,
+    adminFilter.q,
+  ].filter(Boolean).length;
 
   // 复制工单直达链接（URL 带 ?ticket=<id>，打开页面会自动定位到该工单）
   const handleCopyLink = useCallback(() => {
@@ -1056,7 +1307,12 @@ const TicketSystem: React.FC = () => {
             <TicketStatsBar
               stats={stats}
               loading={loading}
-              onQuickFilter={(patch) => setAdminFilter(prev => ({ ...prev, ...patch }))}
+              activeView={activeView}
+              onQuickFilter={(patch, view) => {
+                // 概览卡的 patch 本身就是一套完整筛选；带 view 的卡片同时点亮对应的快捷视图。
+                setActiveView(view ?? '');
+                setAdminFilter(prev => ({ ...prev, ...patch }));
+              }}
             />
           </div>
         )}
@@ -1139,17 +1395,34 @@ const TicketSystem: React.FC = () => {
                     value={adminFilter}
                     searchInput={adminFilter.q}
                     onSearchChange={(value) => setAdminFilter(prev => ({ ...prev, q: value }))}
-                    onChange={(patch) => setAdminFilter(prev => ({ ...prev, ...patch }))}
-                    onReset={() => setAdminFilter({ ...EMPTY_TICKET_FILTER })}
+                    onChange={handleAdminFilterChange}
+                    onReset={handleAdminFilterReset}
                     onRefresh={() => void fetchTickets({ page: 1 })}
                     onExport={handleExportCsv}
+                    loading={loading}
+                    total={listMeta.total}
+                    shown={tickets.length}
+                    activeView={activeView}
+                    onQuickView={handleQuickView}
+                  />
+                )}
+
+                {!isAdmin && (
+                  <TicketUserFilters
+                    value={userFilter}
+                    searchInput={userSearchInput}
+                    onSearchChange={setUserSearchInput}
+                    onChange={handleUserFilterChange}
+                    onReset={handleUserFilterReset}
+                    onRefresh={() => void fetchTickets({ page: 1 })}
                     loading={loading}
                     total={listMeta.total}
                     shown={tickets.length}
                   />
                 )}
 
-                {isAdmin && (
+                {/* 只读管理员没有写权限：批量入口整个不渲染（服务端同样会拒绝） */}
+                {isAdmin && canWrite && (
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white px-3 py-2">
                     <button
                       type="button"
@@ -1160,37 +1433,27 @@ const TicketSystem: React.FC = () => {
                       aria-pressed={bulkMode}
                       className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                     >
-                      <FiCheckSquare size={11} /> {bulkMode ? '退出批量' : '批量处理'}
+                      <FiCheckSquare size={11} aria-hidden /> {bulkMode ? '退出批量' : '批量处理'}
                     </button>
                     {bulkMode && (
-                      <>
-                        <span className="text-[11px] text-slate-500">已选 {checkedIds.length}</span>
-                        <button
-                          type="button"
-                          disabled={checkedIds.length === 0}
-                          onClick={() => void handleBulkStatus('resolved')}
-                          className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-                        >
-                          标记已解决
-                        </button>
-                        <button
-                          type="button"
-                          disabled={checkedIds.length === 0}
-                          onClick={() => void handleBulkStatus('closed')}
-                          className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
-                        >
-                          关闭
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCheckedIds(tickets.map(t => t._id))}
-                          className="ml-auto text-[11px] font-semibold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
-                        >
-                          全选本页
-                        </button>
-                      </>
+                      <span className="text-[11px] text-slate-400">勾选工单后使用下方批量动作</span>
                     )}
                   </div>
+                )}
+
+                {isAdmin && canWrite && bulkMode && (
+                  <TicketBulkBar
+                    checkedCount={checkedIds.length}
+                    totalShown={tickets.length}
+                    busy={bulkBusy}
+                    onSelectAll={() => setCheckedIds(tickets.map(t => t._id))}
+                    onClearSelection={() => setCheckedIds([])}
+                    onExit={() => {
+                      setBulkMode(false);
+                      setCheckedIds([]);
+                    }}
+                    onBulk={(patch) => void handleBulk(patch)}
+                  />
                 )}
 
                 {/* 不加 overscroll-contain：它会把滚轮/触摸手势锁在面板里，
@@ -1214,9 +1477,50 @@ const TicketSystem: React.FC = () => {
                       </button>
                     </div>
                   ) : tickets.length === 0 ? (
-                    <div className="p-12 text-center">
+                    <div className="p-10 text-center">
                       <FiInfo className="mx-auto text-slate-200 mb-2" size={32} />
-                      <p className="text-slate-400 text-sm">暂无工单数据</p>
+                      {isAdmin && activeFilterCount > 0 ? (
+                        <>
+                          <p className="text-sm text-slate-500">没有符合当前筛选的工单</p>
+                          <button
+                            type="button"
+                            onClick={handleAdminFilterReset}
+                            className={cn(studioGhostButtonClassName, 'mt-3 px-4 py-2 text-xs normal-case tracking-normal')}
+                          >
+                            清空筛选
+                          </button>
+                        </>
+                      ) : !isAdmin && (userQuery.q || userQuery.status) ? (
+                        <>
+                          <p className="text-sm text-slate-500">没有符合条件的工单</p>
+                          <button
+                            type="button"
+                            onClick={handleUserFilterReset}
+                            className={cn(studioGhostButtonClassName, 'mt-3 px-4 py-2 text-xs normal-case tracking-normal')}
+                          >
+                            清空筛选
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm text-slate-500">
+                            {isAdmin ? '暂无工单数据' : '你还没有提交过工单'}
+                          </p>
+                          {!isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPendingAttachments([]);
+                                setIsCreating(true);
+                                if (isMobile) setShowDetailOnMobile(true);
+                              }}
+                              className={cn(studioPrimaryButtonClassName, 'mt-3 px-4 py-2 text-xs')}
+                            >
+                              发起新工单
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-100">
@@ -1303,6 +1607,7 @@ const TicketSystem: React.FC = () => {
                         capabilities={capabilities}
                         isMobile={isMobile}
                         isSubmitting={isSubmitting}
+                        resetSignal={createResetSignal}
                         overlengthNotice={
                           overLengthDraft?.kind === 'create' ? (
                             <OverLengthMailNotice
@@ -1335,13 +1640,51 @@ const TicketSystem: React.FC = () => {
                           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                             <h3 className="min-w-0 truncate font-semibold text-slate-900 text-sm sm:text-base">{selectedTicket.title}</h3>
                             {ticketPriorityBadge(selectedTicket.priority)}
+                            {detailSlaBreached ? (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                                <FiAlertCircle size={10} aria-hidden /> 逾期未回复
+                              </span>
+                            ) : null}
+                            {typeof selectedTicket.csatRating === 'number' ? (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                满意度 {selectedTicket.csatRating}/5
+                              </span>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-4 text-[10px] sm:text-[11px] text-slate-500 font-mono flex-wrap">
-                            <span className="flex min-w-0 items-center gap-1"><FiUser className="text-slate-400" /> {selectedTicket.username}</span>
-                            <span className="flex items-center gap-1"><FiClock className="text-slate-400" /> {new Date(selectedTicket.createdAt).toLocaleString()}</span>
+                            <span className="flex min-w-0 items-center gap-1"><FiUser className="text-slate-400" aria-hidden /> {selectedTicket.username}</span>
+                            <span className="flex items-center gap-1"><FiClock className="text-slate-400" aria-hidden /> {new Date(selectedTicket.createdAt).toLocaleString()}</span>
+                            {selectedTicket.firstResponseAt ? (
+                              <span title="首次响应时间">
+                                首响 {new Date(selectedTicket.firstResponseAt).toLocaleString()}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
+                          {/* 上一条 / 下一条：只在当前筛选结果内移动 */}
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => previousTicket && void openTicket(previousTicket)}
+                              disabled={!previousTicket}
+                              aria-label="上一条工单"
+                              title="上一条（k）"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <FiChevronLeft size={14} aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => nextTicket && void openTicket(nextTicket)}
+                              disabled={!nextTicket}
+                              aria-label="下一条工单"
+                              title="下一条（j）"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <FiChevronRight size={14} aria-hidden />
+                            </button>
+                          </div>
                           {canWrite ? (
                             <>
                               <select
@@ -1426,160 +1769,28 @@ const TicketSystem: React.FC = () => {
                         onError={(message) => setNotification({ type: 'error', message })}
                       />
 
-                      {/* Messages（同列表：不用 overscroll-contain，滚到底后把手势交回整页） */}
-                      <div
-                        ref={messagesBoxRef}
-                        className="p-4 sm:p-6 2xl:p-8 space-y-4 sm:space-y-6 bg-white hover-scrollbar md:flex-1 md:overflow-y-auto"
-                      >
-                        {selectedTicket.messages.map((msg, idx) => {
-                          const isAi = msg.senderRole === "ai" || msg.isAi;
-                          const isMe = msg.senderId === user?.id;
-                          const isAdminMsg = msg.senderRole === "admin";
-                          // 内部备注：后端只对 superadmin 下发，这里再做一层样式区分。
-                          const isInternal = (msg as { visibility?: string }).visibility === "internal";
+                      {/* 处理记录：状态/受理人/优先级/分类/满意度变更（默认折叠，客服按需展开） */}
+                      <TicketEventTimeline events={selectedTicket.events} />
 
-                          return (
-                            <motion.div
-                              key={`${selectedTicket._id}-${idx}`}
-                              className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-4`}
-                              initial={prefersReducedMotion ? false : ROW_INITIAL}
-                              animate={ROW_ANIMATE}
-                              transition={{ duration: 0.3 }}
-                            >
-                              {/* 气泡宽度按视口放宽：手机 92% 够用，2xl 收到 70% 避免一行读太长。 */}
-                              <div className={`max-w-[92%] sm:max-w-[85%] lg:max-w-[78%] 2xl:max-w-[70%] relative ${isMe ? 'order-1' : 'order-2'}`}>
-                                <div className={`flex items-center gap-2 mb-1 text-[10px] text-slate-400 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                  {!isMe && !isInternal && (
-                                    <span className={cn(
-                                      "font-semibold",
-                                      isAdminMsg ? "text-slate-700" : "text-slate-500",
-                                    )}>
-                                      {isAi ? (
-                                        <>
-                                          <FiCpu className="inline" size={11} /> 智能助手
-                                        </>
-                                      ) : isAdminMsg ? (
-                                        "Official Customer Service"
-                                      ) : (
-                                        <>
-                                          <FiUser className="inline" size={11} /> 用户
-                                        </>
-                                      )}
-                                    </span>
-                                  )}
-                                  <span>{new Date(msg.createdAt).toLocaleString()}</span>
-                                </div>
-
-                                <div className={cn(
-                                  "relative rounded-2xl p-3.5 sm:p-4 sm:rounded-2xl transition-shadow",
-                                  isMe
-                                    ? "bg-slate-900 text-white rounded-tr-[10px] shadow-sm"
-                                    : isInternal
-                                      ? "bg-violet-50 border border-violet-200 text-slate-900 rounded-tl-[10px]"
-                                      : isAi
-                                        ? "bg-white border border-slate-200 text-slate-900 rounded-tl-[10px] shadow-sm"
-                                        : "bg-slate-50 border border-slate-200 text-slate-900 rounded-tl-[10px]",
-                                )}>
-                                  {isInternal && (
-                                    <div className={cn(studioEyebrowClassName, "mb-1 flex items-center gap-1 text-[10px] tracking-[0.22em] text-violet-600")}>
-                                      <FiLock size={10} /> 内部备注（用户不可见）
-                                    </div>
-                                  )}
-                                  {isAdminMsg && !isInternal && (
-                                    <div className={cn(studioEyebrowClassName, "mb-1 flex items-center gap-1 text-[10px] tracking-[0.22em]")}>
-                                      <FiCheckCircle size={10} /> Official Reply
-                                    </div>
-                                  )}
-                                  {editingIdx === idx ? (
-                                    <div className="space-y-2">
-                                      <textarea
-                                        className="w-full bg-white/10 border border-white/30 rounded-[14px] p-2 text-sm focus:outline-none focus:ring-1 focus:ring-white/50 min-h-[100px] text-white placeholder:text-white/60"
-                                        value={editValue}
-                                        maxLength={MAX_TICKET_REPLY_LEN}
-                                        onChange={(e) => setEditValue(e.target.value)}
-                                        autoFocus
-                                      />
-                                      <div className="flex gap-2 justify-end">
-                                        <button type="button"
-                                          onClick={() => handleAdminEdit(selectedTicket._id, idx)}
-                                          disabled={isUpdating}
-                                          className="px-3 py-1 bg-emerald-500 text-white text-xs rounded-full font-semibold flex items-center gap-1 hover:bg-emerald-600 transition"
-                                        >
-                                          {isUpdating ? <FiLoader className="animate-spin" /> : <FiCheck />} 保存
-                                        </button>
-                                        <button type="button"
-                                          onClick={() => setEditingIdx(null)}
-                                          className="px-3 py-1 bg-white/20 text-white text-xs rounded-full font-semibold hover:bg-white/30 transition"
-                                        >
-                                          取消
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <MarkdownRenderer
-                                      content={msg.content}
-                                      density="compact"
-                                      controls={CHAT_MARKDOWN_CONTROLS}
-                                      onContentCopy={(success) => notifyMarkdownCopy(success, true)}
-                                      onCodeCopy={(success) => notifyMarkdownCopy(success)}
-                                      invert={isMe}
-                                    />
-                                  )}
-
-                                  {isAdmin && isAi && msg.aiErrorDetails && (
-                                    <AiErrorDetailsPanel diagnostics={msg.aiErrorDetails} />
-                                  )}
-
-                                  {canWrite && editingIdx !== idx && (
-                                    <div className={`absolute -bottom-6 ${isMe ? 'left-0' : 'right-0'} opacity-0 group-hover:opacity-100 transition-opacity flex gap-2`}>
-                                      <button type="button"
-                                        onClick={() => {
-                                          setEditingIdx(idx);
-                                          setEditValue(msg.content);
-                                        }}
-                                        className="p-1 text-slate-400 hover:text-slate-700 transition-colors"
-                                        title="编辑消息"
-                                      >
-                                        <FiEdit2 size={12} />
-                                      </button>
-                                      <button type="button"
-                                        onClick={() => handleAdminDelete(selectedTicket._id, idx)}
-                                        className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
-                                        title="删除消息"
-                                      >
-                                        <FiTrash2 size={12} />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-
-                        <AnimatePresence>
-                          {streamingAiResponse && streamingAiResponse.ticketId === selectedTicket?._id && (
-                            <motion.div
-                              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0 }}
-                              className="flex justify-start mb-4"
-                            >
-                              <div className="max-w-[92%] sm:max-w-[85%] lg:max-w-[78%] 2xl:max-w-[70%] relative order-2">
-                                <div className="flex items-center gap-2 mb-1 text-[10px] text-slate-400 justify-start">
-                                  <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
-                                    <FiCpu size={11} /> 智能助手（正在输入…）
-                                  </span>
-                                </div>
-                                <div className="relative rounded-2xl p-3.5 sm:p-4 bg-white border border-slate-200 text-slate-900 rounded-tl-[10px] shadow-sm sm:rounded-2xl">
-                                  <MarkdownRenderer content={streamingAiResponse.content} density="compact" />
-                                  <span className="inline-block w-1.5 h-4 ml-1 bg-slate-700 animate-pulse align-middle" />
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                      <TicketConversation
+                        ticket={selectedTicket}
+                        currentUserId={user?.id}
+                        isAdmin={isAdmin}
+                        canWrite={canWrite}
+                        streamingAiResponse={streamingAiResponse}
+                        editingIdx={editingIdx}
+                        editValue={editValue}
+                        isUpdating={isUpdating}
+                        onStartEdit={(index, content) => {
+                          setEditingIdx(index);
+                          setEditValue(content);
+                        }}
+                        onCancelEdit={() => setEditingIdx(null)}
+                        onEditValueChange={setEditValue}
+                        onSaveEdit={(index) => void handleAdminEdit(selectedTicket._id, index)}
+                        onDeleteMessage={(index) => void handleAdminDelete(selectedTicket._id, index)}
+                        onCopyMarkdown={notifyMarkdownCopy}
+                      />
 
                       {/*
                         附件区（链接 + 文件）。
@@ -1634,6 +1845,20 @@ const TicketSystem: React.FC = () => {
                           />
                         )}
                       </div>
+
+                      {/* 满意度：组件自身也会判权限，这里先判一次，避免给无权用户留一条空边框 */}
+                      {!isAdmin &&
+                      selectedTicket.userId === user?.id &&
+                      (selectedTicket.status === 'resolved' || selectedTicket.status === 'closed') ? (
+                        <div className="shrink-0 border-t border-slate-200/80 bg-slate-50/40 px-4 pt-4 sm:px-5">
+                          <TicketSatisfactionCard
+                            ticket={selectedTicket}
+                            currentUserId={user?.id}
+                            isAdmin={isAdmin}
+                            onSubmit={handleCsatSubmit}
+                          />
+                        </div>
+                      ) : null}
 
                       {/* Reply form */}
                       {selectedTicket.status === "closed" ? (

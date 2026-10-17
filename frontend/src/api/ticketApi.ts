@@ -10,6 +10,34 @@ export interface ITicketMessage {
   createdAt: string;
 }
 
+/** 处理记录的事件类型（与后端 `ticketWorkflowService` 的 TicketEventType 对齐）。 */
+export type TicketEventType =
+  | "created"
+  | "status"
+  | "priority"
+  | "category"
+  | "assignee"
+  | "type"
+  | "service"
+  | "csat";
+
+/**
+ * 工单处理记录（状态 / 受理人 / 优先级 / 分类 / 满意度变更）。
+ *
+ * 属主视角下后端会把管理员/超管的 `actorName` 脱敏为「客服」且不下发 `actorId`；
+ * 前端不做二次脱敏，展示什么就是服务端已经裁剪过的视图。
+ */
+export interface ITicketEvent {
+  type: TicketEventType;
+  actorId?: string | null;
+  actorName?: string | null;
+  actorRole: "user" | "admin" | "superadmin" | "ai" | "system";
+  from?: string | null;
+  to?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
 export type TicketStatus = "open" | "in-progress" | "resolved" | "closed";
 export type TicketPriority = "low" | "medium" | "high";
 export type TicketCategory = "bug" | "feature" | "account" | "billing" | "other";
@@ -90,6 +118,18 @@ export interface ITicket extends ITicketExtraFields {
   messages: ITicketMessage[];
   createdAt: string;
   updatedAt: string;
+  /** 处理记录（后端只保留最近 100 条；老工单缺省为空数组）。 */
+  events?: ITicketEvent[];
+  /** 首次非属主公开回复（AI 或人工）时间；用于「平均首响」。 */
+  firstResponseAt?: string | null;
+  /** 最近一次进入 resolved/closed 的时间；重新打开后清空。 */
+  resolvedAt?: string | null;
+  /** 属主满意度评分 1–5。 */
+  csatRating?: number | null;
+  /** 满意度补充说明（仅属主与超管可见）。 */
+  csatComment?: string | null;
+  /** 评价或修改评价的时间。 */
+  csatSubmittedAt?: string | null;
   /** 仅 superadmin 的详情响应会带（内部备注条数）。 */
   internalNoteCount?: number;
   /** 详情响应专用：附件元数据（列表只带 attachmentCount）。 */
@@ -125,6 +165,8 @@ export interface ITicketSummary extends ITicketExtraFields {
   awaitingReply?: boolean;
   /** 距最后更新时间的小时数。 */
   ageHours?: number;
+  /** 列表只带评分（不带评论与处理记录），用于管理端满意度徽标。 */
+  csatRating?: number | null;
 }
 
 /** 管理端概览统计（GET /api/tickets/admin/stats）。 */
@@ -141,6 +183,15 @@ export interface TicketStats {
   slaBreached: number;
   oldestAwaitingHours: number;
   slaHours: number;
+  /** 以下是分诊 / 首响 / 满意度指标（旧后端不返回时按 0 / — 回退）。 */
+  awaitingMine?: number;
+  mineOpen?: number;
+  unassigned?: number;
+  createdToday?: number;
+  resolvedToday?: number;
+  avgFirstResponseHours?: number;
+  csatAverage?: number | null;
+  csatCount?: number;
 }
 
 /** 工单能力（GET /api/tickets/capabilities）：决定界面显示哪些附件入口。 */
@@ -214,13 +265,47 @@ export interface TicketAttachmentSettings {
   updatedAt?: string;
 }
 
+interface TicketBulkPatch {
+  status?: string;
+  priority?: string;
+  category?: string;
+  assignee?: string;
+}
+
+/** 批量端点的共用实现（`bulkUpdateStatus` 是它的状态专用包装）。 */
+async function patchBulkTickets(
+  ids: string[],
+  fields: TicketBulkPatch,
+): Promise<{ success: boolean; updated: number; matched: number }> {
+  const response = await api.patch("/api/tickets/admin/bulk/status", { ids, ...fields });
+  const data = response.data ?? {};
+  const updated = typeof data.updated === "number" ? data.updated : 0;
+  return {
+    success: data.success === true,
+    updated,
+    // 老后端只回 updated：按「全部命中都发生了变化」回退，避免界面误报「0 张无变化」。
+    matched: typeof data.matched === "number" ? data.matched : updated,
+  };
+}
+
 export const ticketApi = {
-  // 用户获取自己的工单（分页 + 轻量摘要）
-  async getMyTickets(params?: { page?: number; limit?: number }): Promise<TicketListPage> {
+  // 用户获取自己的工单（分页 + 轻量摘要 + 关键词/状态/排序）
+  async getMyTickets(params?: {
+    page?: number;
+    limit?: number;
+    q?: string;
+    status?: string;
+    sort?: string;
+  }): Promise<TicketListPage> {
     const limit = params?.limit ?? DEFAULT_TICKET_PAGE_SIZE;
-    const response = await api.get("/api/tickets", {
-      params: { summary: 1, page: params?.page ?? 1, limit },
-    });
+    const page = params?.page ?? 1;
+    // 只把真正有值的筛选传给后端：空串会让后端把它当成「筛选成空值」而不是「不筛选」。
+    const query: Record<string, string | number> = { summary: 1, page, limit };
+    const q = params?.q?.trim();
+    if (q) query.q = q;
+    if (params?.status) query.status = params.status;
+    if (params?.sort) query.sort = params.sort;
+    const response = await api.get("/api/tickets", { params: query });
     return {
       tickets: Array.isArray(response.data) ? (response.data as ITicketSummary[]) : [],
       meta: readListMeta(response.headers, limit),
@@ -272,6 +357,7 @@ export const ticketApi = {
     assignee?: string;
     awaitingReply?: string;
     unread?: string;
+    csat?: string;
     q?: string;
     from?: string;
     to?: string;
@@ -314,9 +400,29 @@ export const ticketApi = {
     return response.data;
   },
 
-  // 管理端批量更新状态
-  async bulkUpdateStatus(ids: string[], status: string): Promise<{ success: boolean; updated: number }> {
-    const response = await api.patch("/api/tickets/admin/bulk/status", { ids, status });
+  /**
+   * 管理端批量更新（状态 / 优先级 / 分类 / 受理人）。
+   *
+   * 后端沿用 `/api/tickets/admin/bulk/status` 路径以兼容旧调用；只对真正变化的字段落库，
+   * `matched` 是命中的总数、`updated` 是实际变更数（用于「N 张无变化」的提示）。
+   */
+  async bulkUpdate(
+    ids: string[],
+    fields: { status?: string; priority?: string; category?: string; assignee?: string },
+  ): Promise<{ success: boolean; updated: number; matched: number }> {
+    return patchBulkTickets(ids, fields);
+  },
+
+  // 兼容旧调用：只要状态时的薄包装
+  async bulkUpdateStatus(ids: string[], status: string): Promise<{ success: boolean; updated: number; matched: number }> {
+    return patchBulkTickets(ids, { status });
+  },
+
+  /** 属主提交/修改满意度评价（仅 resolved/closed 工单，返回更新后的工单视图）。 */
+  async submitCsat(id: string, rating: number, comment?: string): Promise<ITicket> {
+    const payload: { rating: number; comment?: string } = { rating };
+    if (comment !== undefined) payload.comment = comment;
+    const response = await api.post(`/api/tickets/${id}/csat`, payload);
     return response.data;
   },
 

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { FiChevronDown, FiChevronUp, FiDownload, FiEye, FiFilter, FiRefreshCw, FiSearch, FiSliders, FiX } from 'react-icons/fi';
+import {
+  FiAlertCircle, FiChevronDown, FiChevronUp, FiClock, FiDownload, FiEye, FiFilter, FiInbox, FiRefreshCw,
+  FiSearch, FiSliders, FiStar, FiUserCheck, FiUserPlus, FiX,
+} from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { studioEyebrowClassName, studioFieldClassName, studioGhostButtonClassName, studioPillClassName } from '../studioTheme';
 import {
@@ -34,6 +37,8 @@ export interface TicketFilterValue {
   to: string;
   /** 每页条数（空串 = 默认 50；后端上限 200）。 */
   limit: string;
+  /** 满意度筛选：空串 = 全部；`low` = 1–2 星（需要回访的差评工单）。 */
+  csat: string;
 }
 
 export const EMPTY_TICKET_FILTER: TicketFilterValue = {
@@ -50,6 +55,71 @@ export const EMPTY_TICKET_FILTER: TicketFilterValue = {
   from: '',
   to: '',
   limit: '',
+  csat: '',
+};
+
+/** 管理端快捷视图。顺序即界面顺序；`all` 放在最左侧作为「清空回默认」。 */
+export const TICKET_QUICK_VIEWS = ['all', 'mine', 'unassigned', 'awaiting', 'overdue', 'lowCsat'] as const;
+
+export type TicketQuickView = (typeof TICKET_QUICK_VIEWS)[number];
+
+export const TICKET_QUICK_VIEW_LABELS: Record<TicketQuickView, string> = {
+  all: '全部',
+  mine: '我的待办',
+  unassigned: '未分配',
+  awaiting: '待回复',
+  overdue: '逾期',
+  lowCsat: '低满意度',
+};
+
+/**
+ * 快捷视图对应的筛选补丁。
+ *
+ * 每个视图都先清空互斥条件，否则「逾期 → 我的待办」会留下 `awaitingReply=1` 之外的旧条件，
+ * 界面显示的视图和实际结果对不上。空串 = 后端视为未提供。
+ *
+ * 排序只在「逾期」显式改为 `oldest`：其它视图沿用用户当前排序，避免点一下视图
+ * 就把「最久未更新」这类主动选择悄悄重置掉。
+ */
+export function ticketQuickViewPatch(view: string): Partial<TicketFilterValue> {
+  const cleared: Partial<TicketFilterValue> = {
+    status: '',
+    priority: '',
+    category: '',
+    type: '',
+    service: '',
+    assignee: '',
+    awaitingReply: '',
+    unread: '',
+    csat: '',
+    from: '',
+    to: '',
+  };
+
+  switch (view) {
+    case 'mine':
+      return { ...cleared, assignee: 'me', awaitingReply: '1' };
+    case 'unassigned':
+      return { ...cleared, assignee: 'unassigned' };
+    case 'awaiting':
+      return { ...cleared, awaitingReply: '1' };
+    case 'overdue':
+      return { ...cleared, awaitingReply: '1', sort: 'oldest' };
+    case 'lowCsat':
+      return { ...cleared, csat: 'low' };
+    case 'all':
+    default:
+      return cleared;
+  }
+}
+
+const QUICK_VIEW_ICONS: Record<TicketQuickView, React.ReactNode> = {
+  all: <FiInbox size={11} aria-hidden />,
+  mine: <FiUserCheck size={11} aria-hidden />,
+  unassigned: <FiUserPlus size={11} aria-hidden />,
+  awaiting: <FiClock size={11} aria-hidden />,
+  overdue: <FiAlertCircle size={11} aria-hidden />,
+  lowCsat: <FiStar size={11} aria-hidden />,
 };
 
 interface TicketFiltersProps {
@@ -63,6 +133,10 @@ interface TicketFiltersProps {
   loading: boolean;
   total: number;
   shown: number;
+  /** 当前快捷视图 key；用于胶囊高亮。 */
+  activeView?: string;
+  /** 点击快捷视图。未提供时退化为直接应用对应 patch（保持单独使用组件也能工作）。 */
+  onQuickView?: (view: string) => void;
 }
 
 /**
@@ -83,6 +157,8 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
   loading,
   total,
   shown,
+  activeView,
+  onQuickView,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -95,13 +171,17 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
     assignee = '',
     awaitingReply = '',
     unread = '',
+    csat = '',
     from = '',
     to = '',
   } = value ?? EMPTY_TICKET_FILTER;
 
-  const advancedCount = [status, priority, category, type, service, assignee, awaitingReply, unread, from, to].filter(Boolean).length;
+  const advancedCount = [
+    status, priority, category, type, service, assignee, awaitingReply, unread, csat, from, to,
+  ].filter(Boolean).length;
   const dirty = advancedCount > 0 || Boolean(searchInput);
-  // 收起状态下用一个 title 把「到底开了哪几个筛选」说清楚，避免只剩一个数字徽标让人猜。
+  // 收起状态下用「标签摘要 + title」两条路径说明哪些筛选在生效：
+  // 只靠数字徽标或 tooltip，触屏用户与读屏用户都拿不到条件内容。
   const activeFilterLabels = [
     status ? TICKET_STATUS_META[status as keyof typeof TICKET_STATUS_META]?.label : null,
     priority ? TICKET_PRIORITY_META[priority as keyof typeof TICKET_PRIORITY_META]?.label : null,
@@ -109,11 +189,21 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
     type ? TICKET_TYPE_META[type as keyof typeof TICKET_TYPE_META]?.label : null,
     service ? TICKET_SERVICE_META[service]?.label : null,
     assignee ? (assignee === 'me' ? '我受理的' : '未分配') : null,
-    awaitingReply ? '待我回复' : null,
+    awaitingReply ? '待回复' : null,
     unread ? '仅未读' : null,
+    csat === 'low' ? '满意度 ≤2 星' : null,
     from ? `自 ${from}` : null,
     to ? `至 ${to}` : null,
   ].filter((label): label is string => Boolean(label));
+
+  const applyQuickView = (view: TicketQuickView) => {
+    if (onQuickView) {
+      onQuickView(view);
+      return;
+    }
+    // 未接入 activeView 时仍然让胶囊可用：直接应用 patch。
+    onChange(ticketQuickViewPatch(view));
+  };
 
   const toggleFlag = (key: 'awaitingReply' | 'unread') => {
     onChange({ [key]: value[key] === '1' ? '' : '1' } as Partial<TicketFilterValue>);
@@ -121,6 +211,36 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
 
   return (
     <div className="shrink-0 space-y-2 border-b border-slate-200/80 bg-slate-50/60 p-3">
+      {/*
+        快捷视图：把客服每天开盘要看的几组条件做成一排胶囊。
+        手机上横滑而不是换行，避免六颗胶囊占掉三行高度把列表挤到首屏之外。
+      */}
+      <div
+        className="flex items-center gap-1.5 overflow-x-auto pb-0.5"
+        role="group"
+        aria-label="工单快捷视图"
+      >
+        {TICKET_QUICK_VIEWS.map((view) => {
+          const active = activeView === view;
+          return (
+            <button
+              key={view}
+              type="button"
+              onClick={() => applyQuickView(view)}
+              aria-pressed={active}
+              title={`快捷视图：${TICKET_QUICK_VIEW_LABELS[view]}`}
+              className={cn(
+                studioPillClassName(active),
+                'inline-flex shrink-0 items-center gap-1 normal-case tracking-normal',
+              )}
+            >
+              {QUICK_VIEW_ICONS[view]}
+              {TICKET_QUICK_VIEW_LABELS[view]}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -172,6 +292,26 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
           <FiRefreshCw size={14} className={loading ? 'animate-spin' : undefined} />
         </button>
       </div>
+
+      {!expanded && activeFilterLabels.length > 0 ? (
+        <div
+          className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500"
+          aria-label="当前生效的筛选条件"
+        >
+          <span className="shrink-0 text-slate-400">当前筛选</span>
+          {activeFilterLabels.slice(0, 3).map((label) => (
+            <span
+              key={label}
+              className="inline-flex max-w-full items-center rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
+            >
+              <span className="truncate">{label}</span>
+            </span>
+          ))}
+          {activeFilterLabels.length > 3 ? (
+            <span className="shrink-0 text-slate-400">等 {activeFilterLabels.length} 项</span>
+          ) : null}
+        </div>
+      ) : null}
 
       {expanded ? (
         <div id="ticket-advanced-filters" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -239,6 +379,15 @@ const TicketFilters: React.FC<TicketFiltersProps> = ({
             {TICKET_SERVICE_ORDER.map((item) => (
               <option key={item} value={item}>{TICKET_SERVICE_META[item].label}</option>
             ))}
+          </select>
+          <select
+            aria-label="按满意度筛选"
+            className={cn(studioFieldClassName, 'py-2 text-xs')}
+            value={csat}
+            onChange={(event) => onChange({ csat: event.target.value })}
+          >
+            <option value="">所有满意度</option>
+            <option value="low">满意度 ≤2 星</option>
           </select>
           <label className="min-w-0">
             <span className="sr-only">创建时间起</span>

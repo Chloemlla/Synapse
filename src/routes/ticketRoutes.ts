@@ -67,6 +67,9 @@ router.patch(
     action: "ticket.bulkStatusChange",
     extractDetail: (req) => ({
       status: req.body?.status,
+      priority: req.body?.priority,
+      category: req.body?.category,
+      assignee: req.body?.assignee,
       count: Array.isArray(req.body?.ids) ? req.body.ids.length : 0,
     }),
   }),
@@ -111,6 +114,19 @@ router.get("/capabilities", ticketReadLimiter, ticketController.getTicketCapabil
 router.get("/unread-count", ticketReadLimiter, ticketController.getUnreadCount);
 router.get("/:id", ticketReadLimiter, ticketController.getTicketById);
 router.post("/:id/messages", ticketWriteLimiter, ticketController.replyToTicket);
+// 满意度评价：仅工单属主、仅在 resolved/closed 后可用；重复提交视为修改。
+// 单独挂路由级审计（稳定 action 名 + targetId），便于管理端按「评价」动作回查。
+router.post(
+  "/:id/csat",
+  ticketWriteLimiter,
+  auditLog({
+    module: "other",
+    action: "ticket.csatSubmit",
+    extractTarget: (req) => ({ targetId: req.params.id }),
+    extractDetail: (req) => ({ rating: req.body?.rating }),
+  }),
+  ticketController.submitTicketCsat,
+);
 // 附件：上传/删除是写类操作（`ticketUpload`），下载走读类限额（60/分钟够用：单个 1MB）。
 // 四个端点都写路由级审计（模块 other 下的独立 action）：附件正文是用户数据，
 // 「谁在什么时候下载/删除了哪个附件」必须可回查；全局审计虽然也覆盖 /api，

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiLink, FiPaperclip, FiSquare, FiTag, FiUser,
+  FiAlertCircle, FiCheckSquare, FiClock, FiFileText, FiLink, FiPaperclip, FiSquare, FiStar, FiTag, FiUser,
 } from 'react-icons/fi';
 import type { ITicketSummary } from '../../api/ticketApi';
 import { cn } from '../../utils/cn';
@@ -50,6 +50,13 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
   const reducedMotion = useReducedMotion();
   const categoryMeta = TICKET_CATEGORY_META[ticket.category] || TICKET_CATEGORY_META.other;
   const slaBreached = isAdmin && isTicketSlaBreached(ticket);
+  // csatRating 由本轮后端新增；旧响应没有该字段，按「未评价」处理。
+  const rawCsatRating = (ticket as ITicketSummary & { csatRating?: number | null }).csatRating;
+  const csatRating = typeof rawCsatRating === 'number' && rawCsatRating >= 1 && rawCsatRating <= 5
+    ? rawCsatRating
+    : null;
+  const csatTone: 'slate' | 'rose' | 'green' | 'yellow' =
+    csatRating === null ? 'slate' : csatRating <= 2 ? 'rose' : csatRating >= 4 ? 'green' : 'yellow';
   const senderPrefix = ticket.lastSenderRole === 'user'
     ? '用户'
     : ticket.lastSenderRole === 'ai'
@@ -153,6 +160,15 @@ const TicketListItem: React.FC<TicketListItemProps> = ({
             {slaBreached ? (
               <span className={studioBadgeClassName('rose')} title={`待回复超过 ${formatTicketAge(ticket.ageHours)}`}>
                 <FiAlertCircle /> 逾期
+              </span>
+            ) : null}
+            {isAdmin && csatRating !== null ? (
+              <span
+                className={studioBadgeClassName(csatTone)}
+                title={`满意度：${csatRating} / 5 星${csatRating <= 2 ? '（需要回访）' : ''}`}
+                aria-label={`满意度 ${csatRating} 星（满分 5 星）`}
+              >
+                <FiStar aria-hidden /> {csatRating}
               </span>
             ) : null}
             {isAdmin && (ticket.internalNoteCount ?? 0) > 0 ? (

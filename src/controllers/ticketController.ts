@@ -1,19 +1,16 @@
 import type { Request, Response } from "express";
-import { type ITicket, type ITicketMessage, type ITicketRelation, TicketModel } from "../models/ticketModel";
+import { type ITicket, type ITicketMessage, TicketModel } from "../models/ticketModel";
 import { TicketAttachmentModel } from "../models/ticketAttachmentModel";
 import { EmailService, getDefaultEmailFrom } from "../services/emailService";
 import { libreChatService } from "../services/libreChatService";
 import { createInternalConversation } from "../services/librechat/conversations";
-import { escapeRegexLiteral } from "../utils/regexEscape";
+import { firstString } from "../utils/httpParam";
 import type { ChatFailureDiagnostics } from "../services/librechat/types";
 import { ModerationService } from "../services/moderationService";
 import { mongoose } from "../services/mongoService";
 import { wsService } from "../services/wsService";
-import { UserModel } from "../services/userService";
 import * as emailTemplates from "../templates/emailTemplates";
 import { isAdminRole } from "../middleware/auth";
-import { RuntimeConfigService } from "../services/runtimeConfigService";
-import { firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
 import { toTicketSummary, toTicketView } from "../utils/ticketView";
 import {
@@ -34,6 +31,27 @@ import {
   normalizeRelatedServiceRef,
   normalizeRelatedTicketIds,
 } from "../utils/ticketFields";
+import {
+  VALID_TICKET_PRIORITIES,
+  VALID_TICKET_STATUSES,
+  applyBulkTicketPatch,
+  asTicketCategory,
+  buildAdminTicketFilter,
+  buildTicketEvent,
+  buildUserTicketFilter,
+  canUserUploadAttachmentFiles,
+  computeTicketStats,
+  describeAttachmentUploadPolicy,
+  normalizeActorRole,
+  normalizeCsatInput,
+  parseTicketListQuery,
+  resolveAttachmentUploadPermission,
+  resolveRelatedTickets,
+  resolveTicketNotifyEmail,
+  setTicketListHeaders,
+  type BulkTicketPatch,
+  type TicketActor,
+} from "../services/ticketWorkflowService";
 import { UserStorage } from "../utils/userStorage";
 
 /** 同一工单同时只允许一个 AI 生成任务运行，并发触发会被合并进在跑的任务（避免重复调用 LLM） */
@@ -45,130 +63,13 @@ const AI_GENERATION_MAX_ROUNDS = 8;
 /** 面向用户的官方联系邮箱：封禁/审核/超长内容等 off-channel 兜底统一指向这里 */
 const SUPPORT_EMAIL = "support@chloemlla.com";
 
-/** 列表分页：默认 50、上限 200 —— 单次不把全部工单（含全文）拉进内存。 */
-const TICKET_LIST_DEFAULT_LIMIT = 50;
-const TICKET_LIST_MAX_LIMIT = 200;
-
-interface TicketListQuery {
-  limit: number;
-  page: number;
-  skip: number;
-  summary: boolean;
-}
-
-function parseTicketListQuery(query: unknown): TicketListQuery {
-  const source = (query && typeof query === "object" ? query : {}) as Record<string, unknown>;
-  const rawLimit = Number.parseInt(String(source.limit ?? ""), 10);
-  const rawPage = Number.parseInt(String(source.page ?? ""), 10);
-  const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, TICKET_LIST_MAX_LIMIT) : TICKET_LIST_DEFAULT_LIMIT;
-  const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
-  return {
-    limit,
-    page,
-    skip: (page - 1) * limit,
-    summary: source.summary === "1" || source.summary === "true",
-  };
-}
-
-/**
- * 分页元信息走响应头，响应体仍是数组：既有调用方（不传 limit/page）行为不变，
- * 新调用方靠 `X-Total-Count` / `X-Has-More` 就能实现「加载更多」。
- */
-function setTicketListHeaders(res: Response, total: number, page: number, limit: number): void {
-  res.setHeader("X-Total-Count", String(total));
-  res.setHeader("X-Page", String(page));
-  res.setHeader("X-Page-Size", String(limit));
-  res.setHeader("X-Has-More", String(page * limit < total));
-}
-
 /**
  * 普通用户是否可以上传附件文件。
  *
- * 三个来源，任一成立即放行：
- * 1. 管理员/超管 —— 他们本来就能改工单内容，不受此开关限制；
- * 2. 全站开关（`TICKET_ATTACHMENTS.userUploadEnabled`）打开；
- * 3. **单独授权**：用户 ID 在 `userUploadAllowedUserIds` 里。
- *
- * 单独授权是在「默认关闭」这条默认线之上开的口子：附件是用户上传的任意二进制，
- * 白名单与体积上限挡不住「类型对但内容是恶意文件」，所以不轻易全站放开，
- * 但客服偶尔确实需要某个用户补一张截图 —— 那就只给那一个用户开。
- *
- * 注意比较用的是 `String(user.id)`：JWT 载荷里的 id 可能是数字形态，
- * 而配置里存的一律是字符串，不做归一化会让授权静默失效。
+ * 实现在 `ticketWorkflowService`（纯函数，便于单测）；这里保留同名导出以兼容既有调用方
+ * 与测试的 import 路径。
  */
-export function resolveAttachmentUploadPermission(input: {
-  role?: string;
-  userId?: unknown;
-  globalEnabled: boolean;
-  grantedUserIds: readonly string[] | undefined;
-}): boolean {
-  if (isAdminRole(input.role)) return true;
-  if (input.globalEnabled === true) return true;
-  const userId =
-    typeof input.userId === "string" || typeof input.userId === "number" ? String(input.userId) : "";
-  if (!userId) return false;
-  return Array.isArray(input.grantedUserIds) && input.grantedUserIds.includes(userId);
-}
-
-function canUserUploadAttachmentFiles(user: { id?: unknown; role?: string } | undefined): boolean {
-  const config = RuntimeConfigService.getCachedConfig().ticketAttachments;
-  return resolveAttachmentUploadPermission({
-    role: user?.role,
-    userId: user?.id,
-    globalEnabled: config.userUploadEnabled === true,
-    grantedUserIds: config.userUploadAllowedUserIds,
-  });
-}
-
-function describeAttachmentUploadPolicy(user: { id?: unknown; role?: string } | undefined): string {
-  if (isAdminRole(user?.role)) return "管理端不受附件上传开关限制";
-  // 不透露「谁被单独授权」：这里只描述当前用户自己的状态与出路。
-  return "附件上传暂未对普通用户开放：请在上方「附件链接」里提交截图或文件的地址，或联系管理员为你的账号单独开放附件上传。";
-}
-
-/**
- * 解析关联工单：校验存在性 + 归属，并把标题快照下来。
- *
- * 归属默认必须与工单属主一致 —— 否则等于给了一个「用关联工单把别人的工单标题/ID 拉到自己页面」
- * 的越权读取入口。superadmin 的管理端操作显式放开（`allowAnyOwner`），因为客服本来就能看全部工单。
- */
-async function resolveRelatedTickets(
-  ids: string[],
-  ownerUserId: string,
-  allowAnyOwner: boolean,
-): Promise<{ ok: true; relations: ITicketRelation[] } | { ok: false; error: string }> {
-  if (ids.length === 0) return { ok: true, relations: [] };
-  const tickets = await TicketModel.find({ _id: { $in: ids } })
-    .select("_id title userId")
-    .lean<any[]>();
-  if (tickets.length !== ids.length) return { ok: false, error: "关联工单中有不存在的工单" };
-  const byId = new Map(tickets.map((ticket: any) => [String(ticket._id), ticket]));
-  for (const id of ids) {
-    const found = byId.get(id);
-    if (!found) return { ok: false, error: "关联工单中有不存在的工单" };
-    if (!allowAnyOwner && String(found.userId) !== String(ownerUserId)) {
-      return { ok: false, error: "只能关联自己名下的工单" };
-    }
-  }
-  // 保持调用方给定的顺序（用户拖动/选择顺序就是展示顺序）。
-  return {
-    ok: true,
-    relations: ids.map((id) => ({ ticketId: id, title: String(byId.get(id)?.title || "未命名工单") })),
-  };
-}
-
-/**
- * 通知收件人：一律优先账号邮箱，只在账号没有邮箱时才用票面填写的联系邮箱兜底。
- *
- * 反向（优先联系邮箱）等于把本站的通知通道变成一个「可以改寄到任意地址」的入口：
- * 用户填什么就发给什么，成本只有一次工单提交。
- */
-function resolveTicketNotifyEmail(accountEmail: unknown, contactEmail: unknown): string {
-  const own = typeof accountEmail === "string" ? accountEmail.trim() : "";
-  if (own) return own;
-  return typeof contactEmail === "string" ? contactEmail.trim() : "";
-}
+export { resolveAttachmentUploadPermission };
 
 /**
  * AI 应答失败时给用户留一条可见回复。
@@ -196,6 +97,8 @@ async function appendAiFallbackNotice(ticketId: string, expectedTailMessageId: s
           createdAt: new Date(),
         },
       },
+      // 兜底说明同样是用户可见的 AI 回复，算首次响应（若此前没有人工回复）。
+      ...(fresh.firstResponseAt == null ? { $set: { firstResponseAt: new Date() } } : {}),
     },
     { returnDocument: "after", runValidators: true },
   );
@@ -232,28 +135,6 @@ async function notifyTicketStatusChanged(ticket: {
   } catch (err) {
     logger.error("发送工单状态变更邮件通知失败:", err);
   }
-}
-
-const VALID_TICKET_STATUSES = ["open", "in-progress", "resolved", "closed"] as const;
-const VALID_TICKET_PRIORITIES = ["low", "medium", "high"] as const;
-const VALID_TICKET_CATEGORIES = ["bug", "feature", "account", "billing", "other"] as const;
-type TicketCategoryValue = (typeof VALID_TICKET_CATEGORIES)[number];
-
-function asTicketCategory(value: unknown): TicketCategoryValue | null {
-  return typeof value === "string" && (VALID_TICKET_CATEGORIES as readonly string[]).includes(value)
-    ? (value as TicketCategoryValue)
-    : null;
-}
-
-/** 管理端「逾期未回复」阈值（小时）：列表据此高亮需要优先处理的工单。 */
-const TICKET_SLA_HOURS = 24;
-
-/** 管理员团队收件人（admin 只读 + superadmin 写均需要收到新工单 / 用户追加回复邮件） */
-async function getAdminTeamEmails(): Promise<string[]> {
-  const adminDocs = await UserModel.find({ role: { $in: ["admin", "superadmin"] } })
-    .select("email username id")
-    .lean();
-  return [...new Set(adminDocs.map((a: any) => a.email).filter(Boolean))];
 }
 
 /** 违规处罚邮件（警告 / 封禁共用），创建与回复两条路径共用，避免模板语义漂移 */
@@ -389,11 +270,19 @@ export async function generateAiTicketResponse(ticketId: string) {
 
         // 原子 $push 追加 AI 回复；仅当仍为 open 时翻转为 in-progress，
         // 避免整档 save() 覆盖并发用户消息或回退人工设置的状态。
+        // firstResponseAt：真实文档经 Mongoose 水合后缺失字段会补成 null；测试替身是不带
+        // schema 默认值的普通对象（没有 toObject），此时不臆造字段，保证门禁用例对写入形状的断言稳定。
+        const isFirstResponse =
+          fresh.firstResponseAt === null ||
+          (fresh.firstResponseAt === undefined && typeof fresh.toObject === "function");
+        const setOps: Record<string, unknown> = {};
+        if (fresh.status === "open") setOps.status = "in-progress";
+        if (isFirstResponse) setOps.firstResponseAt = new Date();
         const updated = await TicketModel.findOneAndUpdate(
           { _id: ticketId },
           {
             $push: { messages: aiMsg },
-            ...(fresh.status === "open" ? { $set: { status: "in-progress" } } : {}),
+            ...(Object.keys(setOps).length > 0 ? { $set: setOps } : {}),
           },
           { returnDocument: "after", runValidators: true },
         );
@@ -550,6 +439,17 @@ export const ticketController = {
         relatedTickets: relatedTicketsResult.relations,
         attachmentLinks: attachmentLinksResult.links,
         messages: [{ senderId: userObj.id, senderRole: "user", content: descStr, isAi: false }],
+        // 首条处理记录：把「谁在什么时候创建了工单」固定下来，后续变更沿用同一条时间线。
+        events: [
+          buildTicketEvent({
+            type: "created",
+            actorId: userObj.id,
+            actorName: userObj.username,
+            actorRole: "user",
+            to: "open",
+            createdAt: new Date(),
+          }),
+        ],
       });
 
       await newTicket.save();
@@ -591,9 +491,10 @@ export const ticketController = {
     try {
       const user = (req as any).user;
       const listQuery = parseTicketListQuery(req.query);
-      const filter = { userId: String(user.id) };
+      const { filter, sort } = buildUserTicketFilter(req.query, String(user.id));
+
       const [tickets, total] = await Promise.all([
-        TicketModel.find(filter).sort({ updatedAt: -1 }).skip(listQuery.skip).limit(listQuery.limit),
+        TicketModel.find(filter).sort(sort).skip(listQuery.skip).limit(listQuery.limit),
         TicketModel.countDocuments(filter),
       ]);
       setTicketListHeaders(res, total, listQuery.page, listQuery.limit);
@@ -742,12 +643,38 @@ export const ticketController = {
           targetStatus = "in-progress";
         }
 
+        const now = new Date();
+        const $set: Record<string, unknown> = {};
+        const events: Array<Record<string, unknown>> = [];
+        if (targetStatus && targetStatus !== ticket.status) {
+          $set.status = targetStatus;
+          // 回到 open/in-progress 说明重新打开：清掉最近解决时间，避免 SLA 统计把
+          // 已重新打开的工单算成今天解决。
+          if (ticket.resolvedAt != null) $set.resolvedAt = null;
+          events.push(
+            buildTicketEvent({
+              type: "status",
+              actorId: userObj.id,
+              actorName: userObj.username,
+              actorRole: normalizeActorRole(userObj.role),
+              from: ticket.status,
+              to: targetStatus,
+              createdAt: now,
+            }),
+          );
+        }
+        // 首响只认「非属主 + 公开」的消息：内部备注不是对用户的答复，属主自己发言更不是。
+        if (!isOwnerSender && !isInternalNote && ticket.firstResponseAt == null) {
+          $set.firstResponseAt = now;
+        }
+
+        const updateDoc: any = { $push: { messages: newMessage } };
+        if (events.length > 0) updateDoc.$push.events = { $each: events, $slice: -100 };
+        if (Object.keys($set).length > 0) updateDoc.$set = $set;
+
         updated = await TicketModel.findOneAndUpdate(
           { _id: id, status: ticket.status },
-          {
-            $push: { messages: newMessage },
-            ...(targetStatus && targetStatus !== ticket.status ? { $set: { status: targetStatus } } : {}),
-          },
+          updateDoc,
           { returnDocument: "after", runValidators: true },
         );
         if (!updated) {
@@ -827,82 +754,11 @@ export const ticketController = {
   async getAllTickets(req: Request, res: Response) {
     try {
       const listQuery = parseTicketListQuery(req.query);
-      const status = firstString(req.query.status);
-      const priority = firstString(req.query.priority);
-      const query: any = {};
-      const validStatuses = ["open", "in-progress", "resolved", "closed"];
-      const validPriorities = ["low", "medium", "high"];
-      if (typeof status === "string" && validStatuses.includes(status)) query.status = status;
-      if (typeof priority === "string" && validPriorities.includes(priority)) query.priority = priority;
-
-      // 关键词：标题 / 描述 / 用户名（正则转义，用户输入不当模式用）
-      const keyword = firstString(req.query.q);
-      if (keyword) {
-        const pattern = new RegExp(escapeRegexLiteral(keyword.slice(0, 120)), "i");
-        query.$or = [{ title: pattern }, { description: pattern }, { username: pattern }];
-      }
-
-      // 创建时间区间（用于「本周新工单」这类巡检）
-      const from = firstString(req.query.from);
-      const to = firstString(req.query.to);
-      const createdAt: Record<string, Date> = {};
-      if (from) {
-        const parsed = new Date(from);
-        if (!Number.isNaN(parsed.getTime())) createdAt.$gte = parsed;
-      }
-      if (to) {
-        const parsed = new Date(to);
-        if (!Number.isNaN(parsed.getTime())) createdAt.$lte = parsed;
-      }
-      if (Object.keys(createdAt).length > 0) query.createdAt = createdAt;
-
-      // 分类 / 类型 / 相关服务 / 受理人 / 尾消息筛选
-      const category = asTicketCategory(firstString(req.query.category));
-      if (category) query.category = category;
-
-      // 类型与相关服务：给出默认值时也要把「字段不存在的老工单」一起算进来，
-      // 否则按「咨询 / 其他」筛选会看不到任何历史工单（default 只在写入时生效）。
-      const typeFilter = asTicketType(firstString(req.query.type));
-      if (typeFilter) query.type = typeFilter === "inquiry" ? { $in: ["inquiry", null] } : typeFilter;
-      const serviceFilter = asTicketRelatedService(firstString(req.query.service));
-      if (serviceFilter) {
-        query.relatedService = serviceFilter === "other" ? { $in: ["other", null] } : serviceFilter;
-      }
-
-      const assignee = firstString(req.query.assignee);
-      if (assignee === "me") query.assigneeId = String((req as any).user.id);
-      else if (assignee === "unassigned") query.assigneeId = null;
-      else if (assignee) query.assigneeId = assignee;
-
-      // 尾消息类条件必须在聚合层算（`messages` 是数组）
-      const expressions: any[] = [];
-      if (firstString(req.query.awaitingReply) === "1") {
-        expressions.push({ $eq: [{ $arrayElemAt: ["$messages.senderRole", -1] }, "user"] });
-        query.status = query.status || { $ne: "closed" };
-      }
-      if (firstString(req.query.unread) === "1") {
-        expressions.push({ $eq: [{ $arrayElemAt: ["$messages.senderRole", -1] }, "user"] });
-        expressions.push({
-          $or: [
-            { $eq: ["$adminLastReadAt", null] },
-            { $lt: ["$adminLastReadAt", { $arrayElemAt: ["$messages.createdAt", -1] }] },
-          ],
-        });
-      }
-      if (expressions.length > 0) {
-        query.$expr = expressions.length === 1 ? expressions[0] : { $and: expressions };
-      }
-
-      // 排序：不提供 priority 排序 —— 它是字符串枚举，字典序不等于紧急度。
-      const sortKey = firstString(req.query.sort);
-      const sortSpec: Record<string, 1 | -1> =
-        sortKey === "created" ? { createdAt: -1 as const }
-          : sortKey === "oldest" ? { updatedAt: 1 as const }
-            : { updatedAt: -1 as const };
+      const { filter, sort } = buildAdminTicketFilter(req.query, String((req as any).user.id));
 
       const [tickets, total] = await Promise.all([
-        TicketModel.find(query).sort(sortSpec).skip(listQuery.skip).limit(listQuery.limit),
-        TicketModel.countDocuments(query),
+        TicketModel.find(filter).sort(sort).skip(listQuery.skip).limit(listQuery.limit),
+        TicketModel.countDocuments(filter),
       ]);
       setTicketListHeaders(res, total, listQuery.page, listQuery.limit);
       res.json(
@@ -930,11 +786,30 @@ export const ticketController = {
       // 状态未变化：直接返回当前数据，避免无意义的邮件通知与 WS 广播
       const currentTicket = await TicketModel.findById(id);
       if (!currentTicket) return res.status(404).json({ error: "工单不存在" });
-      if (currentTicket.status === String(status)) {
+      const nextStatus = String(status);
+      if (currentTicket.status === nextStatus) {
         return res.json(toTicketView(currentTicket, true, { includeInternal: true }));
       }
 
-      const ticket = await TicketModel.findByIdAndUpdate(id, { $set: { status: String(status) } }, { returnDocument: "after" });
+      const actor = (req as any).user;
+      const now = new Date();
+      // resolvedAt 只在首次进入终态时写；进入 open/in-progress 时清空（重新打开）。
+      const resolvedAt =
+        nextStatus === "resolved" || nextStatus === "closed" ? currentTicket.resolvedAt || now : null;
+      const event = buildTicketEvent({
+        type: "status",
+        actorId: actor.id,
+        actorName: actor.username,
+        actorRole: normalizeActorRole(actor.role),
+        from: currentTicket.status,
+        to: nextStatus,
+        createdAt: now,
+      });
+      const ticket = await TicketModel.findByIdAndUpdate(
+        id,
+        { $set: { status: nextStatus, resolvedAt }, $push: { events: { $each: [event], $slice: -100 } } },
+        { returnDocument: "after", runValidators: true },
+      );
       if (!ticket) return res.status(404).json({ error: "工单不存在" });
       wsService.notifyTicketUpdate(ticket.userId, ticket);
       void notifyTicketStatusChanged(ticket);
@@ -1032,7 +907,63 @@ export const ticketController = {
       const before = await TicketModel.findById(id);
       if (!before) return res.status(404).json({ error: "工单不存在" });
 
-      const updated = await TicketModel.findByIdAndUpdate(id, { $set: update }, { returnDocument: "after", runValidators: true });
+      // 处理记录：逐个比较「旧值 → 新值」，只在真实变化时追加事件；
+      // 同一请求里改了多个字段就合并成一次 `$push`，避免多次往返。
+      const now = new Date();
+      const events: Array<Record<string, unknown>> = [];
+      const pushEvent = (type: "status" | "priority" | "category" | "assignee" | "type" | "service", from: string | null, to: string | null) =>
+        events.push(
+          buildTicketEvent({
+            type,
+            actorId: actor.id,
+            actorName: actor.username,
+            actorRole: normalizeActorRole(actor.role),
+            from,
+            to,
+            createdAt: now,
+          }),
+        );
+
+      if (typeof update.status === "string" && update.status !== before.status) {
+        pushEvent("status", before.status, update.status);
+        if (update.status === "resolved" || update.status === "closed") {
+          // 只在首次进入终态时记录；resolved → closed 不刷新时间。
+          if (!before.resolvedAt) update.resolvedAt = now;
+        } else {
+          update.resolvedAt = null;
+        }
+      }
+      if (typeof update.priority === "string" && update.priority !== before.priority) {
+        pushEvent("priority", before.priority, update.priority);
+      }
+      if (typeof update.category === "string" && update.category !== before.category) {
+        pushEvent("category", before.category, update.category);
+      }
+      if (typeof update.type === "string" && update.type !== before.type) {
+        pushEvent("type", before.type ?? null, update.type);
+      }
+      if (typeof update.relatedService === "string" && update.relatedService !== before.relatedService) {
+        pushEvent("service", before.relatedService ?? null, update.relatedService);
+      }
+      if (update.assigneeId !== undefined) {
+        const previousId = before.assigneeId ?? null;
+        const nextId = update.assigneeId ?? null;
+        if (String(previousId ?? "") !== String(nextId ?? "")) {
+          pushEvent(
+            "assignee",
+            before.assigneeName ?? null,
+            typeof update.assigneeName === "string" ? update.assigneeName : null,
+          );
+        }
+      }
+
+      const updateDoc: any = { $set: update };
+      if (events.length > 0) updateDoc.$push = { events: { $each: events, $slice: -100 } };
+      const updated = await TicketModel.findByIdAndUpdate(
+        id,
+        updateDoc,
+        { returnDocument: "after", runValidators: true },
+      );
       if (!updated) return res.status(404).json({ error: "工单不存在" });
 
       wsService.notifyTicketUpdate(updated.userId, updated);
@@ -1046,100 +977,92 @@ export const ticketController = {
     }
   },
 
-  // 管理员批量更新状态（列表多选场景）
+  // 管理员批量更新（状态 / 优先级 / 分类 / 受理人；列表多选场景）
   async bulkUpdateStatus(req: Request, res: Response) {
     try {
       const rawIds: unknown[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
-      const status = firstString(req.body?.status);
-      if (!(VALID_TICKET_STATUSES as readonly string[]).includes(String(status))) {
-        return res.status(400).json({ error: "无效的状态值" });
-      }
       if (rawIds.length === 0) return res.status(400).json({ error: "请选择至少一个工单" });
       if (rawIds.length > 100) return res.status(400).json({ error: "单次最多处理 100 个工单" });
 
       const ids = rawIds.filter((value): value is string => typeof value === "string" && mongoose.Types.ObjectId.isValid(value));
       if (ids.length === 0) return res.status(400).json({ error: "无效的工单ID" });
 
-      const before = await TicketModel.find({ _id: { $in: ids } }).select("userId title status").lean<any[]>();
-      await TicketModel.updateMany({ _id: { $in: ids } }, { $set: { status: String(status) } });
-
-      const changed = before.filter((ticket: any) => ticket.status !== String(status));
-      for (const ticket of changed) {
-        wsService.notifyTicketUpdate(ticket.userId, { ...ticket, status: String(status) });
+      const actor = (req as any).user;
+      const patch: BulkTicketPatch = {};
+      const status = firstString(req.body?.status);
+      if (status !== undefined) {
+        if (!(VALID_TICKET_STATUSES as readonly string[]).includes(status)) {
+          return res.status(400).json({ error: "无效的状态值" });
+        }
+        patch.status = status;
       }
-      // 邮件逐条发（最多 100），失败的写日志不阻断整体
-      for (const ticket of changed) {
-        void notifyTicketStatusChanged({ ...ticket, status: String(status) });
+      const priority = firstString(req.body?.priority);
+      if (priority !== undefined) {
+        if (!(VALID_TICKET_PRIORITIES as readonly string[]).includes(priority)) {
+          return res.status(400).json({ error: "无效的优先级" });
+        }
+        patch.priority = priority;
+      }
+      const category = firstString(req.body?.category);
+      if (category !== undefined) {
+        const parsedCategory = asTicketCategory(category);
+        if (!parsedCategory) return res.status(400).json({ error: "无效的分类" });
+        patch.category = parsedCategory;
+      }
+      // 受理人：me（认领）/ none（取消分配）/ 指定 userId
+      if (req.body?.assignee !== undefined) {
+        const assignee = req.body.assignee;
+        if (assignee === null || assignee === "none" || assignee === "") {
+          patch.assigneeId = null;
+          patch.assigneeName = null;
+        } else if (assignee === "me") {
+          patch.assigneeId = String(actor.id);
+          patch.assigneeName = actor.username || String(actor.id);
+        } else if (typeof assignee === "string") {
+          const target = await UserStorage.getUserById(assignee);
+          if (!target) return res.status(400).json({ error: "指定的受理人不存在" });
+          patch.assigneeId = String(target.id);
+          patch.assigneeName = target.username || String(target.id);
+        } else {
+          return res.status(400).json({ error: "无效的受理人" });
+        }
       }
 
-      res.json({ success: true, updated: changed.length, matched: before.length, status: String(status) });
+      if (Object.keys(patch).length === 0) return res.status(400).json({ error: "没有需要更新的字段" });
+
+      const actorPayload: TicketActor = {
+        id: String(actor.id),
+        name: actor.username || String(actor.id),
+        role: String(actor.role),
+      };
+      const result = await applyBulkTicketPatch({ ids, patch, actor: actorPayload });
+
+      for (const ticket of result.changed) {
+        wsService.notifyTicketUpdate(ticket.userId, ticket);
+        // 邮件只在状态真的变化时发：批量认领 / 改优先级不该给用户发「状态更新」。
+        if (ticket.statusChanged) void notifyTicketStatusChanged(ticket);
+      }
+
+      res.json({
+        success: true,
+        updated: result.updated,
+        matched: result.matched,
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+        ...(patch.category !== undefined ? { category: patch.category } : {}),
+        ...(patch.assigneeId !== undefined ? { assignee: patch.assigneeId } : {}),
+      });
     } catch (error) {
-      logger.error("批量更新工单状态失败:", error);
+      logger.error("批量更新工单失败:", error);
       res.status(500).json({ error: "服务器内部错误" });
     }
   },
 
   // 管理端概览：按状态/优先级/分类分组 + 待回复/逾期计数
-  async getTicketStats(_req: Request, res: Response) {
+  async getTicketStats(req: Request, res: Response) {
     try {
-      const slaCutoff = new Date(Date.now() - TICKET_SLA_HOURS * 3600 * 1000);
-      const [total, statusAgg, priorityAgg, categoryAgg, typeAgg, serviceAgg, awaitingAgg] = await Promise.all([
-        TicketModel.countDocuments({}),
-        TicketModel.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-        TicketModel.aggregate([{ $group: { _id: "$priority", count: { $sum: 1 } } }]),
-        TicketModel.aggregate([{ $group: { _id: "$category", count: { $sum: 1 } } }]),
-        // 类型 / 相关服务：本轮新增维度（概览卡片与筛选同源）。
-        // 老工单没有这两个字段，`_id` 会是 null —— 统一归到默认值，否则概览数会与总数对不上。
-        TicketModel.aggregate([{ $group: { _id: "$type", count: { $sum: 1 } } }]),
-        TicketModel.aggregate([{ $group: { _id: "$relatedService", count: { $sum: 1 } } }]),
-        TicketModel.aggregate([
-          { $addFields: { tail: { $arrayElemAt: ["$messages", -1] } } },
-          { $match: { "tail.senderRole": "user", status: { $ne: "closed" } } },
-          {
-            $group: {
-              _id: null,
-              awaitingReply: { $sum: 1 },
-              slaBreached: { $sum: { $cond: [{ $lt: ["$tail.createdAt", slaCutoff] }, 1, 0] } },
-              oldest: { $min: "$tail.createdAt" },
-            },
-          },
-        ]),
-      ]);
-
-      const asMap = (rows: Array<{ _id?: string; count?: number }>): Record<string, number> =>
-        rows.reduce<Record<string, number>>((acc, row) => {
-          if (typeof row?._id === "string") acc[row._id] = row.count || 0;
-          return acc;
-        }, {});
-
-      /** 同 asMap，但把 `_id: null`（老文档缺字段）归到默认值，保证分组求和 = 总数。 */
-      const asMapWithDefault = (
-        rows: Array<{ _id?: string | null; count?: number }>,
-        fallbackKey: string,
-      ): Record<string, number> => {
-        const result: Record<string, number> = {};
-        for (const row of rows) {
-          const key = typeof row?._id === "string" && row._id ? row._id : fallbackKey;
-          result[key] = (result[key] || 0) + (row.count || 0);
-        }
-        return result;
-      };
-
-      const awaiting = (awaitingAgg[0] || {}) as { awaitingReply?: number; slaBreached?: number; oldest?: Date };
-      const oldest = awaiting.oldest ? new Date(awaiting.oldest) : null;
-
-      res.json({
-        total,
-        status: asMap(statusAgg as Array<{ _id?: string; count?: number }>),
-        priority: asMap(priorityAgg as Array<{ _id?: string; count?: number }>),
-        category: asMap(categoryAgg as Array<{ _id?: string; count?: number }>),
-        type: asMapWithDefault(typeAgg as Array<{ _id?: string | null; count?: number }>, "inquiry"),
-        service: asMapWithDefault(serviceAgg as Array<{ _id?: string | null; count?: number }>, "other"),
-        awaitingReply: awaiting.awaitingReply || 0,
-        slaBreached: awaiting.slaBreached || 0,
-        oldestAwaitingHours: oldest ? Math.round(((Date.now() - oldest.getTime()) / 3_600_000) * 100) / 100 : 0,
-        slaHours: TICKET_SLA_HOURS,
-      });
+      // 聚合细节在服务层：控制器只负责把「当前管理员」传进去（我的待办 / 我名下未结束）。
+      res.json(await computeTicketStats(String((req as any).user.id)));
     } catch (error) {
       logger.error("获取工单统计失败:", error);
       res.status(500).json({ error: "服务器内部错误" });
@@ -1196,12 +1119,83 @@ export const ticketController = {
         return res.json(toTicketView(ticket, isSuperadmin, { includeInternal: isSuperadmin }));
       }
 
-      const updated = await TicketModel.findByIdAndUpdate(id, { $set: { status: "closed" } }, { returnDocument: "after" });
+      const now = new Date();
+      const event = buildTicketEvent({
+        type: "status",
+        actorId: user.id,
+        actorName: user.username,
+        actorRole: normalizeActorRole(user.role),
+        from: ticket.status,
+        to: "closed",
+        createdAt: now,
+      });
+      const updated = await TicketModel.findByIdAndUpdate(
+        id,
+        {
+          $set: { status: "closed", resolvedAt: ticket.resolvedAt || now },
+          $push: { events: { $each: [event], $slice: -100 } },
+        },
+        { returnDocument: "after", runValidators: true },
+      );
       if (!updated) return res.status(404).json({ error: "工单不存在" });
       wsService.notifyTicketUpdate(updated.userId, updated);
       res.json(toTicketView(updated, isSuperadmin, { includeInternal: isSuperadmin }));
     } catch (error) {
       logger.error("关闭工单失败:", error);
+      res.status(500).json({ error: "服务器内部错误" });
+    }
+  },
+
+  /**
+   * 属主提交 / 修改满意度评价。
+   *
+   * 只有属主能写（客服不能替用户打分）；状态限定 resolved/closed，避免未解决的工单被提前评价。
+   * 重复提交视为修改：覆盖 rating/comment/submittedAt，并追加一条 csat 事件保留变更轨迹。
+   */
+  async submitTicketCsat(req: Request, res: Response) {
+    try {
+      const id = firstString(req.params.id);
+      const user = (req as any).user;
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "无效的工单ID" });
+
+      const parsed = normalizeCsatInput(req.body);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+      const ticket = await TicketModel.findById(id);
+      if (!ticket) return res.status(404).json({ error: "工单不存在" });
+      if (String(ticket.userId) !== String(user.id)) {
+        return res.status(403).json({ error: "只有工单发起人可以评价" });
+      }
+      if (ticket.status !== "resolved" && ticket.status !== "closed") {
+        return res.status(409).json({ error: "工单解决后才能评价" });
+      }
+
+      const now = new Date();
+      const event = buildTicketEvent({
+        type: "csat",
+        actorId: user.id,
+        actorName: user.username,
+        actorRole: "user",
+        from: ticket.csatRating == null ? null : String(ticket.csatRating),
+        to: String(parsed.rating),
+        note: parsed.comment,
+        createdAt: now,
+      });
+      const updated = await TicketModel.findByIdAndUpdate(
+        id,
+        {
+          $set: { csatRating: parsed.rating, csatComment: parsed.comment, csatSubmittedAt: now },
+          $push: { events: { $each: [event], $slice: -100 } },
+        },
+        { returnDocument: "after", runValidators: true },
+      );
+      if (!updated) return res.status(404).json({ error: "工单不存在" });
+      wsService.notifyTicketUpdate(updated.userId, updated);
+
+      const isSuperadmin = user.role === "superadmin";
+      res.json(toTicketView(updated, isSuperadmin, { includeInternal: isSuperadmin }));
+    } catch (error) {
+      logger.error("提交工单满意度失败:", error);
       res.status(500).json({ error: "服务器内部错误" });
     }
   },

@@ -633,15 +633,19 @@ class WsService {
    */
   notifyTicketUpdate(userId: string, ticket: any) {
     const view = toTicketView(ticket, false);
-    // 发送给工单拥有者
+    // 发送给工单拥有者：属主看得到自己写的满意度评价内容。
     this.sendToUser(userId, {
       type: "ticket:update",
       data: view,
     });
-    // 广播给所有管理员，以便实时查看处理进度（属主本人是管理员时跳过，避免重复）
+    // 广播给所有管理员，以便实时查看处理进度（属主本人是管理员时跳过，避免重复）。
+    // 满意度评价内容只给属主与超管：广播目标里也有只读管理员，所以这里单独剥掉评论；
+    // 超管收到 `ticket:update` 后会重新拉详情，不受影响。
+    const adminView = { ...view };
+    delete adminView.csatComment;
     this.broadcastToAdminsExcluding(userId, {
       type: "ticket:update",
-      data: view,
+      data: adminView,
     });
   }
 

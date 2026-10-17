@@ -14,12 +14,17 @@ function isInternalMessage(message: Record<string, unknown>): boolean {
   return message.visibility === "internal";
 }
 
+function toEventList(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.map((event) => toPlainObject(event)) : [];
+}
+
 /**
  * 给老文档补上新字段的默认值。
  *
  * Mongoose 的 default 只在**写入**时生效：本轮之前落库的工单，读出来是不带
  * `type` / `relatedService` / `attachmentCount` 的。视图层统一归一，前端就不必在渲染时
  * 到处写 `?? 'other'`（那样早晚会漏一处，列表和详情显示成两种口径）。
+ * 新增的事件 / 首响 / 解决 / 满意度字段同理，老文档一律补 null / []。
  */
 function withTicketFieldDefaults(ticket: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -31,6 +36,12 @@ function withTicketFieldDefaults(ticket: Record<string, unknown>): Record<string
     relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
     attachmentLinks: Array.isArray(ticket.attachmentLinks) ? ticket.attachmentLinks : [],
     attachmentCount: typeof ticket.attachmentCount === "number" ? ticket.attachmentCount : 0,
+    events: toEventList(ticket.events),
+    firstResponseAt: toDate(ticket.firstResponseAt),
+    resolvedAt: toDate(ticket.resolvedAt),
+    csatRating: typeof ticket.csatRating === "number" ? ticket.csatRating : null,
+    csatComment: typeof ticket.csatComment === "string" ? ticket.csatComment : null,
+    csatSubmittedAt: toDate(ticket.csatSubmittedAt),
   };
 }
 
@@ -47,6 +58,10 @@ export interface TicketViewOptions {
  *
  * `includeInternal` 是安全边界而不是展示偏好：内部备注永不下发给工单属主，
  * 列表摘要、详情响应、WebSocket 广播三处都必须过滤（漏一处就等于把备注发给用户）。
+ *
+ * 事件里的管理员身份同理：属主视角只保留「客服」这个角色标签，不泄露具体账号名；
+ * 系统 / AI / 属主自己的事件保留原值（用户需要知道「这是系统做的」）。
+ * `csatComment` 给属主与 superadmin（属主需要看到自己写过的评价并修改），列表摘要不带。
  */
 export function toTicketView(
   ticket: unknown,
@@ -54,23 +69,39 @@ export function toTicketView(
   options: TicketViewOptions = {},
 ): Record<string, unknown> {
   const plainTicket = toPlainObject(ticket);
-  if (!Array.isArray(plainTicket.messages)) return withTicketFieldDefaults(plainTicket);
-
   const includeInternal = options.includeInternal === true;
-  const allMessages = plainTicket.messages.map((message) => toPlainObject(message));
+  const allMessages = (Array.isArray(plainTicket.messages) ? plainTicket.messages : []).map((message) =>
+    toPlainObject(message),
+  );
   const visibleMessages = includeInternal ? allMessages : allMessages.filter((message) => !isInternalMessage(message));
 
-  return withTicketFieldDefaults({
+  const view = withTicketFieldDefaults({
     ...plainTicket,
-    messages: visibleMessages.map((message) => {
-      const plainMessage = { ...message };
-      if (!includeAiErrorDetails) delete plainMessage.aiErrorDetails;
-      return plainMessage;
-    }),
+    ...(Array.isArray(plainTicket.messages)
+      ? {
+          messages: visibleMessages.map((message) => {
+            const plainMessage = { ...message };
+            if (!includeAiErrorDetails) delete plainMessage.aiErrorDetails;
+            return plainMessage;
+          }),
+        }
+      : {}),
     ...(includeInternal
       ? { internalNoteCount: allMessages.filter((message) => isInternalMessage(message)).length }
       : {}),
   });
+
+  const events = toEventList(view.events).map((event) => {
+    if (includeInternal || (event.actorRole !== "admin" && event.actorRole !== "superadmin")) return event;
+    const redacted = { ...event };
+    delete redacted.actorId;
+    redacted.actorName = "客服";
+    return redacted;
+  });
+  view.events = events;
+  // `csatComment` 保留给属主与 superadmin：属主需要看到自己写过的评价（可修改），
+  // 而列表摘要已单独把它剔除（列表只带 csatRating）。普通管理员本就拿不到他人工单详情。
+  return view;
 }
 
 export interface TicketSummaryOptions {
@@ -131,9 +162,15 @@ export function toTicketSummary(ticket: unknown, options: TicketSummaryOptions):
   });
 
   // 内部已读水位不进响应；正文由详情接口提供。
+  // 事件 / 评价内容 / 首响时间同样只属于详情：列表只需要 csatRating 画星级，
+  // 把 100 条事件带进列表会让分页响应失去「与工单数量线性相关」的约束。
   delete summary.messages;
   delete summary.userLastReadAt;
   delete summary.adminLastReadAt;
+  delete summary.events;
+  delete summary.firstResponseAt;
+  delete summary.csatComment;
+  delete summary.csatSubmittedAt;
   if (summary.internalNoteCount === undefined) delete summary.internalNoteCount;
 
   return summary;

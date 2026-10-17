@@ -4,6 +4,7 @@
  * 抽出来是为了让「列表卡片 / 筛选栏 / 统计条 / 详情」共用同一份文案，
  * 避免同一个状态在四处各写一遍中文（历史上就是这么漂移的）。
  */
+import type { ITicketEvent, TicketEventType } from '../../api/ticketApi';
 
 export const MAX_TICKET_TITLE_LEN = 120;
 export const MAX_TICKET_DESC_LEN = 4000;
@@ -281,3 +282,137 @@ export function formatTicketAge(hours?: number): string {
   if (hours < 24) return `${Math.round(hours)} 小时`;
   return `${Math.round((hours / 24) * 10) / 10} 天`;
 }
+
+// ── 处理记录（事件时间线）──
+
+/** 事件类型的中文标签与徽标色（与后端 TicketEventType 一一对应）。 */
+export const TICKET_EVENT_META: Record<TicketEventType, { label: string; tone: BadgeTone }> = {
+  created: { label: '工单创建', tone: 'slate' },
+  status: { label: '状态变更', tone: 'blue' },
+  priority: { label: '优先级变更', tone: 'yellow' },
+  category: { label: '分类变更', tone: 'slate' },
+  assignee: { label: '受理人变更', tone: 'green' },
+  type: { label: '类型变更', tone: 'blue' },
+  service: { label: '相关服务变更', tone: 'blue' },
+  csat: { label: '满意度评价', tone: 'yellow' },
+};
+
+function ticketStatusLabel(value?: string | null): string {
+  if (!value) return '—';
+  return TICKET_STATUS_META[value]?.label ?? value;
+}
+
+function ticketPriorityLabel(value?: string | null): string {
+  if (!value) return '—';
+  return TICKET_PRIORITY_META[value]?.label ?? value;
+}
+
+function ticketCategoryLabel(value?: string | null): string {
+  if (!value) return '—';
+  return TICKET_CATEGORY_META[value]?.label ?? value;
+}
+
+function ticketTypeLabel(value?: string | null): string {
+  if (!value) return '—';
+  return TICKET_TYPE_META[value]?.label ?? value;
+}
+
+/**
+ * 受理人展示名。
+ *
+ * 后端事件写的是名称；历史数据/异常路径偶尔只留下 24 位 ObjectId —— 不把一串 ID
+ * 展示给用户（属主视角下管理员姓名本就已脱敏为「客服」）。
+ */
+function ticketAssigneeLabel(value?: string | null): string {
+  if (!value) return '未分配';
+  if (/^[a-f0-9]{24}$/i.test(value)) return '客服';
+  return value;
+}
+
+function describeTicketEventChange(
+  label: string,
+  from: string | null | undefined,
+  to: string | null | undefined,
+  format: (value?: string | null) => string,
+): string {
+  return `${label}：${format(from)} → ${format(to)}`;
+}
+
+/**
+ * 处理记录的一行中文描述（纯函数，供时间线与单测复用）。
+ *
+ * 返回值直接面向用户：只讲「什么从什么变成了什么」，不暴露字段名或接口细节。
+ */
+export function ticketEventDescription(event: ITicketEvent): string {
+  switch (event.type) {
+    case 'created':
+      return '工单已创建';
+    case 'status':
+      return describeTicketEventChange('状态', event.from, event.to, ticketStatusLabel);
+    case 'priority':
+      return describeTicketEventChange('优先级', event.from, event.to, ticketPriorityLabel);
+    case 'category':
+      return describeTicketEventChange('分类', event.from, event.to, ticketCategoryLabel);
+    case 'type':
+      return describeTicketEventChange('类型', event.from, event.to, ticketTypeLabel);
+    case 'service':
+      return describeTicketEventChange('相关服务', event.from, event.to, (value) => ticketServiceLabel(value));
+    case 'assignee':
+      return describeTicketEventChange('受理人', event.from, event.to, ticketAssigneeLabel);
+    case 'csat': {
+      const rating = Number.parseInt(event.to ?? '', 10);
+      return Number.isFinite(rating) && rating >= 1 && rating <= 5
+        ? `满意度：${rating} 星`
+        : '满意度：已评价';
+    }
+    default:
+      return '工单有新的处理记录';
+  }
+}
+
+// ── 满意度评价（CSAT）──
+
+/** 1–5 星对应的中文口径；0 / 越界一律视为未评价。 */
+export const TICKET_CSAT_LABELS: Record<number, string> = {
+  1: '非常不满意',
+  2: '不满意',
+  3: '一般',
+  4: '满意',
+  5: '非常满意',
+};
+
+/** 星级展示：`5 星 · 非常满意`；未评价回退 `—`。 */
+export function formatTicketStarRating(rating?: number | null): string {
+  if (!rating || !Number.isInteger(rating) || rating < 1 || rating > 5) return '—';
+  return `${rating} 星 · ${TICKET_CSAT_LABELS[rating]}`;
+}
+
+/**
+ * 平均首响展示：`—` / `<1 小时` / `N 小时` / `N 天`。
+ *
+ * 后端给的是小时数（可能带小数）；不足 1 小时统一回收成 `<1 小时`，
+ * 避免出现「0 小时」这种看起来像没算的读数。
+ */
+export function formatFirstResponse(hours?: number | null): string {
+  if (hours === undefined || hours === null || !Number.isFinite(hours) || hours < 0) return '—';
+  if (hours < 1) return '<1 小时';
+  if (hours < 24) return `${Math.round(hours)} 小时`;
+  const days = Math.round((hours / 24) * 10) / 10;
+  return `${days} 天`;
+}
+
+// ── 用户端筛选默认值 ──
+
+/** 用户端「我的工单」筛选（关键词 + 状态 + 排序）。 */
+export interface UserTicketFilterValue {
+  status: string;
+  q: string;
+  sort: string;
+}
+
+/** 默认视图：全部状态、无关键词、最近更新在前。 */
+export const USER_TICKET_FILTER_DEFAULT: UserTicketFilterValue = {
+  status: '',
+  q: '',
+  sort: 'updated',
+};
