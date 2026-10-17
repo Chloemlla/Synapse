@@ -188,7 +188,7 @@ TTS 当前不是内存队列，核心状态保存在 MongoDB。
 | Workspace / Voice / Version | `workspaces`、`voice_projects`、`versions`、`invitations`、`collaboration_sessions` |
 | 工单 | `tickets` |
 | NexAI | `nexai_users`、`nexai_sync`、`nexai_sync_v2_records`、`nexai_sync_v2_counters`、`DeviceTracking` 默认集合、`SecurityEvent` 默认集合 |
-| 邮件 | `email_quotas`、`outemail_records`、`outemail_quotas`、`outemail_settings` |
+| 邮件 | `email_quotas`、`outemail_records`（系统内部发信 + 对外发信，`channel` 区分）、`outemail_quotas`、`outemail_settings` |
 | Webhook | `webhook_events`、`webhook_settings` |
 | 管理后台 | `announcements`、`runtime_config_settings`、`debug_console_configs`、`debug_console_access_logs`、`github_billing_*` |
 | 安全 / 风控 | `ipbans` 默认集合、`blocked_ips`、`audit_logs`、`policy_consents`、`turnstile_settings`、`hcaptcha_settings`、`shc_traces`、`moderation_logs` |

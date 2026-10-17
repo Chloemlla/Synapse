@@ -3,6 +3,7 @@ import type { EmailRuntimeConfig } from "../config/runtimeConfigDefaults";
 import { filterSuppressedEmails, normalizeEmail } from "./emailSuppressionService";
 import { logger } from "./logger";
 import { RuntimeConfigService } from "./runtimeConfigService";
+import { recordEmailTraces } from "./emailTraceService";
 
 /**
  * EM-4: 发送前过滤抑制名单（退信 / 投诉 / 退订）。
@@ -384,6 +385,17 @@ export class EmailService {
         subject: emailData.subject,
       });
 
+      // 系统内部发信（primary 通道）同样进入发信溯源。对外发信在 outEmailService
+      // 里以原始正文落库，这里跳过，避免同一次发送写两条记录。
+      if (emailData.channel !== "outemail") {
+        void recordEmailTraces([{
+          channel: "internal",
+          to: deliverable.recipients,
+          subject: emailData.subject,
+          content: emailData.html || emailData.text || "",
+        }]);
+      }
+
       return {
         success: true,
         data,
@@ -476,6 +488,14 @@ export class EmailService {
         count: deliverableMessages.length,
         ids,
       });
+      if (batchEmailData.channel !== "outemail") {
+        void recordEmailTraces(deliverableMessages.map((message) => ({
+          channel: "internal" as const,
+          to: message.to,
+          subject: message.subject,
+          content: message.html || message.text || "",
+        })));
+      }
       return { success: true, data, ids, acceptedMessages, acceptedCount: acceptedMessages.reduce((count, message) => count + message.to.length, 0) };
     } catch (error: any) {
       logger.error("批量邮件发送异常", {

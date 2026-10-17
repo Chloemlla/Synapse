@@ -215,8 +215,9 @@ router.post("/batch-send", outEmailLimiter, async (req, res) => {
 
 /**
  * GET /api/outemail/records
- * 查询对外邮件发送记录（溯源日志，仅超级管理员）
- * 邮件正文可能包含验证码/重置链接等凭证，因此从 admin 收窄到 superadmin。
+ * 查询邮件发信记录（系统内部发信 + 对外发信，仅超级管理员）。
+ * 内部发信（密码重置、邮箱验证、通知等）同样落在 outemail_records，`channel` 区分来源；
+ * 正文可能包含验证码/重置链接等凭证，因此从 admin 收窄到 superadmin。
  */
 router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, requireAdminScope, authenticateSuperAdmin, async (req, res) => {
   try {
@@ -224,10 +225,12 @@ router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, 
     const pageSize = parseInt(req.query.pageSize as string) || 20;
     const to = req.query.to as string | undefined;
     const subject = req.query.subject as string | undefined;
+    const channel = req.query.channel as string | undefined;
     const startDate = req.query.startDate as string | undefined;
     const endDate = req.query.endDate as string | undefined;
 
-    const result = await getOutEmailRecords({ page, pageSize, to, subject, startDate, endDate });
+    // channel 只认 internal / outemail；其它值按「不过滤」处理（服务层负责收敛）。
+    const result = await getOutEmailRecords({ page, pageSize, to, subject, channel, startDate, endDate });
     res.json({ success: true, ...result });
   } catch (e: any) {
     logger.error("[OutEmail] 记录查询失败", e);

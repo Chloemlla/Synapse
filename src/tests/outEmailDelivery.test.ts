@@ -3,7 +3,6 @@ const mockSettle = jest.fn();
 const mockRefund = jest.fn();
 const mockSend = jest.fn();
 const mockBatchSend = jest.fn();
-const mockCreateRecord = jest.fn();
 const mockInsertRecords = jest.fn();
 const reservation = { id: "a".repeat(32), ledgerId: "public:outemail", resetAt: "2026-10-08T00:00:00.000Z", count: 1 };
 
@@ -29,8 +28,10 @@ jest.mock("../services/mongoService", () => {
   const mongoose = jest.requireActual("mongoose");
   return { mongoose: {
     Schema: mongoose.Schema, models: {},
+    // 溯源写入会先检查连接状态：替身必须显式给出已连接的 readyState。
+    connection: { readyState: 1 },
     model: (name: string) => name === "OutEmailRecord"
-      ? { create: (...args: unknown[]) => mockCreateRecord(...args), insertMany: (...args: unknown[]) => mockInsertRecords(...args) }
+      ? { insertMany: (...args: unknown[]) => mockInsertRecords(...args) }
       : { findOne: () => ({ lean: () => ({ exec: async () => null }) }) },
   } };
 });
@@ -51,12 +52,11 @@ describe("outemail delivery and quota settlement", () => {
     mockRefund.mockResolvedValue(undefined);
     mockSend.mockResolvedValue({ success: true, messageId: "single-id", acceptedCount: 1, acceptedRecipients: ["user@example.com"] });
     mockBatchSend.mockResolvedValue({ success: true, ids: ["batch-id"], acceptedCount: 1, acceptedMessages: [{ index: 0, to: ["user@example.com"] }] });
-    mockCreateRecord.mockResolvedValue({});
     mockInsertRecords.mockResolvedValue([]);
   });
 
   it("does not report accepted mail as failed when saving history fails", async () => {
-    mockCreateRecord.mockRejectedValue(new Error("storage offline"));
+    mockInsertRecords.mockRejectedValue(new Error("storage offline"));
     expect(await sendOutEmail(single)).toMatchObject({ success: true, messageId: "single-id" });
     expect(mockSettle).toHaveBeenCalledWith(reservation, 1);
     expect(mockRefund).not.toHaveBeenCalled();
@@ -66,7 +66,14 @@ describe("outemail delivery and quota settlement", () => {
     mockSend.mockResolvedValue({ success: false, error: "provider error" });
     expect(await sendOutEmail(single)).toMatchObject({ success: false, code: "EMAIL_SEND_FAILED", statusCode: 502 });
     expect(mockRefund).toHaveBeenCalledWith(reservation);
-    expect(mockCreateRecord).not.toHaveBeenCalled();
+    expect(mockInsertRecords).not.toHaveBeenCalled();
+  });
+
+  it("stores external sends with the outemail channel", async () => {
+    await sendOutEmail(single);
+    expect(mockInsertRecords).toHaveBeenCalledWith([
+      { to: "user@example.com", subject: "test", content: "hello", ip: "127.0.0.1", channel: "outemail" },
+    ]);
   });
 
   it("distinguishes unavailable quota storage from exhausted allowance", async () => {
@@ -85,7 +92,9 @@ describe("outemail delivery and quota settlement", () => {
     })).toMatchObject({ success: true, acceptedCount: 1, ids: ["batch-id"] });
     expect(mockReserve).toHaveBeenCalledWith(3);
     expect(mockSettle).toHaveBeenCalledWith(reservation, 1);
-    expect(mockInsertRecords).toHaveBeenCalledWith([{ to: "user@example.com", subject: "one", content: "one", ip: "127.0.0.1" }]);
+    expect(mockInsertRecords).toHaveBeenCalledWith([
+      { to: "user@example.com", subject: "one", content: "one", ip: "127.0.0.1", channel: "outemail" },
+    ]);
   });
 
   it("rejects a mixed-validity recipient list before quota reservation", async () => {

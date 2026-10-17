@@ -14,19 +14,16 @@ import { containsHtmlTag } from "./outEmailHtmlProbe";
 import { sanitizeEmailHtml } from "../utils/announcementHtml";
 import { recordUsage, validateApiKey } from "./apiKeyService";
 import { UserStorage } from "../utils/userStorage";
-import { escapeRegexLiteral } from "../utils/regexEscape";
+import {
+  getEmailTraceRecordById,
+  getEmailTraceRecords,
+  recordEmailTraces,
+} from "./emailTraceService";
 
-const OutEmailRecordSchema = new mongoose.Schema(
-  {
-    to: String,
-    subject: String,
-    content: String,
-    sentAt: { type: Date, default: Date.now },
-    ip: String,
-  },
-  { collection: "outemail_records" },
-);
-const OutEmailRecord = mongoose.models.OutEmailRecord || mongoose.model("OutEmailRecord", OutEmailRecordSchema);
+// 溯源记录的模型/查询定义在 emailTraceService：内部发信与对外发信共用同一个集合。
+// 这里保留同名导出，路由与既有测试不需要跟着改 import。
+export const getOutEmailRecords = getEmailTraceRecords;
+export const getOutEmailRecordById = getEmailTraceRecordById;
 
 /**
  * 构造出站邮件的 text/plain 与 text/html 两份正文。
@@ -277,92 +274,6 @@ function quotaFailure(result: Extract<EmailQuotaResult, { success: false }>): Ou
     : failure("今日邮件发送额度不足", "EMAIL_QUOTA_EXCEEDED", 429, result.retryAfterSeconds);
 }
 
-export async function getOutEmailRecords(params: {
-  page?: number;
-  pageSize?: number;
-  to?: string;
-  subject?: string;
-  startDate?: string;
-  endDate?: string;
-}): Promise<{
-  records: Array<{ _id: string; to: string; subject: string; content: string; sentAt: Date; ip: string }>;
-  total: number;
-  page: number;
-  pageSize: number;
-}> {
-  const page = Math.max(1, params.page || 1);
-  const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
-  const filter: Record<string, any> = {};
-
-  // `to` / `subject` 是运营手输的关键词：不转义的话 `.`/`*` 会变成通配符（搜出来的记录与
-  // 关键词不符），病态模式还能触发 Mongo 侧灾难性回溯。
-  if (params.to) {
-    filter.to = { $regex: escapeRegexLiteral(params.to), $options: "i" };
-  }
-  if (params.subject) {
-    filter.subject = { $regex: escapeRegexLiteral(params.subject), $options: "i" };
-  }
-  if (params.startDate || params.endDate) {
-    filter.sentAt = {};
-    if (params.startDate) filter.sentAt.$gte = new Date(params.startDate);
-    if (params.endDate) filter.sentAt.$lte = new Date(params.endDate);
-  }
-
-  try {
-    const [records, total] = await Promise.all([
-      OutEmailRecord.find(filter)
-        .sort({ sentAt: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .lean()
-        .exec(),
-      OutEmailRecord.countDocuments(filter),
-    ]);
-    return {
-      records: records.map((r: any) => ({
-        _id: String(r._id),
-        to: r.to || "",
-        subject: r.subject || "",
-        content: (r.content || "").substring(0, 200),
-        sentAt: r.sentAt || new Date(),
-        ip: r.ip || "",
-      })),
-      total,
-      page,
-      pageSize,
-    };
-  } catch (error) {
-    logger.error("查询对外邮件记录失败", { error: (error as any)?.message });
-    return { records: [], total: 0, page, pageSize };
-  }
-}
-
-export async function getOutEmailRecordById(id: string): Promise<{
-  _id: string;
-  to: string;
-  subject: string;
-  content: string;
-  sentAt: Date;
-  ip: string;
-} | null> {
-  try {
-    const doc = await OutEmailRecord.findById(id).lean().exec();
-    if (!doc) return null;
-    const r = doc as any;
-    return {
-      _id: String(r._id),
-      to: r.to || "",
-      subject: r.subject || "",
-      content: r.content || "",
-      sentAt: r.sentAt || new Date(),
-      ip: r.ip || "",
-    };
-  } catch (error) {
-    logger.error("查询对外邮件详情失败", { error: (error as any)?.message, id });
-    throw error;
-  }
-}
-
 export async function getOutEmailAuthStatus(domain?: string): Promise<{
   configured: boolean;
   hasApiKey: boolean;
@@ -446,16 +357,18 @@ export async function sendOutEmailBatch({
   }
   const acceptedCount = result.acceptedCount ?? requestedCount;
   await settleEmailQuota(quota.reservation, acceptedCount);
-  // Provider acceptance is the send result. History persistence cannot undo delivery.
-  try {
-    const acceptedMessages = result.acceptedMessages ?? prepared.map((message, index) => ({ index, to: message.to }));
-    const records = acceptedMessages.map(({ index, to }) => ({
-      to: to.join(","), subject: prepared[index].subject, content: messages[index].content, ip,
-    }));
-    if (records.length) await OutEmailRecord.insertMany(records);
-  } catch (error) {
-    logger.error("对外邮件已发送，但发送记录保存失败", { error });
-  }
+  // Provider acceptance is the send result. History persistence cannot undo delivery
+  // (recordEmailTraces 自身吞掉写入异常，只记日志).
+  const acceptedMessages = result.acceptedMessages ?? prepared.map((message, index) => ({ index, to: message.to }));
+  await recordEmailTraces(
+    acceptedMessages.map(({ index, to }) => ({
+      channel: "outemail",
+      to,
+      subject: prepared[index].subject,
+      content: messages[index].content,
+      ip,
+    })),
+  );
   return { success: true, ids: result.ids, acceptedCount };
 }
 
@@ -515,10 +428,13 @@ export async function sendOutEmail({
   }
   const acceptedCount = result.acceptedCount ?? 1;
   await settleEmailQuota(quota.reservation, acceptedCount);
-  try {
-    await OutEmailRecord.create({ to: result.acceptedRecipients?.[0] || recipient, subject: stripControlChars(subject), content, ip });
-  } catch (error) {
-    logger.error("对外邮件已发送，但发送记录保存失败", { error });
-  }
+  // 同样走旁路写入：记录失败不改变「已发出」的结果。
+  await recordEmailTraces([{
+    channel: "outemail",
+    to: result.acceptedRecipients?.[0] || recipient,
+    subject: stripControlChars(subject),
+    content,
+    ip,
+  }]);
   return { success: true, messageId: result.messageId, acceptedCount };
 }

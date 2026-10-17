@@ -171,7 +171,7 @@ const AdminDashboard: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold text-slate-900">邮件发信溯源</h2>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">对外邮件服务状态与发送记录概览。</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">邮件服务状态与发信记录概览（含系统内部发信）。</p>
                 </div>
               </div>
 

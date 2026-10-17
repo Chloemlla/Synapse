@@ -3,6 +3,7 @@ import { api } from "@/api";
 import { FaSearch, FaRedo, FaEnvelope, FaDatabase, FaGlobe, FaEye, FaCopy, FaCheck, FaCode, FaFileAlt } from "react-icons/fa";
 import { cn } from '../utils/cn';
 import {
+  studioBadgeClassName,
   studioFieldClassName,
   studioGhostButtonClassName,
   studioPrimaryButtonClassName,
@@ -19,6 +20,8 @@ import {
   StudioPager,
 } from './studioFeedback';
 
+type EmailTraceChannel = "internal" | "outemail";
+
 interface EmailRecord {
   _id: string;
   to: string;
@@ -26,6 +29,7 @@ interface EmailRecord {
   content: string;
   sentAt: string;
   ip: string;
+  channel?: EmailTraceChannel;
 }
 
 interface RecordsResponse {
@@ -43,6 +47,7 @@ interface FullRecord {
   content: string;
   sentAt: string;
   ip: string;
+  channel?: EmailTraceChannel;
 }
 
 interface QuotaInfo {
@@ -59,6 +64,13 @@ interface ServiceStatus {
 }
 
 const PAGE_SIZE = 20;
+
+/** 来源标签：内部系统发信 / 对外发信（老记录没有 channel，按对外发信展示）。 */
+function getChannelMeta(channel?: EmailTraceChannel) {
+  return channel === "internal"
+    ? { label: "内部发信", hint: "系统内部通知、验证码、密码重置等" }
+    : { label: "对外发信", hint: "外部服务通过对外发信接口发送" };
+}
 
 function formatDateTime(value?: string) {
   if (!value) return "-";
@@ -78,6 +90,7 @@ const EmailTraceability: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTo, setSearchTo] = useState("");
   const [searchSubject, setSearchSubject] = useState("");
+  const [channelFilter, setChannelFilter] = useState<"" | EmailTraceChannel>("");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [quota, setQuota] = useState<QuotaInfo>({ used: 0, total: 0, resetAt: "" });
 
@@ -99,6 +112,7 @@ const EmailTraceability: React.FC = () => {
       params.set("pageSize", String(PAGE_SIZE));
       if (searchTo.trim()) params.set("to", searchTo.trim());
       if (searchSubject.trim()) params.set("subject", searchSubject.trim());
+      if (channelFilter) params.set("channel", channelFilter);
 
       const res = await api.get(`/api/outemail/records?${params.toString()}`);
       const data = res.data as RecordsResponse;
@@ -113,7 +127,7 @@ const EmailTraceability: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTo, searchSubject]);
+  }, [searchTo, searchSubject, channelFilter]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -202,7 +216,7 @@ const EmailTraceability: React.FC = () => {
         </div>
         <div>
           <h2 className="text-lg font-bold text-slate-900">邮件发信溯源日志</h2>
-          <p className="text-sm text-slate-500">对外邮件发送记录查询与追踪</p>
+          <p className="text-sm text-slate-500">系统内部发信与对外发信的记录查询与追踪</p>
         </div>
       </div>
 
@@ -281,6 +295,18 @@ const EmailTraceability: React.FC = () => {
             className={cn(studioFieldClassName, "py-2 pl-9 pr-3")}
           />
         </div>
+        <div className="w-full sm:w-[150px]">
+          <select
+            aria-label="按发信来源筛选"
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value as "" | EmailTraceChannel)}
+            className={cn(studioFieldClassName, "py-2 pl-3 pr-8")}
+          >
+            <option value="">全部来源</option>
+            <option value="internal">内部发信</option>
+            <option value="outemail">对外发信</option>
+          </select>
+        </div>
         <button
           type="button"
           onClick={handleSearch}
@@ -321,6 +347,7 @@ const EmailTraceability: React.FC = () => {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="px-3 sm:px-4 py-3 font-semibold text-slate-500">发送时间</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold text-slate-500">来源</th>
                   <th className="px-3 sm:px-4 py-3 font-semibold text-slate-500">收件人</th>
                   <th className="px-3 sm:px-4 py-3 font-semibold text-slate-500">主题</th>
                   <th className="px-3 sm:px-4 py-3 font-semibold text-slate-500">内容摘要</th>
@@ -333,6 +360,14 @@ const EmailTraceability: React.FC = () => {
                   <tr key={rec._id || i} className="hover:bg-slate-50/50">
                     <td className="whitespace-nowrap px-3 sm:px-4 py-3 text-slate-600">
                       {formatDateTime(rec.sentAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 sm:px-4 py-3">
+                      <span
+                        className={studioBadgeClassName(rec.channel === "internal" ? "slate" : "blue")}
+                        title={getChannelMeta(rec.channel).hint}
+                      >
+                        {getChannelMeta(rec.channel).label}
+                      </span>
                     </td>
                     <td className="max-w-[120px] sm:max-w-[200px] truncate px-3 sm:px-4 py-3 font-medium text-slate-800">
                       {rec.to}
@@ -414,6 +449,12 @@ const EmailTraceability: React.FC = () => {
                 <div className="rounded-2xl bg-slate-50 p-3">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">主题</span>
                   <p className="mt-1 text-sm font-medium text-slate-800 break-all">{detailRecord.subject}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">来源</span>
+                  <p className="mt-1 text-sm font-medium text-slate-800">
+                    {getChannelMeta(detailRecord.channel).label}
+                  </p>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-3">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">来源 IP</span>
