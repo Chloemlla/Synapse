@@ -1040,8 +1040,13 @@ export const ticketController = {
       };
       const result = await applyBulkTicketPatch({ ids, patch, actor: actorPayload });
 
+      // WS 广播用变更后的完整文档：局部对象会把属主已打开的会话冲掉。
+      const documentsById = new Map(
+        result.documents.map((document: any) => [String(document._id), document]),
+      );
       for (const ticket of result.changed) {
-        wsService.notifyTicketUpdate(ticket.userId, ticket);
+        const document = documentsById.get(ticket._id);
+        if (document) wsService.notifyTicketUpdate(ticket.userId, document);
         // 邮件只在状态真的变化时发：批量认领 / 改优先级不该给用户发「状态更新」。
         if (ticket.statusChanged) void notifyTicketStatusChanged(ticket);
       }

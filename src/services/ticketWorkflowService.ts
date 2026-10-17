@@ -502,6 +502,13 @@ export interface ApplyBulkTicketPatchResult {
   matched: number;
   updated: number;
   changed: BulkTicketChange[];
+  /**
+   * 变更后的完整文档（仅变化的那些）。
+   *
+   * WebSocket 必须广播完整视图：`ticket:update` 会被前端直接用于刷新详情，
+   * 发一个只有 `_id/status` 的局部对象会把属主已打开的会话冲掉（消息数组一并消失）。
+   */
+  documents: any[];
 }
 
 /**
@@ -517,7 +524,7 @@ export async function applyBulkTicketPatch(args: {
   now?: Date;
 }): Promise<ApplyBulkTicketPatchResult> {
   const now = args.now ?? new Date();
-  if (args.ids.length === 0) return { matched: 0, updated: 0, changed: [] };
+  if (args.ids.length === 0) return { matched: 0, updated: 0, changed: [], documents: [] };
 
   const tickets = await TicketModel.find({ _id: { $in: args.ids } })
     .select("userId title status priority category assigneeId assigneeName firstResponseAt resolvedAt")
@@ -555,10 +562,11 @@ export async function applyBulkTicketPatch(args: {
     });
   }
 
-  if (operations.length === 0) return { matched: tickets.length, updated: 0, changed };
+  if (operations.length === 0) return { matched: tickets.length, updated: 0, changed, documents: [] };
 
   const result = await TicketModel.bulkWrite(operations);
-  return { matched: tickets.length, updated: result.modifiedCount ?? 0, changed };
+  const documents = await TicketModel.find({ _id: { $in: changed.map((ticket) => ticket._id) } });
+  return { matched: tickets.length, updated: result.modifiedCount ?? 0, changed, documents };
 }
 
 export interface TicketStats {

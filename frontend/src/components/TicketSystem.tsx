@@ -183,7 +183,13 @@ function scrollTicketPaneToTop(): void {
  */
 function mergeTicketDetail(current: ITicket | null, updated: ITicket): ITicket {
   if (!current || current._id !== updated._id) return updated;
-  return { ...updated, attachments: updated.attachments ?? current.attachments };
+  return {
+    ...updated,
+    attachments: updated.attachments ?? current.attachments,
+    // WebSocket 的局部视图（例如批量更新的广播）可能不带 messages：
+    // 直接用它会清空已打开的会话，所以缺字段时保留上一份。
+    messages: updated.messages ?? current.messages,
+  };
 }
 
 const TicketSystem: React.FC = () => {
