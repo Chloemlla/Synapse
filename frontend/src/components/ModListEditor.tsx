@@ -233,6 +233,13 @@ const ModListEditor: React.FC = () => {
   const [showBatchAddModal, setShowBatchAddModal] = useState(false);
 
   const canWrite = isSuperAdmin(user?.role);
+  /**
+   * 修改码是否仍是必填项。
+   *
+   * 后端对超级管理员已放行（写路由本来就要求 authenticateSuperAdmin），
+   * 前端同步隐藏必填校验与输入框：否则超管会被一个自己不需要的口令挡住。
+   */
+  const codeRequired = !isSuperAdmin(user?.role);
 
   const notify = (type: "success" | "error" | "info" | "warning", message: string) => {
     setNotification({ type, message });
@@ -333,8 +340,8 @@ const ModListEditor: React.FC = () => {
 
   const handleSubmitAdd = async () => {
     if (!canWrite) return;
-    if (!draft.name.trim() || !draft.hash.trim() || !modifyCode.trim()) {
-      notify("error", "新增时必须填写名称、Hash 和修改码");
+    if (!draft.name.trim() || !draft.hash.trim() || (codeRequired && !modifyCode.trim())) {
+      notify("error", codeRequired ? "新增时必须填写名称、Hash 和修改码" : "新增时必须填写名称和 Hash");
       return;
     }
 
@@ -344,7 +351,7 @@ const ModListEditor: React.FC = () => {
         name: draft.name.trim(),
         hash: draft.hash.trim(),
         md5: draft.md5.trim() || undefined,
-        code: modifyCode.trim(),
+        code: modifyCode.trim() || undefined,
       });
       if (!result.success) {
         throw new Error(result.error || "新增失败");
@@ -361,8 +368,8 @@ const ModListEditor: React.FC = () => {
 
   const handleSubmitEdit = async () => {
     if (!canWrite) return;
-    if (!selectedMod?.id || !draft.name.trim() || !modifyCode.trim()) {
-      notify("error", "编辑时必须填写名称和修改码");
+    if (!selectedMod?.id || !draft.name.trim() || (codeRequired && !modifyCode.trim())) {
+      notify("error", codeRequired ? "编辑时必须填写名称和修改码" : "编辑时必须填写名称");
       return;
     }
 
@@ -372,7 +379,7 @@ const ModListEditor: React.FC = () => {
         name: draft.name.trim(),
         hash: draft.hash.trim() || undefined,
         md5: draft.md5.trim() || undefined,
-        code: modifyCode.trim(),
+        code: modifyCode.trim() || undefined,
       });
       if (!result.success) {
         throw new Error(result.error || "更新失败");
@@ -389,7 +396,7 @@ const ModListEditor: React.FC = () => {
 
   const handleSubmitDelete = async () => {
     if (!canWrite) return;
-    if (!selectedMod?.id || !deleteCode.trim()) {
+    if (!selectedMod?.id || (codeRequired && !deleteCode.trim())) {
       notify("error", "删除前必须输入修改码");
       return;
     }
@@ -417,7 +424,7 @@ const ModListEditor: React.FC = () => {
       notify("error", "请先选择要删除的模组");
       return;
     }
-    if (!batchCode.trim()) {
+    if (codeRequired && !batchCode.trim()) {
       notify("error", "批量删除必须输入修改码");
       return;
     }
@@ -461,7 +468,7 @@ const ModListEditor: React.FC = () => {
       return;
     }
 
-    if (!batchCode.trim()) {
+    if (codeRequired && !batchCode.trim()) {
       notify("error", "批量新增必须输入修改码");
       return;
     }
@@ -497,7 +504,7 @@ const ModListEditor: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">模组列表管理</h1>
                 <p className="mt-3 text-sm leading-7 text-slate-900/72 sm:text-base">
-                  在这里维护模组列表：支持新增、编辑、删除、批量新增和批量删除，所有写操作都需要填写修改码。
+                  在这里维护模组列表：支持新增、编辑、删除、批量新增和批量删除。超级管理员直接操作；其他授权账号的写操作需要填写修改码。
                   列表视图适合逐条核对，JSON 工作区适合整理后一次性批量新增。
                 </p>
               </div>
@@ -757,7 +764,7 @@ const ModListEditor: React.FC = () => {
           <TextField label="名称" value={draft.name} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} placeholder="例如：example-mod" />
           <TextField label="Hash" value={draft.hash} onChange={(value) => setDraft((current) => ({ ...current, hash: value }))} placeholder="请输入 Hash" />
           <TextField label="MD5" value={draft.md5} onChange={(value) => setDraft((current) => ({ ...current, md5: value }))} placeholder="可选" />
-          <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />
+          {codeRequired && <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
@@ -778,7 +785,7 @@ const ModListEditor: React.FC = () => {
           <TextField label="名称" value={draft.name} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} placeholder="请输入名称" />
           <TextField label="Hash" value={draft.hash} onChange={(value) => setDraft((current) => ({ ...current, hash: value }))} placeholder="留空则清除" />
           <TextField label="MD5" value={draft.md5} onChange={(value) => setDraft((current) => ({ ...current, md5: value }))} placeholder="留空则清除" />
-          <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />
+          {codeRequired && <TextField label="修改码" value={modifyCode} onChange={setModifyCode} placeholder="请输入修改码" type="password" />}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
@@ -799,7 +806,7 @@ const ModListEditor: React.FC = () => {
           <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
             即将删除：<span className="font-semibold">{selectedMod?.name || "-"}</span>
           </div>
-          <TextField label="修改码" value={deleteCode} onChange={setDeleteCode} placeholder="请输入修改码" type="password" />
+          {codeRequired && <TextField label="修改码" value={deleteCode} onChange={setDeleteCode} placeholder="请输入修改码" type="password" />}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
@@ -818,7 +825,7 @@ const ModListEditor: React.FC = () => {
       <Modal open={showBatchDeleteModal} title="批量删除模组" onClose={closeAllModals}>
         <div className="space-y-4">
           <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">当前已选 {selectedCount} 项。</div>
-          <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />
+          {codeRequired && <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">
@@ -839,7 +846,7 @@ const ModListEditor: React.FC = () => {
           <div className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-slate-900/72">
             这里会把当前 JSON 解析为数组，并把其中的模组一次性批量添加到列表。
           </div>
-          <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />
+          {codeRequired && <TextField label="修改码" value={batchCode} onChange={setBatchCode} placeholder="请输入修改码" type="password" />}
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={closeAllModals} className="rounded-2xl border border-slate-200/40 px-4 py-3 text-sm font-medium text-slate-900">

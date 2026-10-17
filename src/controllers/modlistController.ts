@@ -51,6 +51,24 @@ function timingSafeCodeEqual(candidate: unknown, expected: string): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/**
+ * 写操作的修改码校验。
+ *
+ * 超级管理员**不需要**修改码：写路由本身已经挂了 `authenticateSuperAdmin`，
+ * 能走到这里就说明会话身份已经是最高权限，再要求一个共享口令只是让同一个
+ * 人重复证明一次（与「管理员账号无需填写生成码」同一口径）。
+ *
+ * 修改码仍然保留给未来的非超管授权路径，因此这里不是删除校验，而是按角色分流：
+ * 身份缺失或非超管 ⇒ 照旧要求定时安全比较。
+ */
+async function passesWriteCodeGate(req: Request): Promise<boolean> {
+  const role = (req as Request & { user?: { role?: unknown } }).user?.role;
+  if (role === "superadmin") return true;
+  const expected = await getModifyCodeFromDb();
+  const candidate = (req.body as { code?: unknown } | undefined)?.code;
+  return Boolean(expected) && timingSafeCodeEqual(candidate, expected as string);
+}
+
 export const getModList = async (req: Request, res: Response) => {
   try {
     const { withHash, withMd5 } = req.query;
@@ -114,8 +132,7 @@ export const addMod = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "MOD名不能为空" });
     }
 
-    const expected = await getModifyCodeFromDb();
-    if (!expected || !timingSafeCodeEqual(code, expected)) {
+    if (!(await passesWriteCodeGate(req))) {
       return res.status(403).json({ error: "修改码错误" });
     }
 
@@ -135,8 +152,7 @@ export const updateMod = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "参数错误" });
     }
 
-    const expected = await getModifyCodeFromDb();
-    if (!expected || !timingSafeCodeEqual(code, expected)) {
+    if (!(await passesWriteCodeGate(req))) {
       return res.status(403).json({ error: "修改码错误" });
     }
 
@@ -153,8 +169,7 @@ export const deleteMod = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { code } = req.body;
 
-    const expected = await getModifyCodeFromDb();
-    if (!expected || !timingSafeCodeEqual(code, expected)) {
+    if (!(await passesWriteCodeGate(req))) {
       return res.status(403).json({ error: "修改码错误" });
     }
 
@@ -178,8 +193,7 @@ export const batchAddMods = async (req: Request, res: Response) => {
     }
 
     // 校验修改码
-    const expected = await getModifyCodeFromDb();
-    if (!expected || !timingSafeCodeEqual(code, expected)) {
+    if (!(await passesWriteCodeGate(req))) {
       return res.status(403).json({ error: "修改码错误" });
     }
 
@@ -203,8 +217,7 @@ export const batchDeleteMods = async (req: Request, res: Response) => {
     }
 
     // 校验修改码
-    const expected = await getModifyCodeFromDb();
-    if (!expected || !timingSafeCodeEqual(code, expected)) {
+    if (!(await passesWriteCodeGate(req))) {
       return res.status(403).json({ error: "修改码错误" });
     }
 
