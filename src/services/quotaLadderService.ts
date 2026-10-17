@@ -82,6 +82,8 @@ export interface QuotaLadderBanContext {
 }
 
 export interface QuotaLadderConfig {
+  /** 持久化适配口：四个写操作都必须原子（见 QuotaLadderStore 注释）。 */
+  store: QuotaLadderStore;
   /** 资源标识，只用于日志/理由文案（如 "librechat"）。 */
   resource: string;
   dailyLimit: number;

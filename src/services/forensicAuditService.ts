@@ -17,7 +17,8 @@ import { SecurityEvent } from "../models/securityEventModel";
 import { AuditLogService, type AuditEntry } from "./auditLogService";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
-import { checkLegalHold, LegalHoldValidationError, type LegalHoldScope } from "./legalHoldService";
+import type { LegalHoldScope } from "../models/legalHoldModel";
+import { checkLegalHold, LegalHoldValidationError } from "./legalHoldService";
 
 /**
  * 取证审计与导出（RC-22 / RC-35 / RC-58 / D10 / D16）。

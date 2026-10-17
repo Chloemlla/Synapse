@@ -261,7 +261,7 @@ async function applyAccountRiskActionForBan(context: {
   reason: string;
 }): Promise<void> {
   if (QUOTA_LADDER_ACCOUNT_RISK_ACTION === "off") return;
-  const { applyAccountRiskAction } = await import("./accountRiskService");
+  const { applyAccountRiskAction } = await import("./accountRiskService.js");
   const result = await applyAccountRiskAction({
     userId: context.userId,
     action: QUOTA_LADDER_ACCOUNT_RISK_ACTION as "require_step_up" | "restrict" | "suspend",
@@ -282,6 +282,9 @@ async function applyAccountRiskActionForBan(context: {
 const ladderConfig: QuotaLadderConfig & {
   codes: { dailyLimit: LibreChatQuotaCode; banned: LibreChatQuotaCode };
 } = {
+  // 持久化适配口（RC-29 抽公共件后由引擎反向依赖）：漏传会让 createQuotaLadder
+  // 解构出 undefined，第一次 consume 就抛错 —— 类型上它是必填字段。
+  store: libreChatStore,
   resource: "LibreChat",
   dailyLimit: LIBRECHAT_DAILY_LIMIT,
   maxWarnings: LIBRECHAT_MAX_WARNINGS,

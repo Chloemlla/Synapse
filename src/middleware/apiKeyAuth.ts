@@ -63,7 +63,7 @@ function scheduleIdcEgressRecheck(params: {
     try {
       // 不在调用方先读缓存：`handleIdcEgressRisk` 内部先过「同账户 5 分钟」频率闸，
       // 再决定是否查库。否则开关打开后每个 API Key 请求都会多一次 Mongo 读。
-      const { handleIdcEgressRisk } = await import("../services/accountRiskService");
+      const { handleIdcEgressRisk } = await import("../services/accountRiskService.js");
       await handleIdcEgressRisk({
         userId: params.userId,
         ipAddress: params.ipAddress,
