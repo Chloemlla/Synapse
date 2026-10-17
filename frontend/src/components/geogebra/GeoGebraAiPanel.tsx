@@ -237,6 +237,9 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
   };
 
   const result = job?.result ?? null;
+  // 收窄成稳定数组：JSX 里 `result?.commands?.length &&` 不会把可选成员带进回调闭包，
+  // 直接 map 会在开启选中逻辑后报「可能为 undefined」。
+  const commandList = result?.commands ?? [];
 
   /**
    * GEO-16：把 AI 概要写入项目评论。
@@ -406,17 +409,17 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
                 {result.notes.map((note) => <li key={note}>{note}</li>)}
               </ul>
             ) : null}
-            {result?.commands?.length ? (
+            {commandList.length ? (
               <div className="mt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-600">待写入指令（{applyCommands().length}/{result.commands.length} 条）</p>
+                  <p className="text-xs font-semibold text-slate-600">待写入指令（{applyCommands().length}/{commandList.length} 条）</p>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => setSelectedCommandIndexes(null)} className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900">全选</button>
                     <button type="button" onClick={() => setSelectedCommandIndexes([])} className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900">全不选</button>
                   </div>
                 </div>
                 <ul className="mt-1 max-h-48 space-y-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                  {result.commands.map((command, index) => {
+                  {commandList.map((command, index) => {
                     const checked = selectedCommandIndexes === null || selectedCommandIndexes.includes(index);
                     return (
                       <li key={`${index}-${command}`}>
@@ -426,7 +429,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
                             className="mt-0.5 shrink-0"
                             checked={checked}
                             onChange={() => {
-                              const current = selectedCommandIndexes ?? result.commands.map((_, item) => item);
+                              const current = selectedCommandIndexes ?? commandList.map((_, item) => item);
                               const next = checked ? current.filter((item) => item !== index) : [...current, index].sort((a, b) => a - b);
                               setSelectedCommandIndexes(next);
                             }}
