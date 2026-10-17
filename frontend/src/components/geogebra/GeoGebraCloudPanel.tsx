@@ -59,6 +59,8 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
     try { return window.localStorage.getItem(AUTO_SYNC_KEY) === "true"; } catch { return false; }
   });
   const [status, setStatus] = useState("");
+  // GEO-10：用户要能看到「上次同步是什么时候」，而不是只有一句瞬时提示。
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
@@ -160,6 +162,7 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
       }
       onProjectSynced(saved.projectId, saved.revision, saved.workspaceId);
       setProjects((items) => [saved, ...items.filter((item) => item.projectId !== saved.projectId)]);
+      setLastSyncedAt(new Date().toISOString());
       setStatus("项目已保存。");
     } catch (caught) {
       const statusCode = (caught as { response?: { status?: number } })?.response?.status;
@@ -201,6 +204,7 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
       });
       onProjectSynced(saved.projectId, saved.revision, saved.workspaceId);
       setProjects((items) => [saved, ...items.filter((item) => item.projectId !== saved.projectId)]);
+      setLastSyncedAt(new Date().toISOString());
       setConflict(null);
       setStatus("已用本机版本覆盖云端。");
     } catch {
@@ -397,6 +401,9 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
               <>
                 <p className="truncate text-sm font-semibold text-slate-800">{project.title}</p>
                 <p className="mt-1 text-xs text-slate-500">{project.folder} · {project.tags.join(", ") || "无标签"}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {lastSyncedAt ? `最近保存：${new Date(lastSyncedAt).toLocaleTimeString("zh-CN")}` : project.cloudRevision ? "已同步到云端，本页尚未再次保存。" : "还没有保存到云端。"}
+                </p>
                 <FeatureConsentGate feature="geogebra-projects">
                   <div className="space-y-3">
                     <label className="mt-4 block text-xs font-semibold text-slate-600">
