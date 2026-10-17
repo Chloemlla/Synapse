@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaComment, FaLightbulb, FaMagic, FaUpload } from "react-icons/fa";
+import { FaComment, FaMagic } from "react-icons/fa";
 import { cn } from "../../utils/cn";
 import { useConfirm } from "../confirm/ConfirmDialogProvider";
 import FeatureConsentGate from "../FeatureConsentGate";
