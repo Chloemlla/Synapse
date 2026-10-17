@@ -46,7 +46,7 @@ import logger from "../utils/logger";
 import { normalizeScamalyticsUser, validateScamalyticsUser } from "../utils/scamalytics";
 import { timingSafeStringEqual } from "../utils/timingSafeCompare";
 import { mongoose } from "./mongoService";
-import { PROXYCHECK_HMAC_KEY_LENGTH } from "./proxycheckSignature";
+import { assessStoredVerificationKey, PROXYCHECK_HMAC_KEY_LENGTH } from "./proxycheckSignature";
 
 const FALLBACK_BASE_URL = "https://chloemlla.com";
 const FALLBACK_FRONTEND_URL = "https://chloemlla.com";
@@ -679,22 +679,37 @@ function normalizeStoredQqGuardSigningConfig(
   };
 }
 
+/** 载入时体检只告警一次：周期刷新每 10s 跑一遍，逐次打日志会把日志淹没。 */
+let proxycheckStoredKeyWarningLogged = false;
+
 function normalizeStoredProxycheckConfig(
   value: unknown,
   defaults = runtimeConfigDefaults.proxycheck,
 ): ProxycheckRuntimeConfig {
   const raw = asObject(value);
+  const hmacSecret = normalizeOptionalString(raw.hmacSecret, defaults.hmacSecret, 1024);
+  // 保存路径会拒绝「长度不对」与「与 hmacSecret 同串」，但存量文档不经过保存路径。
+  // 2026-10-02 的线上文档就是 payloadVerificationKey === hmacSecret，之后每次查询都因
+  // 上游没带 http_x_signature 抛 proxycheck_signature_header_missing，风控整段 fail_open。
+  // 载入时按同一判据当作「未配置」（只依赖 TLS），风险判定立即恢复。
+  const verificationKey = assessStoredVerificationKey(
+    normalizeOptionalString(raw.payloadVerificationKey, defaults.payloadVerificationKey, 1024),
+    hmacSecret,
+  );
+  if (verificationKey.rejected && !proxycheckStoredKeyWarningLogged) {
+    proxycheckStoredKeyWarningLogged = true;
+    logger.warn("[RuntimeConfig] PROXYCHECK 的 payloadVerificationKey 不可用，已按未配置处理", {
+      reason: verificationKey.rejected,
+      consequence: "上游响应不再验签，仅依赖 TLS；请到「IP 风险」分区清除或改为 Dashboard 生成的密钥",
+    });
+  }
 
   return {
     enabled: normalizeBoolean(raw.enabled, defaults.enabled),
     apiKey: normalizeOptionalString(raw.apiKey, defaults.apiKey, 1024),
     publicApiKey: normalizeOptionalString(raw.publicApiKey, defaults.publicApiKey, 1024),
-    payloadVerificationKey: normalizeOptionalString(
-      raw.payloadVerificationKey,
-      defaults.payloadVerificationKey,
-      1024,
-    ),
-    hmacSecret: normalizeOptionalString(raw.hmacSecret, defaults.hmacSecret, 1024),
+    payloadVerificationKey: verificationKey.key,
+    hmacSecret,
     cacheTtlHours: normalizeInteger(raw.cacheTtlHours, defaults.cacheTtlHours, 1, 168),
     timeoutMs: normalizeInteger(raw.timeoutMs, defaults.timeoutMs, 1000, 15000),
     dailyQuotaPerKey: normalizeInteger(raw.dailyQuotaPerKey, defaults.dailyQuotaPerKey, 100, 1000000),

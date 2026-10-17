@@ -27,6 +27,33 @@ export function computePayloadSignature(rawBody: string | Buffer, key: string): 
 
 export type PayloadSignatureVerdict = "verified" | "header_missing" | "header_malformed" | "mismatch";
 
+/** 载入已存配置时判定「这把验签密钥不能拿来验签」的两类原因。 */
+export type StoredVerificationKeyRejection = "same_as_hmac_secret" | "malformed";
+
+/**
+ * 载入已存配置时的验签密钥体检。
+ *
+ * 保存路径（runtimeConfigService.setProxycheckSetting）早就会拒绝「长度不对」与
+ * 「与本服务 hmacSecret 同串」两种填法，但**存量文档不会重新经过保存路径**：
+ * 2026-10-02 的线上事故正是这样留下的 —— payloadVerificationKey 被填成 hmacSecret，
+ * 此后每次查询都在 readVerifiedPayload 抛 proxycheck_signature_header_missing，
+ * 风控整段 fail_open 静默放行。载入时用同一套判据把它当作「未配置」，只依赖 TLS。
+ *
+ * 返回空 key + 原因，由调用方决定如何告警（本模块不引 logger，保持纯函数）。
+ */
+export function assessStoredVerificationKey(
+  rawKey: unknown,
+  hmacSecret: unknown,
+): { key: string; rejected: StoredVerificationKeyRejection | null } {
+  const key = typeof rawKey === "string" ? rawKey.trim() : "";
+  if (!key) return { key: "", rejected: null };
+
+  const secret = typeof hmacSecret === "string" ? hmacSecret.trim() : "";
+  if (secret && key === secret) return { key: "", rejected: "same_as_hmac_secret" };
+  if (!isValidHmacKeyShape(key)) return { key: "", rejected: "malformed" };
+  return { key, rejected: null };
+}
+
 /**
  * 先用 regex 钉死 64 位小写 hex 形态，再定时安全比较：timingSafeEqual 在长度不等时会抛错，
  * Buffer.from(x,"hex") 对非法 hex 又会静默截断，不先钉形态这两点都会出错。
