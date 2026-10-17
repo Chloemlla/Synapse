@@ -23,10 +23,13 @@ const modlistLimiter = createLimiter({
 });
 
 router.get("/", authenticateToken, modlistLimiter, getModList);
-// codeql[js/missing-rate-limiting] rate-limited at mount: modlistMountLimiter on /api/modlist (postTamperModules modlist-routes); no in-router duplicate
 // 明文导出只给管理员：加密的 GET /api/modlist 是给「有登录态但前端拿不到令牌」的
 // 客户端留的兼容路径；而这条是明文，普通用户能读就等于把加密白做了。
-router.get("/json", authenticateToken, authenticateAdmin, modlistLimiter, getModListJson);
+//
+// 限流器放在认证**之前**：既符合「先挡洪水再验身份」的一般顺序，也是 CodeQL
+// js/missing-rate-limiting 要求的写法 —— 它要求授权中间件之前先出现可识别的限流器，
+// 否则整条路由会被判成「做了授权但没有限流」。
+router.get("/json", modlistLimiter, authenticateToken, authenticateAdmin, getModListJson);
 // G3-23: 写操作要求登录 + 超级管理员，修改码降级为二次确认，并写审计
 router.post("/", modlistLimiter, authenticateToken, authenticateSuperAdmin, auditLog({ module: "modlist", action: "modlist.add" }), addMod);
 router.put("/:id", modlistLimiter, authenticateToken, authenticateSuperAdmin, auditLog({ module: "modlist", action: "modlist.update", extractTarget: (req) => ({ targetId: req.params.id }) }), updateMod);

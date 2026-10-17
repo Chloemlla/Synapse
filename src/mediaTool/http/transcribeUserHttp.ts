@@ -208,8 +208,11 @@ export function createTranscribeUserRouter(deps: TranscribeUserRouterDeps): expr
     const verified = inspectUploadedFile(file.path, sandboxRoot, sandboxLimits);
     if (!verified.ok) {
       try {
-        // codeql[js/path-injection] file.path 是 multer 落盘路径（服务端生成，不来自请求体）；且上一行已过 inspectUploadedFile 的 relInside(root,·) 守界，自定义守界函数 CodeQL 不可见。
-        fs.unlinkSync(file.path);
+        // 不用 multer 给的 `file.path` 直接删：它是服务端落盘路径，但静态分析看不到
+        // 这一点（把它当用户可控值）。改成「用 basename 重新锚定到沙箱根」——
+        // basename 会丢掉任何目录成分（`../`、绝对路径、盘符），拼回的路径必然在
+        // sandboxRoot 之内；行为与直接删 file.path 等价（multer 就是落在 inbox 下）。
+        fs.unlinkSync(path.join(sandboxRoot, path.basename(file.path)));
       } catch {
         // 删除失败不改变拒绝结果
       }

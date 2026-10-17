@@ -168,10 +168,20 @@ export function inspectUploadedFile(
   if (relInside(root, absPath) === null) {
     return { ok: false, code: "MEDIA_SANDBOX_PATH_INVALID", message: "文件路径越界" };
   }
+  // 第二道（与上一道等价，但**写成静态分析可见的形态**）：relInside 是自定义函数，
+  // CodeQL 的数据流看不到它做过守界；这里把「解析后仍以 root 为前缀」显式写出来，
+  // 并只用这个解析结果去访问文件系统。两道同时存在不是重复劳动：
+  //   · 第一道负责语义（Windows 盘符、UNC、相对路径都按 path.relative 判）；
+  //   · 第二道负责让机器也能证明这一点，避免每次改动都新增一条 path-injection 告警。
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(absPath);
+  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+  if (!resolvedPath.startsWith(rootPrefix)) {
+    return { ok: false, code: "MEDIA_SANDBOX_PATH_INVALID", message: "文件路径越界" };
+  }
   let st: fs.Stats;
   try {
-    // codeql[js/path-injection] absPath 在函数入口已过 relInside(root,·) 守界（不通过则直接返回），自定义守界函数 CodeQL 不可见。
-    st = fs.lstatSync(absPath);
+    st = fs.lstatSync(resolvedPath);
   } catch {
     return { ok: false, code: "MEDIA_SANDBOX_PATH_INVALID", message: "文件不存在或不可读" };
   }
