@@ -18,7 +18,7 @@ jest.mock("../geogebra/shareAssetStorage", () => ({
 }));
 
 import GeoGebraShareModel from "../models/geogebraShareModel";
-import { createGeoGebraShare, GeoGebraDomainError } from "../geogebra/shareService";
+import { createGeoGebraShare } from "../geogebra/shareService";
 
 const shareCreate = (GeoGebraShareModel as unknown as { create: jest.Mock }).create;
 
@@ -37,7 +37,7 @@ describe("createGeoGebraShare cover validation", () => {
       name: "GeoGebraDomainError",
       status: 400,
       code: "GEOGEBRA_SHARE_COVER_INVALID",
-    } satisfies Partial<GeoGebraDomainError>);
+    });
     expect(shareCreate).not.toHaveBeenCalled();
   });
 });
