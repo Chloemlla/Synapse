@@ -521,6 +521,15 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                           <span className="text-xs text-slate-500">{new Date(version.createdAt).toLocaleString("zh-CN")}</span>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">与当前脚本相比：改动 {diff.changedLines} 行、新增 {diff.addedLines} 行、删除 {diff.removedLines} 行</p>
+                        {diff.samples.length > 0 && (
+                          <ul className="mt-1 space-y-1">
+                            {diff.samples.slice(0, 3).map((sample) => (
+                              <li key={sample.lineNumber} className="rounded-xl bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-500">
+                                第 {sample.lineNumber} 行：{sample.before ?? "（空）"} → {sample.after ?? "（删除）"}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                         <button type="button" onClick={() => onApplyVersion(version.code, version.canvasMode)} className={cn(studioGhostButtonClassName, "mt-2")}>应用该版本</button>
                       </div>
                     );

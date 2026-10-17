@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FaCopy, FaShareAlt, FaTimes } from "react-icons/fa";
 import { useAuth } from "../../hooks/useAuth";
+import { useConfirm } from "../confirm/ConfirmDialogProvider";
 import { createGeoGebraShare, deleteGeoGebraShare, listGeoGebraShares } from "../../api/geogebra";
 import { cn } from "../../utils/cn";
 import FeatureConsentGate from "../FeatureConsentGate";
@@ -10,9 +11,6 @@ import { prepareGeoGebraScript } from "./script";
 import { geoGebraShareUrl, resolveGeoGebraEmbedUrl } from "./embed";
 import type { GeoGebraLocalProject, GeoGebraShare } from "../../types/geogebra";
 
-// 后端 shareView 已带 embedUrl；这里用可选交叉类型兼容旧响应，缺失时由 embed.ts 本地推导。
-type ShareWithEmbed = GeoGebraShare & { embedUrl?: string | null };
-
 type Props = {
   project: GeoGebraLocalProject | null;
   onGetCover: () => string | null;
@@ -20,6 +18,7 @@ type Props = {
 
 export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [title, setTitle] = useState(project?.title ?? "GeoGebra 画布");
   const [allowFork, setAllowFork] = useState(true);
   const [shares, setShares] = useState<GeoGebraShare[]>([]);
@@ -55,11 +54,8 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
       setError("请先修正脚本中的问题，再发布分享。");
       return;
     }
+    // 封面是可选信息：画布还没运行时也可以发布脚本，只是分享页不显示预览图。
     const coverDataUrl = onGetCover();
-    if (!coverDataUrl) {
-      setError("请先运行画布，再发布分享。");
-      return;
-    }
     setBusy(true);
     setError("");
     setStatus("");
@@ -73,7 +69,7 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
         allowFork,
       });
       setShares((items) => [share, ...items.filter((item) => item.shareId !== share.shareId)]);
-      setStatus("分享已发布。");
+      setStatus(coverDataUrl ? "分享已发布。" : "分享已发布；本次没有预览图，运行画布后重新发布即可带上。");
     } catch {
       setError("分享暂时无法发布，请稍后重试。");
     } finally {
@@ -82,6 +78,13 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
   };
 
   const revoke = async (shareId: string) => {
+    const approved = await confirm({
+      title: "撤销分享",
+      description: "撤销后这个链接与嵌入地址会立即失效，访客无法再打开。",
+      confirmLabel: "撤销分享",
+      tone: "danger",
+    });
+    if (!approved) return;
     try {
       await deleteGeoGebraShare(shareId);
       setShares((items) => items.map((item) => item.shareId === shareId ? { ...item, revokedAt: new Date().toISOString(), coverUrl: null } : item));
@@ -102,7 +105,7 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
 
   const copy = (slug: string) => copyText(geoGebraShareUrl(slug), "分享链接已复制。");
   const copyEmbed = (share: GeoGebraShare) => copyText(
-    resolveGeoGebraEmbedUrl(share as ShareWithEmbed),
+    resolveGeoGebraEmbedUrl(share),
     "嵌入链接已复制。",
   );
 
@@ -145,7 +148,7 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
               <StudioLoadingState text="加载分享..." minHeightClassName="min-h-[180px]" />
             ) : shares.length ? shares.map((share) => {
               const url = geoGebraShareUrl(share.slug);
-              const embedUrl = resolveGeoGebraEmbedUrl(share as ShareWithEmbed);
+              const embedUrl = resolveGeoGebraEmbedUrl(share);
               return (
                 <article key={share.shareId} className={cn(studioTileClassName, "p-3")}>
                   <div className="flex flex-wrap items-center justify-between gap-2">

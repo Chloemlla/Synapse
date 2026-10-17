@@ -69,6 +69,8 @@ export type GeoGebraShare = {
   allowFork: boolean;
   revokedAt: string | null;
   createdAt: string;
+  /** 服务端返回的相对嵌入地址；已撤销/不可嵌入时为 null。 */
+  embedUrl: string | null;
 };
 
 export type WorkspaceSummary = {

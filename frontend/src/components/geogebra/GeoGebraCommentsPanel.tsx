@@ -20,6 +20,8 @@ export default function GeoGebraCommentsPanel({ project, objectNames }: Props) {
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [status, setStatus] = useState("");
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const visibleComments = onlyOpen ? comments.filter((comment) => comment.status === "open") : comments;
 
   const loadComments = useCallback(async () => {
     if (!project?.cloudRevision) {
@@ -102,11 +104,22 @@ export default function GeoGebraCommentsPanel({ project, objectNames }: Props) {
           </div>
         </FeatureConsentGate>
         <div className="mt-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">评论记录</h3>
+            <button
+              type="button"
+              onClick={() => setOnlyOpen((value) => !value)}
+              aria-pressed={onlyOpen}
+              className={cn(studioGhostButtonClassName, "min-h-10 px-3 py-1 text-xs", onlyOpen && "border-slate-900 bg-slate-900 text-white")}
+            >
+              {onlyOpen ? `只看待处理（${comments.filter((item) => item.status === "open").length}）` : `全部（${comments.length}）`}
+            </button>
+          </div>
           {loading ? (
             <StudioLoadingState text="加载评论..." minHeightClassName="min-h-[220px]" />
           ) : listError ? (
             <StudioErrorState message={listError} onRetry={() => void loadComments()} retryLabel="重新加载评论" />
-          ) : comments.length ? comments.map((comment) => (
+          ) : visibleComments.length ? visibleComments.map((comment) => (
             <article key={comment.commentId} className={cn(studioTileClassName, "p-4")}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-slate-700">{comment.objectName || "项目评论"} · {comment.status === "resolved" ? "已处理" : "待处理"}</div>
@@ -118,7 +131,7 @@ export default function GeoGebraCommentsPanel({ project, objectNames }: Props) {
               <time className="mt-2 block text-xs text-slate-400" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString("zh-CN")}</time>
             </article>
           )) : (
-            <StudioEmptyState message="还没有评论。在上方写下意见并选择关联对象，即可提交第一条评论。" />
+            <StudioEmptyState message={onlyOpen && comments.length > 0 ? "没有待处理的评论。" : "还没有评论。在上方写下意见并选择关联对象，即可提交第一条评论。"} />
           )}
         </div>
       </section>

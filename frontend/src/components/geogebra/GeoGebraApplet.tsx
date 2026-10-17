@@ -30,6 +30,7 @@ export type GeoGebraApi = {
   reset?: () => void;
   deleteObject?: (name: string) => void;
   getPNGBase64?: (scale: number, transparent: boolean) => string;
+  getSVGBase64?: (scale: number) => string;
   getScreenshotBase64?: (callback: (value: string) => void) => void;
   getBase64?: () => string;
   registerClientListener?: (listener: (event: unknown) => void) => void;
@@ -107,6 +108,8 @@ export type GeoGebraRunReport = {
   errorCount: number;
   error?: { lineNumber: number; command: string; message: string };
   executionTime: number;
+  /** 用户主动停止。与失败区分开：界面不该把「我按了停止」显示成脚本出错。 */
+  stopped?: boolean;
   // 逐条明细：单条失败中止后，用户需要看到“跑到第几条、哪条失败、花了多久”，
   // 只有汇总计数无法定位问题。
   steps: GeoGebraRunStep[];
@@ -129,9 +132,11 @@ export type GeoGebraStyleOptions = {
 
 export type GeoGebraHandle = {
   run(commands: string[], onProgress?: (current: number, total: number) => void): Promise<GeoGebraRunReport>;
+  stop(): void;
   clear(): void;
   reset(): void;
   exportPng(): string | null;
+  exportSvg(): string | null;
   exportGgb(): string | null;
   readFreePoints(names?: string[]): GeoGebraPointState[];
   getObjectNames(): string[];
@@ -156,6 +161,9 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
   const instanceRef = useRef<GeoGebraAppletInstance | null>(null);
   const apiRef = useRef<GeoGebraApi | null>(null);
   const clientListenerRef = useRef<((event: unknown) => void) | null>(null);
+  // 每次 run 取一个令牌；stop() 让令牌失效，执行循环在两条指令之间退出。
+  // GeoGebra 的 evalCommand 是同步的，单条指令无法被打断，但「长脚本逐条跑」可以。
+  const runTokenRef = useRef(0);
   const callbacksRef = useRef({ onReady, onError, onPointsMoved });
   callbacksRef.current = { onReady, onError, onPointsMoved };
   const [containerId] = useState(() => `geogebra-${Math.random().toString(36).slice(2, 10)}`);
@@ -239,6 +247,8 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
 
     return () => {
       cancelled = true;
+      // 卸载后正在跑的循环没有意义，且会继续向已清空的容器写对象。
+      runTokenRef.current += 1;
       if (timeout) window.clearTimeout(timeout);
       const api = apiRef.current;
       if (clientListenerRef.current) api?.unregisterClientListener?.(clientListenerRef.current);
@@ -262,10 +272,16 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
     async run(commands, onProgress) {
       const api = requireApi(apiRef.current);
       const started = Date.now();
+      const token = ++runTokenRef.current;
       api.reset?.();
       const steps: GeoGebraRunStep[] = [];
       let successCount = 0;
       for (let index = 0; index < commands.length; index += 1) {
+        if (runTokenRef.current !== token) {
+          const message = "已停止运行。";
+          steps.push({ lineNumber: index + 1, command: commands[index] ?? "", status: "failed", durationMs: 0, message });
+          return { success: false, successCount, errorCount: 0, stopped: true, executionTime: Date.now() - started, steps };
+        }
         const command = commands[index] ?? "";
         const stepStarted = Date.now();
         if (Date.now() - started > GEO_GEBRA_MAX_EXECUTION_MS) {
@@ -292,6 +308,9 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
       this.lockPoints(locked);
       return { success: true, successCount, errorCount: 0, executionTime: Date.now() - started, steps };
     },
+    stop() {
+      runTokenRef.current += 1;
+    },
     clear() {
       const api = requireApi(apiRef.current);
       for (const name of api.getAllObjectNames?.() ?? []) api.deleteObject?.(name);
@@ -307,6 +326,15 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
         return null;
       }
       return null;
+    },
+    exportSvg() {
+      const api = apiRef.current;
+      try {
+        const base64 = api?.getSVGBase64?.(1);
+        return base64 ? `data:image/svg+xml;base64,${base64}` : null;
+      } catch {
+        return null;
+      }
     },
     exportGgb() {
       const api = apiRef.current;

@@ -21,9 +21,14 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "expired"
 
 type Props = {
   project: GeoGebraLocalProject | null;
+  /** 画布侧直接导出：由页面把 applet 句柄包成回调传进来，面板不持有画布引用。 */
+  onExportPng?: () => void;
+  onExportSvg?: () => void;
+  onExportGgb?: () => void;
+  onExportScript?: () => void;
 };
 
-export default function GeoGebraExportPanel({ project }: Props) {
+export default function GeoGebraExportPanel({ project, onExportPng, onExportSvg, onExportGgb, onExportScript }: Props) {
   const [capabilities, setCapabilities] = useState<GeoGebraExportCapability[]>([]);
   const [format, setFormat] = useState<GeoGebraExportFormat>("zip-bundle");
   const [job, setJob] = useState<GeoGebraJob | null>(null);
@@ -123,7 +128,19 @@ export default function GeoGebraExportPanel({ project }: Props) {
       <div className="mb-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Export</p>
         <h2 id="geogebra-export-heading" className="mt-1 text-lg font-semibold text-slate-900">导出</h2>
-        <p className="mt-1 text-sm text-slate-500">画布上的 PNG / GGB / 脚本文本可直接导出；需要打包归档时用下面的后台任务。</p>
+        <p className="mt-1 text-sm text-slate-500">画布上的 PNG / SVG / GGB / 脚本文本可直接导出；需要打包归档时用下面的后台任务。</p>
+      </div>
+
+      <div className={studioSubPanelClassName}>
+        <h3 className="text-sm font-semibold text-slate-900">画布直接导出</h3>
+        <p className="mt-1 text-xs text-slate-500">不经过后台任务，下载的就是当前画布与脚本。</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onExportPng} disabled={!onExportPng} className={studioGhostButtonClassName}><FaDownload /> PNG 图片</button>
+          <button type="button" onClick={onExportSvg} disabled={!onExportSvg} className={studioGhostButtonClassName}><FaDownload /> SVG 矢量图</button>
+          <button type="button" onClick={onExportGgb} disabled={!onExportGgb} className={studioGhostButtonClassName}><FaDownload /> GGB 文件</button>
+          <button type="button" onClick={onExportScript} disabled={!onExportScript} className={studioGhostButtonClassName}><FaDownload /> 脚本文本</button>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">PNG / SVG / GGB 需要画布已经运行；脚本文本随时可导出。</p>
       </div>
 
       {loading ? (

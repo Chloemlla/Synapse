@@ -53,15 +53,24 @@ export default function GeoGebraProjectPanel({
 }: Props) {
   const [tagsText, setTagsText] = useState(currentProject?.tags.join(", ") ?? "");
   const [comparison, setComparison] = useState<GeoGebraLocalVersion | null>(null);
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     setTagsText(currentProject?.tags.join(", ") ?? "");
     setComparison(null);
   }, [currentProject?.projectId]);
   const comparisonSummary = comparison ? summarizeLocalGeoGebraDiff(comparison.code, currentCode) : null;
-  const recentProjects = useMemo(() => [...projects]
+  const sortedProjects = useMemo(() => [...projects]
     .sort((left, right) => Number(right.isFavorite) - Number(left.isFavorite)
-      || Date.parse(right.lastOpenedAt) - Date.parse(left.lastOpenedAt))
-    .slice(0, 6), [projects]);
+      || Date.parse(right.lastOpenedAt) - Date.parse(left.lastOpenedAt)), [projects]);
+  const recentProjects = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    const matched = keyword
+      ? sortedProjects.filter((project) => `${project.title} ${project.folder} ${project.tags.join(" ")}`.toLowerCase().includes(keyword))
+      : sortedProjects;
+    // 搜索时展示全部命中项；不搜索时沿用「最近 6 个」，避免项目一多就把面板撑长。
+    return matched.slice(0, keyword || showAll ? sortedProjects.length : 6);
+  }, [query, showAll, sortedProjects]);
   const versions = currentProject?.versions ?? [];
 
   return (
@@ -124,8 +133,23 @@ export default function GeoGebraProjectPanel({
               <button type="button" onClick={onExportProject} className={studioGhostButtonClassName}><FaFileAlt /> 导出项目数据</button>
             </div>
             <div className="mt-4 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">最近项目</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">最近项目</h3>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={cn(studioFieldClassName, "h-10 w-40 text-sm")}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索项目"
+                    aria-label="搜索本地项目"
+                  />
+                  <button type="button" onClick={() => setShowAll((value) => !value)} className={cn(studioGhostButtonClassName, "min-h-10 px-3 py-1 text-xs")} disabled={Boolean(query.trim())}>
+                    {showAll ? "只看最近 6 个" : `显示全部 ${projects.length} 个`}
+                  </button>
+                </div>
+              </div>
               <div className="grid gap-2 sm:grid-cols-2">
+                {recentProjects.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500 sm:col-span-2">没有匹配的项目，换个关键词试试。</p>}
                 {recentProjects.map((project) => (
                   <div key={project.projectId} className="flex items-center gap-2">
                     <button

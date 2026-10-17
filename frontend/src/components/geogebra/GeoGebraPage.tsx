@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { FaCheck, FaDownload, FaLock, FaPlay, FaRedo, FaUnlock } from "react-icons/fa";
+import {
+  FaCheck,
+  FaCode,
+  FaCopy,
+  FaDownload,
+  FaExpand,
+  FaLock,
+  FaPlay,
+  FaRedo,
+  FaSave,
+  FaStop,
+  FaUnlock,
+} from "react-icons/fa";
 import { useAuth } from "../../hooks/useAuth";
 import { cn } from "../../utils/cn";
 import {
@@ -22,6 +34,8 @@ import GeoGebraCommentsPanel from "./GeoGebraCommentsPanel";
 import GeoGebraEditor from "./GeoGebraEditor";
 import GeoGebraProjectPanel from "./GeoGebraProjectPanel";
 import GeoGebraSharePanel from "./GeoGebraSharePanel";
+import GeoGebraTabBar from "./GeoGebraTabBar";
+import { resolveGeoGebraWorkbenchTab, type GeoGebraWorkbenchTabId } from "./workbenchTabs";
 import {
   createLocalGeoGebraProject,
   createLocalGeoGebraVersion,
@@ -60,6 +74,15 @@ const CANVAS_MODES: Array<{ id: GeoGebraMode; label: string; description: string
 ];
 const DEFAULT_CODE = STARTER_SNIPPETS[0].code;
 
+type RunSummary = {
+  success: boolean;
+  successCount: number;
+  errorCount: number;
+  duration: number;
+  steps: GeoGebraRunStep[];
+  stopped?: boolean;
+};
+
 export default function GeoGebraPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -87,7 +110,7 @@ export default function GeoGebraPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [runReport, setRunReport] = useState<{ success: boolean; successCount: number; errorCount: number; duration: number; steps: GeoGebraRunStep[] } | null>(null);
+  const [runReport, setRunReport] = useState<RunSummary | null>(null);
   const [canvasObjects, setCanvasObjects] = useState<string[]>([]);
   const [canvasMovedNames, setCanvasMovedNames] = useState<string[]>([]);
   const [selectedMovedNames, setSelectedMovedNames] = useState<string[]>([]);
@@ -107,6 +130,8 @@ export default function GeoGebraPage() {
   const [presentationMode, setPresentationMode] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [workbenchTab, setWorkbenchTab] = useState<GeoGebraWorkbenchTabId>(() => resolveGeoGebraWorkbenchTab(searchParams.get("tab")));
+  const [mobileCodeTab, setMobileCodeTab] = useState(true);
   const currentCode = currentProject?.code ?? DEFAULT_CODE;
   const prepared = useMemo(() => prepareGeoGebraScript(currentCode), [currentCode]);
   const controls = useMemo(() => extractGeoGebraControls(currentCode), [currentCode]);
@@ -253,8 +278,19 @@ export default function GeoGebraPage() {
     try {
       const report = await appletRef.current?.run(runPrepared.commands, (current, total) => setProgress(total ? Math.round(current / total * 100) : 0));
       if (!report) throw new Error("画布暂时无法运行。");
-      setRunReport({ success: report.success, successCount: report.successCount, errorCount: report.errorCount, duration: report.executionTime, steps: report.steps });
-      if (report.success) {
+      setRunReport({
+        success: report.success,
+        successCount: report.successCount,
+        errorCount: report.errorCount,
+        duration: report.executionTime,
+        steps: report.steps,
+        stopped: report.stopped,
+      });
+      if (report.stopped) {
+        setError("");
+        setNotice("运行已停止。");
+        pushLog("运行已停止。", "warning");
+      } else if (report.success) {
         setError("");
         setNotice(`运行完成：${report.successCount} 条指令。`);
         setCanvasObjects(appletRef.current?.getObjectNames() ?? []);
@@ -277,6 +313,12 @@ export default function GeoGebraPage() {
     }
   }, [appendSnapshot, canvasDrift, currentCode, currentProject?.canvasMode, pushLog, running]);
   runHandlerRef.current = handleRun;
+
+  const handleStopRun = useCallback(() => {
+    appletRef.current?.stop();
+    setNotice("已请求停止，正在结束当前指令…");
+    pushLog("已请求停止运行。", "warning");
+  }, [pushLog]);
 
   const handlePointsMoved = useCallback((names: string[]) => {
     driftBaselineRef.current ??= currentCode;
@@ -606,7 +648,9 @@ export default function GeoGebraPage() {
     }
   };
 
-  const exportData = async (dataUrl: string | null, filename: string) => {
+  const projectFileBase = () => currentProject?.title.trim().replace(/\s+/g, "-") || "geogebra";
+
+  const exportData = (dataUrl: string | null, filename: string) => {
     if (!dataUrl) {
       setError("导出暂时不可用，请先运行画布。");
       return;
@@ -617,23 +661,43 @@ export default function GeoGebraPage() {
     anchor.click();
   };
 
+  const exportPng = () => exportData(appletRef.current?.exportPng() ?? null, `${projectFileBase()}.png`);
+  const exportSvg = () => exportData(appletRef.current?.exportSvg() ?? null, `${projectFileBase()}.svg`);
+  const exportGgb = () => exportData(appletRef.current?.exportGgb() ?? null, `${projectFileBase()}.ggb`);
+
   const exportScript = () => {
     if (!currentProject) return;
     const blob = new Blob([currentProject.code], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${currentProject.title.trim().replace(/\s+/g, "-") || "geogebra"}.ggs.txt`;
+    anchor.download = `${projectFileBase()}.ggs.txt`;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
-  const exportProjectJson = () => {
-    if (!currentProject) return;
-    downloadTextFile(`${currentProject.title.trim().replace(/\s+/g, "-") || "geogebra"}.json`, JSON.stringify(currentProject, null, 2));
+  const copyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(currentProject?.code ?? "");
+      setNotice("脚本已复制。");
+      setError("");
+    } catch {
+      setError("无法复制脚本，请手动选择编辑器内容。");
+    }
   };
 
-  const [mobileCodeTab, setMobileCodeTab] = useState(true);
+  const exportProjectJson = () => {
+    if (!currentProject) return;
+    downloadTextFile(`${projectFileBase()}.json`, JSON.stringify(currentProject, null, 2));
+  };
+
+  const workbenchTabs = [
+    { id: "project", label: "项目与版本", hint: "本地项目、云端同步与历史快照", badge: String(projects.length) },
+    { id: "collab", label: "协作与分享", hint: "团队评论与公开分享" },
+    { id: "tools", label: "参数与样式", hint: "参数调节、脚本结构与画布样式", badge: controls.length ? String(controls.length) : undefined },
+    { id: "ai", label: "AI 与导出", hint: "AI 辅助与后台打包" },
+    { id: "learn", label: "讲解与记录", hint: "课堂讲解与最近运行记录", badge: lectureCommands.length ? `${lectureStep}/${lectureCommands.length}` : undefined },
+  ];
 
   return (
     <div className={cn(studioPageClassName, "min-w-0 overflow-x-hidden")}>
@@ -647,11 +711,12 @@ export default function GeoGebraPage() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">GeoGebra Studio</p>
                 <h1 className="mt-2 text-[2rem] font-semibold leading-tight text-slate-900 sm:text-4xl">几何脚本工作台</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">编写脚本、调整画布并保存项目，逐步探索数学关系。</p>
+                {currentProject && <p className="mt-2 truncate text-xs text-slate-500">当前项目：{currentProject.title || "未命名项目"} · {currentProject.folder || "个人空间"}</p>}
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2"><span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">画布</span><strong className="mt-1 block text-sm text-slate-800">{CANVAS_MODES.find((item) => item.id === currentProject?.canvasMode)?.label ?? "平面几何"}</strong></div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2"><span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">脚本行数</span><strong className="mt-1 block text-sm text-slate-800">{prepared.stats.commandLines}</strong></div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-3 py-2"><span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">运行状态</span><strong className="mt-1 block text-sm text-slate-800">{running ? `${progress}%` : runReport?.success ? "运行成功" : "等待运行"}</strong></div>
+                <div className={cn("rounded-2xl border px-3 py-2", running ? "border-sky-200 bg-sky-50/80" : "border-emerald-200 bg-emerald-50/80")}><span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">运行状态</span><strong className="mt-1 block text-sm text-slate-800">{running ? `运行中 ${progress}%` : runReport?.stopped ? "已停止" : runReport?.success ? "运行成功" : "等待运行"}</strong></div>
               </div>
             </div>
           </section>
@@ -659,55 +724,6 @@ export default function GeoGebraPage() {
 
         {!presentationMode && notice && <p role="status" aria-live="polite" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>}
         {!presentationMode && error && <p role="alert" className="whitespace-pre-line rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-
-        {!presentationMode && (
-          <section className={studioPanelClassName} aria-labelledby="geogebra-examples-heading">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-              <div><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Starter Scenes</p><h2 id="geogebra-examples-heading" className="mt-1 text-lg font-semibold text-slate-900">示例模板</h2></div>
-              <span className="text-xs text-slate-500">选择示例可载入一份可编辑脚本</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {STARTER_SNIPPETS.map((snippet) => (
-                <button key={snippet.title} type="button" onClick={() => handleLoadSnippet(snippet)} className={cn(studioSubPanelClassName, "min-h-20 text-left transition hover:border-slate-300 hover:shadow-sm")}>
-                  <span className="block text-sm font-semibold text-slate-800">{snippet.title}</span>
-                  <span className="mt-1 block text-xs text-slate-500">{CANVAS_MODES.find((mode) => mode.id === snippet.mode)?.label}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {!presentationMode && (
-          <>
-            <GeoGebraProjectPanel
-              projects={projects}
-              currentProject={currentProject}
-              currentCode={currentCode}
-              onCreate={handleNewProject}
-              onUpdateMetadata={(patch) => currentProject && updateProject((project) => ({ ...project, ...patch, updatedAt: new Date().toISOString() }))}
-              onSave={handleSaveLocal}
-              onSnapshot={handleSnapshot}
-              onOpen={handleOpenLocalProject}
-              onRestoreVersion={handleRestoreVersion}
-              onUndoVersion={handleUndoVersion}
-              onRedoVersion={handleRedoVersion}
-              versionCursor={versionCursor}
-              onExport={exportScript}
-              onExportProject={exportProjectJson}
-              onDelete={handleDeleteLocalProject}
-            />
-            <GeoGebraCloudPanel
-              project={currentProject}
-              onProjectSynced={updateSyncedProject}
-              onOpenProject={handleOpenCloudProject}
-              onProjectDeleted={(projectId) => setProjects((items) => items.map((item) => item.projectId === projectId ? { ...item, cloudRevision: undefined, workspaceId: null } : item))}
-              onWorkspaceChange={updateWorkspace}
-              onApplyVersion={handleApplyCloudVersion}
-            />
-            <GeoGebraCommentsPanel project={currentProject} objectNames={canvasObjects} />
-            <GeoGebraSharePanel project={currentProject} onGetCover={() => appletRef.current?.exportPng() ?? null} />
-          </>
-        )}
 
         {compact && !presentationMode && (
           <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white/80 p-2" role="tablist" aria-label="工作台面板">
@@ -718,158 +734,234 @@ export default function GeoGebraPage() {
 
         <div className={cn("grid min-w-0 gap-4 xl:grid-cols-2", presentationMode && "grid-cols-1")}>
           {!presentationMode && currentProject && (
-            <section className={cn(studioPanelClassName, "min-w-0", compact && !mobileCodeTab && "hidden")}>
+            <section className={cn(studioPanelClassName, "min-w-0", compact && !mobileCodeTab && "hidden")} aria-labelledby="geogebra-editor-heading">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Script Editor</p><h2 className="mt-1 text-lg font-semibold text-slate-900">{currentProject.title}</h2></div>
-                <select className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700" value={currentProject.canvasMode} onChange={(event) => handleModeChange(event.target.value as GeoGebraMode)} aria-label="画布类型">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Script Editor</p>
+                  <h2 id="geogebra-editor-heading" className="mt-1 truncate text-lg font-semibold text-slate-900">{currentProject.title || "未命名项目"}</h2>
+                </div>
+                <select className="min-h-11 shrink-0 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700" value={currentProject.canvasMode} onChange={(event) => handleModeChange(event.target.value as GeoGebraMode)} aria-label="画布类型">
                   {CANVAS_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
                 </select>
               </div>
+
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">示例</span>
+                {STARTER_SNIPPETS.map((snippet) => (
+                  <button key={snippet.title} type="button" onClick={() => handleLoadSnippet(snippet)} className={cn(studioGhostButtonClassName, "min-h-9 px-3 py-1 text-xs")}>
+                    {snippet.title}
+                  </button>
+                ))}
+              </div>
+
               <GeoGebraEditor value={currentProject.code} onChange={updateCode} onRun={() => void handleRun()} />
+
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void handleRun()} disabled={running} className={studioPrimaryButtonClassName}><FaPlay /> {running ? `运行中 ${progress}%` : "运行脚本"}</button>
+                <button type="button" onClick={() => running ? handleStopRun() : void handleRun()} className={studioPrimaryButtonClassName}>
+                  {running ? <><FaStop /> 停止运行</> : <><FaPlay /> 运行脚本</>}
+                </button>
+                <button type="button" onClick={handleSnapshot} disabled={running} className={studioGhostButtonClassName}><FaSave /> 保存快照</button>
                 <button type="button" onClick={() => setConfirmAction({ title: "清空画布", message: "当前图形将被移除，但脚本不会更改。", action: () => { appletRef.current?.clear(); setCanvasObjects([]); setNotice("画布已清空。"); } })} disabled={running} className={studioGhostButtonClassName}>清空画布</button>
-                <button type="button" onClick={handleResetWorkbench} disabled={running} className={studioGhostButtonClassName}><FaRedo /> 重置工作台</button>
-                <button type="button" onClick={() => void exportData(appletRef.current?.exportPng() ?? null, "geogebra.png")} disabled={running} className={studioGhostButtonClassName}><FaDownload /> PNG</button>
-                <button type="button" onClick={() => void exportData(appletRef.current?.exportGgb() ?? null, "geogebra.ggb")} disabled={running} className={studioGhostButtonClassName}><FaDownload /> GGB</button>
+                <button type="button" onClick={handleResetWorkbench} disabled={running} className={studioGhostButtonClassName}><FaRedo /> 重置</button>
+                <button type="button" onClick={exportPng} disabled={running} className={studioGhostButtonClassName}><FaDownload /> PNG</button>
+                <button type="button" onClick={exportSvg} disabled={running} className={studioGhostButtonClassName}><FaDownload /> SVG</button>
+                <button type="button" onClick={exportGgb} disabled={running} className={studioGhostButtonClassName}><FaDownload /> GGB</button>
+                <button type="button" onClick={() => void copyScript()} className={studioGhostButtonClassName}><FaCopy /> 复制脚本</button>
                 <button type="button" onClick={() => setLocked((value) => !value)} className={studioGhostButtonClassName}>{locked ? <FaLock /> : <FaUnlock />} {locked ? "解锁拖动" : "锁定拖动"}</button>
-                <button type="button" onClick={() => void togglePresentation()} className={studioGhostButtonClassName}>演示模式</button>
+                <button type="button" onClick={() => void togglePresentation()} className={studioGhostButtonClassName}><FaExpand /> 演示模式</button>
               </div>
               {prepared.warnings.length > 0 && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">部分脚本指令可能需要较长时间运行，请确认内容后再继续。</p>}
-              {runReport && <p className={cn("mt-3 rounded-2xl border px-3 py-2 text-xs", runReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{runReport.success ? `最近运行成功：${runReport.successCount} 条指令，${runReport.duration} ms。` : `最近运行未完成：${runReport.errorCount} 处需要检查。`}</p>}
+              {runReport && !runReport.stopped && <p className={cn("mt-3 rounded-2xl border px-3 py-2 text-xs", runReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{runReport.success ? `最近运行成功：${runReport.successCount} 条指令，${runReport.duration} ms。` : `最近运行未完成：${runReport.errorCount} 处需要检查。`}</p>}
+              {runReport?.stopped && <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">最近一次运行已由你停止。</p>}
             </section>
           )}
 
-          <section className={cn("min-w-0 space-y-4", compact && mobileCodeTab && !presentationMode && "hidden")}>
-              <GeoGebraApplet
-                key={currentProject?.canvasMode ?? "geometry"}
-                ref={appletRef}
-                mode={currentProject?.canvasMode ?? "geometry"}
-                height={phone ? 390 : 560}
-                locked={locked}
-                onReady={() => { setNotice("画布已准备好。"); setError(""); }}
-                onError={setError}
-                onPointsMoved={handlePointsMoved}
-              />
-              {!presentationMode && canvasDrift && (
-                <section className={studioPanelClassName}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">画布调整</p><h2 className="mt-1 text-sm font-semibold text-slate-900">选择要保存的点位</h2><p className="mt-1 text-xs text-slate-500">未保存的点位会在重新运行或切换画布时恢复到脚本中的位置。</p></div>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={handleSyncMovedPoints} className={studioPrimaryButtonClassName}><FaCheck /> 保存所选点位</button>
-                      <button type="button" onClick={() => { setCanvasMovedNames([]); setSelectedMovedNames([]); driftBaselineRef.current = null; setNotice("未保存的点位调整已忽略。"); }} className={studioGhostButtonClassName}>忽略调整</button>
-                    </div>
+          <section className={cn("min-w-0 space-y-4", compact && mobileCodeTab && !presentationMode && "hidden", !compact && !presentationMode && "xl:sticky xl:top-4 xl:self-start")}>
+            <GeoGebraApplet
+              key={currentProject?.canvasMode ?? "geometry"}
+              ref={appletRef}
+              mode={currentProject?.canvasMode ?? "geometry"}
+              height={phone ? 390 : presentationMode ? Math.max(480, window.innerHeight - 120) : 560}
+              locked={locked}
+              onReady={() => { setNotice("画布已准备好。"); setError(""); }}
+              onError={setError}
+              onPointsMoved={handlePointsMoved}
+            />
+            {!presentationMode && canvasDrift && (
+              <section className={studioPanelClassName}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">画布调整</p><h2 className="mt-1 text-sm font-semibold text-slate-900">选择要保存的点位</h2><p className="mt-1 text-xs text-slate-500">未保存的点位会在重新运行或切换画布时恢复到脚本中的位置。</p></div>
+                  <div className="flex shrink-0 gap-2">
+                    <button type="button" onClick={handleSyncMovedPoints} className={studioPrimaryButtonClassName}><FaCheck /> 保存所选点位</button>
+                    <button type="button" onClick={() => { setCanvasMovedNames([]); setSelectedMovedNames([]); driftBaselineRef.current = null; setNotice("未保存的点位调整已忽略。"); }} className={studioGhostButtonClassName}>忽略调整</button>
                   </div>
-                  {driftConflict && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">脚本内容也有更新，保存点位前会再次确认。</p>}
-                  {movedPointChanges.length > 0 && (
-                    <ul className="mt-3 space-y-2">
-                      {movedPointChanges.slice(0, 6).map((change) => (
-                        <li key={change.name} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
-                          <span className="font-semibold text-slate-700">{change.name}</span>
-                          <span className="mt-1 block font-mono text-[11px] text-slate-500">{change.before ?? "脚本里还没有这条定义，保存后会新增。"}</span>
-                          <span className="mt-1 block font-mono text-[11px] text-sky-700">保存后：{change.after}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {canvasMovedNames.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedMovedNames.includes(name)} onChange={() => setSelectedMovedNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>)}
-                  </div>
-                </section>
-              )}
-            </section>
+                </div>
+                {driftConflict && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">脚本内容也有更新，保存点位前会再次确认。</p>}
+                {movedPointChanges.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {movedPointChanges.slice(0, 6).map((change) => (
+                      <li key={change.name} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+                        <span className="font-semibold text-slate-700">{change.name}</span>
+                        <span className="mt-1 block font-mono text-[11px] text-slate-500">{change.before ?? "脚本里还没有这条定义，保存后会新增。"}</span>
+                        <span className="mt-1 block font-mono text-[11px] text-sky-700">保存后：{change.after}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {canvasMovedNames.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedMovedNames.includes(name)} onChange={() => setSelectedMovedNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>)}
+                </div>
+              </section>
+            )}
+          </section>
         </div>
 
         {!presentationMode && (
-          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-            <section className={studioPanelClassName}>
-              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Parameters</p><h2 className="mt-1 text-lg font-semibold text-slate-900">参数调节</h2></div>
-              {controls.length ? <div className="space-y-3">{controls.map((control) => (
-                <label key={control.name} className="block rounded-2xl border border-slate-200 bg-white/80 p-3">
-                  <span className="mb-2 flex justify-between text-xs font-semibold text-slate-600"><span>{control.name}</span><span>第 {control.lineNumber} 行</span></span>
-                  {control.type === "number" ? <div className="flex items-center gap-3"><input className="min-w-0 flex-1 accent-slate-900" type="range" min={control.min} max={control.max} step={control.step} value={Number(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, Number(event.target.value))} /><input className="w-24 rounded-2xl border border-slate-200 px-2 py-2 text-sm" type="number" value={Number(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, Number(event.target.value))} /></div> : control.type === "boolean" ? <span className="flex min-h-10 items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={Boolean(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, event.target.checked)} />启用</span> : <input className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" value={String(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, event.target.value)} />}
-                </label>
-              ))}</div> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本中还没有可调节的简单参数。</p>}
-              <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void applyParameters(false)} disabled={!controls.length} className={studioGhostButtonClassName}>应用参数</button><button type="button" onClick={() => void applyParameters(true)} disabled={!controls.length || running} className={studioPrimaryButtonClassName}>应用并运行</button></div>
-            </section>
+          <>
+            <GeoGebraTabBar tabs={workbenchTabs} value={workbenchTab} onChange={(id) => setWorkbenchTab(resolveGeoGebraWorkbenchTab(id))} ariaLabel="工作台功能区" />
 
-            <section className={studioPanelClassName}>
-              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Script Structure</p><h2 className="mt-1 text-lg font-semibold text-slate-900">脚本结构</h2><p className="mt-1 text-sm text-slate-500">确认变量是否已定义、在哪里被用到。</p></div>
-              <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">定义 {variableReport.stats.definitions}</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">引用 {variableReport.stats.references}</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未使用 {variableReport.stats.unused}</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未定义 {variableReport.stats.undefined}</span>
-              </div>
-              {variableReport.undefinedNames.length > 0 && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">这些名字在脚本里没有定义：{variableReport.undefinedNames.slice(0, 6).join("、")}。请检查拼写或补上定义行。</p>}
-              {variableReport.duplicateNames.length > 0 && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">这些名字定义了多次，后一次会覆盖前一次：{variableReport.duplicateNames.slice(0, 6).join("、")}。</p>}
-              {variableReport.unusedNames.length > 0 && <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">这些定义暂时没有被引用：{variableReport.unusedNames.slice(0, 6).join("、")}。</p>}
-              {variableReport.definitions.length
-                ? <ul className="mt-3 space-y-2">{variableReport.definitions.slice(0, 8).map((item) => <li key={`${item.name}-${item.lineNumber}`} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">{item.name}</span><span className="ml-2 text-xs text-slate-400">第 {item.lineNumber} 行 · {item.kind === "function" ? "函数" : "值"}</span><span className="mt-1 block text-xs text-slate-500">{item.usedAtLines.length ? `在第 ${item.usedAtLines.slice(0, 5).join("、")} 行被使用` : "暂时没有被引用"}</span></li>)}</ul>
-                : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本里还没有可分析的变量。</p>}
-            </section>
+            <div role="tabpanel" id="geogebra-workbench-panel-project" aria-labelledby="geogebra-workbench-tab-project" hidden={workbenchTab !== "project"} className="space-y-4">
+              <GeoGebraProjectPanel
+                projects={projects}
+                currentProject={currentProject}
+                currentCode={currentCode}
+                onCreate={handleNewProject}
+                onUpdateMetadata={(patch) => currentProject && updateProject((project) => ({ ...project, ...patch, updatedAt: new Date().toISOString() }))}
+                onSave={handleSaveLocal}
+                onSnapshot={handleSnapshot}
+                onOpen={handleOpenLocalProject}
+                onRestoreVersion={handleRestoreVersion}
+                onUndoVersion={handleUndoVersion}
+                onRedoVersion={handleRedoVersion}
+                versionCursor={versionCursor}
+                onExport={exportScript}
+                onExportProject={exportProjectJson}
+                onDelete={handleDeleteLocalProject}
+              />
+              <GeoGebraCloudPanel
+                project={currentProject}
+                onProjectSynced={updateSyncedProject}
+                onOpenProject={handleOpenCloudProject}
+                onProjectDeleted={(projectId) => setProjects((items) => items.map((item) => item.projectId === projectId ? { ...item, cloudRevision: undefined, workspaceId: null } : item))}
+                onWorkspaceChange={updateWorkspace}
+                onApplyVersion={handleApplyCloudVersion}
+              />
+            </div>
 
-            <section className={studioPanelClassName}>
-              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Canvas Style</p><h2 className="mt-1 text-lg font-semibold text-slate-900">画布样式</h2></div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="text-xs font-semibold text-slate-600">颜色<input type="color" value={styleColor} onChange={(event) => setStyleColor(event.target.value)} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 bg-white p-1" /></label>
-                <label className="text-xs font-semibold text-slate-600">线宽<input type="number" min={1} max={13} value={lineThickness} onChange={(event) => setLineThickness(Math.max(1, Math.min(13, Number(event.target.value) || 1)))} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 px-3" /></label>
-                <label className="text-xs font-semibold text-slate-600">点大小<input type="number" min={1} max={12} value={pointSize} onChange={(event) => setPointSize(Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 px-3" /></label>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-700">
-                <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={labelsVisible} onChange={(event) => setLabelsVisible(event.target.checked)} />显示标签</label>
-                <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />显示网格</label>
-                <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={axesVisible} onChange={(event) => setAxesVisible(event.target.checked)} />显示坐标轴</label>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={() => setStyleScope("all")} className={cn(studioGhostButtonClassName, styleScope === "all" && "border-slate-900 bg-slate-900 text-white")}>全部对象</button>
-                <button type="button" onClick={() => setStyleScope("selected")} className={cn(studioGhostButtonClassName, styleScope === "selected" && "border-slate-900 bg-slate-900 text-white")}>选择对象</button>
-              </div>
-              {styleScope === "selected" && <div className="mt-3 flex flex-wrap gap-2">{canvasObjects.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedStyleNames.includes(name)} onChange={() => setSelectedStyleNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>)}</div>}
-              <button type="button" onClick={applyStyles} className={cn(studioPrimaryButtonClassName, "mt-3")}>应用样式</button>
-            </section>
+            <div role="tabpanel" id="geogebra-workbench-panel-collab" aria-labelledby="geogebra-workbench-tab-collab" hidden={workbenchTab !== "collab"} className="space-y-4">
+              <GeoGebraCommentsPanel project={currentProject} objectNames={canvasObjects} />
+              <GeoGebraSharePanel project={currentProject} onGetCover={() => appletRef.current?.exportPng() ?? null} />
+            </div>
 
-            <GeoGebraAiPanel
-              project={currentProject}
-              canvasMode={currentProject?.canvasMode ?? "geometry"}
-              code={currentCode}
-              objectNames={canvasObjects}
-              onApplyCommands={handleApplyAiCommands}
-            />
+            <div role="tabpanel" id="geogebra-workbench-panel-tools" aria-labelledby="geogebra-workbench-tab-tools" hidden={workbenchTab !== "tools"} className="grid min-w-0 gap-4 xl:grid-cols-2">
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Parameters</p><h2 className="mt-1 text-lg font-semibold text-slate-900">参数调节</h2><p className="mt-1 text-sm text-slate-500">识别脚本里的简单数字、开关与文本，改完可只改脚本或同时重跑。</p></div>
+                {controls.length ? <div className="space-y-3">{controls.map((control) => (
+                  <label key={control.name} className="block rounded-2xl border border-slate-200 bg-white/80 p-3">
+                    <span className="mb-2 flex justify-between text-xs font-semibold text-slate-600"><span>{control.name}</span><span>第 {control.lineNumber} 行</span></span>
+                    {control.type === "number" ? <div className="flex items-center gap-3"><input className="min-w-0 flex-1 accent-slate-900" type="range" min={control.min} max={control.max} step={control.step} value={Number(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, Number(event.target.value))} /><input className="w-24 rounded-2xl border border-slate-200 px-2 py-2 text-sm" type="number" value={Number(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, Number(event.target.value))} /></div> : control.type === "boolean" ? <span className="flex min-h-10 items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={Boolean(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, event.target.checked)} />启用</span> : <input className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" value={String(parameterValues[control.name] ?? control.value)} onChange={(event) => handleParameterValueChange(control.name, event.target.value)} />}
+                  </label>
+                ))}</div> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本中还没有可调节的简单参数。</p>}
+                <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void applyParameters(false)} disabled={!controls.length} className={studioGhostButtonClassName}>应用参数</button><button type="button" onClick={() => void applyParameters(true)} disabled={!controls.length || running} className={studioPrimaryButtonClassName}>应用并运行</button></div>
+              </section>
 
-            <GeoGebraExportPanel project={currentProject} />
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Script Structure</p><h2 className="mt-1 text-lg font-semibold text-slate-900">脚本结构</h2><p className="mt-1 text-sm text-slate-500">确认变量是否已定义、在哪里被用到。</p></div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">定义 {variableReport.stats.definitions}</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">引用 {variableReport.stats.references}</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未使用 {variableReport.stats.unused}</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">未定义 {variableReport.stats.undefined}</span>
+                </div>
+                {variableReport.undefinedNames.length > 0 && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">这些名字在脚本里没有定义：{variableReport.undefinedNames.slice(0, 6).join("、")}。请检查拼写或补上定义行。</p>}
+                {variableReport.duplicateNames.length > 0 && <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">这些名字定义了多次，后一次会覆盖前一次：{variableReport.duplicateNames.slice(0, 6).join("、")}。</p>}
+                {variableReport.unusedNames.length > 0 && <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">这些定义暂时没有被引用：{variableReport.unusedNames.slice(0, 6).join("、")}。</p>}
+                {variableReport.definitions.length
+                  ? <ul className="mt-3 space-y-2">{variableReport.definitions.slice(0, 8).map((item) => <li key={`${item.name}-${item.lineNumber}`} className="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">{item.name}</span><span className="ml-2 text-xs text-slate-400">第 {item.lineNumber} 行 · {item.kind === "function" ? "函数" : "值"}</span><span className="mt-1 block text-xs text-slate-500">{item.usedAtLines.length ? `在第 ${item.usedAtLines.slice(0, 5).join("、")} 行被使用` : "暂时没有被引用"}</span></li>)}</ul>
+                  : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">脚本里还没有可分析的变量。</p>}
+              </section>
 
-            <section className={studioPanelClassName}>
-              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Lesson Mode</p><h2 className="mt-1 text-lg font-semibold text-slate-900">课堂讲解</h2><p className="mt-1 text-sm text-slate-500">逐步展示脚本如何组成图形。</p></div>
-              <div className="flex flex-wrap gap-2 text-xs text-slate-600"><span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">步骤 {lectureStep}/{lectureCommands.length}</span><span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{lecturePlaying ? "自动播放中" : "等待讲解"}</span></div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={prepareLecture} className={studioGhostButtonClassName}>准备讲解</button>
-                <button type="button" onClick={() => void runLectureStep(Math.max(0, lectureStep - 1), lectureCommands)} disabled={!lectureCommands.length || lecturePlaying} className={studioGhostButtonClassName}>上一步</button>
-                <button type="button" onClick={() => void runLectureStep(Math.min(lectureCommands.length, lectureStep + 1), lectureCommands)} disabled={!lectureCommands.length || lecturePlaying} className={studioGhostButtonClassName}>下一步</button>
-                <button type="button" onClick={() => lecturePlaying ? stopLecture() : void playLecture()} className={studioPrimaryButtonClassName}>{lecturePlaying ? "停止" : "自动播放"}</button>
-              </div>
-            </section>
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Canvas Style</p><h2 className="mt-1 text-lg font-semibold text-slate-900">画布样式</h2></div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="text-xs font-semibold text-slate-600">颜色<input type="color" value={styleColor} onChange={(event) => setStyleColor(event.target.value)} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 bg-white p-1" /></label>
+                  <label className="text-xs font-semibold text-slate-600">线宽<input type="number" min={1} max={13} value={lineThickness} onChange={(event) => setLineThickness(Math.max(1, Math.min(13, Number(event.target.value) || 1)))} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 px-3" /></label>
+                  <label className="text-xs font-semibold text-slate-600">点大小<input type="number" min={1} max={12} value={pointSize} onChange={(event) => setPointSize(Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 px-3" /></label>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-700">
+                  <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={labelsVisible} onChange={(event) => setLabelsVisible(event.target.checked)} />显示标签</label>
+                  <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />显示网格</label>
+                  <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={axesVisible} onChange={(event) => setAxesVisible(event.target.checked)} />显示坐标轴</label>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setStyleScope("all")} className={cn(studioGhostButtonClassName, styleScope === "all" && "border-slate-900 bg-slate-900 text-white")}>全部对象</button>
+                  <button type="button" onClick={() => setStyleScope("selected")} className={cn(studioGhostButtonClassName, styleScope === "selected" && "border-slate-900 bg-slate-900 text-white")}>选择对象</button>
+                </div>
+                {styleScope === "selected" && <div className="mt-3 flex flex-wrap gap-2">{canvasObjects.length ? canvasObjects.map((name) => <label key={name} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700"><input type="checkbox" checked={selectedStyleNames.includes(name)} onChange={() => setSelectedStyleNames((items) => items.includes(name) ? items.filter((item) => item !== name) : [...items, name])} />{name}</label>) : <p className="text-xs text-slate-500">运行脚本后可以在这里选择对象。</p>}</div>}
+                <button type="button" onClick={applyStyles} className={cn(studioPrimaryButtonClassName, "mt-3")}>应用样式</button>
+              </section>
 
-            <section className={studioPanelClassName}>
-              <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Run History</p><h2 className="mt-1 text-lg font-semibold text-slate-900">最近活动</h2></div>
-              {runReport && runReport.steps.length > 0 && (
-                <ul className="mb-3 max-h-56 space-y-1 overflow-y-auto">
-                  {runReport.steps.slice(0, 40).map((step) => (
-                    <li key={`${step.lineNumber}-${step.command}`} className={cn("rounded-2xl border px-3 py-1.5 text-xs", step.status === "ok" ? "border-slate-200 bg-white/80 text-slate-600" : "border-rose-200 bg-rose-50 text-rose-700")}>
-                      <span className="font-semibold">第 {step.lineNumber} 行</span>
-                      <span className="ml-2 font-mono text-[11px]">{step.command}</span>
-                      <span className="ml-2 opacity-70">{step.durationMs} ms</span>
-                      {step.message && <span className="mt-1 block">{step.message}</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {logs.length ? <ul className="space-y-2">{logs.slice(0, 12).map((entry) => <li key={entry.id} className={cn("rounded-2xl border px-3 py-2 text-sm", entry.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : entry.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : entry.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white/80 text-slate-600")}><span>{entry.message}</span><time className="ml-2 text-xs opacity-70">{new Date(entry.at).toLocaleTimeString("zh-CN")}</time></li>)}</ul> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">运行后会显示最近结果。</p>}
-            </section>
-          </div>
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Shortcuts</p><h2 className="mt-1 text-lg font-semibold text-slate-900">快捷操作</h2><p className="mt-1 text-sm text-slate-500">这些操作在编辑器工具栏里也能找到。</p></div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={exportPng} className={studioGhostButtonClassName}><FaDownload /> 下载 PNG 图片</button>
+                  <button type="button" onClick={exportSvg} className={studioGhostButtonClassName}><FaDownload /> 下载 SVG 矢量图</button>
+                  <button type="button" onClick={exportGgb} className={studioGhostButtonClassName}><FaDownload /> 下载 GGB 文件</button>
+                  <button type="button" onClick={exportScript} className={studioGhostButtonClassName}><FaCode /> 导出脚本文本</button>
+                </div>
+              </section>
+            </div>
+
+            <div role="tabpanel" id="geogebra-workbench-panel-ai" aria-labelledby="geogebra-workbench-tab-ai" hidden={workbenchTab !== "ai"} className="grid min-w-0 gap-4 xl:grid-cols-2">
+              <GeoGebraAiPanel
+                project={currentProject}
+                canvasMode={currentProject?.canvasMode ?? "geometry"}
+                code={currentCode}
+                objectNames={canvasObjects}
+                onApplyCommands={handleApplyAiCommands}
+              />
+              <GeoGebraExportPanel
+                project={currentProject}
+                onExportPng={exportPng}
+                onExportSvg={exportSvg}
+                onExportGgb={exportGgb}
+                onExportScript={exportScript}
+              />
+            </div>
+
+            <div role="tabpanel" id="geogebra-workbench-panel-learn" aria-labelledby="geogebra-workbench-tab-learn" hidden={workbenchTab !== "learn"} className="grid min-w-0 gap-4 xl:grid-cols-2">
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Lesson Mode</p><h2 className="mt-1 text-lg font-semibold text-slate-900">课堂讲解</h2><p className="mt-1 text-sm text-slate-500">逐步展示脚本如何组成图形。</p></div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-600"><span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">步骤 {lectureStep}/{lectureCommands.length}</span><span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{lecturePlaying ? "自动播放中" : "等待讲解"}</span></div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={prepareLecture} className={studioGhostButtonClassName}>准备讲解</button>
+                  <button type="button" onClick={() => void runLectureStep(Math.max(0, lectureStep - 1), lectureCommands)} disabled={!lectureCommands.length || lecturePlaying} className={studioGhostButtonClassName}>上一步</button>
+                  <button type="button" onClick={() => void runLectureStep(Math.min(lectureCommands.length, lectureStep + 1), lectureCommands)} disabled={!lectureCommands.length || lecturePlaying} className={studioGhostButtonClassName}>下一步</button>
+                  <button type="button" onClick={() => lecturePlaying ? stopLecture() : void playLecture()} className={studioPrimaryButtonClassName}>{lecturePlaying ? "停止" : "自动播放"}</button>
+                </div>
+              </section>
+
+              <section className={studioPanelClassName}>
+                <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Run History</p><h2 className="mt-1 text-lg font-semibold text-slate-900">最近活动</h2></div>
+                {runReport && runReport.steps.length > 0 && (
+                  <ul className="mb-3 max-h-56 space-y-1 overflow-y-auto">
+                    {runReport.steps.slice(0, 40).map((step) => (
+                      <li key={`${step.lineNumber}-${step.command}`} className={cn("rounded-2xl border px-3 py-1.5 text-xs", step.status === "ok" ? "border-slate-200 bg-white/80 text-slate-600" : "border-rose-200 bg-rose-50 text-rose-700")}>
+                        <span className="font-semibold">第 {step.lineNumber} 行</span>
+                        <span className="ml-2 font-mono text-[11px]">{step.command}</span>
+                        <span className="ml-2 opacity-70">{step.durationMs} ms</span>
+                        {step.message && <span className="mt-1 block">{step.message}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {logs.length ? <ul className="space-y-2">{logs.slice(0, 12).map((entry) => <li key={entry.id} className={cn("rounded-2xl border px-3 py-2 text-sm", entry.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : entry.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : entry.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white/80 text-slate-600")}><span>{entry.message}</span><time className="ml-2 text-xs opacity-70">{new Date(entry.at).toLocaleTimeString("zh-CN")}</time></li>)}</ul> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">运行后会显示最近结果。</p>}
+              </section>
+            </div>
+          </>
         )}
 
-        {presentationMode && <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between bg-white/90 px-4 py-3 shadow-sm backdrop-blur"><span className="text-sm font-semibold text-slate-700">演示模式</span><div className="flex gap-2"><button type="button" onClick={() => void handleRun(true)} className={studioGhostButtonClassName}>重新运行</button><button type="button" onClick={() => void exportData(appletRef.current?.exportPng() ?? null, "geogebra.png")} className={studioGhostButtonClassName}>导出 PNG</button><button type="button" onClick={() => void exportData(appletRef.current?.exportGgb() ?? null, "geogebra.ggb")} className={studioGhostButtonClassName}>导出 GGB</button><button type="button" onClick={() => void togglePresentation()} className={studioPrimaryButtonClassName}>退出演示</button></div></div>}
+        {presentationMode && <div className="fixed inset-x-0 top-0 z-50 flex flex-wrap items-center justify-between gap-2 bg-white/90 px-4 py-3 shadow-sm backdrop-blur"><span className="text-sm font-semibold text-slate-700">演示模式</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void handleRun(true)} className={studioGhostButtonClassName}>重新运行</button><button type="button" onClick={exportPng} className={studioGhostButtonClassName}>导出 PNG</button><button type="button" onClick={exportSvg} className={studioGhostButtonClassName}>导出 SVG</button><button type="button" onClick={exportGgb} className={studioGhostButtonClassName}>导出 GGB</button><button type="button" onClick={() => void togglePresentation()} className={studioPrimaryButtonClassName}>退出演示</button></div></div>}
 
         {confirmAction && (
           <div className="fixed inset-0 z-[10050] grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm" role="presentation" onClick={() => setConfirmAction(null)}>
