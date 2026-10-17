@@ -13,6 +13,8 @@ export const TTS_API = `${API_BASE_URL}/api/admin/tts/setting`;
 export const TTS_PROVIDER_ADMIN_API = `${API_BASE_URL}/api/admin/tts/provider`;
 export const TTS_EDGE_VOICES_REFRESH_API = `${API_BASE_URL}/api/admin/tts/provider/edge-voices/refresh`;
 export const LIBRECHAT_PROVIDERS_API = `${API_BASE_URL}/api/librechat/admin/providers`;
+/** GeoGebra 工作台的 AI 提供商：来源选择 + 独立配置 / 复用 LibreChat 提供者。 */
+export const GEOGEBRA_AI_SETTING_API = `${API_BASE_URL}/api/admin/geogebra/ai/setting`;
 export const SHORTURL_AES_API = `${API_BASE_URL}/api/shorturl/admin/aes-key`;
 export const WEBHOOK_SECRET_API = `${API_BASE_URL}/api/admin/webhook/secret`;
 export const IPFS_CONFIG_API = `${API_BASE_URL}/api/ipfs/settings`;

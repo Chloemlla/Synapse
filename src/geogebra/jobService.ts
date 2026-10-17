@@ -10,7 +10,7 @@ import GeoGebraProjectVersionModel from "../models/geogebraProjectVersionModel";
 import { createZipBuffer } from "../docTool/zipStore";
 import { GeoGebraDomainError, getAccessibleGeoGebraProject } from "./projectService";
 import { createGeoGebraAssetFromBuffer, deleteGeoGebraAsset, readGeoGebraAsset } from "./assetService";
-import { requestGeoGebraAi, resolveGeoGebraAiProvider, type GeoGebraAiKind } from "./aiService";
+import { requestGeoGebraAi, resolveGeoGebraAiProviderForRuntime, type GeoGebraAiKind } from "./aiService";
 
 // GeoGebra 异步任务域（GEO-15/16/21）。
 //
@@ -169,7 +169,9 @@ export async function createGeoGebraAiJob(input: {
   focusObject?: unknown;
   referenceAssetId?: unknown;
 }): Promise<GeoGebraJobView> {
-  const provider = resolveGeoGebraAiProvider();
+  // AI 来源可能是环境变量、独立配置或复用的 LibreChat 提供者：入队前先按当前生效配置判一次，
+  // 未配置就不要排一个注定失败的任务（解析是异步的，读的是 Mongo 里的运行时配置）。
+  const provider = await resolveGeoGebraAiProviderForRuntime();
   if (!provider.configured) {
     throw new GeoGebraDomainError("AI 能力暂不可用，请稍后再试。", 503, "GEOGEBRA_AI_UNAVAILABLE");
   }

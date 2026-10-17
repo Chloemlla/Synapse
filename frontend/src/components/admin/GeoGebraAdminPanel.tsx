@@ -15,6 +15,13 @@ const REFRESH_OPTIONS = [
   { value: 60_000, label: "1 分钟" },
 ];
 
+/** AI 配置来源：只说明「从哪读的」，便于排查「改了环境变量却没生效」。 */
+const AI_SOURCE_LABELS: Record<GeoGebraAdminOverview["ai"]["source"], string> = {
+  env: "环境变量",
+  custom: "运行时独立配置",
+  librechat: "复用 LibreChat 提供者",
+};
+
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -142,6 +149,10 @@ const GeoGebraAdminPanel: React.FC = () => {
               <div><dt className="text-xs text-slate-500">运行时长</dt><dd>{formatDuration(overview.service.uptimeSeconds)}</dd></div>
               <div><dt className="text-xs text-slate-500">Mongo</dt><dd>{overview.mongo.state}{overview.mongo.database ? ` · ${overview.mongo.database}` : ""}</dd></div>
               <div><dt className="text-xs text-slate-500">Node</dt><dd>{overview.service.nodeVersion}</dd></div>
+              <div>
+                <dt className="text-xs text-slate-500">AI 配置来源</dt>
+                <dd>{AI_SOURCE_LABELS[overview.ai.source] ?? overview.ai.source}</dd>
+              </div>
               <div><dt className="text-xs text-slate-500">AI 图片能力</dt><dd>{overview.ai.configured ? (overview.ai.vision ? "已开启" : "未开启") : "未配置"}</dd></div>
             </dl>
             {!overview.ai.configured && overview.ai.reason && <p className="mt-2 text-xs text-amber-700">{overview.ai.reason}</p>}

@@ -1,7 +1,20 @@
 import axios from "axios";
-import { config } from "../config/config";
 import { GeoGebraDomainError } from "./projectService";
+import type { GeoGebraAiProvider } from "./aiProvider";
+import { resolveGeoGebraAiProviderForRuntime } from "./aiProviderConfigService";
 import { validateGeoGebraCommands } from "./scriptValidation";
+
+// 解析原语与运行时来源分别落在两个模块，这里统一转出，调用方只认 aiService 一个入口：
+//  - aiProvider.ts：类型 + 地址校验 + 环境变量来源；
+//  - aiProviderConfigService.ts：管理端在线配置（独立配置 / 复用 LibreChat 提供者）。
+export {
+  isAllowedGeoGebraAiBaseUrl,
+  resolveGeoGebraAiProvider,
+  type GeoGebraAiProvider,
+  type GeoGebraAiProviderResolution,
+  type GeoGebraAiProviderSource,
+} from "./aiProvider";
+export { resolveGeoGebraAiProviderForRuntime } from "./aiProviderConfigService";
 
 // GeoGebra AI 能力的服务端唯一出口（GEO-15/16）。
 //
@@ -10,60 +23,6 @@ import { validateGeoGebraCommands } from "./scriptValidation";
 //  2) 未配置就 fail-closed：返回明确的「暂不可用」，绝不静默走公开端点或降级成假结果。
 //  3) 模型输出一律按不可信输入处理：必须通过 JSON 解析、字段白名单、长度与命令校验，
 //     再交给用户预览确认；AI 输出不绕过既有脚本预检。
-export type GeoGebraAiProvider = {
-  configured: boolean;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  /** 只有显式开启且模型确实支持图片时才允许把参考图发出去。 */
-  vision: boolean;
-  reason?: string;
-};
-
-const PRIVATE_HOST_PATTERNS = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^192\.168\./,
-  /^169\.254\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^\[?::1\]?$/,
-  /^0\.0\.0\.0$/,
-];
-
-/** 供应商地址来自服务端配置（受保护 env），但仍要挡住 https 之外与明显的内网目标。 */
-export function isAllowedGeoGebraAiBaseUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:") return false;
-    if (url.username || url.password) return false;
-    if (PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname))) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function resolveGeoGebraAiProvider(
-  env: NodeJS.ProcessEnv = process.env,
-  options: { useConfigFallback?: boolean } = {},
-): GeoGebraAiProvider {
-  // 默认允许回退到站内既有的 OpenAI 配置；测试可以只认显式 env，避免被本机配置干扰。
-  const configFallbackAllowed = options.useConfigFallback !== false;
-  const baseUrl = String(env.GEOGEBRA_AI_BASE_URL || (configFallbackAllowed ? config.openaiBaseUrl : "") || "").trim();
-  const apiKey = String(env.GEOGEBRA_AI_API_KEY || (configFallbackAllowed ? config.openaiApiKey : "") || "").trim();
-  const model = String(env.GEOGEBRA_AI_MODEL || (configFallbackAllowed ? config.openaiModel : "") || "").trim();
-  const visionRequested = String(env.GEOGEBRA_AI_VISION || "").trim().toLowerCase() === "true";
-
-  if (!baseUrl || !apiKey || !model) {
-    return { configured: false, baseUrl: "", apiKey: "", model: "", vision: false, reason: "AI 能力尚未配置。" };
-  }
-  if (!isAllowedGeoGebraAiBaseUrl(baseUrl)) {
-    // 配置错了也要 fail-closed，而不是回退到别的地址。
-    return { configured: false, baseUrl: "", apiKey: "", model: "", vision: false, reason: "AI 服务地址不可用。" };
-  }
-  return { configured: true, baseUrl: baseUrl.replace(/\/+$/, ""), apiKey, model, vision: visionRequested };
-}
 
 export const GEOGEBRA_AI_KINDS = ["ai-drawing", "ai-insight", "ai-annotation", "ai-explanation"] as const;
 export type GeoGebraAiKind = (typeof GEOGEBRA_AI_KINDS)[number];
@@ -195,7 +154,8 @@ function buildMessages(request: GeoGebraAiRequest, provider: GeoGebraAiProvider)
 }
 
 export async function requestGeoGebraAi(request: GeoGebraAiRequest, env: NodeJS.ProcessEnv = process.env): Promise<GeoGebraAiResult> {
-  const provider = resolveGeoGebraAiProvider(env);
+  // 每次调用都重新解析：管理员在运行时配置里切换来源后，下一个任务立即生效（无需重启）。
+  const provider = await resolveGeoGebraAiProviderForRuntime(env);
   if (!provider.configured) {
     throw new GeoGebraDomainError("AI 能力暂不可用，请稍后再试。", 503, "GEOGEBRA_AI_UNAVAILABLE");
   }

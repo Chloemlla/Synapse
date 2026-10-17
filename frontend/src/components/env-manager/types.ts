@@ -42,6 +42,39 @@ export interface ChatProviderItem {
   updatedAt?: string;
 }
 
+/** GeoGebra AI 提供方的来源：环境变量 / 独立配置 / 复用 LibreChat 提供者。 */
+export type GeoGebraAiProviderMode = 'env' | 'custom' | 'librechat';
+
+export interface GeoGebraAiAdminConfig {
+  mode: GeoGebraAiProviderMode;
+  baseUrl: string;
+  model: string;
+  vision: boolean;
+  librechatProviderId: string;
+  hasApiKey: boolean;
+  /** 后端脱敏后的密钥片段，仅用于提示「已保存」，不回填输入框。 */
+  apiKeyMasked: string;
+  updatedAt: string | null;
+  updatedBy: string;
+}
+
+export interface GeoGebraLibreChatProviderOption {
+  id: string;
+  baseUrl: string;
+  model: string;
+  wire: ChatWireFormat;
+  group: string;
+  enabled: boolean;
+  /** 仅 OpenAI Chat Completions 格式可被 GeoGebra AI 复用。 */
+  compatible: boolean;
+}
+
+export interface GeoGebraAiAdminStatus {
+  configured: boolean;
+  source: GeoGebraAiProviderMode;
+  reason: string | null;
+}
+
 export interface ShortAesSetting {
   aesKey: string | null;
   updatedAt?: string;

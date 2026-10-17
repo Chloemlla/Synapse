@@ -6,7 +6,7 @@ export type GeoGebraAdminOverview = {
   generatedAt: string;
   service: { uptimeSeconds: number; pid: number; nodeVersion: string };
   mongo: { readyState: number; state: string; database: string | null };
-  ai: { configured: boolean; vision: boolean; reason: string | null };
+  ai: { configured: boolean; source: "env" | "custom" | "librechat"; vision: boolean; reason: string | null };
   counts: { projects: number; versions: number; comments: number; shares: number; activeShares: number; assets: number };
   worker: {
     scheduler: "in-process";

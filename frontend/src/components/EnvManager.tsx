@@ -32,6 +32,7 @@ import SelfContainedRegistrationInviteConfigSection from './env-manager/SelfCont
 import SelfContainedFirstVisitVerificationConfigSection from './env-manager/SelfContainedFirstVisitVerificationConfigSection';
 import { AccountRiskPolicySection, SecuritySessionPolicySection, RegionPolicySection } from './env-manager/SelfContainedRiskPolicySections';
 import SelfContainedLibreChatProvidersSection from './env-manager/SelfContainedLibreChatProvidersSection';
+import SelfContainedGeoGebraAiConfigSection from './env-manager/SelfContainedGeoGebraAiConfigSection';
 import SelfContainedCodeSettingSection from './env-manager/SelfContainedCodeSettingSection';
 import SelfContainedSecretKeySection from './env-manager/SelfContainedSecretKeySection';
 import SelfContainedEcoEnchantsTokenSection from './env-manager/SelfContainedEcoEnchantsTokenSection';
@@ -583,6 +584,7 @@ const EnvManager: React.FC = () => {
         <SelfContainedProjectLumenConfigSection />
         <SelfContainedLumenServerConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedLibreChatProvidersSection prefersReducedMotion={prefersReducedMotion} />
+        <SelfContainedGeoGebraAiConfigSection prefersReducedMotion={prefersReducedMotion} />
 
         {/* Source Modal */}
         <StudioModal

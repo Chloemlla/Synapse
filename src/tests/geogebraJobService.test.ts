@@ -6,7 +6,7 @@ import GeoGebraJobModel from "../models/geogebraJobModel";
 import GeoGebraProjectVersionModel from "../models/geogebraProjectVersionModel";
 import { getAccessibleGeoGebraProject } from "../geogebra/projectService";
 import { createGeoGebraAssetFromBuffer } from "../geogebra/assetService";
-import { requestGeoGebraAi, resolveGeoGebraAiProvider } from "../geogebra/aiService";
+import { requestGeoGebraAi, resolveGeoGebraAiProviderForRuntime } from "../geogebra/aiService";
 import {
   cancelGeoGebraJob,
   createGeoGebraAiJob,
@@ -56,11 +56,11 @@ jest.mock("../geogebra/assetService", () => ({
 jest.mock("../geogebra/aiService", () => ({
   __esModule: true,
   GEOGEBRA_AI_KINDS: ["ai-drawing", "ai-insight", "ai-annotation", "ai-explanation"],
-  resolveGeoGebraAiProvider: jest.fn(() => ({ configured: true, baseUrl: "https://ai.test", apiKey: "k", model: "m", vision: false })),
+  resolveGeoGebraAiProviderForRuntime: jest.fn(async () => ({ configured: true, baseUrl: "https://ai.test", apiKey: "k", model: "m", vision: false, source: "env" })),
   requestGeoGebraAi: jest.fn(),
 }));
 
-const mockedResolveProvider = resolveGeoGebraAiProvider as jest.Mock;
+const mockedResolveProvider = resolveGeoGebraAiProviderForRuntime as jest.Mock;
 const mockedRequestAi = requestGeoGebraAi as jest.Mock;
 
 function asJobDoc(over: Record<string, unknown> = {}) {
@@ -91,7 +91,7 @@ function asJobDoc(over: Record<string, unknown> = {}) {
 beforeEach(async () => {
   jest.clearAllMocks();
   process.env.GEOGEBRA_TMP_ROOT = await fs.mkdtemp(path.join(os.tmpdir(), "ggb-tmp-"));
-  mockedResolveProvider.mockReturnValue({ configured: true, baseUrl: "https://ai.test", apiKey: "k", model: "m", vision: false });
+  mockedResolveProvider.mockResolvedValue({ configured: true, baseUrl: "https://ai.test", apiKey: "k", model: "m", vision: false, source: "env" });
   (GeoGebraJobModel.countDocuments as jest.Mock).mockResolvedValue(0);
   (GeoGebraJobModel.create as jest.Mock).mockImplementation(async (doc: unknown) => doc);
   (GeoGebraJobModel.findOneAndUpdate as jest.Mock).mockReturnValue({ lean: () => Promise.resolve(null) });
@@ -125,7 +125,7 @@ describe("导出能力矩阵", () => {
 
 describe("任务创建", () => {
   it("AI 未配置时 fail-closed，不入队", async () => {
-    mockedResolveProvider.mockReturnValue({ configured: false, baseUrl: "", apiKey: "", model: "", vision: false, reason: "未配置" });
+    mockedResolveProvider.mockResolvedValue({ configured: false, baseUrl: "", apiKey: "", model: "", vision: false, reason: "未配置", source: "env" });
     await expect(createGeoGebraAiJob({ userId: "user-1", kind: "ai-insight", code: "A = (0,0)" }))
       .rejects.toMatchObject({ code: "GEOGEBRA_AI_UNAVAILABLE" });
     expect(GeoGebraJobModel.create).not.toHaveBeenCalled();

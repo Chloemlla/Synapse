@@ -6,7 +6,7 @@ import GeoGebraReviewCommentModel from "../models/geogebraReviewCommentModel";
 import GeoGebraShareModel from "../models/geogebraShareModel";
 import GeoGebraAssetModel from "../models/geogebraAssetModel";
 import GeoGebraJobModel from "../models/geogebraJobModel";
-import { resolveGeoGebraAiProvider } from "./aiService";
+import { resolveGeoGebraAiProviderForRuntime } from "./aiProviderConfigService";
 import { getGeoGebraJobRunnerStatus } from "./jobService";
 
 // GeoGebra 管理诊断（GEO-22）。
@@ -66,7 +66,9 @@ export async function getGeoGebraDiagnostics() {
     GeoGebraAssetModel.find({ subjectDeletedAt: 0 }).sort({ createdAt: -1 }).limit(10).lean(),
   ]);
 
-  const provider = resolveGeoGebraAiProvider();
+  // 来源可能是环境变量 / 独立配置 / 复用的 LibreChat 提供者：只报「是否可用 + 来源 + 原因」，
+  // 地址、模型名与密钥一律不出现（与下方的脱敏口径一致）。
+  const provider = await resolveGeoGebraAiProviderForRuntime();
   const jobStatus: Record<string, number> = {};
   for (const entry of jobsByStatus) jobStatus[String(entry._id ?? "unknown")] = Number(entry.count ?? 0);
 
@@ -95,6 +97,8 @@ export async function getGeoGebraDiagnostics() {
     },
     ai: {
       configured: provider.configured,
+      // 来源只说明「配置从哪来」，便于排查「改了环境变量却没生效」这类问题。
+      source: provider.source,
       vision: provider.configured ? provider.vision : false,
       reason: provider.configured ? null : provider.reason ?? "AI 能力尚未配置。",
     },
