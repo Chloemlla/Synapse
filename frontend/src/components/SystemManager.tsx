@@ -25,6 +25,7 @@ import {
 } from './studioTheme';
 import { csvFileStamp } from '../utils/csv';
 import RedisDataBrowser from './admin/RedisDataBrowser';
+import MongoDataBrowser from './admin/MongoDataBrowser';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '暂无';
@@ -678,6 +679,9 @@ export default function SystemManager() {
 
       {/* Redis 在库数据（只读浏览 + 快照导出，超管 + 安全会话） */}
       <RedisDataBrowser />
+
+      {/* MongoDB 在库数据（只读浏览 + NDJSON 导出，超管 + 安全会话，服务端脱敏） */}
+      <MongoDataBrowser />
 
       {/* 系统信息 */}
       <InfoPanel>

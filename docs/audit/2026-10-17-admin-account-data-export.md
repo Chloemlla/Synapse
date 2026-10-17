@@ -82,7 +82,32 @@
 - `check:ts-file-size`：`UserManagement.tsx` 1478 行（< 1500），新文件均远低于上限；
 - `check:audit-policies`：通过。
 
-## 7. 已知边界
+## 7. 补充：MongoDB 在库数据浏览器（/admin/system）
+
+仿照 Redis 在库数据浏览器（`frontend/src/components/admin/RedisDataBrowser.tsx` +
+`src/routes/admin/system.ts` + `src/services/redisAdminService.ts`）新增 MongoDB 版本：
+
+| 端点 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /api/admin/system/mongo/overview` | 超管 + 安全会话 | 连接、库名、集合数、估算文档数、数据/索引体积 |
+| `GET /api/admin/system/mongo/collections` | 超管 + 安全会话 | 集合清单与估算条数（只读元数据） |
+| `GET /api/admin/system/mongo/collections/:name/documents` | 超管 + 安全会话 | 分页读文档，支持受限 JSON 过滤与排序 |
+| `GET /api/admin/system/mongo/collections/:name/detail` | 超管 + 安全会话 | 索引与集合选项（不返回 validator 正文） |
+| `GET /api/admin/system/mongo/export` | 超管 + 安全会话 | NDJSON 流导出（头信息 / 文档 / 汇总） |
+
+要点：
+
+- **脱敏可选**：默认原样返回（该端点已强制超管 + 安全会话，即管理员当场验过一次身份）；
+  传 `redact=1` 时按账户导出同一套规则把密码材料、令牌、密钥、密文与内部存储键替换为 `[redacted]`。
+  前端在浏览器面板提供「脱敏显示」开关，未脱敏时明确标注「原始数据」并提示截图前先脱敏。
+- **过滤条件受限**：只接受 JSON 对象，拒绝 `$where` / `$function` / `$accumulator`（服务端脚本执行），
+  嵌套超过 8 层直接拒绝；排序字段只允许 `[A-Za-z0-9_.]`。
+- **分页有硬上限**：每页 ≤100、页码 ≤200，避免 `skip` 深页退化成全表扫描；超限时提示改用过滤条件。
+- **审计只记元数据**：集合名、页码、返回条数、是否脱敏、导出条数；不记过滤条件正文与文档内容。
+- **BSON 归一**：ObjectId / Long / Decimal128 / Timestamp / Binary 等先转成 JSON 安全形状，
+  二进制正文只报大小（不脱敏时也一样）。
+
+## 8. 已知边界
 
 - 工单附件正文、Pixel 取证材料、法律保留与取证日志不在账号导出内（按契约走各自的下载 / 取证通道），
   导出文件会列出原因；

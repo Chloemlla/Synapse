@@ -691,6 +691,21 @@ const LIMITER_DEFINITIONS = {
     max: 40,
     message: "Redis 数据浏览请求过于频繁，请稍后再试",
   },
+  // 管理端 MongoDB 浏览：分页读文档 + 折叠集合元数据，额度略低于普通管理读。
+  adminMongo: {
+    profile: "admin",
+    category: "admin",
+    max: 60,
+    message: "MongoDB 数据浏览请求过于频繁，请稍后再试",
+  },
+  // 集合导出：长时间游标 + 大响应，单独一档低频额度。
+  adminMongoExport: {
+    profile: "sensitive",
+    category: "admin",
+    windowMs: 10 * 60_000,
+    max: 3,
+    message: "MongoDB 导出过于频繁，请稍后再试",
+  },
   // 全库快照导出：每次都是长时间扫描 + 大响应，单独一档低频额度。
   adminRedisExport: {
     profile: "sensitive",
@@ -1061,6 +1076,8 @@ export const pixelReadLimiter = limiterFromDefinition("pixelRead");
 export const adminLimiter = limiterFromDefinition("admin");
 export const adminRedisLimiter = limiterFromDefinition("adminRedis");
 export const adminRedisExportLimiter = limiterFromDefinition("adminRedisExport");
+export const adminMongoLimiter = limiterFromDefinition("adminMongo");
+export const adminMongoExportLimiter = limiterFromDefinition("adminMongoExport");
 export const frontendLimiter = limiterFromDefinition("frontend");
 export const totpLimiter = limiterFromDefinition("totp");
 export const passkeyLimiter = limiterFromDefinition("passkey");

@@ -9,6 +9,7 @@ import {
   scanRedisAdminKeys,
 } from "../../services/redisAdminService";
 import logger from "../../utils/logger";
+import mongoAdminRouter from "./mongo";
 import { assertSecuritySessionBinding, hasValidSecuritySession } from "../../utils/securitySession";
 
 /**
@@ -286,5 +287,8 @@ router.get("/redis/export", adminRedisExportLimiter, async (req, res) => {
     );
   }
 });
+
+// MongoDB 在库数据浏览器：与 Redis 浏览器同一套三层保护，路由拆在 ./mongo.ts。
+router.use("/mongo", mongoAdminRouter);
 
 export default router;
