@@ -1169,8 +1169,8 @@ export default function CDKStoreManager() {
         <div className="text-slate-600 space-y-2">
           <p>此功能用于管理CDK兑换码，支持生成、查看、删除CDK，提供完整的CDK生命周期管理。</p>
           <div className="flex items-start gap-2 text-sm">
-            <FaInfoCircle className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-            <div>
+            <FaInfoCircle className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1">
               <p className="font-semibold text-slate-700">功能说明：</p>
               <ul className="list-disc list-inside space-y-1 mt-1">
                 <li>支持为指定资源批量生成CDK</li>
@@ -1453,9 +1453,9 @@ export default function CDKStoreManager() {
 
         {loadError ? (
           <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2 text-sm text-rose-700">
-              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{loadError}</span>
+            <div className="flex min-w-0 flex-1 items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{loadError}</span>
             </div>
             <button type="button"
               onClick={() => void fetchCDKs()}
@@ -1935,9 +1935,9 @@ export default function CDKStoreManager() {
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-shrink-0">
-                  <FaExclamationTriangle className="w-8 h-8 text-rose-500" />
+                  <FaExclamationTriangle className="w-8 h-8 text-rose-500" aria-hidden />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-lg font-semibold text-slate-900">
                     危险操作确认
                   </h3>
@@ -2019,9 +2019,9 @@ export default function CDKStoreManager() {
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-shrink-0">
-                  <FaExclamationTriangle className="w-8 h-8 text-orange-500" />
+                  <FaExclamationTriangle className="w-8 h-8 text-orange-500" aria-hidden />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-lg font-semibold text-slate-900">
                     删除未使用CDK确认
                   </h3>

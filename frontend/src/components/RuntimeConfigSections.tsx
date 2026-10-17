@@ -168,7 +168,7 @@ function FieldLabel(props: { label: string; htmlFor?: string; hint?: string }) {
       ) : (
         <span className="text-sm font-medium text-slate-700">{label}</span>
       )}
-      {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
+      {hint ? <span className="min-w-0 truncate text-xs text-slate-400">{hint}</span> : null}
     </div>
   );
 }
@@ -1106,9 +1106,9 @@ const RuntimeConfigSections: React.FC = () => {
         {!ipqsLoading && !ipqsSetting && <StudioErrorNote>配置尚未成功读取，请点击刷新重试。成功读取前无法保存。</StudioErrorNote>}
         {ipqsLoadError ? (
           <StudioErrorNote className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2">
-              <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <span>
+            <div className="flex min-w-0 flex-1 items-start gap-2">
+              <FaExclamationTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">
                 {ipqsLoadError}。当前表单显示的是默认值而非线上真实配置，已停用保存以免覆盖线上配置。
               </span>
             </div>
@@ -1423,9 +1423,9 @@ const RuntimeConfigSections: React.FC = () => {
 
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
+            <div className="min-w-0">
               <div className="text-sm font-medium text-slate-800">导入 Google OAuth JSON</div>
-              <div className="mt-1 text-xs text-slate-500">
+              <div className="mt-1 break-words text-xs text-slate-500">
                 请导入 Google Cloud Console 下载的 `web` 类型 OAuth JSON（应用类型：Web application）。系统会提取 `web.client_id`。Desktop/`installed` JSON 不符合 GSI 要求，将被拒绝。配置前请在凭据中加入前端 origin，例如 `https://chloemlla.com` 与本地 `http://localhost:3001`。
               </div>
             </div>

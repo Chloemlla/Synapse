@@ -816,11 +816,11 @@ const WebhookEventsManager: React.FC = () => {
         className="bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-200 p-4 sm:p-6"
       >
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
-              <Webhook className="w-5 h-5" />
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10">
+              <Webhook className="w-5 h-5" aria-hidden />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="text-lg font-semibold">Webhook 事件管理</div>
               <div className="text-slate-300 text-sm">接收端点、Resend 密钥、测试投递与事件处理</div>
             </div>
@@ -1056,7 +1056,7 @@ const WebhookEventsManager: React.FC = () => {
                   <td className="p-3">
                     {canWrite && (
                     <button type="button" onClick={() => toggleOne(item._id)} className="text-slate-600 hover:text-slate-900" aria-label="选择事件">
-                      {selectedSet.has(item._id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                      {selectedSet.has(item._id) ? <CheckSquare className="w-4 h-4" aria-hidden /> : <Square className="w-4 h-4" aria-hidden />}
                     </button>
                     )}
                   </td>
@@ -1311,8 +1311,8 @@ function EventCard({
     <div className="p-4">
       <div className="flex items-start gap-3">
         {canWrite && (
-        <button type="button" onClick={onCheck} className="mt-1 min-h-11 text-slate-600" aria-label="选择事件">
-          {checked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+        <button type="button" onClick={onCheck} className="mt-1 min-h-11 shrink-0 text-slate-600" aria-label="选择事件">
+          {checked ? <CheckSquare className="w-4 h-4" aria-hidden /> : <Square className="w-4 h-4" aria-hidden />}
         </button>
         )}
         <div className="min-w-0 flex-1">
@@ -1386,7 +1386,7 @@ function Modal({ title, onClose, children, width = 'max-w-4xl' }: { title: strin
         exit={{ scale: 0.96, y: 10, opacity: 0 }}
       >
         <div className="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
-          <div id={titleId} className="font-semibold text-slate-900">{title}</div>
+          <div id={titleId} className="min-w-0 truncate font-semibold text-slate-900">{title}</div>
           <button type="button" onClick={onClose} className={studioModalCloseButtonClassName} title="关闭">
             <X className="w-4 h-4" />
           </button>

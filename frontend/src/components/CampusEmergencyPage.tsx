@@ -129,18 +129,18 @@ const CampusEmergencyPage: React.FC = () => {
 
         <InfoPanel compact className="border-rose-100">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
+            <div className="flex min-w-0 items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 ring-1 ring-rose-100">
-                {isAudioPlaying ? <FaVolumeUp /> : <FaVolumeMute />}
+                {isAudioPlaying ? <FaVolumeUp aria-hidden /> : <FaVolumeMute aria-hidden />}
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className={cn(studioEyebrowClassName, "text-xs text-slate-400")}>Live Broadcast</p>
                 <p className="mt-2 text-base font-semibold leading-7 text-slate-950">
                   校内广播：请注意，校园网络遭恶意攻击，计算机社团学生请立刻前往教机室。
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-3">
               <div className="flex items-end gap-1">
                 {Array.from({ length: 8 }).map((_, index) => (
                   <motion.span
@@ -210,9 +210,9 @@ const CampusEmergencyPage: React.FC = () => {
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
-                          <Icon />
+                          <Icon aria-hidden />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-slate-950">{character.name}</h3>
                             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{character.role}</span>
@@ -276,7 +276,7 @@ const CampusEmergencyPage: React.FC = () => {
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
                 <div className="flex items-start gap-4">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-700 ring-1 ring-emerald-100">
-                    <FaChalkboardTeacher />
+                    <FaChalkboardTeacher aria-hidden />
                   </div>
                   <div className="min-w-0 flex-1">
                     <AnimatePresence mode="wait">
@@ -325,9 +325,9 @@ const CampusEmergencyPage: React.FC = () => {
               >
                 <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-700 ring-1 ring-rose-100">
-                    <FaUsb />
+                    <FaUsb aria-hidden />
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="text-lg font-semibold">U 盘启动 - 紧急重启</div>
                     <p className="mt-1 text-sm leading-6 opacity-85">点击执行演练记录，系统会短暂登记预案触发状态。</p>
                   </div>
@@ -351,8 +351,8 @@ const CampusEmergencyPage: React.FC = () => {
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
           >
             <div className="flex items-start gap-3">
-              <FaExclamationTriangle className="mt-1 shrink-0" />
-              <div>
+              <FaExclamationTriangle className="mt-1 shrink-0" aria-hidden />
+              <div className="min-w-0">
                 <div className="font-semibold">异常状态登记</div>
                 <p className="mt-1 text-sm leading-6">{deviceFailures.join('、')} 已触发，正在等待恢复。</p>
               </div>

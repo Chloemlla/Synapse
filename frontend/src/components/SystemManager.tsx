@@ -352,8 +352,8 @@ export default function SystemManager() {
       {!canWrite ? (
         <InfoPanel className="border-amber-200 bg-amber-50/70">
           <div className="flex items-start gap-2 text-sm text-amber-800">
-            <FaInfoCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>
+            <FaInfoCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden />
+            <span className="min-w-0 break-words">
               当前账号为只读管理员：启动 / 停止调度器、手动清理与手动同步 IP 封禁需要超级管理员权限，相关按钮已禁用。
             </span>
           </div>
@@ -376,12 +376,12 @@ export default function SystemManager() {
                 key={capability.key}
                 className={`${capability.enabled ? 'bg-white/80 border-slate-200' : 'bg-slate-50 border-slate-200 opacity-75'} rounded-2xl p-4 border`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{capability.label}</p>
                     <p className="text-sm text-slate-600 mt-1">{capability.description}</p>
                   </div>
-                  <InfoBadge tone={capability.enabled ? 'emerald' : 'slate'}>
+                  <InfoBadge tone={capability.enabled ? 'emerald' : 'slate'} className="shrink-0">
                     {capability.enabled ? '可用' : '不可用'}
                   </InfoBadge>
                 </div>
@@ -449,9 +449,9 @@ export default function SystemManager() {
           )}
 
           {schedulerStatus.lastCleanupError && (
-            <div className="my-4 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{schedulerStatus.lastCleanupError}</span>
+            <div className="my-4 flex min-w-0 items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{schedulerStatus.lastCleanupError}</span>
             </div>
           )}
 
@@ -509,9 +509,9 @@ export default function SystemManager() {
         <InfoPanel>
           <InfoSectionTitle eyebrow="Scheduler" title="调度器状态" icon={FaRunning} />
           <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2 text-sm text-rose-700">
-              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{schedulerError}</span>
+            <div className="flex min-w-0 flex-1 items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{schedulerError}</span>
             </div>
             <button type="button" onClick={() => void fetchSchedulerStatus()} className={studioSecondaryButtonClassName}>
               <FaSync className="w-4 h-4" />
@@ -656,9 +656,9 @@ export default function SystemManager() {
         <InfoPanel>
           <InfoSectionTitle eyebrow="Sync Runtime" title="数据同步状态" icon={FaExchangeAlt} />
           <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2 text-sm text-rose-700">
-              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{syncError}</span>
+            <div className="flex min-w-0 flex-1 items-start gap-2 text-sm text-rose-700">
+              <FaExclamationTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{syncError}</span>
             </div>
             <button type="button" onClick={() => void fetchSyncStatus()} className={studioSecondaryButtonClassName}>
               <FaSync className="w-4 h-4" />

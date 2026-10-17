@@ -834,8 +834,8 @@ const IntegrationsHealthPanel: React.FC = () => {
                   <ul className="space-y-2 text-sm">
                     {recommendations.topStyles.map((row) => (
                       <li key={row.styleId} className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-xs">{row.styleId}</span>
-                        <span className="text-slate-500">{row.total}</span>
+                        <span className="min-w-0 truncate font-mono text-xs">{row.styleId}</span>
+                        <span className="shrink-0 text-slate-500">{row.total}</span>
                       </li>
                     ))}
                   </ul>
@@ -850,8 +850,8 @@ const IntegrationsHealthPanel: React.FC = () => {
                   <ul className="space-y-2 text-sm">
                     {recommendations.topLanguages.map((row) => (
                       <li key={row.language} className="flex items-center justify-between gap-3">
-                        <span>{row.language}</span>
-                        <span className="text-slate-500">{row.total}</span>
+                        <span className="min-w-0 truncate">{row.language}</span>
+                        <span className="shrink-0 text-slate-500">{row.total}</span>
                       </li>
                     ))}
                   </ul>
@@ -887,8 +887,8 @@ const IntegrationsHealthPanel: React.FC = () => {
                   <ul className="space-y-2 text-sm">
                     {invites.topCodes.map((row) => (
                       <li key={row.code} className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-xs">{row.code}</span>
-                        <span className="text-slate-500">
+                        <span className="min-w-0 truncate font-mono text-xs">{row.code}</span>
+                        <span className="shrink-0 text-slate-500">
                           {row.usedCount} / {row.maxUses}
                           {row.active ? '' : '（已停用）'}
                         </span>
@@ -906,7 +906,7 @@ const IntegrationsHealthPanel: React.FC = () => {
                   <ul className="space-y-2 text-sm">
                     {invites.recentUses.map((row) => (
                       <li key={`${row.code}-${row.usedAt}-${row.username}`} className="flex items-center justify-between gap-3">
-                        <span className="truncate">
+                        <span className="min-w-0 truncate">
                           <span className="font-mono text-xs">{row.code}</span>
                           <span className="ml-2 text-slate-500">{row.username || '—'}</span>
                         </span>

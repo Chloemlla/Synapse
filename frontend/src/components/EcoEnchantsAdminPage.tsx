@@ -608,11 +608,11 @@ const EcoEnchantsAdminPage: React.FC = () => {
       {mfaRequired && (
         <InfoPanel>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
+            <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                <FaShieldAlt />
+                <FaShieldAlt aria-hidden />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-semibold text-slate-900">
                   需要双因素验证
                 </h2>
