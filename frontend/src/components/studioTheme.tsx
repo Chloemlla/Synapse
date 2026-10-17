@@ -233,15 +233,31 @@ export const InfoQueryHero: React.FC<{
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 ${classes.accent}`} />
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 max-w-3xl">
-          <div className={studioEyebrowPillClassName}>
-            <Icon className={`text-[10px] ${classes.text}`} />
+          {/* 眉标是 inline-flex：长文案（中文长串 + 0.28em 字距）不会自己换行，会冲出卡片。 */}
+          <div className={cn(studioEyebrowPillClassName, 'max-w-full break-words')}>
+            <Icon className={cn('shrink-0 text-[10px]', classes.text)} aria-hidden />
             {eyebrow}
           </div>
           <h1 className="mt-5 break-words text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">{title}</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">{description}</p>
           {meta && <div className="mt-5 flex flex-wrap gap-2">{meta}</div>}
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap gap-3 lg:justify-end">{actions}</div>}
+        {/*
+          右侧动作区（hero 右框）：`shrink-0` 只该管「按钮不被压扁」，不能连文字一起
+          锁死不换行 —— 嵌进来的说明文字/长按钮文案会把内容顶出卡片，而
+          studioHeroCardClassName 带 overflow-hidden，溢出的部分是被**裁掉**，
+          看起来就是「文字消失」而不是「没换行」。
+
+          这里的分工：容器允许收缩并约束在半栏内（min-w-0 + lg:max-w-[48%]），
+          自身允许断词（break-words），整棵子树都允许收缩（[&_*]:min-w-0 ——
+          只写直接子项不够：按钮里的 <span> 也是一层 flex 项，会继续把文字锁住），
+          换行交给 flex-wrap。图标有固定宽高，min-w-0 不会把它们压没。
+        */}
+        {actions && (
+          <div className="flex min-w-0 flex-wrap gap-3 break-words [&_*]:min-w-0 lg:max-w-[48%] lg:justify-end">
+            {actions}
+          </div>
+        )}
       </div>
     </section>
   );
