@@ -31,14 +31,21 @@ export function SidebarViewHeader({ view }: SidebarViewHeaderProps) {
           <SidebarMenuButton
             tooltip={view.parent.label}
             className={cn(
-              'text-slate-500 hover:text-slate-900 h-8 gap-1.5 rounded-2xl',
+              // 返回入口是独立于导航列表的控件：悬停必须有可见的底色 + 描边，
+              // 否则 13px 的浅灰文字直接融进白色侧栏（与页面内容混在一起）。
+              'text-slate-600 hover:text-slate-900 h-8 gap-1.5 rounded-2xl px-2',
+              'border border-transparent hover:border-slate-200 hover:bg-slate-100',
+              'hover:ring-1 hover:ring-slate-300/70 focus-visible:ring-2 focus-visible:ring-slate-400',
               'font-medium',
             )}
             render={
               <Link to={view.parent.to} onClick={() => setOpenMobile(false)} />
             }
           >
-            <FaChevronLeft className='size-3.5 shrink-0 opacity-70' aria-hidden='true' />
+            <FaChevronLeft
+              className='size-3.5 shrink-0 opacity-70 group-hover/menu-button:opacity-100'
+              aria-hidden='true'
+            />
             <span className='truncate text-[13px] group-data-[collapsible=icon]:hidden'>
               {view.parent.label}
             </span>

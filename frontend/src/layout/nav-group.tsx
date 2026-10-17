@@ -82,7 +82,9 @@ function SidebarMenuLink({
           'h-9 rounded-2xl px-2.5 transition-colors',
           active &&
             'bg-slate-100 text-slate-700 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.18)]',
-          !active && 'text-slate-900/85 hover:text-slate-900',
+          // 悬停底色来自 ui/sidebar 的默认 variant；这里再补 1px 描边，
+          // 让浅色侧栏上的可点击行有明确的边界（只靠 slate-100 太容易看清）。
+          !active && 'text-slate-900/85 hover:bg-slate-100 hover:text-slate-900 hover:ring-1',
         )}
         render={
           <Link to={item.url} onClick={() => setOpenMobile(false)} />

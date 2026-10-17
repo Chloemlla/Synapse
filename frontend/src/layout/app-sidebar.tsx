@@ -58,7 +58,7 @@ export function AppSidebar({
                 tooltip='Synapse'
                 className={cn(
                   'h-11 gap-2.5 px-2 data-active:bg-transparent',
-                  'hover:bg-slate-100/60',
+                  'hover:bg-slate-100 hover:ring-1 hover:ring-slate-300/70',
                 )}
                 render={<Link to='/' />}
               >
