@@ -729,6 +729,7 @@ const TicketSystem: React.FC = () => {
     const baseTitle = 'Synapse - 支持中心';
     document.title = unreadCount > 0 ? `（${unreadCount}）支持中心 - Synapse` : baseTitle;
     return () => {
+      // 卸载或计数变化时先回到基准标题：/support 的路由标题就是它，下一次 effect 再按新未读改写。
       document.title = baseTitle;
     };
   }, [unreadCount]);
