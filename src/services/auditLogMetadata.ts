@@ -33,6 +33,7 @@ export const ALLOWED_AUDIT_MODULES = new Set<IAuditLog["module"]>([
   "ipban",
   "env",
   "announcement",
+  "geogebra",
   "other",
 ]);
 
