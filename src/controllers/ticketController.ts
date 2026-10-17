@@ -890,12 +890,14 @@ export const ticketController = {
           update.assigneeId = null;
           update.assigneeName = null;
         } else if (assignee === "me") {
-          update.assigneeId = actor.id;
-          update.assigneeName = actor.username || actor.id;
+          // 一律存字符串：列表筛选「我受理的」与服务端统计都按 String(id) 比较，
+          // JWT 载荷若给成数字形态，不归一化会让认领后的工单从「我的待办」里消失。
+          update.assigneeId = String(actor.id);
+          update.assigneeName = actor.username || String(actor.id);
         } else if (typeof assignee === "string") {
           const target = await UserStorage.getUserById(assignee);
           if (!target) return res.status(400).json({ error: "指定的受理人不存在" });
-          update.assigneeId = target.id;
+          update.assigneeId = String(target.id);
           update.assigneeName = target.username;
         } else {
           return res.status(400).json({ error: "无效的受理人" });
