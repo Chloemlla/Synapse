@@ -123,10 +123,17 @@ export class WorkspaceController {
       }
 
       const members = await workspaceService.getWorkspaceMembers(id);
+      // 成员列表只补公开昵称，方便团队面板区分「谁是谁」；不带邮箱、凭据或在线状态。
+      // 用户已注销时查不到，username 落成 null，前端回落到短 ID 显示。
+      const users = await UserStorage.getUsersByIds(members.map((member) => member.userId)).catch(() => []);
+      const usernameById = new Map(users.map((user) => [String(user.id), String(user.username ?? "")]));
 
       res.json({
         success: true,
-        data: members,
+        data: members.map((member) => ({
+          ...member,
+          username: usernameById.get(String(member.userId)) || null,
+        })),
         count: members.length,
       });
     } catch (error) {

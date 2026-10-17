@@ -459,7 +459,7 @@ export default function GeoGebraCloudPanel({ project, onProjectSynced, onOpenPro
                     <ul className="mt-2 space-y-2">
                       {members.map((member) => (
                         <li key={member.userId} className={cn(studioTileClassName, "flex flex-wrap items-center justify-between gap-2 px-3 py-2")}>
-                          <span className="min-w-0 text-sm text-slate-700">{member.userId === user.id ? "我" : `${member.userId.slice(0, 10)}…`}</span>
+                          <span className="min-w-0 truncate text-sm text-slate-700">{member.userId === user.id ? "我" : member.username || `${member.userId.slice(0, 10)}…`}</span>
                           <span className="flex items-center gap-2">
                             <select
                               className={cn(studioFieldClassName, "w-28")}

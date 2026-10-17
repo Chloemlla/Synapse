@@ -77,7 +77,7 @@ export type WorkspaceSummary = {
   id: string;
   name: string;
   description: string;
-  members: Array<{ userId: string; role: "admin" | "editor" | "reviewer" | "viewer" }>;
+  members: Array<{ userId: string; role: "admin" | "editor" | "reviewer" | "viewer"; username?: string | null }>;
 };
 
 export type GeoGebraAsset = {
