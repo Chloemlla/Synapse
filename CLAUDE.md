@@ -421,10 +421,13 @@ frontend/src/
   （`STEP_UP_REQUIRED`）、安全会话（`SECURITY_SESSION_REQUIRED`）都带稳定 `code`，前端据此弹对应入口；
   禁用的 403 目前只有文案。新增任何「拒绝用户」的分支都要先问一句「前端怎么识别它」——
   靠文案匹配是最后选择，不是默认选择。
-- **CodeQL 告警的处理顺序**：先判断能不能**真修**；确实属于「工具看不到守卫」的，才在告警那一行的
-  **上一行**写 `// codeql[<rule-id>] <为什么安全>`（同文件既有写法：`docTool/runtime.ts`、
-  `mediaTool/runtime.ts`、`adminOverviewService.ts`）。注释必须紧贴 sink，写清依据（谁做了守界、
-  为什么数据不可控），**不要写「误报」了事**——下一个人要靠这句话判断能不能改。
+- **CodeQL 告警的处理顺序**：先判断能不能**真修**，优先把守卫改写成静态分析**看得见**的形态。
+  典型手法：自定义守界函数改成「`path.resolve` 后与解析过的根做前缀比较」并把结果直接交给
+  `fs.*`；用户可控值先经 `path.basename()` 重新锚定。这样不用抑制也能让数据流收敛。
+  ⚠️ **`// codeql[<rule-id>]` 注释在本仓库只是给人看的说明，不构成抑制**——本仓库的 CodeQL
+  工作流没有启用 `alert-suppression` 查询，注释写上去告警照样 open（曾因此误以为已收口）。
+  确实属于「工具看不到守卫」且无法改写时，走 GitHub 界面或 API 按 `false positive` 关闭，
+  并在注释里写清依据（谁做的守界、为什么数据不可控）；**不要只写「误报」了事**。
 - **审计脱敏字段**：`src/utils/auditRedaction.ts` 是唯一来源（EXACT 精确匹配 + SUBSTRING 包含匹配）。
   新增凭据类字段名（含 `verificationToken` 这类一次会话令牌）要同时加进 EXACT 表，
   否则 `AUDIT_LOG_CAPTURE_PAYLOADS=true` 时会被写进 60 天可导出的审计库。

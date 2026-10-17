@@ -221,8 +221,10 @@ step `outcome`。
 - **法律保留与 TTL 互斥**：新集合若可能被 `legal_holds` 命中，就**不要加物理 TTL**，
   改为登记进 `LEGAL_HOLD_CLEANUP_TARGETS` 走应用层清理。物理 TTL 会在校验 hold 之前删文档。
 - **取证审计不设 TTL**：调查周期常超过 60 天；普通业务审计仍保持 `AUDIT_LOG_RETENTION_DAYS = 60`。
-- **CodeQL 告警先判能不能真修**，确认「工具看不到守卫」才在 sink 的上一行写
-  `// codeql[<rule-id>] <为什么安全>`，并写清依据（谁守的界、为什么不可控），不要只写「误报」。
+- **CodeQL 告警先判能不能真修**：优先把守卫改写成分析器看得见的形态（`path.resolve` 前缀比较、
+  `path.basename` 重新锚定），让数据流自己收敛。**`// codeql[...]` 注释不是抑制指令** ——
+  本仓库的 CodeQL 工作流没启用 `alert-suppression` 查询，注释不会关闭告警；真要关闭就走
+  GitHub 界面/API 按 `false positive` 处理，并在注释里写清依据，不要只写「误报」。
 - **审计脱敏字段是单点**：新增凭据类字段名（含 `verificationToken` 这类会话令牌）要加进
   `src/utils/auditRedaction.ts` 的 EXACT 表，否则开载荷捕获时会进 60 天可导出的审计库。
 - **提交前比对暂存集**：本 clone 多会话共用，`git add <文件>` 是在既有索引上追加。
