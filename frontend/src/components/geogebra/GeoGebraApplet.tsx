@@ -211,7 +211,9 @@ const GeoGebraApplet = forwardRef<GeoGebraHandle, Props>(function GeoGebraApplet
           showAlgebraInput: false,
           enableLabelDrags: true,
           enableRightClick: true,
-          language: "en",
+          // 画布内的右键菜单、标签与单位跟随 GeoGebra 的界面语言；工作台本身是中文，
+          // 保持 en 会让「设置」「属性」等菜单和页面其余部分对不上。
+          language: "zh_CN",
           useBrowserForJS: true,
           appletOnLoad: (api) => {
             if (cancelled) return;
