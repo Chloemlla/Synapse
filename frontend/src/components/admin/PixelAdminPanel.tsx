@@ -29,6 +29,7 @@ import {
   type PixelKeyRotationStatus,
   type PixelUsageLogView,
 } from "@/api/pixelAdmin";
+import { api } from "@/api/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotification } from "@/components/Notification";
 import { InfoBadge, InfoMetricCard, InfoPanel, InfoQueryHero, InfoQueryShell } from "@/components/studioTheme";
@@ -57,17 +58,53 @@ function formatTime(value: string | null): string {
   return value ? new Date(value).toLocaleString("zh-CN") : "无数据";
 }
 
+// PIX-13：服务端在配置视图里补了来源/覆盖/热更分类；这里用交叉类型兼容旧响应，
+// 避免为三个展示字段再去改 api/pixelAdmin.ts 的公开类型（接线由协调者统一收口）。
+type PixelConfigWithMeta = PixelIntegrationConfigView & {
+  source?: "db" | "env" | "default";
+  overridden?: boolean;
+  reload?: "runtime" | "restart";
+};
+
+// PIX-14：总览新增 runtime（proxy/worker/queue）与 metrics（errors/latency/requestSize）。
+// 无数据源时服务端显式返回 null + 原因，前端只负责显示「无数据」占位。
+type PixelDashboardWithRuntime = PixelAdminDashboardView & {
+  runtime?: {
+    upstream?: { configured: boolean; enabled: boolean; host: string; source?: string; reload?: string };
+    proxy: null;
+    worker: null;
+    queue: null;
+    unavailableReasons?: { proxy?: string; worker?: string; queue?: string };
+  };
+  metrics?: {
+    errors: { total: number; failed: number; rate: number; byOutcome: Record<string, number> } | null;
+    latency: { samples: number; avgMs: number; p95Ms: number; p99Ms: number; maxMs: number } | null;
+    requestSize: { samples: number; avgBytes: number; p95Bytes: number; maxBytes: number } | null;
+    unavailableReasons?: { errors?: string | null; latency?: string | null; requestSize?: string | null };
+  };
+};
+
+const CONFIG_SOURCE_LABEL: Record<string, string> = {
+  db: "数据库覆盖",
+  env: "环境变量",
+  default: "内置默认",
+};
+
+function configSourceLabel(source: string | undefined): string {
+  return source ? CONFIG_SOURCE_LABEL[source] ?? source : "未知";
+}
+
 const PixelAdminPanel: React.FC = () => {
   const { setNotification } = useNotification();
   const { user } = useAuth();
   const confirm = useConfirm();
   const [tab, setTab] = useState<TabKey>("overview");
-  const [dashboard, setDashboard] = useState<PixelAdminDashboardView | null>(null);
+  const [dashboard, setDashboard] = useState<PixelDashboardWithRuntime | null>(null);
   const [mappings, setMappings] = useState<PixelCdkMappingView[]>([]);
   const [usage, setUsage] = useState<PixelUsageLogView[]>([]);
   const [usageCursor, setUsageCursor] = useState<string | null>(null);
   const [usageDetail, setUsageDetail] = useState<PixelUsageLogView | null>(null);
-  const [config, setConfig] = useState<PixelIntegrationConfigView | null>(null);
+  const [config, setConfig] = useState<PixelConfigWithMeta | null>(null);
   const [holds, setHolds] = useState<PixelEvidenceHoldView[]>([]);
   const [approvals, setApprovals] = useState<PixelEvidenceApprovalView[]>([]);
   const [evidence, setEvidence] = useState<PixelEvidenceView[]>([]);
@@ -88,7 +125,7 @@ const PixelAdminPanel: React.FC = () => {
 
   const loadDashboard = useCallback(async () => {
     try {
-      setDashboard(await getPixelAdminDashboard());
+      setDashboard((await getPixelAdminDashboard()) as PixelDashboardWithRuntime);
     } catch {
       setError("暂时无法读取总览数据。");
     }
@@ -114,7 +151,7 @@ const PixelAdminPanel: React.FC = () => {
 
   const loadConfig = useCallback(async () => {
     try {
-      const view = await getPixelIntegrationConfig();
+      const view = (await getPixelIntegrationConfig()) as PixelConfigWithMeta;
       setConfig(view);
       setConfigForm({
         upstreamBaseUrl: view.upstreamBaseUrl,
@@ -201,16 +238,50 @@ const PixelAdminPanel: React.FC = () => {
     setBusy(true);
     setError("");
     try {
-      const view = await savePixelIntegrationConfig({
+      const view = (await savePixelIntegrationConfig({
         upstreamBaseUrl: configForm.upstreamBaseUrl.trim(),
         allowedHosts: configForm.allowedHosts.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
         enabled: configForm.enabled,
         requestTimeoutMs: Number(configForm.requestTimeoutMs) || 20000,
-      });
+      })) as PixelConfigWithMeta;
       setConfig(view);
       setNotification?.({ type: "success", message: "集成配置已保存。" });
     } catch {
       setError("保存失败：地址必须为 HTTPS 公网地址，且主机需在允许清单内。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * PIX-13「恢复默认」：删除数据库配置，回到 env / 内置默认来源。
+   * 明确告知管理员这不会变出一个可用上游——默认仍然 fail-closed。
+   */
+  const handleResetConfig = async () => {
+    if (!isSuperAdmin) return;
+    const approved = await confirm({
+      title: "恢复默认集成配置",
+      description: "会删除数据库中的上游地址、主机清单与开关。默认没有上游地址，此后所有上游调用会按 fail-closed 拒绝（除非部署侧显式配置了环境变量）。",
+      confirmLabel: "恢复默认",
+      tone: "danger",
+    });
+    if (!approved) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.delete<{ success: boolean; data: PixelConfigWithMeta }>("/api/admin/pixel/configs");
+      const view = response.data.data;
+      setConfig(view);
+      setConfigForm({
+        upstreamBaseUrl: view.upstreamBaseUrl,
+        allowedHosts: view.allowedHosts.join("\n"),
+        enabled: view.enabled,
+        requestTimeoutMs: view.requestTimeoutMs,
+      });
+      setNotification?.({ type: "success", message: "已恢复默认配置；上游调用将按 fail-closed 处理。" });
+      await loadDashboard();
+    } catch {
+      setError("恢复默认失败（需超级管理员与有效安全会话）。");
     } finally {
       setBusy(false);
     }
@@ -399,6 +470,63 @@ const PixelAdminPanel: React.FC = () => {
               ? <div className="mt-2 flex flex-wrap gap-2">{Object.entries(dashboard.tasks.bySubmitState).map(([state, count]) => <InfoBadge key={state}>{state}: {count}</InfoBadge>)}</div>
               : <p className="mt-2 text-sm text-slate-500">无数据。</p>}
           </InfoPanel>
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">运行时状态</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              代理 / worker / 队列目前没有可核对的数据源，按「无数据 + 原因」展示；不用 0 或推算值冒充指标。
+            </p>
+            <dl className="mt-3 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-slate-500">代理（proxy）</dt>
+                <dd className="mt-1">无数据：{dashboard?.runtime?.unavailableReasons?.proxy ?? "服务端未提供原因。"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">worker</dt>
+                <dd className="mt-1">无数据：{dashboard?.runtime?.unavailableReasons?.worker ?? "服务端未提供原因。"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">队列（queue）</dt>
+                <dd className="mt-1">无数据：{dashboard?.runtime?.unavailableReasons?.queue ?? "服务端未提供原因。"}</dd>
+              </div>
+            </dl>
+          </InfoPanel>
+          <InfoPanel>
+            <h3 className="text-sm font-semibold text-slate-900">错误 / 延迟 / 请求大小</h3>
+            <p className="mt-1 text-xs text-slate-500">数字只来自脱敏溯源（调用结果分类、耗时、请求字节数）；没有样本时显示无数据。</p>
+            <dl className="mt-3 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-slate-500">错误率</dt>
+                <dd className="mt-1">
+                  {dashboard?.metrics?.errors
+                    ? `${(dashboard.metrics.errors.rate * 100).toFixed(2)}%（${dashboard.metrics.errors.failed}/${dashboard.metrics.errors.total}）`
+                    : `无数据：${dashboard?.metrics?.unavailableReasons?.errors ?? "服务端未提供原因。"}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">耗时（均值 / P95 / P99）</dt>
+                <dd className="mt-1">
+                  {dashboard?.metrics?.latency
+                    ? `${dashboard.metrics.latency.avgMs} / ${dashboard.metrics.latency.p95Ms} / ${dashboard.metrics.latency.p99Ms} ms（${dashboard.metrics.latency.samples} 次）`
+                    : `无数据：${dashboard?.metrics?.unavailableReasons?.latency ?? "服务端未提供原因。"}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">请求大小（均值 / P95 / 最大）</dt>
+                <dd className="mt-1">
+                  {dashboard?.metrics?.requestSize
+                    ? `${dashboard.metrics.requestSize.avgBytes} / ${dashboard.metrics.requestSize.p95Bytes} / ${dashboard.metrics.requestSize.maxBytes} B（${dashboard.metrics.requestSize.samples} 次）`
+                    : `无数据：${dashboard?.metrics?.unavailableReasons?.requestSize ?? "服务端未提供原因。"}`}
+                </dd>
+              </div>
+            </dl>
+            {dashboard?.metrics?.errors && Object.keys(dashboard.metrics.errors.byOutcome).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {Object.entries(dashboard.metrics.errors.byOutcome).map(([outcome, count]) => (
+                  <InfoBadge key={outcome}>{outcome}: {count}</InfoBadge>
+                ))}
+              </div>
+            )}
+          </InfoPanel>
         </div>
       )}
 
@@ -503,6 +631,15 @@ const PixelAdminPanel: React.FC = () => {
             未配置或关闭时，用户侧的任务接口一律拒绝（fail-closed），不会回落到任何默认地址。
             {config ? ` 最近更新：${formatTime(config.updatedAt)}${config.updatedByUsername ? ` · ${config.updatedByUsername}` : ""}` : ""}
           </p>
+          {config && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <InfoBadge tone="slate">来源：{configSourceLabel(config.source)}</InfoBadge>
+              <InfoBadge tone={config.overridden ? "amber" : "slate"}>{config.overridden ? "数据库已覆盖默认值" : "未覆盖默认值"}</InfoBadge>
+              <InfoBadge tone={config.reload === "restart" ? "amber" : "emerald"}>
+                {config.reload === "restart" ? "需重启/重新部署生效" : "保存后即时生效"}
+              </InfoBadge>
+            </div>
+          )}
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-slate-600">上游地址（https）
               <input className="mt-1 block min-h-11 w-full rounded-2xl border border-slate-200 px-3 text-sm" value={configForm.upstreamBaseUrl} onChange={(event) => setConfigForm((prev) => ({ ...prev, upstreamBaseUrl: event.target.value }))} disabled={!isSuperAdmin} placeholder="https://upstream.example.com" />
@@ -518,9 +655,15 @@ const PixelAdminPanel: React.FC = () => {
             <input type="checkbox" checked={configForm.enabled} onChange={(event) => setConfigForm((prev) => ({ ...prev, enabled: event.target.checked }))} disabled={!isSuperAdmin} />
             启用该上游（关闭后所有任务接口立即拒绝）
           </label>
-          <button type="button" onClick={() => void handleSaveConfig()} disabled={busy || !isSuperAdmin} className="mt-3 min-h-11 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
-            {busy ? "保存中…" : "保存配置"}
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleSaveConfig()} disabled={busy || !isSuperAdmin} className="min-h-11 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+              {busy ? "保存中…" : "保存配置"}
+            </button>
+            <button type="button" onClick={() => void handleResetConfig()} disabled={busy || !isSuperAdmin} className="min-h-11 rounded-2xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 hover:border-rose-300 hover:bg-rose-100 disabled:opacity-50">
+              恢复默认
+            </button>
+          </div>
+          {!isSuperAdmin && <p className="mt-2 text-xs text-slate-500">来源/覆盖/热更分类对管理员只读；保存与恢复默认仅超级管理员可操作。</p>}
         </InfoPanel>
       )}
 

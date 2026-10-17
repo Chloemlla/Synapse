@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { FaCheck, FaDownload, FaLock, FaPlay, FaRedo, FaUnlock } from "react-icons/fa";
 import { useAuth } from "../../hooks/useAuth";
 import { cn } from "../../utils/cn";
@@ -62,8 +62,17 @@ const DEFAULT_CODE = STARTER_SNIPPETS[0].code;
 
 export default function GeoGebraPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedProjectId = searchParams.get("projectId");
+  const requestedShareSlug = searchParams.get("share");
+  // GEO-17：`?share=<slug>` 是「从别处打开这份公开分享」的入口。
+  // 工作台本身不内嵌别人的画布（避免把分享态混进本地编辑/自动同步），统一转到只读分享页。
+  useEffect(() => {
+    const slug = (requestedShareSlug ?? "").trim();
+    if (!/^[a-z0-9-]{10,100}$/i.test(slug)) return;
+    navigate(`/geogebra/share/${encodeURIComponent(slug)}`, { replace: true });
+  }, [navigate, requestedShareSlug]);
   const [initialProjects] = useState(() => {
     const saved = readLocalGeoGebraProjects();
     return saved.length ? saved : [createLocalGeoGebraProject({ code: DEFAULT_CODE, title: "几何草稿", tags: ["示例"] })];

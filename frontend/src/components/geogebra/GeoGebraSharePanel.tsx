@@ -7,7 +7,11 @@ import FeatureConsentGate from "../FeatureConsentGate";
 import { studioFieldClassName, studioGhostButtonClassName, studioPanelClassName, studioPrimaryButtonClassName, studioSubPanelClassName, studioTileClassName } from "../studioTheme";
 import { StudioEmptyState, StudioErrorNote, StudioLoadingState, StudioSuccessNote } from "../studioFeedback";
 import { prepareGeoGebraScript } from "./script";
+import { geoGebraShareUrl, resolveGeoGebraEmbedUrl } from "./embed";
 import type { GeoGebraLocalProject, GeoGebraShare } from "../../types/geogebra";
+
+// 后端 shareView 已带 embedUrl；这里用可选交叉类型兼容旧响应，缺失时由 embed.ts 本地推导。
+type ShareWithEmbed = GeoGebraShare & { embedUrl?: string | null };
 
 type Props = {
   project: GeoGebraLocalProject | null;
@@ -87,14 +91,20 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
     }
   };
 
-  const copy = async (slug: string) => {
+  const copyText = async (text: string, message: string) => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/geogebra/share/${slug}`);
-      setStatus("分享链接已复制。");
+      await navigator.clipboard.writeText(text);
+      setStatus(message);
     } catch {
       setError("无法复制链接，请手动打开分享页面并复制地址。");
     }
   };
+
+  const copy = (slug: string) => copyText(geoGebraShareUrl(slug), "分享链接已复制。");
+  const copyEmbed = (share: GeoGebraShare) => copyText(
+    resolveGeoGebraEmbedUrl(share as ShareWithEmbed),
+    "嵌入链接已复制。",
+  );
 
   if (!user) {
     return <section className={studioPanelClassName}><h2 className="text-lg font-semibold text-slate-900">公开分享</h2><p className="mt-2 text-sm text-slate-600">登录后可发布和管理画布分享。</p><a href="/login" className={cn(studioPrimaryButtonClassName, "mt-4")}>登录后继续</a></section>;
@@ -134,16 +144,21 @@ export default function GeoGebraSharePanel({ project, onGetCover }: Props) {
             {sharesLoading ? (
               <StudioLoadingState text="加载分享..." minHeightClassName="min-h-[180px]" />
             ) : shares.length ? shares.map((share) => {
-              const url = `${window.location.origin}/geogebra/share/${share.slug}`;
+              const url = geoGebraShareUrl(share.slug);
+              const embedUrl = resolveGeoGebraEmbedUrl(share as ShareWithEmbed);
               return (
                 <article key={share.shareId} className={cn(studioTileClassName, "p-3")}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <strong className="block truncate text-sm text-slate-800">{share.title}</strong>
                       <span className="mt-1 block truncate text-xs text-slate-500">{share.revokedAt ? "已撤销" : url}</span>
+                      {!share.revokedAt && (
+                        <span className="mt-1 block truncate text-xs text-slate-400" title={embedUrl}>嵌入：{embedUrl}</span>
+                      )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {!share.revokedAt && <button type="button" onClick={() => void copy(share.slug)} className={studioGhostButtonClassName}><FaCopy /> 复制</button>}
+                      {!share.revokedAt && <button type="button" onClick={() => void copyEmbed(share)} className={studioGhostButtonClassName}><FaShareAlt /> 复制嵌入</button>}
                       {!share.revokedAt && <button type="button" onClick={() => void revoke(share.shareId)} className={studioGhostButtonClassName}><FaTimes /> 撤销</button>}
                     </div>
                   </div>

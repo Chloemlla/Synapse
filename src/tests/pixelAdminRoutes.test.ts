@@ -45,6 +45,7 @@ jest.mock("../pixel/usageLogService", () => ({ pixelUsageLogService: {} }));
 jest.mock("../pixel/integrationConfigService", () => ({
   getPixelIntegrationConfigView: async () => ({}),
   savePixelIntegrationConfig: async () => ({}),
+  resetPixelIntegrationConfig: async () => ({}),
 }));
 jest.mock("../pixel/dashboardService", () => ({ getPixelAdminDashboard: async () => ({}) }));
 jest.mock("../services/auditLogService", () => ({ AuditLogService: { log: async () => undefined } }));
@@ -80,10 +81,23 @@ const USAGE: PixelUsageLogView = {
 };
 
 const DASHBOARD: PixelAdminDashboardView = {
-  config: { configured: true, enabled: true, host: "upstream.example.com" },
+  config: { configured: true, enabled: true, host: "upstream.example.com", source: "db", reload: "runtime" },
   mappings: { total: 1, enabled: 1 },
-  usage: { total: 3, last24h: 1, last7d: 3, lastAt: "2026-01-02T00:00:00.000Z" },
+  usage: { total: 3, last24h: 1, last7d: 3, lastAt: "2026-01-02T00:00:00.000Z", retentionDays: 30 },
   tasks: { total: 2, bySubmitState: { accepted: 2 } },
+  runtime: {
+    upstream: { configured: true, enabled: true, host: "upstream.example.com", source: "db", reload: "runtime" },
+    proxy: null,
+    worker: null,
+    queue: null,
+    unavailableReasons: { proxy: "无代理", worker: "无 worker", queue: "无队列" },
+  },
+  metrics: {
+    errors: { total: 3, failed: 1, rate: 0.3333, byOutcome: { success: 2, upstream_error: 1 } },
+    latency: { samples: 3, avgMs: 120, p95Ms: 180, p99Ms: 200, maxMs: 200 },
+    requestSize: { samples: 3, avgBytes: 100, p95Bytes: 140, maxBytes: 150 },
+    unavailableReasons: { errors: null, latency: null, requestSize: null },
+  },
 };
 
 describe("pixel 管理端路由", () => {
@@ -91,6 +105,7 @@ describe("pixel 管理端路由", () => {
   let createError: unknown = null;
   let usageQuery: unknown[] = [];
   let saveCalls: Array<Record<string, unknown>> = [];
+  let resetCalls = 0;
 
   const deps: PixelAdminRouterDeps = {
     mappings: {
@@ -124,6 +139,9 @@ describe("pixel 管理端路由", () => {
           requestTimeoutMs: 20_000,
           updatedAt: "2026-01-01T00:00:00.000Z",
           updatedByUsername: "root",
+          source: "db" as const,
+          overridden: true,
+          reload: "runtime" as const,
         };
       },
       async save(input, actor) {
@@ -139,6 +157,24 @@ describe("pixel 管理端路由", () => {
           requestTimeoutMs: 20_000,
           updatedAt: "2026-01-01T00:00:00.000Z",
           updatedByUsername: actor.username,
+          source: "db" as const,
+          overridden: true,
+          reload: "runtime" as const,
+        };
+      },
+      async reset() {
+        resetCalls += 1;
+        return {
+          configured: false,
+          enabled: false,
+          upstreamBaseUrl: "",
+          allowedHosts: [],
+          requestTimeoutMs: 20_000,
+          updatedAt: null,
+          updatedByUsername: "",
+          source: "default" as const,
+          overridden: false,
+          reload: "runtime" as const,
         };
       },
     },
@@ -202,6 +238,7 @@ describe("pixel 管理端路由", () => {
     createError = null;
     usageQuery = [];
     saveCalls = [];
+    resetCalls = 0;
   });
 
   it("未登录/非管理员被拒绝", async () => {
@@ -306,5 +343,35 @@ describe("pixel 管理端路由", () => {
     const response = await request(app).get("/api/admin/pixel/dashboard").set("x-test-admin", "a1");
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual(DASHBOARD);
+  });
+
+  it("恢复默认配置仅 superadmin，并写一条不含地址的审计", async () => {
+    const forbidden = await request(app).delete("/api/admin/pixel/configs").set("x-test-admin", "a1");
+    expect(forbidden.status).toBe(403);
+    expect(resetCalls).toBe(0);
+
+    const response = await request(app).delete("/api/admin/pixel/configs").set("x-test-superadmin", "root");
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ configured: false, enabled: false, source: "default" });
+    expect(resetCalls).toBe(1);
+
+    const entry = audits.find((item) => item.action === "pixel.config.reset");
+    expect(entry).toBeDefined();
+    expect(JSON.stringify(entry)).not.toContain("upstream.example.com");
+  });
+
+  it("保存配置时把完整 body 交给 service（受保护字段由服务层 allowlist 拒绝）", async () => {
+    const response = await request(app)
+      .put("/api/admin/pixel/configs")
+      .set("x-test-superadmin", "root")
+      .send({
+        upstreamBaseUrl: "https://upstream.example.com",
+        allowedHosts: ["upstream.example.com"],
+        enabled: true,
+        mongoUri: "mongodb://protected",
+      });
+    expect(response.status).toBe(200);
+    // 路由不得悄悄丢掉未知字段：只有原样透传，服务层的 allowlist 才可能拒绝它。
+    expect(saveCalls[0]).toMatchObject({ mongoUri: "mongodb://protected" });
   });
 });

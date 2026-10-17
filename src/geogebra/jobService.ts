@@ -416,6 +416,29 @@ const runnerOwner = `geogebra-runner-${process.pid}`;
 let runnerTimer: NodeJS.Timeout | null = null;
 let runnerRunning = false;
 
+/**
+ * 供管理诊断（GEO-22）读取的 worker/队列静态信息。
+ * 只报进程内可核对的事实：调度方式、runner 是否已启动、租约与单用户并发上限；
+ * 进程内 runner 没有「空闲 worker 数」这种可观测值，所以不提供该字段（不编数字）。
+ */
+export function getGeoGebraJobRunnerStatus(): {
+  scheduler: "in-process";
+  running: boolean;
+  pid: number;
+  tickMs: number;
+  leaseMs: number;
+  maxActiveJobsPerUser: number;
+} {
+  return {
+    scheduler: "in-process",
+    running: runnerTimer !== null,
+    pid: process.pid,
+    tickMs: TICK_MS,
+    leaseMs: LEASE_MS,
+    maxActiveJobsPerUser: MAX_ACTIVE_JOBS_PER_USER,
+  };
+}
+
 /** 单进程内只有一个 runner：多实例部署时靠租约互斥，不靠进程数。 */
 export function startGeoGebraJobRunner(): void {
   if (runnerTimer) return;

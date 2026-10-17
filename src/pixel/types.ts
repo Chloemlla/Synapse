@@ -219,6 +219,16 @@ export interface PixelUsageLogView {
   createdAt: string;
 }
 
+/**
+ * 集成配置的来源分类（PIX-13）：
+ *   db      —— 管理端保存到 `pixel_integration_configs`，覆盖容器默认；
+ *   env     —— 没有数据库记录，生效值来自部署环境变量；
+ *   default —— 两者都没有，走代码内置默认值（上游仍为空 → fail-closed）。
+ */
+export type PixelIntegrationConfigSource = "db" | "env" | "default";
+/** 热更分类：runtime 保存后即时生效；restart 需要重启/重新部署才生效。 */
+export type PixelIntegrationConfigReload = "runtime" | "restart";
+
 /** 上游集成配置视图（仅管理端；用户侧接口绝不返回上游 host）。 */
 export interface PixelIntegrationConfigView {
   configured: boolean;
@@ -228,6 +238,36 @@ export interface PixelIntegrationConfigView {
   requestTimeoutMs: number;
   updatedAt: string | null;
   updatedByUsername: string;
+  /** 生效值来自哪里（PIX-13）。 */
+  source: PixelIntegrationConfigSource;
+  /** 是否有数据库记录覆盖了容器默认/环境变量。 */
+  overridden: boolean;
+  /** 改动后何时生效。 */
+  reload: PixelIntegrationConfigReload;
+}
+
+/** 错误/延迟/大小聚合（来自脱敏溯源；无样本时对应字段为 null）。 */
+export interface PixelUsageErrorMetrics {
+  total: number;
+  failed: number;
+  /** failed / total，0..1。 */
+  rate: number;
+  byOutcome: Record<string, number>;
+}
+
+export interface PixelUsageLatencyMetrics {
+  samples: number;
+  avgMs: number;
+  p95Ms: number;
+  p99Ms: number;
+  maxMs: number;
+}
+
+export interface PixelUsageSizeMetrics {
+  samples: number;
+  avgBytes: number;
+  p95Bytes: number;
+  maxBytes: number;
 }
 
 export interface PixelAdminDashboardView {
@@ -235,6 +275,8 @@ export interface PixelAdminDashboardView {
     configured: boolean;
     enabled: boolean;
     host: string;
+    source: PixelIntegrationConfigSource;
+    reload: PixelIntegrationConfigReload;
   };
   mappings: {
     total: number;
@@ -251,5 +293,37 @@ export interface PixelAdminDashboardView {
   tasks: {
     total: number;
     bySubmitState: Record<string, number>;
+  };
+  /**
+   * PIX-14：运行时状态。proxy/worker/queue 目前**没有数据源**，因此固定为 null，
+   * 原因放在 unavailableReasons 里，前端按「无数据」渲染而不是留白或编数字。
+   */
+  runtime: {
+    upstream: {
+      configured: boolean;
+      enabled: boolean;
+      host: string;
+      source: PixelIntegrationConfigSource;
+      reload: PixelIntegrationConfigReload;
+    };
+    proxy: null;
+    worker: null;
+    queue: null;
+    unavailableReasons: {
+      proxy: string;
+      worker: string;
+      queue: string;
+    };
+  };
+  /** PIX-14：来自脱敏溯源日志的可核对聚合；没有样本时为 null + 原因。 */
+  metrics: {
+    errors: PixelUsageErrorMetrics | null;
+    latency: PixelUsageLatencyMetrics | null;
+    requestSize: PixelUsageSizeMetrics | null;
+    unavailableReasons: {
+      errors: string | null;
+      latency: string | null;
+      requestSize: string | null;
+    };
   };
 }

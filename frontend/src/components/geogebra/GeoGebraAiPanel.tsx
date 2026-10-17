@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaLightbulb, FaMagic, FaUpload } from "react-icons/fa";
+import { FaComment, FaLightbulb, FaMagic, FaUpload } from "react-icons/fa";
 import { cn } from "../../utils/cn";
 import { useConfirm } from "../confirm/ConfirmDialogProvider";
 import FeatureConsentGate from "../FeatureConsentGate";
@@ -16,6 +16,7 @@ import { StudioEmptyState, StudioErrorNote, StudioLoadingState, StudioSuccessNot
 import {
   cancelGeoGebraJob,
   createGeoGebraAiJob,
+  createGeoGebraComment,
   deleteGeoGebraAsset,
   getGeoGebraJob,
   uploadGeoGebraReferenceImage,
@@ -71,6 +72,8 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [applying, setApplying] = useState(false);
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [commentStatus, setCommentStatus] = useState("");
   const pollRef = useRef<number | null>(null);
 
   const activeAction = useMemo(() => AI_ACTIONS.find((action) => action.kind === kind) ?? AI_ACTIONS[0], [kind]);
@@ -91,6 +94,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
     setJob(null);
     setError("");
     setNotice("");
+    setCommentStatus("");
   }, [project?.projectId, stopPolling]);
 
   useEffect(() => {
@@ -153,6 +157,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
     setBusy(true);
     setError("");
     setNotice("");
+    setCommentStatus("");
     try {
       const created = await createGeoGebraAiJob({
         kind,
@@ -214,6 +219,34 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
   };
 
   const result = job?.result ?? null;
+
+  /**
+   * GEO-16：把 AI 概要写入项目评论。
+   * 必须是用户显式点击：这里没有任何 effect 会自动调用；写入失败保留可见错误态。
+   * 只有已同步到云端的项目才有服务端评论可写（本地草稿的 projectId 在服务端不存在）。
+   */
+  const handleWriteSummaryComment = async () => {
+    const summary = typeof result?.summary === "string" ? result.summary.trim() : "";
+    if (!summary || commentBusy) return;
+    if (!project?.cloudRevision) {
+      setError("请先把项目保存到云端，再把概要写入评论。");
+      return;
+    }
+    setCommentBusy(true);
+    setError("");
+    setCommentStatus("");
+    try {
+      await createGeoGebraComment({
+        projectId: project.projectId,
+        body: summary.slice(0, 4_000),
+      });
+      setCommentStatus("概要已写入项目评论。");
+    } catch {
+      setError("概要写入评论失败，请确认项目权限后重试。");
+    } finally {
+      setCommentBusy(false);
+    }
+  };
 
   return (
     <section className={studioPanelClassName} aria-labelledby="geogebra-ai-heading">
@@ -305,6 +338,21 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
             </div>
             {job.status === "failed" && <StudioErrorNote className="mt-2">{job.errorMessage ?? "这次没有生成可用的建议，请重试。"}</StudioErrorNote>}
             {result?.summary && <p className="mt-2 text-sm leading-6 text-slate-700">{result.summary}</p>}
+            {result?.summary && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleWriteSummaryComment()}
+                  disabled={commentBusy || !project?.cloudRevision}
+                  className={studioGhostButtonClassName}
+                  title={project?.cloudRevision ? "把这段概要写入项目评论" : "保存到云端后可写入评论"}
+                >
+                  <FaComment /> {commentBusy ? "写入中…" : "写入评论"}
+                </button>
+                {!project?.cloudRevision && <span className="text-xs text-slate-500">保存到云端后可把概要写入评论。</span>}
+                {commentStatus && <span role="status" className="text-xs text-emerald-700">{commentStatus}</span>}
+              </div>
+            )}
             {typeof result?.confidence === "number" && (
               <p className="mt-1 text-xs text-slate-500">模型自评把握度约 {Math.round(result.confidence * 100)}%，请以预检与实际运行为准。</p>
             )}

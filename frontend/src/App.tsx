@@ -132,6 +132,7 @@ const PublicShortLinkCreator = React.lazy(() => import('./components/PublicShort
 const SpeechToTextPage = React.lazy(() => import('./components/speech-to-text/SpeechToTextPage').then((module) => ({ default: module.SpeechToTextPage })));
 const GeoGebraPage = React.lazy(() => import('./components/geogebra/GeoGebraPage'));
 const GeoGebraSharePage = React.lazy(() => import('./components/geogebra/GeoGebraSharePage'));
+const GeoGebraEmbedShell = React.lazy(() => import('./components/geogebra/GeoGebraEmbedShell'));
 const PixelWorkbenchPage = React.lazy(() => import('./components/pixel/PixelWorkbenchPage'));
 
 // 人机验证页面懒加载（验证方式由后端 captcha-providers 选择）
@@ -620,6 +621,13 @@ const App: React.FC = () => {
   );
   const adminFallbackPath = user ? '/' : loginRedirectPath;
   const isArtifactSharePath = React.useMemo(() => location.pathname.startsWith('/artifacts/'), [location.pathname]);
+  // GEO-17 嵌入壳：/geogebra/share/:slug?embed=1 不渲染站点导航与页脚。
+  // 只认 embed=1 这一个显式开关；普通分享页仍走完整站点外壳。
+  const isGeoGebraEmbedPath = React.useMemo(
+    () => location.pathname.startsWith('/geogebra/share/')
+      && new URLSearchParams(location.search).get('embed') === '1',
+    [location.pathname, location.search],
+  );
   const isCloudflareChallengePage = React.useMemo(() => location.pathname === '/cdn-cgi', [location.pathname]);
   const isAuthFlowPath = React.useMemo(() => (
     AUTH_FLOW_PATHS.has(location.pathname)
@@ -632,6 +640,9 @@ const App: React.FC = () => {
     || isArtifactSharePath
   ), [isArtifactSharePath, location.pathname]);
   const shouldBlockForFirstVisitCheck = !isArtifactSharePath
+    // 嵌入壳是公开、只读的 iframe 目标：首次访问验证会把它整块挡住，因此对未封禁的访问者豁免；
+    // IP 封禁仍然生效（不因为 embed 而绕过处罚态）。
+    && !(isGeoGebraEmbedPath && !isIpBanned)
     && !isCloudflareChallengePage
     && enableFirstVisitVerification
     && Boolean(fingerprint)
@@ -1489,6 +1500,21 @@ const App: React.FC = () => {
         <Suspense fallback={<RouteLoadingShell label="Loading artifact..." />}>
           <Routes location={location} key={location.pathname}>
             <Route path="/artifacts/:shortId" element={<ArtifactSharePage />} />
+            <Route path="*" element={<NotFoundPage path={location.pathname} />} />
+          </Routes>
+        </Suspense>
+      </div>
+    );
+  }
+
+  // GeoGebra 只读嵌入：独立于桌面侧栏/移动端导航与页脚的外壳，只渲染画布本身。
+  // 与 /artifacts 分支同一模式：不进入下面的 NotificationProvider 站点壳。
+  if (isGeoGebraEmbedPath) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Suspense fallback={<RouteLoadingShell label="正在打开嵌入画布..." />}>
+          <Routes location={location} key={location.pathname}>
+            <Route path="/geogebra/share/:slug" element={<GeoGebraEmbedShell />} />
             <Route path="*" element={<NotFoundPage path={location.pathname} />} />
           </Routes>
         </Suspense>

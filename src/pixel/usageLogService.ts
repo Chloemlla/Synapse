@@ -1,6 +1,13 @@
 import PixelUsageLogModel, { type IPixelUsageLog } from "../models/pixelUsageLogModel";
 import { maskSecret, newPixelId } from "./runtime";
-import { PixelDomainError, type PixelUsageLogView, type PixelUsageOutcome } from "./types";
+import {
+  PixelDomainError,
+  type PixelUsageErrorMetrics,
+  type PixelUsageLatencyMetrics,
+  type PixelUsageLogView,
+  type PixelUsageOutcome,
+  type PixelUsageSizeMetrics,
+} from "./types";
 
 /**
  * 脱敏溯源日志（PIX-12）。
@@ -81,6 +88,27 @@ export interface PixelUsageQuery {
   limit?: unknown;
   /** 翻页游标：上一页最后一条的 createdAt（ISO）。 */
   cursor?: unknown;
+}
+
+export interface PixelUsageMetrics {
+  total: number;
+  errors: PixelUsageErrorMetrics | null;
+  latency: PixelUsageLatencyMetrics | null;
+  requestSize: PixelUsageSizeMetrics | null;
+  unavailableReasons: {
+    errors: string | null;
+    latency: string | null;
+    requestSize: string | null;
+  };
+}
+
+const NO_SAMPLES_REASON = "还没有可核对的调用记录（溯源表为空或已过保留期）。";
+
+function round(value: unknown, digits = 0): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  const factor = 10 ** digits;
+  return Math.round(numeric * factor) / factor;
 }
 
 export const pixelUsageLogService = {
@@ -172,6 +200,90 @@ export const pixelUsageLogService = {
       last24h,
       last7d,
       lastAt: latestAt ? latestAt.toISOString() : null,
+    };
+  },
+  /**
+   * PIX-14：错误/延迟/请求大小的可核对聚合。
+   *
+   * 数字只来自 `pixel_usage_logs`（脱敏溯源）：outcome 分类、durationMs、requestBytes。
+   * 没有样本时返回 null 并给出原因，而不是「0 ms / 0%」这种看起来正常、实际没有依据的值。
+   * 分位用 MongoDB 7+ 的 `$percentile`（近似法）：比把所有行拉进内存排序便宜，也避免
+   * 在管理端刷新时把整张溯源表读一遍。
+   */
+  async metrics(): Promise<PixelUsageMetrics> {
+    // `$percentile` 是 MongoDB 7+ 的聚合累加器；Mongoose 的类型表尚未收录它，
+    // 因此显式断言成 PipelineStage[]，而不是为了类型去改写成内存排序。
+    const pipeline = [
+      {
+        $facet: {
+          outcomes: [{ $group: { _id: "$outcome", count: { $sum: 1 } } }],
+          latency: [{
+            $group: {
+              _id: null,
+              samples: { $sum: 1 },
+              avgMs: { $avg: "$durationMs" },
+              maxMs: { $max: "$durationMs" },
+              p: { $percentile: { input: "$durationMs", p: [0.95, 0.99], method: "approximate" } },
+            },
+          }],
+          size: [{
+            $group: {
+              _id: null,
+              samples: { $sum: 1 },
+              avgBytes: { $avg: "$requestBytes" },
+              maxBytes: { $max: "$requestBytes" },
+              p: { $percentile: { input: "$requestBytes", p: [0.95], method: "approximate" } },
+            },
+          }],
+        },
+      },
+    ] as unknown as Parameters<typeof PixelUsageLogModel.aggregate>[0];
+    const rows = await PixelUsageLogModel.aggregate<{
+      outcomes: Array<{ _id: string; count: number }>;
+      latency: Array<{ samples: number; avgMs: number; maxMs: number; p: number[] }>;
+      size: Array<{ samples: number; avgBytes: number; maxBytes: number; p: number[] }>;
+    }>(pipeline).exec();
+
+    const facet = rows[0] ?? { outcomes: [], latency: [], size: [] };
+    const total = facet.outcomes.reduce((sum, entry) => sum + Number(entry.count ?? 0), 0);
+    const byOutcome: Record<string, number> = {};
+    for (const entry of facet.outcomes) byOutcome[String(entry._id ?? "unknown")] = Number(entry.count ?? 0);
+    const failed = total - Number(byOutcome.success ?? 0);
+    const latencySample = facet.latency[0] ?? null;
+    const sizeSample = facet.size[0] ?? null;
+
+    return {
+      total,
+      errors: total > 0
+        ? {
+            total,
+            failed,
+            rate: round(failed / total, 4),
+            byOutcome,
+          }
+        : null,
+      latency: total > 0 && latencySample
+        ? {
+            samples: Number(latencySample.samples ?? total),
+            avgMs: round(latencySample.avgMs, 1),
+            p95Ms: round(latencySample.p?.[0] ?? 0, 1),
+            p99Ms: round(latencySample.p?.[1] ?? 0, 1),
+            maxMs: round(latencySample.maxMs, 1),
+          }
+        : null,
+      requestSize: total > 0 && sizeSample
+        ? {
+            samples: Number(sizeSample.samples ?? total),
+            avgBytes: round(sizeSample.avgBytes, 1),
+            p95Bytes: round(sizeSample.p?.[0] ?? 0, 1),
+            maxBytes: round(sizeSample.maxBytes, 1),
+          }
+        : null,
+      unavailableReasons: {
+        errors: total > 0 ? null : NO_SAMPLES_REASON,
+        latency: total > 0 ? null : NO_SAMPLES_REASON,
+        requestSize: total > 0 ? null : NO_SAMPLES_REASON,
+      },
     };
   },
 };

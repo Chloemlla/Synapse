@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 import { isBlockedAddress } from "../utils/ssrfGuard";
-import { PixelDomainError, type PixelIntegrationConfigView } from "./types";
+import {
+  PixelDomainError,
+  type PixelIntegrationConfigView,
+} from "./types";
 
 /**
  * Pixel 上游集成配置（PRD 6.1.7 / PIX-13 的 Phase 4 子集）。
@@ -58,6 +61,71 @@ const MAX_TIMEOUT_MS = 60_000;
 const HOSTNAME_PATTERN = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 /** 明显属于内部命名空间的 TLD：真正的判定是出站时的 DNS 解析，这里只是省掉一次明显的误配。 */
 const INTERNAL_TLD_PATTERN = /(?:^|\.)(?:local|internal|localhost|lan|home|corp)$/;
+
+/**
+ * 写接口只接受这四个字段。其余字段（包括 `source`/`overridden`/`reload` 这类派生元数据）
+ * 一律 400——这是 allowlist 而不是 denylist：Mongo URI、数据库名、主密钥、签名材料等
+ * bootstrap 配置不能因为「忘了列进黑名单」而在这个页面被改写（PRD PIX-13，fail-closed）。
+ */
+const WRITABLE_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  "upstreamBaseUrl",
+  "allowedHosts",
+  "enabled",
+  "requestTimeoutMs",
+]);
+
+/**
+ * 部署环境里的上游配置（PIX-13 的「容器默认」来源）。
+ * 只作为**数据库没有记录时**的显式配置通道存在：它没有任何默认地址，未填写就仍然
+ * fail-closed，不会凭空出现一个可连接的上游。
+ */
+const ENV_KEYS = {
+  baseUrl: "PIXEL_UPSTREAM_BASE_URL",
+  allowedHosts: "PIXEL_UPSTREAM_ALLOWED_HOSTS",
+  enabled: "PIXEL_UPSTREAM_ENABLED",
+  timeoutMs: "PIXEL_UPSTREAM_TIMEOUT_MS",
+} as const;
+
+interface PixelIntegrationConfigInput {
+  upstreamBaseUrl: string;
+  allowedHosts: string[];
+  enabled: boolean;
+  requestTimeoutMs: number;
+}
+
+function readEnvIntegrationConfig(env: NodeJS.ProcessEnv = process.env): PixelIntegrationConfigInput | null {
+  const baseUrl = String(env[ENV_KEYS.baseUrl] ?? "").trim();
+  const rawHosts = String(env[ENV_KEYS.allowedHosts] ?? "").split(",");
+  const allowedHosts = normalizeAllowedHosts(rawHosts);
+  const enabledRaw = String(env[ENV_KEYS.enabled] ?? "").trim().toLowerCase();
+  const enabled = ["1", "true", "yes", "on"].includes(enabledRaw);
+  // 一个环境变量都没设 → 没有 env 来源，避免把「内置默认值」误报成 env。
+  if (!baseUrl && allowedHosts.length === 0 && !enabledRaw) return null;
+  return {
+    upstreamBaseUrl: baseUrl,
+    allowedHosts,
+    enabled,
+    requestTimeoutMs: normalizeTimeoutMs(env[ENV_KEYS.timeoutMs]),
+  };
+}
+
+function applyIntegrationConfigCandidate(input: PixelIntegrationConfigInput): PixelIntegrationConfig | null {
+  if (!input.enabled || !input.upstreamBaseUrl) return null;
+  const allowedHosts = normalizeAllowedHosts(input.allowedHosts);
+  try {
+    const base = validatePixelUpstreamBaseUrl(input.upstreamBaseUrl, allowedHosts);
+    for (const host of allowedHosts) assertHostAllowedShape(host);
+    if (!base) return null;
+    return {
+      upstreamBaseUrl: base,
+      allowedHosts,
+      enabled: true,
+      requestTimeoutMs: normalizeTimeoutMs(input.requestTimeoutMs),
+    };
+  } catch {
+    return null;
+  }
+}
 
 let cached: { at: number; value: PixelIntegrationConfig | null } | null = null;
 
@@ -138,63 +206,80 @@ function normalizeTimeoutMs(raw: unknown): number {
 }
 
 /**
- * 读取生效配置。未配置 / 被显式关闭 / 地址或 host 清单不完整时返回 null（**fail-closed**）。
+ * 读取生效配置。优先级：数据库记录 > 环境变量 > 内置默认（上游地址为空的 fail-closed 默认）。
+ * 未配置 / 被显式关闭 / 地址或 host 清单不完整时返回 null（**fail-closed**）。
  */
 export async function loadPixelIntegrationConfig(): Promise<PixelIntegrationConfig | null> {
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
 
   const doc = await PixelIntegrationConfigModel.findOne({ key: CONFIG_KEY }).lean();
-  let value: PixelIntegrationConfig | null = null;
-  if (doc && doc.enabled && doc.upstreamBaseUrl) {
-    const allowedHosts = normalizeAllowedHosts(doc.allowedHosts);
-    // 出站前的第一道闸：地址与 host 清单必须自洽。不自洽就当作没配置，而不是"尽力连一下"。
-    try {
-      const base = validatePixelUpstreamBaseUrl(doc.upstreamBaseUrl, allowedHosts);
-      for (const host of allowedHosts) assertHostAllowedShape(host);
-      if (base) {
-        value = {
-          upstreamBaseUrl: base,
-          allowedHosts,
-          enabled: true,
-          requestTimeoutMs: normalizeTimeoutMs(doc.requestTimeoutMs),
-        };
+  // 有数据库记录就完全以它为准（即使它是「关闭」），不会被环境变量偷偷重新启用。
+  const candidate: PixelIntegrationConfigInput | null = doc
+    ? {
+        upstreamBaseUrl: doc.upstreamBaseUrl ?? "",
+        allowedHosts: normalizeAllowedHosts(doc.allowedHosts),
+        enabled: Boolean(doc.enabled),
+        requestTimeoutMs: normalizeTimeoutMs(doc.requestTimeoutMs),
       }
-    } catch {
-      value = null;
-    }
-  }
+    : readEnvIntegrationConfig();
+  const value = candidate ? applyIntegrationConfigCandidate(candidate) : null;
   cached = { at: Date.now(), value };
   return value;
 }
 
 export async function getPixelIntegrationConfigView(): Promise<PixelIntegrationConfigView> {
   const doc = await PixelIntegrationConfigModel.findOne({ key: CONFIG_KEY }).lean();
-  if (!doc) {
+  if (doc) {
+    const allowedHosts = normalizeAllowedHosts(doc.allowedHosts);
+    const configured = Boolean(doc.upstreamBaseUrl && allowedHosts.length);
     return {
-      configured: false,
-      enabled: false,
-      upstreamBaseUrl: "",
-      allowedHosts: [],
-      requestTimeoutMs: DEFAULT_TIMEOUT_MS,
-      updatedAt: null,
-      updatedByUsername: "",
+      configured,
+      enabled: Boolean(doc.enabled) && configured,
+      upstreamBaseUrl: doc.upstreamBaseUrl || "",
+      allowedHosts,
+      requestTimeoutMs: normalizeTimeoutMs(doc.requestTimeoutMs),
+      updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+      updatedByUsername: doc.updatedByUsername || "",
+      source: "db",
+      overridden: true,
+      reload: "runtime",
     };
   }
-  const configured = Boolean(doc.upstreamBaseUrl && normalizeAllowedHosts(doc.allowedHosts).length);
+
+  const envConfig = readEnvIntegrationConfig();
+  if (envConfig) {
+    return {
+      configured: Boolean(envConfig.upstreamBaseUrl && envConfig.allowedHosts.length),
+      enabled: envConfig.enabled && Boolean(envConfig.upstreamBaseUrl && envConfig.allowedHosts.length),
+      upstreamBaseUrl: envConfig.upstreamBaseUrl,
+      allowedHosts: envConfig.allowedHosts,
+      requestTimeoutMs: envConfig.requestTimeoutMs,
+      updatedAt: null,
+      updatedByUsername: "环境变量",
+      source: "env",
+      overridden: false,
+      reload: "restart",
+    };
+  }
+
   return {
-    configured,
-    enabled: Boolean(doc.enabled) && configured,
-    upstreamBaseUrl: doc.upstreamBaseUrl || "",
-    allowedHosts: normalizeAllowedHosts(doc.allowedHosts),
-    requestTimeoutMs: normalizeTimeoutMs(doc.requestTimeoutMs),
-    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
-    updatedByUsername: doc.updatedByUsername || "",
+    configured: false,
+    enabled: false,
+    upstreamBaseUrl: "",
+    allowedHosts: [],
+    requestTimeoutMs: DEFAULT_TIMEOUT_MS,
+    updatedAt: null,
+    updatedByUsername: "",
+    source: "default",
+    overridden: false,
+    reload: "runtime",
   };
 }
-
 /**
  * 保存生效配置（仅超管路径调用，调用点已由 authenticateSuperAdmin 把关）。
  * 校验顺序刻意是「先归一 host 清单 → 再校验地址」，这样 base URL 的 host 一定能在清单里找到。
+ * 入参先过 allowlist：任何未登记字段（含派生的 source/overridden/reload、以及 Mongo URI /
+ * 主密钥 / 签名材料这类 bootstrap 项）直接 400，绝不被静默忽略或写进集合。
  */
 export async function savePixelIntegrationConfig(
   input: unknown,
@@ -203,6 +288,16 @@ export async function savePixelIntegrationConfig(
   const body = input && typeof input === "object" && !Array.isArray(input)
     ? (input as Record<string, unknown>)
     : {};
+  for (const key of Object.keys(body)) {
+    if (!WRITABLE_CONFIG_KEYS.has(key)) {
+      throw new PixelDomainError(
+        "该字段不允许在运行时配置页修改。",
+        400,
+        "PIXEL_CONFIG_PROTECTED_FIELD",
+        { field: key.slice(0, 40) },
+      );
+    }
+  }
   const allowedHosts = normalizeAllowedHosts(body.allowedHosts);
   if (allowedHosts.length === 0) {
     throw new PixelDomainError("请先填写允许访问的上游主机。", 400, "PIXEL_CONFIG_HOSTS_REQUIRED");
@@ -231,6 +326,18 @@ export async function savePixelIntegrationConfig(
     },
     { upsert: true },
   );
+  invalidatePixelIntegrationConfigCache();
+  return getPixelIntegrationConfigView();
+}
+
+/**
+ * 恢复默认（PIX-13）：删除数据库记录，回到「环境变量 > 内置默认」的来源。
+ *
+ * 注意这不是「恢复成一个可用的默认上游」——默认上游地址为空，删除后所有上游调用立刻
+ * fail-closed（除非部署侧显式配置了环境变量）。审计由路由层写（记录操作者与结果来源）。
+ */
+export async function resetPixelIntegrationConfig(): Promise<PixelIntegrationConfigView> {
+  await PixelIntegrationConfigModel.deleteOne({ key: CONFIG_KEY });
   invalidatePixelIntegrationConfigCache();
   return getPixelIntegrationConfigView();
 }

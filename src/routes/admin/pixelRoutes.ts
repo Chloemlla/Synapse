@@ -4,6 +4,7 @@ import { pixelCdkMappingService } from "../../pixel/cdkMappingService";
 import { getPixelAdminDashboard } from "../../pixel/dashboardService";
 import {
   getPixelIntegrationConfigView,
+  resetPixelIntegrationConfig,
   savePixelIntegrationConfig,
 } from "../../pixel/integrationConfigService";
 import { pixelUsageLogService } from "../../pixel/usageLogService";
@@ -25,7 +26,7 @@ import {
   getPixelKeyRotationStatus,
   reencryptPixelSecretsWithCurrentKey,
 } from "../../pixel/reencryptService";
-import { hasValidSecuritySession } from "../../utils/securitySession";
+import { assertSecuritySessionBinding, hasValidSecuritySession } from "../../utils/securitySession";
 import { suppressAuditPayloadCapture } from "../../pixel/requestAudit";
 import { PixelDomainError, type PixelAdminDashboardView } from "../../pixel/types";
 import { AuditLogService, type AuditEntry } from "../../services/auditLogService";
@@ -57,6 +58,7 @@ export interface PixelAdminRouterDeps {
   config: {
     getView: typeof getPixelIntegrationConfigView;
     save: typeof savePixelIntegrationConfig;
+    reset: typeof resetPixelIntegrationConfig;
   };
   dashboard: () => Promise<PixelAdminDashboardView>;
   /** 法律保全：登记（快照）/列表/解除。 */
@@ -372,21 +374,15 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
     suppressAuditPayloadCapture(req);
     const body = jsonBody(req);
     try {
-      const view = await deps.config.save(
-        {
-          upstreamBaseUrl: body.upstreamBaseUrl,
-          allowedHosts: body.allowedHosts,
-          enabled: body.enabled,
-          requestTimeoutMs: body.requestTimeoutMs,
-        },
-        actorOf(req),
-      );
+      // 原样交给 service：allowlist（只允许四个可写字段）必须在服务层生效，
+      // 否则「禁止受保护字段」只会在路由这一层被悄悄过滤掉，等于没有拦截。
+      const view = await deps.config.save(body, actorOf(req));
       res.json({ success: true, data: view });
       audit(req, res, {
         module: "config",
         action: "pixel.config.update",
         // 记「启用了没有 / 主机数」，不记地址本体以外的东西；地址本身是运维定位必要信息。
-        detail: { enabled: view.enabled, hostCount: view.allowedHosts.length },
+        detail: { enabled: view.enabled, hostCount: view.allowedHosts.length, source: view.source },
       });
     } catch (error) {
       sendError(res, "save-config", error);
@@ -396,6 +392,40 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
         result: "failure",
         errorMessage: error instanceof Error ? error.name : "unknown",
       });
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/admin/pixel/configs:
+   *   delete:
+   *     summary: 恢复默认上游集成配置（仅超级管理员）
+   *     description: 删除数据库记录，回到「环境变量 > 内置默认」的来源。默认没有上游地址，删除后所有上游调用继续 fail-closed。
+   *     responses:
+   *       200:
+   *         description: 恢复后的配置视图（含 source/overridden/reload）
+   *       403:
+   *         description: 需要超级管理员权限
+   */
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+  router.delete("/pixel/configs", authenticateSuperAdmin, async (req, res) => {
+    try {
+      const view = await deps.config.reset();
+      res.json({ success: true, data: view });
+      audit(req, res, {
+        module: "config",
+        action: "pixel.config.reset",
+        // 只记录恢复到哪个来源；不记录被删除的具体地址。
+        detail: { source: view.source },
+      });
+    } catch (error) {
+      audit(req, res, {
+        module: "config",
+        action: "pixel.config.reset",
+        result: "failure",
+        errorMessage: error instanceof Error ? error.name : "unknown",
+      });
+      sendError(res, "reset-config", error);
     }
   });
 
@@ -756,6 +786,21 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
       res.status(403).json({ success: false, error: "安全会话无效或已过期，请先建立安全会话。", code: "SECURITY_SESSION_REQUIRED" });
       return;
     }
+    // RC-41：主密钥重加密属于高危控制面操作，跟随统一的环境绑定判定。
+    if (!(await assertSecuritySessionBinding(req))) {
+      audit(req, res, {
+        module: "config",
+        action: "pixel.key-rotation.reencrypt",
+        result: "failure",
+        errorMessage: "SECURITY_SESSION_BINDING_CHANGED",
+      });
+      res.status(403).json({
+        success: false,
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: "SECURITY_SESSION_BINDING_CHANGED",
+      });
+      return;
+    }
     const body = jsonBody(req);
     try {
       assertReencryptLimit(body.limit);
@@ -792,7 +837,11 @@ export function createPixelAdminRouter(deps: PixelAdminRouterDeps): express.Rout
 export default createPixelAdminRouter({
   mappings: pixelCdkMappingService,
   usage: pixelUsageLogService,
-  config: { getView: getPixelIntegrationConfigView, save: savePixelIntegrationConfig },
+  config: {
+    getView: getPixelIntegrationConfigView,
+    save: savePixelIntegrationConfig,
+    reset: resetPixelIntegrationConfig,
+  },
   dashboard: getPixelAdminDashboard,
   holds: { create: createPixelEvidenceHold, list: listPixelEvidenceHolds, release: releasePixelEvidenceHold },
   evidence: {

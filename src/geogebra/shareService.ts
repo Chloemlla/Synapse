@@ -22,16 +22,20 @@ function makeSlug(title: string): string {
 }
 
 function shareView(share: IGeoGebraShare) {
+  const active = !share.revokedAt && !share.subjectDeletedAt;
   return {
     shareId: share.shareId,
     slug: share.slug,
     title: share.title,
     canvasMode: share.canvasMode,
     commands: share.commands,
-    coverUrl: share.coverStored && !share.revokedAt && !share.subjectDeletedAt ? `/api/geogebra/shares/${encodeURIComponent(share.slug)}/cover` : null,
+    coverUrl: share.coverStored && active ? `/api/geogebra/shares/${encodeURIComponent(share.slug)}/cover` : null,
     allowFork: share.allowFork,
     revokedAt: share.revokedAt ?? null,
     createdAt: share.createdAt,
+    // GEO-17：embed 入口与分享页共用同一个 slug，`?embed=1` 由前端切到只读嵌入壳
+    // （隐藏站点导航/页脚）。已撤销的分享不返回可用 embed 地址，避免给出必然 404 的链接。
+    embedUrl: active ? `/geogebra/share/${encodeURIComponent(share.slug)}?embed=1` : null,
   };
 }
 

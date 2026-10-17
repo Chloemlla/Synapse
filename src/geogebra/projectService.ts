@@ -29,6 +29,23 @@ export type GeoGebraProjectInput = {
 const MODES = new Set<GeoGebraMode>(["geometry", "3d", "graphing", "classic"]);
 const PROJECT_ID = /^[A-Za-z0-9_-]{8,80}$/;
 
+/**
+ * 云端版本保留上限（GEO-11）。PRD 把「最多保留 24 个版本」定义为默认行为，
+ * 具体数值属于数据保留策略，因此允许部署侧用环境变量覆盖，而不是把 24 写死在业务里。
+ * 取值被钳制在 1..500：0 或负数会让「创建后立刻删掉刚建的版本」变成静默的数据丢失，
+ * 过大则达不到保留上限的目的。
+ */
+export const DEFAULT_GEOGEBRA_VERSION_RETENTION = 24;
+const MAX_GEOGEBRA_VERSION_RETENTION = 500;
+
+export function geoGebraVersionRetentionLimit(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = String(env.GEOGEBRA_VERSION_RETENTION_LIMIT ?? "").trim();
+  if (!raw) return DEFAULT_GEOGEBRA_VERSION_RETENTION;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_GEOGEBRA_VERSION_RETENTION;
+  return Math.min(Math.max(parsed, 1), MAX_GEOGEBRA_VERSION_RETENTION);
+}
+
 function normalizeText(value: unknown, fallback: string, maxLength: number): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) || fallback : fallback;
 }
@@ -226,6 +243,47 @@ export async function listGeoGebraVersions(userId: string, projectId: string) {
   return versions.map((version) => versionView(version as unknown as IGeoGebraProjectVersion));
 }
 
+/**
+ * 按项目裁剪超出保留上限的版本（GEO-11）。
+ *
+ * 口径（仓库没有 GeoGebra 版本级的 legal hold 概念，只有账号级 Pixel 取证保全）：
+ *   · 只按**项目内最旧**的版本裁剪，不跨项目、不按用户全局裁剪；
+ *   · **被评论引用的版本不删除**：评论里存的是 versionId，删掉它会让历史评审失去锚点，
+ *     因此宁可让该项目临时超过上限，也不制造悬空引用；
+ *   · 裁剪是硬删除（与 deleteGeoGebraProject 删除私有历史的口径一致），否则「上限」只会在
+ *     逻辑上成立、存储仍然无界增长；
+ *   · 每次创建版本后同步执行，失败不回滚已创建的版本（版本本身已成功落库，清理可下轮再做）。
+ */
+export async function pruneGeoGebraVersions(
+  projectId: string,
+  limit: number = geoGebraVersionRetentionLimit(),
+): Promise<{ removed: number; protected: number }> {
+  const versions = await GeoGebraProjectVersionModel.find({ projectId, subjectDeletedAt: 0 })
+    .sort({ createdAt: -1 }).select("versionId").lean();
+  const excess = versions
+    .slice(limit)
+    .map((version) => String((version as { versionId?: unknown }).versionId ?? ""))
+    .filter(Boolean);
+  if (excess.length === 0) return { removed: 0, protected: 0 };
+
+  const referenced = await GeoGebraReviewCommentModel.distinct("versionId", {
+    projectId,
+    versionId: { $in: excess },
+  });
+  const protectedIds = new Set(referenced.filter(Boolean).map(String));
+  const removable = excess.filter((versionId) => !protectedIds.has(versionId));
+  if (removable.length === 0) return { removed: 0, protected: excess.length };
+
+  const result = await GeoGebraProjectVersionModel.deleteMany({
+    projectId,
+    versionId: { $in: removable },
+  });
+  return {
+    removed: Number((result as { deletedCount?: number }).deletedCount ?? 0),
+    protected: excess.length - removable.length,
+  };
+}
+
 export async function createGeoGebraVersion(userId: string, projectId: string, input: {
   label?: unknown;
   code?: unknown;
@@ -245,6 +303,9 @@ export async function createGeoGebraVersion(userId: string, projectId: string, i
     trigger: normalizeText(input.trigger, "manual", 40),
     createdAt: new Date(),
   });
+  // 保留上限在创建成功后立刻执行，避免「只在文档里存在」的上限；裁剪本身失败不能把
+  // 已经成功的快照变成 500——清理是后台性质的工作，下一轮创建会继续收敛。
+  await pruneGeoGebraVersions(projectId).catch(() => undefined);
   return versionView(version as unknown as IGeoGebraProjectVersion);
 }
 

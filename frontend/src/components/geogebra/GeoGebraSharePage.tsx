@@ -12,7 +12,15 @@ import GeoGebraEditor from "./GeoGebraEditor";
 import { prepareGeoGebraScript } from "./script";
 import type { GeoGebraMode, GeoGebraShare } from "../../types/geogebra";
 
-export default function GeoGebraSharePage() {
+type Props = {
+  /**
+   * 只读嵌入壳（GEO-17）：`?embed=1` 时由 GeoGebraEmbedShell 传入。
+   * 嵌入场景不渲染复制/登录/fork 等跳出画布的动作，只保留画布与导出。
+   */
+  embedded?: boolean;
+};
+
+export default function GeoGebraSharePage({ embedded = false }: Props) {
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -97,7 +105,7 @@ export default function GeoGebraSharePage() {
     return <div className={studioPageClassName}><div className="mx-auto max-w-7xl"><div className={studioPanelClassName} role="status">正在打开分享…</div></div></div>;
   }
   if (!share) {
-    return <div className={studioPageClassName}><div className="mx-auto max-w-3xl"><div className={studioPanelClassName}><p className="text-sm text-slate-600">{error || "此分享链接不可用或已撤销。"}</p><a href="/geogebra" className={cn(studioPrimaryButtonClassName, "mt-4")}>打开 GeoGebra 工作台</a></div></div></div>;
+    return <div className={studioPageClassName}><div className="mx-auto max-w-3xl"><div className={studioPanelClassName}><p className="text-sm text-slate-600">{error || "此分享链接不可用或已撤销。"}</p>{!embedded && <a href="/geogebra" className={cn(studioPrimaryButtonClassName, "mt-4")}>打开 GeoGebra 工作台</a>}</div></div></div>;
   }
 
   return (
@@ -113,13 +121,21 @@ export default function GeoGebraSharePage() {
               <p className="mt-2 text-sm text-slate-600">打开画布后可运行脚本、查看图形或下载文件。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => void copyLink()} className={studioGhostButtonClassName}><FaCopy /> 复制链接</button>
-              {share.allowFork && user && (
-                <FeatureConsentGate feature="geogebra-projects">
-                  <button type="button" disabled={busy} onClick={() => void fork()} className={studioPrimaryButtonClassName}><FaShareAlt /> {busy ? "创建中…" : "创建项目副本"}</button>
-                </FeatureConsentGate>
+              {embedded ? (
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                  只读嵌入
+                </span>
+              ) : (
+                <>
+                  <button type="button" onClick={() => void copyLink()} className={studioGhostButtonClassName}><FaCopy /> 复制链接</button>
+                  {share.allowFork && user && (
+                    <FeatureConsentGate feature="geogebra-projects">
+                      <button type="button" disabled={busy} onClick={() => void fork()} className={studioPrimaryButtonClassName}><FaShareAlt /> {busy ? "创建中…" : "创建项目副本"}</button>
+                    </FeatureConsentGate>
+                  )}
+                  {share.allowFork && !user && <a href={`/login?redirect=${encodeURIComponent(window.location.pathname)}`} className={studioPrimaryButtonClassName}>登录后创建副本</a>}
+                </>
               )}
-              {share.allowFork && !user && <a href={`/login?redirect=${encodeURIComponent(window.location.pathname)}`} className={studioPrimaryButtonClassName}>登录后创建副本</a>}
             </div>
           </div>
         </section>
