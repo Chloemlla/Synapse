@@ -420,7 +420,9 @@ export const ticketApi = {
     const response = await api.get("/api/admin/ticket-attachments/setting");
     const setting = response.data?.setting ?? {};
     const config = setting?.config ?? {};
-    const grantedRaw = Array.isArray(config.userUploadAllowedUsers) ? config.userUploadAllowedUsers : [];
+    // 显式标注 unknown[]：`config` 来自 any（axios 响应），`Array.isArray` 收窄后整条
+    // 三元表达式仍是 any，链式 filter/map 的回调参数就会退化成隐式 any（TS7006）。
+    const grantedRaw: unknown[] = Array.isArray(config.userUploadAllowedUsers) ? config.userUploadAllowedUsers : [];
     return {
       userUploadEnabled: config.userUploadEnabled === true,
       userUploadAllowedUserIds: Array.isArray(config.userUploadAllowedUserIds)
