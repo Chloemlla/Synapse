@@ -1,6 +1,8 @@
 import express, { Router } from "express";
 import { dataCollectionService } from "../services/dataCollectionService";
 import { dataCollectionLimiter } from "../middleware/routeLimiters";
+import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
+import { requireFeatureConsentForAuthenticatedUser } from "../middleware/featureConsent";
 import logger from "../utils/logger";
 
 const router = Router();
@@ -25,7 +27,13 @@ const router = Router();
 router.use("/collect_data", express.text({ type: "*/*", limit: "5mb" }));
 
 // 在 router 内部挂限流器，避免被 pre-parser 阶段的同名挂载遮蔽而绕过
-router.post("/collect_data", dataCollectionLimiter, async (req, res) => {
+router.post(
+  "/collect_data",
+  dataCollectionLimiter,
+  // 匿名客户端没有账号可同意，保持原行为；带登录态时才要求该用户自己的同意状态。
+  optionalAuthenticateToken,
+  requireFeatureConsentForAuthenticatedUser("data-report"),
+  async (req, res) => {
   try {
     const now = new Date();
     let payload: any = {};

@@ -5,6 +5,11 @@ import { auditLog } from "../middleware/auditLog";
 import { adminAuthMiddleware, authMiddlewareV2 as authMiddleware } from "../middleware/auth";
 import { oauthTokenAuth } from "../middleware/oauthTokenAuth";
 import { adminLimiter, createLimiter } from "../middleware/routeLimiters";
+import {
+  requireFeatureConsent,
+  requireFeatureConsentForAuthenticatedUser,
+} from "../middleware/featureConsent";
+import { requireSecuritySession } from "../utils/securitySession";
 
 const router = Router();
 const oauthReadLimiter = createLimiter({
@@ -78,15 +83,23 @@ router.get("/jwks", oauthReadLimiter, OAuthController.jwks);
 router.post("/token", oauthTokenEndpointLimiter, OAuthController.token);
 router.post("/introspect", oauthTokenEndpointLimiter, OAuthController.introspect);
 router.post("/revoke", oauthTokenEndpointLimiter, OAuthController.revoke);
-router.get("/userinfo", oauthReadLimiter, oauthTokenAuth(), OAuthController.userinfo);
+router.get(
+  "/userinfo",
+  oauthReadLimiter,
+  oauthTokenAuth(),
+  // token 持有者本人撤销同意后，下一请求即 403（服务层不缓存）。
+  requireFeatureConsentForAuthenticatedUser("api-access"),
+  OAuthController.userinfo,
+);
 
-router.get("/authorize/preview", oauthAuthorizeLimiter, authMiddleware, OAuthController.authorizePreview);
-router.post("/authorize", oauthAuthorizeLimiter, authMiddleware, OAuthController.authorize);
-router.get("/authorize/mobile/preview", oauthAuthorizeLimiter, authMiddleware, OAuthController.authorizePreview);
+router.get("/authorize/preview", oauthAuthorizeLimiter, authMiddleware, requireFeatureConsent("api-access"), OAuthController.authorizePreview);
+router.post("/authorize", oauthAuthorizeLimiter, authMiddleware, requireFeatureConsent("api-access"), OAuthController.authorize);
+router.get("/authorize/mobile/preview", oauthAuthorizeLimiter, authMiddleware, requireFeatureConsent("api-access"), OAuthController.authorizePreview);
 router.post(
   "/authorize/mobile/approve",
   oauthAuthorizeLimiter,
   authMiddleware,
+  requireFeatureConsent("api-access"),
   (req, _res, next) => {
     req.body = { ...(req.body || {}), approve: true };
     next();
@@ -97,6 +110,7 @@ router.post(
   "/authorize/mobile/deny",
   oauthAuthorizeLimiter,
   authMiddleware,
+  requireFeatureConsent("api-access"),
   (req, _res, next) => {
     req.body = { ...(req.body || {}), approve: false };
     next();
@@ -140,8 +154,10 @@ router.post(
   auditLog({
     module: "oauth",
     action: "oauth.client.rotate_secret",
+    captureBody: false,
     extractTarget: oauthClientAuditTarget,
   }),
+  requireSecuritySession,
   OAuthController.rotateClientSecret,
 );
 router.delete(

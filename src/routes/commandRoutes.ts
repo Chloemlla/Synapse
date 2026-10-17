@@ -4,7 +4,12 @@ import { auditLog } from "../middleware/auditLog";
 import { authenticateToken } from "../middleware/authenticateToken";
 import { commandLimiter } from "../middleware/routeLimiters";
 import { commandService } from "../services/commandService";
-import { hasValidSecuritySession, assertSecuritySessionBinding } from "../utils/securitySession";
+import {
+  SECURITY_SESSION_BINDING_CHANGED_CODE,
+  SECURITY_SESSION_REQUIRED_CODE,
+  assertSecuritySessionBinding,
+  hasValidSecuritySession,
+} from "../utils/securitySession";
 import { encryptCommandPayload } from "../utils/commandCrypto";
 import { boundedInt, firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
@@ -55,7 +60,7 @@ function encryptWithToken(payload: unknown, token: string) {
  *       200:
  *         description: 添加命令结果
  */
-router.post("/y", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.add" }), async (req, res) => {
+router.post("/y", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.add", captureBody: false, extractDetail: (req) => ({ command: (req.body as any)?.command }) }), async (req, res) => {
   const { command } = req.body;
 
   if (!ensureAdmin(req, res)) {
@@ -64,7 +69,14 @@ router.post("/y", commandLimiter, authenticateToken, auditLog({ module: "system"
 
   if (!hasValidSecuritySession(req)) {
     logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/y" });
-    return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+    return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: SECURITY_SESSION_REQUIRED_CODE });
+  }
+  if (!(await assertSecuritySessionBinding(req))) {
+    logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/y" });
+    return res.status(403).json({
+      error: "登录环境发生变化，请重新建立安全会话",
+      code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+    });
   }
 
   try {
@@ -201,6 +213,7 @@ router.post(
   auditLog({
     module: "system",
     action: "command.execute",
+    captureBody: false,
     extractDetail: (req) => ({ command: (req.body as any)?.command }),
   }),
   async (req, res) => {
@@ -213,18 +226,16 @@ router.post(
 
       if (!hasValidSecuritySession(req)) {
         logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/execute" });
-        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: SECURITY_SESSION_REQUIRED_CODE });
       }
-
-      // RC-41 / 裁决二：命令执行是最高危的控制面操作，额外做**异步**绑定检查
-      // （UA 已在同步路径上强绑；这里管“IP 跨国家/省”那种异地重放：只跨城不踢人）。
       if (!(await assertSecuritySessionBinding(req))) {
         logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/execute" });
         return res.status(403).json({
           error: "登录环境发生变化，请重新建立安全会话",
-          code: "SECURITY_SESSION_BINDING_CHANGED",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
         });
       }
+
 
       // 真正的命令白名单/黑名单判定在 commandService.validateCommand，路由层不再维护子串黑名单
       const output = await commandService.executeCommand(command);
@@ -271,7 +282,14 @@ router.post(
 
       if (!hasValidSecuritySession(req)) {
         logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/status" });
-        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+        return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: SECURITY_SESSION_REQUIRED_CODE });
+      }
+      if (!(await assertSecuritySessionBinding(req))) {
+        logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/status" });
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+        });
       }
 
       const status = commandService.getServerStatus();
@@ -344,7 +362,7 @@ router.get("/history", commandLimiter, authenticateToken, async (req, res) => {
  *       200:
  *         description: 清空结果
  */
-router.post("/clear-history", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.clearHistory" }), async (req, res) => {
+router.post("/clear-history", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.clearHistory", captureBody: false }), async (req, res) => {
   try {
     // 先判管理员再判操作密码：反过来的话，任何已登录的普通用户都能凭「密码错误 / 需要管理员权限」
     // 两种 403 的差异把这个接口当成操作密码的探测口。
@@ -354,7 +372,14 @@ router.post("/clear-history", commandLimiter, authenticateToken, auditLog({ modu
 
     if (!hasValidSecuritySession(req)) {
       logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/clear-history" });
-      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: SECURITY_SESSION_REQUIRED_CODE });
+    }
+    if (!(await assertSecuritySessionBinding(req))) {
+      logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/clear-history" });
+      return res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
     }
 
     const result = await commandService.clearExecutionHistory();
@@ -385,7 +410,7 @@ router.post("/clear-history", commandLimiter, authenticateToken, auditLog({ modu
  *       200:
  *         description: 清空结果
  */
-router.post("/clear-queue", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.clearQueue" }), async (req, res) => {
+router.post("/clear-queue", commandLimiter, authenticateToken, auditLog({ module: "system", action: "command.clearQueue", captureBody: false }), async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) {
       return;
@@ -393,7 +418,14 @@ router.post("/clear-queue", commandLimiter, authenticateToken, auditLog({ module
 
     if (!hasValidSecuritySession(req)) {
       logger.warn("[CommandManager] 安全会话校验失败", { reason: "invalid-session", path: "/clear-queue" });
-      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话" });
+      return res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: SECURITY_SESSION_REQUIRED_CODE });
+    }
+    if (!(await assertSecuritySessionBinding(req))) {
+      logger.warn("[CommandManager] 安全会话绑定校验失败（异地）", { path: "/clear-queue" });
+      return res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
     }
 
     const result = await commandService.clearCommandQueue();

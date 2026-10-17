@@ -14,6 +14,14 @@ import logger from "./logger";
 import { UserStorage } from "./userStorage";
 
 /**
+ * 前端靠稳定 code 识别「需要重新建立安全会话」，不靠中文文案匹配。
+ * `SECURITY_SESSION_REQUIRED` = 没有/过期/不属于当前用户；
+ * `SECURITY_SESSION_BINDING_CHANGED` = 会话仍存在但环境绑定（跨地 IP）已变化，已被终止。
+ */
+export const SECURITY_SESSION_REQUIRED_CODE = "SECURITY_SESSION_REQUIRED";
+export const SECURITY_SESSION_BINDING_CHANGED_CODE = "SECURITY_SESSION_BINDING_CHANGED";
+
+/**
  * 全站统一的「安全会话」校验：所有需要二次验证（超级）管理员身份的敏感操作，
  * 都复用个人资料页建立的同一枚 verificationToken（见 profileUpdateVerificationService），
  * 而不再各自校验管理操作口令。
@@ -69,8 +77,10 @@ async function resolveLocation(ip: string): Promise<string | null> {
  *
  * 返回 true = 会话可继续使用；false = 已失效（调用方必须拒绝该请求）。
  */
-export async function assertSecuritySessionBinding(req: Request): Promise<boolean> {
-  const session = getSecuritySession(req);
+export async function assertSecuritySessionBinding(
+  req: Request,
+  session: ProfileVerificationSession | null = getSecuritySession(req),
+): Promise<boolean> {
   if (!session) return false;
 
   const cfg = config.securitySession;
@@ -146,6 +156,40 @@ export function hasValidSecuritySession(req: Request, options?: { requireTwoFact
 }
 
 /**
+ * 管理端敏感写端点的统一守卫（RC-32 / RC-41）。
+ *
+ * 和控制器里的 `hasValidSecuritySession` 相比，它多做两件事：
+ *  1. 用**稳定 code** 拒绝（前端据此引导重新验证，而不是靠文案匹配）；
+ *  2. 在同步校验之后做**异步绑定判定**（只有 IP 跨国家/省才终止会话，同城异网仅记信号）。
+ *
+ * 逐请求只解析一次会话：把 session 传给 `assertSecuritySessionBinding`，避免重复校验。
+ */
+export async function requireSecuritySession(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const session = getSecuritySession(req);
+  if (!session) {
+    logger.warn("[SecuritySession] 敏感操作缺少有效安全会话", {
+      userId: (req as Request & { user?: { id?: string } }).user?.id,
+      path: (req.originalUrl || req.path || "").split("?")[0],
+    });
+    res.status(403).json({
+      error: "安全会话无效或已过期，请先建立安全会话",
+      code: SECURITY_SESSION_REQUIRED_CODE,
+    });
+    return;
+  }
+
+  if (!(await assertSecuritySessionBinding(req, session))) {
+    res.status(403).json({
+      error: "登录环境发生变化，请重新建立安全会话",
+      code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+    });
+    return;
+  }
+
+  next();
+}
+
+/**
  * 双因素配置类操作（启用/关闭 TOTP、配置 Passkey、查看与重生成恢复码）的安全会话守卫。
  *
  * 账号已配置任一二次验证因素（TOTP 或 Passkey）时，必须用 TOTP / Passkey 建立的安全会话，
@@ -156,7 +200,19 @@ export async function requireTwoFactorConfigSession(req: Request, res: Response,
   try {
     const session = getSecuritySession(req);
     if (!session) {
-      res.status(403).json({ error: "安全会话无效或已过期，请先建立安全会话", code: "SECURITY_SESSION_REQUIRED" });
+      res.status(403).json({
+        error: "安全会话无效或已过期，请先建立安全会话",
+        code: SECURITY_SESSION_REQUIRED_CODE,
+      });
+      return;
+    }
+
+    // RC-41：双因素配置同样属于敏感操作，跟随统一的环境绑定判定。
+    if (!(await assertSecuritySessionBinding(req, session))) {
+      res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
       return;
     }
 

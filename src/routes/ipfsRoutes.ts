@@ -7,6 +7,7 @@ import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
+import { requireFeatureConsentForAuthenticatedUser } from "../middleware/featureConsent";
 import { waitForConnection } from "../services/mongoService";
 import logger from "../utils/logger";
 import { createLimiter } from "../middleware/routeLimiters";
@@ -138,6 +139,8 @@ router.post(
   "/upload",
   optionalAuthenticateToken,
   ipfsApiKeyAuth,
+  // 匿名上传（Turnstile 通道）保持原行为；已认证用户必须满足自己账号下的同意状态。
+  requireFeatureConsentForAuthenticatedUser("ipfs-upload"),
   uploadLimiter,
   upload.single("file"),
   IPFSController.uploadImage,

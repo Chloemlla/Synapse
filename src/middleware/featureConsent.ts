@@ -24,6 +24,29 @@ import logger from "../utils/logger";
 export const POLICY_CONSENT_REQUIRED_CODE = "POLICY_CONSENT_REQUIRED";
 const UNAUTHENTICATED_CODE = "UNAUTHENTICATED";
 
+/**
+ * 只在**请求已被识别出 userId** 时套用同意闸门。
+ *
+ * 用途：匿名/公开入口同时存在、且不能因为「没有账号可同意」而被迫 401 的路由
+ * （IPFS 上传、公共短链创建、客户端数据上报等）。
+ * 这些入口的匿名分支保持原行为；一旦请求带着已认证用户（Cookie JWT、API Key、OAuth token），
+ * 该用户自己的同意状态就必须满足，否则 403 POLICY_CONSENT_REQUIRED。
+ *
+ * 与 `requireFeatureConsent` 的差别只有「未登录时放行」这一条；判定、403 形状、fail-closed
+ * 全部复用同一个实现，避免两条门禁口径分叉。
+ */
+export function requireFeatureConsentForAuthenticatedUser(feature: FeatureConsentKey): RequestHandler {
+  const gate = requireFeatureConsent(feature);
+  return (req: Request, res: Response, next: NextFunction) => {
+    const userId = String((req as AuthenticatedRequest).user?.id ?? "").trim();
+    if (!userId) {
+      next();
+      return;
+    }
+    return gate(req, res, next);
+  };
+}
+
 export function requireFeatureConsent(feature: FeatureConsentKey): RequestHandler {
   // 工厂期就把映射取出来：挂了一个不存在的功能键时，路由装配（进程启动）即失败，
   // 而不是等到某个请求才 500。

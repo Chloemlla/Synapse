@@ -8,6 +8,7 @@ import {
 import { canonicalizeBackendApiUrl } from '../utils/apiPath';
 import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
 import { notifyCaptchaFailure } from '../utils/captchaRecovery';
+import { getSecuritySessionToken } from '../hooks/useSecuritySession';
 import {
     StepUpUnsupportedError,
     isStepUpRequiredPayload,
@@ -107,6 +108,11 @@ api.interceptors.request.use(async (config) => {
     } catch {
         // ignore header injection failures and let the backend answer clearly
     }
+    // 安全会话（RC-32/RC-41）：敏感写端点要求 `x-verification-token`。
+    // 这里统一附带而不是让每个调用方自己传：漏传的后果是管理员点保存得到 403，
+    // 而页面不会告诉他是“没有建立安全会话”。没有有效会话时不带（后端照常拒绝）。
+    const securityToken = getSecuritySessionToken();
+    if (securityToken) headers.set('x-verification-token', securityToken);
     return config;
 });
 

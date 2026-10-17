@@ -9,7 +9,7 @@ import {
   scanRedisAdminKeys,
 } from "../../services/redisAdminService";
 import logger from "../../utils/logger";
-import { hasValidSecuritySession } from "../../utils/securitySession";
+import { assertSecuritySessionBinding, hasValidSecuritySession } from "../../utils/securitySession";
 
 /**
  * 管理端「Redis 在库数据浏览器」（`/api/admin/system/redis/*`）。
@@ -32,18 +32,31 @@ function ensureSuperAdmin(req: Request, res: Response): boolean {
   return false;
 }
 
-function ensureSecuritySession(req: Request, res: Response): boolean {
-  if (hasValidSecuritySession(req)) return true;
-  logger.warn("[RedisAdmin] 安全会话校验失败", {
-    userId: req.user?.id,
-    path: (req.originalUrl || req.path).split("?")[0],
-  });
-  res.status(403).json({
-    success: false,
-    error: "安全会话无效或已过期，请先建立安全会话",
-    code: "SECURITY_SESSION_REQUIRED",
-  });
-  return false;
+async function ensureSecuritySession(req: Request, res: Response): Promise<boolean> {
+  if (!hasValidSecuritySession(req)) {
+    logger.warn("[RedisAdmin] 安全会话校验失败", {
+      userId: req.user?.id,
+      path: (req.originalUrl || req.path).split("?")[0],
+    });
+    res.status(403).json({
+      success: false,
+      error: "安全会话无效或已过期，请先建立安全会话",
+      code: "SECURITY_SESSION_REQUIRED",
+    });
+    return false;
+  }
+
+  // RC-41 / 裁决二：UA 已在同步校验里强绑；这里只处理 IP 跨国家/省的异地重放。
+  // 同城异网只写 SECURITY_SESSION_IP_CHANGED 信号，不会因为换基站把管理员踢下线。
+  if (!(await assertSecuritySessionBinding(req))) {
+    res.status(403).json({
+      success: false,
+      error: "登录环境发生变化，请重新建立安全会话",
+      code: "SECURITY_SESSION_BINDING_CHANGED",
+    });
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -92,7 +105,7 @@ function auditKeyName(value: unknown): string | undefined {
  *         description: 需要超级管理员 + 有效安全会话
  */
 router.get("/redis/overview", adminRedisLimiter, async (req, res) => {
-  if (!ensureSuperAdmin(req, res) || !ensureSecuritySession(req, res)) return;
+  if (!ensureSuperAdmin(req, res) || !(await ensureSecuritySession(req, res))) return;
   try {
     const overview = await getRedisAdminOverview();
     auditRedisAdmin(req, res, "system.redis.overview", { available: overview.status.available });
@@ -113,7 +126,7 @@ router.get("/redis/overview", adminRedisLimiter, async (req, res) => {
  *         description: 键列表
  */
 router.get("/redis/keys", adminRedisLimiter, async (req, res) => {
-  if (!ensureSuperAdmin(req, res) || !ensureSecuritySession(req, res)) return;
+  if (!ensureSuperAdmin(req, res) || !(await ensureSecuritySession(req, res))) return;
   try {
     const result = await scanRedisAdminKeys({
       cursor: req.query.cursor,
@@ -150,7 +163,7 @@ router.get("/redis/keys", adminRedisLimiter, async (req, res) => {
  *         description: 键内容
  */
 router.post("/redis/value", adminRedisLimiter, async (req, res) => {
-  if (!ensureSuperAdmin(req, res) || !ensureSecuritySession(req, res)) return;
+  if (!ensureSuperAdmin(req, res) || !(await ensureSecuritySession(req, res))) return;
   const body = (req.body ?? {}) as { key?: unknown; maxValueChars?: unknown; maxEntries?: unknown };
   try {
     const result = await readRedisAdminKey(body.key, {
@@ -195,7 +208,7 @@ router.post("/redis/value", adminRedisLimiter, async (req, res) => {
  *         description: RDB 文件导出不可用（需宿主机侧执行）
  */
 router.get("/redis/export", adminRedisExportLimiter, async (req, res) => {
-  if (!ensureSuperAdmin(req, res) || !ensureSecuritySession(req, res)) return;
+  if (!ensureSuperAdmin(req, res) || !(await ensureSecuritySession(req, res))) return;
 
   const format = typeof req.query.format === "string" ? req.query.format.trim().toLowerCase() : "ndjson";
   if (format === "rdb" || format === "dump") {

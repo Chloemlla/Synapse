@@ -18,6 +18,7 @@ import {
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { authenticateToken } from "../middleware/authenticateToken";
+import { requireFeatureConsent } from "../middleware/featureConsent";
 import { createLimiter } from "../middleware/routeLimiters";
 
 const router = Router();
@@ -43,6 +44,7 @@ router.post(
   "/redeem",
   cdkRedeemLimiter,
   authenticateToken,
+  requireFeatureConsent("cdk-redeem"),
   auditLog({
     module: "cdk",
     action: "cdk.redeem",
@@ -52,7 +54,7 @@ router.post(
 );
 // 已兑换资源列表必须登录且按 req.user.id 归属，防止越权拉取他人兑换记录。
 // codeql[js/missing-rate-limiting] rate-limited at mount: cdkMountLimiter on /api/cdks (postTamperModules cdk-routes); no in-router duplicate
-router.get("/redeemed", authenticateToken, getUserRedeemedResources);
+router.get("/redeemed", authenticateToken, requireFeatureConsent("cdk-redeem"), getUserRedeemedResources);
 
 // 管理员API
 router.get("/", cdkAdminLimiter, authenticateAdmin, requireAdminScope, getCDKs);

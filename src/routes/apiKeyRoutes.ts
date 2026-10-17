@@ -1,6 +1,7 @@
 import { type Request, type Response, Router } from "express";
 import { authMiddlewareV2 as authMiddleware, authenticateSuperAdmin, isAdminRole, isSuperAdmin } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
+import { requireFeatureConsent } from "../middleware/featureConsent";
 import { boundedInt, firstString } from "../utils/httpParam";
 import { ApiKeyModel } from "../models/apiKeyModel";
 import {
@@ -50,6 +51,8 @@ async function findVisibleKeyForWrite(req: Request, keyId: string) {
 // 所有路由都需要 JWT 认证
 router.use(authMiddleware);
 router.use(apiKeyManagementLimiter);
+// 开放接口以账号与凭据为责任单位：发放/管理 Key 前要求用户本人已同意 account-credential 类条款。
+router.use(requireFeatureConsent("api-access"));
 
 /** 获取可用权限列表 */
 router.get("/permissions", (req: Request, res: Response) => {

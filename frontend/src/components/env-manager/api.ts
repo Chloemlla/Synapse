@@ -1,4 +1,5 @@
 import getApiBaseUrl from '../../api';
+import { getSecuritySessionToken } from '../../hooks/useSecuritySession';
 
 
 const API_BASE_URL = getApiBaseUrl();
@@ -56,5 +57,11 @@ export function getAuthHeaders(): Record<string, string> {
  * env-manager 所有 API 调用都应使用此函数而非原始 fetch。
  */
 export function authFetch(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, { ...init, credentials: 'include' });
+  // 敏感写端点（/api/admin/envs 的 POST/DELETE、reveal-key、rotate-aes-key、end-sessions）
+  // 现在都要求安全会话（RC-32/RC-41）。这里统一附带，避免每个分区各传一遍、
+  // 漏传就在保存时得到看不懂的 403。没有有效会话时不带，后端照常拒绝。
+  const securityToken = getSecuritySessionToken();
+  const headers = new Headers(init?.headers || {});
+  if (securityToken) headers.set('x-verification-token', securityToken);
+  return fetch(url, { ...init, headers, credentials: 'include' });
 }

@@ -9,7 +9,13 @@ import {
   createProfileVerificationSession,
   validateEmailChangeChallenge,
 } from "../../services/profileUpdateVerificationService";
-import { hasValidSecuritySession, requestVerificationToken } from "../../utils/securitySession";
+import {
+  SECURITY_SESSION_BINDING_CHANGED_CODE,
+  SECURITY_SESSION_REQUIRED_CODE,
+  assertSecuritySessionBinding,
+  hasValidSecuritySession,
+  requestVerificationToken,
+} from "../../utils/securitySession";
 import {
   generateBackupCodeUsedEmailHtml,
   generateEmailChangeNewNoticeHtml,
@@ -193,6 +199,13 @@ router.post("/user/profile/devices/:deviceKey/revoke", authMiddleware, async (re
     if (!/^[a-f0-9]{40}$/.test(deviceKey)) return res.status(400).json({ error: "设备标识无效" });
     if (!hasValidSecuritySession(req)) {
       return res.status(401).json({ error: "请先完成身份验证", code: "PROFILE_VERIFICATION_REQUIRED" });
+    }
+    // RC-41：会话仍有效但环境绑定变化（跨地 IP）时必须重新验证。
+    if (!(await assertSecuritySessionBinding(req))) {
+      return res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
     }
 
     const result = await revokeAuthDevice(user.id, deviceKey, token);
@@ -417,7 +430,16 @@ router.post("/user/profile/email/send-code", authMiddleware, async (req, res) =>
     const newEmail = normalizeEmail(req.body?.newEmail);
 
     if (!hasValidSecuritySession(req)) {
-      return res.status(401).json({ error: "身份验证已过期，请重新验证" });
+      return res.status(401).json({
+        error: "身份验证已过期，请重新验证",
+        code: SECURITY_SESSION_REQUIRED_CODE,
+      });
+    }
+    if (!(await assertSecuritySessionBinding(req))) {
+      return res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
     }
 
     if (!newEmail || !validator.isEmail(newEmail)) {
@@ -498,7 +520,16 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
       verifiedBySession = hasValidSecuritySession(req);
 
       if (!verifiedBySession) {
-        return res.status(401).json({ error: "身份验证已过期，请重新验证" });
+        return res.status(401).json({
+          error: "身份验证已过期，请重新验证",
+          code: SECURITY_SESSION_REQUIRED_CODE,
+        });
+      }
+      if (!(await assertSecuritySessionBinding(req))) {
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+        });
       }
     }
 
@@ -508,7 +539,10 @@ router.post("/user/profile", authMiddleware, async (req, res) => {
       }
 
       if (!verifiedBySession) {
-        return res.status(401).json({ error: "修改邮箱前请先完成身份验证" });
+        return res.status(401).json({
+          error: "修改邮箱前请先完成身份验证",
+          code: SECURITY_SESSION_REQUIRED_CODE,
+        });
       }
 
       if (!emailVerificationCode) {

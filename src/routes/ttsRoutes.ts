@@ -6,6 +6,7 @@ import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
 import { authenticateAdmin, authenticateSuperAdmin } from "../middleware/auth";
 import { optionalAuthenticateToken } from "../middleware/optionalAuthenticateToken";
+import { requireFeatureConsent } from "../middleware/featureConsent";
 import {
   adminLimiter,
   createLimiter,
@@ -120,8 +121,8 @@ const ttsAdminOperationLimiter = adminLimiter;
  *                   type: object
  *                   description: 建议的下一步动作
  */
-router.post("/generate", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.submitJob);
-router.post("/jobs", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, TtsController.submitJob);
+router.post("/generate", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, requireFeatureConsent("tts-generate"), TtsController.submitJob);
+router.post("/jobs", ttsSubmissionLimiter, optionalAuthenticateToken, ttsApiKeyAuth, requireFeatureConsent("tts-generate"), TtsController.submitJob);
 router.get("/provider-config", ttsConfigReadLimiter, ttsProviderController.getPublicConfig);
 router.get("/fish-catalog", ttsConfigReadLimiter, ttsProviderController.getFishCatalog);
 router.get("/fish-audio-sample", ttsConfigReadLimiter, ttsProviderController.getFishAudioSample);

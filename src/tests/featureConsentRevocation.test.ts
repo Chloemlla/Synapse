@@ -20,7 +20,11 @@ jest.mock("../utils/logger", () => ({
   default: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import { requireFeatureConsent, POLICY_CONSENT_REQUIRED_CODE } from "../middleware/featureConsent";
+import {
+  POLICY_CONSENT_REQUIRED_CODE,
+  requireFeatureConsent,
+  requireFeatureConsentForAuthenticatedUser,
+} from "../middleware/featureConsent";
 
 function makeReq(): Request {
   return { user: { id: "u1" }, headers: {}, path: "/api/doc-tool/convert" } as unknown as Request;
@@ -89,6 +93,41 @@ describe("requireFeatureConsent", () => {
     expect(status).toHaveBeenCalledWith(403);
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({ code: POLICY_CONSENT_REQUIRED_CODE, feature: "doc-tool", missingAgreements: ["specific-terms"] }),
+    );
+  });
+});
+
+describe("requireFeatureConsentForAuthenticatedUser", () => {
+  it("匿名请求直接放行：公开入口不会被同意闸门改写成 401", async () => {
+    const { res, status, json } = makeRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await requireFeatureConsentForAuthenticatedUser("ipfs-upload")({ headers: {} } as Request, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(status).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+    expect(mockResolveViews).not.toHaveBeenCalled();
+  });
+
+  it("已识别出 userId 但未同意：仍按 403 POLICY_CONSENT_REQUIRED 拒绝", async () => {
+    mockResolveViews.mockResolvedValue([
+      {
+        key: "ipfs-upload",
+        satisfied: false,
+        requiredAgreements: ["usage", "specific-terms"],
+        missingAgreements: ["usage", "specific-terms"],
+      },
+    ]);
+    const { res, status, json } = makeRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await requireFeatureConsentForAuthenticatedUser("ipfs-upload")(makeReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(403);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: POLICY_CONSENT_REQUIRED_CODE, feature: "ipfs-upload" }),
     );
   });
 });

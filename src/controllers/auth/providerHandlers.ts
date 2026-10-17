@@ -8,7 +8,12 @@ import {
   verifyGoogleIdToken,
 } from "../../services/googleAuthService";
 import { getLinuxDoConfigSummary } from "../../services/linuxDoAuthService";
-import { hasValidSecuritySession } from "../../utils/securitySession";
+import {
+  SECURITY_SESSION_BINDING_CHANGED_CODE,
+  SECURITY_SESSION_REQUIRED_CODE,
+  assertSecuritySessionBinding,
+  hasValidSecuritySession,
+} from "../../utils/securitySession";
 import {
   confirmProviderBindSession,
   getProviderBindSessionView,
@@ -199,7 +204,16 @@ export async function googleBind(req: Request, res: Response) {
       return res.status(400).json({ error: "缺少 Google idToken" });
     }
     if (!hasValidSecuritySession(req)) {
-      return res.status(401).json({ error: "请先完成身份验证" });
+      return res.status(401).json({
+        error: "请先完成身份验证",
+        code: SECURITY_SESSION_REQUIRED_CODE,
+      });
+    }
+    if (!(await assertSecuritySessionBinding(req))) {
+      return res.status(403).json({
+        error: "登录环境发生变化，请重新建立安全会话",
+        code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+      });
     }
 
     const profile = await verifyGoogleIdToken(idToken);

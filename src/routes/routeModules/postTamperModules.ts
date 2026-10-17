@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { RouteModule } from "../index";
 import { authenticateToken } from "../../middleware/authenticateToken";
+import { requireFeatureConsent } from "../../middleware/featureConsent";
 import { nexaiRequestSignature } from "../../middleware/nexaiRequestSignature";
 import {
   adminLimiter,
@@ -638,7 +639,7 @@ export const postTamperRouteModules: RouteModule[] = [
     name: "transcribe-user-routes",
     path: "/api/transcribe",
     router: transcribeRoutes,
-    middlewares: [authenticateToken, transcribeLimiter],
+    middlewares: [authenticateToken, requireFeatureConsent("transcribe"), transcribeLimiter],
     requiresAuth: true,
     rateLimited: true,
     isPublic: false,

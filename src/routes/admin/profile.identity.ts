@@ -8,7 +8,12 @@ import {
 import { confirmAccountMerge, getMergePreviewByToken } from "../../services/accountMergeService";
 import { getGoogleAuthConfigSummary } from "../../services/googleAuthService";
 import { createLinuxDoAuthorizationUrl, isLinuxDoAuthEnabled } from "../../services/linuxDoAuthService";
-import { hasValidSecuritySession } from "../../utils/securitySession";
+import {
+  SECURITY_SESSION_BINDING_CHANGED_CODE,
+  SECURITY_SESSION_REQUIRED_CODE,
+  assertSecuritySessionBinding,
+  hasValidSecuritySession,
+} from "../../utils/securitySession";
 import { getClientIP } from "../../utils/ipUtils";
 import logger from "../../utils/logger";
 import { UserStorage } from "../../utils/userStorage";
@@ -45,7 +50,16 @@ export function registerProfileIdentityRoutes(router: Router): void {
       }
 
       if (!hasValidSecuritySession(req)) {
-        return res.status(401).json({ error: "请先完成身份验证" });
+        return res.status(401).json({
+          error: "请先完成身份验证",
+          code: SECURITY_SESSION_REQUIRED_CODE,
+        });
+      }
+      if (!(await assertSecuritySessionBinding(req))) {
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+        });
       }
 
       if (provider === "google") {
@@ -98,7 +112,16 @@ export function registerProfileIdentityRoutes(router: Router): void {
       }
 
       if (!hasValidSecuritySession(req)) {
-        return res.status(401).json({ error: "请先完成身份验证" });
+        return res.status(401).json({
+          error: "请先完成身份验证",
+          code: SECURITY_SESSION_REQUIRED_CODE,
+        });
+      }
+      if (!(await assertSecuritySessionBinding(req))) {
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+        });
       }
 
       const accounts = await unlinkProviderIdentity({
@@ -158,7 +181,16 @@ export function registerProfileIdentityRoutes(router: Router): void {
         return res.status(400).json({ error: "缺少合并令牌" });
       }
       if (!hasValidSecuritySession(req)) {
-        return res.status(401).json({ error: "确认合并前请先完成身份验证" });
+        return res.status(401).json({
+          error: "确认合并前请先完成身份验证",
+          code: SECURITY_SESSION_REQUIRED_CODE,
+        });
+      }
+      if (!(await assertSecuritySessionBinding(req))) {
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
+        });
       }
 
       const result = await confirmAccountMerge({

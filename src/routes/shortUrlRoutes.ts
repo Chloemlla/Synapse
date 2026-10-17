@@ -1,5 +1,9 @@
 import { Router } from "express";
 import { requireAdminScope } from "../middleware/adminScope";
+import {
+  requireFeatureConsent,
+  requireFeatureConsentForAuthenticatedUser,
+} from "../middleware/featureConsent";
 import { ShortUrlController } from "../controllers/shortUrlController";
 import { apiKeyAuth } from "../middleware/apiKeyAuth";
 import { auditLog } from "../middleware/auditLog";
@@ -11,6 +15,7 @@ import { mongoose } from "../services/mongoService";
 import { ShortUrlService } from "../services/shortUrlService";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
 import { config } from "../config/config";
+import { requireSecuritySession } from "../utils/securitySession";
 import logger from "../utils/logger";
 
 // 允许的 URL 协议白名单（防止 javascript:/data:/file: 等协议导致的开放重定向）
@@ -85,9 +90,9 @@ const publicCreateLimiter = createLimiter({
 const replayGuard = replayProtection();
 
 // 用户短链管理（需要登录）—— 字面量路由在参数路由之前注册，避免被 /:code 吞掉
-router.get("/shorturls", shortUrlApiKeyAuth, authMiddleware, userManageLimiter, ShortUrlController.getUserShortUrls);
-router.delete("/shorturls/batch", shortUrlApiKeyAuth, authMiddleware, userManageLimiter, ShortUrlController.batchDeleteShortUrls);
-router.delete("/shorturls/:code", shortUrlApiKeyAuth, authMiddleware, userManageLimiter, ShortUrlController.deleteShortUrl);
+router.get("/shorturls", shortUrlApiKeyAuth, authMiddleware, requireFeatureConsent("shorturl"), userManageLimiter, ShortUrlController.getUserShortUrls);
+router.delete("/shorturls/batch", shortUrlApiKeyAuth, authMiddleware, requireFeatureConsent("shorturl"), userManageLimiter, ShortUrlController.batchDeleteShortUrls);
+router.delete("/shorturls/:code", shortUrlApiKeyAuth, authMiddleware, requireFeatureConsent("shorturl"), userManageLimiter, ShortUrlController.deleteShortUrl);
 
 // 管理员功能：导出所有短链数据
 router.get("/admin/export", authMiddleware, adminAuthMiddleware, requireAdminScope, adminLimiter, ShortUrlController.exportAllShortUrls);
@@ -158,6 +163,7 @@ router.post(
   authenticateSuperAdmin,
   replayGuard,
   auditLog({ module: "shorturl", action: "shorturl.aesKeySet", captureBody: false }),
+  requireSecuritySession,
   async (req, res) => {
     try {
       const { value } = req.body || {};
@@ -186,10 +192,13 @@ router.delete(
   authMiddleware,
   authenticateSuperAdmin,
   replayGuard,
-  auditLog({ module: "shorturl", action: "shorturl.aesKeyDelete" }),
+  auditLog({ module: "shorturl", action: "shorturl.aesKeyDelete", captureBody: false }),
+  requireSecuritySession,
   async (_req, res) => {
     try {
-      await ShortUrlSettingModel.deleteOne({ key: "AES_KEY" });
+      // 单条运行时配置（AES_KEY），不是用户数据：删除即“恢复到未配置”；走 softDeleteService
+      // 会把配置行变成墓碑，让加解密读到一个已删除的设置。
+      await ShortUrlSettingModel.deleteOne({ key: "AES_KEY" }); // soft-delete-exempt: 单条运行时配置，非用户数据
       return res.json({ success: true });
     } catch (_e) {
       return res.status(500).json({ success: false, error: "删除 AES_KEY 失败" });
@@ -198,7 +207,14 @@ router.delete(
 );
 
 // 匿名公共创建短链（显式启用、独立口令、严格限流）；已登录管理员免填口令
-router.post("/public/create", publicCreateLimiter, requireAdminOrAnonymous, optionalAdminAuth, async (req: any, res: any) => {
+router.post(
+  "/public/create",
+  publicCreateLimiter,
+  requireAdminOrAnonymous,
+  optionalAdminAuth,
+  // 匿名公共创建保持原行为；已登录管理员由 requireAdminOrAnonymous 放行后，仍须满足自己账号下的发布类同意。
+  requireFeatureConsentForAuthenticatedUser("shorturl"),
+  async (req: any, res: any) => {
   try {
     const { target, customCode, password } = req.body || {};
 

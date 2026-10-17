@@ -46,6 +46,10 @@ const SENSITIVE_AUDIT_FIELDS_EXACT = new Set(
     "integritytoken",
     "encryptedvalue",
     "svixsignature",
+    // 安全会话令牌（`x-verification-token` 请求体/头里的同名字段）：它等价于一次
+    // 已完成的二次验证，落进 60 天可导出的审计库就等于把“当时的身份凭证”存档。
+    "verificationtoken",
+    "xverificationtoken",
   ].map(normalizeAuditFieldName),
 );
 

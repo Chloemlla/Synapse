@@ -5,6 +5,7 @@ import { ttsProviderController } from "../../controllers/ttsProviderController";
 import { authenticateSuperAdmin } from "../../middleware/auth";
 import { auditLog } from "../../middleware/auditLog";
 import { requireAllowedOriginForWrites } from "../../middleware/corsMiddleware";
+import { requireSecuritySession } from "../../utils/securitySession";
 
 const router = express.Router();
 
@@ -53,6 +54,7 @@ router.post(
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.set", captureBody: false, extractDetail: (req) => ({ key: req.body.key }) }),
+  requireSecuritySession,
   adminController.setEnv,
 );
 
@@ -82,6 +84,7 @@ router.post(
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.reveal_key", captureBody: false, extractDetail: (req) => ({ label: req.body?.label ?? "all" }) }),
+  requireSecuritySession,
   adminController.revealKey,
 );
 
@@ -100,6 +103,7 @@ router.post(
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.end_security_sessions", captureBody: false }),
+  requireSecuritySession,
   adminController.endAllSecuritySessions,
 );
 
@@ -118,6 +122,7 @@ router.post(
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
   auditLog({ module: "env", action: "env.rotate_aes_key", captureBody: false }),
+  requireSecuritySession,
   adminController.rotateAesKey,
 );
 
@@ -144,7 +149,8 @@ router.delete(
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
-  auditLog({ module: "env", action: "env.delete", extractDetail: (req) => ({ key: req.body.key }) }),
+  auditLog({ module: "env", action: "env.delete", captureBody: false, extractDetail: (req) => ({ key: req.body.key }) }),
+  requireSecuritySession,
   adminController.deleteEnv,
 );
 
@@ -171,7 +177,8 @@ router.post(
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
   requireAllowedOriginForWrites,
   authenticateSuperAdmin,
-  auditLog({ module: "env", action: "env.delete", extractDetail: (req) => ({ key: req.body.key }) }),
+  auditLog({ module: "env", action: "env.delete", captureBody: false, extractDetail: (req) => ({ key: req.body.key }) }),
+  requireSecuritySession,
   adminController.deleteEnv,
 );
 

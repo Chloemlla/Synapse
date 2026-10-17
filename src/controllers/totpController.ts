@@ -20,7 +20,11 @@ import {
 import { setAuthSessionCookie } from "../utils/authCookie";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
-import { hasValidSecuritySession } from "../utils/securitySession";
+import {
+  SECURITY_SESSION_BINDING_CHANGED_CODE,
+  assertSecuritySessionBinding,
+  hasValidSecuritySession,
+} from "../utils/securitySession";
 import { UserStorage } from "../utils/userStorage";
 
 // TOTP验证尝试次数限制：参数与锁定时长收在 services/verificationAttemptGuard.ts，
@@ -566,6 +570,13 @@ export class TOTPController {
         return res.status(403).json({
           error: "关闭双因素验证需先建立安全会话",
           code: "SECURITY_SESSION_REQUIRED",
+        });
+      }
+      // RC-41：关闭双因素是最敏感的账户操作之一，跟随统一的环境绑定判定。
+      if (!(await assertSecuritySessionBinding(req))) {
+        return res.status(403).json({
+          error: "登录环境发生变化，请重新建立安全会话",
+          code: SECURITY_SESSION_BINDING_CHANGED_CODE,
         });
       }
 
