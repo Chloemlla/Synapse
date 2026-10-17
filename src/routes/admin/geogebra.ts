@@ -127,7 +127,7 @@ router.put(
   requireSecuritySession,
   async (req, res) => {
     try {
-      const setting = await saveGeoGebraAiSetting(req.body, (req as { user?: { username?: string } }).user?.username ?? "unknown");
+      const setting = await saveGeoGebraAiSetting(req.body, req.user?.username ?? "unknown");
       res.json({ success: true, ...setting });
     } catch (error) {
       if (error instanceof GeoGebraAiConfigError) {
