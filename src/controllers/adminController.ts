@@ -233,8 +233,7 @@ const MAX_TICKET_ATTACHMENT_GRANT_ENTRIES = 200;
 
 /** 把提交上来的名单（数组或换行/逗号分隔的字符串）压成去重、保序的条目列表。 */
 function normalizeGrantEntries(value: unknown): string[] {
-  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[
-,，]+/) : [];
+  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\n,，]+/) : [];
   const seen = new Set<string>();
   const entries: string[] = [];
   for (const item of source) {

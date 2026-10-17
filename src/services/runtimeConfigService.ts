@@ -770,8 +770,7 @@ const TICKET_ATTACHMENT_GRANTED_USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
  *   而整份拒绝会让管理员一次粘贴 300 个用户时连前 200 个也存不进去。
  */
 export function normalizeTicketAttachmentGrantedUserIds(value: unknown): string[] {
-  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[
-,]+/) : [];
+  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\n,]+/) : [];
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const item of source) {
