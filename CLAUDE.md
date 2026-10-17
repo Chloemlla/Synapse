@@ -80,8 +80,9 @@ frontend/src/
 
 顺序定义在 `src/app/assembly.ts`，自外向内大致是：
 
-1. **CSP nonce + surface 判定**（`res.locals`，为后续 helmet 与 HTML 注入准备）
-2. **helmet**（CSP / HSTS / noSniff / frameguard……）→ 去掉 `Server` / `X-Powered-By`
+1. **CSP + surface 判定**（`security/contentSecurityPolicy.ts` 直接写头：文档响应带 nonce 与完整策略，
+   API/静态产物走最小策略；同一处判定 `res.locals.cspSurface`，供 HTML 注入复用）
+2. **helmet**（HSTS / noSniff / frameguard……；CSP 已由上一相位接管，helmet 侧关闭）→ 去掉 `Server` / `X-Powered-By`
 3. **响应压缩**（`compression`；显式跳过 `text/event-stream` 与 206/Range —— SSE 与音频分段请求压缩会坏事）
 4. CORS 特例：`/s/*path` 与 `/api/health`（它们在 `globalCors` 之前，需自带白名单 CORS）
 5. **preBodyParser 安全相位**：IP 封禁检查 → 全局审计拦截（包 `res.json`/`res.send`）

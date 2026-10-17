@@ -39,7 +39,7 @@ import {
 import { legacyApiRedirectMiddleware } from "../routes/legacyApiRedirect";
 import {
   applyCspNonceToHtml,
-  buildHelmetCspDirectives,
+  buildCspHeaderValue,
   ensureCspNonce,
   resolveCspSurface,
 } from "../security/contentSecurityPolicy";
@@ -250,15 +250,16 @@ export function registerCoreMiddleware(app: Express): void {
   // 被白名单外 Origin 拦截。
   app.use((req, res, next) => {
     res.locals.cspSurface = resolveCspSurface(req.path);
-    ensureCspNonce(res);
+    // CSP 由这里直接写头，不再交给 helmet 的 directive 回调：
+    // 只有文档响应才需要 nonce 与第三方 host 白名单；JSON/静态产物用最小策略，
+    // 既省掉每条响应 ~3 KB 的头，也让这些响应的 CSP 值保持恒定（HTTP/2 HPACK 可整段复用）。
+    // nonce 改为按需生成（ensureCspNonce），API 请求不再做一次随机的 crypto 调用。
+    res.setHeader("Content-Security-Policy", buildCspHeaderValue(req, res));
     next();
   });
   app.use(
     helmet({
-      contentSecurityPolicy: {
-        useDefaults: false,
-        directives: buildHelmetCspDirectives(),
-      },
+      contentSecurityPolicy: false,
       hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
       noSniff: true,
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
@@ -266,6 +267,9 @@ export function registerCoreMiddleware(app: Express): void {
       frameguard: { action: "deny" },
       crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
       crossOriginResourcePolicy: { policy: "cross-origin" },
+      // IE / Flash 时代的两枚头，现代浏览器不再消费，留着只是噪音。
+      xDownloadOptions: false,
+      xPermittedCrossDomainPolicies: false,
     }),
   );
   // GEO-17：嵌入壳已通过 CSP frame-ancestors 放行，但 helmet 仍会发

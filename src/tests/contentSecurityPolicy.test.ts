@@ -1,8 +1,11 @@
+import type { Request, Response } from "express";
 import {
   applyCspNonceToHtml,
+  buildCspHeaderValue,
   createCspNonce,
   renderCspHeaderValue,
   resolveCspSurface,
+  shouldUseMinimalCsp,
   summarizeCspHeader,
 } from "../security/contentSecurityPolicy";
 
@@ -89,7 +92,11 @@ describe("contentSecurityPolicy", () => {
       expect(summary.hasScriptNonce).toBe(true);
       // strict-dynamic 只用于脚本；样式仍走 unsafe-inline（framer-motion 运行时样式）。
       expect(header).toMatch(/script-src\s+[^;]*'strict-dynamic'/);
-      expect(header).toMatch(/script-src-elem\s+[^;]*'strict-dynamic'/);
+      // script-src-elem / style-src-elem / child-src 与基础指令完全同值，
+      // 按 CSP 回落链等价；不再重复下发（每条响应省约 1.1 KB）。
+      expect(header).not.toMatch(/script-src-elem/);
+      expect(header).not.toMatch(/style-src-elem/);
+      expect(header).not.toMatch(/child-src/);
       expect(header).not.toMatch(/style-src[^;]*'strict-dynamic'/);
       // 仍然不得出现 unsafe-inline / unsafe-eval：这两个才是真正会拆掉 XSS 防线的。
       expect(summary.hasScriptUnsafeInline).toBe(false);
@@ -144,6 +151,63 @@ describe("contentSecurityPolicy", () => {
       expect(header).toContain("wss://*.chloemlla.com");
       expect(header).toContain("frame-ancestors 'none'");
       expect(header).toContain("object-src 'none'");
+    });
+  });
+
+  describe("non-document responses", () => {
+    const minimal = "default-src 'none';base-uri 'none';form-action 'none';frame-ancestors 'none'";
+
+    it("sends the minimal policy (and no nonce) for API and static-asset responses", () => {
+      const api = renderCspHeaderValue({ cspSurface: "default" }, { path: "/api/auth/login", nodeEnv: "production" });
+      expect(api).toBe(minimal);
+      expect(api).not.toContain("nonce-");
+
+      const asset = renderCspHeaderValue({ cspSurface: "spa" }, { path: "/static/assets/index-a1b2c3.js", nodeEnv: "production" });
+      expect(asset).toBe(minimal);
+      expect(asset).not.toContain("nonce-");
+    });
+
+    it("keeps the full document policy when an API path is opened as a document", () => {
+      const req = {
+        path: "/api/email/unsubscribe",
+        url: "/api/email/unsubscribe",
+        originalUrl: "/api/email/unsubscribe",
+        headers: { "sec-fetch-dest": "document" },
+      } as unknown as Request;
+      expect(shouldUseMinimalCsp(req, "default", req.path)).toBe(false);
+
+      const res = { locals: { cspSurface: "default", cspNonce: "docNonce" } } as unknown as Response;
+      const header = buildCspHeaderValue(req, res);
+      expect(header).toContain("'nonce-docNonce'");
+      expect(header).toMatch(/script-src[^;]*'strict-dynamic'/);
+    });
+
+    it("treats fetch() of an API path as non-document", () => {
+      const req = {
+        path: "/api/tts",
+        headers: { "sec-fetch-dest": "empty", accept: "*/*" },
+      } as unknown as Request;
+      expect(shouldUseMinimalCsp(req, "default", "/api/tts")).toBe(true);
+    });
+
+    it("falls back to Accept when Sec-Fetch-Dest is absent", () => {
+      const nav = {
+        path: "/api/email/unsubscribe",
+        headers: { accept: "text/html,application/xhtml+xml" },
+      } as unknown as Request;
+      const xhr = {
+        path: "/api/email/unsubscribe",
+        headers: { accept: "application/json" },
+      } as unknown as Request;
+      expect(shouldUseMinimalCsp(nav, "default", "/api/email/unsubscribe")).toBe(false);
+      expect(shouldUseMinimalCsp(xhr, "default", "/api/email/unsubscribe")).toBe(true);
+    });
+
+    it("never tightens Swagger docs or SPA page paths", () => {
+      const docsReq = { path: "/api-docs", headers: { "sec-fetch-dest": "empty" } } as unknown as Request;
+      const spaReq = { path: "/login", headers: { "sec-fetch-dest": "empty" } } as unknown as Request;
+      expect(shouldUseMinimalCsp(docsReq, "docs", "/api-docs")).toBe(false);
+      expect(shouldUseMinimalCsp(spaReq, "spa", "/login")).toBe(false);
     });
   });
 });
