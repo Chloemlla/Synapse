@@ -8,8 +8,10 @@
 ## 项目概览
 
 Synapse 是一个以 **文本转语音（TTS）** 为核心的全栈平台，围绕它长出了用户与多因素认证、安全防护（WAF /
-限流 / IP 封禁 / 篡改检测）、资源商店与 CDK、媒体工具（视频/音频转写、B 站同步）、运营与审计等子系统。
-前后端分离、同镜像发布：后端 Express 提供 API 与 Swagger，并直接托管前端构建产物。
+限流 / IP 封禁 / 篡改检测 / 账户风险分级 / 逐步验证）、资源商店与 CDK、媒体工具（视频/音频转写、
+B 站同步）、**Markdown → Word 批量转换（doc-tool）**、**GeoGebra 协作工作台**、**Pixel 任务工作台**、
+法律保留与取证审计、运营与审计等子系统。前后端分离、同镜像发布：后端 Express 提供 API 与 Swagger，
+并直接托管前端构建产物。
 
 **技术栈**（版本以 `package.json` / `pnpm-lock.yaml` 为准）
 
@@ -38,7 +40,10 @@ src/
   models/                Mongoose schema、索引、TTL
   middleware/            认证、管理员、WAF、IP 封禁、限流、请求守卫
   security/              安全策略、CSP 管线、安全流水线相位
-  tts/  mediaTool/       TTS 管线与媒体工具子系统
+  tts/  mediaTool/       TTS 管线与媒体工具子系统（转写、B 站下载、文件沙箱）
+  docTool/               Markdown → Word 批量转换（服务端 pandoc、串行任务队列、内置 ZIP）
+  geogebra/              GeoGebra 工作台（项目/版本/协作/评论/分享/资产/AI 任务/导出/诊断）
+  pixel/                 Pixel 任务工作台（卡密校验/任务提交/导出/上游适配/取证保全）
   generated/             生成物（勿手改，由 script 生成、CI 卡漂移）
   utils/                 日志、cookie、IP、工具函数
   tests/                 后端 Jest 用例
@@ -54,6 +59,11 @@ frontend/src/
 
 **分层约定**：`routes`（定义路径 + 挂限流器）→ `controllers`（解析/校验/回响应）→ `services`（业务与外部 IO）→
 `models`（持久化）。服务层以**函数式导出**为主；控制器不直接碰 Mongoose 模型以外的业务规则。
+
+**三个「子系统目录」不是新分层**：`tts/`、`mediaTool/`、`docTool/`、`geogebra/`、`pixel/` 各自在内部复刻
+同一套 routes/controller/service 习惯，只是把**一个功能的全部实现**收在一个目录里，避免往全局
+`services/` 里再堆几十个文件。跨子系统共享的东西（审计、限流、加密、用户）仍然放在全局 `services/`、
+`middleware/`。新增子系统按这个形态建目录，不要散落到全局。
 
 ---
 
@@ -143,6 +153,40 @@ frontend/src/
 `providerBindSessionService.ts`、`accountIdentityService.ts`。未绑定身份的第三方账号一律走「显式验密绑定」
 （`provider-bind` 流程），**不做按邮箱静默并号**（防账号接管）。
 
+**安全会话（敏感操作二次验证）**：`src/utils/securitySession.ts` 是唯一实现源。
+
+- 用户先经 `/api/admin/user/profile/verify`（密码 / TOTP / passkey）拿到 `verificationToken`，
+  放在 `x-verification-token` 请求头；前端由共享 axios 实例与 env-manager 的 `authFetch` **统一附带**
+  （漏传的后果是管理员点保存得到一个看不懂的 403）。
+- 守卫有两种：`requireSecuritySession`（同步校验存在与归属）与 `assertSecuritySessionBinding`
+  （异步绑定判定：UA 摘要已在签名 payload 里，不匹配立即失效；IP 变化不直接踢人，只有 `isGeoJump`
+  跨地才终止会话并 `revokeAllAuthSessions`，同城异网只写信号）。
+- **不要在控制器里再写一份同步副本** —— 那会让绑定校验在这条链路上静默失效（已发生过一次）。
+- 覆盖面：运行时配置写入、环境变量增删改、密钥读取/轮换、命令执行、双因素配置、第三方绑定、
+  法律保留与取证导出。新增敏感端点时先问一句「这个动作能不能用一次会话继续做」。
+
+**按同意开放功能（feature consent gate）**：`src/middleware/featureConsent.ts` + `src/config/featureConsent.ts`。
+
+- 与政策同意的区别：政策同意是**全站准入**，这里的门禁是**按功能放行**——用户只同意某几个功能对应的
+  条款，就能用那几个功能。
+- 契约：只认 `userId`、**不回落设备指纹**、服务层**不做缓存**（撤销后下一请求立即 403）；
+  拒绝统一回 `code: POLICY_CONSENT_REQUIRED` + 缺失条款清单。
+- 匿名路由用 `requireFeatureConsentForAuthenticatedUser`：匿名请求原样放行，识别出 `userId` 后才复用同一门禁。
+- 加新功能：在 `config/featureConsent.ts` 加键 → 在目标路由的**认证之后**挂 `requireFeatureConsent(key)`
+  → 前端页面若可能有 403 就包 `<FeatureConsentGate feature="...">`。
+  `securityGovernanceCoverage.test.ts` 会钉住已接线的键，漏挂或误删即红。
+
+**账户风险分级与逐步验证**：`services/accountRiskService.ts`（唯一写入口 `applyAccountRiskAction`）、
+`middleware/accountStepUpGuard.ts`、`services/geoRisk.ts`（属地判据单一入口）、
+`middleware/regionGuard.ts`。
+
+- **所有处罚/升档只经 `applyAccountRiskAction` 这一个出口**，直接改用户字段会让审计与升降档规则脱节。
+- `isRiskExempt` 只认 superadmin；豁免范围与「不豁免的三件事」写在 `services/riskExemption.ts`。
+- **匿名链路只能记信号、不得升级为封禁**：登录前人机验证失败这类拿不到可信 `userId` 的路径，
+  评分按半权重、总额封顶，且必须带 `requireKnownIp` 归因闸（否则任何人都能拿别人用户名刷对方风险分）。
+- 客户端上报的探测结果（WebRTC 出口不一致、`navigator.webdriver`）**只作信号**，受
+  `accountRisk.ipRecheckEnabled` 观察期开关控制，默认关。
+
 ---
 
 ## 限流系统
@@ -156,6 +200,20 @@ frontend/src/
 - 相位挂载：限流器作为模块登记在 `src/routes/routeModules/routeLimiterModules.ts`，由 `assembly.ts`
   在 early 相位统一挂载。**新增路由必须配一个限流器**，且不要在子路由重复挂同一个实例
   （一次请求会过两遍、额度减半）。
+- **匿名请求是双判据**：除 IP 桶外，再按设备/浏览器指纹（`X-Fingerprint`，H5 用 `x-device-id`）
+  **单独计一个桶，两桶各自计数、任一超限即拒绝**。刻意不把两者拼成一个键（`ip|fp`）：拼键时换指纹
+  或换 IP 都会得到全新桶，等于给刷子发新额度。指纹是客户端自报的，只能作附加维度、不能替代 IP；
+  登录请求不参与（账户 ID 已是更强身份），不带指纹的客户端行为与单 IP 判据一致。
+  存储键只用指纹的 SHA256 前 32 位，不落原文。
+- **并发硬顶**：`createBurstConcurrencyGuard()` 按「在途请求数」限制昂贵端点（与固定窗口限流正交），
+  超顶立即 429 + `Retry-After`（不排队 —— 排队本身就是新的内存压力），`finish`/`close` 双释放槽位。
+- **每用户并发**：TTS 队列按 `userId` 统计 `queued+processing`，超 `perUserMaxActive` 直接 429
+  `TTS_USER_CONCURRENCY_LIMIT`；这与「全局队列并发」是两个层面，别互相替代。
+- **配额阶梯**：`services/quotaLadderService.ts` 是泛化后的「日额度 → 警告 N 次 → 按累计违规次数递增
+  封禁时长」引擎；`libreChatQuotaService` 是第一个消费者（响应体形状保持不变）。封禁动作走
+  `applyAccountRiskAction` 统一出口，默认观察期不自动处罚。
+- **配额事件与账户预算**：`services/quotaEventService.ts` 按 `keyId+阈值+账期` 幂等写 80%/100% 事件；
+  账户级日/月预算取 `min(账户剩余, Key 剩余)`，`admin`/`superadmin` 按既有口径豁免。
 - 429 会记指标（`RateLimitMetricsRegistry`，按 IP/路由的有界 Map）并打一条结构化告警日志。
 
 ---
@@ -170,8 +228,18 @@ frontend/src/
   `scripts/redis-restore-snapshot.js`（默认 dry-run，`--apply` 才写、`--replace` 才覆盖）。
   Redis 与其它应用共享时用 `ADMIN_REDIS_KEY_PREFIXES` 把范围收窄到本服务命名空间。
 - 模型在 `src/models/`，索引与 TTL 就近声明。已经具备的代表性约束：
-  审计日志 90 天 TTL + `requestId`/`createdAt`/`module`/`userId`/`action` 索引；
-  会话表按 `userId` 前缀建索引；`credentialHash` 唯一索引；IP 封禁表 TTL + `ipAddress`/`fingerprint` 索引。
+  审计日志 **60 天** TTL（`AUDIT_LOG_RETENTION_DAYS`）+ `requestId`/`createdAt`/`module`/`userId`/`action` 索引；
+  会话表按 `userId` 前缀建索引；`credentialHash` 唯一索引；IP 封禁表 `ipAddress`/`fingerprint` 索引。
+- **物理 TTL 与法律保留不兼容（裁决三）**：Mongo 的 TTL 后台线程会在应用层来得及校验 `legal_holds`
+  之前就把文档删掉。因此六个关键集合**只保留查询索引、不再带 `expireAfterSeconds`**
+  （`ipbans` / `accesstokens` / `ip_verification_tokens` / `verification_tokens` / `proxycheck_risk_cache` /
+  `auth_email_cooldowns`），过期清理由 `services/legalHoldCleanupService.ts` 每 6 小时执行，
+  **删除前逐条校验 hold，库不可用时整轮 fail-closed**。
+  ⚠️ 改 schema 只影响**新建**索引；线上老索引必须用 `pnpm run migrate:legal-hold-ttl`
+  （默认 dry-run，按索引形状匹配、带 `--apply` 才删）摘除，否则 TTL 继续绕开 hold。
+- **取证审计不设 TTL**：`forensic_audit_logs` / `forensic_export_requests` 刻意无过期 ——
+  调查周期经常长于普通审计的 60 天，TTL 会把证据静默删掉。普通业务审计仍是 60 天；
+  `legal_holds` 的增删在服务层**双写**普通审计与取证集合（覆盖 Pixel 保全这条内部路径）。
 - 查询习惯：读多写少的列表一律 `.lean()` + `select()` 投影；筛选/排序/分页**下推到 Mongo**
   （管理端用户列表用 `$facet` + `$skip/$limit`），不要把整表读进内存再分页。
 - 写入习惯：批量操作走 `bulkWrite` / `updateMany`；高频审计写入走内存缓冲 + 定时 `insertMany` 批量落库。
@@ -214,6 +282,21 @@ frontend/src/
 - **状态**：Zustand 三个 store（auth / authProvider / ui），组件用选择器订阅，别整包订阅。
 - **WebSocket**：`hooks/useWebSocket.ts` + `components/WsConnector.tsx`（指数退避重连、
   后台标签页不做无用的碰撞检测）。
+- **视觉基线只有一套**：`components/studioTheme.tsx`（配色 token、面板/磁贴/按钮/字段类名、
+  `InfoQueryHero` / `InfoSectionTitle` / `InfoMetricCard` / `InfoBadge` / `InfoPanel`）与
+  `components/studioFeedback.tsx`（`StudioModal` / `StudioErrorState` / `StudioEmptyState` /
+  `StudioLoadingState` / `StudioPager` 等四态原语）。**新代码从这里取，不要自建弹窗、自写四态、
+  自绘 spinner**；也不要引入 indigo/purple/fuchsia/pink 与任意 hex。
+  规则由 `pnpm run check:frontend-design-language` 把关（基线在
+  `scripts/governance/frontend-design-language-baseline.json`，**只允许下降**），
+  清单与编号见 `docs/audit/audit-2026-10-16-frontend-design-language.md`。
+- **flex 溢出的固定坑**：`justify-between` 行里，承载文本的兄弟节点必须 `min-w-0`，
+  右侧图标/按钮才该 `shrink-0`。flex 子项默认 `min-width: auto` 不收缩，长标题/长邮箱会直接把
+  图标顶出卡片；卡片通常带 `overflow-hidden`，溢出的部分是被**裁掉**的——表现是「文字消失」，
+  不是「没换行」。同理，绝对定位的纯装饰层要 `pointer-events-none`，否则会挡住下面可点的内容。
+- **重依赖不进首屏静态闭包**：`docx`、`katex`、`mermaid`、`monaco-editor`、`react-syntax-highlighter`、
+  `exceljs` 一律**动态 `import()`**，模块到达前先渲染可读的退化形态（等宽纯文本/占位），加载失败也要
+  有可见退路。`check:frontend-bundle` 会校验首屏闭包与预算。
 
 ---
 
@@ -273,6 +356,19 @@ frontend/src/
 要让页面能授给普通管理员，再到 `src/config/adminPages.ts` 里加一条（key 与 `/admin/<key>` 对齐 + `apiPrefixes`），
 然后在超管界面的页面授权里勾上；前端入口会自动跟随授权结果。
 
+**新增一条静态治理闸门**：脚本放 `scripts/governance/check-*.js`（纯 Node，不引第三方依赖）→
+在 `package.json` 加 `check:<name>` → 接进 `.github/workflows/quality-guardrails.yml`。
+存量违规要落基线文件、闸门**只报新增**且允许数值下降（参考 `frontend-design-language-baseline.json`、
+`slicing-and-softdelete-baseline.json`）。**不要用 `--update-baseline` 掩盖真实新增**。
+
+**新增一个「按同意放行」的功能**：`config/featureConsent.ts` 加键（含要哪几份条款与依据）→
+目标路由认证之后挂 `requireFeatureConsent(key)` → 前端页面包 `<FeatureConsentGate>` →
+`securityGovernanceCoverage.test.ts` 补一行断言。
+
+**加一个需要法律保留保护的数据集**：模型登记进 `services/legalHoldCleanupService.ts` 的
+`LEGAL_HOLD_CLEANUP_TARGETS`（集合名用**实际落库名**，Mongoose 大写化会产生歧义）→
+确保该集合**不带物理 TTL** → 隐私地图登记 → 写进 `docs/reference/data-retention-and-legal-hold.md`。
+
 **新增依赖**：走 `AGENTS.md` §7 的通路（只改清单，锁文件由 CI 的 `Update Lockfiles` 工作流重生）。
 
 **加索引 / TTL**：在对应 model 里 `.index(...)` 声明；线上大集合加索引前先评估构建开销。
@@ -320,6 +416,19 @@ frontend/src/
   确认 nonce 仍被正确注入（`security/contentSecurityPolicy.ts`）。
 - **响应压缩**：跳过 `text/event-stream`（SSE 会被缓冲成一次性响应）与 206/Range
   （压缩后的字节区间与 `Content-Range` 不再对应，音频 seek 会取到错位数据）。
-- **处罚态契约**：封停（`ACCOUNT_SUSPENDED`）与工单封禁（`TICKET_PERMISSION_BANNED`）都带稳定 `code`，
-  前端据此弹申诉入口；禁用的 403 目前只有文案。新增任何「拒绝用户」的分支都要先问
-  一句「前端怎么识别它」——靠文案匹配是最后选择，不是默认选择。
+- **处罚态契约**：封停（`ACCOUNT_SUSPENDED`）、通道受限（`ACCOUNT_RESTRICTED`）、工单封禁
+  （`TICKET_PERMISSION_BANNED`）、同意缺失（`POLICY_CONSENT_REQUIRED`）、逐步验证
+  （`STEP_UP_REQUIRED`）、安全会话（`SECURITY_SESSION_REQUIRED`）都带稳定 `code`，前端据此弹对应入口；
+  禁用的 403 目前只有文案。新增任何「拒绝用户」的分支都要先问一句「前端怎么识别它」——
+  靠文案匹配是最后选择，不是默认选择。
+- **CodeQL 告警的处理顺序**：先判断能不能**真修**；确实属于「工具看不到守卫」的，才在告警那一行的
+  **上一行**写 `// codeql[<rule-id>] <为什么安全>`（同文件既有写法：`docTool/runtime.ts`、
+  `mediaTool/runtime.ts`、`adminOverviewService.ts`）。注释必须紧贴 sink，写清依据（谁做了守界、
+  为什么数据不可控），**不要写「误报」了事**——下一个人要靠这句话判断能不能改。
+- **审计脱敏字段**：`src/utils/auditRedaction.ts` 是唯一来源（EXACT 精确匹配 + SUBSTRING 包含匹配）。
+  新增凭据类字段名（含 `verificationToken` 这类一次会话令牌）要同时加进 EXACT 表，
+  否则 `AUDIT_LOG_CAPTURE_PAYLOADS=true` 时会被写进 60 天可导出的审计库。
+- **日志里绝不出现密钥原文**：CodeQL 会把 `apiKey*` 域的数据流一律视作凭据，因此记 `keyId` / 条数 /
+  动作名这类元数据时也要在行上写清「记录的是什么」，避免反复被同一类告警打断。
+- **NAT 与设备判据要成对出现**：只用 IP 会在校园网/运营商 NAT 后误伤，只用客户端自报标识会被伪造；
+  限流与风险判定都应保持「IP + 设备」两个正交维度，且两者各自独立计数。

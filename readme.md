@@ -30,6 +30,9 @@
   - [数据收集与分析](#5-数据收集与分析)
   - [通信服务](#6-通信服务)
   - [实用工具](#7-实用工具)
+    - [GeoGebra 工作台](#75-geogebra-工作台)
+    - [Pixel 任务工作台](#76-pixel-任务工作台)
+    - [法律保留与取证](#77-法律保留与取证)
   - [查询服务](#8-查询服务)
   - [娱乐与游戏](#9-娱乐与游戏)
   - [管理后台](#10-管理后台)
@@ -60,6 +63,12 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 - 🔒 全站统一「安全会话」：查看密钥 / 命令执行 / 双因素配置 / 第三方绑定共用一次强验证（密码 / TOTP / Passkey）
 - 🧬 单一 `AES_KEY` 主密钥，经 HKDF 派生 JWT 签名、密码 KEK、令牌签名与各内部签名/凭据密钥
 - 🛡️ 多层安全防护（WAF + IP 封禁 + 速率限制 + 篡改检测 + 智能人机验证 + proxycheck.io IP 风险检测 + WebRTC 泄露检测）
+- 🧭 限流双判据：匿名请求同时按 **IP 与设备/浏览器指纹** 两个独立桶计数，换出口或换设备都各自被拦
+- 🕵️ 账户风险分级：属地跳变、机房出口、设备共享、自动化痕迹等信号聚合成风险档，按档位决定「放行 / 逐步验证 / 受限 / 封停」
+- 📄 Markdown → Word 批量转换（服务端 pandoc）：参考样式模板统一表格框线与中文字体，支持冲突策略、目录结构保留、打包下载与失败重试
+- 📐 GeoGebra 协作工作台：脚本编辑器、版本快照与回滚、团队协作、评论、分享与嵌入、AI 生图转脚本
+- 🖼️ Pixel 任务工作台：卡密校验、批量提交、结果导出与脱敏溯源
+- ⚖️ 法律保留与取证审计：被保留对象禁止物理删除，取证导出需双人确认并带校验和
 - 🧩 人机验证供应商调度：Turnstile / hCaptcha / trycap 可按场景权重、优先级、粘性、灰度与月度额度下发
 - 📜 政策条文单点维护：登录/注册逐项同意、条文指纹留痕、用户端查看与撤回、管理端只读审计
 - 🎙️ 多提供商文本转语音（OpenAI / Fish Audio / 内置微软 Edge 朗读）
@@ -92,7 +101,7 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 |-------|------|------|
 | WAF 防火墙 | Web 应用防火墙，检测恶意请求 | `wafMiddleware.ts` |
 | IP 封禁 | 自动/手动封禁恶意 IP，支持 CIDR 段 | `ipBanCheck.ts`, `IPBanManager` |
-| 速率限制 | 按路由粒度的请求频率限制（37 个独立限流器） | `routeLimiters.ts` |
+| 速率限制 | 按路由粒度的请求频率限制；单一定义处 `LIMITER_DEFINITIONS`，匿名请求另按设备指纹独立计桶 | `routeLimiters.ts` |
 | 篡改检测 | 前端关键元素篡改保护 | `tamperProtection.ts`, `TamperDetectionDemo` |
 | 智能人机验证 | 基于行为分析的人机识别 | `smartHumanCheckService.ts`, `SmartHumanCheck` |
 | Turnstile 验证码 | Cloudflare Turnstile 集成 | `turnstileAuth.ts`, `TurnstileWidget` |
@@ -105,6 +114,12 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 指纹采集 | 浏览器指纹识别与追踪 | `FingerprintManager`, `FingerprintRequestModal` |
 | 重放保护 | 防止请求重放攻击 | `replayProtection.ts` |
 | 审计日志 | 全操作审计记录 | `auditLog.ts`, `AuditLogViewer` |
+| 限流双判据 | 匿名请求按 IP 与设备/浏览器指纹**各自计数、任一超限即拒绝**；指纹只落哈希，登录请求不参与 | `routeLimiters.ts` |
+| 并发硬顶 | 昂贵端点按「在途请求数」单独限制，超顶立即 429 + `Retry-After`（不排队） | `createBurstConcurrencyGuard` |
+| 账户风险分级 | 属地跳变 / 机房出口 / 设备共享 / 自动化痕迹 / 出口探测不一致聚合成风险档，处罚只经统一出口 | `accountRiskService.ts`, `geoRisk.ts`, `regionGuard.ts` |
+| 逐步验证 | 被标记账户的敏感操作要求一次性人机挑战（含 hashcash PoW），失败关闭、可申诉 | `accountStepUpGuard.ts`, `StepUpGate` |
+| 法律保留 | 被保留对象禁止物理删除；关键集合不再用 Mongo 物理 TTL，改应用层清理并逐条校验 hold | `legalHoldService.ts`, `legalHoldCleanupService.ts` |
+| 取证审计 | 普通审计 60 天 TTL；取证审计与导出申请**不设 TTL**，导出需双人确认 + 校验和 | `forensicAuditService.ts` |
 
 ### 2. 文本转语音 (TTS)
 
@@ -267,6 +282,44 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | IPFS 上传 | 文件上传至 IPFS 分布式存储 | `ipfsRoutes` |
 | 图片上传 | 图片批量上传与管理 | `imageDataRoutes` |
 
+### 7.5 GeoGebra 工作台
+
+独立懒加载页面 `/geogebra`，支持本地与云端两种模式（切换前会提示未保存的拖拽点）。
+
+| 能力 | 说明 |
+|------|------|
+| 脚本编辑 | Monaco 编辑器（行号/折叠/括号配对/高亮），Ctrl/Cmd+Enter 运行；**编辑器与 worker 都是动态加载**，不进首屏闭包 |
+| 变量与执行 | 变量定义/引用分析、可调风险阈值、逐条执行明细、原/新指令对照 |
+| 版本管理 | 云端版本快照、列表、diff、应用与回滚；默认保留最近 24 个版本（被评论引用的版本不裁剪） |
+| 团队协作 | 复用 workspace：创建团队、成员与角色（admin/editor/reviewer/viewer）、项目绑定 |
+| 评论 | 评论关联到版本与对象，可标记已解决；只能读有权项目 |
+| 分享与嵌入 | 发布得到 slug 与分享 URL，也提供 **embed URL**；被撤销的分享不再给出可用链接 |
+| 资产与 AI | 图片资产（魔数/体积/TTL/归属校验）；AI 生图转脚本为异步任务，结果需人工确认后写回 |
+| 导出 | 服务端产出 `zip-bundle`；SVG/PDF/GIF/MP4/PPTX 由画布侧能力提供，UI 不摆不可用的按钮 |
+
+> 嵌入壳（`?embed=1`）不渲染站点导航与页脚，并豁免首访验证闸门；IP 封禁仍然生效。
+
+### 7.6 Pixel 任务工作台
+
+独立页面 `/pixel`，用于批量提交上游任务并按卡密导出结果。
+
+- **卡密校验**：卡密只以掩码形式回显；`valid=false` 时仍可查看历史。
+- **提交与轮询**：每行一个账号（格式/行数/大小/重复校验，整批拒绝并只回行号）；5 秒轮询、终态停止。
+- **导出**：单任务与按卡密导出 `email----result_link`，服务端复验后才产出。
+- **限流**：验证 / 提交 / 查询按操作敏感度分开计桶，全部是「用户 + IP」双键。
+- **溯源**：只存掩码、大小与状态；审计**零载荷**（请求体不被捕获），避免凭据进审计库。
+- **管理端**：卡密映射、用量溯源、上游集成配置（`source` / `overridden` / 热更分类可读，支持恢复默认）与运行指标；**无数据时显式返回 null 与原因**，不编造 0。
+
+### 7.7 法律保留与取证
+
+面向「收到具备法律依据的调取要求」的场景，保证相关证据不会被自动清理或误删。
+
+- **法律保留（legal hold）**：按用户 / IP / 指纹登记，强制填写案件编号与理由；同一对象同一案件重复登记按幂等处理；解除必须案件编号一致。
+- **与 TTL 的关系**：Mongo 的物理 TTL 会在应用层校验 hold 之前就删文档，因此六个关键集合（`ipbans`、`accesstokens`、`ip_verification_tokens`、`verification_tokens`、`proxycheck_risk_cache`、`auth_email_cooldowns`）**移除 `expireAfterSeconds`**，改由应用层每 6 小时清理，**删除前逐条校验 hold，库不可用时整轮 fail-closed**。
+  > 已有部署需执行一次 `pnpm run migrate:legal-hold-ttl`（默认 dry-run，`--apply` 才摘除线上旧 TTL 索引）。
+- **审计分层**：普通业务审计保持 **60 天** TTL；`legal_holds` 增删会**双写**普通审计与 `forensic_audit_logs`（**不设 TTL**）。调查周期经常超过 60 天，TTL 会把证据静默删掉。
+- **取证导出**：超级管理员手工发起 + **双人确认** + 安全会话；按 `_id` 游标流式输出 NDJSON，硬顶 20,000 行，超限返回 `413 EXPORT_LIMIT_EXCEEDED` 且**不截断**（明确告诉你一条都没导出），交付件带行数与校验和；拒绝 API Key 触发。
+
 ### 8. 查询服务
 
 | 服务 | 说明 | 前端路由 | 后端路由 |
@@ -314,6 +367,10 @@ Synapse 是一个综合性 Web 应用平台，围绕文本转语音核心功能�
 | 人机验证控制台 | 供应商上下线、场景权重/优先级/粘性/灰度、组件外观、月度额度与用量 | `CaptchaProviderAdmin.tsx` |
 | 政策同意记录 | 政策同意记录只读查看、版本/来源分布、逐条审计与 CSV 导出 | `PolicyConsentPanel.tsx` |
 | B 站数据管理 | B 站登录期 cookie 上报与账号绑定元数据（仅密文，无明文导出） | `BilibiliDataAdmin.tsx` |
+| 模组列表 | MOD 清单维护（新增/编辑/删除/批量）；页面与读接口都只对管理员开放，超管写操作免修改码 | `ModListEditor.tsx` |
+| 法律保留与取证 | 登记/解除法律保留（强制案件编号与理由）、超管取证审计与导出（双人确认 + 校验和 + 行数硬顶） | `LegalHoldManager.tsx` |
+| GeoGebra 诊断 | 项目/分享/资源/异步任务概览，无数据源的指标显式标注而不是编造 | `GeoGebraAdminPanel.tsx` |
+| Pixel 任务与 CDK | 卡密映射、用量溯源、上游集成配置（来源/覆盖/热更可见，可恢复默认）、运行指标 | `PixelAdminPanel.tsx` |
 
 ### 11. 网络与集成
 
@@ -442,6 +499,9 @@ Synapse/
 │   │   ├── wsService.ts              # WebSocket 服务
 │   │   ├── schedulerService.ts       # 定时任务服务
 │   │   └── ...                       # 更多服务
+│   ├── docTool/                       # Markdown → Word 批量转换（pandoc + 串行队列 + 内置 ZIP）
+│   ├── geogebra/                      # GeoGebra 工作台（项目/版本/协作/分享/资产/AI/导出/诊断）
+│   ├── pixel/                         # Pixel 任务工作台（卡密/任务/导出/上游适配/取证保全）
 │   ├── middleware/                    # 中间件（22 个）
 │   │   ├── authenticateToken.ts      # JWT 认证
 │   │   ├── corsMiddleware.ts         # CORS 配置
@@ -1138,7 +1198,7 @@ pnpm run analyze:bundle     # Bundle 体积分析
 | CORS | 自定义中间件 | 严格的跨域资源共享策略，按路由差异化配置 |
 | WAF | `wafMiddleware.ts` | Web 应用防火墙，检测 SQL 注入、XSS 等攻击 |
 | IP 封禁 | `ipBanCheck.ts` + Redis | 自动/手动 IP 封禁，支持 CIDR 段，Redis 同步 |
-| 速率限制 | express-rate-limit | 37 个独立限流器，按路由粒度配置 |
+| 速率限制 | express-rate-limit | 单一定义处按路由粒度配置；匿名请求同时按 IP 与设备/浏览器指纹两个独立桶计数 |
 | JWT 认证 | jsonwebtoken | Token 签发与验证，支持可选认证 |
 | 密码加密 | bcrypt | 密码哈希存储 |
 | 输入验证 | Zod + Validator.js | 请求参数校验与清理 |

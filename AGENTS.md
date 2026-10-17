@@ -49,7 +49,9 @@ Synapse 是 TypeScript 全栈 TTS 平台，前后端分离、同镜像发布。
 | `middleware/` | 认证、管理员范围、WAF、IP 封禁、限流、请求守卫 |
 | `security/` | 安全策略、CSP 管线、安全流水线相位 |
 | `generated/` | 生成物（勿手改，由 script 生成、CI 卡漂移） |
-| `tts/`、`mediaTool/` | TTS 管线与媒体工具子系统 |
+| `tts/`、`mediaTool/` | TTS 管线与媒体工具子系统（转写、B 站下载、文件沙箱） |
+| `docTool/` | Markdown → Word 批量转换（服务端 pandoc、串行任务队列、内置 ZIP） |
+| `geogebra/`、`pixel/` | GeoGebra 工作台与 Pixel 任务工作台（各自复刻 routes/service/model 内部结构） |
 | `tests/` | 后端 Jest 用例 |
 
 **前端 `frontend/src/`**：`main.tsx` 入口、`App.tsx` 路由（懒加载）、`components/`（含
@@ -87,7 +89,15 @@ pnpm run check:admin-spa-paths    # 管理面板路径清单是否漂移
 pnpm run check:ts-file-size       # 源码体积闸门
 pnpm run check:frontend-bundle    # 前端 gzip 预算（需先构建前端）
 pnpm run check:privacy-contract   # 隐私数据地图契约
+pnpm run check:frontend-design-language  # 前端设计语言（配色/圆角/token，基线只允许下降）
+pnpm run check:slicing-and-softdelete    # 裸删除与未切片响应（存量在基线里，只报新增）
+pnpm run check:imports            # 嵌套导入
 pnpm run smoke:obfuscated         # 混淆产物的生产启动冒烟
+
+# 一次性迁移（默认 dry-run，加 --apply 才动库）
+pnpm run migrate:legal-hold-ttl   # 摘除六个关键集合的物理 TTL 索引（裁决三）
+pnpm run migrate:rc47-indexes     # blocked_identities 部分唯一索引
+pnpm run migrate:lumen-ttl        # Lumen 会话集合 TTL
 ```
 
 ---
@@ -97,7 +107,7 @@ pnpm run smoke:obfuscated         # 混淆产物的生产启动冒烟
 | Workflow | 是否门禁 | 内容 |
 | --- | --- | --- |
 | **Node Verification** | ✅ | `pnpm install` → audit 策略 → build → openapi 生成/drift → admin SPA 路径 drift → 混淆产物冒烟 → **后端 Jest + 前端 Vitest（含覆盖率）** |
-| **Quality Guardrails** | ✅ | 源码体积闸门、隐私契约、存储责任报告（advisory）、未用依赖报告（advisory）；**前端构建 + 体积预算**；Mongo 副本集集成测试 |
+| **Quality Guardrails** | ✅ | 源码体积闸门、隐私契约与隐私地图漂移、**前端设计语言**、**裸删除/响应切片**、存储责任报告（advisory）、未用依赖报告（advisory）；**前端构建 + 体积预算**；Mongo 副本集集成测试 |
 | **CodeQL** | ✅ | code scanning |
 | **Docker** | ✅ | 镜像构建与发布 |
 | **Code Quality (fuck-u-code)** | ⚠️ advisory | `continue-on-error: true`，只报告不拦 |
@@ -122,6 +132,17 @@ step `outcome`。
   后端路径清单由 `scripts/generate-admin-spa-paths.js` 生成，`check:admin-spa-paths` 会卡漂移。
 - 注释写「为什么」，尤其是**反直觉的取舍**与安全相关判断；不要复述代码本身。
 - 用户可见文案只讲「要做什么 / 现在什么状态」，不铺实现原理（诊断细节收进可展开的「详情」）。
+- **前端视觉只有一套基线**：配色/面板/按钮/四态一律从 `components/studioTheme.tsx` 与
+  `components/studioFeedback.tsx` 取；不自建弹窗、不自写四态、不自绘 spinner，
+  不引入 indigo/purple/fuchsia/pink 与任意 hex。`check:frontend-design-language` 会卡新增违规。
+- **flex 行里的固定写法**：`justify-between` 承载长文本的一侧必须 `min-w-0`（需要时 `flex-1`），
+  图标/按钮侧才写 `shrink-0`。flex 子项默认 `min-width: auto` 不收缩，漏写会把图标顶出卡片；
+  卡片通常带 `overflow-hidden`，表现是「文字/图标消失」而不是「没换行」。
+  绝对定位的纯装饰层要有 `pointer-events-none`。
+- **重依赖必须动态 `import()`**：`docx`、`katex`、`mermaid`、`monaco-editor`、
+  `react-syntax-highlighter`、`exceljs` 不进首屏静态闭包；加载中先给可读的退化形态，失败要有可见退路。
+- **两端口径必须成对**：限流与风险判定同时保留「IP」与「客户端自报标识」两个正交维度并各自计数，
+  不要拼成一个键（换任一侧就得到全新配额），也不要把任一单独维度当唯一判据。
 
 ---
 
@@ -136,6 +157,11 @@ step `outcome`。
 - 用例命名按「被测模块或行为」命名（`authController.test.ts`、`securityPipeline.test.ts`）。
 - 改生产代码前先看有没有测试**替身**依赖该成员：`jest.mock` 工厂漏一个导出就会让整组用例
   以「看起来像业务坏了」的方式挂掉（报错点常在业务文件里，根因在替身缺件）。
+- **越权与隔离断言优先于功能断言**：新增子系统时先写「他人项目/资源 404、只读角色不能写、
+  撤销后全链路 404、fork 关闭时拒绝」，再补正向用例。这类缺口不会让 CI 变红，但会让隔离形同虚设。
+- **`index('...' , { expireAfterSeconds })` 变更必须配迁移脚本**：Mongo 只会在**新建**索引时应用 TTL，
+  线上老索引不会因为 schema 改动而消失，也不会自动冲突报错。改 TTL 前先跑
+  `listIndexes` 确认键形状，写成幂等脚本（参考 `scripts/apply-legal-hold-ttl-removal.js`，默认 dry-run、按形状匹配）。
 
 ---
 
@@ -184,6 +210,24 @@ step `outcome`。
   不配就是整个当前 DB。真 RDB 只能在宿主机用 `deploy/openresty/backup-redis.sh` 导出；
   拿回快照用 `node scripts/redis-restore-snapshot.js --file <ndjson> [--apply --replace]`（默认 dry-run）。
 - 新增路由必须配限流器；不要在子路由重复挂同一个限流器实例（会让一次请求过两遍、额度减半）。
+- **处罚与拒绝必须带稳定 `code`**：`ACCOUNT_SUSPENDED` / `ACCOUNT_RESTRICTED` / `TICKET_PERMISSION_BANNED` /
+  `POLICY_CONSENT_REQUIRED` / `STEP_UP_REQUIRED` / `SECURITY_SESSION_REQUIRED` / `EXPORT_LIMIT_EXCEEDED`。
+  前端靠 `code` 弹对应入口；新增「拒绝用户」的分支先想清楚前端怎么识别它，不要靠文案匹配。
+- **账户风险处罚只走 `applyAccountRiskAction`**：直接改用户字段会与审计和升降档规则脱节。
+  匿名链路（登录前人机验证失败等）**只能记信号、不得升级为封禁**，且必须带 `requireKnownIp` 归因闸。
+- **敏感操作的安全会话**：守卫统一用 `src/utils/securitySession.ts` 的 `requireSecuritySession` /
+  `assertSecuritySessionBinding`；**不要在控制器里再写一份同步副本**（会让绑定校验静默失效）。
+  前端由共享 axios 实例与 env-manager 的 `authFetch` 统一附带 `x-verification-token`。
+- **法律保留与 TTL 互斥**：新集合若可能被 `legal_holds` 命中，就**不要加物理 TTL**，
+  改为登记进 `LEGAL_HOLD_CLEANUP_TARGETS` 走应用层清理。物理 TTL 会在校验 hold 之前删文档。
+- **取证审计不设 TTL**：调查周期常超过 60 天；普通业务审计仍保持 `AUDIT_LOG_RETENTION_DAYS = 60`。
+- **CodeQL 告警先判能不能真修**，确认「工具看不到守卫」才在 sink 的上一行写
+  `// codeql[<rule-id>] <为什么安全>`，并写清依据（谁守的界、为什么不可控），不要只写「误报」。
+- **审计脱敏字段是单点**：新增凭据类字段名（含 `verificationToken` 这类会话令牌）要加进
+  `src/utils/auditRedaction.ts` 的 EXACT 表，否则开载荷捕获时会进 60 天可导出的审计库。
+- **提交前比对暂存集**：本 clone 多会话共用，`git add <文件>` 是在既有索引上追加。
+  `git diff --cached --name-only` 与自己声明的白名单逐字一致才 commit；
+  撤回混合提交用 `git reset HEAD~1`（mixed，工作树不动），**只在 push 之前**。
 
 ---
 
