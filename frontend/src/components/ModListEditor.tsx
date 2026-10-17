@@ -69,6 +69,11 @@ async function fetchModListJson(): Promise<ModItem[]> {
   return Array.isArray(response.data) ? response.data : [];
 }
 
+/**
+ * `code` 允许空串：超级管理员的写操作不需要修改码（后端 `passesWriteCodeGate` 按角色分流），
+ * 其余身份传空串等价于「没有码」，后端照常 403。不要改成可选字段 —— 那样请求体里会
+ * 完全没有 `code`，两端口径更容易漂。
+ */
 async function createMod(payload: { name: string; code: string; hash?: string; md5?: string }) {
   const response = await api.post<MutationResponse>("/api/modlist", payload);
   return response.data;
@@ -351,7 +356,7 @@ const ModListEditor: React.FC = () => {
         name: draft.name.trim(),
         hash: draft.hash.trim(),
         md5: draft.md5.trim() || undefined,
-        code: modifyCode.trim() || undefined,
+        code: modifyCode.trim(),
       });
       if (!result.success) {
         throw new Error(result.error || "新增失败");
@@ -379,7 +384,7 @@ const ModListEditor: React.FC = () => {
         name: draft.name.trim(),
         hash: draft.hash.trim() || undefined,
         md5: draft.md5.trim() || undefined,
-        code: modifyCode.trim() || undefined,
+        code: modifyCode.trim(),
       });
       if (!result.success) {
         throw new Error(result.error || "更新失败");
