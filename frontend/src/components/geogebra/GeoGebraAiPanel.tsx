@@ -21,6 +21,7 @@ import {
   getGeoGebraJob,
   uploadGeoGebraReferenceImage,
 } from "../../api/geogebra";
+import { buildGeoGebraDependencyTree, formatGeoGebraDependencyTree } from "./dependency";
 import type { GeoGebraAiKind, GeoGebraJob, GeoGebraLocalProject } from "../../types/geogebra";
 
 // GeoGebra AI 面板（GEO-15 / GEO-16）。
@@ -74,9 +75,16 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
   const [applying, setApplying] = useState(false);
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentStatus, setCommentStatus] = useState("");
+  // GEO-16：对象标注要求「勾选要写回的项」。null = 全选（尚未手动调整过）。
+  const [selectedCommandIndexes, setSelectedCommandIndexes] = useState<number[] | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const activeAction = useMemo(() => AI_ACTIONS.find((action) => action.kind === kind) ?? AI_ACTIONS[0], [kind]);
+  // 依赖树是本地推导的确定性结果（与 AI 解释并列展示），AI 不可用时也能看。
+  const dependencyTree = useMemo(
+    () => focusObject ? buildGeoGebraDependencyTree(code, focusObject) : null,
+    [code, focusObject],
+  );
   const running = job !== null && !TERMINAL_STATUSES.has(job.status);
 
   const stopPolling = useCallback(() => {
@@ -95,6 +103,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
     setError("");
     setNotice("");
     setCommentStatus("");
+    setSelectedCommandIndexes(null);
   }, [project?.projectId, stopPolling]);
 
   useEffect(() => {
@@ -170,6 +179,7 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
         referenceAssetId,
       });
       setJob(created);
+      setSelectedCommandIndexes(null);
       // 上传的参考图已交给任务，面板不再持有它。
       setReferenceAssetId(null);
       setAttachmentName("");
@@ -196,8 +206,16 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
     }
   };
 
-  const handleApply = async (mode: "replace" | "append") => {
+  // 只把勾选中的指令交给写回流程；未手动调整过时等同全选。
+  const applyCommands = (): string[] => {
     const commands = job?.result?.commands ?? [];
+    if (!selectedCommandIndexes) return commands;
+    const chosen = new Set(selectedCommandIndexes);
+    return commands.filter((_, index) => chosen.has(index));
+  };
+
+  const handleApply = async (mode: "replace" | "append") => {
+    const commands = applyCommands();
     if (!commands.length || applying) return;
     if (mode === "replace") {
       const approved = await confirm({
@@ -315,6 +333,33 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
           </label>
         )}
 
+        {kind === "ai-explanation" && dependencyTree && (
+          <div className={cn(studioSubPanelClassName, "mt-3")}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-slate-800">本地依赖关系</span>
+              <button
+                type="button"
+                onClick={() => { void navigator.clipboard.writeText(formatGeoGebraDependencyTree(dependencyTree)).then(() => setNotice("依赖关系已复制。")).catch(() => setError("无法复制依赖关系。")); }}
+                className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900"
+              >
+                复制
+              </button>
+            </div>
+            {dependencyTree.children.length ? (
+              <ul className="mt-2 space-y-1 font-mono text-[11px] text-slate-600">
+                <li className="font-semibold text-slate-800">{dependencyTree.root.name}{dependencyTree.root.lineNumber ? `（第 ${dependencyTree.root.lineNumber} 行）` : "（脚本里没有定义）"}</li>
+                {dependencyTree.children.map((entry) => (
+                  <li key={`${entry.depth}-${entry.node.name}`} style={{ paddingLeft: `${entry.depth * 14}px` }} className="min-w-0 truncate">
+                    - {entry.node.name}（第 {entry.node.lineNumber} 行）{entry.circular && <span className="ml-1 text-amber-700">已在上层出现</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">{dependencyTree.root.defined ? "这个对象不依赖脚本里的其它对象。" : "这个对象不在当前脚本的顶层定义里，可能由 GeoGebra 自动命名。"}</p>
+            )}
+          </div>
+        )}
+
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" onClick={() => void handleRun()} disabled={busy || running} className={studioPrimaryButtonClassName}>
             <FaMagic /> {busy ? "提交中…" : running ? "生成中…" : "生成建议"}
@@ -363,11 +408,39 @@ export default function GeoGebraAiPanel({ project, canvasMode, code, objectNames
             ) : null}
             {result?.commands?.length ? (
               <div className="mt-3">
-                <p className="text-xs font-semibold text-slate-600">待写入指令（{result.commands.length} 条）</p>
-                <pre className="mt-1 max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] leading-5 text-slate-700">{result.commands.join("\n")}</pre>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-slate-600">待写入指令（{applyCommands().length}/{result.commands.length} 条）</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setSelectedCommandIndexes(null)} className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900">全选</button>
+                    <button type="button" onClick={() => setSelectedCommandIndexes([])} className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900">全不选</button>
+                  </div>
+                </div>
+                <ul className="mt-1 max-h-48 space-y-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                  {result.commands.map((command, index) => {
+                    const checked = selectedCommandIndexes === null || selectedCommandIndexes.includes(index);
+                    return (
+                      <li key={`${index}-${command}`}>
+                        <label className="flex min-w-0 items-start gap-2 rounded-xl px-1 py-1 text-[11px] leading-5 text-slate-700 hover:bg-white/70">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 shrink-0"
+                            checked={checked}
+                            onChange={() => {
+                              const current = selectedCommandIndexes ?? result.commands.map((_, item) => item);
+                              const next = checked ? current.filter((item) => item !== index) : [...current, index].sort((a, b) => a - b);
+                              setSelectedCommandIndexes(next);
+                            }}
+                            aria-label={`第 ${index + 1} 条：${command}`}
+                          />
+                          <code className="min-w-0 break-all font-mono">{command}</code>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => void handleApply("replace")} disabled={applying} className={studioPrimaryButtonClassName}>替换脚本</button>
-                  <button type="button" onClick={() => void handleApply("append")} disabled={applying} className={studioGhostButtonClassName}>追加到脚本</button>
+                  <button type="button" onClick={() => void handleApply("replace")} disabled={applying || applyCommands().length === 0} className={studioPrimaryButtonClassName}>替换脚本</button>
+                  <button type="button" onClick={() => void handleApply("append")} disabled={applying || applyCommands().length === 0} className={studioGhostButtonClassName}>追加到脚本</button>
                 </div>
               </div>
             ) : null}
