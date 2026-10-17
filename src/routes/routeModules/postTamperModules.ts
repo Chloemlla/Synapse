@@ -20,6 +20,7 @@ import bilibiliCookieReportRoutes from "../bilibiliCookieReportRoutes";
 import bilibiliSyncRoutes from "../bilibiliSyncRoutes";
 import cdictRoutes from "../cdictRoutes";
 import cdkRoutes from "../cdkRoutes";
+import clientTelemetryRoutes from "../clientTelemetryRoutes";
 import coinFlipRoutes from "../coinFlipRoutes";
 import commandRoutes from "../commandRoutes";
 import compatRoutes from "../compatRoutes";
@@ -100,6 +101,31 @@ export const postTamperRouteModules: RouteModule[] = [
       mode: "router",
       handlers: ["authenticateToken"],
       note: "LibreChat 只属于登录账号：router 内统一 enforce JWT/Cookie 登录（authenticateToken），不再接受游客或客户端自选 token；admin 用户/提供方读写（含 delete-all）仍由 admin 子路由内的角色门控约束。",
+    },
+  },
+  {
+    name: "client-telemetry-routes",
+    path: "/api/client-telemetry",
+    router: clientTelemetryRoutes,
+    requiresAuth: false,
+    rateLimited: true,
+    isPublic: true,
+    rateLimitPolicy: {
+      mode: "router",
+      limiters: ["clientTelemetryLimiter"],
+      note: "clientTelemetryLimiter is applied inside clientTelemetryRoutes.ts so the batch quota is counted once.",
+    },
+    securityBypass: {
+      // 首访验证未通过时浏览器仍要能上报错误：这正是用户最常卡住的一步。
+      ipVerification: {
+        value: true,
+        reason: "Browser error telemetry must be collectable while the visitor is still blocked at the first-visit verification gate.",
+      },
+      // 控制台报错文本可能包含引号、尖括号、分号（例如解析失败的 HTML/JSON），WAF 会误判。
+      waf: {
+        value: true,
+        reason: "Console error text legitimately contains quotes/angle brackets; the payload is stored as data and never interpreted.",
+      },
     },
   },
   {

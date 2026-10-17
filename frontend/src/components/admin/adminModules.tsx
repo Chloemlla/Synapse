@@ -72,6 +72,8 @@ export const ADMIN_MODULE_LOADERS = {
     })),
   'audit-log': () => import('@/components/AuditLogViewer'),
   'crash-reports': () => import('@/components/admin/CrashReportManager'),
+  // 客户端遥测与问题追踪码复盘（页面 /admin/client-errors）。
+  'client-errors': () => import('@/components/admin/ClientTelemetryManager'),
   'qq-guard': () => import('@/components/admin/QqGuardManager'),
   geogebra: () => import('@/components/admin/GeoGebraAdminPanel'),
   pixel: () => import('@/components/admin/PixelAdminPanel'),

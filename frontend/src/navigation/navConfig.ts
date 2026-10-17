@@ -587,6 +587,14 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'admin',
           },
           {
+            // 用户报「问题追踪码」后在这里复盘：浏览器报错 + 首访验证结果。
+            title: '客户端遥测',
+            url: '/admin/client-errors',
+            icon: FaBug as IconType,
+            requiredRole: 'admin',
+            requiredPage: 'client-errors',
+          },
+          {
             title: 'QQ 群纪律',
             url: '/admin/qq-guard',
             icon: FaShieldAlt as IconType,
@@ -721,6 +729,7 @@ export const ADMIN_TAB_TO_PATH: Record<string, string> = {
   'bilibili-data': '/admin/bilibili-data',
   'data-collection': '/admin/data-collection',
   'crash-reports': '/admin/crash-reports',
+  'client-errors': '/admin/client-errors',
   'github-billing-cache': '/admin/github-billing-cache',
   'ip-ban': '/admin/ip-ban',
   fingerprint: '/admin/fingerprint',

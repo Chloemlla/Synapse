@@ -9,6 +9,7 @@ import logger from "../utils/logger";
 import { buildScamalyticsLookupUrl, normalizeScamalyticsUser } from "../utils/scamalytics";
 import { mongoose } from "./mongoService";
 import { evaluateIpRisk } from "./ipRiskService";
+import { attachRequestTraceId } from "./turnstile/trace";
 import { manualBanIp } from "./turnstile/ipBan";
 import { TurnstileService } from "./turnstileService";
 interface ScamalyticsResponse {
@@ -83,6 +84,11 @@ export interface IpVerificationSessionResult {
   banned?: boolean;
   banReason?: string;
   banExpiresAt?: string;
+  /**
+   * 人机验证供应商本次溯源 id（shc_traces.traceId）。
+   * 与用户看到的追踪码（服务端 requestId）不是一个东西：前者看评分明细，后者定位整次请求。
+   */
+  captchaTraceId?: string;
 }
 
 function normalizeFingerprint(input: string): string | null {
@@ -730,6 +736,8 @@ export class IpVerificationService {
     captchaToken: string,
     userAgent?: string,
     captchaType: "turnstile" | "hcaptcha" | "trycap" = "turnstile",
+    /** 用户看到的那串追踪码（服务端 requestId）；只用于把溯源关联起来，不参与校验。 */
+    requestTraceId?: string,
   ): Promise<IpVerificationSessionResult> {
     const fingerprint = normalizeFingerprint(fingerprintInput);
     const ipAddress = normalizeIpAddress(ipAddressInput);
@@ -753,6 +761,10 @@ export class IpVerificationService {
       fingerprint,
       captchaType,
     );
+    // 把用户看到的追踪码挂到本次人机验证溯源上：管理员拿到码就能查到评分明细。
+    if (requestTraceId && captchaResult.traceId) {
+      await attachRequestTraceId(captchaResult.traceId, requestTraceId);
+    }
 
     if (!captchaResult.success) {
       return {
@@ -763,10 +775,12 @@ export class IpVerificationService {
         ipAddress,
         reason: captchaResult.errorCode || captchaResult.reason || "captcha_verification_failed",
         tokenTtlMinutes: config.ipqs.tokenTtlMinutes,
+        captchaTraceId: captchaResult.traceId,
       };
     }
 
-    return IpVerificationService.issueToken(fingerprint, ipAddress, captchaType, undefined, []);
+    const issued = await IpVerificationService.issueToken(fingerprint, ipAddress, captchaType, undefined, []);
+    return { ...issued, captchaTraceId: captchaResult.traceId };
   }
 
   public static async verifyRequestToken(

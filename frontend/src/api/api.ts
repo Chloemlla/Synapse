@@ -8,6 +8,7 @@ import {
 import { canonicalizeBackendApiUrl } from '../utils/apiPath';
 import { maybeEmitPenaltyAppealFromError } from '../utils/penaltyAppeal';
 import { notifyCaptchaFailure } from '../utils/captchaRecovery';
+import { noteClientRequestId, reportClientNetworkFailure } from '../utils/clientTelemetry';
 import { getSecuritySessionToken } from '../hooks/useSecuritySession';
 import {
     StepUpUnsupportedError,
@@ -94,6 +95,8 @@ api.interceptors.request.use(async (config) => {
     if (typeof config.url === 'string') {
         config.url = canonicalizeBackendApiUrl(config.url);
     }
+    // 供客户端遥测统计耗时（只用于 5xx/网络失败的诊断）。
+    (config as AxiosRequestConfig & { _startedAt?: number })._startedAt = Date.now();
 
     const headers =
         config.headers instanceof AxiosHeaders
@@ -155,6 +158,8 @@ export function markFingerprintHashProcessed(hash: string): void {
 // 响应拦截器：处理错误和重试
 api.interceptors.response.use(
     (response) => {
+        // 记住服务端请求 ID：客户端遥测用它把「浏览器报错」与「服务端审计」串起来。
+        noteClientRequestId(response.headers?.['x-request-id']);
         notifyCaptchaFailure(response.data, response.config?.data, response.status);
         try {
             if (handleFingerprintHeader(response.headers as any)) {
@@ -166,6 +171,22 @@ api.interceptors.response.use(
     },
     async (error) => {
         const originalRequest = error.config;
+        // 遥测：只记 5xx / 网络层失败 / 超时（4xx 是正常业务拒绝，由审计覆盖）。
+        try {
+            const pathname = resolveRequestPathname(originalRequest) || (typeof originalRequest?.url === 'string' ? originalRequest.url : '');
+            reportClientNetworkFailure({
+                method: (originalRequest?.method || 'get').toUpperCase(),
+                path: pathname.split('?')[0],
+                status: error.response?.status,
+                durationMs: (() => {
+                    const startedAt = (originalRequest as AxiosRequestConfig & { _startedAt?: number } | undefined)?._startedAt;
+                    return typeof startedAt === 'number' ? Date.now() - startedAt : undefined;
+                })(),
+                errorCode: error.code || error.response?.data?.code,
+                message: error.message,
+                requestId: error.response?.headers?.['x-request-id'],
+            });
+        } catch { }
         const captchaFailed = notifyCaptchaFailure(error.response?.data, originalRequest?.data, error.response?.status);
         if (captchaFailed || !originalRequest) return Promise.reject(error);
 

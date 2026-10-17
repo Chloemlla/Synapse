@@ -79,3 +79,23 @@ export async function persistTurnstileTrace(traceData: any): Promise<void> {
     }
   }
 }
+
+/**
+ * 把「用户看到的那串追踪码」挂到本次人机验证溯源上。
+ *
+ * verifyTokenDetailed 在验证过程中已经写过溯源（键是它自己的 24 位 traceId），
+ * 事后补一个 requestTraceId 字段即可，不必改所有写入分支；失败只记日志，
+ * 溯源关联不能影响验证主流程。
+ */
+export async function attachRequestTraceId(providerTraceId: string, requestTraceId: string): Promise<void> {
+  if (!providerTraceId || !requestTraceId) return;
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+    const TraceModel = getTraceModel();
+    await TraceModel.updateOne({ traceId: providerTraceId }, { $set: { requestTraceId } });
+  } catch (error) {
+    logger.warn("[Turnstile] 关联请求追踪码失败", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+  }
+}

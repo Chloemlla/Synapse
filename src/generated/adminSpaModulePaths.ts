@@ -19,6 +19,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/bilibili-sync",
   "/admin/broadcast",
   "/admin/captcha-providers",
+  "/admin/client-errors",
   "/admin/coin-flip",
   "/admin/command",
   "/admin/crash-reports",

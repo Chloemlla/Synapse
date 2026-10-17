@@ -33,6 +33,8 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   // GeoGebra 工作台诊断：读接口 admin + 页面授权；默认不列入普通管理员默认页面，
   // 要共享给普通管理员时由超管在页面授权里勾选（未登记的前缀仍是 fail-closed）。
   { key: "geogebra", label: "GeoGebra 诊断", apiPrefixes: ["/api/admin/geogebra"] },
+  // 客户端遥测：浏览器报错与首访验证复盘。读接口 admin + 页面授权，删除超管。
+  { key: "client-errors", label: "客户端遥测", apiPrefixes: ["/api/admin/client-errors"] },
   { key: "pixel", label: "Pixel 任务与 CDK", apiPrefixes: ["/api/admin/pixel"] },
   { key: "users", label: "用户管理", apiPrefixes: ["/api/admin/users"] },
   { key: "apikeys", label: "API Key 管理", apiPrefixes: ["/api/apikeys"] },

@@ -4,6 +4,7 @@ import { isFirstVisitVerificationEnabled } from './firstVisitVerificationConfig'
 import { getApiBaseUrl } from '../api/api';
 import { fetchWithTimeout } from './fetchWithTimeout';
 import { maybeEmitPenaltyAppealFromResponse } from './penaltyAppeal';
+import { noteClientRequestId, reportClientTelemetry, setClientTelemetryTraceId } from './clientTelemetry';
 
 export type IpCaptchaType = 'turnstile' | 'hcaptcha' | 'trycap';
 
@@ -265,6 +266,8 @@ export async function initializeIpVerificationSession(existingFingerprint?: stri
     body: JSON.stringify({ fingerprint }),
   });
 
+  noteClientRequestId(response.headers.get('x-request-id'));
+
   if (!response.ok) {
     // G9-14：后端以 403 + error=IP已被封禁（或 errorCode=IP_BANNED）表达封禁，转成带 banData 的错误，
     // 供 useFirstVisitDetection 读取真实 isIpBanned 并渲染阻断页。
@@ -277,12 +280,16 @@ export async function initializeIpVerificationSession(existingFingerprint?: stri
     // 追踪码挂到错误上：闸门页要把它展示给匿名访客（后端每条响应都带 traceId）。
     const initError = new Error('SESSION_INIT_FAILED') as Error & { traceId?: string };
     const traceId = (errPayload as { traceId?: unknown } | null)?.traceId;
-    if (typeof traceId === 'string' && traceId) initError.traceId = traceId;
+    if (typeof traceId === 'string' && traceId) {
+      initError.traceId = traceId;
+      setClientTelemetryTraceId(traceId);
+    }
     throw initError;
   }
 
   const payload = await response.json().catch(() => ({}));
   const normalized = normalizeSessionPayload(payload, fingerprint);
+  if (normalized.traceId) setClientTelemetryTraceId(normalized.traceId);
 
   if (normalized.token && normalized.verified) {
     storeIpVerificationToken(normalized);
@@ -328,7 +335,9 @@ export async function completeIpVerification(
     }),
   });
 
+  noteClientRequestId(response.headers.get('x-request-id'));
   const payload = await response.json().catch(() => ({}));
+  setClientTelemetryTraceId((payload as { traceId?: unknown } | null)?.traceId);
 
   // fetch 已收到响应时也可能换轮；旧会话不能覆盖新挑战的本地凭证。
   if (signal?.aborted) throw new DOMException('Verification cancelled', 'AbortError');
@@ -348,6 +357,23 @@ export async function completeIpVerification(
 
   if (normalized.token && normalized.verified) {
     storeIpVerificationToken(normalized);
+  }
+
+  // 验证失败的现场交给遥测：管理员拿到追踪码时能看到「哪一步、什么原因、换了哪家供应商」。
+  if (!normalized.success || !normalized.verified) {
+    reportClientTelemetry(`首访验证未通过：${normalized.reason || 'unknown'}`, {
+      kind: 'verification',
+      level: 'error',
+      source: 'ip-verification/complete',
+      outcome: normalized.reason || 'failure',
+      context: {
+        captchaType,
+        issuedBy: normalized.issuedBy,
+        riskFlags: normalized.riskFlags,
+        fraudScore: normalized.fraudScore,
+        responseStatus: response.status,
+      },
+    });
   }
 
   return normalized;

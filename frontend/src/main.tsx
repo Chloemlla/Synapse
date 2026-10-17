@@ -13,6 +13,11 @@ import {
   type ClientIntegrityCheckResult,
 } from "./utils/integrityDiagnostics";
 import "./utils/ipVerification";
+// 客户端遥测：在任何渲染/请求之前挂上控制台与全局错误钩子，
+// 首访验证页报错时才有东西可复盘。采集边界见 utils/clientTelemetry.ts。
+import { installClientTelemetry } from "./utils/clientTelemetry";
+
+installClientTelemetry();
 
 /**
  * 部署换版自愈（2026-10-02 生产实测）：新镜像里只有新哈希的资源，而浏览器里还开着旧标签页时，

@@ -24,6 +24,7 @@ type LimiterCategory =
   | "status"
   | "static"
   | "cloudflare-challenge"
+  | "telemetry"
   | "global";
 
 type RateProfileName =
@@ -1017,6 +1018,14 @@ const LIMITER_DEFINITIONS = {
     category: "public-api",
     message: "请求过于频繁，请稍后再试",
   },
+  // 浏览器遥测：前端错误上报是批量、低频的，但匿名入口必须防刷。
+  // 与 datacollection 不同，这里接受的是结构化事件表，额度按「批」计。
+  clientTelemetry: {
+    profile: "relaxed",
+    category: "telemetry",
+    max: 30,
+    message: "遥测上报过于频繁，请稍后再试",
+  },
 } as const satisfies Record<string, LimiterDefinition>;
 
 function limiterFromDefinition(name: keyof typeof LIMITER_DEFINITIONS): RateLimitRequestHandler {
@@ -1063,6 +1072,7 @@ export const ticketUploadLimiter = limiterFromDefinition("ticketUpload");
 export const ticketAdminLimiter = limiterFromDefinition("ticketAdmin");
 export const libreChatLimiter = limiterFromDefinition("librechat");
 export const dataCollectionLimiter = limiterFromDefinition("datacollection");
+export const clientTelemetryLimiter = limiterFromDefinition("clientTelemetry");
 export const logsLimiter = limiterFromDefinition("logs");
 export const ipfsLimiter = limiterFromDefinition("ipfs");
 export const networkLimiter = limiterFromDefinition("network");

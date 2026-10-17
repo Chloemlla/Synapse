@@ -10,6 +10,7 @@ import {
 } from '../utils/captchaSelection';
 import getApiBaseUrl from '../api';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { noteClientRequestId, reportClientTelemetry, setClientTelemetryTraceId } from '../utils/clientTelemetry';
 
 interface SecureCaptchaConfig {
   captchaType: CaptchaType;
@@ -112,6 +113,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
         })
       });
       if (!isCurrent()) return;
+      noteClientRequestId(response.headers.get('x-request-id'));
 
       if (!response.ok) {
         // 原始状态码与后端原文只进 console；用户侧只看到中性可行动的中文文案。
@@ -121,7 +123,17 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
         const bodyTraceId = typeof (errorData as { traceId?: unknown } | null)?.traceId === 'string'
           ? String((errorData as { traceId: string }).traceId)
           : '';
-        if (isCurrent() && (bodyTraceId || headerTraceId)) setTraceId(bodyTraceId || headerTraceId);
+        if (isCurrent() && (bodyTraceId || headerTraceId)) {
+          setTraceId(bodyTraceId || headerTraceId);
+          setClientTelemetryTraceId(bodyTraceId || headerTraceId);
+        }
+        reportClientTelemetry(`获取验证方式失败：HTTP ${response.status}`, {
+          kind: 'verification',
+          level: 'error',
+          source: 'secure-captcha-config',
+          outcome: `http-${response.status}`,
+          context: { scenario, excluded, error: typeof (errorData as { error?: unknown } | null)?.error === 'string' ? (errorData as { error: string }).error : undefined },
+        });
         console.error(
           '获取验证方式失败:',
           response.status,
@@ -137,6 +149,7 @@ export const useSecureCaptchaSelection = (options: UseSecureCaptchaSelectionOpti
 
       if (typeof data?.traceId === 'string' && data.traceId) setTraceId(data.traceId);
       else if (headerTraceId) setTraceId(headerTraceId);
+      if (data?.traceId || headerTraceId) setClientTelemetryTraceId(data?.traceId || headerTraceId);
 
       if (!data.success) {
         // 同上一分支：后端原文只进 console，不直铺界面。

@@ -11,6 +11,7 @@ import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/
 import { wsService } from "../../services/wsService";
 import adminScopeRouter from "./adminScope";
 import broadcastRouter from "./broadcast";
+import clientErrorsRouter from "./clientErrors";
 import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
 import integrationsRouter from "./integrations";
@@ -98,6 +99,8 @@ router.use(ipRiskLogsRouter);
 router.use("/legal-holds", legalHoldsRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
+// 客户端遥测与问题追踪码复盘（页面 /admin/client-errors；读 admin + 页面授权，删除超管）。
+router.use("/client-errors", clientErrorsRouter);
 // Pixel 任务与 CDK 映射（页面 /admin/pixel；读接口 admin + 页面授权，凭据类写接口 superadmin）。
 router.use(pixelAdminRouter);
 router.use(mobileTokensRouter);

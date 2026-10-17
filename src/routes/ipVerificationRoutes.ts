@@ -1,5 +1,6 @@
 import express from "express";
 import IpVerificationService from "../services/ipVerificationService";
+import { recordServerTelemetryEvent } from "../services/clientTelemetryService";
 import { config } from "../config/config";
 import { createLimiter } from "../middleware/routeLimiters";
 import { getClientIP } from "../utils/ipUtils";
@@ -31,6 +32,43 @@ function traceOf(req: express.Request): string {
   return req.requestId;
 }
 
+/**
+ * 把一次首访验证的结果写进客户端遥测。
+ *
+ * 为什么服务端也要写：用户报的追踪码必须至少能查到「这次验证到底走到哪一步、结论是什么」，
+ * 不能只靠全局审计（它在运行时可被关掉，且默认不抓响应体）。写入失败不影响响应。
+ */
+function recordVerificationTelemetry(
+  req: express.Request,
+  input: {
+    step: "session" | "complete";
+    result: { success: boolean; reason?: string; banned?: boolean; issuedBy?: string; captchaTraceId?: string };
+    fingerprint: string;
+  },
+): void {
+  const success = Boolean(input.result.success);
+  void recordServerTelemetryEvent({
+    kind: "verification",
+    level: success ? "info" : "error",
+    source: `ip-verification/${input.step}`,
+    message: success ? "首访验证通过" : `首访验证未通过：${input.result.reason || "unknown"}`,
+    outcome: success ? "success" : "failure",
+    traceId: traceOf(req),
+    providerTraceId: input.result.captchaTraceId,
+    path: `/api/ip-verification/${input.step}`,
+    deviceId: input.fingerprint,
+    ipAddress: resolveIpAddress(req),
+    userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined,
+    context: {
+      step: input.step,
+      success,
+      reason: input.result.reason,
+      banned: input.result.banned === true,
+      issuedBy: input.result.issuedBy,
+    },
+  });
+}
+
 router.post("/session", sessionLimiter, async (req, res) => {
   try {
     const fingerprint = typeof req.body?.fingerprint === "string" ? req.body.fingerprint : "";
@@ -40,6 +78,7 @@ router.post("/session", sessionLimiter, async (req, res) => {
       userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined,
       userLanguage: typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined,
     });
+    recordVerificationTelemetry(req, { step: "session", result, fingerprint });
 
     if (result.banned) {
       // 形状与 ipBanCheck 的封禁响应对齐：前端 ipVerification.ts 按 error==="IP已被封禁"
@@ -87,13 +126,19 @@ router.post("/complete", sessionLimiter, async (req, res) => {
       captchaToken,
       typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined,
       captchaType,
+      traceOf(req),
     );
+    recordVerificationTelemetry(req, { step: "complete", result, fingerprint });
+
+    // captchaTraceId 是内部溯源键（shc_traces），只在服务端遥测里保留：
+    // 客户端拿到会多一串与问题追踪码混淆的编号，没有可操作性。
+    const { captchaTraceId: _captchaTraceId, ...clientResult } = result;
 
     if (!result.success) {
-      return res.status(400).json({ ...result, traceId: traceOf(req) });
+      return res.status(400).json({ ...clientResult, traceId: traceOf(req) });
     }
 
-    res.json({ ...result, traceId: traceOf(req) });
+    res.json({ ...clientResult, traceId: traceOf(req) });
   } catch (error) {
     logger.error("[IpVerification] 完成验证失败", error);
     res.status(500).json({

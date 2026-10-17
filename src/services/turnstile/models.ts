@@ -400,6 +400,10 @@ const SHCTraceSchema = new mongoose.Schema(
     challengeRequired: Boolean,
     verificationMethod: { type: String, default: "turnstile" },
     fingerprint: String,
+    // 请求级追踪码（服务端 requestId）：用户把首访验证页展示的那串码报给管理员时，
+    // 管理端要能从这里直接跳到同一次人机验证的评分明细。溯源自身的 traceId 是另一套
+    // 24 位 hex，两者语义不同，不能互相替代。
+    requestTraceId: { type: String },
     violationCount: Number,
     banned: Boolean,
     banExpiresAt: Date,
@@ -410,6 +414,8 @@ const SHCTraceSchema = new mongoose.Schema(
 
 // Keep security diagnostics for the same 90-day period as the audit log.
 SHCTraceSchema.index({ time: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
+// 管理端按「用户报的追踪码」反查同一次验证。
+SHCTraceSchema.index({ requestTraceId: 1, time: -1 });
 
 const SHCTraceModel = mongoose.models.SHCTrace || mongoose.model("SHCTrace", SHCTraceSchema);
 

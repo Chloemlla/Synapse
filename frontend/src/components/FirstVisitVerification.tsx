@@ -17,6 +17,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CaptchaType } from '../utils/captchaSelection';
 import { completeIpVerification } from '../utils/ipVerification';
+import { reportClientTelemetry, setClientTelemetryTraceId } from '../utils/clientTelemetry';
 import { getFingerprint } from '../utils/fingerprint';
 import { useSecureCaptchaSelection } from '../hooks/useSecureCaptchaSelection';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -362,6 +363,20 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
       !attempted.includes(current) &&
       attempted.length + 1 < Math.max(1, failoverMaxAttempts);
 
+    // 控件加载失败是首访门禁最常见的故障：记进遥测，管理员拿追踪码能看到换了哪几家。
+    reportClientTelemetry(`验证控件加载失败：${current ?? 'unknown'}`, {
+      kind: 'verification',
+      level: 'error',
+      source: 'captcha-widget',
+      outcome: canRetry ? 'failover' : 'gave-up',
+      context: {
+        provider: current,
+        attempted,
+        failoverMaxAttempts,
+        apiEndpoint: secureCaptchaConfig?.config?.apiEndpoint,
+      },
+    });
+
     if (canRetry) {
       failedProvidersRef.current = [...attempted, current];
       succeededRef.current = false;
@@ -471,6 +486,10 @@ export const FirstVisitVerification: React.FC<FirstVisitVerificationProps> = ({
   //   4. 握手成功时的兜底（例如用户点开页面但还没操作）。
   const challengeTraceId = challengeReason ? initialTraceId ?? '' : '';
   const traceId = verifyTraceId || challengeTraceId || configTraceId || initialTraceId || '';
+  // 遥测要跟着「用户此刻看到的这串码」走，否则管理员拿到的码在客户端事件里对不上。
+  useEffect(() => {
+    if (traceId) setClientTelemetryTraceId(traceId);
+  }, [traceId]);
   const [traceCopied, setTraceCopied] = useState(false);
   const copyTraceId = useCallback(async () => {
     if (!traceId) return;

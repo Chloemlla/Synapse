@@ -2315,6 +2315,62 @@
         "src/models/forensicAuditModel.ts",
         "src/services/forensicAuditService.ts"
       ]
+    },
+    {
+      "id": "client-telemetry",
+      "collection": "client_telemetry_events",
+      "fields": [
+        "kind",
+        "level",
+        "source",
+        "message",
+        "stack",
+        "path",
+        "traceId",
+        "providerTraceId",
+        "outcome",
+        "context",
+        "appVersion",
+        "buildSha",
+        "userAgent",
+        "deviceHash",
+        "ipHash",
+        "count",
+        "firstSeenAt",
+        "lastSeenAt",
+        "receivedAt"
+      ],
+      "purpose": "Diagnose browser-side failures (console errors, network failures, captcha verification results) using the trace code a user reports",
+      "legalBasis": "security_and_service_integrity",
+      "userFacing": {
+        "label": "浏览器错误与验证诊断",
+        "category": "安全与风控",
+        "what": "页面报错与控制台输出的文本、错误栈、失败的接口（方法/路径/状态码/耗时）、人机验证结果、页面路径、浏览器与应用版本，以及不可逆的设备与网络摘要。不包含请求内容、表单输入、Cookie 或本地存储。",
+        "why": "用户在首访验证或页面使用中遇到问题时，会把页面上的「问题追踪码」报给我们；这些记录让管理员能按同一个码复盘当时浏览器发生了什么，从而定位是验证服务、网络还是页面本身的故障。",
+        "retention": "保留 30 天，到期由数据库自动清理。",
+        "policySection": "data-use"
+      },
+      "retention": {
+        "type": "ttl",
+        "ttlField": "receivedAt",
+        "expireAfterSeconds": 2592000,
+        "typicalLifetime": "up to 30 days",
+        "description": "Mongo TTL removes events 30 days after they were received"
+      },
+      "delete": {
+        "onUserDelete": "not_linked",
+        "manual": "expires automatically after 30 days; superadmins can delete single records from /admin/client-errors"
+      },
+      "export": {
+        "supported": false,
+        "surface": "not part of account export (operational diagnostics keyed by hashed device, not account)",
+        "includes": []
+      },
+      "evidence": [
+        "src/services/clientTelemetryService.ts",
+        "src/models/clientTelemetryModel.ts",
+        "frontend/src/utils/clientTelemetry.ts"
+      ]
     }
   ]
 }

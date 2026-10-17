@@ -612,12 +612,24 @@ export const PRIVACY_DATASETS: readonly PrivacyDataMapDataset[] = [
     exportable: "none",
     deleteOnUserDelete: "not_applicable",
   },
+  {
+    id: "client-telemetry",
+    label: "浏览器错误与验证诊断",
+    category: "安全与风控",
+    what: "页面报错与控制台输出的文本、错误栈、失败的接口（方法/路径/状态码/耗时）、人机验证结果、页面路径、浏览器与应用版本，以及不可逆的设备与网络摘要。不包含请求内容、表单输入、Cookie 或本地存储。",
+    why: "用户在首访验证或页面使用中遇到问题时，会把页面上的「问题追踪码」报给我们；这些记录让管理员能按同一个码复盘当时浏览器发生了什么，从而定位是验证服务、网络还是页面本身的故障。",
+    retention: "保留 30 天，到期由数据库自动清理。",
+    policySection: "data-use",
+    retentionType: "ttl",
+    exportable: "none",
+    deleteOnUserDelete: "not_linked",
+  },
 ];
 
 /** 类别 → 数据集 id，供页面分组渲染（顺序与 PRIVACY_DATA_CATEGORY_ORDER 一致）。 */
 export const PRIVACY_DATASET_IDS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = {
   "账户与身份": ["mobile-client-tokens", "api-keys"],
-  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "auth-sessions", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs"],
+  "安全与风控": ["user-fingerprints", "temp-fingerprints", "access-tokens", "ip-verification-tokens", "ip-bans", "data-collections", "device-tracking", "account-ip-signals", "device-fingerprints", "registration-attempts", "blocked-identities", "auth-sessions", "ipqs-lookup-logs", "tamper-events", "proxycheck-risk-cache", "proxycheck-lookup-logs", "proxycheck-probe-reports", "pixel-usage-logs", "client-telemetry"],
   "服务与业务": ["tts-jobs", "recommendation-feedback", "geogebra-projects", "geogebra-project-versions", "geogebra-review-comments", "geogebra-public-shares", "geogebra-share-covers", "geogebra-assets", "geogebra-jobs", "pixel-cdk-mappings", "pixel-task-access", "pixel-integration-configs", "tickets", "ticket-attachments"],
   "合规与审计": ["policy-consents", "audit-logs", "pixel-evidence-holds", "pixel-evidence-approvals", "pixel-account-evidence", "legal-holds", "forensic-audit-logs", "forensic-export-requests"],
   "通信与集成": ["bilibili-cookie-reports", "email-suppressions", "webhook-events"],
