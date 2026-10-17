@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   MAX_TICKET_ATTACHMENT_BYTES,
+  MAX_TICKET_ATTACHMENT_LINKS,
   formatTicketAttachmentSize,
+  normalizeTicketAttachmentLinks,
   resolveTicketAttachmentExt,
   sanitizeTicketAttachmentFileName,
   toTicketAttachmentView,
@@ -200,5 +202,55 @@ describe("formatTicketAttachmentSize", () => {
     expect(formatTicketAttachmentSize(2048)).toBe("2KB");
     expect(formatTicketAttachmentSize(1.5 * 1024 * 1024)).toBe("1.5MB");
     expect(formatTicketAttachmentSize(0)).toBe("0KB");
+  });
+});
+
+/**
+ * 附件链接是上传开关默认关闭时的**主通道**：只存 URL、从不代取，因此校验必须严格
+ * 限定协议（`javascript:` / `data:` 一旦进到 <a href> 就是执行面），并限制条数与长度。
+ */
+describe("normalizeTicketAttachmentLinks", () => {
+  it("accepts http(s) strings and {url,label} objects, normalising dedupe", () => {
+    const result = normalizeTicketAttachmentLinks([
+      " https://img.example.com/a.png ",
+      { url: "https://img.example.com/b.png", label: "  报错\n截图  " },
+      // 与第一条归一化后相同 ⇒ 去重
+      "https://img.example.com/a.png",
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      links: [
+        { url: "https://img.example.com/a.png", label: null },
+        { url: "https://img.example.com/b.png", label: "报错 截图" },
+      ],
+    });
+  });
+
+  it("rejects dangerous protocols and malformed URLs", () => {
+    for (const url of ["javascript:alert(1)", "data:text/html;base64,PHNjcmlwdD4=", "file:///etc/passwd", "not a url"]) {
+      const result = normalizeTicketAttachmentLinks([url]);
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  it("rejects too many links and over-long values", () => {
+    const tooMany = normalizeTicketAttachmentLinks(
+      Array.from({ length: MAX_TICKET_ATTACHMENT_LINKS + 1 }, (_, index) => `https://example.com/${index}.png`),
+    );
+    expect(tooMany.ok).toBe(false);
+
+    const tooLong = normalizeTicketAttachmentLinks([`https://example.com/${"x".repeat(2048)}`]);
+    expect(tooLong.ok).toBe(false);
+
+    const labelTooLong = normalizeTicketAttachmentLinks([
+      { url: "https://example.com/a.png", label: "x".repeat(121) },
+    ]);
+    expect(labelTooLong.ok).toBe(false);
+  });
+
+  it("treats undefined/null as an empty list and rejects non-array input", () => {
+    expect(normalizeTicketAttachmentLinks(undefined)).toEqual({ ok: true, links: [] });
+    expect(normalizeTicketAttachmentLinks(null)).toEqual({ ok: true, links: [] });
+    expect(normalizeTicketAttachmentLinks("https://example.com/a.png").ok).toBe(false);
   });
 });

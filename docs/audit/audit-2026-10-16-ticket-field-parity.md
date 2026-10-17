@@ -41,20 +41,20 @@
 
 | 编号 | 严重度 | 侧 | 位置 | 类型 | 状态 |
 |---|---|---|---|---|---|
-| TP-01 | 中 | 前后端 | `ticketModel` / `TicketSystem.tsx` 创建表单 | 票面字段缺失：联系邮箱 | 待修 |
-| TP-02 | 中 | 前后端 | 同上 | 票面字段缺失：工单类型（咨询 / 故障） | 待修 |
-| TP-03 | 中 | 前后端 | 同上 | 票面字段缺失：相关服务 + 具体资源/任务说明 | 待修 |
-| TP-04 | 中 | 前后端 | 同上 | 票面字段缺失：关联工单 | 待修 |
-| TP-05 | 高 | 前后端 | 同上 + 无附件接口 | 票面字段缺失：附件（上传 / 下载 / 删除 / 规则） | 待修 |
-| TP-06 | 中 | 后端→前端 | `ticketController.adminEditMessage`、`adminDeleteMessage` | 响应未带 `includeInternal`：superadmin 改/删一条消息后，**同一响应里内部备注被过滤掉**，前端 `setSelectedTicket(updated)` 立刻把它们从界面上抹掉（要刷新才回来） | 待修 |
-| TP-07 | 低 | 前后端 | `frontend/src/components/TicketSystem.tsx` `toSummary` | WS `ticket:update` 走本地 `toSummary`，`ageHours` 恒为 0 ⇒ 管理端「逾期」徽标与 `formatTicketAge` 在 WS 更新过的行上失效（列表刷新后才有值） | 待修 |
-| TP-08 | 低 | 后端有 / 前端无 | `getAllTickets` 已支持 `from`/`to`；`TicketFilters.tsx` 无日期控件 | 能力缺口：无法按创建时间区间筛选巡检 | 待修 |
-| TP-09 | 低 | 前端 | `frontend/src/api/ticketApi.ts` `createTicket` 形参类型 | `{title, description, priority?}` 未声明 `category`：字段是「靠变量多余属性被放行」传过去的，将来收紧成对象字面量即静默丢字段 | 待修 |
-| TP-10 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `limit` ≤ 200；前端固定 50 | 能力缺口：每页条数不可调 | 待修 |
-| TP-11 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `assignee=<userId>`；前端只有「我受理的 / 未分配」 | 能力缺口：不能按指定客服筛选（需要管理员列表，**挂起**：本轮不引入新的用户检索接口） | 挂起 |
-| TP-12 | 中 | 治理 | 新增附件落库 | 存储责任：隐私数据地图里没有工单/附件条目，本轮补 `tickets` + `ticket_attachments` 两个数据集并重生 `src/generated/privacyDataMap.ts` | 待修 |
-| TP-13 | 中 | 前后端 | 附件上传权限口径 | **普通用户上传文件默认关闭**，需超管在后台手动开启；开启前只能以「附件链接」提交。默认开启会把任意二进制收进库，而白名单只能拦类型、拦不住内容 | 待修 |
-| TP-14 | 中 | 前后端 | `TicketAttachments.tsx` / `TicketCreateForm.tsx` | **附件 URL 输入框在开关关闭与打开时都要有**（票面要求）：关闭时它是主通道，打开时它是「不占本站存储」的补充通道 | 待修 |
+| TP-01 | 中 | 前后端 | `ticketModel` / `TicketSystem.tsx` 创建表单 | 票面字段缺失：联系邮箱 | 已修（`src/models/ticketModel.ts:135`、`src/controllers/ticketController.ts:139-143,509-521,967-970`、`src/utils/ticketView.ts:30`、`frontend/src/components/ticket/TicketCreateForm.tsx:215-228`、`TicketDetailMeta.tsx:313-320`） |
+| TP-02 | 中 | 前后端 | 同上 | 票面字段缺失：工单类型（咨询 / 故障） | 已修（`src/models/ticketModel.ts:124`、`src/controllers/ticketController.ts:505-518,837,952-957,1065`、`TicketCreateForm.tsx:153-186`、`TicketFilters.tsx:221-231`、`TicketDetailMeta.tsx:275-289`、`TicketListItem.tsx:129`） |
+| TP-03 | 中 | 前后端 | 同上 | 票面字段缺失：相关服务 + 具体资源/任务说明 | 已修（`src/models/ticketModel.ts:126-128`、`src/controllers/ticketController.ts:506-521,839,953-963,1066`、`TicketCreateForm.tsx:188-213`、`TicketFilters.tsx:232-242`、`TicketDetailMeta.tsx:290-312`、`TicketListItem.tsx:132-136`） |
+| TP-04 | 中 | 前后端 | 同上 | 票面字段缺失：关联工单 | 已修（`src/models/ticketModel.ts:136-137`、`src/controllers/ticketController.ts:108-136,452-456,522,972-982`、`TicketCreateForm.tsx:230-281`、`TicketDetailMeta.tsx:193-270`） |
+| TP-05 | 高 | 前后端 | 同上 + 无附件接口 | 票面字段缺失：附件（上传 / 下载 / 删除 / 规则） | 已修（`src/models/ticketAttachmentModel.ts:15-38`、`src/utils/ticketAttachments.ts:1-324`、`src/controllers/ticketController.ts:610-621,1252-1460`、`src/routes/ticketRoutes.ts:118-177`、`frontend/src/components/ticket/TicketAttachments.tsx:1-517`、`TicketSystem.tsx:710-778,1590-1635`） |
+| TP-06 | 中 | 后端→前端 | `ticketController.adminEditMessage`、`adminDeleteMessage` | 响应未带 `includeInternal`：superadmin 改/删一条消息后，**同一响应里内部备注被过滤掉**，前端 `setSelectedTicket(updated)` 立刻把它们从界面上抹掉（要刷新才回来） | 已修（`src/controllers/ticketController.ts:1208,1236`） |
+| TP-07 | 低 | 前后端 | `frontend/src/components/TicketSystem.tsx` `toSummary` | WS `ticket:update` 走本地 `toSummary`，`ageHours` 恒为 0 ⇒ 管理端「逾期」徽标与 `formatTicketAge` 在 WS 更新过的行上失效（列表刷新后才有值） | 已修（`frontend/src/components/TicketSystem.tsx:284-291,317`，与后端 `ticketView.ts:116` 同口径） |
+| TP-08 | 低 | 后端有 / 前端无 | `getAllTickets` 已支持 `from`/`to`；`TicketFilters.tsx` 无日期控件 | 能力缺口：无法按创建时间区间筛选巡检 | 已修（`frontend/src/components/ticket/TicketFilters.tsx:243-264`、`TicketSystem.tsx:528-552`、`frontend/src/api/ticketApi.ts:261-263`；本地日期按含当天 23:59:59.999 转 ISO，避免 UTC 解析差一天） |
+| TP-09 | 低 | 前端 | `frontend/src/api/ticketApi.ts` `createTicket` 形参类型 | `{title, description, priority?}` 未声明 `category`：字段是「靠变量多余属性被放行」传过去的，将来收紧成对象字面量即静默丢字段 | 已修（`frontend/src/api/ticketApi.ts:217-228`；`ticketApiContract.test.ts` 用完整对象字面量钉住全字段） |
+| TP-10 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `limit` ≤ 200；前端固定 50 | 能力缺口：每页条数不可调 | 已修（`frontend/src/components/ticket/TicketFilters.tsx:265-274`、`TicketSystem.tsx:533-534,552`、`frontend/src/api/ticketApi.ts:265`） |
+| TP-11 | 低 | 后端有 / 前端无 | `getAllTickets` 支持 `assignee=<userId>`；前端只有「我受理的 / 未分配」 | 能力缺口：不能按指定客服筛选（需要管理员列表，**挂起**：本轮不引入新的用户检索接口） | 挂起（理由：需要新增管理员用户检索接口，超出本次票面对齐范围；后端 `assignee=<userId>` 能力已保留，前端仍提供「我受理的 / 未分配」） |
+| TP-12 | 中 | 治理 | 新增附件落库 | 存储责任：隐私数据地图里没有工单/附件条目，本轮补 `tickets` + `ticket_attachments` 两个数据集并重生 `src/generated/privacyDataMap.ts` | 已修（`docs/governance/privacy-data-map.json` 的 `tickets` / `ticket-attachments`；`src/generated/privacyDataMap.ts:532,544`；`node scripts/generate-privacy-data-map.js --check` 通过，43 个数据集同步） |
+| TP-13 | 中 | 前后端 | 附件上传权限口径 | **普通用户上传文件默认关闭**，需超管在后台手动开启；开启前只能以「附件链接」提交。默认开启会把任意二进制收进库，而白名单只能拦类型、拦不住内容 | 已修（`src/config/runtimeConfigDefaults.ts:640-642` 默认 `false`、`src/services/runtimeConfigService.ts:1904-1963`、`src/controllers/adminController.ts:2276-2320`、`src/routes/admin/config.ts:456-467`、`src/controllers/ticketController.ts:92-104,1265-1272`、`TicketAttachmentSettingsCard.tsx`） |
+| TP-14 | 中 | 前后端 | `TicketAttachments.tsx` / `TicketCreateForm.tsx` | **附件 URL 输入框在开关关闭与打开时都要有**（票面要求）：关闭时它是主通道，打开时它是「不占本站存储」的补充通道 | 已修（`frontend/src/components/ticket/TicketAttachments.tsx:60-193` 链接编辑器、`TicketCreateForm.tsx:283-307`、`TicketSystem.tsx:1590-1635`；`ticketCreateForm.test.tsx` 覆盖开关关闭 / 能力拉取失败两种降级） |
 
 ### 逐条细节
 
@@ -208,7 +208,84 @@ Synapse 没有「服务实例」注册表，所以落成两层：`relatedService
 - CI：`Node Verification`（后端 Jest + 前端 Vitest + 类型 + 治理闸门）与 `Quality Guardrails`
   （隐私契约、体积闸门、前端构建与预算）全绿即判通过；本地不跑任何构建/测试。
 - 本地静态校验（非构建）：`check-slicing-and-softdelete`、`check-privacy-contract`、
-  `generate-privacy-data-map --check`、`check-ts-file-size`、`check-frontend-design-language` 全部通过
+  `generate-privacy-data-map --check`、`check-ts-file-size`、`check-frontend-design-language` 在
+  `4896ca34` / `3b02dcf5` / `7d2bdaa6` 批次上全部通过
   （附件删除与运行时配置重置两处裸删除按闸门口径逐行标注 `soft-delete-exempt` 并写明理由，
-  基线数量保持 124 不变，只有行号刷新）。
+  基线数量保持 124 不变，只有行号刷新）。收尾复跑结果与并发会话造成的整仓红灯见 §7.4。
 - 逐条对账：本节编号 TP-01～TP-14 在收尾时逐条标注去向（已修 / 挂起理由）。
+
+## 七、收尾对账（2026-10-17）
+
+本轮按 §三「逐条对账」把 TP-01～TP-14 全部核过一遍，结论：**13 项已修、1 项按原计划挂起**。
+核对方式是前后端三段字段名逐一对照（`ticketApi.ts` ↔ `ticketController.ts` ↔ `ticketView.ts` ↔
+`ticketModel.ts`），并沿调用链确认「声明改了、调用也改了」，不是只补类型。
+
+### 7.1 本轮补齐的缺口
+
+- **附件删除 / 下载审计**：`src/routes/ticketRoutes.ts` 为上传（`ticket.attachmentUpload`）、
+  下载（`ticket.attachmentDownload`）、删除（`ticket.attachmentDelete`）、链接替换
+  （`ticket.attachmentLinksUpdate`）各挂一条路由级 `auditLog`（带 `targetId` 与 `attachmentId`）。
+  全局审计也覆盖 `/api`，但路由级审计才有稳定的 action 名，管理端可按动作回查
+  「谁在什么时候下载/删除了哪个附件」；下载响应的二进制体会被审计层归一成 `"[Buffer]"`。
+- **写操作与 WS 更新不再抹掉附件列表**：`TicketSystem.tsx` 新增 `mergeTicketDetail`，
+  在合并 WS `ticket:update` 以及回复 / 改状态 / 认领 / 编辑消息 / 改附件链接 / 关闭工单的写响应时
+  保留上一份 `attachments`。这些响应都不带附件元数据（只有详情接口带），原实现整对象替换会让
+  已加载的附件列表在任意一次操作后消失，直到重新打开工单。
+- **关闭上传不隐藏历史附件**：`TicketSystem.tsx` 详情区此前只在
+  `capabilities.canUploadAttachments === true` 时渲染附件列表，开关一关就连**已存在**的附件
+  也一起从界面消失，违反 TP-13「已存在的附件仍可下载与删除」。现在列表在「可上传」或
+  「已有附件」时都渲染，只隐藏新增入口；删除权限与后端对齐（属主 / 上传者 / 超管），
+  不再因工单关闭或开关关闭而禁止删除。
+- **测试补强**：
+  - `frontend/src/tests/ticketCreateForm.test.tsx`（新）：创建表单全量票面字段、上传开关关闭时
+    链接输入框仍可用且可提交、链接本地预校验（仅 http/https）、能力接口失败（`capabilities=null`）
+    时降级为「仅链接」。
+  - `frontend/src/tests/ticketApiContract.test.ts`（新）：`createTicket` 全字段对象字面量、
+    管理端 `from`/`to`/`limit` 透传与分页响应头解析、附件 multipart 字段名 `file`、
+    链接替换接口 body、能力接口开关读取。
+  - `src/tests/ticketAttachmentPolicy.test.ts`：补附件链接归一化（协议白名单、去重、条数/长度上限）。
+
+### 7.2 逐条去向
+
+| 编号 | 去向 | 说明 |
+|---|---|---|
+| TP-01 | 已修 | 联系邮箱快照（缺省账号邮箱）+ 管理端可改；通知仍优先账号邮箱，仅在账号无邮箱时用 `contactEmail` 兜底 |
+| TP-02 | 已修 | `inquiry` / `incident` 两端同源，进筛选、概览统计、列表/详情徽标 |
+| TP-03 | 已修 | `relatedService` 枚举（与前端清单逐一对照）+ `relatedServiceRef` ≤120，管理端可按模块筛选 |
+| TP-04 | 已修 | `{ticketId,title}` 快照 ≤5；创建校验存在性 + 同属主（管理端放开），保留顺序 |
+| TP-05 | 已修 | 独立 `ticket_attachments` 集合；白名单 / 1MB / ASCII 文件名 / 魔数 / 单工单 ≤5 / 属主或超管可见；`.txt` 过 AI 审查；下载 `attachment` + `nosniff` |
+| TP-06 | 已修 | `adminEditMessage` / `adminDeleteMessage` 响应带 `{ includeInternal: true }` |
+| TP-07 | 已修 | WS 本地投影按后端同口径计算 `ageHours`（2 位小数小时） |
+| TP-08 | 已修 | 前端日期区间控件 → 本地日期转 ISO（含当天 23:59:59.999）→ 后端 `from`/`to` |
+| TP-09 | 已修 | `createTicket` 形参声明全部后端读取字段；契约测试用对象字面量钉住 |
+| TP-10 | 已修 | 每页 50 / 100 / 200 可选，后台上限 200 |
+| TP-11 | 挂起 | 按原计划不引入管理员用户检索接口；后端 `assignee=<userId>` 保留，前端仍只有「我受理的 / 未分配」 |
+| TP-12 | 已修 | 隐私数据地图新增 `tickets` + `ticket-attachments` 并重生生成物；`--check` 通过 |
+| TP-13 | 已修 | `TICKET_ATTACHMENTS.userUploadEnabled` 默认 `false`，超管开关 + 管理台卡片；关闭时上传 403 `ATTACHMENT_UPLOAD_DISABLED`，已有附件仍可下载/删除，管理员不受限 |
+| TP-14 | 已修 | 链接输入框在开关关闭与打开时都渲染；关时为主通道，开时保留；只存 URL、不代取，`rel="noopener noreferrer nofollow"` |
+
+### 7.3 需要协调者应用的注册 / 隐私地图补丁
+
+- **无**。附件路由定义在已挂载的 `src/routes/ticketRoutes.ts`；`ticketUploadLimiter` 是路由级限流器，
+  不需要登记到 `routeModules/routeLimiterModules.ts`。管理端开关路由已存在。
+- 隐私数据地图的 `tickets` / `ticket-attachments` 两个数据集已在 `docs/governance/privacy-data-map.json`
+  中，且 `src/generated/privacyDataMap.ts` 已同步（`--check` 通过），无需手工补丁。
+- 本轮**未改动** `src/controllers/adminController.ts`、`src/routes/admin/config.ts`、
+  `docs/governance/privacy-data-map.json`、`src/generated/privacyDataMap.ts`、`src/routes/routeModules/*.ts`
+  与前端三个禁改文件（`ModListEditor.tsx` / `ModListPage.tsx` / `TigerAdventure.tsx`）。
+- **仍有意未做（不阻塞 TP-13）**：`frontend/src/components/EnvManager.tsx` 的「工单附件」分区。
+  该文件不在本轮可改范围，且审计 §五 已注明当时因并行设计语言批次而推迟；开关已可从工单管理台的
+  「普通用户附件上传」卡片以及 `GET/POST/DELETE /api/admin/ticket-attachments/setting` 修改，
+  数据与接口无需再改。待该文件空闲后补一个分区即可。
+
+### 7.4 本地静态复验（非构建）
+
+- `node scripts/generate-privacy-data-map.js --check`：通过（43 个数据集 / 6 个类别）。
+- `node scripts/governance/check-slicing-and-softdelete.js`：工单域改动未新增裸删除（附件删除与运行时配置
+  重置两处豁免标注保持原样）；复跑时该闸门在整仓粒度上红灯，命中的是**并发会话**新增的
+  `src/services/legalHoldCleanupService.ts:217`（不在本轮改动范围），与本次工单收尾无关。
+- `node scripts/governance/check-privacy-contract.js`：通过（43 个数据集，4 个已确认 gap）。
+- `node scripts/governance/check-ts-file-size.js`：通过；`TicketSystem.tsx` 为既有超限文件，
+  本轮为 1670 → 1692（在 +300 遗留增速预算内）。
+- `node scripts/governance/check-frontend-design-language.js`：通过（命中数与基线一致）。
+- 构建 / 类型 / 测试仍以 CI（`Node Verification` + `Quality Guardrails`）为唯一裁决者，本机未运行。

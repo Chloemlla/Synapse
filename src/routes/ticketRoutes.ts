@@ -112,16 +112,65 @@ router.get("/unread-count", ticketReadLimiter, ticketController.getUnreadCount);
 router.get("/:id", ticketReadLimiter, ticketController.getTicketById);
 router.post("/:id/messages", ticketWriteLimiter, ticketController.replyToTicket);
 // 附件：上传/删除是写类操作（`ticketUpload`），下载走读类限额（60/分钟够用：单个 1MB）。
+// 四个端点都写路由级审计（模块 other 下的独立 action）：附件正文是用户数据，
+// 「谁在什么时候下载/删除了哪个附件」必须可回查；全局审计虽然也覆盖 /api，
+// 但路由级审计才有稳定的 action 名与 targetId，便于管理端按动作筛选。
 router.post(
   "/:id/attachments",
   ticketUploadLimiter,
+  auditLog({
+    module: "other",
+    action: "ticket.attachmentUpload",
+    extractTarget: (req) => ({ targetId: req.params.id }),
+    captureBody: false,
+  }),
   uploadSingleTicketAttachment,
   ticketController.uploadTicketAttachment,
 );
-router.get("/:id/attachments/:attachmentId/download", ticketReadLimiter, ticketController.downloadTicketAttachment);
-router.delete("/:id/attachments/:attachmentId", ticketUploadLimiter, ticketController.deleteTicketAttachment);
+router.get(
+  "/:id/attachments/:attachmentId/download",
+  ticketReadLimiter,
+  auditLog({
+    module: "other",
+    action: "ticket.attachmentDownload",
+    extractTarget: (req) => ({ targetId: req.params.id }),
+    extractDetail: (req) => ({ attachmentId: req.params.attachmentId }),
+    // GET 无请求体；响应是二进制，审计中间件会把它归一成 "[Buffer]"。
+    captureBody: false,
+  }),
+  ticketController.downloadTicketAttachment,
+);
+router.delete(
+  "/:id/attachments/:attachmentId",
+  ticketUploadLimiter,
+  auditLog({
+    module: "other",
+    action: "ticket.attachmentDelete",
+    extractTarget: (req) => ({ targetId: req.params.id }),
+    extractDetail: (req) => ({ attachmentId: req.params.attachmentId }),
+  }),
+  ticketController.deleteTicketAttachment,
+);
 // 附件链接（上传文件默认关闭时用户提交截图的通道）。
-router.put("/:id/attachment-links", ticketWriteLimiter, ticketController.updateTicketAttachmentLinks);
+router.put(
+  "/:id/attachment-links",
+  ticketWriteLimiter,
+  auditLog({
+    module: "other",
+    action: "ticket.attachmentLinksUpdate",
+    extractTarget: (req) => ({ targetId: req.params.id }),
+    extractDetail: (req) => {
+      // 控制器同时接受 `links` 与 `attachmentLinks` 两种入参形态，审计也按同一口径计数。
+      const links = Array.isArray(req.body?.links)
+        ? req.body.links
+        : Array.isArray(req.body?.attachmentLinks)
+          ? req.body.attachmentLinks
+          : [];
+      return { count: links.length };
+    },
+  }),
+  ticketController.updateTicketAttachmentLinks,
+);
 // 属主自助关闭；客服侧走 PATCH /admin/:id
 router.patch("/:id/close", ticketWriteLimiter, ticketController.closeOwnTicket);
 

@@ -150,6 +150,18 @@ function scrollTicketPaneToTop(): void {
 }
 
 
+/**
+ * 写操作返回的工单视图不带 `attachments`（只有详情接口带）。
+ *
+ * 回复 / 改状态 / 认领 / 编辑消息 / 改附件链接成功后都会用它覆盖当前详情；
+ * 直接替换会把已加载的附件列表从界面上抹掉，直到用户重新打开工单。
+ * 附件元数据不会因这些操作而过期，所以保留上一份；其余字段仍以服务端最新值为准。
+ */
+function mergeTicketDetail(current: ITicket | null, updated: ITicket): ITicket {
+  if (!current || current._id !== updated._id) return updated;
+  return { ...updated, attachments: updated.attachments ?? current.attachments };
+}
+
 const TicketSystem: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = isAdminRole(user?.role);
@@ -321,7 +333,7 @@ const TicketSystem: React.FC = () => {
       return [summary, ...next].sort(compareTicketsByUpdatedDesc);
     });
 
-    setSelectedTicket(prev => prev?._id === updatedTicket._id ? updatedTicket : prev);
+    setSelectedTicket(prev => mergeTicketDetail(prev, updatedTicket));
   }, [toSummary]);
 
   // G12-22：isFinished 时把累计内容乐观追加为一条 AI 消息，等待 ticket:update 用服务端版本替换
@@ -425,7 +437,7 @@ const TicketSystem: React.FC = () => {
     setIsUpdating(true);
     try {
       const updated = await ticketApi.adminEditMessage(ticketId, idx, editValue);
-      setSelectedTicket(updated);
+      setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setEditingIdx(null);
       setNotification({ type: 'success', message: "消息已修改" });
@@ -447,7 +459,7 @@ const TicketSystem: React.FC = () => {
     if (!ok) return;
     try {
       const updated = await ticketApi.adminDeleteMessage(ticketId, idx);
-      setSelectedTicket(updated);
+      setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({ type: 'success', message: "消息已删除" });
     } catch (error) {
@@ -784,7 +796,7 @@ const TicketSystem: React.FC = () => {
     setIsSubmitting(true);
     try {
       const updated = await ticketApi.replyTicket(selectedTicket._id, content, internal);
-      setSelectedTicket(updated);
+      setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({
         type: 'success',
@@ -809,7 +821,7 @@ const TicketSystem: React.FC = () => {
     if (!canWrite) return;
     try {
       const updated = await ticketApi.updateStatus(id, status);
-      if (selectedTicket?._id === id) setSelectedTicket(updated);
+      if (selectedTicket?._id === id) setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({ type: 'success', message: "工单状态已更新" });
       refreshAdminStats();
@@ -836,7 +848,7 @@ const TicketSystem: React.FC = () => {
     if (!canWrite) return;
     try {
       const updated = await ticketApi.updateFields(id, fields);
-      if (selectedTicket?._id === id) setSelectedTicket(updated);
+      if (selectedTicket?._id === id) setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({ type: 'success', message: "工单信息已更新" });
       refreshAdminStats();
@@ -858,7 +870,7 @@ const TicketSystem: React.FC = () => {
       setSelectedTicket({ ...ticket, attachmentLinks: links });
       try {
         const updated = await ticketApi.updateAttachmentLinks(ticket._id, links);
-        setSelectedTicket(updated);
+        setSelectedTicket(prev => mergeTicketDetail(prev, updated));
         applyTicketUpdate(updated);
       } catch (error) {
         setSelectedTicket({ ...ticket, attachmentLinks: previous });
@@ -970,7 +982,7 @@ const TicketSystem: React.FC = () => {
     if (!ok) return;
     try {
       const updated = await ticketApi.closeTicket(selectedTicket._id);
-      setSelectedTicket(updated);
+      setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({ type: 'success', message: '工单已关闭' });
     } catch (error) {
@@ -1587,24 +1599,34 @@ const TicketSystem: React.FC = () => {
                           onError={(message) => setNotification({ type: 'error', message })}
                           onChange={(links) => void handleAttachmentLinksChange(links)}
                         />
-                        {capabilities?.canUploadAttachments && (
+                        {/*
+                          即使上传开关关闭（capabilities=false），已存在的附件也必须能下载/删除：
+                          「关闭上传」只阻止新增，不是把历史附件从界面上藏起来。
+                          因此列表在「可上传」或「已有附件」时都渲染，只是隐藏上传入口。
+                        */}
+                        {(capabilities?.canUploadAttachments || (selectedTicket.attachments?.length ?? 0) > 0) && (
                           <TicketAttachmentList
                             ticketId={selectedTicket._id}
                             attachments={selectedTicket.attachments ?? []}
                             canUpload={
+                              Boolean(capabilities?.canUploadAttachments) &&
                               selectedTicket.status !== 'closed' &&
                               (selectedTicket.userId === user?.id || canWrite)
                             }
                             uploadDisabledReason={
-                              selectedTicket.status === 'closed'
-                                ? '此工单已关闭，无法继续添加附件'
-                                : '你不是该工单的属主，无法添加上传附件'
+                              !capabilities?.canUploadAttachments
+                                ? capabilities?.attachmentUploadPolicy ??
+                                  '附件上传暂未开放；已存在的附件仍可下载与删除'
+                                : selectedTicket.status === 'closed'
+                                  ? '此工单已关闭，无法继续添加附件'
+                                  : '你不是该工单的属主，无法添加上传附件'
                             }
+                            // 删除权限与后端一致：工单属主 / 上传者 / 超管。
+                            // 刻意不因工单关闭或上传开关关闭而禁止 —— 删除已有数据属于用户权利。
                             canDelete={(attachment) =>
-                              selectedTicket.status !== 'closed' &&
-                              (selectedTicket.userId === user?.id ||
-                                attachment.uploadedById === user?.id ||
-                                canWrite)
+                              selectedTicket.userId === user?.id ||
+                              attachment.uploadedById === user?.id ||
+                              canWrite
                             }
                             onUploaded={handleAttachmentUploaded}
                             onDeleted={handleAttachmentDeleted}

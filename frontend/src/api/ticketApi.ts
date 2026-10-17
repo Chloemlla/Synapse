@@ -57,11 +57,11 @@ export interface ITicketAttachment {
   createdAt: string | null;
 }
 
-/** 附件链接（外部地址 + 可选说明）。 */
+/** 附件链接（外部地址 + 可选说明）。展示用的 host 由前端按 URL 计算（见 `attachmentLinkHost`）。 */
 export interface ITicketAttachmentLink {
   url: string;
   label?: string | null;
-  /** 后端视图层补的 host（便于列表里认出站点）。 */
+  /** 预留：后端视图若补 host 则直接用；当前前端渲染时自行解析。 */
   host?: string;
 }
 
