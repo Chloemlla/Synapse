@@ -11,6 +11,7 @@ import {
   TicketListMeta,
   TicketStats,
   type TicketCategory,
+  type TicketContentFormat,
   type TicketRelatedService,
   type TicketType,
 } from "../api/ticketApi";
@@ -221,6 +222,8 @@ const TicketSystem: React.FC = () => {
   const [newTicket, setNewTicket] = useState({
     title: "",
     description: "",
+    // 描述正文格式：markdown（默认，渲染排版）或 plain（纯文本，原样保留换行与空格）。
+    contentFormat: "markdown",
     priority: "medium",
     category: "other",
     type: "inquiry",
@@ -867,6 +870,7 @@ const TicketSystem: React.FC = () => {
       const created = await ticketApi.createTicket({
         title: newTicket.title,
         description: newTicket.description,
+        contentFormat: newTicket.contentFormat as TicketContentFormat,
         priority: newTicket.priority,
         category: newTicket.category as TicketCategory,
         type: newTicket.type as TicketType,
@@ -885,6 +889,7 @@ const TicketSystem: React.FC = () => {
       setNewTicket({
         title: "",
         description: "",
+        contentFormat: "markdown",
         priority: "medium",
         category: "other",
         type: "inquiry",
@@ -936,13 +941,17 @@ const TicketSystem: React.FC = () => {
     }
   };
 
-  const handleReply = async (content: string, internal: boolean): Promise<boolean> => {
+  const handleReply = async (
+    content: string,
+    internal: boolean,
+    format: TicketContentFormat,
+  ): Promise<boolean> => {
     if (!selectedTicket || !content.trim()) return false;
     // G12-21：in-flight 防双击，同一条回复不能发两次
     if (isSubmitting) return false;
     setIsSubmitting(true);
     try {
-      const updated = await ticketApi.replyTicket(selectedTicket._id, content, internal);
+      const updated = await ticketApi.replyTicket(selectedTicket._id, content, internal, format);
       setSelectedTicket(prev => mergeTicketDetail(prev, updated));
       applyTicketUpdate(updated);
       setNotification({

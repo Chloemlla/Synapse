@@ -251,6 +251,8 @@ const TicketConversation: React.FC<TicketConversationProps> = ({
           const isMe = message.senderId === currentUserId;
           const isAdminMsg = message.senderRole === 'admin';
           const isInternal = isInternalMessage(message as { visibility?: string });
+          // 纯文本消息原样展示（保留换行与空格）；缺字段的老消息按 Markdown 渲染。
+          const isPlain = message.format === 'plain';
           const senderLabel = isAi ? '智能助手' : isAdminMsg ? '客服' : '用户';
           const isEditing = editingIdx === index;
           const actionTone = isMe
@@ -313,6 +315,14 @@ const TicketConversation: React.FC<TicketConversationProps> = ({
                     <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)}>
                       {formatTicketTime(message.createdAt)}
                     </time>
+                    {isPlain ? (
+                      <span
+                        className="shrink-0 rounded-full border border-slate-200 px-1.5 py-0.5 text-[9px] font-semibold text-slate-400"
+                        title="这条消息按纯文本原样展示"
+                      >
+                        纯文本
+                      </span>
+                    ) : null}
                   </div>
 
                   <div
@@ -377,6 +387,12 @@ const TicketConversation: React.FC<TicketConversationProps> = ({
                             取消
                           </button>
                         </div>
+                      </div>
+                    ) : isPlain ? (
+                      // 纯文本：换行与空格按原样保留，不解析任何 Markdown（贴日志/堆栈时尤其重要）。
+                      // 颜色继承气泡文字色，深色（我方）与浅色（对方）气泡都能直接读。
+                      <div className="whitespace-pre-wrap break-words text-sm leading-6">
+                        {message.content}
                       </div>
                     ) : (
                       <MarkdownRenderer

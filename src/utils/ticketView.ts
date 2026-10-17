@@ -82,6 +82,9 @@ export function toTicketView(
           messages: visibleMessages.map((message) => {
             const plainMessage = { ...message };
             if (!includeAiErrorDetails) delete plainMessage.aiErrorDetails;
+            // 正文格式：老消息（本轮之前落库）没有该字段，历史行为就是全部按 Markdown 渲染。
+            // 在这里统一归一，前端只判 `format === "plain"`，不必到处写缺省回退。
+            plainMessage.format = message.format === "plain" ? "plain" : "markdown";
             return plainMessage;
           }),
         }

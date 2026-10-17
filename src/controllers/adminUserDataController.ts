@@ -119,7 +119,9 @@ export const adminUserDataController = {
       res.status(400).json({ error: `单次最多导出 ${ACCOUNT_EXPORT_MAX_USERS} 个账号` });
       return;
     }
-    const invalid = userIds.find((id) => !isValidUserId(id));
+    // 写成 `=== false` 而不是 `!isValidUserId(id)`：后者是「否定类型谓词」，
+    // TS 5.5 会把 find 的结果收窄成 never，`.slice` 直接报 TS2339。
+    const invalid = userIds.find((id) => isValidUserId(id) === false);
     if (invalid) {
       res.status(400).json({ error: `非法的用户 ID：${invalid.slice(0, 64)}` });
       return;
