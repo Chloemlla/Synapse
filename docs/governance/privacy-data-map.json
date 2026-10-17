@@ -2192,7 +2192,7 @@
         "what": "被保留对象的类型与标识、案件编号、保留理由、经办人、保留与解除时间。",
         "why": "收到具备法律依据的调取要求时，需要冻结相关记录的删除，并能说明谁在何时依据什么案件操作。",
         "retention": "保留至案件结束且由超级管理员按程序解除；解除后记录仍作为合规留痕保留。",
-        "policySection": "data-retention"
+        "policySection": "retention"
       },
       "retention": {
         "type": "operational",
@@ -2242,7 +2242,7 @@
         "what": "谁在什么时候登记/解除法律保留、发起/批准/下载了哪个案件的取证导出，以及请求来源。",
         "why": "调查周期可能超过普通审计的 60 天；取证访问必须可追溯且不能被 TTL 静默清除。",
         "retention": "按内部合规策略长期保留，不设自动过期。",
-        "policySection": "data-retention"
+        "policySection": "retention"
       },
       "retention": {
         "type": "operational",
@@ -2295,7 +2295,7 @@
         "what": "导出申请的发起人、批准人、案件编号、对象范围、时间窗，以及交付件行数与校验和。",
         "why": "取证交付需要双人确认并可证明交付件未被改动，因此申请与校验和必须长期可查。",
         "retention": "按内部合规策略长期保留，不设自动过期。",
-        "policySection": "data-retention"
+        "policySection": "retention"
       },
       "retention": {
         "type": "operational",
