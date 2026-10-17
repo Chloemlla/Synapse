@@ -85,18 +85,46 @@ function setTicketListHeaders(res: Response, total: number, page: number, limit:
 /**
  * 普通用户是否可以上传附件文件。
  *
- * 默认关闭（TICKET_ATTACHMENTS.userUploadEnabled 默认 false）：附件是用户上传的任意二进制，
- * 默认只收「附件链接」，确实需要收文件时由超管在后台手动打开。
- * 管理员/超管不受此开关限制（他们本来就能改工单内容）。
+ * 三个来源，任一成立即放行：
+ * 1. 管理员/超管 —— 他们本来就能改工单内容，不受此开关限制；
+ * 2. 全站开关（`TICKET_ATTACHMENTS.userUploadEnabled`）打开；
+ * 3. **单独授权**：用户 ID 在 `userUploadAllowedUserIds` 里。
+ *
+ * 单独授权是在「默认关闭」这条默认线之上开的口子：附件是用户上传的任意二进制，
+ * 白名单与体积上限挡不住「类型对但内容是恶意文件」，所以不轻易全站放开，
+ * 但客服偶尔确实需要某个用户补一张截图 —— 那就只给那一个用户开。
+ *
+ * 注意比较用的是 `String(user.id)`：JWT 载荷里的 id 可能是数字形态，
+ * 而配置里存的一律是字符串，不做归一化会让授权静默失效。
  */
-function canUserUploadAttachmentFiles(user: { role?: string } | undefined): boolean {
-  if (isAdminRole(user?.role)) return true;
-  return RuntimeConfigService.getCachedConfig().ticketAttachments.userUploadEnabled === true;
+export function resolveAttachmentUploadPermission(input: {
+  role?: string;
+  userId?: unknown;
+  globalEnabled: boolean;
+  grantedUserIds: readonly string[] | undefined;
+}): boolean {
+  if (isAdminRole(input.role)) return true;
+  if (input.globalEnabled === true) return true;
+  const userId =
+    typeof input.userId === "string" || typeof input.userId === "number" ? String(input.userId) : "";
+  if (!userId) return false;
+  return Array.isArray(input.grantedUserIds) && input.grantedUserIds.includes(userId);
 }
 
-function describeAttachmentUploadPolicy(user: { role?: string } | undefined): string {
+function canUserUploadAttachmentFiles(user: { id?: unknown; role?: string } | undefined): boolean {
+  const config = RuntimeConfigService.getCachedConfig().ticketAttachments;
+  return resolveAttachmentUploadPermission({
+    role: user?.role,
+    userId: user?.id,
+    globalEnabled: config.userUploadEnabled === true,
+    grantedUserIds: config.userUploadAllowedUserIds,
+  });
+}
+
+function describeAttachmentUploadPolicy(user: { id?: unknown; role?: string } | undefined): string {
   if (isAdminRole(user?.role)) return "管理端不受附件上传开关限制";
-  return "附件上传暂未对普通用户开放：请在上方「附件链接」里提交截图或文件的地址，或联系管理员开启附件上传。";
+  // 不透露「谁被单独授权」：这里只描述当前用户自己的状态与出路。
+  return "附件上传暂未对普通用户开放：请在上方「附件链接」里提交截图或文件的地址，或联系管理员为你的账号单独开放附件上传。";
 }
 
 /**

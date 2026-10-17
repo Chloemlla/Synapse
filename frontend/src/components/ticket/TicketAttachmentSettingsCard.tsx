@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FiAlertCircle, FiLoader, FiPaperclip, FiRefreshCw } from 'react-icons/fi';
+import { FiAlertCircle, FiLoader, FiPaperclip, FiRefreshCw, FiUserPlus, FiX } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
-import { ticketApi } from '../../api/ticketApi';
+import { ticketApi, type TicketAttachmentGrantedUser } from '../../api/ticketApi';
 import { useConfirm } from '../confirm/ConfirmDialogProvider';
 import {
   studioEyebrowClassName,
+  studioFieldClassName,
   studioGhostButtonClassName,
   studioPanelClassName,
 } from '../studioTheme';
@@ -25,6 +26,10 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
 }) => {
   const confirm = useConfirm();
   const [enabled, setEnabled] = useState(false);
+  /** 单独授权名单（服务端已解析成「ID + 可读名」）。 */
+  const [grantedUsers, setGrantedUsers] = useState<TicketAttachmentGrantedUser[]>([]);
+  const [grantInput, setGrantInput] = useState('');
+  const [grantBusy, setGrantBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,6 +40,7 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
     try {
       const setting = await ticketApi.getAttachmentSettings();
       setEnabled(setting.userUploadEnabled);
+      setGrantedUsers(setting.userUploadAllowedUsers);
       setUpdatedAt(setting.updatedAt);
       setLoadError(null);
     } catch {
@@ -62,7 +68,7 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
       if (!ok) return;
       setSaving(true);
       try {
-        await ticketApi.saveAttachmentSettings(next);
+        await ticketApi.saveAttachmentSettings({ userUploadEnabled: next });
         setEnabled(next);
         onNotify?.({ type: 'success', message: next ? '已允许普通用户上传附件' : '已关闭普通用户的附件上传' });
       } catch (error) {
@@ -88,6 +94,7 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
     try {
       await ticketApi.resetAttachmentSettings();
       setEnabled(false);
+      setGrantedUsers([]);
       onNotify?.({ type: 'success', message: '已恢复默认（普通用户不能上传附件）' });
     } catch {
       onNotify?.({ type: 'error', message: '恢复默认失败，请重试' });
@@ -95,6 +102,58 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
       setSaving(false);
     }
   }, [confirm, onNotify]);
+
+  /**
+   * 保存整份名单（服务端是「整体替换」语义）。
+   *
+   * 先按新名单乐观更新界面，失败再回滚 —— 添加/移除都是单次点击，等一个来回
+   * 才反馈在低频管理操作上没有必要；但失败必须回到原样，否则界面会显示一份没存进去的名单。
+   */
+  const persistGrantedUsers = useCallback(
+    async (nextIds: string[], optimistic: TicketAttachmentGrantedUser[], successMessage: string) => {
+      const previous = grantedUsers;
+      setGrantedUsers(optimistic);
+      setGrantBusy(true);
+      try {
+        await ticketApi.saveAttachmentSettings({ userUploadAllowedUserIds: nextIds });
+        onNotify?.({ type: 'success', message: successMessage });
+        // 重新拉一次：新加的用户需要服务端返回的 username/email 才能显示可读名。
+        await load();
+      } catch (error) {
+        setGrantedUsers(previous);
+        const message =
+          (error as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+          '保存授权名单失败，请重试';
+        onNotify?.({ type: 'error', message });
+      } finally {
+        setGrantBusy(false);
+      }
+    },
+    [grantedUsers, load, onNotify],
+  );
+
+  const addGrant = useCallback(async () => {
+    const entry = grantInput.trim();
+    if (!entry) return;
+    if (grantedUsers.length >= 200) {
+      onNotify?.({ type: 'error', message: '单独授权最多 200 人，请先移除一些' });
+      return;
+    }
+    const nextIds = [...grantedUsers.map((item) => item.id), entry];
+    // 乐观项先用输入值占位；load() 会用服务端解析出的真实用户名/邮箱覆盖它。
+    const optimistic = [...grantedUsers, { id: entry, username: entry, email: null, missing: false }];
+    setGrantInput('');
+    await persistGrantedUsers(nextIds, optimistic, `已授权 ${entry} 上传附件`);
+  }, [grantInput, grantedUsers, onNotify, persistGrantedUsers]);
+
+  const removeGrant = useCallback(
+    async (target: TicketAttachmentGrantedUser) => {
+      const nextIds = grantedUsers.filter((item) => item.id !== target.id).map((item) => item.id);
+      const optimistic = grantedUsers.filter((item) => item.id !== target.id);
+      await persistGrantedUsers(nextIds, optimistic, `已取消 ${target.username || target.id} 的授权`);
+    },
+    [grantedUsers, persistGrantedUsers],
+  );
 
   return (
     <section className={cn(studioPanelClassName, 'shrink-0 p-3 sm:p-4')} aria-label="工单附件上传开关">
@@ -155,9 +214,92 @@ const TicketAttachmentSettingsCard: React.FC<{ onNotify?: (payload: { type: 'suc
       <p className="mt-2 text-[10px] leading-4 text-slate-400">
         {enabled
           ? '普通用户可上传 jpg/jpeg/png/gif/txt/pdf（单个 ≤1MB、每工单 ≤5 个）；附件正文入库存管，仅属主与超管可下载。'
-          : '普通用户只能提交附件链接（我们只存 URL，不代为下载或转存）；需要收文件时再开启上传。'}
+          : '普通用户只能提交附件链接（我们只存 URL，不代为下载或转存）；需要收文件时再开启上传，或在下方单独授权个别用户。'}
         {updatedAt ? ` 上次修改：${new Date(updatedAt).toLocaleString()}` : ''}
       </p>
+
+      {/*
+        单独授权：全站开关关闭时，名单里的普通用户仍可上传。
+        存在的意义是「客服确实需要某个用户补一张截图，但不想为此对全站开放任意二进制上传」。
+        全站开关打开时这里依然可见 —— 它不影响授权，只是说明为什么现在所有人都能传。
+      */}
+      <div className="mt-3 border-t border-slate-200/70 pt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-slate-700">单独授权上传附件</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+            {grantedUsers.length} 人
+          </span>
+          {enabled ? (
+            <span className="text-[10px] text-slate-400">全站已开启，授权名单此时不影响结果</span>
+          ) : null}
+        </div>
+
+        {grantedUsers.length > 0 ? (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {grantedUsers.map((granted) => (
+              <li
+                key={granted.id}
+                className={cn(
+                  'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]',
+                  granted.missing
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-slate-200 bg-white text-slate-700',
+                )}
+                title={granted.missing ? `用户 ${granted.id} 已不存在，建议移除以保持名单干净` : granted.id}
+              >
+                <span className="min-w-0 truncate">
+                  {granted.username || granted.email || granted.id}
+                  {granted.missing ? '（已注销）' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void removeGrant(granted)}
+                  disabled={grantBusy || saving}
+                  aria-label={`移除 ${granted.username || granted.id} 的附件上传授权`}
+                  className="shrink-0 rounded-full p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-rose-600 disabled:opacity-50"
+                >
+                  <FiX size={11} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-[10px] text-slate-400">暂无单独授权的用户。</p>
+        )}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={grantInput}
+            onChange={(event) => setGrantInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void addGrant();
+              }
+            }}
+            placeholder="用户名 / 邮箱 / 用户 ID"
+            aria-label="要单独授权上传附件的用户"
+            disabled={grantBusy || saving}
+            className={cn(studioFieldClassName, 'h-8 min-w-0 flex-1 py-0 text-xs sm:max-w-xs')}
+          />
+          <button
+            type="button"
+            onClick={() => void addGrant()}
+            disabled={grantBusy || saving || !grantInput.trim()}
+            className={cn(
+              studioGhostButtonClassName,
+              'h-8 gap-1 px-3 py-0 text-[11px] normal-case tracking-normal',
+            )}
+          >
+            {grantBusy ? <FiLoader className="animate-spin" size={11} /> : <FiUserPlus size={11} />}
+            添加授权
+          </button>
+        </div>
+        <p className="mt-1.5 text-[10px] leading-4 text-slate-400">
+          只影响名单里的普通用户；管理员与超管本来就不受开关限制。名单按用户 ID 保存，改名或换邮箱不会把授权转移给别人。
+        </p>
+      </div>
     </section>
   );
 };

@@ -225,6 +225,105 @@ async function isLastSuperadmin(targetUser: { role?: string }): Promise<boolean>
   return allUsers.filter((u) => u.role === "superadmin").length <= 1;
 }
 
+/**
+ * 工单附件「单独授权」名单的上限，与 runtimeConfigService 的归一化保持一致。
+ * 两处都设上限是因为解析发生在写库之前：不设的话，一次提交 5 万个条目会打出 5 万次查库。
+ */
+const MAX_TICKET_ATTACHMENT_GRANT_ENTRIES = 200;
+
+/** 把提交上来的名单（数组或换行/逗号分隔的字符串）压成去重、保序的条目列表。 */
+function normalizeGrantEntries(value: unknown): string[] {
+  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[
+,，]+/) : [];
+  const seen = new Set<string>();
+  const entries: string[] = [];
+  for (const item of source) {
+    if (typeof item !== "string") continue;
+    const entry = item.trim();
+    if (!entry || seen.has(entry)) continue;
+    seen.add(entry);
+    entries.push(entry);
+    if (entries.length >= MAX_TICKET_ATTACHMENT_GRANT_ENTRIES) break;
+  }
+  return entries;
+}
+
+/**
+ * 把「用户 ID / 用户名 / 邮箱」解析成用户 ID。
+ *
+ * 顺序是 ID → 用户名 → 邮箱。ID 优先是因为它精确且便宜（先批量查一次）；
+ * 用户名与邮箱只能逐个查，所以数量被上面那条上限兜住。
+ * 解析不到的条目**整份拒绝**（由调用方返回 400），不静默跳过。
+ */
+async function resolveTicketAttachmentGrantTargets(
+  value: unknown,
+): Promise<{ ids: string[]; unknown: string[] }> {
+  const entries = normalizeGrantEntries(value);
+  if (entries.length === 0) return { ids: [], unknown: [] };
+
+  // 先批量确认哪些条目本身就是用户 ID，剩下的才逐个按用户名/邮箱查。
+  const byId = new Map<string, User>();
+  for (const user of await UserStorage.getUsersByIds(entries)) {
+    byId.set(String(user.id), user);
+  }
+
+  const ids: string[] = [];
+  const unknown: string[] = [];
+  for (const entry of entries) {
+    const direct = byId.get(entry);
+    if (direct) {
+      if (!ids.includes(String(direct.id))) ids.push(String(direct.id));
+      continue;
+    }
+
+    let found: User | null = null;
+    try {
+      found = await UserStorage.getUserByUsername(entry);
+      if (!found) found = await UserStorage.getUserByEmail(entry);
+    } catch (error) {
+      // 查库失败不该被当成「用户不存在」：那会让管理员以为是自己填错了。
+      logger.error("[TicketAttachment] 解析授权用户失败", { entry, error });
+      throw new Error("解析授权用户时数据库不可用，请稍后重试");
+    }
+
+    if (!found) {
+      unknown.push(entry);
+      continue;
+    }
+    const foundId = String(found.id);
+    if (!ids.includes(foundId)) ids.push(foundId);
+  }
+
+  return { ids, unknown };
+}
+
+/**
+ * 读路径上把 ID 水合成可读信息。
+ *
+ * 已注销用户的 ID 仍然返回（带 `missing: true`），而不是从列表里消失 ——
+ * 静默消失会让管理员以为授权记录丢了，进而重复添加。
+ */
+async function hydrateTicketAttachmentGrantedUsers(ids: string[]): Promise<
+  Array<{ id: string; username: string | null; email: string | null; missing: boolean }>
+> {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const found = new Map<string, User>();
+  try {
+    for (const user of await UserStorage.getUsersByIds(ids)) found.set(String(user.id), user);
+  } catch (error) {
+    logger.warn("[TicketAttachment] 读取授权用户信息失败，仅返回 ID", { error });
+  }
+  return ids.map((id) => {
+    const user = found.get(id);
+    return {
+      id,
+      username: user ? user.username : null,
+      email: user ? user.email : null,
+      missing: !user,
+    };
+  });
+}
+
 export const adminController = {
   getUsers: async (req: Request, res: Response) => {
     try {
@@ -2281,7 +2380,18 @@ export const adminController = {
       if (!req.user || !isAdminRole(req.user.role)) return res.status(403).json({ error: "无权限" });
       if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
       const result = await RuntimeConfigService.getTicketAttachmentSetting();
-      return res.json({ success: true, ...result });
+      const config = result.setting.config;
+      // 配置里只有稳定主键（用户 ID）。管理端要看得懂「这个人是谁」，所以在读路径上
+      // 一次性把名单水合出来；查不到的用户（已注销）保留 ID 并标 missing，
+      // 而不是悄悄吞掉 —— 否则管理员会以为记录丢了。
+      const grantedUsers = await hydrateTicketAttachmentGrantedUsers(config.userUploadAllowedUserIds);
+      return res.json({
+        success: true,
+        setting: {
+          ...result.setting,
+          config: { ...config, userUploadAllowedUsers: grantedUsers },
+        },
+      });
     } catch (error) {
       logger.error("获取工单附件配置失败", { error });
       return res.status(500).json({ success: false, error: "获取工单附件配置失败" });
@@ -2292,7 +2402,27 @@ export const adminController = {
     try {
       if (!req.user || !isSuperAdmin(req)) return res.status(403).json({ error: "需要超级管理员权限" });
       if (mongoose.connection.readyState !== 1) return res.status(500).json({ error: "数据库未连接" });
-      const result = await RuntimeConfigService.setTicketAttachmentSetting(req.body || {});
+
+      const body = (req.body || {}) as Record<string, unknown>;
+      let payload: Record<string, unknown> = body;
+
+      // 允许管理员填用户名 / 邮箱：他手里通常没有用户的内部 ID。这里统一解析成 ID 再落库，
+      // 库里的名单因此只含稳定主键（改名、换邮箱都不会把授权漂到别人身上）。
+      // 解析失败整份拒绝并指出是哪一项 —— 静默跳过会让管理员以为已经加上了。
+      if (Object.prototype.hasOwnProperty.call(body, "userUploadAllowedUserIds")) {
+        const resolved = await resolveTicketAttachmentGrantTargets(body.userUploadAllowedUserIds);
+        if (resolved.unknown.length > 0) {
+          return res.status(400).json({
+            success: false,
+            error: `找不到这些用户：${resolved.unknown.join("、")}`,
+            code: "TICKET_ATTACHMENT_GRANT_UNKNOWN_USER",
+            unknown: resolved.unknown,
+          });
+        }
+        payload = { ...body, userUploadAllowedUserIds: resolved.ids };
+      }
+
+      const result = await RuntimeConfigService.setTicketAttachmentSetting(payload);
       return res.json({ success: true, setting: result });
     } catch (error) {
       return res.status(400).json({

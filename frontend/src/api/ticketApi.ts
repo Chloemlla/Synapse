@@ -199,6 +199,21 @@ function readListMeta(headers: unknown, fallbackPageSize: number): TicketListMet
 
 export const DEFAULT_TICKET_PAGE_SIZE = 50;
 
+/** 单独授权上传附件的用户（管理端视角）。`missing` = 该 ID 对应用户已不存在。 */
+export interface TicketAttachmentGrantedUser {
+  id: string;
+  username: string | null;
+  email: string | null;
+  missing: boolean;
+}
+
+export interface TicketAttachmentSettings {
+  userUploadEnabled: boolean;
+  userUploadAllowedUserIds: string[];
+  userUploadAllowedUsers: TicketAttachmentGrantedUser[];
+  updatedAt?: string;
+}
+
 export const ticketApi = {
   // 用户获取自己的工单（分页 + 轻量摘要）
   async getMyTickets(params?: { page?: number; limit?: number }): Promise<TicketListPage> {
@@ -401,18 +416,40 @@ export const ticketApi = {
   // ── 管理端：附件上传开关（超管）──
 
   /** 读取「普通用户可上传附件」开关（默认关闭）。 */
-  async getAttachmentSettings(): Promise<{ userUploadEnabled: boolean; updatedAt?: string }> {
+  async getAttachmentSettings(): Promise<TicketAttachmentSettings> {
     const response = await api.get("/api/admin/ticket-attachments/setting");
     const setting = response.data?.setting ?? {};
+    const config = setting?.config ?? {};
+    const grantedRaw = Array.isArray(config.userUploadAllowedUsers) ? config.userUploadAllowedUsers : [];
     return {
-      userUploadEnabled: setting?.config?.userUploadEnabled === true,
+      userUploadEnabled: config.userUploadEnabled === true,
+      userUploadAllowedUserIds: Array.isArray(config.userUploadAllowedUserIds)
+        ? config.userUploadAllowedUserIds.filter((id: unknown): id is string => typeof id === "string")
+        : [],
+      userUploadAllowedUsers: grantedRaw
+        .filter((item: unknown): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+        .map((item: Record<string, unknown>) => ({
+          id: String(item.id ?? ""),
+          username: typeof item.username === "string" ? item.username : null,
+          email: typeof item.email === "string" ? item.email : null,
+          missing: item.missing === true,
+        }))
+        .filter((item) => item.id),
       updatedAt: typeof setting?.updatedAt === "string" ? setting.updatedAt : undefined,
     };
   },
 
-  /** 保存开关。只有超管能写（服务端也会再判一次）。 */
-  async saveAttachmentSettings(userUploadEnabled: boolean): Promise<void> {
-    await api.post("/api/admin/ticket-attachments/setting", { userUploadEnabled });
+  /**
+   * 保存开关与/或单独授权名单。只有超管能写（服务端也会再判一次）。
+   *
+   * 名单是**整体替换**语义：只传本次改动的那一份完整清单；不传该字段则保持原值。
+   * 条目可以是用户 ID、用户名或邮箱 —— 服务端解析成 ID 后落库。
+   */
+  async saveAttachmentSettings(input: {
+    userUploadEnabled?: boolean;
+    userUploadAllowedUserIds?: string[];
+  }): Promise<void> {
+    await api.post("/api/admin/ticket-attachments/setting", input);
   },
 
   /** 重置开关（回到默认：关闭）。 */

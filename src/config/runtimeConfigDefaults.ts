@@ -247,6 +247,14 @@ export interface RegistrationInviteRuntimeConfig {
 export interface TicketAttachmentRuntimeConfig {
   /** true = 普通用户可以上传附件文件；false（默认）= 只能用附件链接，上传接口对普通用户 403。 */
   userUploadEnabled: boolean;
+  /**
+   * 单独授权的普通用户（用户 ID）。与全站开关是**或**关系：
+   * 全站关闭时，名单里的用户仍然可以上传。
+   *
+   * 存 ID 而不是用户名/邮箱：ID 是稳定主键，改名或换邮箱不会让授权漂到别人身上。
+   * 管理员保存时可以填用户名或邮箱，由控制器解析成 ID 后落库（见 adminController）。
+   */
+  userUploadAllowedUserIds: string[];
 }
 
 /**
@@ -639,6 +647,7 @@ export function buildRuntimeConfigDefaults(options: {
     // 默认关闭：附件是用户上传的任意二进制，默认只收「附件链接」，需要时由超管手动开启。
     ticketAttachments: {
       userUploadEnabled: false,
+      userUploadAllowedUserIds: [],
     },
     // 默认开启：与「ENABLE_FIRST_VISIT_VERIFICATION 未设置 = true」的历史默认值一致，
     // 存量部署未显式配置时不得凭空放宽首访验证（env 由 config.ts 覆盖）。
@@ -827,6 +836,9 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     },
     ticketAttachments: {
       ...config.ticketAttachments,
+      // 数组必须显式拷贝：浅展开会让缓存与默认值共享同一个数组引用，
+      // 一次「往缓存里 push」就永久改写了默认值（与 ipqs.apiKeys 同一处理）。
+      userUploadAllowedUserIds: [...config.ticketAttachments.userUploadAllowedUserIds],
     },
     firstVisitVerification: {
       ...config.firstVisitVerification,

@@ -751,6 +751,41 @@ function normalizeStoredRegistrationInviteConfig(
   };
 }
 
+/**
+ * 单个授权的普通用户最多这么多条：这是一个「例外名单」，不是等级体系。
+ * 上限存在的意义是让误传的大数组不能把运行时配置文档撑大（它会被每个请求读缓存）。
+ */
+const MAX_TICKET_ATTACHMENT_GRANTED_USERS = 200;
+/** 用户 ID 的实际形态是 `Date.now().toString()`，但历史导入的 ID 可能带其它字符。 */
+const TICKET_ATTACHMENT_GRANTED_USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * 归一化「单独授权上传附件的普通用户」名单。
+ *
+ * 三条硬规则：
+ * - **只收合法 ID 形态**：非法条目直接丢弃而不是原样落库 —— 落库后再被读出来当成 ID 比较，
+ *   会让一个脏字符串长期占着位置，排查时很难看出它是脏的；
+ * - **去重且保序**：管理员看到的顺序就是他添加的顺序；
+ * - **超出上限截断而不是整份拒绝**：名单本身是宽松授权，截断只会少授权（fail-closed 方向），
+ *   而整份拒绝会让管理员一次粘贴 300 个用户时连前 200 个也存不进去。
+ */
+export function normalizeTicketAttachmentGrantedUserIds(value: unknown): string[] {
+  const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[
+,]+/) : [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of source) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!TICKET_ATTACHMENT_GRANTED_USER_ID_PATTERN.test(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= MAX_TICKET_ATTACHMENT_GRANTED_USERS) break;
+  }
+  return ids;
+}
+
 function normalizeStoredTicketAttachmentConfig(
   value: unknown,
   defaults = runtimeConfigDefaults.ticketAttachments,
@@ -759,6 +794,9 @@ function normalizeStoredTicketAttachmentConfig(
 
   return {
     userUploadEnabled: normalizeBoolean(raw.userUploadEnabled, defaults.userUploadEnabled),
+    userUploadAllowedUserIds: hasOwnKey(raw, "userUploadAllowedUserIds")
+      ? normalizeTicketAttachmentGrantedUserIds(raw.userUploadAllowedUserIds)
+      : [...(defaults.userUploadAllowedUserIds ?? [])],
   };
 }
 
@@ -1919,6 +1957,7 @@ export class RuntimeConfigService {
       setting: {
         config: {
           userUploadEnabled: config.userUploadEnabled,
+          userUploadAllowedUserIds: [...config.userUploadAllowedUserIds],
         },
         updatedAt: doc?.updatedAt?.toISOString(),
       },
@@ -1938,6 +1977,11 @@ export class RuntimeConfigService {
       userUploadEnabled: hasOwnKey(raw, "userUploadEnabled")
         ? normalizeBoolean(raw.userUploadEnabled, current.userUploadEnabled)
         : current.userUploadEnabled,
+      // 名单是**整体替换**而不是增量合并：调用方每次提交完整清单，
+      // 增量语义会让「移除某人」变成不可能（前端只能靠传空数组表达清空）。
+      userUploadAllowedUserIds: hasOwnKey(raw, "userUploadAllowedUserIds")
+        ? normalizeTicketAttachmentGrantedUserIds(raw.userUploadAllowedUserIds)
+        : [...current.userUploadAllowedUserIds],
     };
 
     const { updatedAt: persistedAt } = await writeRuntimeConfigDoc(
