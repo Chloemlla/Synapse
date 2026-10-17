@@ -44,10 +44,18 @@ body {
 }
 
 /* 键盘焦点兜底：studio*ButtonClassName 自带 focus-visible:ring-*；
-   这个只拯救尚未走 token 的手写控件，不替代 token。 */
-:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid #94a3b8; /* slate-400 */
-  outline-offset: 2px;
+   这个只拯救尚未走 token 的手写控件，不替代 token。
+
+   必须放在 @layer base 里：Tailwind v4 的 utilities 都在 @layer utilities，
+   而未分层（unlayered）的规则**优先级高于任何图层**，与选择器特异度无关。
+   这条规则早先写在顶层，于是 `outline-none` / `focus:outline-none` 全部失效，
+   首屏脚本给 #app-main-content 的 .focus() 会画出 2px 外框（用户看到的「黑色方框」）。
+   另外排除 tabindex="-1"：那是脚本聚焦的落点 / 跳转目标，不是键盘导航焦点。 */
+@layer base {
+  :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid #94a3b8; /* slate-400 */
+    outline-offset: 2px;
+  }
 }
 .custom-toast {
   background: transparent !important;
