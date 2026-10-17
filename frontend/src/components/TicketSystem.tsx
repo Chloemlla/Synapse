@@ -1866,10 +1866,15 @@ const TicketSystem: React.FC = () => {
                         )}
                       </div>
 
-                      {/* 满意度：组件自身也会判权限，这里先判一次，避免给无权用户留一条空边框 */}
-                      {!isAdmin &&
-                      selectedTicket.userId === user?.id &&
-                      (selectedTicket.status === 'resolved' || selectedTicket.status === 'closed') ? (
+                      {/*
+                        满意度：属主在 resolved/closed 后可填写与修改；客服（超管）只读查看
+                        用户写了什么（星级 + 补充说明 + 提交时间）。
+                        组件自身也会判权限，这里先判一次，避免给无权用户留一条空边框。
+                      */}
+                      {((!isAdmin &&
+                        selectedTicket.userId === user?.id &&
+                        (selectedTicket.status === 'resolved' || selectedTicket.status === 'closed')) ||
+                        (isAdmin && typeof selectedTicket.csatRating === 'number')) ? (
                         <div className="shrink-0 border-t border-slate-200/80 bg-slate-50/40 px-4 pt-4 sm:px-5">
                           <TicketSatisfactionCard
                             ticket={selectedTicket}

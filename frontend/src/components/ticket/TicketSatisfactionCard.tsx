@@ -14,10 +14,11 @@ import {
 } from '../studioTheme';
 
 /**
- * 满意度评价卡（仅工单属主、`resolved` / `closed` 状态显示）。
+ * 满意度评价卡：属主可填写/修改，客服（超管）只读查看。
  *
- * 评价可修改：`POST /api/tickets/:id/csat` 对重复提交按「修改」处理，
- * 首次提交与后续修改共用同一个入口，因此这里只需要区分「展示」与「编辑」两态。
+ * 属主侧只在 `resolved` / `closed` 状态出现，按「展示 / 编辑」两态切换；
+ * 客服侧只要有评价就展示星级、补充说明与提交时间 —— 用户写了什么必须能被回访的人看到，
+ * 否则这条内容只存在于属主界面，客服既无法据此改进，也不知道差评原因。
  */
 
 interface TicketSatisfactionCardProps {
@@ -53,7 +54,9 @@ const TicketSatisfactionCard: React.FC<TicketSatisfactionCardProps> = ({
 
   const isOwner = !isAdmin && Boolean(currentUserId) && ticket.userId === currentUserId;
   const canRate = isOwner && (ticket.status === 'resolved' || ticket.status === 'closed');
-  if (!canRate) return null;
+  // 客服视角：已评价就展示内容（只读）。未评价时不出卡片 —— 客服不能替用户打分。
+  const canView = canRate || (isAdmin && Boolean(ticket.csatRating));
+  if (!canView) return null;
 
   const handleSubmit = async () => {
     if (submitting || rating < 1) return;
@@ -95,10 +98,10 @@ const TicketSatisfactionCard: React.FC<TicketSatisfactionCardProps> = ({
         <div className="min-w-0">
           <div className={studioEyebrowClassName}>满意度评价</div>
           <h3 className="mt-1 text-sm font-semibold text-slate-900">
-            {hasExistingRating ? '感谢你的评价' : '这个工单解决了吗？'}
+            {isAdmin ? '用户评价' : hasExistingRating ? '感谢你的评价' : '这个工单解决了吗？'}
           </h3>
         </div>
-        {hasExistingRating && !editing ? (
+        {canRate && hasExistingRating && !editing ? (
           <button type="button" onClick={startEdit} className={cn(studioGhostButtonClassName, 'shrink-0')}>
             修改评价
           </button>

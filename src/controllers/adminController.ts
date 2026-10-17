@@ -231,6 +231,16 @@ async function isLastSuperadmin(targetUser: { role?: string }): Promise<boolean>
  */
 const MAX_TICKET_ATTACHMENT_GRANT_ENTRIES = 200;
 
+/**
+ * 用户名形状：与 `UserStorage.getUserByUsername` 的入参守卫保持同一套规则。
+ *
+ * 为什么要在调用前先判形状：那个守卫对不合法用户名**直接抛错**，而管理员填邮箱是
+ * 正常操作（邮箱必然不匹配用户名规则）。不分流的话，填邮箱会被下面的 catch 当成
+ * 「查库失败」，整份名单被拒 —— 线上就是这样报的
+ * `[TicketAttachment] 解析授权用户失败 { entry: 'xx@xx.com' }`。
+ */
+const USERNAME_ENTRY_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
+
 /** 把提交上来的名单（数组或换行/逗号分隔的字符串）压成去重、保序的条目列表。 */
 function normalizeGrantEntries(value: unknown): string[] {
   const source = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\n,，]+/) : [];
@@ -277,11 +287,19 @@ async function resolveTicketAttachmentGrantTargets(
 
     let found: User | null = null;
     try {
-      found = await UserStorage.getUserByUsername(entry);
-      if (!found) found = await UserStorage.getUserByEmail(entry);
+      // 按形状分流：只有长得像用户名的才走用户名查询（该接口对非法入参会抛错），
+      // 其余一律按邮箱查，且大小写不敏感 —— 管理员抄来的邮箱大小写常常不一致。
+      if (USERNAME_ENTRY_PATTERN.test(entry)) {
+        found = await UserStorage.getUserByUsername(entry);
+      }
+      if (!found) found = await UserStorage.getUserByEmailCaseInsensitive(entry);
     } catch (error) {
       // 查库失败不该被当成「用户不存在」：那会让管理员以为是自己填错了。
-      logger.error("[TicketAttachment] 解析授权用户失败", { entry, error });
+      // 记 message 而不是整个 Error：日志字段里 Error 会序列化成 `{}`，事后无从排查。
+      logger.error("[TicketAttachment] 解析授权用户失败", {
+        entry,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw new Error("解析授权用户时数据库不可用，请稍后重试");
     }
 
