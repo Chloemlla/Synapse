@@ -70,9 +70,9 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
     >
       <InfoPanel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-            <FaHistory />
+            <FaHistory aria-hidden />
             <span id="device-sessions-title">设备与会话</span>
           </div>
           <p className="mt-2 text-[13px] leading-6 text-slate-600 sm:text-sm">
@@ -90,21 +90,21 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
           aria-label="刷新设备会话"
           title="刷新设备会话"
         >
-          <FaSyncAlt className={loading ? 'animate-spin' : undefined} />
+          <FaSyncAlt className={loading ? 'animate-spin' : undefined} aria-hidden />
           刷新
         </button>
       </div>
 
       {error && (
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm">
-          <span>{error}</span>
+          <span className="min-w-0 break-words">{error}</span>
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading || actionLoading}
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
           >
-            <FaSyncAlt />
+            <FaSyncAlt aria-hidden />
             重试
           </button>
         </div>
@@ -112,7 +112,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
 
       {loading && sessions.length === 0 ? (
         <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-4 text-sm text-slate-500">
-          <FaSyncAlt className="animate-spin" />
+          <FaSyncAlt className="animate-spin shrink-0" aria-hidden />
           正在加载设备会话...
         </div>
       ) : sessions.length === 0 ? (
@@ -141,14 +141,14 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
                       'flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-2xl',
                       session.isCurrent ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-500',
                     )}>
-                      <DeviceIcon />
+                      <DeviceIcon aria-hidden />
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="break-words text-sm font-semibold text-slate-900">{session.deviceName}</h3>
                         {session.isCurrent ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
-                            <FaCheckCircle />
+                            <FaCheckCircle aria-hidden />
                             当前 Profile 设备
                           </span>
                         ) : (
@@ -176,7 +176,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
                       )}
                       title={securitySessionActive ? '退出此设备全部会话' : '验证后退出此设备'}
                     >
-                      {actionLoading ? <FaSyncAlt className="animate-spin" /> : <FaSignOutAlt />}
+                      {actionLoading ? <FaSyncAlt className="animate-spin shrink-0" aria-hidden /> : <FaSignOutAlt className="shrink-0" aria-hidden />}
                       {securitySessionActive ? '退出此设备全部会话' : '验证后退出此设备'}
                     </button>
                   )}
@@ -186,8 +186,8 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
                   <div className="min-w-0">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">最近活动</div>
                     <div className="mt-1 flex min-w-0 items-start gap-1.5 break-words">
-                      <FaClock className="mt-0.5 shrink-0 text-slate-400" />
-                      <span>
+                      <FaClock className="mt-0.5 shrink-0 text-slate-400" aria-hidden />
+                      <span className="min-w-0">
                         {formatRelativeTime(session.lastActiveAt)}
                         {session.lastActiveAt ? ` · ${formatDateTime(session.lastActiveAt)}` : ''}
                       </span>
@@ -200,8 +200,8 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
                   <div className="min-w-0 sm:col-span-2 xl:col-span-2">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">IP 属地</div>
                     <div className="mt-1 flex min-w-0 items-start gap-1.5 break-words font-medium">
-                      <FaMapMarkerAlt className="mt-0.5 shrink-0 text-slate-400" />
-                      <span>{displayLocation(session.ipLocation)}</span>
+                      <FaMapMarkerAlt className="mt-0.5 shrink-0 text-slate-400" aria-hidden />
+                      <span className="min-w-0">{displayLocation(session.ipLocation)}</span>
                     </div>
                   </div>
                 </div>
@@ -213,8 +213,8 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
 
       {hasOtherSessions && (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 px-3.5 py-3 text-[12px] leading-5 text-amber-700">
-          <FaSignOutAlt className="mt-0.5 shrink-0" />
-          <span>每个设备的退出操作会撤销该设备或客户端的全部关联会话；当前 Profile 设备不会提供退出按钮。</span>
+          <FaSignOutAlt className="mt-0.5 shrink-0" aria-hidden />
+          <span className="min-w-0">每个设备的退出操作会撤销该设备或客户端的全部关联会话；当前 Profile 设备不会提供退出按钮。</span>
         </div>
       )}
       </InfoPanel>

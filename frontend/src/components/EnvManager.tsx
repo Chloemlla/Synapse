@@ -378,8 +378,8 @@ const EnvManager: React.FC = () => {
         {!canWrite ? (
           <InfoPanel className="border-amber-200 bg-amber-50/70">
             <div className="flex items-start gap-2 text-sm text-amber-800">
-              <FaLock className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>
+              <FaLock className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+              <span className="min-w-0">
                 当前账号为只读管理员：环境变量的编辑 / 删除需要超级管理员权限，列表中的写入控件已禁用。
               </span>
             </div>
@@ -390,13 +390,13 @@ const EnvManager: React.FC = () => {
         {configurationWorkflow && configurationProgressItems.length > 0 && (
           <m.section className="rounded-2xl border border-amber-200 bg-amber-50/80 shadow-sm backdrop-blur-xl" initial={ENTER_INITIAL} animate={ENTER_ANIMATE} transition={trans06}>
             <div className="flex flex-col gap-3 border-b border-amber-200 px-4 py-3 sm:px-5 sm:py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-amber-900">服务配置处理进度</h3>
                 <p className="mt-1 text-sm text-amber-800">
                   {configurationNextIssue ? `当前处理：${configurationNextIssue.label}` : configurationStatusFetched ? '全部配置已完成' : '正在检查配置状态...'}
                 </p>
               </div>
-              <button type="button" onClick={() => { if (!configurationNextIssue) return; setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('configIssue', configurationNextIssue.id); return n; }, { replace: true }); }} disabled={!configurationNextIssue} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={() => { if (!configurationNextIssue) return; setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('configIssue', configurationNextIssue.id); return n; }, { replace: true }); }} disabled={!configurationNextIssue} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50 shrink-0">
                 {configurationNextIssue ? '处理下一项' : '已完成'}
               </button>
             </div>
@@ -418,11 +418,11 @@ const EnvManager: React.FC = () => {
         {/* Env Vars Table */}
         <m.section data-env-section="envs" className={studioSurfaceClassName} initial={ENTER_INITIAL} animate={ENTER_ANIMATE} transition={trans06}>
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0">
               <h3 className="text-lg font-semibold text-slate-800">环境变量列表</h3>
               <p className="mt-1 text-sm text-slate-500">查看系统环境变量配置，支持加密传输、自动解密和数据来源标记。</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <m.button type="button" onClick={() => { envFetchedRef.current = true; fetchEnvs(); }} disabled={loading} className={studioPrimaryButtonClassName} whileTap={{ scale: 0.97 }}>
                 <FaSync className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />刷新
               </m.button>
@@ -437,8 +437,8 @@ const EnvManager: React.FC = () => {
               <m.div key="env-list-wrap" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={prefersReducedMotion ? NO_DURATION : { duration: 0.25 }} className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                   <div className="flex items-start gap-3 text-sm text-slate-700">
-                    <FaInfoCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-                    <span className="font-medium leading-relaxed">带信息图标的变量表示有明确的数据来源信息</span>
+                    <FaInfoCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" aria-hidden />
+                    <span className="min-w-0 font-medium leading-relaxed">带信息图标的变量表示有明确的数据来源信息</span>
                   </div>
                 </div>
                 {loading ? (
@@ -464,7 +464,7 @@ const EnvManager: React.FC = () => {
                               {item.source && <button type="button" onClick={() => handleSourceClickWrapper(item.source!)} className="flex-shrink-0 self-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1" aria-label="查看数据来源"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-600"><FaInfoCircle className="w-3 h-3" aria-hidden /></span></button>}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2">
-                                  <div className="text-sm sm:text-base font-semibold text-slate-900 tracking-wide break-words">{item.key.split(':').pop() || item.key}</div>
+                                  <div className="min-w-0 flex-1 text-sm sm:text-base font-semibold text-slate-900 tracking-wide break-words">{item.key.split(':').pop() || item.key}</div>
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button type="button" onClick={() => handleStartEdit(item)} disabled={!canWrite} className="min-h-11 min-w-11 rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40" title={canWrite ? '编辑' : '需要超级管理员权限'} aria-label="编辑该变量"><FaEdit className="w-3.5 h-3.5" aria-hidden /></button>
                                     <button type="button" onClick={() => handleDeleteEnvVar(item.key)} disabled={!canWrite} className="min-h-11 min-w-11 rounded-full p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40" title={canWrite ? '删除' : '需要超级管理员权限'} aria-label="删除该变量"><FaTrash className="w-3.5 h-3.5" aria-hidden /></button>
@@ -499,13 +499,13 @@ const EnvManager: React.FC = () => {
                               <td className="px-4 py-3 font-mono text-sm font-medium text-slate-900 align-top">
                                 <div className="break-words whitespace-normal leading-relaxed flex items-start gap-1">
                                   {item.source && <button type="button" onClick={() => handleSourceClickWrapper(item.source!)} className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1" aria-label="查看数据来源"><FaInfoCircle className="h-3 w-3" aria-hidden /></button>}
-                                  <span>{item.key.split(':').pop() || item.key}</span>
+                                  <span className="min-w-0">{item.key.split(':').pop() || item.key}</span>
                                 </div>
                               </td>
                               <td className="px-4 py-3 font-mono text-sm text-slate-700 align-top">
                                 {editingKey === item.key ? (
                                   <div className="flex items-center gap-2">
-                                    <input value={form.value || ''} onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))} className={`${studioFieldClassName} flex-1`} autoComplete="off" spellCheck={false} />
+                                    <input value={form.value || ''} onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))} className={`${studioFieldClassName} min-w-0 flex-1`} autoComplete="off" spellCheck={false} />
                                     <button type="button" onClick={handleSaveEdit} className="min-h-11 min-w-11 rounded-full p-2 text-slate-900 transition hover:bg-slate-100 hover:text-slate-700" title="保存" aria-label="保存该变量"><FaCheck className="w-4 h-4" aria-hidden /></button>
                                     <button type="button" onClick={handleCancelEdit} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600" title="取消" aria-label="取消编辑"><FaTimes className="w-4 h-4" aria-hidden /></button>
                                   </div>
@@ -527,7 +527,7 @@ const EnvManager: React.FC = () => {
                 {!loading && envs.length > 0 && (
                   <m.div initial={ENTER_INITIAL} animate={ENTER_ANIMATE} transition={trans03} className="mt-6 pt-4 border-t border-slate-200">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-3">
                         <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5">
                           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                           <span className="text-sm font-semibold text-slate-700">总计 {envs.length} 个环境变量</span>
@@ -537,9 +537,9 @@ const EnvManager: React.FC = () => {
                           <span className="text-xs sm:text-sm font-medium text-emerald-700">数据正常</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5">
+                      <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5">
                         <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
-                        <span className="text-xs sm:text-sm text-slate-600">本次加载于: {envsLoadedAt ?? '未知'}</span>
+                        <span className="break-words text-xs sm:text-sm text-slate-600">本次加载于: {envsLoadedAt ?? '未知'}</span>
                       </div>
                     </div>
                   </m.div>
@@ -596,7 +596,7 @@ const EnvManager: React.FC = () => {
               <FaInfoCircle className="h-8 w-8 text-slate-600" aria-hidden />
             </div>
             <h3 id="env-source-modal-title" className="mb-2 text-xl font-semibold text-slate-900">数据来源</h3>
-            <p className="mb-6 text-sm leading-7 text-slate-600">{selectedSource}</p>
+            <p className="mb-6 break-words text-sm leading-7 text-slate-600">{selectedSource}</p>
             <button type="button" onClick={handleSourceModalCloseWrapper} className={studioPrimaryButtonClassName}>确定</button>
           </div>
         </StudioModal>

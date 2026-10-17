@@ -47,13 +47,13 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
     >
       <InfoPanel className={isVerified ? 'border-emerald-100' : 'border-rose-100'}>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex gap-4">
+          <div className="flex min-w-0 gap-4">
             <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 sm:h-14 sm:w-14 ${isVerified ? 'bg-emerald-50 text-emerald-700 ring-emerald-100' : 'bg-rose-50 text-rose-700 ring-rose-100'}`}>
-              {isVerified ? <FaCheckCircle className="h-6 w-6" /> : <FaExclamationTriangle className="h-6 w-6" />}
+              {isVerified ? <FaCheckCircle className="h-6 w-6" aria-hidden /> : <FaExclamationTriangle className="h-6 w-6" aria-hidden />}
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">验证结果</p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 sm:text-2xl">{isVerified ? '验证成功' : '验证失败'}</h2>
+              <h2 className="mt-2 break-words text-xl font-semibold text-slate-950 sm:text-2xl">{isVerified ? '验证成功' : '验证失败'}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 {isVerified ? '该产品已返回安踏官方数据。' : '该产品验证失败，请谨慎购买并联系官方渠道。'}
               </p>
@@ -86,7 +86,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
               <dl key={field.label} className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-4 w-4" aria-hidden />
                   </div>
                   <div className="min-w-0">
                     <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{field.label}</dt>
@@ -102,8 +102,8 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
       {queryCount > 1 && (
         <InfoPanel compact className="border-amber-200 bg-amber-50/80">
           <div className="flex items-start gap-3 text-amber-800">
-            <FaExclamationTriangle className="mt-1 shrink-0" />
-            <div>
+            <FaExclamationTriangle className="mt-1 shrink-0" aria-hidden />
+            <div className="min-w-0">
               <h3 className="font-semibold">高频查询提醒</h3>
               <p className="mt-1 text-sm leading-6">
                 该产品查询次数较多，可能存在二次流通或假冒风险。建议通过安踏官方渠道购买，或前往官方授权店铺进一步验证。
@@ -115,7 +115,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product, queryCount, is
 
       <InfoPanel compact>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm leading-6 text-slate-600">
+          <div className="min-w-0 text-sm leading-6 text-slate-600">
             本查询结果仅供参考，产品真伪最终解释权归安踏体育用品有限公司所有。
           </div>
           <div className="flex flex-wrap gap-2">

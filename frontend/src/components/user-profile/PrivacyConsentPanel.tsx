@@ -225,9 +225,9 @@ const PrivacyConsentPanel: React.FC = () => {
       aria-busy={busy}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-            <FaUserShield />
+            <FaUserShield aria-hidden />
             <span id="privacy-consent-title">隐私与同意</span>
           </div>
           <p className="mt-2 text-[13px] leading-6 text-slate-600 sm:text-sm">
@@ -253,7 +253,7 @@ const PrivacyConsentPanel: React.FC = () => {
           aria-label="刷新隐私与同意状态"
           title="刷新隐私与同意状态"
         >
-          <FaSyncAlt className={loading ? 'animate-spin' : undefined} />
+          <FaSyncAlt className={loading ? 'animate-spin' : undefined} aria-hidden />
           刷新
         </button>
       </div>
@@ -263,9 +263,9 @@ const PrivacyConsentPanel: React.FC = () => {
           role="alert"
           className="mt-4 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700 sm:flex-row sm:items-center sm:justify-between sm:text-sm"
         >
-          <span className="flex items-start gap-2 break-words">
+          <span className="flex min-w-0 items-start gap-2 break-words">
             <FaExclamationCircle className="mt-0.5 shrink-0" />
-            <span>{error}</span>
+            <span className="min-w-0">{error}</span>
           </span>
           <button
             type="button"
@@ -275,7 +275,7 @@ const PrivacyConsentPanel: React.FC = () => {
             disabled={busy}
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
           >
-            <FaSyncAlt />
+            <FaSyncAlt aria-hidden />
             重试
           </button>
         </div>
@@ -287,20 +287,20 @@ const PrivacyConsentPanel: React.FC = () => {
           aria-live="polite"
           className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-[12px] leading-5 text-emerald-700"
         >
-          <FaCheckCircle className="mt-0.5 shrink-0" />
-          <span>{notice}</span>
+          <FaCheckCircle className="mt-0.5 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">{notice}</span>
         </div>
       )}
 
       {loading && !status ? (
         <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-4 text-sm text-slate-500">
-          <FaSyncAlt className="animate-spin" />
+          <FaSyncAlt className="animate-spin shrink-0" aria-hidden />
           正在加载本设备的同意状态...
         </div>
       ) : credentialMissing ? (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 text-[13px] leading-6 text-slate-600 sm:text-sm">
-          <FaShieldAlt className="mt-1 shrink-0 text-slate-400" />
-          <span>
+          <FaShieldAlt className="mt-1 shrink-0 text-slate-400" aria-hidden />
+          <span className="min-w-0">
             本浏览器没有该设备的同意凭据（可能是在其他设备上同意过，或清除了站点数据），因此这里没有可撤回的同意。
             继续使用依赖同意的功能时，会被要求重新逐项勾选；也可以直接到{' '}
             <Link to="/policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">
@@ -320,7 +320,7 @@ const PrivacyConsentPanel: React.FC = () => {
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">本设备同意状态</div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold', presentation.badgeClassName)}>
-                  <FaShieldAlt />
+                  <FaShieldAlt aria-hidden />
                   {presentation.label}
                 </span>
                 {status.hasValidConsent && status.expiresAt && (
@@ -349,7 +349,7 @@ const PrivacyConsentPanel: React.FC = () => {
                     key={key}
                     className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700"
                   >
-                    <FaCheckCircle className="text-[9px]" />
+                    <FaCheckCircle className="text-[9px]" aria-hidden />
                     {describeAgreementKey(key)}
                   </span>
                 ))}
@@ -358,7 +358,7 @@ const PrivacyConsentPanel: React.FC = () => {
                     key={key}
                     className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700"
                   >
-                    <FaExclamationTriangle className="text-[9px]" />
+                    <FaExclamationTriangle className="text-[9px]" aria-hidden />
                     缺少 {describeAgreementKey(key)}
                   </span>
                 ))}
@@ -368,8 +368,8 @@ const PrivacyConsentPanel: React.FC = () => {
 
           {staleDocument && (
             <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
-              <FaExclamationTriangle className="mt-0.5 shrink-0" />
-              <span>
+              <FaExclamationTriangle className="mt-0.5 shrink-0" aria-hidden />
+              <span className="min-w-0">
                 这条同意记录对应的条文与当前条文不是同一份（措辞更新过）。同意仍然有效，但建议重新阅读并在政策页重新同意。
               </span>
             </p>
@@ -377,8 +377,8 @@ const PrivacyConsentPanel: React.FC = () => {
 
           {expiringSoon && (
             <p className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
-              <FaExclamationTriangle className="mt-0.5 shrink-0" />
-              <span>
+              <FaExclamationTriangle className="mt-0.5 shrink-0" aria-hidden />
+              <span className="min-w-0">
                 本设备同意将在 {remainingDays === 0 ? '今天' : `约 ${remainingDays} 天后`}到期。
                 到期后依赖同意的功能会要求重新逐项勾选（约 1 分钟），可现在就到{' '}
                 <Link to="/policy" className="font-semibold underline underline-offset-2">
@@ -397,8 +397,8 @@ const PrivacyConsentPanel: React.FC = () => {
             {confirming === 'revoke' ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3">
                 <p className="flex items-start gap-2 break-words text-[12px] leading-5 text-amber-800">
-                  <FaExclamationTriangle className="mt-0.5 shrink-0" />
-                  <span>{REVOKE_WARNING}</span>
+                  <FaExclamationTriangle className="mt-0.5 shrink-0" aria-hidden />
+                  <span className="min-w-0">{REVOKE_WARNING}</span>
                 </p>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <button
@@ -409,7 +409,7 @@ const PrivacyConsentPanel: React.FC = () => {
                     disabled={revoking}
                     className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
                   >
-                    {revoking ? <FaSyncAlt className="animate-spin" /> : <FaExclamationTriangle />}
+                    {revoking ? <FaSyncAlt className="animate-spin shrink-0" aria-hidden /> : <FaExclamationTriangle className="shrink-0" aria-hidden />}
                     {revoking ? '正在撤回...' : '确认撤回本设备同意'}
                   </button>
                   <button
@@ -425,8 +425,8 @@ const PrivacyConsentPanel: React.FC = () => {
             ) : confirming === 'purge' ? (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-3">
                 <p className="flex items-start gap-2 break-words text-[12px] leading-5 text-rose-800">
-                  <FaTrashAlt className="mt-0.5 shrink-0" />
-                  <span>{PURGE_WARNING}</span>
+                  <FaTrashAlt className="mt-0.5 shrink-0" aria-hidden />
+                  <span className="min-w-0">{PURGE_WARNING}</span>
                 </p>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <button
@@ -437,7 +437,7 @@ const PrivacyConsentPanel: React.FC = () => {
                     disabled={purging}
                     className={cn(studioDangerButtonClassName, 'w-full px-3 py-2 text-xs sm:w-auto')}
                   >
-                    {purging ? <FaSyncAlt className="animate-spin" /> : <FaTrashAlt />}
+                    {purging ? <FaSyncAlt className="animate-spin shrink-0" aria-hidden /> : <FaTrashAlt className="shrink-0" aria-hidden />}
                     {purging ? '正在删除...' : '确认删除全部记录'}
                   </button>
                   <button
@@ -463,7 +463,7 @@ const PrivacyConsentPanel: React.FC = () => {
                   aria-label="撤回本设备的政策同意"
                   title="撤回本设备的政策同意"
                 >
-                  <FaExclamationTriangle />
+                  <FaExclamationTriangle aria-hidden />
                   撤回本设备同意
                 </button>
                 <button
@@ -477,7 +477,7 @@ const PrivacyConsentPanel: React.FC = () => {
                   aria-label="删除本设备的政策同意记录"
                   title="删除本设备在服务端的全部同意记录（不可恢复）"
                 >
-                  <FaTrashAlt />
+                  <FaTrashAlt aria-hidden />
                   删除本设备记录
                 </button>
               </div>
@@ -489,9 +489,9 @@ const PrivacyConsentPanel: React.FC = () => {
       {history && history.length > 0 && (
         <details className="group mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3.5 sm:px-4">
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600 transition hover:text-slate-800">
-            <FaHistory className="text-slate-400" />
+            <FaHistory className="text-slate-400" aria-hidden />
             本设备同意轨迹（最近 {history.length} 条）
-            <FaChevronDown className="ml-auto text-[10px] text-slate-400 transition-transform group-open:rotate-180" />
+            <FaChevronDown className="ml-auto text-[10px] text-slate-400 transition-transform group-open:rotate-180" aria-hidden />
           </summary>
           <ol className="mt-3 space-y-2.5">
             {history.map((entry) => {

@@ -382,10 +382,10 @@ export const LoginPage: React.FC = () => {
                     <m.div className={authCardClassName} variants={effectiveCardVariants} initial="hidden" animate="visible" transition={effectiveCardTransition}>
                         <div className={authCardBodyClassName}>
                             <div className={authCardHeaderClassName}>
-                                <div className={authHeaderBadgeClassName}>
+                                <div className={cn(authHeaderBadgeClassName, 'shrink-0')}>
                                     {adminLoginRequested ? <FaUserShield /> : <FaSignInAlt />}
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                     <div className={authEyebrowClassName}>{adminLoginRequested ? '管理员入口' : '账号登录'}</div>
                                     <h2 className={authTitleClassName}>{adminLoginRequested ? '管理员登录' : '登录账户'}</h2>
                                 </div>
@@ -420,8 +420,8 @@ export const LoginPage: React.FC = () => {
                             {user && (
                                 <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authInfoPanelClassName, 'mb-5 flex items-start gap-3')}>
                                     <FaUser className="mt-1 shrink-0 text-slate-500" />
-                                    <div>
-                                        <p className="text-xs font-semibold text-slate-900">您已登录为 {user.username}</p>
+                                    <div className="min-w-0">
+                                        <p className="break-words text-xs font-semibold text-slate-900">您已登录为 {user.username}</p>
                                         <p className="mt-1 text-[11px] leading-5 text-slate-600">继续登录将在此设备上添加新账号，您可以在菜单中随时切换。</p>
                                     </div>
                                 </m.div>
@@ -430,7 +430,7 @@ export const LoginPage: React.FC = () => {
                             {adminLoginRequested && (
                                 <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authWarningPanelClassName, 'mb-5 flex items-start gap-3')}>
                                     <FaShieldAlt className="mt-1 shrink-0 text-amber-600" />
-                                    <div>
+                                    <div className="min-w-0">
                                         <p className="text-xs font-semibold text-amber-950">管理员会话</p>
                                         <p className="mt-1 text-[11px] leading-5">登录后将进入管理后台，非管理员账号会被带回首页。</p>
                                     </div>
@@ -508,7 +508,7 @@ export const LoginPage: React.FC = () => {
                             {consentComplete ? (
                                 <>
                                     <div className={authDividerClassName}>
-                                        <div className="absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
+                                        <div className="pointer-events-none absolute inset-0 flex items-center"><div className={authDividerLineClassName}></div></div>
                                         <div className="relative flex justify-center"><span className={authDividerLabelClassName}>或者使用以下方式</span></div>
                                     </div>
 
@@ -591,9 +591,9 @@ export const LoginPage: React.FC = () => {
                             {showTwoFactorPanel && (twoFactorExpired ? (
                                 <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authAlertClassName, 'mt-6')}>
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="flex items-start gap-3">
+                                        <div className="flex min-w-0 items-start gap-3">
                                             <FaShieldAlt className="mt-0.5 shrink-0" />
-                                            <div>
+                                            <div className="min-w-0">
                                                 <p className="text-xs font-semibold">本次二次验证已过期</p>
                                                 <p className="mt-1 text-[11px] leading-5">验证令牌有效期为 5 分钟，已自动失效。请重新输入密码登录。</p>
                                             </div>
@@ -606,9 +606,9 @@ export const LoginPage: React.FC = () => {
                             ) : (
                                 <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={cn(authWarningPanelClassName, 'mt-6')}>
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="flex items-start gap-3">
+                                        <div className="flex min-w-0 items-start gap-3">
                                             <FaShieldAlt className="mt-0.5 shrink-0 text-amber-600" />
-                                            <div>
+                                            <div className="min-w-0">
                                                 <p className="text-xs font-semibold text-amber-950">还有一次二次验证未完成</p>
                                                 <p className="mt-1 text-[11px] leading-5">
                                                     请在 <span className="font-mono font-semibold">{twoFactorRemainingText}</span> 内完成验证；关闭验证窗口不会取消本次登录，无需重新输入密码。

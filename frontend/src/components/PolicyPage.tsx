@@ -375,9 +375,9 @@ const PolicyPage: React.FC = () => {
         {error && !policy && (
           <InfoPanel className="border-rose-200 bg-rose-50/85">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3 text-rose-800">
+              <div className="flex min-w-0 items-start gap-3 text-rose-800">
                 <FaExclamationTriangle className="mt-1 shrink-0" />
-                <div className="text-sm leading-6">
+                <div className="min-w-0 break-words text-sm leading-6">
                   <div className="font-semibold">无法加载政策条文</div>
                   <div className="mt-1 whitespace-pre-line">{error}</div>
                 </div>
@@ -443,7 +443,7 @@ const PolicyPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => scrollToAnchor(resumeSectionId)}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:border-sky-300"
+                          className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:border-sky-300"
                           title="继续上次读到的那一章"
                         >
                           <FaHistory className="text-[11px]" />
@@ -463,7 +463,7 @@ const PolicyPage: React.FC = () => {
                   {archiveNotice && (
                     <p className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600" role="status">
                       <FaDownload className="mt-0.5 shrink-0 text-slate-400" />
-                      <span>{archiveNotice}</span>
+                      <span className="min-w-0 break-words">{archiveNotice}</span>
                     </p>
                   )}
                 </div>
@@ -517,7 +517,7 @@ const PolicyPage: React.FC = () => {
                 <InfoPanel className="print:border-0 print:shadow-none">
                   <div className="flex items-start gap-3 text-amber-800">
                     <FaExclamationTriangle className="mt-1 shrink-0" />
-                    <div className="text-sm leading-6">
+                    <div className="min-w-0 break-words text-sm leading-6">
                       <div className="font-semibold">没有条文命中「{query.trim()}」</div>
                       <div className="mt-1">
                         换个关键词（例如「撤回」「保留」「Cookie」「跨境」），或清空检索查看全部 {policy.sections.length} 章。

@@ -375,7 +375,7 @@ export default function FingerprintManager() {
           icon={FaFingerprint}
           action={
             <Link to="/admin" className={studioSecondaryButtonClassName}>
-              <FaInfoCircle className="text-xs" />
+              <FaInfoCircle className="text-xs" aria-hidden />
               返回仪表板
             </Link>
           }
@@ -464,7 +464,7 @@ export default function FingerprintManager() {
 
           {loadError && (
             <StudioErrorNote className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className="flex items-start gap-2">
+              <span className="flex min-w-0 items-start gap-2 break-words">
                 <FaExclamationTriangle className="mt-0.5 shrink-0 text-xs" aria-hidden />
                 指纹数据加载失败：{loadError}
               </span>
@@ -494,8 +494,8 @@ export default function FingerprintManager() {
                   return (
                     <tr key={user.id} className="text-slate-600 transition-colors duration-150 hover:bg-slate-50/70">
                       <td className="px-3 py-3 align-top">
-                        <div className="font-semibold text-slate-900">{user.username}</div>
-                        <div className="mt-1 text-xs text-slate-500">{user.email || user.id}</div>
+                        <div className="break-words font-semibold text-slate-900">{user.username}</div>
+                        <div className="mt-1 break-words text-xs text-slate-500">{user.email || user.id}</div>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           <InfoBadge>{user.role || 'user'}</InfoBadge>
                           {user.accountStatus === 'suspended' && <InfoBadge tone="rose">封停</InfoBadge>}
@@ -526,7 +526,7 @@ export default function FingerprintManager() {
                         )}
                       </td>
                       <td className="px-3 py-3 align-top text-xs text-slate-500">
-                        <div>{user.lastLoginIp || '-'}</div>
+                        <div className="break-all">{user.lastLoginIp || '-'}</div>
                         <div className="mt-1">{formatDateTime(user.lastLoginAt)}</div>
                       </td>
                       <td className="px-3 py-3 align-top">
@@ -561,10 +561,10 @@ export default function FingerprintManager() {
           </div>
 
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0">
               共 {pagination.total} 个用户 · 第 {pagination.page}/{pagination.totalPages} 页
             </div>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <button
                 type="button"
                 disabled={page <= 1}
@@ -650,7 +650,7 @@ export default function FingerprintManager() {
                           <button
                             type="button"
                             onClick={() => void copyText(record.id, '指纹 ID 已复制')}
-                            className={studioSecondaryButtonClassName}
+                            className={`${studioSecondaryButtonClassName} shrink-0`}
                           >
                             <FaClipboard className="text-xs" />
                             复制
@@ -720,18 +720,18 @@ export default function FingerprintManager() {
 }
 
 const KeyMetric: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   label: string;
   value: React.ReactNode;
 }> = ({ icon: Icon, label, value }) => (
   <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
     <div className="flex items-start justify-between gap-3">
-      <div>
+      <div className="min-w-0">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
         <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
       </div>
-      <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500">
-        <Icon className="h-4 w-4" />
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500">
+        <Icon className="h-4 w-4" aria-hidden />
       </div>
     </div>
   </div>
