@@ -177,11 +177,11 @@ export async function translateText(input: CDictTranslateInput): Promise<Record<
   }
 }
 
-/** The gateway rejects GET (405). Device fields belong in a POST form, not in the URL. */
+/** Use a POST form and the same application identity as the translation request. */
 export async function fetchLanguageList(): Promise<unknown> {
   const upstream = { ...config.cdictUpstream };
   const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
-  const body = encodeForm(deviceParams());
+  const body = encodeForm({ appId: upstream.translateAppId, ...deviceParams() });
   try {
     const response = await axios.post(`${baseUrl}${LANGUAGE_LIST_PATH}`, body, {
       ...SAFE_UPSTREAM_OPTIONS,

@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 afterAll(() => { RuntimeConfigService.getCachedConfig().cdictUpstream = baseline; });
 
-it("POSTs the exact form-encoded language device body, never GET or a query string", async () => {
+it("POSTs the app identity and exact form-encoded device body, never GET or a query string", async () => {
   const payload = { code: 0, data: { list: [{ langCode: "en", extra: "preserved" }] }, untouched: [1, 2] };
   post.mockResolvedValueOnce({ data: payload });
   expect(await fetchLanguageList()).toBe(payload);
@@ -31,7 +31,7 @@ it("POSTs the exact form-encoded language device body, never GET or a query stri
   expect(post).toHaveBeenCalledTimes(1);
   const [url, body, options] = post.mock.calls[0];
   expect(url).toBe("https://vivotrans.vivo.com/translation/lang/list");
-  expect(body).toBe("em=00000000000000&model=V2309A&product=PD2243&deviceType=mobile&elapsedtime=0&av=1&an=1.0.0&cs=0&sysVer=14&appVersion=1&appVer=1.0.0&appPkgName=com.vivo.translator&netType=2&screensize=1080x2400&oaid=&vaid=00000000000000");
+  expect(body).toBe("appId=9023957766&em=00000000000000&model=V2309A&product=PD2243&deviceType=mobile&elapsedtime=0&av=1&an=1.0.0&cs=0&sysVer=14&appVersion=1&appVer=1.0.0&appPkgName=com.vivo.translator&netType=2&screensize=1080x2400&oaid=&vaid=00000000000000");
   expect(options).toMatchObject({
     headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "okhttp/4.9.1", "Content-Length": String(Buffer.byteLength(body)) },
     timeout: 20_000, responseType: "json", maxContentLength: 2 * 1024 * 1024,
@@ -52,6 +52,8 @@ it("uses changed translation URL/appId and language URL on the next call without
   ]);
   expect(post.mock.calls[0][1]).toContain("appId=app+one%26*");
   expect(post.mock.calls[2][1]).toContain("appId=app+two%26*");
+  expect(post.mock.calls[1][1]).toContain("appId=app+one%26*");
+  expect(post.mock.calls[3][1]).toContain("appId=app+two%26*");
   expect(post.mock.calls[0][1]).toContain("text=%E6%B1%89%E5%AD%97+%26*");
 });
 

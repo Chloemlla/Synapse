@@ -1357,7 +1357,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteIpqsSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "IPQS" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "IPQS" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.ipqs = cloneRuntimeConfigDefaults(runtimeConfigDefaults).ipqs;
     loadedKeys.delete("IPQS");
     invalidateHotCache("IPQS");
@@ -1432,7 +1432,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteLinuxDoSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "LINUXDO" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "LINUXDO" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.linuxdo = cloneRuntimeConfigDefaults(runtimeConfigDefaults).linuxdo;
     loadedKeys.delete("LINUXDO");
     invalidateHotCache("LINUXDO");
@@ -1499,7 +1499,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteGoogleAuthSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "GOOGLE_AUTH" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "GOOGLE_AUTH" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.googleAuth = cloneRuntimeConfigDefaults(runtimeConfigDefaults).googleAuth;
     loadedKeys.delete("GOOGLE_AUTH");
     invalidateHotCache("GOOGLE_AUTH");
@@ -1594,7 +1594,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteSynapseAndroidSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "SYNAPSE_ANDROID" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "SYNAPSE_ANDROID" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.synapseAndroid = cloneRuntimeConfigDefaults(runtimeConfigDefaults).synapseAndroid;
     loadedKeys.delete("SYNAPSE_ANDROID");
     invalidateHotCache("SYNAPSE_ANDROID");
@@ -1685,7 +1685,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteNexaiSigningSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "NEXAI_SIGNING" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "NEXAI_SIGNING" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.nexaiSigning = cloneRuntimeConfigDefaults(runtimeConfigDefaults).nexaiSigning;
     loadedKeys.delete("NEXAI_SIGNING");
     invalidateHotCache("NEXAI_SIGNING");
@@ -1758,7 +1758,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteQqGuardSigningSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "QQ_GUARD_SIGNING" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "QQ_GUARD_SIGNING" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.qqGuardSigning = cloneRuntimeConfigDefaults(runtimeConfigDefaults).qqGuardSigning;
     loadedKeys.delete("QQ_GUARD_SIGNING");
     invalidateHotCache("QQ_GUARD_SIGNING");
@@ -1904,7 +1904,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteProxycheckSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "PROXYCHECK" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "PROXYCHECK" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.proxycheck = cloneRuntimeConfigDefaults(runtimeConfigDefaults).proxycheck;
     loadedKeys.delete("PROXYCHECK");
     invalidateHotCache("PROXYCHECK");
@@ -1962,7 +1962,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteRegistrationInviteSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "REGISTRATION_INVITE" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "REGISTRATION_INVITE" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.registrationInvite = cloneRuntimeConfigDefaults(runtimeConfigDefaults).registrationInvite;
     loadedKeys.delete("REGISTRATION_INVITE");
     invalidateHotCache("REGISTRATION_INVITE");
@@ -2090,7 +2090,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteFirstVisitVerificationSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "FIRST_VISIT_VERIFICATION" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "FIRST_VISIT_VERIFICATION" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.firstVisitVerification = cloneRuntimeConfigDefaults(
       runtimeConfigDefaults,
     ).firstVisitVerification;
@@ -2223,7 +2223,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteMobileTokenIntegritySetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "MOBILE_TOKEN_INTEGRITY" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "MOBILE_TOKEN_INTEGRITY" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.mobileTokenIntegrity = cloneRuntimeConfigDefaults(
       runtimeConfigDefaults,
     ).mobileTokenIntegrity;
@@ -2284,7 +2284,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteMobileTokenRotationRiskSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "MOBILE_TOKEN_ROTATION_RISK" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "MOBILE_TOKEN_ROTATION_RISK" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.mobileTokenRotationRisk = cloneRuntimeConfigDefaults(
       runtimeConfigDefaults,
     ).mobileTokenRotationRisk;
@@ -2341,7 +2341,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteAccountRiskSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "ACCOUNT_RISK" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "ACCOUNT_RISK" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.accountRisk = cloneRuntimeConfigDefaults(runtimeConfigDefaults).accountRisk;
     loadedKeys.delete("ACCOUNT_RISK");
     invalidateHotCache("ACCOUNT_RISK");
@@ -2380,7 +2380,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteSecuritySessionSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "SECURITY_SESSION" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "SECURITY_SESSION" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.securitySession = cloneRuntimeConfigDefaults(runtimeConfigDefaults).securitySession;
     loadedKeys.delete("SECURITY_SESSION");
     invalidateHotCache("SECURITY_SESSION");
@@ -2421,7 +2421,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteRegionPolicySetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "REGION_POLICY" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "REGION_POLICY" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.regionPolicy = cloneRuntimeConfigDefaults(runtimeConfigDefaults).regionPolicy;
     loadedKeys.delete("REGION_POLICY");
     invalidateHotCache("REGION_POLICY");
@@ -2561,7 +2561,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteCdictSigningSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "CDICT_SIGNING" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "CDICT_SIGNING" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.cdictSigning = cloneRuntimeConfigDefaults(runtimeConfigDefaults).cdictSigning;
     loadedKeys.delete("CDICT_SIGNING");
     invalidateHotCache("CDICT_SIGNING");
@@ -2626,7 +2626,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteDeepLXSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "DEEPLX" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "DEEPLX" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.deeplx = cloneRuntimeConfigDefaults(runtimeConfigDefaults).deeplx;
     loadedKeys.delete("DEEPLX");
     invalidateHotCache("DEEPLX");
@@ -2709,7 +2709,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteNexaiSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "NEXAI" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "NEXAI" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.nexai = cloneRuntimeConfigDefaults(runtimeConfigDefaults).nexai;
     loadedKeys.delete("NEXAI");
     invalidateHotCache("NEXAI");
@@ -2788,7 +2788,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteTtsSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "TTS" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "TTS" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.tts = cloneRuntimeConfigDefaults(runtimeConfigDefaults).tts;
     loadedKeys.delete("TTS");
     invalidateHotCache("TTS");
@@ -3000,7 +3000,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteEmailSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "EMAIL" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "EMAIL" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.email = cloneRuntimeConfigDefaults(runtimeConfigDefaults).email;
     loadedKeys.delete("EMAIL");
     invalidateHotCache("EMAIL");
@@ -3173,7 +3173,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteAdminSecuritySetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "ADMIN_SECURITY" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "ADMIN_SECURITY" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     runtimeConfigCache.adminSecurity = cloneRuntimeConfigDefaults(runtimeConfigDefaults).adminSecurity;
     loadedKeys.delete("ADMIN_SECURITY");
     invalidateHotCache("ADMIN_SECURITY");
@@ -3403,7 +3403,7 @@ export class RuntimeConfigService {
   }
 
   static async deleteLumenSetting(): Promise<void> {
-    await RuntimeConfigModel.deleteOne({ key: "LUMEN" }).exec();
+    await RuntimeConfigModel.deleteOne({ key: "LUMEN" }).exec(); // soft-delete-exempt: 删除后台配置覆盖以恢复部署默认值，非用户记录
     const defaults = cloneRuntimeConfigDefaults(runtimeConfigDefaults).lumen;
     runtimeConfigCache.lumen = defaults;
     refreshLumenConfig(defaults);
