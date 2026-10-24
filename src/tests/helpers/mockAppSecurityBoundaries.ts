@@ -72,6 +72,7 @@ jest.mock("../../middleware/routeLimiters", () =>
     {
       __esModule: true,
       createLimiter: (opts?: { name?: string }) => mockLimiterStub(opts?.name || "createdLimiter"),
+      createBurstConcurrencyGuard: (opts: { name: string }) => mockLimiterStub(opts.name),
       getRateLimitMetricsSnapshot: () => ({
         total429Hits: 0,
         byLimiter: {},

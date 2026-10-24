@@ -120,15 +120,15 @@ export const FEATURE_CONSENT_REQUIREMENTS: Record<FeatureConsentKey, FeatureCons
     label: "文字转语音",
     category: "third-party-transfer",
     agreements: ["usage", "specific-terms"],
-    rationale: "提交的文本与合成结果会交由第三方语音服务处理（含跨境）：usage 约定使用合规，specific-terms 约定文本与结果的使用方式。路由：/api/tts",
+    rationale: "提交的文本与合成结果会交由第三方语音服务处理（含跨境）：usage 约定使用合规，specific-terms 约定文本与结果的使用方式。路由：/api/tts、/api/translate/cdict/tts",
     message: "把文本交给第三方合成语音前，需要先同意使用政策与服务专项条款。",
   },
   "deeplx-translate": {
     key: "deeplx-translate",
-    label: "DeepLX 翻译",
+    label: "文本翻译",
     category: "third-party-transfer",
     agreements: ["usage", "specific-terms"],
-    rationale: "待翻译文本会发给第三方翻译服务：usage 约定使用合规，specific-terms 约定调用方责任与配额。路由：/api/deeplx",
+    rationale: "待翻译文本会发给第三方翻译服务：usage 约定使用合规，specific-terms 约定调用方责任与配额。路由：/api/deeplx、/api/translate/cdict/translate",
     message: "把待翻译文本交给第三方翻译服务前，需要先同意使用政策与服务专项条款。",
   },
   shorturl: {

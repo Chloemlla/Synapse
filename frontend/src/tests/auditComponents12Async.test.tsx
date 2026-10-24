@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({ notify: vi.fn(), config: vi.fn(), translate: v
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'user' } }) }));
 vi.mock('../components/Notification', () => ({ useNotification: () => ({ setNotification: mocks.notify }) }));
 vi.mock('../api/deeplx', () => ({ fetchDeepLXConfig: mocks.config, translateWithDeepLX: mocks.translate }));
+vi.mock('../api/cdict', () => ({ fetchCDictLanguages: vi.fn().mockResolvedValue([{ code: 'en', label: '英语' }, { code: 'zh-CHS', label: '中文' }]), translateWithCDict: vi.fn(), fetchCDictSpeech: vi.fn(), fetchCDictDonation: vi.fn().mockResolvedValue(null), fetchCDictDonationImage: vi.fn(), claimCDictDonation: vi.fn() }));
 vi.mock('../api/markdownArticles', () => ({ markdownArticleApi: { listPublished: mocks.articles } }));
 
 import { DeepLXTranslatorPage } from '../components/DeepLXTranslatorPage';
@@ -22,6 +23,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function startManualTranslation() {
   render(<DeepLXTranslatorPage />);
+  fireEvent.change(screen.getByRole('combobox', { name: '翻译服务' }), { target: { value: 'deeplx' } });
   await screen.findByText('服务可用');
   fireEvent.click(screen.getByRole('checkbox', { name: '自动翻译' }));
   fireEvent.change(screen.getByPlaceholderText('输入想翻译的内容，或者直接把整段文案粘贴进来。'), { target: { value: 'original' } });

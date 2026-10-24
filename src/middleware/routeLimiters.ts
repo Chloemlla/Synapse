@@ -498,6 +498,8 @@ export function resetBurstConcurrencyForTests(): void {
 
 export interface BurstConcurrencyOptions {
   name: string;
+  /** Preserve local exemptions by default; private website quotas can explicitly disable them. */
+  skipLocal?: boolean;
   /** 每个身份键允许的在途请求数（默认取 env 或调用方给的保守值）。 */
   maxConcurrent: number;
   /** 429 时给出的 Retry-After（秒）；只是"建议重试"提示，不承诺精确时点。 */
@@ -527,8 +529,8 @@ export function createBurstConcurrencyGuard(opts: BurstConcurrencyOptions): Requ
   burstConcurrencyRegistry.register(opts.name, maxConcurrent);
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    // 与其它限流器同一口径：本机调试/健康检查不参与配额。
-    if (req.isLocalIp) {
+    // Default to the existing local exemption unless this route explicitly requires a hard ceiling.
+    if (opts.skipLocal !== false && req.isLocalIp) {
       next();
       return;
     }

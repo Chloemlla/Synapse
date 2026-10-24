@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import logger from "../utils/logger";
+import { toBrowserCdictAudio } from "./cdictWebAudio";
 import {
   type CDictAudio,
   fetchDictionaryVoice,
@@ -78,6 +79,15 @@ export class CDictController {
 
   /** GET /api/cdict/tts —— source=engine 走在线合成，source=youdao 走词典静态音频；成功回音频字节。 */
   public static async tts(req: Request, res: Response): Promise<void> {
+    return CDictController.speech(req, res, false);
+  }
+
+  /** Website-only conversion; Android retains original audio bytes and caching. */
+  public static async ttsForWeb(req: Request, res: Response): Promise<void> {
+    return CDictController.speech(req, res, true);
+  }
+
+  private static async speech(req: Request, res: Response, forWeb: boolean): Promise<void> {
     const text = firstString(req.query?.text).trim();
     const source = (firstString(req.query?.source).trim() || SOURCE_ENGINE).toLowerCase();
     if (!text) {
@@ -95,7 +105,12 @@ export class CDictController {
     try {
       let audio: CDictAudio;
       if (source === SOURCE_DICTIONARY) {
-        const type = Number.parseInt(firstString(req.query?.type) || "2", 10);
+        const rawType = firstString(req.query?.type) || "2";
+        if (forWeb && !/^[12]$/.test(rawType)) {
+          fail(res, 400, "type 只支持 1（英式）或 2（美式）");
+          return;
+        }
+        const type = Number.parseInt(rawType, 10);
         if (type !== 1 && type !== 2) {
           fail(res, 400, "type 只支持 1（英式）或 2（美式）");
           return;
@@ -109,8 +124,9 @@ export class CDictController {
         }
         audio = await synthesizeSpeech(text, langType);
       }
+      if (forWeb) audio = toBrowserCdictAudio(audio);
       res.setHeader("Content-Type", audio.contentType);
-      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Cache-Control", forWeb ? "private, no-store" : "public, max-age=86400");
       res.status(200).send(audio.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : "语音获取失败";

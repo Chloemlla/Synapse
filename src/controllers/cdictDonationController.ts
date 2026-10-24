@@ -32,7 +32,7 @@ export class CDictDonationController {
         fail(res, 404, "赞赏功能当前未开启");
         return;
       }
-      res.setHeader("Cache-Control", "public, max-age=300");
+      res.setHeader("Cache-Control", res.locals.cdictPrivateResponse ? "private, no-store" : "public, max-age=300");
       res.json({
         success: true,
         notice: config.notice,
@@ -56,6 +56,15 @@ export class CDictDonationController {
    * 后台填了图片地址就 302 到那个地址，客户端自己去图床取图；地址留空时才直接吐内置图片的字节。
    */
   public static async image(req: Request, res: Response): Promise<void> {
+    return CDictDonationController.donationImage(req, res, false);
+  }
+
+  /** Do not redirect an authenticated browser API request (and its security headers) to a third party. */
+  public static async imageForWeb(req: Request, res: Response): Promise<void> {
+    return CDictDonationController.donationImage(req, res, true);
+  }
+
+  private static async donationImage(req: Request, res: Response, forWeb: boolean): Promise<void> {
     const channelId = String(req.params.channel || "");
     try {
       const resolved = await resolveDonationImage(channelId);
@@ -64,12 +73,23 @@ export class CDictDonationController {
         return;
       }
       if (resolved.kind === "redirect") {
-        res.setHeader("Cache-Control", "public, max-age=300");
+        if (forWeb) {
+          // The service validates public HTTPS image URLs. Reject embedded credentials as well.
+          const url = new URL(resolved.url);
+          if (url.protocol !== "https:" || url.username || url.password) {
+            fail(res, 404, "该赞赏渠道当前没有可用的收款码");
+            return;
+          }
+          res.setHeader("Cache-Control", "private, no-store");
+          res.json({ success: true, imageUrl: url.toString() });
+          return;
+        }
+        res.setHeader("Cache-Control", res.locals.cdictPrivateResponse ? "private, no-store" : "public, max-age=300");
         res.redirect(302, resolved.url);
         return;
       }
       res.setHeader("Content-Type", resolved.image.contentType);
-      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.setHeader("Cache-Control", res.locals.cdictPrivateResponse ? "private, no-store" : "public, max-age=3600");
       res.status(200).send(resolved.image.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : "收款码获取失败";

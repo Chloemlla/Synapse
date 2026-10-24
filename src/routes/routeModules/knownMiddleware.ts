@@ -2,6 +2,8 @@ import type { RequestHandler } from "express";
 import { requireAdminScope } from "../../middleware/adminScope";
 import { adminOnly } from "../../middleware/adminOnly";
 import { authenticateToken } from "../../middleware/authenticateToken";
+import { translationAccessMiddleware } from "../../middleware/translationAccessMiddleware";
+import { cdictWebIngressLimiter } from "../../middleware/cdictWebLimiters";
 import { authenticateAdmin, authMiddleware } from "../../middleware/auth";
 import { adminAuthMiddleware, authMiddlewareV2, authenticateSuperAdmin } from "../../middleware/auth";
 import { nexaiRequestSignature } from "../../middleware/nexaiRequestSignature";
@@ -45,6 +47,7 @@ import {
 } from "../../middleware/routeLimiters";
 
 export const knownMountLimiters = new Map<RequestHandler, string>([
+  [cdictWebIngressLimiter, "cdictWebIngressLimiter"],
   [adminLimiter, "adminLimiter"],
   [antaLimiter, "antaLimiter"],
   [authLimiter, "authLimiter"],
@@ -91,6 +94,7 @@ export const knownMountLimiters = new Map<RequestHandler, string>([
  */
 export const knownAuthMiddleware = new Map<RequestHandler, string>([
   [authenticateToken, "authenticateToken"],
+  [translationAccessMiddleware, "translationAccessMiddleware"],
   [authMiddleware, "authMiddleware"],
   [authMiddlewareV2, "authMiddleware"],
   [adminAuthMiddleware, "adminAuthMiddleware"],

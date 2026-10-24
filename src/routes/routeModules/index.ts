@@ -1,6 +1,8 @@
 export { earlyRouteModules } from "./earlyModules";
 export { knownAuthHandlerNames, knownAuthMiddleware, knownMountLimiters } from "./knownMiddleware";
-export { postTamperRouteModules } from "./postTamperModules";
+import { postTamperRouteModules as existingPostTamperModules } from "./postTamperModules";
+import { cdictWebRouteModules } from "./cdictWebModules";
+export const postTamperRouteModules = [...existingPostTamperModules, ...cdictWebRouteModules];
 export { preDocsRouteModules } from "./preDocsModules";
 export { preParserRouteModules } from "./preParserModules";
 export { preTamperRouteModules } from "./preTamperModules";
