@@ -187,6 +187,14 @@ export async function fetchLanguageList(): Promise<unknown> {
     userId: "com.vivo.translator", // SDK KEY_USER_ID is camelCase for language queries.
     imei: "unknown", // SDK fallback, not a real device identifier.
     ...deviceParams(),
+    // HttpParamsUtils and the reverse-engineered 4.5.9.0 manifest, not text-query placeholders.
+    deviceType: "phone",
+    av: "34",
+    an: "14",
+    appVersion: "45900",
+    appVer: "4.5.9.0",
+    sysVer: "unknown",
+    screensize: "1080*2400",
     online: "1",
   });
   const url = `${baseUrl}${LANGUAGE_LIST_PATH}`;

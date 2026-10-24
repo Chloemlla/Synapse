@@ -13,7 +13,7 @@ live("CDict upstream live language protocol", () => {
     const root = !Array.isArray(payload) ? payload as Record<string, unknown> : {};
     for (const key of ["code", "retcode"] as const) {
       if (root[key] !== undefined && Number(root[key]) !== 0) {
-        let message = typeof root.msg === "string" ? root.msg : typeof root.message === "string" ? root.message : "";
+        let message = [root.msg, root.message].find((value): value is string => typeof value === "string" && Boolean(value.trim())) || "";
         const credential = config.cdictUpstream.ttsAppKey;
         if (credential) message = message.replaceAll(credential, "[REDACTED]");
         message = message.replace(/https?:\/\/\S+/gi, "[URL]")

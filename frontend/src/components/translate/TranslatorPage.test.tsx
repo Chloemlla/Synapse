@@ -43,7 +43,7 @@ describe('CDict translator interface', () => {
     expect(screen.getByRole('region', { name: '词典释义' })).toHaveTextContent('释义');
     expect(screen.getByRole('button', { name: '朗读原文' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '朗读译文' })).toBeEnabled();
-    expect(JSON.parse(localStorage.getItem('synapse_deeplx_history')!)[0].provider).toBe('cdict');
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('synapse_deeplx_history') || '[]')[0]?.provider).toBe('cdict'));
   });
   it('converts language codes when switching providers and preserves text', async () => {
     mocks.config.mockResolvedValue({ enabled: true });

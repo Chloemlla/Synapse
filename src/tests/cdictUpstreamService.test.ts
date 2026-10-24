@@ -34,7 +34,7 @@ it("sends the complete documented SDK language query including online and camelC
   const [rawUrl, options] = get.mock.calls[0];
   const url = new URL(rawUrl);
   expect(url.origin + url.pathname).toBe("https://vivotrans.vivo.com/translation/lang/list");
-  for (const [key, value] of Object.entries({ appId: "9023957766", app: "com.vivo.translator", userId: "com.vivo.translator", imei: "unknown", online: "1", model: "V2309A", em: "00000000000000" })) {
+  for (const [key, value] of Object.entries({ appId: "9023957766", app: "com.vivo.translator", userId: "com.vivo.translator", imei: "unknown", online: "1", model: "V2309A", em: "00000000000000", deviceType: "phone", av: "34", an: "14", appVersion: "45900", appVer: "4.5.9.0", screensize: "1080*2400" })) {
     expect(url.searchParams.get(key)).toBe(value);
   }
   expect(url.searchParams.has("user_id")).toBe(false);
