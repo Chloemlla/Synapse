@@ -242,8 +242,17 @@ jobs:
           pnpm --dir frontend install --frozen-lockfile --ignore-scripts
 
       - name: Website authentication and native CDict isolation
-        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware'
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware|rc47'
 
       - name: Website translation and pronunciation regression
         if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
-        run: pnpm --dir frontend exec vitest run src/components/translate/ src/api/cdict.test.ts src/tests/auditComponents12Async.test.tsx
+        run: pnpm --dir frontend exec vitest run src/components/translate/ src/api/cdict.test.ts src/tests/auditComponents12Async.test.tsx CDictUpstream
+
+
+      - name: Real CDict upstream language-list protocol
+        if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
+        env:
+          CDICT_LIVE_LANGUAGE_CHECK: "1"
+        # Unlike the mocked website contract tests, this makes one actual public
+        # upstream request. HTTP 405 or an empty/error payload must fail the step.
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns=cdictUpstreamLiveLanguages

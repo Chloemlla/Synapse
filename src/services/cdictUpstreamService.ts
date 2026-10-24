@@ -1,5 +1,9 @@
 import axios, { type AxiosResponse } from "axios";
 import crypto from "node:crypto";
+import { lookup } from "node:dns";
+import https from "node:https";
+import { config } from "../config/config";
+import { isPublicCdictUpstreamAddress, normalizeCdictUpstreamUrl } from "../config/cdictUpstreamConfig";
 import logger from "../utils/logger";
 
 /**
@@ -10,17 +14,8 @@ import logger from "../utils/logger";
  * 可通过环境变量覆盖（VIVO_TRANSLATE_* / VIVO_TTS_*）。
  */
 
-const TRANSLATE_BASE_URL = (process.env.VIVO_TRANSLATE_BASE_URL || "https://vivotrans.vivo.com").trim();
-const TRANSLATE_APP_ID = (process.env.VIVO_TRANSLATE_APP_ID || "9023957766").trim();
 const TRANSLATE_PATH = "/translation/query";
 const LANGUAGE_LIST_PATH = "/translation/lang/list";
-
-const TTS_URL = (process.env.VIVO_TTS_URL || "https://vivotrans.vivo.com.cn/fy/tts").trim();
-const TTS_APP_ID = (process.env.VIVO_TTS_APP_ID || "1336541186").trim();
-// G7-42: no hardcoded default for the signing key. A literal third-party appKey
-// in the source tree leaks into dist/ and images; if unset, TTS is disabled with
-// a clear error instead of signing with a public fallback.
-const TTS_APP_KEY = (process.env.VIVO_TTS_APP_KEY || "").trim();
 
 const YOUDAO_VOICE_URL = "https://dict.youdao.com/dictvoice";
 const UPSTREAM_TIMEOUT_MS = 20000;
@@ -105,39 +100,67 @@ function deviceParams(): Record<string, string> {
 }
 
 function extractUpstreamError(error: unknown, fallback: string): string {
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const payload = error.response?.data;
-    const detail =
-      typeof payload === "string"
-        ? payload.slice(0, 200)
-        : (payload as Record<string, unknown> | undefined)?.message ||
-          (payload as Record<string, unknown> | undefined)?.msg ||
-          error.message;
-    return status ? `${fallback}（上游 HTTP ${status}）: ${String(detail)}` : `${fallback}: ${String(detail)}`;
-  }
-  return `${fallback}: ${error instanceof Error ? error.message : String(error)}`;
+  // Axios error.message/config and upstream payloads may echo credentials. Keep
+  // only the HTTP status for diagnosis; never forward arbitrary upstream details.
+  const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+  return Number.isInteger(status) ? `${fallback}（上游 HTTP ${status}）` : fallback;
 }
+
+/** Check DNS at the connection itself and use that checked address (no rebinding gap). */
+const publicHttpsAgent = new https.Agent({
+  keepAlive: false,
+  autoSelectFamily: false,
+  lookup(hostname, options, callback) {
+    lookup(hostname, { all: true, verbatim: true }, (error, addresses) => {
+      if (error || addresses.length === 0 || addresses.some(({ address }) => !isPublicCdictUpstreamAddress(address))) {
+        callback(new Error("CDict upstream public address lookup failed"), "", 4);
+        return;
+      }
+      const family: unknown = typeof options === "number" ? options : options.family;
+      const requestedFamily = family === "IPv4" ? 4 : family === "IPv6" ? 6 : Number(family || 0);
+      const candidates = addresses.filter((entry) => !requestedFamily || requestedFamily === entry.family);
+      const selected = candidates.find((entry) => entry.family === 4) || candidates[0];
+      if (!selected) {
+        callback(new Error("CDict upstream public address lookup failed"), "", 4);
+        return;
+      }
+      callback(null, selected.address, selected.family);
+    });
+  },
+});
+
+const SAFE_UPSTREAM_OPTIONS = {
+  httpsAgent: publicHttpsAgent,
+  // Environment proxies and redirects must not bypass the checked target or send
+  // signed bodies to a second host. No browser credentials are ever forwarded.
+  proxy: false as const,
+  maxRedirects: 0,
+  maxBodyLength: 512 * 1024,
+};
 
 /** 文本翻译：请求体字段与顺序完全复刻客户端历史请求；响应体原样透传。 */
 export async function translateText(input: CDictTranslateInput): Promise<Record<string, unknown>> {
+  const upstream = { ...config.cdictUpstream };
+  const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
   const body = encodeForm({
     text: input.text,
     from: input.from,
     to: input.to,
     requestId: crypto.randomUUID(),
-    appId: TRANSLATE_APP_ID,
+    appId: upstream.translateAppId,
     app: "com.vivo.translator",
     user_id: "com.vivo.translator",
     ...deviceParams(),
   });
   try {
     const response: AxiosResponse<Record<string, unknown>> = await axios.post(
-      `${TRANSLATE_BASE_URL}${TRANSLATE_PATH}`,
+      `${baseUrl}${TRANSLATE_PATH}`,
       body,
       {
+        ...SAFE_UPSTREAM_OPTIONS,
         timeout: UPSTREAM_TIMEOUT_MS,
         headers: {
+          Accept: "application/json",
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": UPSTREAM_USER_AGENT,
           "Content-Length": Buffer.byteLength(body, "utf8").toString(),
@@ -154,14 +177,22 @@ export async function translateText(input: CDictTranslateInput): Promise<Record<
   }
 }
 
-/** 语言列表：设备参数走查询串，与客户端历史请求一致；响应体原样透传。 */
+/** The gateway rejects GET (405). Device fields belong in a POST form, not in the URL. */
 export async function fetchLanguageList(): Promise<unknown> {
+  const upstream = { ...config.cdictUpstream };
+  const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
+  const body = encodeForm(deviceParams());
   try {
-    const response = await axios.get(`${TRANSLATE_BASE_URL}${LANGUAGE_LIST_PATH}?${encodeForm(deviceParams())}`, {
+    const response = await axios.post(`${baseUrl}${LANGUAGE_LIST_PATH}`, body, {
+      ...SAFE_UPSTREAM_OPTIONS,
       timeout: UPSTREAM_TIMEOUT_MS,
-      headers: { "User-Agent": UPSTREAM_USER_AGENT },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body, "utf8").toString(),
+        "User-Agent": UPSTREAM_USER_AGENT,
+      },
       responseType: "json",
-      // G7-17: bound the response body.
       maxContentLength: 2 * 1024 * 1024,
     });
     return response.data ?? {};
@@ -176,12 +207,12 @@ export async function fetchLanguageList(): Promise<unknown> {
  *   2. hmacHex = hex(HMAC-SHA256(appKey, 拼接串))
  *   3. sign = hex(MD5(hmacHex + "&key=" + appKey))
  */
-function ttsSignature(params: string): string {
-  if (!TTS_APP_KEY) {
+function ttsSignature(params: string, appKey: string): string {
+  if (!appKey) {
     throw new Error("VIVO_TTS_APP_KEY 未配置，语音合成功能不可用");
   }
-  const hmacHex = crypto.createHmac("sha256", TTS_APP_KEY).update(params, "utf8").digest("hex");
-  return crypto.createHash("md5").update(`${hmacHex}&key=${TTS_APP_KEY}`, "utf8").digest("hex");
+  const hmacHex = crypto.createHmac("sha256", appKey).update(params, "utf8").digest("hex");
+  return crypto.createHash("md5").update(`${hmacHex}&key=${appKey}`, "utf8").digest("hex");
 }
 
 function detectAudioContentType(data: Buffer): string {
@@ -194,12 +225,14 @@ function detectAudioContentType(data: Buffer): string {
 
 /** 在线合成引擎：成功返回音频字节；上游以 {"errorResult":{…}} 拒绝时抛错。 */
 export async function synthesizeSpeech(text: string, langType: string): Promise<CDictAudio> {
+  const upstream = { ...config.cdictUpstream };
+  const ttsUrl = normalizeCdictUpstreamUrl(upstream.ttsUrl, "ttsUrl");
   const taskId = crypto.randomUUID().replace(/-/g, "");
   const nonce = randomAlphanumeric(16);
   const textB64 = Buffer.from(text, "utf8").toString("base64");
-  const signedParams = `appId=${TTS_APP_ID}&deviceid=${TTS_DEVICE_ID}&nonce_str=${nonce}&taskid=${taskId}&text=${textB64}`;
+  const signedParams = `appId=${upstream.ttsAppId}&deviceid=${TTS_DEVICE_ID}&nonce_str=${nonce}&taskid=${taskId}&text=${textB64}`;
   const body = JSON.stringify({
-    appId: TTS_APP_ID,
+    appId: upstream.ttsAppId,
     deviceid: TTS_DEVICE_ID,
     taskid: taskId,
     nonce_str: nonce,
@@ -212,7 +245,7 @@ export async function synthesizeSpeech(text: string, langType: string): Promise<
     langType,
     text: textB64,
     encoding: "utf-8",
-    sign: ttsSignature(signedParams),
+    sign: ttsSignature(signedParams, upstream.ttsAppKey),
     sysVer: "14",
     product: "PD2243",
     model: "V2309A",
@@ -221,7 +254,8 @@ export async function synthesizeSpeech(text: string, langType: string): Promise<
   });
   let response: AxiosResponse<ArrayBuffer>;
   try {
-    response = await axios.post(TTS_URL, body, {
+    response = await axios.post(ttsUrl, body, {
+      ...SAFE_UPSTREAM_OPTIONS,
       timeout: UPSTREAM_TIMEOUT_MS,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
@@ -238,9 +272,8 @@ export async function synthesizeSpeech(text: string, langType: string): Promise<
   if (data.length === 0) throw new Error("上游语音合成返回空音频");
   const head = data.subarray(0, 1024).toString("utf8");
   if (head.includes("errorResult")) {
-    const code = /"errorCode"\s*:\s*"?([^,"}\s]+)"?/.exec(head)?.[1];
-    const message = /"errorMsg"\s*:\s*"([^"]*)"/.exec(head)?.[1];
-    throw new Error(`上游语音合成拒绝 errorCode=${code ?? "-"} errorMsg=${message ?? "-"}`);
+    // Do not echo errorMsg or arbitrary errorCode values: upstream may include keys.
+    throw new Error("上游语音合成拒绝请求");
   }
   return { contentType: detectAudioContentType(data), data };
 }

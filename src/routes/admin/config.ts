@@ -1,6 +1,7 @@
 import express from "express";
 import { adminController } from "../../controllers/adminController";
 import { CDictDonationController } from "../../controllers/cdictDonationController";
+import { cdictUpstreamConfigController } from "../../controllers/cdictUpstreamConfigController";
 import { ttsProviderController } from "../../controllers/ttsProviderController";
 import { authenticateSuperAdmin } from "../../middleware/auth";
 import { auditLog } from "../../middleware/auditLog";
@@ -577,6 +578,31 @@ router.delete(
   auditLog({ module: "security", action: "security.region-policy.delete" }),
   adminController.deleteRegionPolicySetting,
 );
+// Authentication + env-page scope + adminLimiter are supplied by the admin mount.
+router.get(
+  "/cdict-upstream/setting",
+  auditLog({ module: "config", action: "config.cdict-upstream.read", captureBody: false }),
+  cdictUpstreamConfigController.getSetting,
+);
+router.post(
+  "/cdict-upstream/setting",
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount
+  requireAllowedOriginForWrites,
+  authenticateSuperAdmin,
+  auditLog({ module: "config", action: "config.cdict-upstream.set", captureBody: false }),
+  requireSecuritySession,
+  cdictUpstreamConfigController.setSetting,
+);
+router.delete(
+  "/cdict-upstream/setting",
+  // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount
+  requireAllowedOriginForWrites,
+  authenticateSuperAdmin,
+  auditLog({ module: "config", action: "config.cdict-upstream.delete", captureBody: false }),
+  requireSecuritySession,
+  cdictUpstreamConfigController.deleteSetting,
+);
+
 router.get("/cdict-signing/setting", adminController.getCdictSigningSetting);
 router.post(
   "/cdict-signing/setting",

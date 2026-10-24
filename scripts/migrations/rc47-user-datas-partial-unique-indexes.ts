@@ -3,10 +3,10 @@
  *
  * 为什么还要留手工入口：
  *   - 排障时想先看状态而不改库（`--dry-run`）；
- *   - 迁移曾被判 `blocked`（如活跃账号有重复邮箱），人工去重后需要主动重跑（`--force`）；
+ *   - 迁移曾被判 blocked/failed，解决冲突后主动重试（下次启动也会自动重试）；
  *   - 有人手工删坏了索引，需要复查（`--reverify`）。
  *
- * 与启动期同一套实现（`rc47UserDataPartialUniqueIndexes`），不重复写第二份索引逻辑 ——
+ * 与启动期共用 RC47_USER_DATA_MIGRATIONS（原迁移 + 独立版本化索引修复），不重复索引逻辑 ——
  * 两份实现必然漂移，这是本仓已经反复踩过的坑。
  *
  * 用法：
@@ -16,7 +16,7 @@
  */
 import { connectMongo } from "../../src/services/mongoService";
 import { runSchemaMigrations } from "../../src/services/migrationRunner";
-import { rc47UserDataPartialUniqueIndexes } from "../../src/services/migrations/rc47UserDataPartialUniqueIndexes";
+import { RC47_USER_DATA_MIGRATIONS } from "../../src/services/migrations/rc47UserDataPartialUniqueIndexes";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   await connectMongo();
 
   const results = await runSchemaMigrations({
-    migrations: [rc47UserDataPartialUniqueIndexes],
+    migrations: RC47_USER_DATA_MIGRATIONS,
     dryRun,
     force,
   });

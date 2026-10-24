@@ -157,6 +157,26 @@ export interface NexaiSigningConfigSetting {
 
 export type CDictSigningConfigSetting = NexaiSigningConfigSetting;
 
+/** GET config: the key is masked metadata, never an editable draft value. */
+export interface CDictUpstreamConfigSetting {
+  translateBaseUrl: string;
+  translateAppId: string;
+  ttsUrl: string;
+  ttsAppId: string;
+  ttsAppKey: string;
+  hasTtsAppKey: boolean;
+}
+
+export interface CDictUpstreamConfigUpdate {
+  translateBaseUrl: string;
+  translateAppId: string;
+  ttsUrl: string;
+  ttsAppId: string;
+  /** Omit a blank key to preserve the current value. */
+  ttsAppKey?: string;
+  clearTtsAppKey?: true;
+}
+
 /** GET /api/admin/proxycheck/setting 返回体里的 config 对象（updatedAt 在其同级 setting 下，不在本对象内）。 */
 export interface ProxycheckConfigSetting {
   enabled: boolean;

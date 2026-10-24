@@ -26,6 +26,7 @@ import {
   type TtsRuntimeConfig,
 } from "./runtimeConfigDefaults";
 import type { TtsProviderRuntimeConfig } from "./ttsProviderConfig";
+import { buildCdictUpstreamDefaultsFromEnv, type CdictUpstreamRuntimeConfig } from "./cdictUpstreamConfig";
 import { buildLumenConfigFromEnv } from "./lumen";
 import { applyAdminEnvOverlay } from "./env";
 import {
@@ -318,7 +319,7 @@ export const compileTimeConfig = Object.freeze({
   audioDir: path.join(process.cwd(), "finish"),
   dataDir: path.join(process.cwd(), "data"),
   logsDir: path.join(process.cwd(), "logs"),
-  runtimeMutableKeys: ["IPQS", "LINUXDO", "GOOGLE_AUTH", "DEEPLX", "NEXAI", "TTS", "TTS_PROVIDER", "EMAIL", "ADMIN_SECURITY", "SYNAPSE_ANDROID", "NEXAI_SIGNING", "CDICT_SIGNING", "QQ_GUARD_SIGNING", "LUMEN", "PROXYCHECK"] as const,
+  runtimeMutableKeys: ["IPQS", "LINUXDO", "GOOGLE_AUTH", "DEEPLX", "NEXAI", "TTS", "TTS_PROVIDER", "EMAIL", "ADMIN_SECURITY", "SYNAPSE_ANDROID", "NEXAI_SIGNING", "CDICT_SIGNING", "CDICT_UPSTREAM", "QQ_GUARD_SIGNING", "LUMEN", "PROXYCHECK"] as const,
 });
 
 const runtimeDefaults = buildRuntimeConfigDefaults({
@@ -400,6 +401,10 @@ runtimeDefaults.cdictSigning = {
     return Number.isFinite(n) && n > 0 ? Math.round(n) : runtimeDefaults.cdictSigning.maxDriftMs;
   })(),
 };
+
+// Capture all five deployment knobs in runtime defaults, not just in module constants.
+// Stored overrides (including an empty TTS key) survive the shared periodic DB refresh.
+runtimeDefaults.cdictUpstream = buildCdictUpstreamDefaultsFromEnv(process.env);
 
 // QQ 群纪律机器人控制通道共享密钥默认来自 env；已存 QQ_GUARD_SIGNING 文档覆盖之。
 // 用 process.env（非 parsedEnv schema）是因为这两项尚未进入 env 校验白名单。
@@ -588,6 +593,9 @@ export const runtimeMutableConfig = {
   get cdictSigning(): CdictSigningRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().cdictSigning;
   },
+  get cdictUpstream(): CdictUpstreamRuntimeConfig {
+    return RuntimeConfigService.getCachedConfig().cdictUpstream;
+  },
   get tts(): TtsRuntimeConfig {
     return RuntimeConfigService.getCachedConfig().tts;
   },
@@ -687,6 +695,9 @@ export const config = {
   },
   get nexai() {
     return runtimeMutableConfig.nexai;
+  },
+  get cdictUpstream() {
+    return runtimeMutableConfig.cdictUpstream;
   },
   get tts() {
     return runtimeMutableConfig.tts;

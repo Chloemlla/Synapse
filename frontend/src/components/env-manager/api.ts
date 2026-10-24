@@ -31,6 +31,7 @@ export const PROXYCHECK_API = `${API_BASE_URL}/api/admin/proxycheck/setting`;
 export const REGISTRATION_INVITE_API = `${API_BASE_URL}/api/admin/registration-invite/setting`;
 export const FIRST_VISIT_VERIFICATION_API = `${API_BASE_URL}/api/admin/first-visit-verification/setting`;
 export const CDICT_SIGNING_API = `${API_BASE_URL}/api/admin/cdict-signing/setting`;
+export const CDICT_UPSTREAM_API = `${API_BASE_URL}/api/admin/cdict-upstream/setting`;
 export const SYNAPSE_ANDROID_API = `${API_BASE_URL}/api/admin/synapse-android/setting`;
 export const CDICT_DONATION_API = `${API_BASE_URL}/api/admin/cdict-donation/setting`;
 export const CDICT_DONATION_CLAIMS_API = `${API_BASE_URL}/api/admin/cdict-donation/claims`;

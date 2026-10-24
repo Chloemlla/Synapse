@@ -34,6 +34,13 @@ import {
   type TtsProviderOption,
   type TtsProviderRuntimeConfig,
 } from "../config/ttsProviderConfig";
+import {
+  CdictUpstreamValidationError,
+  maskedCdictUpstreamSetting,
+  mergeCdictUpstreamUpdate,
+  normalizeStoredCdictUpstreamConfig,
+} from "../config/cdictUpstreamConfig";
+import { validatePublicUrl } from "../utils/ssrfGuard";
 import { formatFishAudioCatalogCurl } from "../config/fishAudioCatalog";
 import { resolveEdgeVoiceOptions } from "../tts/edge/edge.voices";
 import { type RuntimeConfigKey, RuntimeConfigModel } from "../models/runtimeConfigModel";
@@ -485,6 +492,7 @@ const RUNTIME_CONFIG_KEY_TO_PROP: Partial<Record<RuntimeConfigKey, keyof Runtime
   SYNAPSE_ANDROID: "synapseAndroid",
   NEXAI_SIGNING: "nexaiSigning",
   CDICT_SIGNING: "cdictSigning",
+  CDICT_UPSTREAM: "cdictUpstream",
   QQ_GUARD_SIGNING: "qqGuardSigning",
   PROXYCHECK: "proxycheck",
   REGISTRATION_INVITE: "registrationInvite",
@@ -1060,6 +1068,9 @@ function applyCacheForKey(target: RuntimeConfigDefaults, key: RuntimeConfigKey, 
     case "CDICT_SIGNING":
       target.cdictSigning = normalizeStoredCdictSigningConfig(value);
       return;
+    case "CDICT_UPSTREAM":
+      target.cdictUpstream = normalizeStoredCdictUpstreamConfig(value, runtimeConfigDefaults.cdictUpstream);
+      return;
     case "QQ_GUARD_SIGNING":
       target.qqGuardSigning = normalizeStoredQqGuardSigningConfig(value);
       return;
@@ -1119,6 +1130,7 @@ const RUNTIME_CONFIG_KEYS: readonly RuntimeConfigKey[] = [
   "SYNAPSE_ANDROID",
   "NEXAI_SIGNING",
   "CDICT_SIGNING",
+  "CDICT_UPSTREAM",
   "QQ_GUARD_SIGNING",
   "LUMEN",
   "PROXYCHECK",
@@ -1192,6 +1204,9 @@ export class RuntimeConfigService {
     }
     if (!loadedKeys.has("CDICT_SIGNING")) {
       runtimeConfigCache.cdictSigning = cloneRuntimeConfigDefaults(defaults).cdictSigning;
+    }
+    if (!loadedKeys.has("CDICT_UPSTREAM")) {
+      runtimeConfigCache.cdictUpstream = { ...defaults.cdictUpstream };
     }
     if (!loadedKeys.has("QQ_GUARD_SIGNING")) {
       runtimeConfigCache.qqGuardSigning = cloneRuntimeConfigDefaults(defaults).qqGuardSigning;
@@ -2410,6 +2425,45 @@ export class RuntimeConfigService {
     runtimeConfigCache.regionPolicy = cloneRuntimeConfigDefaults(runtimeConfigDefaults).regionPolicy;
     loadedKeys.delete("REGION_POLICY");
     invalidateHotCache("REGION_POLICY");
+  }
+
+  static async getCdictUpstreamSetting() {
+    const doc = await readRuntimeConfigDoc("CDICT_UPSTREAM");
+    const config = normalizeStoredCdictUpstreamConfig(doc?.value, runtimeConfigDefaults.cdictUpstream);
+    runtimeConfigCache.cdictUpstream = config;
+    return { setting: { config: maskedCdictUpstreamSetting(config), updatedAt: doc?.updatedAt?.toISOString() } };
+  }
+
+  static async setCdictUpstreamSetting(input: unknown): Promise<{ updatedAt: string }> {
+    const doc = await readRuntimeConfigDoc("CDICT_UPSTREAM");
+    const current = normalizeStoredCdictUpstreamConfig(doc?.value, runtimeConfigDefaults.cdictUpstream);
+    const next = mergeCdictUpstreamUpdate(input, current);
+    // Save-time DNS validation gives administrators immediate feedback. Transport also
+    // checks the actual socket lookup, so rebinding after saving cannot bypass this.
+    for (const url of [next.translateBaseUrl, next.ttsUrl]) {
+      if (!(await validatePublicUrl(url)).ok) {
+        throw new CdictUpstreamValidationError("上游地址必须指向可解析的公网 HTTPS 服务");
+      }
+    }
+    const { updatedAt } = await writeRuntimeConfigDoc(
+      "CDICT_UPSTREAM", next as unknown as Record<string, unknown>, doc?.updatedAt,
+    ).catch(() => {
+      // Mongo validation/write errors can include the update document. Do not let
+      // a caller accidentally log or expose the credential-bearing exception.
+      throw new Error("保存 CDict 上游配置失败，请刷新后重试");
+    });
+    runtimeConfigCache.cdictUpstream = next;
+    loadedKeys.add("CDICT_UPSTREAM");
+    invalidateHotCache("CDICT_UPSTREAM");
+    initialized = true;
+    return { updatedAt: updatedAt.toISOString() };
+  }
+
+  static async deleteCdictUpstreamSetting(): Promise<void> {
+    await RuntimeConfigModel.deleteOne({ key: "CDICT_UPSTREAM" }).exec(); // soft-delete-exempt: 重置部署默认配置，非用户数据
+    runtimeConfigCache.cdictUpstream = { ...runtimeConfigDefaults.cdictUpstream };
+    loadedKeys.delete("CDICT_UPSTREAM");
+    invalidateHotCache("CDICT_UPSTREAM");
   }
 
   static async getCdictSigningSetting(): Promise<{

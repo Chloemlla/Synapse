@@ -56,6 +56,22 @@
 
 署名申请提交 `transactionId` 和 `displayName`，由后端继续执行原有格式校验、幂等规则与提交限流。站点不宣称已核实付款；是否加入鸣谢名单仍由管理员核实。
 
+## 管理后台上游配置
+
+env-manager 的「CDict 翻译与朗读配置」支持全部现有上游环境项：
+
+| 环境默认值 | 后台字段 | 用途 |
+| --- | --- | --- |
+| `VIVO_TRANSLATE_BASE_URL` | `translateBaseUrl` | 翻译及语言列表的服务地址 |
+| `VIVO_TRANSLATE_APP_ID` | `translateAppId` | 翻译应用标识 |
+| `VIVO_TTS_URL` | `ttsUrl` | 在线朗读服务地址 |
+| `VIVO_TTS_APP_ID` | `ttsAppId` | 在线朗读应用标识 |
+| `VIVO_TTS_APP_KEY` | `ttsAppKey` | 在线朗读凭据 |
+
+管理员接口为 `GET / POST / DELETE /api/admin/cdict-upstream/setting`。读取时密钥仅脱敏展示，并提供 `hasTtsAppKey` 状态；只有超级管理员可写入或重置，并沿用网站安全验证。新密钥输入留空表示保留已有值，勾选明确清除会使在线引擎不可用，删除整个后台覆盖则恢复部署环境默认值。保存后后续请求读取当前运行期配置，不依赖服务重启。现有 CDict 客户端请求签名与赞赏配置分区仍单独维护。
+
+网站和 Android 继续使用 GET 获取后端语言列表；只有服务端到上游的语言列表调用使用 POST，不要求客户端改变请求方法。
+
 ## 验证
 
 后端回归覆盖网站会话鉴权、翻译限制、原生签名隔离、端点委派和 PCM/WAV 兼容；前端回归覆盖 CDict 返回值归一化、语言和提供方切换、认证 API 路径、发音请求及资源清理。所有构建与测试只由 GitHub Actions 执行，具体通过结论以当前提交的 CI job / step 为准。

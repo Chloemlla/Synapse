@@ -2,7 +2,7 @@ import validator from "validator";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { mongoose } from "./mongoService";
 import logger from "../utils/logger";
-import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted } from "../utils/softDeleteState";
+import { USER_DELETED_FIELD, activeUserFilter, isSoftDeleted, ACTIVE_USER_PARTIAL_FILTER } from "../utils/softDeleteState";
 import { normalizeEmailCanonical, retireIdentity } from "./blockedIdentityService";
 import { checkAnyLegalHold } from "./legalHoldService";
 import { purgePixelTelemetryUnlessHeld } from "../pixel/evidenceHoldService";
@@ -146,31 +146,15 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ role: 1, createdAt: 1 });
 
-/**
- * 「活跃账号」的部分索引过滤条件（RC-47）。
- *
- * 语义上等价于 `utils/softDeleteState.ts` 的 `activeUserFilter()`（`$in: [0, null]`），
- * 但这里刻意改用 `$or` + 等值/`$exists` 这组**部分索引最保守的子集**：
- * partialFilterExpression 只允许有限运算符，用最保守的写法能避开“表达式被拒 → 索引建不出来”
- * 这类只在线上才会发作的故障。
- *
- * ⚠ 不能用 `{ deletedAt: { $eq: null } }`：本模型的 deletedAt 是**数字 0** 表示未删除，
- * `$eq: null` 只匹配「缺失或 null」，**不会匹配 0** —— 那样索引会把全部存量活跃账号排除在外，
- * 等于把邮箱唯一性直接取消（比它要解决的洗白问题更严重）。
- */
-const ACTIVE_USER_PARTIAL_FILTER = {
-  $or: [{ deletedAt: 0 }, { deletedAt: { $exists: false } }],
-};
-
 // 唯一性只在活跃账号之间成立；已软删除的账号不再占着邮箱/用户名（否则无法重注）。
 // 是否允许重注由 blocked_identities 墓碑在应用层裁决。
 userSchema.index(
   { email: 1 },
-  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER },
+  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER, collation: { locale: "simple" } },
 );
 userSchema.index(
   { username: 1 },
-  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER },
+  { unique: true, partialFilterExpression: ACTIVE_USER_PARTIAL_FILTER, collation: { locale: "simple" } },
 );
 
 const UserModel = mongoose.models.User || mongoose.model("User", userSchema);

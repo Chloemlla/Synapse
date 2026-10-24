@@ -18,6 +18,8 @@ const SENSITIVE_AUDIT_FIELDS_EXACT = new Set(
     "clientsecret",
     "authorization",
     "apikey",
+    "ttsAppKey",
+    "VIVO_TTS_APP_KEY",
     "jwt",
     "refreshtoken",
     "accesstoken",

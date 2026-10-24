@@ -40,6 +40,15 @@ export function activeUserFilter(): Record<string, unknown> {
   return activeRecordFilter(USER_DELETED_FIELD);
 }
 
+/**
+ * 活跃用户的部分唯一索引判据（RC-47），由 schema 与迁移共用。
+ * null 等值同时匹配显式 null 和缺失字段；0 分支不可省略。
+ * 不用 $exists:false：Mongo 在部分索引中将它展开为不支持的 $not。
+ */
+export const ACTIVE_USER_PARTIAL_FILTER = {
+  $or: [{ [USER_DELETED_FIELD]: 0 }, { [USER_DELETED_FIELD]: null }],
+};
+
 /** 「已软删除」判据。 */
 export function deletedRecordFilter(field: string = SUBJECT_DELETED_FIELD): Record<string, unknown> {
   return { [field]: { $gt: 0 } };

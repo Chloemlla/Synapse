@@ -25,6 +25,7 @@ import SelfContainedGoogleClientIdsSection from './env-manager/SelfContainedGoog
 import SelfContainedSynapseAndroidConfigSection from './env-manager/SelfContainedSynapseAndroidConfigSection';
 import SelfContainedCDictDonationConfigSection from './env-manager/SelfContainedCDictDonationConfigSection';
 import SelfContainedCDictSigningConfigSection from './env-manager/SelfContainedCDictSigningConfigSection';
+import SelfContainedCDictUpstreamConfigSection from './env-manager/SelfContainedCDictUpstreamConfigSection';
 import SelfContainedNexaiSigningConfigSection from './env-manager/SelfContainedNexaiSigningConfigSection';
 import SelfContainedQqGuardSigningConfigSection from './env-manager/SelfContainedQqGuardSigningConfigSection';
 import SelfContainedProxycheckConfigSection from './env-manager/SelfContainedProxycheckConfigSection';
@@ -560,6 +561,7 @@ const EnvManager: React.FC = () => {
         <SelfContainedSynapseAndroidConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedCDictDonationConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedCDictSigningConfigSection prefersReducedMotion={prefersReducedMotion} />
+        <SelfContainedCDictUpstreamConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedNexaiSigningConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedQqGuardSigningConfigSection prefersReducedMotion={prefersReducedMotion} />
         <SelfContainedProxycheckConfigSection prefersReducedMotion={prefersReducedMotion} />

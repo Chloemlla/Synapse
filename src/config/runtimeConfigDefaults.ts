@@ -1,3 +1,4 @@
+import { CDICT_UPSTREAM_DEFAULTS, type CdictUpstreamRuntimeConfig } from "./cdictUpstreamConfig";
 import {
   EDGE_DEFAULT_BASE_URL,
   EDGE_DEFAULT_VOICE,
@@ -455,6 +456,7 @@ export interface RuntimeConfigDefaults {
   synapseAndroid: SynapseAndroidRuntimeConfig;
   nexaiSigning: NexaiSigningRuntimeConfig;
   cdictSigning: CdictSigningRuntimeConfig;
+  cdictUpstream: CdictUpstreamRuntimeConfig;
   qqGuardSigning: QqGuardSigningRuntimeConfig;
   proxycheck: ProxycheckRuntimeConfig;
   registrationInvite: RegistrationInviteRuntimeConfig;
@@ -620,6 +622,7 @@ export function buildRuntimeConfigDefaults(options: {
       appSignSecretPrev: "",
       maxDriftMs: 5 * 60 * 1000,
     },
+    cdictUpstream: { ...CDICT_UPSTREAM_DEFAULTS },
     qqGuardSigning: {
       token: "",
       alertEmails: "",
@@ -825,6 +828,7 @@ export function cloneRuntimeConfigDefaults(config: RuntimeConfigDefaults): Runti
     cdictSigning: {
       ...config.cdictSigning,
     },
+    cdictUpstream: { ...config.cdictUpstream },
     qqGuardSigning: {
       ...config.qqGuardSigning,
     },
