@@ -11,6 +11,7 @@ jest.mock("node:dns", () => ({ ...jest.requireActual("node:dns"), lookup: jest.f
 jest.mock("../utils/logger", () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 const post = jest.mocked(axios.post);
+const get = jest.mocked(axios.get);
 const baseline = { ...config.cdictUpstream };
 function useConfig(patch: Partial<CdictUpstreamRuntimeConfig>) {
   RuntimeConfigService.getCachedConfig().cdictUpstream = { ...CDICT_UPSTREAM_DEFAULTS, ...patch };
@@ -18,43 +19,67 @@ function useConfig(patch: Partial<CdictUpstreamRuntimeConfig>) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  get.mockReset().mockResolvedValue({ data: ["en"] });
+  post.mockReset();
   jest.mocked(axios.isAxiosError).mockImplementation((error): error is AxiosError => Boolean(error && (error as { isAxiosError?: boolean }).isAxiosError));
   useConfig({});
 });
 afterAll(() => { RuntimeConfigService.getCachedConfig().cdictUpstream = baseline; });
 
-it("POSTs the app identity and exact form-encoded device body, never GET or a query string", async () => {
-  const payload = { code: 0, data: { list: [{ langCode: "en", extra: "preserved" }] }, untouched: [1, 2] };
+it("sends the complete documented SDK language query including online and camelCase userId", async () => {
+  const payload = { code: 0, data: { langs: ["en"] }, untouched: [1, 2] };
+  get.mockResolvedValueOnce({ data: payload });
+  expect(await fetchLanguageList()).toBe(payload);
+  expect(post).not.toHaveBeenCalled();
+  const [rawUrl, options] = get.mock.calls[0];
+  const url = new URL(rawUrl);
+  expect(url.origin + url.pathname).toBe("https://vivotrans.vivo.com/translation/lang/list");
+  for (const [key, value] of Object.entries({ appId: "9023957766", app: "com.vivo.translator", userId: "com.vivo.translator", imei: "unknown", online: "1", model: "V2309A", em: "00000000000000" })) {
+    expect(url.searchParams.get(key)).toBe(value);
+  }
+  expect(url.searchParams.has("user_id")).toBe(false);
+  expect(options).toMatchObject({ headers: { Accept: "application/json", "User-Agent": "okhttp/4.9.1" },
+    timeout: 20_000, responseType: "json", maxContentLength: 2 * 1024 * 1024, maxRedirects: 0, proxy: false });
+});
+
+it("retries only an HTTP405 once as a form POST with exactly the same SDK parameters", async () => {
+  get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 405 } });
+  const payload = { code: 0, data: { langs: ["en", "zh-CHS"] } };
   post.mockResolvedValueOnce({ data: payload });
   expect(await fetchLanguageList()).toBe(payload);
-  expect(axios.get).not.toHaveBeenCalled();
+  expect(get).toHaveBeenCalledTimes(1);
   expect(post).toHaveBeenCalledTimes(1);
   const [url, body, options] = post.mock.calls[0];
   expect(url).toBe("https://vivotrans.vivo.com/translation/lang/list");
-  expect(body).toBe("appId=9023957766&em=00000000000000&model=V2309A&product=PD2243&deviceType=mobile&elapsedtime=0&av=1&an=1.0.0&cs=0&sysVer=14&appVersion=1&appVer=1.0.0&appPkgName=com.vivo.translator&netType=2&screensize=1080x2400&oaid=&vaid=00000000000000");
-  expect(options).toMatchObject({
-    headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "okhttp/4.9.1", "Content-Length": String(Buffer.byteLength(body)) },
-    timeout: 20_000, responseType: "json", maxContentLength: 2 * 1024 * 1024,
-    maxBodyLength: 512 * 1024, maxRedirects: 0, proxy: false,
-  });
+  expect(body).toBe(new URL(get.mock.calls[0][0]).search.slice(1));
+  expect(options).toMatchObject({ headers: { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": String(Buffer.byteLength(body)) },
+    timeout: 20_000, maxContentLength: 2 * 1024 * 1024, maxRedirects: 0, proxy: false });
 });
 
-it("uses changed translation URL/appId and language URL on the next call without reimport", async () => {
+it("does not retry a business rejection as another request method", async () => {
+  const payload = { code: 20000, data: null, msg: "参数非法" };
+  get.mockResolvedValueOnce({ data: payload });
+  expect(await fetchLanguageList()).toBe(payload); // controller and live check must reject this result
+  expect(post).not.toHaveBeenCalled();
+});
+
+it("uses changed translation and language app identities without reimport", async () => {
   post.mockResolvedValue({ data: { code: 0, data: { translation: "hello" } } });
   for (const id of ["one", "two"]) {
     useConfig({ translateBaseUrl: `https://${id}.example.com/base`, translateAppId: `app ${id}&*` });
     await translateText({ text: "汉字 &*", from: "en", to: "zh-CHS" });
     await fetchLanguageList();
   }
-  expect(post.mock.calls.map(([url]) => url)).toEqual([
-    "https://one.example.com/base/translation/query", "https://one.example.com/base/translation/lang/list",
-    "https://two.example.com/base/translation/query", "https://two.example.com/base/translation/lang/list",
-  ]);
+  expect(post.mock.calls.map(([url]) => url)).toEqual(["https://one.example.com/base/translation/query", "https://two.example.com/base/translation/query"]);
   expect(post.mock.calls[0][1]).toContain("appId=app+one%26*");
-  expect(post.mock.calls[2][1]).toContain("appId=app+two%26*");
-  expect(post.mock.calls[1][1]).toContain("appId=app+one%26*");
-  expect(post.mock.calls[3][1]).toContain("appId=app+two%26*");
+  expect(post.mock.calls[1][1]).toContain("appId=app+two%26*");
   expect(post.mock.calls[0][1]).toContain("text=%E6%B1%89%E5%AD%97+%26*");
+  for (const [index, id] of ["one", "two"].entries()) {
+    const url = new URL(get.mock.calls[index][0]);
+    expect(url.origin + url.pathname).toBe(`https://${id}.example.com/base/translation/lang/list`);
+    expect(url.searchParams.get("appId")).toBe(`app ${id}&*`);
+    expect(url.searchParams.get("online")).toBe("1");
+  }
 });
 
 it("uses a per-call TTS URL/appId/key snapshot and never transmits the raw key", async () => {
@@ -92,12 +117,18 @@ it("does not sign or send TTS when the current key is empty, regardless of env",
 it.each([405, 400, 500])("propagates upstream HTTP %i without echoing secrets or Axios config", async (status) => {
   const secret = "test-secret-must-not-escape";
   const error = { isAxiosError: true, message: secret, config: { data: secret }, response: { status, data: { message: secret } } };
-  for (const call of [() => fetchLanguageList(), () => translateText({ text: "hello", from: "en", to: "zh" }),
-    () => synthesizeSpeech("hello", "en")]) {
+  const calls = [fetchLanguageList, () => translateText({ text: "hello", from: "en", to: "zh" }), () => synthesizeSpeech("hello", "en")];
+  for (const [index, call] of calls.entries()) {
     useConfig({ ttsAppKey: secret });
-    post.mockRejectedValueOnce(error);
+    const reject = () => {
+      if (index === 0) {
+        get.mockRejectedValueOnce(error);
+        if (status === 405) post.mockRejectedValueOnce(error);
+      } else post.mockRejectedValueOnce(error);
+    };
+    reject();
     await expect(call()).rejects.toThrow(`上游 HTTP ${status}`);
-    post.mockRejectedValueOnce(error);
+    reject();
     await expect(call()).rejects.not.toThrow(secret);
   }
 });
@@ -112,12 +143,13 @@ it.each(["https://127.0.0.1", "https://[::1]", "http://example.com", "https://us
   useConfig({ translateBaseUrl });
   await expect(fetchLanguageList()).rejects.toThrow();
   expect(post).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
 });
 
 it("checks all socket DNS answers and refuses rebinding to private/reserved destinations", async () => {
-  post.mockResolvedValueOnce({ data: ["en"] });
+  get.mockResolvedValueOnce({ data: ["en"] });
   await fetchLanguageList();
-  const agent = post.mock.calls[0][2]!.httpsAgent;
+  const agent = get.mock.calls[0][1]!.httpsAgent;
   const resolver = agent.options.lookup;
   const callback = jest.fn();
   const dnsMock = lookup as unknown as jest.Mock;

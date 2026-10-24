@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import logger from "../utils/logger";
+import { normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
 import { toBrowserCdictAudio } from "./cdictWebAudio";
 import {
   type CDictAudio,
@@ -65,11 +66,7 @@ export class CDictController {
   public static async languages(_req: Request, res: Response): Promise<void> {
     try {
       const upstream = await fetchLanguageList();
-      if (Array.isArray(upstream)) {
-        res.json(upstream);
-        return;
-      }
-      res.json({ success: true, ...(upstream as Record<string, unknown>) });
+      res.json(normalizeCdictLanguageResponse(upstream));
     } catch (error) {
       const message = error instanceof Error ? error.message : "语言列表获取失败";
       logger.warn("[CDict] 语言列表获取失败", { message });

@@ -177,24 +177,43 @@ export async function translateText(input: CDictTranslateInput): Promise<Record<
   }
 }
 
-/** Use a POST form and the same application identity as the translation request. */
+/** SDK queryAvailableLanguage supplies online=1 and the full NmtHttpParamsUtils identity. */
 export async function fetchLanguageList(): Promise<unknown> {
   const upstream = { ...config.cdictUpstream };
   const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
-  const body = encodeForm({ appId: upstream.translateAppId, ...deviceParams() });
+  const body = encodeForm({
+    appId: upstream.translateAppId,
+    app: "com.vivo.translator",
+    userId: "com.vivo.translator", // SDK KEY_USER_ID is camelCase for language queries.
+    imei: "unknown", // SDK fallback, not a real device identifier.
+    ...deviceParams(),
+    online: "1",
+  });
+  const url = `${baseUrl}${LANGUAGE_LIST_PATH}`;
+  const headers = { Accept: "application/json", "User-Agent": UPSTREAM_USER_AGENT };
+  const options = {
+    ...SAFE_UPSTREAM_OPTIONS,
+    timeout: UPSTREAM_TIMEOUT_MS,
+    headers,
+    responseType: "json" as const,
+    maxContentLength: 2 * 1024 * 1024,
+  };
   try {
-    const response = await axios.post(`${baseUrl}${LANGUAGE_LIST_PATH}`, body, {
-      ...SAFE_UPSTREAM_OPTIONS,
-      timeout: UPSTREAM_TIMEOUT_MS,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Content-Length": Buffer.byteLength(body, "utf8").toString(),
-        "User-Agent": UPSTREAM_USER_AGENT,
-      },
-      responseType: "json",
-      maxContentLength: 2 * 1024 * 1024,
-    });
+    let response: AxiosResponse<unknown>;
+    try {
+      response = await axios.get(`${url}?${body}`, options);
+    } catch (error) {
+      // SDK documents GET. Retry only a real 405, once, with identical parameters.
+      if (!axios.isAxiosError(error) || error.response?.status !== 405) throw error;
+      response = await axios.post(url, body, {
+        ...options,
+        headers: {
+          ...headers,
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": Buffer.byteLength(body, "utf8").toString(),
+        },
+      });
+    }
     return response.data ?? {};
   } catch (error) {
     throw new Error(extractUpstreamError(error, "上游语言列表请求失败"));

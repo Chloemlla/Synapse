@@ -45,6 +45,7 @@ describe('language and provider mapping', () => {
     { data: { list: [{ code: 'en' }, { lang: 'zh-CHS' }, { langCode: 'Ja' }] } },
     { languages: ['en', 'zh-CHS', 'ja'] }, { data: { languages: ['en', 'zh-CHS', 'ja'] } },
     { list: ['en', 'zh-CHS', 'ja'] }, { langs: ['en', 'zh-CHS', 'ja'] },
+    { code: 0, data: { langs: ['en', 'zh-CHS', 'ja'], expire: '86400' } },
   ].map(value => ({ value })))('normalizes the Android supported language list envelopes', ({ value }) => {
     expect(normalizeCDictLanguages(value).map(option => option.code)).toEqual(['en', 'zh-CHS', 'ja']);
   });

@@ -1,3 +1,4 @@
+import { collectCdictLanguageCodes, normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
 import { config } from "../config/config";
 import { fetchLanguageList } from "../services/cdictUpstreamService";
 
@@ -5,8 +6,8 @@ import { fetchLanguageList } from "../services/cdictUpstreamService";
 const live = process.env.CDICT_LIVE_LANGUAGE_CHECK === "1" ? describe : describe.skip;
 
 live("CDict upstream live language protocol", () => {
-  it("returns a successful, nonempty language list through the real POST transport", async () => {
-    const payload = await fetchLanguageList(); // one bounded real request, no retry loop
+  it("returns a successful, nonempty language list through the real SDK transport with bounded 405 compatibility", async () => {
+    const payload = await fetchLanguageList(); // bounded SDK request, at most one HTTP405 compatibility retry
     expect(payload).not.toBeNull();
     expect(typeof payload).toBe("object");
     const root = !Array.isArray(payload) ? payload as Record<string, unknown> : {};
@@ -26,7 +27,7 @@ live("CDict upstream live language protocol", () => {
     const data = root.data && typeof root.data === "object" && !Array.isArray(root.data)
       ? root.data as Record<string, unknown> : {};
     // Same response shapes understood by the official downstream Android client.
-    const candidates = [payload, root.data, data.list, data.languages, root.list, root.languages, root.langs];
+    const candidates = [payload, root.data, data.langs, data.list, data.languages, root.list, root.languages, root.langs];
     const languages = new Set<string>();
     for (const list of candidates) {
       if (!Array.isArray(list)) continue;
@@ -41,5 +42,7 @@ live("CDict upstream live language protocol", () => {
       throw new Error(`语言列表为空或结构未知，rootKeys=${Object.keys(root).join(",")} dataKeys=${Object.keys(data).join(",")}`);
     }
     expect(languages.size).toBeGreaterThan(0);
-  }, 30_000);
+    const normalized = normalizeCdictLanguageResponse(payload);
+    expect(collectCdictLanguageCodes(normalized).length).toBeGreaterThan(0);
+  }, 50_000);
 });

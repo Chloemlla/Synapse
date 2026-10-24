@@ -121,7 +121,7 @@ export function normalizeCDictLanguages(value: unknown): LanguageOption[] {
   assertCDictSuccess(value);
   const response = record(value);
   const data = record(response.data);
-  const lists = [value, response.data, data.list, data.languages, response.list, response.languages, response.langs];
+  const lists = [value, response.data, data.langs, data.list, data.languages, response.list, response.languages, response.langs];
   const options = new Map<string, LanguageOption>();
   for (const list of lists) {
     if (!Array.isArray(list)) continue;

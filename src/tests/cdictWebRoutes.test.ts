@@ -248,11 +248,26 @@ describe("website CDict delegation and validation", () => {
     expect(upstream.translateText).toHaveBeenCalledTimes(1);
   });
   it.each([
-    [[], []], [{ code: 0, data: { en: "English" } }, { success: true, code: 0, data: { en: "English" } }],
-  ])("preserves language response variants %j", async (upstreamResult, expected) => {
+    [["en", "zh-CHS"], ["en", "zh-CHS"]],
+    [{ code: 0, data: { langs: ["en"], expire: "3600" } }, { success: true, code: 0, data: { langs: ["en"], expire: "3600" }, languages: ["en"] }],
+  ])("preserves successful language variants and adds a legacy alias %j", async (upstreamResult, expected) => {
     jest.mocked(upstream.fetchLanguageList).mockResolvedValue(upstreamResult);
     const res = await request(appForWeb()).get(prefix + "/languages").set("Cookie", cookie());
+    expect(res.status).toBe(200);
     expect(res.body).toEqual(expected);
+  });
+  it.each([
+    [], { code: 0, data: { en: "English" } },
+    { success: true, code: 20000, data: null, msg: "参数非法", requestId: null, serviceRegion: "asia" },
+    { retcode: 10000, code: 0, data: { langs: ["en"] } },
+  ].map((payload) => ({ payload }))) ("never reports success for invalid or failed language results %j", async ({ payload }) => {
+    jest.mocked(upstream.fetchLanguageList).mockResolvedValue(payload);
+    const res = await request(appForWeb()).get(prefix + "/languages").set("Cookie", cookie());
+    expect(res.status).toBe(502);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe(502);
+    expect(res.body.languages).toBeUndefined();
+    expect(res.headers["cache-control"]).toBe("private, no-store");
   });
   it.each(["/translate", "/languages", "/tts?text=hello"])("returns nonzero upstream errors for %s", async (path) => {
     jest.mocked(upstream.translateText).mockRejectedValue(new Error("upstream unavailable"));
