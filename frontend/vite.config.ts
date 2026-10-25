@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type OxcOptions, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import vitePluginsAutoI18n, { GoogleTranslator } from "vite-auto-i18n-plugin";
 import path from "path";
@@ -445,17 +445,11 @@ export default defineConfig(({ mode, command }) => {
       __BACKEND_VERSION__: JSON.stringify(BACKEND_VERSION),
       __GIT_SHORT_SHA__: JSON.stringify(GIT_SHORT_SHA),
     },
-    esbuild: {
-      sourcemap: false,
-      legalComments: "none" as const, // 移除所有法律注释（如许可证信息）以减小打包体积
-      logOverride: { "this-is-undefined-in-esm": "silent" as const }, // 抑制ESM模块中undefined警告，避免控制台噪音
-      treeShaking: true, // 启用摇树优化，自动移除未使用的代码以减小最终打包体积
-      minifyIdentifiers: true, // 压缩变量名和函数名，将长名称替换为短名称以减小文件大小
-      minifySyntax: true, // 压缩语法结构，移除不必要的括号、分号等以优化代码体积
-      minifyWhitespace: true, // 移除多余的空格、换行符和缩进，进一步压缩文件大小
-      keepNames: true, // 保留函数和类的原始名称，便于调试和错误追踪（与压缩标识符平衡）
+    // Vite 8 的 React 插件也配置 Oxc；同时保留 esbuild 会让整段配置被忽略。
+    // 这里只放转换器支持的选项；压缩、摇树和产物 sourcemap 继续由 build 控制。
+    oxc: {
       target: "es2020",
-    },
+    } satisfies OxcOptions,
     build: {
       minify: "terser" as const,
       terserOptions: {
@@ -494,7 +488,7 @@ export default defineConfig(({ mode, command }) => {
           codeSplitting: {
             groups: [
               { name: "vite-runtime", test: /vite[\\/]preload-helper/, priority: 100 },
-              { name: (moduleId: string) => getManualChunk(moduleId), priority: 0 },
+              { name: (moduleId: string) => getManualChunk(moduleId), debugName: "manual-vendor", priority: 0 },
             ],
           },
           entryFileNames: "assets/[name].[hash].js",
@@ -565,7 +559,7 @@ export default defineConfig(({ mode, command }) => {
         codeSplitting: {
           groups: [
             { name: "vite-runtime", test: /vite[\\/]preload-helper/, priority: 100 },
-            { name: (moduleId: string) => getManualChunk(moduleId), priority: 0 },
+            { name: (moduleId: string) => getManualChunk(moduleId), debugName: "manual-vendor", priority: 0 },
           ],
         },
         entryFileNames: "assets/[name].[hash].js",
