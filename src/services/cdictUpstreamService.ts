@@ -124,7 +124,7 @@ const publicHttpsAgent = new https.Agent({
       const selected = candidates.find((entry) => entry.family === 4) || candidates[0];
       if (!selected) {
         callback(Object.assign(new Error("CDict upstream public address lookup failed"),
-          { code: safeCDictTransportCode(error?.code) || "CDICT_UPSTREAM_ADDRESS_REJECTED" }), "", 4);
+          { code: "CDICT_UPSTREAM_ADDRESS_REJECTED" }), "", 4);
         return;
       }
       callback(null, selected.address, selected.family);
