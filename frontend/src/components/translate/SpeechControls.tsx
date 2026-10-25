@@ -38,7 +38,7 @@ export function SpeechControls({ side, text, language, speech, disabled }: {
     {tooLong && <p className="text-sm text-slate-500">朗读最多 300 个字符，请缩短文本；不会截取内容。</p>}
     {!langType && text.trim() && <p className="text-sm text-slate-500">请先选择原文语言，或翻译后使用识别结果朗读。</p>}
     {speech.state.key === side && speech.state.status === 'loading' && <StudioLoadingState text="正在准备语音…" minHeightClassName="min-h-12" />}
-    {speech.state.key === side && speech.state.status === 'playing' && <p role="status" className="text-sm text-slate-500">正在朗读{label}</p>}
+    {speech.state.key === side && speech.state.status === 'playing' && <p role="status" className="text-sm text-slate-500">正在朗读{label}{speech.state.provider === 'microsoft' ? '（Microsoft TTS）' : ''}</p>}
     {speech.state.key === side && speech.state.error && <StudioErrorNote>{speech.state.error}</StudioErrorNote>}
   </div>;
 }

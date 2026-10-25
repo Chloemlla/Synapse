@@ -1,4 +1,8 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
+import { EventEmitter } from "node:events";
+import { CDictController } from "../controllers/cdictController";
+import * as microsoft from "../services/cdictMicrosoftSpeechService";
+import logger from "../utils/logger";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
@@ -33,6 +37,9 @@ jest.mock("../services/policyConsentService", () => ({ resolveFeatureConsentView
 jest.mock("../services/cdictUpstreamService", () => ({
   translateText: jest.fn(), fetchLanguageList: jest.fn(), synthesizeSpeech: jest.fn(), fetchDictionaryVoice: jest.fn(),
 }));
+jest.mock("../services/cdictMicrosoftSpeechService", () => ({
+  ...jest.requireActual("../services/cdictMicrosoftSpeechService"), synthesizeMicrosoftSpeech: jest.fn(),
+}));
 jest.mock("../services/cdictDonationService", () => ({
   getPublicDonationConfig: jest.fn(), resolveDonationImage: jest.fn(), submitDonationClaim: jest.fn(),
 }));
@@ -46,11 +53,20 @@ jest.mock("../services/sharedRateLimitStore", () => {
 const mount = cdictWebRouteModules[0];
 const prefix = "/api/translate/cdict";
 const pcm = Buffer.from([0x00, 0x80, 0xff, 0x7f, 0x34, 0x12]);
+const speechSources = ["engine", "microsoft"] as const;
+const speechProviders = {
+  engine: jest.mocked(upstream.synthesizeSpeech), microsoft: jest.mocked(microsoft.synthesizeMicrosoftSpeech),
+};
+function speechAudio(source: typeof speechSources[number]): upstream.CDictAudio {
+  return source === "engine" ? { contentType: "audio/L16; rate=16000", data: pcm }
+    : { contentType: "audio/mpeg", data: Buffer.from("ID3microsoft") };
+}
 const translateResult = { retcode: 0, code: 0, data: { translation: "你好", from: "en", to: "zh-CHS" } };
 const endpoints = [
   ["post", "/translate", { text: "hello", to: "zh-CHS" }],
   ["get", "/languages", undefined],
   ["get", "/tts?text=hello", undefined],
+  ["get", "/tts?text=hello&source=microsoft&langType=en-GBR", undefined],
   ["get", "/donate", undefined],
   ["post", "/donate/claim", { transactionId: "order123", displayName: "reader" }],
   ["get", "/donate/alipay", undefined],
@@ -80,7 +96,7 @@ function views(satisfied = true): FeatureConsentView[] {
 }
 function expectNoBusinessCalls(): void {
   for (const mock of [upstream.translateText, upstream.fetchLanguageList, upstream.synthesizeSpeech,
-    upstream.fetchDictionaryVoice, donations.getPublicDonationConfig, donations.resolveDonationImage,
+    upstream.fetchDictionaryVoice, microsoft.synthesizeMicrosoftSpeech, donations.getPublicDonationConfig, donations.resolveDonationImage,
     donations.submitDonationClaim]) expect(mock).not.toHaveBeenCalled();
 }
 
@@ -99,6 +115,8 @@ beforeEach(() => {
   jest.mocked(upstream.fetchLanguageList).mockResolvedValue([{ lang: "en", name: "English" }]);
   jest.mocked(upstream.synthesizeSpeech).mockResolvedValue({ contentType: "audio/L16; rate=16000", data: pcm });
   jest.mocked(upstream.fetchDictionaryVoice).mockResolvedValue({ contentType: "audio/mpeg", data: Buffer.from("ID3audio") });
+  jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockReset()
+    .mockResolvedValue({ contentType: "audio/mpeg", data: Buffer.from("ID3microsoft") });
   jest.mocked(donations.getPublicDonationConfig).mockResolvedValue({
     enabled: true, notice: "thanks", channels: [{ id: "alipay", name: "Alipay", hint: "scan" }], supporters: [],
   } as Awaited<ReturnType<typeof donations.getPublicDonationConfig>>);
@@ -212,7 +230,10 @@ describe("website CDict mount security", () => {
     expect(classified).toBe(false);
   });
 
-  it.each([["post", "/translate", "deeplx-translate"], ["get", "/tts?text=hello", "tts-generate"]] as const)
+  it.each([
+    ["post", "/translate", "deeplx-translate"], ["get", "/tts?text=hello", "tts-generate"],
+    ["get", "/tts?text=hello&source=microsoft&langType=en-USA", "tts-generate"],
+  ] as const)
     ("requires current-user third-party consent for %s %s", async (method, path, feature) => {
       jest.mocked(resolveFeatureConsentViews).mockResolvedValue(views(false));
       const res = await hit(appForWeb(), method, path, { text: "hello", to: "en" }).set("Cookie", cookie());
@@ -313,6 +334,93 @@ describe("website CDict delegation and validation", () => {
 });
 
 describe("website CDict speech and Android isolation", () => {
+  it.each(["en-USA", "en-GBR", "zh-CHS", "zh-CHT", "zh-HK"])
+    ("returns private Microsoft MP3 for %s without type or another provider call", async (langType) => {
+      const res = await request(appForWeb()).get(prefix + "/tts")
+        .query({ text: "hello", source: "microsoft", langType }).set("Cookie", cookie());
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/^audio\/mpeg/);
+      expect(res.headers["cache-control"]).toBe("private, no-store");
+      expect(res.body).toEqual(Buffer.from("ID3microsoft"));
+      expect(microsoft.synthesizeMicrosoftSpeech).toHaveBeenCalledWith("hello", langType, expect.any(AbortSignal));
+      expect(upstream.synthesizeSpeech).not.toHaveBeenCalled();
+      expect(upstream.fetchDictionaryVoice).not.toHaveBeenCalled();
+    });
+  it.each([
+    [{ text: "", source: "microsoft", langType: "en-USA" }, 400],
+    [{ text: "x".repeat(301), source: "microsoft", langType: "en-USA" }, 413],
+    [{ text: "hello", source: "microsoft", langType: "bad_code" }, 400],
+    [{ text: "hello", source: "microsoft", langType: "auto" }, 400],
+  ] as const)("validates Microsoft arguments before invoking any service %j", async (query, status) => {
+    const res = await request(appForWeb()).get(prefix + "/tts").query(query).set("Cookie", cookie());
+    expect(res.status).toBe(status);
+    expect(res.body.code).toBe(status);
+    expect(microsoft.synthesizeMicrosoftSpeech).not.toHaveBeenCalled();
+    expect(upstream.synthesizeSpeech).not.toHaveBeenCalled();
+    expect(upstream.fetchDictionaryVoice).not.toHaveBeenCalled();
+  });
+  it("accepts exactly 300 Microsoft speech characters", async () => {
+    const res = await request(appForWeb()).get(prefix + "/tts")
+      .query({ text: "x".repeat(300), source: "microsoft", langType: "en-USA" }).set("Cookie", cookie());
+    expect(res.status).toBe(200);
+    expect(microsoft.synthesizeMicrosoftSpeech).toHaveBeenCalledTimes(1);
+  });
+  it.each(["provider_disabled", "language_unavailable", "invalid_audio", "audio_too_large", "upstream_failed"] as const)
+    ("returns 502 for Microsoft %s, without retry or leaking raw errors", async (category) => {
+      jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockRejectedValue(new microsoft.CDictMicrosoftSpeechError(category));
+      const res = await request(appForWeb()).get(prefix + "/tts?text=private-text&source=microsoft&langType=en-USA")
+        .set("Cookie", cookie());
+      expect(res.status).toBe(502);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe(502);
+      expect(res.headers["cache-control"]).toBe("private, no-store");
+      expect(microsoft.synthesizeMicrosoftSpeech).toHaveBeenCalledTimes(1);
+      expect(upstream.synthesizeSpeech).not.toHaveBeenCalled();
+      expect(upstream.fetchDictionaryVoice).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith("[CDict] 微软短朗读请求失败", { category });
+    });
+  it("logs only a fixed category for unexpected Microsoft errors", async () => {
+    jest.mocked(microsoft.synthesizeMicrosoftSpeech)
+      .mockRejectedValue(new Error("wss://private.example/speech?token=secret private-text"));
+    const res = await request(appForWeb()).get(prefix + "/tts?text=private-text&source=microsoft&langType=en-USA")
+      .set("Cookie", cookie());
+    expect(res.status).toBe(502);
+    expect(logger.warn).toHaveBeenCalledWith("[CDict] 微软短朗读请求失败", { category: "upstream_failed" });
+    expect(JSON.stringify(jest.mocked(logger.warn).mock.calls)).not.toMatch(/private-text|private\.example|token=secret/);
+    expect(JSON.stringify(res.body)).not.toMatch(/private-text|private\.example|token=secret/);
+  });
+  it("never automatically invokes Microsoft when engine or dictionary fails", async () => {
+    jest.mocked(upstream.synthesizeSpeech).mockRejectedValue(new Error("failed"));
+    jest.mocked(upstream.fetchDictionaryVoice).mockRejectedValue(new Error("failed"));
+    const app = appForWeb();
+    for (const source of ["engine", "youdao"]) {
+      const res = await request(app).get(prefix + "/tts").query({ text: "hello", source }).set("Cookie", cookie());
+      expect(res.status).toBe(502);
+    }
+    expect(microsoft.synthesizeMicrosoftSpeech).not.toHaveBeenCalled();
+  });
+  it("rejects Microsoft on the native endpoint before any speech IO", async () => {
+    const android = express();
+    android.use("/api/cdict", cdictRoutes);
+    const res = await request(android).get("/api/cdict/tts?text=hello&source=microsoft&langType=en-USA");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("source 只支持 engine 或 youdao");
+    expect(microsoft.synthesizeMicrosoftSpeech).not.toHaveBeenCalled();
+    expect(upstream.synthesizeSpeech).not.toHaveBeenCalled();
+    expect(upstream.fetchDictionaryVoice).not.toHaveBeenCalled();
+  });
+  it("keeps native engine and dictionary delegation and public audio caching", async () => {
+    const android = express();
+    android.use("/api/cdict", cdictRoutes);
+    for (const source of ["engine", "youdao"]) {
+      const res = await request(android).get("/api/cdict/tts").query({ text: "hello", source, type: "1", langType: "en-GBR" });
+      expect(res.status).toBe(200);
+      expect(res.headers["cache-control"]).toBe("public, max-age=86400");
+    }
+    expect(upstream.synthesizeSpeech).toHaveBeenCalledWith("hello", "en-GBR");
+    expect(upstream.fetchDictionaryVoice).toHaveBeenCalledWith("hello", 1);
+    expect(microsoft.synthesizeMicrosoftSpeech).not.toHaveBeenCalled();
+  });
   it("returns a RIFF/WAVE container with 16-bit mono 16kHz PCM and unchanged signed samples", async () => {
     const res = await request(appForWeb()).get(prefix + "/tts?text=hello").set("Cookie", cookie());
     const data = res.body as Buffer;
@@ -411,7 +519,85 @@ describe("website CDict speech and Android isolation", () => {
   });
 });
 
-describe("website CDict real rate and upstream burst protection", () => {
+function speechExchange() {
+  const incoming = Object.assign(new EventEmitter(), {
+    query: { text: "hello", source: "microsoft", langType: "en-USA" }, aborted: false,
+  });
+  const outgoing = Object.assign(new EventEmitter(), {
+    writableEnded: false, destroyed: false, setHeader: jest.fn(), status: jest.fn(), send: jest.fn(), json: jest.fn(),
+  });
+  outgoing.status.mockReturnValue(outgoing);
+  outgoing.send.mockImplementation(() => { outgoing.writableEnded = true; outgoing.emit("close"); return outgoing; });
+  return { incoming, outgoing, req: incoming as unknown as Request, res: outgoing as unknown as Response };
+}
+
+describe("Microsoft controller request lifecycle", () => {
+  it("does not abort a normal response close and removes listeners on success", async () => {
+    const exchange = speechExchange();
+    await CDictController.ttsForWeb(exchange.req, exchange.res);
+    const signal = jest.mocked(microsoft.synthesizeMicrosoftSpeech).mock.calls[0][2]!;
+    expect(signal.aborted).toBe(false);
+    expect(exchange.outgoing.send).toHaveBeenCalledWith(Buffer.from("ID3microsoft"));
+    expect(exchange.incoming.listenerCount("aborted")).toBe(0);
+    expect(exchange.outgoing.listenerCount("close")).toBe(0);
+  });
+  it("cleans up listeners after failure", async () => {
+    const exchange = speechExchange();
+    jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockRejectedValue(new Error("unsafe upstream"));
+    await CDictController.ttsForWeb(exchange.req, exchange.res);
+    expect(exchange.outgoing.status).toHaveBeenCalledWith(502);
+    expect(exchange.incoming.listenerCount("aborted")).toBe(0);
+    expect(exchange.outgoing.listenerCount("close")).toBe(0);
+  });
+  it.each(["aborted", "close"])("cancels only the disconnected Microsoft request on %s", async (event) => {
+    const exchange = speechExchange();
+    jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockImplementationOnce((_text, _lang, signal) =>
+      new Promise<upstream.CDictAudio>((_resolve, reject) => signal!.addEventListener("abort", () => reject(new Error("cancelled")), { once: true })));
+    const pending = CDictController.ttsForWeb(exchange.req, exchange.res);
+    const other = speechExchange();
+    await CDictController.ttsForWeb(other.req, other.res);
+    const calls = jest.mocked(microsoft.synthesizeMicrosoftSpeech).mock.calls;
+    (event === "aborted" ? exchange.incoming : exchange.outgoing).emit(event);
+    await pending;
+    expect(calls[0][2]!.aborted).toBe(true);
+    expect(calls[1][2]!.aborted).toBe(false);
+    expect(exchange.outgoing.send).not.toHaveBeenCalled();
+    expect(exchange.outgoing.json).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(exchange.incoming.listenerCount("aborted")).toBe(0);
+    expect(exchange.outgoing.listenerCount("close")).toBe(0);
+  });
+  it("ignores close after writableEnded even if synthesis has not settled", async () => {
+    const exchange = speechExchange();
+    let finish: (audio: upstream.CDictAudio) => void = () => undefined;
+    jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const pending = CDictController.ttsForWeb(exchange.req, exchange.res);
+    exchange.outgoing.writableEnded = true;
+    exchange.outgoing.emit("close");
+    expect(jest.mocked(microsoft.synthesizeMicrosoftSpeech).mock.calls[0][2]!.aborted).toBe(false);
+    finish(speechAudio("microsoft"));
+    await pending;
+    expect(exchange.outgoing.send).not.toHaveBeenCalled();
+    expect(exchange.incoming.listenerCount("aborted")).toBe(0);
+    expect(exchange.outgoing.listenerCount("close")).toBe(0);
+  });
+});
+
+it("shares the same short-reading quota across engine and Microsoft", async () => {
+  const app = appForWeb();
+  for (let i = 0; i < 30; i++) {
+    const res = await request(app).get(prefix + "/tts").query({ text: "hello", source: i % 2 ? "microsoft" : "engine" })
+      .set("Cookie", cookie());
+    expect(res.status).toBe(200);
+  }
+  const limited = await request(app).get(prefix + "/tts?text=hello&source=microsoft").set("Cookie", cookie());
+  expect(limited.status).toBe(429);
+  expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(15);
+  expect(microsoft.synthesizeMicrosoftSpeech).toHaveBeenCalledTimes(15);
+});
+
+describe.each(speechSources)("website CDict real rate and upstream burst protection (%s)", (source) => {
+  const speechProvider = speechProviders[source];
   it("preserves the shared guard's default exemption for other locally classified routes", () => {
     const guard = createBurstConcurrencyGuard({ name: "legacy-local-exemption", maxConcurrent: 1, methods: ["GET"] });
     const appRequest = { method: "GET", isLocalIp: true } as Parameters<typeof guard>[0];
@@ -426,27 +612,27 @@ describe("website CDict real rate and upstream burst protection", () => {
   it("keeps a user quota when the same session rotates IP and Android headers", async () => {
     const app = appForWeb();
     for (let i = 0; i < 30; i++) {
-      const res = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie())
+      const res = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie())
         .set("X-Forwarded-For", `203.0.113.${i + 1}`).set("X-CDict-Install", `install-${i}`);
       expect(res.status).toBe(200);
     }
-    const limited = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie())
+    const limited = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie())
       .set("X-Forwarded-For", "198.51.100.90").set("X-CDict-Install", "new-install");
     expect(limited.status).toBe(429);
-    expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(30);
+    expect(speechProvider).toHaveBeenCalledTimes(30);
     expect(limited.headers["cache-control"]).toBe("private, no-store");
   });
   it("retains the upstream IP ceiling even when sessions/accounts rotate", async () => {
     const app = appForWeb();
     for (let i = 0; i < 60; i++) {
-      const res = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie(`user-${i}`))
+      const res = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie(`user-${i}`))
         .set("X-Forwarded-For", "203.0.113.50");
       expect(res.status).toBe(200);
     }
-    const limited = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie("next-user"))
+    const limited = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie("next-user"))
       .set("X-Forwarded-For", "203.0.113.50");
     expect(limited.status).toBe(429);
-    expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(60);
+    expect(speechProvider).toHaveBeenCalledTimes(60);
   });
   it("does not grant a superadmin or locally classified request unlimited usage", async () => {
     jest.mocked(UserStorage.getUserById).mockResolvedValue({ id: "web-user", role: "superadmin", accountStatus: "active" } as User);
@@ -454,10 +640,10 @@ describe("website CDict real rate and upstream burst protection", () => {
     app.use((req, _res, next) => { req.isLocalIp = true; next(); });
     app.use(prefix, ...(mount.middlewares || []), mount.router);
     for (let i = 0; i < 30; i++) {
-      const res = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie());
+      const res = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie());
       expect(res.status).toBe(200);
     }
-    const res = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie());
+    const res = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie());
     expect(res.status).toBe(429);
   });
   it("enforces the website burst ceiling even for locally classified sessions", async () => {
@@ -467,18 +653,18 @@ describe("website CDict real rate and upstream burst protection", () => {
     const release: Array<() => void> = [];
     let markArrived: () => void = () => undefined;
     const arrived = new Promise<void>((resolve) => { markArrived = resolve; });
-    jest.mocked(upstream.synthesizeSpeech).mockImplementation(() => new Promise((resolve) => {
-      release.push(() => resolve({ contentType: "audio/L16; rate=16000", data: pcm }));
+    speechProvider.mockImplementation(() => new Promise<upstream.CDictAudio>((resolve) => {
+      release.push(() => resolve(speechAudio(source)));
       if (release.length === 3) markArrived();
     }));
-    const pending = Array.from({ length: 3 }, () => request(app).get(prefix + "/tts?text=hello")
+    const pending = Array.from({ length: 3 }, () => request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`)
       .set("Cookie", cookie()).then((res) => res));
     try {
       await arrived;
-      const limited = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie()).timeout(5000);
+      const limited = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie()).timeout(5000);
       expect(limited.status).toBe(429);
       expect(limited.body.code).toBe("BURST_CONCURRENCY_LIMIT");
-      expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(3);
+      expect(speechProvider).toHaveBeenCalledTimes(3);
     } finally {
       release.forEach((resolve) => resolve());
       await Promise.all(pending);
@@ -490,20 +676,20 @@ describe("website CDict real rate and upstream burst protection", () => {
     const release: Array<() => void> = [];
     let markArrived: () => void = () => undefined;
     const arrived = new Promise<void>((resolve) => { markArrived = resolve; });
-    jest.mocked(upstream.synthesizeSpeech).mockImplementation(() => new Promise((resolve) => {
-      release.push(() => resolve({ contentType: "audio/L16; rate=16000", data: pcm }));
+    speechProvider.mockImplementation(() => new Promise<upstream.CDictAudio>((resolve) => {
+      release.push(() => resolve(speechAudio(source)));
       if (release.length === 3) markArrived();
     }));
-    const pending = Array.from({ length: 3 }, (_, i) => request(app).get(prefix + "/tts?text=hello")
+    const pending = Array.from({ length: 3 }, (_, i) => request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`)
       .set("Cookie", cookie()).set("X-Forwarded-For", `203.0.113.${i + 1}`).then((res) => res));
     try {
       await arrived;
-      const limited = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie())
+      const limited = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie())
         .set("X-Forwarded-For", "198.51.100.5");
       expect(limited.status).toBe(429);
       expect(limited.body.code).toBe("BURST_CONCURRENCY_LIMIT");
       expect(limited.headers["retry-after"]).toBe("2");
-      expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(3);
+      expect(speechProvider).toHaveBeenCalledTimes(3);
       expect(getBurstConcurrencySnapshot().guards["cdict-web-upstream-user-burst"].active).toBe(3);
     } finally {
       release.forEach((resolve) => resolve());
@@ -540,27 +726,30 @@ it("a genuinely valid Android signature still cannot replace a website login", a
 afterAll(() => destroyNonceStore("cdict-sig-v1"));
 
 it.each([
-  [6, "cdict-web-upstream-ip-burst", true],
-  [24, "cdict-web-upstream-global-burst", false],
-] as const)("caps %i concurrent speech requests with %s", async (maximum, guardName, sameIp) => {
+  [6, "cdict-web-upstream-ip-burst", true, "engine"],
+  [6, "cdict-web-upstream-ip-burst", true, "microsoft"],
+  [24, "cdict-web-upstream-global-burst", false, "engine"],
+  [24, "cdict-web-upstream-global-burst", false, "microsoft"],
+] as const)("caps %i concurrent speech requests with %s (sameIp=%s, source=%s)", async (maximum, guardName, sameIp, source) => {
+  const speechProvider = speechProviders[source];
   const app = appForWeb();
   const release: Array<() => void> = [];
   let markArrived: () => void = () => undefined;
   const arrived = new Promise<void>((resolve) => { markArrived = resolve; });
-  jest.mocked(upstream.synthesizeSpeech).mockImplementation(() => new Promise((resolve) => {
-    release.push(() => resolve({ contentType: "audio/L16; rate=16000", data: pcm }));
+  speechProvider.mockImplementation(() => new Promise<upstream.CDictAudio>((resolve) => {
+    release.push(() => resolve(speechAudio(source)));
     if (release.length === maximum) markArrived();
   }));
-  const pending = Array.from({ length: maximum }, (_, i) => request(app).get(prefix + "/tts?text=hello")
+  const pending = Array.from({ length: maximum }, (_, i) => request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`)
     .set("Cookie", cookie(`user-${i}`)).set("X-Forwarded-For", sameIp ? "203.0.113.90" : `203.0.113.${i + 1}`)
     .then((res) => res));
   try {
     await arrived;
-    const limited = await request(app).get(prefix + "/tts?text=hello").set("Cookie", cookie("next-user"))
+    const limited = await request(app).get(prefix + `/tts?text=hello&source=${source}&langType=en-USA`).set("Cookie", cookie("next-user"))
       .set("X-Forwarded-For", sameIp ? "203.0.113.90" : "198.51.100.90");
     expect(limited.status).toBe(429);
     expect(limited.body.code).toBe("BURST_CONCURRENCY_LIMIT");
-    expect(upstream.synthesizeSpeech).toHaveBeenCalledTimes(maximum);
+    expect(speechProvider).toHaveBeenCalledTimes(maximum);
     expect(getBurstConcurrencySnapshot().guards[guardName].active).toBe(maximum);
   } finally {
     release.forEach((resolve) => resolve());

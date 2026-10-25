@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | POST | `/api/translate/cdict/translate` | 翻译，JSON 或表单字段 `text`、`from`、`to` |
 | GET | `/api/translate/cdict/languages` | 支持的语言列表 |
-| GET | `/api/translate/cdict/tts` | 在线合成或词典发音，返回浏览器可播放的音频 |
+| GET | `/api/translate/cdict/tts` | 在线合成、词典发音或显式 Microsoft 短朗读，返回浏览器可播放的音频 |
 | GET | `/api/translate/cdict/donate` | 赞赏渠道、说明与鸣谢名单 |
 | POST | `/api/translate/cdict/donate/claim` | 交易号和署名申请 |
 | GET | `/api/translate/cdict/donate/:channel` | 当前渠道的收款码 |
@@ -40,11 +40,20 @@
 | --- | --- |
 | `text` | 要朗读的文本，非空且最长 300 个字符；不静默截断 |
 | `source=engine` | 在线语音合成 |
-| `langType` | 在线合成语言／音色，例如 `en-USA`、`en-GBR`、`zh-CHS` |
+| `langType` | `engine`／`microsoft` 的语言与口音，省略时为 `en-USA`；例如 `en-USA`、`en-GBR`、`zh-CHS`、`zh-CHT` |
 | `source=youdao` | 词典发音 |
-| `type=1` / `type=2` | 英式／美式词典发音 |
+| `type=1` / `type=2` | 英式／美式词典发音，仅 `youdao` 使用 |
+| `source=microsoft` | 网站专用 Microsoft 短朗读，仅在运行时已启用 Edge 提供方时可用；无需传 `type` |
 
-在线合成能否使用取决于后端上游语音配置及其支持的语言，词典发音不假装成任意语言的在线合成。上游失败必须显示可理解的错误，不自动改用浏览器语音冒充后端成功。
+在线合成能否使用取决于后端上游语音配置及其支持的语言，词典发音不假装成任意语言的在线合成。CDict 分支不追加服务级重试，也不自动跨提供方兜底；上游失败返回 502，不自动改用浏览器语音冒充后端成功。
+
+Microsoft 请求仍是同一个 `GET /api/translate/cdict/tts`，传 `source=microsoft&langType=...&text=...`。它每次读取当前 TTS 提供方启用集合、Edge 地址与音色目录，不使用 TTS 页的默认主服务。语言码 `en-USA`／`en-GBR`／`zh-CHS`／`zh-CHT` 分别映射到 `en-US`／`en-GB`／`zh-CN`／`zh-TW`；`zh-HK` 保持香港粤语地区，不归成台湾国语。这些明确口音／中文地区只能选匹配地区的目录音色；其它语言优先匹配精确地区，再选同语言音色。未知语言不会改成中文，`auto` 不可用于 Microsoft 朗读。音色优先采用目录内的常用对应音色，其次采用匹配语言的配置默认音色或目录候选；管理员更新地址、目录或启用状态后，后续请求按新配置处理。
+
+`text` 和 `langType` 先校验再调用服务；无效参数返回 400，超过 300 字返回 413。Edge 未启用、语言没有可用音色、服务失败、非音频／无效音频或超过 8 MiB 时，Microsoft 请求仍返回 502 与非零 `code`，不改用其它来源。成功响应为经过音频校验的 `audio/mpeg` 字节，使用 `Cache-Control: private, no-store`；断连取消该次 Microsoft 合成，不取消其它请求。
+
+这是现有网站 CDict **短朗读**的扩展：继续要求网站会话、翻译权限、`tts-generate` 条款同意，并共享该分支既有的 IP／用户请求限额以及用户／IP／全局并发限额。它不创建公共音频文件、TTS jobs 或历史，不消耗或改变 TTS 页生成码、生成配额和任务队列；短朗读限额独立于 TTS jobs，换 `source` 不能获得新额度。原生 `/api/cdict/tts` 仍只接受 `engine`／`youdao`，`microsoft` 返回 400。
+
+前端 API 契约为 `fetchMicrosoftTranslatorSpeech(payload: CDictSpeechPayload, signal?): Promise<Blob>`：将原始来源／口音转换成上述 Microsoft 查询，仍走网站认证 API。调用方仅在首次服务／网络／音频错误后显式发起一次 Microsoft 请求；权限拒绝、限流、主动取消和浏览器自动播放拒绝不触发兜底。Microsoft 请求失败仍显示失败，成功时前端按实际使用的来源显示状态。
 
 网站端将上游裸 PCM 包装成单声道、16000 Hz、16-bit WAV；已有 MP3／WAV 字节保持原样。转换只发生在网站分支，原生客户端收到的音频契约不变。网站音频不进入公共共享缓存。
 
@@ -76,4 +85,4 @@ env-manager 的「CDict 翻译与朗读配置」支持全部现有上游环境�
 
 ## 验证
 
-后端回归覆盖网站会话鉴权、翻译限制、原生签名隔离、端点委派和 PCM/WAV 兼容；前端回归覆盖 CDict 返回值归一化、语言和提供方切换、认证 API 路径、发音请求及资源清理。所有构建与测试只由 GitHub Actions 执行，具体通过结论以当前提交的 CI job / step 为准。
+后端回归覆盖网站会话鉴权、翻译限制、条款同意、原生签名／来源隔离、各来源共享的限额与并发、端点委派、PCM/WAV 兼容，以及 Microsoft 的启用状态、运行时地址／目录更新、语言口音选择、8 MiB 音频校验和请求取消；前端回归覆盖 CDict 返回值归一化、语言和提供方切换、认证 API 路径、发音请求及资源清理。所有构建与测试只由 GitHub Actions 执行，具体通过结论以当前提交的 CI job / step 为准。

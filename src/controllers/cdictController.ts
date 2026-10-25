@@ -3,6 +3,11 @@ import logger from "../utils/logger";
 import { normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
 import { toBrowserCdictAudio } from "./cdictWebAudio";
 import {
+  CDictMicrosoftSpeechError,
+  normalizeMicrosoftSpeechLocale,
+  synthesizeMicrosoftSpeech,
+} from "../services/cdictMicrosoftSpeechService";
+import {
   type CDictAudio,
   fetchDictionaryVoice,
   fetchLanguageList,
@@ -95,9 +100,17 @@ export class CDictController {
       fail(res, 413, `文本超过 ${MAX_SPEECH_CHARS} 字上限`);
       return;
     }
-    if (source !== SOURCE_ENGINE && source !== SOURCE_DICTIONARY) {
-      fail(res, 400, "source 只支持 engine 或 youdao");
+    if (source !== SOURCE_ENGINE && source !== SOURCE_DICTIONARY && !(forWeb && source === "microsoft")) {
+      fail(res, 400, forWeb ? "source 只支持 engine、youdao 或 microsoft" : "source 只支持 engine 或 youdao");
       return;
+    }
+    if (source === "microsoft") {
+      const langType = firstString(req.query?.langType).trim() || "en-USA";
+      if (!normalizeMicrosoftSpeechLocale(langType)) {
+        fail(res, 400, "langType 不合法或不能用于朗读");
+        return;
+      }
+      return CDictController.microsoftSpeech(req, res, text, langType);
     }
     try {
       let audio: CDictAudio;
@@ -125,10 +138,36 @@ export class CDictController {
       res.setHeader("Content-Type", audio.contentType);
       res.setHeader("Cache-Control", forWeb ? "private, no-store" : "public, max-age=86400");
       res.status(200).send(audio.data);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "语音获取失败";
-      logger.warn("[CDict] 语音请求失败", { source, message });
+    } catch {
+      logger.warn("[CDict] 语音请求失败", { source, category: "upstream_failed" });
       fail(res, 502, "上游服务暂时不可用");
+    }
+  }
+
+  private static async microsoftSpeech(
+    req: Request, res: Response, text: string, langType: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const onAborted = () => controller.abort();
+    // Normal response completion also emits close; only disconnects cancel synthesis.
+    const onClose = () => { if (!res.writableEnded) controller.abort(); };
+    req.once("aborted", onAborted);
+    res.once("close", onClose);
+    if (req.aborted || res.destroyed) controller.abort();
+    try {
+      const audio = await synthesizeMicrosoftSpeech(text, langType, controller.signal);
+      if (controller.signal.aborted || res.destroyed || res.writableEnded) return;
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).send(audio.data);
+    } catch (error) {
+      if (controller.signal.aborted || res.destroyed || res.writableEnded) return;
+      const category = error instanceof CDictMicrosoftSpeechError ? error.category : "upstream_failed";
+      logger.warn("[CDict] 微软短朗读请求失败", { category });
+      fail(res, 502, "语音服务暂时不可用");
+    } finally {
+      req.removeListener("aborted", onAborted);
+      res.removeListener("close", onClose);
     }
   }
 }

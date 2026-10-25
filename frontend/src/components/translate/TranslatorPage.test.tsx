@@ -1,11 +1,11 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ config: vi.fn(), deeplx: vi.fn(), languages: vi.fn(), cdict: vi.fn(), speech: vi.fn(), donation: vi.fn(), notify: vi.fn(), user: { id: 'user', isTranslationEnabled: true } }));
+const mocks = vi.hoisted(() => ({ config: vi.fn(), deeplx: vi.fn(), languages: vi.fn(), cdict: vi.fn(), speech: vi.fn(), microsoft: vi.fn(), donation: vi.fn(), notify: vi.fn(), user: { id: 'user', isTranslationEnabled: true } }));
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock('../Notification', () => ({ useNotification: () => ({ setNotification: mocks.notify }) }));
 vi.mock('../../api/deeplx', () => ({ fetchDeepLXConfig: mocks.config, translateWithDeepLX: mocks.deeplx }));
-vi.mock('../../api/cdict', () => ({ fetchCDictLanguages: mocks.languages, translateWithCDict: mocks.cdict, fetchCDictSpeech: mocks.speech,
+vi.mock('../../api/cdict', () => ({ fetchCDictLanguages: mocks.languages, translateWithCDict: mocks.cdict, fetchCDictSpeech: mocks.speech, fetchMicrosoftTranslatorSpeech: mocks.microsoft,
   fetchCDictDonation: mocks.donation, fetchCDictDonationImage: vi.fn(), claimCDictDonation: vi.fn() }));
 import { DeepLXTranslatorPage } from '../DeepLXTranslatorPage';
 
@@ -17,6 +17,8 @@ beforeEach(() => {
   mocks.languages.mockResolvedValue([{ code: 'en', label: '英语' }, { code: 'zh-CHS', label: '中文（简体）' }, { code: 'hi', label: '印地语' }]);
   mocks.cdict.mockResolvedValue(translated); mocks.donation.mockResolvedValue(null);
   mocks.speech.mockResolvedValue(new Blob(['wav'], { type: 'audio/wav' }));
+  mocks.microsoft.mockResolvedValue(new Blob(['fallback'], { type: 'audio/mpeg' }));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubGlobal('Audio', class {
     onended = null; onerror = null; play = vi.fn().mockResolvedValue(undefined); pause = vi.fn(); removeAttribute = vi.fn(); load = vi.fn();
     constructor() { players.push(this); }
@@ -24,7 +26,7 @@ beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:test-voice') });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
 async function setupManual() {
   render(<DeepLXTranslatorPage />);
   await waitFor(() => expect(mocks.languages).toHaveBeenCalledOnce());
@@ -165,4 +167,22 @@ it('keeps paste, copy, and detected-language swapping usable', async () => {
   expect(screen.getByRole('combobox', { name: '译文语言' })).toHaveValue('zh-CHS');
   expect(screen.getByRole('textbox', { name: '待翻译文本' })).toHaveValue('target result');
   expect(screen.getByLabelText('翻译结果')).toHaveTextContent('clipboard text');
+});
+
+it('shows Microsoft TTS only for fallback playback and restores the original playback wording', async () => {
+  mocks.speech.mockRejectedValueOnce({ response: { status: 502 } });
+  await setupManual();
+  fireEvent.click(screen.getByRole('button', { name: '立即翻译' }));
+  await screen.findByLabelText('翻译结果');
+  fireEvent.click(screen.getByRole('button', { name: '朗读原文' }));
+  expect(await screen.findByText('正在朗读原文（Microsoft TTS）')).toBeInTheDocument();
+  expect(mocks.microsoft).toHaveBeenCalledExactlyOnceWith(
+    { text: 'hello', source: 'engine', langType: 'en-USA' }, mocks.speech.mock.calls[0][1]);
+  fireEvent.click(screen.getByRole('button', { name: '停止原文朗读' }));
+  expect((mocks.microsoft.mock.calls[0][1] as AbortSignal).aborted).toBe(true);
+  expect(screen.queryByText(/Microsoft TTS/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '朗读译文' }));
+  expect(await screen.findByText('正在朗读译文')).toBeInTheDocument();
+  expect(screen.queryByText(/Microsoft TTS/)).not.toBeInTheDocument();
+  expect(mocks.microsoft).toHaveBeenCalledOnce();
 });

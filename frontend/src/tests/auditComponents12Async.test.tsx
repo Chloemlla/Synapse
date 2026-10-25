@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ notify: vi.fn(), config: vi.fn(), translate: v
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'user' } }) }));
 vi.mock('../components/Notification', () => ({ useNotification: () => ({ setNotification: mocks.notify }) }));
 vi.mock('../api/deeplx', () => ({ fetchDeepLXConfig: mocks.config, translateWithDeepLX: mocks.translate }));
-vi.mock('../api/cdict', () => ({ fetchCDictLanguages: vi.fn().mockResolvedValue([{ code: 'en', label: '英语' }, { code: 'zh-CHS', label: '中文' }]), translateWithCDict: vi.fn(), fetchCDictSpeech: vi.fn(), fetchCDictDonation: vi.fn().mockResolvedValue(null), fetchCDictDonationImage: vi.fn(), claimCDictDonation: vi.fn() }));
+vi.mock('../api/cdict', () => ({ fetchCDictLanguages: vi.fn().mockResolvedValue([{ code: 'en', label: '英语' }, { code: 'zh-CHS', label: '中文' }]), translateWithCDict: vi.fn(), fetchCDictSpeech: vi.fn(), fetchMicrosoftTranslatorSpeech: vi.fn(), fetchCDictDonation: vi.fn().mockResolvedValue(null), fetchCDictDonationImage: vi.fn(), claimCDictDonation: vi.fn() }));
 vi.mock('../api/markdownArticles', () => ({ markdownArticleApi: { listPublished: mocks.articles } }));
 
 import { DeepLXTranslatorPage } from '../components/DeepLXTranslatorPage';

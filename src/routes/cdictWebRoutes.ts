@@ -53,12 +53,12 @@ import { cdictDonationClaimLimiter } from "../middleware/routeLimiters";
  *   get:
  *     tags: [CDict Web]
  *     summary: 登录网站账号朗读文本
- *     description: 需要网站会话、翻译权限与语音条款同意；PCM 转为浏览器可播放的 WAV，已有 MP3/WAV 保持原字节，响应不共享缓存。
+ *     description: 需要网站会话、翻译权限与语音条款同意；短朗读受独立请求及并发限额约束，不创建 TTS jobs 或消耗 TTS 页生成码/配额。engine 的 PCM 转 WAV；microsoft 仅在 Edge 启用时按当前语言音色返回 MP3，不自动重试或改换提供方，响应不共享缓存。
  *     parameters:
  *       - { in: query, name: text, required: true, schema: { type: string, maxLength: 300 } }
- *       - { in: query, name: source, schema: { type: string, enum: [engine, youdao], default: engine } }
- *       - { in: query, name: langType, schema: { type: string, default: en-USA } }
- *       - { in: query, name: type, schema: { type: integer, enum: [1, 2], default: 2 } }
+ *       - { in: query, name: source, schema: { type: string, enum: [engine, youdao, microsoft], default: engine } }
+ *       - { in: query, name: langType, description: 'engine/microsoft 的语言与口音；en-USA、en-GBR、zh-CHS、zh-CHT 分别映射到 en-US、en-GB、zh-CN、zh-TW，microsoft 不接受 auto', schema: { type: string, default: en-USA } }
+ *       - { in: query, name: type, description: '仅 youdao 使用；microsoft 不需要此字段', schema: { type: integer, enum: [1, 2], default: 2 } }
  *     responses:
  *       200:
  *         description: 音频字节

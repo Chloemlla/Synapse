@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchCDictSpeech, type CDictSpeechPayload } from '../../api/cdict';
+import { fetchCDictSpeech, fetchMicrosoftTranslatorSpeech, type CDictSpeechPayload } from '../../api/cdict';
+import { canFallbackSpeech, isSpeechCancellation, logTranslatorFailure, speechFailureMessage,
+  type SpeechFailureStage, type SpeechProvider } from './speechFallback';
 
 export type SpeechMode = 'engine' | 'engine-uk' | 'uk' | 'us';
-export interface SpeechState { status: 'idle' | 'loading' | 'playing'; key: string; error: string }
+export interface SpeechState { status: 'idle' | 'loading' | 'playing'; key: string; error: string; provider?: SpeechProvider }
 const IDLE: SpeechState = { status: 'idle', key: '', error: '' };
 
 export function useTranslatorSpeech(context: string) {
@@ -11,10 +13,7 @@ export function useTranslatorSpeech(context: string) {
   const controller = useRef<AbortController | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const objectUrl = useRef<string | null>(null);
-  const release = useCallback(() => {
-    sequence.current++;
-    controller.current?.abort();
-    controller.current = null;
+  const releaseMedia = useCallback(() => {
     const current = audio.current;
     audio.current = null;
     if (current) {
@@ -27,6 +26,12 @@ export function useTranslatorSpeech(context: string) {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
     objectUrl.current = null;
   }, []);
+  const release = useCallback(() => {
+    sequence.current++;
+    controller.current?.abort();
+    controller.current = null;
+    releaseMedia();
+  }, [releaseMedia]);
   const stop = useCallback(() => { release(); setState(IDLE); }, [release]);
   useEffect(() => { stop(); return release; }, [context, release, stop]);
 
@@ -40,29 +45,56 @@ export function useTranslatorSpeech(context: string) {
     }
     const request = new AbortController();
     controller.current = request;
-    setState({ status: 'loading', key, error: '' });
-    try {
-      const blob = await fetchCDictSpeech({ ...payload, text }, request.signal);
-      if (version !== sequence.current || request.signal.aborted) return;
-      const url = URL.createObjectURL(blob);
-      objectUrl.current = url;
-      const player = new Audio(url);
-      audio.current = player;
-      player.onended = () => { if (version === sequence.current) stop(); };
-      player.onerror = () => {
-        if (version !== sequence.current) return;
-        release();
-        setState({ status: 'idle', key, error: '语音播放失败，请重试。' });
+    const isCurrent = () => version === sequence.current && !request.signal.aborted;
+    const attempt = async (provider: SpeechProvider): Promise<void> => {
+      let failed = false;
+      let player: HTMLAudioElement | null = null;
+      let stage: SpeechFailureStage = 'http';
+      const ownsAttempt = () => isCurrent() && !failed && (!player || audio.current === player);
+      const fail = async (error: unknown, failureStage: SpeechFailureStage) => {
+        if (!ownsAttempt()) return;
+        // Media errors and play rejections can describe the same failure. Claim it before any await.
+        failed = true;
+        if ((error as { code?: unknown } | null)?.code === 'INVALID_AUDIO_RESPONSE') failureStage = 'invalid-response';
+        if (isSpeechCancellation(error, request.signal)) { stop(); return; }
+        logTranslatorFailure('/api/translate/cdict/tts', failureStage, error, request.signal, undefined, provider);
+        releaseMedia();
+        if (provider === 'cdict' && canFallbackSpeech(error, failureStage)) {
+          // Keep the same generation and controller, including throughout playback.
+          await attempt('microsoft');
+        } else {
+          release();
+          setState({ status: 'idle', key, error: speechFailureMessage(error, failureStage) });
+        }
       };
-      await player.play();
-      if (version !== sequence.current || request.signal.aborted) return;
-      controller.current = null;
-      setState({ status: 'playing', key, error: '' });
-    } catch {
-      if (version !== sequence.current || request.signal.aborted) return;
-      release();
-      setState({ status: 'idle', key, error: '语音暂时不可用，请重试或选择另一种发音。' });
-    }
-  }, [release, stop]);
+      setState({ status: 'loading', key, error: '', provider });
+      try {
+        const fetchAudio = provider === 'cdict' ? fetchCDictSpeech : fetchMicrosoftTranslatorSpeech;
+        const blob = await fetchAudio({ ...payload, text }, request.signal);
+        if (!ownsAttempt()) return;
+        // Defend the media boundary even if a transport returns a nonaudio value.
+        stage = 'invalid-response';
+        if (!(blob instanceof Blob) || !blob.size || !blob.type.toLowerCase().startsWith('audio/')) {
+          throw Object.assign(new Error('语音暂时不可用。'), { code: 'INVALID_AUDIO_RESPONSE' });
+        }
+        stage = 'media';
+        objectUrl.current = URL.createObjectURL(blob);
+        player = new Audio(objectUrl.current);
+        audio.current = player;
+        player.onended = () => { if (ownsAttempt()) stop(); };
+        player.onerror = () => {
+          const error = new DOMException('语音播放失败。', player?.error?.code === 1 ? 'AbortError' : 'NotSupportedError');
+          void fail(error, 'media');
+        };
+        stage = 'play';
+        await player.play();
+        if (!ownsAttempt()) return;
+        setState({ status: 'playing', key, error: '', provider });
+      } catch (error) {
+        await fail(error, stage);
+      }
+    };
+    await attempt('cdict');
+  }, [release, releaseMedia, stop]);
   return { state, play, stop };
 }

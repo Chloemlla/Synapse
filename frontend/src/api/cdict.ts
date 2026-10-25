@@ -1,4 +1,5 @@
 import { api } from './api';
+import { logTranslatorFailure } from '../components/translate/speechFallback';
 import { assertCDictSuccess, displayText, normalizeCDictLanguages, normalizeCDictTranslation, record } from '../components/translate/translationModel';
 
 const PREFIX = '/api/translate/cdict';
@@ -13,15 +14,48 @@ export async function translateWithCDict(payload: CDictTranslatePayload, signal?
   return normalizeCDictTranslation(response.data, payload.from, payload.to);
 }
 export async function fetchCDictLanguages(signal?: AbortSignal) {
-  const response = await api.get<unknown>(`${PREFIX}/languages`, { signal });
-  return normalizeCDictLanguages(response.data);
+  let stage: 'http' | 'invalid-response' = 'http';
+  let reply: unknown;
+  try {
+    const response = await api.get<unknown>(`${PREFIX}/languages`, { signal });
+    reply = response;
+    stage = 'invalid-response';
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    return normalizeCDictLanguages(response.data);
+  } catch (error) {
+    logTranslatorFailure(`${PREFIX}/languages`, stage, error, signal, reply);
+    throw error;
+  }
+}
+const SPEECH_TIMEOUT = 60000; // CDict can take 20s; the Microsoft Edge request can take 45s.
+function speechText(text: string): string {
+  const value = text.trim();
+  if (!value || value.length > 300) throw Object.assign(
+    new Error('朗读内容需为 1–300 个字符，请缩短文本后重试。'), { code: 'INVALID_SPEECH_INPUT' });
+  return value;
+}
+async function fetchSpeech(params: { text: string; source: string; langType?: string; type?: 1 | 2 }, signal?: AbortSignal): Promise<Blob> {
+  const response = await api.get<Blob>(`${PREFIX}/tts`, { params, signal, responseType: 'blob', timeout: SPEECH_TIMEOUT });
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  const blob = response.data;
+  if (!(blob instanceof Blob) || !blob.size || !blob.type.toLowerCase().startsWith('audio/')) throw Object.assign(
+    new Error('语音暂时不可用，请稍后重试。'), {
+      code: 'INVALID_AUDIO_RESPONSE', httpStatus: response.status,
+      requestId: response.headers?.['x-request-id'],
+    });
+  return blob;
 }
 export async function fetchCDictSpeech(payload: CDictSpeechPayload, signal?: AbortSignal): Promise<Blob> {
-  if (!payload.text.trim() || payload.text.trim().length > 300) throw new Error('朗读内容需为 1–300 个字符，请缩短文本后重试。');
-  const response = await api.get<Blob>(`${PREFIX}/tts`, { params: payload, signal, responseType: 'blob' });
-  const blob = response.data;
-  if (!(blob instanceof Blob) || !blob.size || !blob.type.toLowerCase().startsWith('audio/')) throw new Error('语音暂时不可用，请稍后重试。');
-  return blob;
+  return fetchSpeech({ ...payload, text: speechText(payload.text) }, signal);
+}
+export async function fetchMicrosoftTranslatorSpeech(payload: CDictSpeechPayload, signal?: AbortSignal): Promise<Blob> {
+  const text = speechText(payload.text);
+  const langType = payload.source === 'youdao'
+    ? payload.type === 1 ? 'en-GBR' : payload.type === 2 ? 'en-USA' : undefined
+    : payload.langType?.trim();
+  if (!langType || langType.toLowerCase() === 'auto') throw Object.assign(
+    new Error('请先选择朗读语言。'), { code: 'INVALID_SPEECH_INPUT' });
+  return fetchSpeech({ source: 'microsoft', text, langType }, signal);
 }
 export async function fetchCDictDonation(signal?: AbortSignal): Promise<DonationInfo | null> {
   try {
