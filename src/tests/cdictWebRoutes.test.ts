@@ -757,3 +757,13 @@ it.each([
   }
   expect(getBurstConcurrencySnapshot().totalActive).toBe(0);
 });
+
+
+it("logs the bounded Microsoft handshake diagnostic, not the raw upstream error", async () => {
+  const diagnostic = { code: "TTS_UPSTREAM_AUTH_FAILED", statusCode: 502, upstreamStatusCode: 403, protocolVersion: "2-143.0.3650.75" };
+  jest.mocked(microsoft.synthesizeMicrosoftSpeech).mockRejectedValue(new microsoft.CDictMicrosoftSpeechError("upstream_failed", diagnostic));
+  const res = await request(appForWeb()).get(prefix + "/tts?text=private-text&source=microsoft").set("Cookie", cookie());
+  expect(res.status).toBe(502);
+  expect(logger.warn).toHaveBeenCalledWith("[CDict] 微软短朗读请求失败", { category: "upstream_failed", ...diagnostic });
+  expect(JSON.stringify(jest.mocked(logger.warn).mock.calls)).not.toContain("private-text");
+});

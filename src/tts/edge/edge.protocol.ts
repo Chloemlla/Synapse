@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 
 /**
  * 微软 Edge「朗读」接口的协议常量。
- * 取值来源：aitts-rev/decompiled/TTS.Base/TTS.Base.TTS.Edge/{Constants,Drm,Communicate}.cs
+ * 基础参数来源：aitts-rev/decompiled/TTS.Base/TTS.Base.TTS.Edge/{Constants,Drm,Communicate}.cs
+ * v2 鉴权版本：edge-tts ba61d944（2026-10-13），必须与 edge.gec-v2 同步。
  * 这些值等同于 Edge 浏览器自带朗读功能所用的公开客户端参数，不属于本项目的机密。
  */
 
 export const EDGE_TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-export const EDGE_SEC_MS_GEC_VERSION = "1-143.0.3650.75";
+export const EDGE_SEC_MS_GEC_VERSION = "2-143.0.3650.75";
 export const EDGE_ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 export const EDGE_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";

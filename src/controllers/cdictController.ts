@@ -163,7 +163,8 @@ export class CDictController {
     } catch (error) {
       if (controller.signal.aborted || res.destroyed || res.writableEnded) return;
       const category = error instanceof CDictMicrosoftSpeechError ? error.category : "upstream_failed";
-      logger.warn("[CDict] 微软短朗读请求失败", { category });
+      const diagnostic = error instanceof CDictMicrosoftSpeechError ? error.diagnostic : {};
+      logger.warn("[CDict] 微软短朗读请求失败", { category, ...diagnostic });
       fail(res, 502, "语音服务暂时不可用");
     } finally {
       req.removeListener("aborted", onAborted);

@@ -4,7 +4,7 @@ import { RuntimeConfigService } from "../services/runtimeConfigService";
 import {
   CDictMicrosoftSpeechError, normalizeMicrosoftSpeechLocale, synthesizeMicrosoftSpeech,
 } from "../services/cdictMicrosoftSpeechService";
-import { EdgeTtsClient, type EdgeSynthesisInput } from "../tts/edge/edge.client";
+import { EdgeHandshakeError, EdgeTtsClient, type EdgeSynthesisInput } from "../tts/edge/edge.client";
 
 const mp3 = Buffer.from("ID3test-audio");
 const realSynthesize = EdgeTtsClient.prototype.synthesize;
@@ -219,4 +219,14 @@ describe("CDict Microsoft short speech", () => {
     await expect(synthesizeMicrosoftSpeech("hello", "en-USA", controller.signal))
       .rejects.toMatchObject({ category: "cancelled" });
   });
+});
+
+
+it("preserves safe typed handshake diagnostics without leaking configuration or text", async () => {
+  synthesize.mockRejectedValue(new EdgeHandshakeError(403));
+  await expect(synthesizeMicrosoftSpeech("private-text", "en-USA")).rejects.toMatchObject({
+    category: "upstream_failed", diagnostic: { code: "TTS_UPSTREAM_AUTH_FAILED", statusCode: 502,
+      upstreamStatusCode: 403, protocolVersion: "2-143.0.3650.75" },
+  });
+  expect(synthesize).toHaveBeenCalledTimes(1);
 });

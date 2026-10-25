@@ -70,6 +70,14 @@ jobs:
       - name: Run build
         run: pnpm run build
 
+      - name: Microsoft GEC v2 independent reference vectors
+        run: node scripts/verify-edge-gec-v2.mjs dist/tts/edge/edge.drm.js
+
+      - name: Real Microsoft speech protocol
+        env:
+          EDGE_LIVE_SPEECH_CHECK: "1"
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns=edgeLiveSpeech
+
       - name: Generate OpenAPI spec (validate swagger-jsdoc annotations)
         # openapi.json 被 .gitignore 忽略，产物不入库；在镜像构建前暴露 swagger-jsdoc 语法错误。
         run: pnpm run generate:openapi
@@ -242,7 +250,7 @@ jobs:
           pnpm --dir frontend install --frozen-lockfile --ignore-scripts
 
       - name: Website authentication and native CDict isolation
-        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware|rc47'
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware|rc47|edgeDrm|edgeProtocol|edgeClient'
 
       - name: Website translation and pronunciation regression
         if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}

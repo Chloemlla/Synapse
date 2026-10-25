@@ -1,7 +1,9 @@
 import { resolveEnabledTtsProviders, type TtsProviderOption } from "../config/ttsProviderConfig";
 import { RuntimeConfigService } from "./runtimeConfigService";
 import type { CDictAudio } from "./cdictUpstreamService";
-import { EdgeTtsClient } from "../tts/edge/edge.client";
+import { EdgeHandshakeError, EdgeTtsClient } from "../tts/edge/edge.client";
+import { TtsGenerationError } from "../tts/tts.errors";
+import { EDGE_SEC_MS_GEC_VERSION } from "../tts/edge/edge.protocol";
 import { resolveEdgeVoiceOptions } from "../tts/edge/edge.voices";
 import { assertAudioResponse } from "../tts/tts.provider";
 
@@ -22,9 +24,13 @@ const STRICT_LOCALES = new Set([...Object.keys(PREFERRED_VOICES), "zh-hk"]);
 type SpeechFailureCategory = "invalid_input" | "provider_disabled" | "language_unavailable" |
   "invalid_audio" | "audio_too_large" | "upstream_failed" | "cancelled";
 
-/** Only fixed categories cross this boundary; Edge errors can contain private upstream URLs. */
+const DIAGNOSTIC_CODES = new Set(["TTS_UPSTREAM_AUTH_FAILED", "TTS_UPSTREAM_UNAVAILABLE",
+  "TTS_UPSTREAM_TIMEOUT", "TTS_ABORTED", "TTS_EMPTY_PROVIDER_RESPONSE", "TTS_INVALID_PROVIDER_RESPONSE"]);
+interface SpeechDiagnostic { code?: string; statusCode?: number; upstreamStatusCode?: number; protocolVersion?: string }
+
+/** Only bounded diagnostic fields cross this boundary; never forward upstream URLs or text. */
 export class CDictMicrosoftSpeechError extends Error {
-  constructor(public readonly category: SpeechFailureCategory) {
+  constructor(public readonly category: SpeechFailureCategory, public readonly diagnostic: SpeechDiagnostic = {}) {
     super("CDict Microsoft speech failed");
     this.name = "CDictMicrosoftSpeechError";
   }
@@ -83,6 +89,16 @@ export async function synthesizeMicrosoftSpeech(
   } catch (error) {
     assertNotCancelled(signal);
     if (error instanceof CDictMicrosoftSpeechError) throw error;
-    throw new CDictMicrosoftSpeechError("upstream_failed");
+    const diagnostic: SpeechDiagnostic = {};
+    if (error instanceof TtsGenerationError) {
+      if (DIAGNOSTIC_CODES.has(error.code)) diagnostic.code = error.code;
+      if (Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode <= 599) diagnostic.statusCode = error.statusCode;
+    }
+    if (error instanceof EdgeHandshakeError && Number.isInteger(error.upstreamStatusCode)
+      && error.upstreamStatusCode >= 100 && error.upstreamStatusCode <= 599) {
+      diagnostic.upstreamStatusCode = error.upstreamStatusCode;
+      diagnostic.protocolVersion = EDGE_SEC_MS_GEC_VERSION;
+    }
+    throw new CDictMicrosoftSpeechError("upstream_failed", diagnostic);
   }
 }

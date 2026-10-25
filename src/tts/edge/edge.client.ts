@@ -58,17 +58,17 @@ export interface EdgeSynthesisResult {
   contentType: string;
 }
 
-/** 握手被上游以 HTTP 状态码拒绝（403 通常意味着本机时钟偏差）。 */
-class EdgeHandshakeError extends TtsGenerationError {
+/** HTTP 403 alone does not prove clock skew; unchanged authentication must not be retried. */
+export class EdgeHandshakeError extends TtsGenerationError {
   constructor(
     public readonly upstreamStatusCode: number,
-    message: string,
+    public readonly serverDate: string | null = null,
   ) {
     super(
-      message,
+      `微软语音握手被拒绝（上游 HTTP ${upstreamStatusCode}）`,
       502,
       upstreamStatusCode === 403 ? "TTS_UPSTREAM_AUTH_FAILED" : "TTS_UPSTREAM_UNAVAILABLE",
-      upstreamStatusCode === 403,
+      upstreamStatusCode >= 500,
     );
     this.name = "EdgeHandshakeError";
   }
@@ -87,7 +87,7 @@ function toBuffer(data: unknown): Buffer {
 }
 
 export class EdgeTtsClient {
-  /** 累积的时钟偏移（秒），源自上游 Date 头；与参考实现一致采用累加而非覆盖。 */
+  /** Absolute offset from upstream Date relative to the local clock, not a cumulative delta. */
   private clockSkewSeconds = 0;
 
   constructor(
@@ -111,7 +111,17 @@ export class EdgeTtsClient {
           throw error;
         }
         lastError = error;
-        const corrected = await this.refreshClockSkewFromVoiceList(input.baseUrl);
+        if (input.signal?.aborted) throw new TtsGenerationError("微软语音合成已取消", 499, "TTS_ABORTED", false);
+        if (attempt + 1 === EDGE_MAX_HANDSHAKE_ATTEMPTS) throw error;
+        let corrected: boolean;
+        if (error.serverDate) {
+          const skew = parseEdgeClockSkewSeconds(error.serverDate);
+          corrected = skew !== this.clockSkewSeconds;
+          this.clockSkewSeconds = skew;
+        } else {
+          corrected = await this.refreshClockSkewFromVoiceList(input.baseUrl, input.signal);
+        }
+        if (input.signal?.aborted) throw new TtsGenerationError("微软语音合成已取消", 499, "TTS_ABORTED", false);
         if (!corrected) throw error;
       }
     }
@@ -127,7 +137,7 @@ export class EdgeTtsClient {
     if (response.status === 403) {
       const skew = parseEdgeClockSkewSeconds(readDateHeader(response.headers));
       if (skew) {
-        this.clockSkewSeconds += skew;
+        this.clockSkewSeconds = skew;
         response = await this.requestVoiceList(this.buildVoiceListUrl(baseUrl));
       }
     }
@@ -151,7 +161,7 @@ export class EdgeTtsClient {
     return `${buildEdgeVoiceListUrl(baseUrl)}?${params.toString()}`;
   }
 
-  private requestVoiceList(url: string): Promise<Response> {
+  private requestVoiceList(url: string, signal?: AbortSignal): Promise<Response> {
     return this.fetchImpl(url, {
       method: "GET",
       headers: {
@@ -159,16 +169,19 @@ export class EdgeTtsClient {
         "Accept-Language": EDGE_ACCEPT_LANGUAGE,
         Cookie: `muid=${generateEdgeMuid()};`,
       },
-      signal: AbortSignal.timeout(EDGE_VOICE_LIST_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(EDGE_VOICE_LIST_TIMEOUT_MS)])
+        : AbortSignal.timeout(EDGE_VOICE_LIST_TIMEOUT_MS),
     });
   }
 
-  private async refreshClockSkewFromVoiceList(baseUrl: string): Promise<boolean> {
+  private async refreshClockSkewFromVoiceList(baseUrl: string, signal?: AbortSignal): Promise<boolean> {
     try {
-      const response = await this.requestVoiceList(this.buildVoiceListUrl(baseUrl));
-      const skew = parseEdgeClockSkewSeconds(readDateHeader(response.headers));
-      if (!skew) return false;
-      this.clockSkewSeconds += skew;
+      const response = await this.requestVoiceList(this.buildVoiceListUrl(baseUrl), signal);
+      const date = readDateHeader(response.headers);
+      if (!date) return false;
+      const skew = parseEdgeClockSkewSeconds(date);
+      if (skew === this.clockSkewSeconds) return false;
+      this.clockSkewSeconds = skew;
       return true;
     } catch {
       return false;
@@ -251,9 +264,7 @@ export class EdgeTtsClient {
         finish(
           new EdgeHandshakeError(
             statusCode,
-            statusCode === 403
-              ? "微软语音拒绝握手（时钟偏差）"
-              : `微软语音握手失败（${statusCode}）`,
+            readDateHeader(response.headers),
           ),
         );
       });
@@ -327,7 +338,9 @@ export class EdgeTtsClient {
   }
 }
 
-function readDateHeader(headers: Response["headers"]): string | null {
-  if (!headers || typeof headers.get !== "function") return null;
-  return headers.get("date");
+function readDateHeader(headers: Response["headers"] | EdgeHandshakeResponse["headers"]): string | null {
+  if (!headers) return null;
+  const date = typeof headers.get === "function" ? headers.get("date") : "date" in headers ? headers.date : null;
+  if (typeof date !== "string" || !Number.isFinite(Date.parse(date))) return null;
+  return new Date(date).toUTCString();
 }
