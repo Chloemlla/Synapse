@@ -5,6 +5,7 @@ import https from "node:https";
 import { config } from "../config/config";
 import { isPublicCdictUpstreamAddress, normalizeCdictUpstreamUrl } from "../config/cdictUpstreamConfig";
 import logger from "../utils/logger";
+import { CDictSpeechError, cdictSpeechResponseMetadata, cdictSpeechTransportDiagnostic, safeCDictTransportCode } from "./cdictSpeechDiagnostics";
 
 /**
  * CDict 上游代理服务。
@@ -113,7 +114,8 @@ const publicHttpsAgent = new https.Agent({
   lookup(hostname, options, callback) {
     lookup(hostname, { all: true, verbatim: true }, (error, addresses) => {
       if (error || addresses.length === 0 || addresses.some(({ address }) => !isPublicCdictUpstreamAddress(address))) {
-        callback(new Error("CDict upstream public address lookup failed"), "", 4);
+        callback(Object.assign(new Error("CDict upstream public address lookup failed"),
+          { code: safeCDictTransportCode(error?.code) || "CDICT_UPSTREAM_ADDRESS_REJECTED" }), "", 4);
         return;
       }
       const family: unknown = typeof options === "number" ? options : options.family;
@@ -121,7 +123,8 @@ const publicHttpsAgent = new https.Agent({
       const candidates = addresses.filter((entry) => !requestedFamily || requestedFamily === entry.family);
       const selected = candidates.find((entry) => entry.family === 4) || candidates[0];
       if (!selected) {
-        callback(new Error("CDict upstream public address lookup failed"), "", 4);
+        callback(Object.assign(new Error("CDict upstream public address lookup failed"),
+          { code: safeCDictTransportCode(error?.code) || "CDICT_UPSTREAM_ADDRESS_REJECTED" }), "", 4);
         return;
       }
       callback(null, selected.address, selected.family);
@@ -236,7 +239,7 @@ export async function fetchLanguageList(): Promise<unknown> {
  */
 function ttsSignature(params: string, appKey: string): string {
   if (!appKey) {
-    throw new Error("VIVO_TTS_APP_KEY 未配置，语音合成功能不可用");
+    throw new CDictSpeechError("VIVO_TTS_APP_KEY 未配置，语音合成功能不可用", { reason: "configuration_missing", setting: "VIVO_TTS_APP_KEY" });
   }
   const hmacHex = crypto.createHmac("sha256", appKey).update(params, "utf8").digest("hex");
   return crypto.createHash("md5").update(`${hmacHex}&key=${appKey}`, "utf8").digest("hex");
@@ -253,7 +256,9 @@ function detectAudioContentType(data: Buffer): string {
 /** 在线合成引擎：成功返回音频字节；上游以 {"errorResult":{…}} 拒绝时抛错。 */
 export async function synthesizeSpeech(text: string, langType: string): Promise<CDictAudio> {
   const upstream = { ...config.cdictUpstream };
-  const ttsUrl = normalizeCdictUpstreamUrl(upstream.ttsUrl, "ttsUrl");
+  let ttsUrl: string;
+  try { ttsUrl = normalizeCdictUpstreamUrl(upstream.ttsUrl, "ttsUrl"); }
+  catch { throw new CDictSpeechError("语音上游地址配置无效", { reason: "configuration_invalid", setting: "VIVO_TTS_URL" }); }
   const taskId = crypto.randomUUID().replace(/-/g, "");
   const nonce = randomAlphanumeric(16);
   const textB64 = Buffer.from(text, "utf8").toString("base64");
@@ -293,14 +298,14 @@ export async function synthesizeSpeech(text: string, langType: string): Promise<
       maxContentLength: 8 * 1024 * 1024,
     });
   } catch (error) {
-    throw new Error(extractUpstreamError(error, "上游语音合成请求失败"));
+    throw new CDictSpeechError(extractUpstreamError(error, "上游语音合成请求失败"), cdictSpeechTransportDiagnostic(error));
   }
   const data = Buffer.from(response.data);
-  if (data.length === 0) throw new Error("上游语音合成返回空音频");
+  if (data.length === 0) throw new CDictSpeechError("上游语音合成返回空音频", { reason: "empty_audio", ...cdictSpeechResponseMetadata(response) });
   const head = data.subarray(0, 1024).toString("utf8");
   if (head.includes("errorResult")) {
-    // Do not echo errorMsg or arbitrary errorCode values: upstream may include keys.
-    throw new Error("上游语音合成拒绝请求");
+    // Keep numeric business codes only; errorMsg and arbitrary codes may echo credentials.
+    throw new CDictSpeechError("上游语音合成拒绝请求", { reason: "upstream_rejected", ...cdictSpeechResponseMetadata(response) });
   }
   return { contentType: detectAudioContentType(data), data };
 }
@@ -318,19 +323,19 @@ export async function fetchDictionaryVoice(text: string, type: number): Promise<
       maxContentLength: 8 * 1024 * 1024,
     });
   } catch (error) {
-    throw new Error(extractUpstreamError(error, "上游词典音频请求失败"));
+    throw new CDictSpeechError(extractUpstreamError(error, "上游词典音频请求失败"), cdictSpeechTransportDiagnostic(error));
   }
   const data = Buffer.from(response.data);
-  if (data.length === 0) throw new Error("上游词典音频返回空响应体");
+  if (data.length === 0) throw new CDictSpeechError("上游词典音频返回空响应体", { reason: "empty_audio", ...cdictSpeechResponseMetadata(response) });
   const upstreamType = String(response.headers["content-type"] || "");
   if (upstreamType && !upstreamType.toLowerCase().startsWith("audio/")) {
-    throw new Error(`上游词典音频返回非音频响应 content-type=${upstreamType}`);
+    throw new CDictSpeechError("上游词典音频返回非音频响应", { reason: "unexpected_content_type", ...cdictSpeechResponseMetadata(response) });
   }
   const contentType = upstreamType.toLowerCase().startsWith("audio/")
     ? upstreamType
     : detectAudioContentType(data);
   if (!contentType.toLowerCase().startsWith("audio/")) {
-    throw new Error("上游词典音频返回非音频格式");
+    throw new CDictSpeechError("上游词典音频返回非音频格式", { reason: "unexpected_content_type", ...cdictSpeechResponseMetadata(response) });
   }
   return { contentType, data };
 }

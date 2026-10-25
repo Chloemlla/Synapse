@@ -4,7 +4,7 @@ import { lookup } from "node:dns";
 import { config } from "../config/config";
 import { CDICT_UPSTREAM_DEFAULTS, type CdictUpstreamRuntimeConfig } from "../config/cdictUpstreamConfig";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
-import { fetchLanguageList, synthesizeSpeech, translateText } from "../services/cdictUpstreamService";
+import { fetchDictionaryVoice, fetchLanguageList, synthesizeSpeech, translateText } from "../services/cdictUpstreamService";
 
 jest.mock("axios");
 jest.mock("node:dns", () => ({ ...jest.requireActual("node:dns"), lookup: jest.fn() }));
@@ -165,4 +165,27 @@ it("checks all socket DNS answers and refuses rebinding to private/reserved dest
   });
   resolver("public.example.com", { family: 4 }, callback);
   expect(callback).toHaveBeenLastCalledWith(null, "8.8.8.8", 4);
+});
+
+
+it("retains missing-key and invalid-URL reasons without submitting speech", async () => {
+  useConfig({ ttsAppKey: "" });
+  await expect(synthesizeSpeech("SECRET", "en-USA")).rejects.toMatchObject({ diagnostic: { reason: "configuration_missing", setting: "VIVO_TTS_APP_KEY" } });
+  useConfig({ ttsUrl: "https://name:SECRET@invalid.example", ttsAppKey: "SECRET" });
+  await expect(synthesizeSpeech("SECRET", "en-USA")).rejects.toMatchObject({ diagnostic: { reason: "configuration_invalid", setting: "VIVO_TTS_URL" } });
+  expect(post).not.toHaveBeenCalled();
+});
+
+it("retains numeric engine business errors while hiding their error messages", async () => {
+  useConfig({ ttsAppKey: "SECRET" });
+  const data = Buffer.from(JSON.stringify({ errorResult: { errorCode: 20004, errorMsg: "SECRET" } }));
+  post.mockResolvedValueOnce({ status: 200, data, headers: { "content-type": "application/json" } });
+  await expect(synthesizeSpeech("SECRET", "en-USA")).rejects.toMatchObject({ diagnostic: { reason: "upstream_rejected", upstreamStatus: 200, upstreamCode: 20004, responseBytes: data.length } });
+});
+
+it("retains dictionary HTTP and nonaudio response diagnostics", async () => {
+  get.mockRejectedValueOnce({ isAxiosError: true, code: "ERR_BAD_REQUEST", response: { status: 403, data: { msg: "SECRET" } } });
+  await expect(fetchDictionaryVoice("SECRET", 1)).rejects.toMatchObject({ diagnostic: { reason: "http_error", upstreamStatus: 403, transportCode: "ERR_BAD_REQUEST" } });
+  get.mockResolvedValueOnce({ status: 200, data: Buffer.from("SECRET"), headers: { "content-type": "text/html; token=SECRET" } });
+  await expect(fetchDictionaryVoice("SECRET", 2)).rejects.toMatchObject({ diagnostic: { reason: "unexpected_content_type", upstreamStatus: 200, upstreamContentType: "text/html", responseBytes: 6 } });
 });

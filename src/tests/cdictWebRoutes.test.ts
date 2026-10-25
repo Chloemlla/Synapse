@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response } from "express";
 import { EventEmitter } from "node:events";
 import { CDictController } from "../controllers/cdictController";
+import { CDictSpeechError } from "../services/cdictSpeechDiagnostics";
 import * as microsoft from "../services/cdictMicrosoftSpeechService";
 import logger from "../utils/logger";
 import jwt from "jsonwebtoken";
@@ -766,4 +767,31 @@ it("logs the bounded Microsoft handshake diagnostic, not the raw upstream error"
   expect(res.status).toBe(502);
   expect(logger.warn).toHaveBeenCalledWith("[CDict] 微软短朗读请求失败", { category: "upstream_failed", ...diagnostic });
   expect(JSON.stringify(jest.mocked(logger.warn).mock.calls)).not.toContain("private-text");
+});
+
+
+it("logs detailed CDict engine diagnostics and request context without speech text", async () => {
+  jest.mocked(upstream.synthesizeSpeech).mockRejectedValue(new CDictSpeechError("SECRET", {
+    reason: "configuration_missing", setting: "VIVO_TTS_APP_KEY",
+  }));
+  const app = express();
+  app.use((req, _res, next) => { req.requestId = "speech-trace"; next(); });
+  app.use(prefix, ...(mount.middlewares || []), mount.router);
+  const response = await request(app).get(prefix + "/tts?text=SECRET&langType=en-USA").set("Cookie", cookie());
+  expect(response.status).toBe(502);
+  expect(logger.warn).toHaveBeenCalledWith("[CDict] 语音请求失败", expect.objectContaining({
+    source: "engine", category: "upstream_failed", reason: "configuration_missing",
+    setting: "VIVO_TTS_APP_KEY", langType: "en-USA", textLength: 6, requestId: "speech-trace", durationMs: expect.any(Number),
+  }));
+  expect(JSON.stringify(jest.mocked(logger.warn).mock.calls)).not.toContain("SECRET");
+  expect(JSON.stringify(response.body)).not.toContain("VIVO_TTS_APP_KEY");
+});
+
+it("distinguishes CDict audio conversion errors from an upstream request failure", async () => {
+  jest.mocked(upstream.synthesizeSpeech).mockResolvedValue({ contentType: "audio/L16;rate=44100", data: pcm });
+  const response = await request(appForWeb()).get(prefix + "/tts?text=hello").set("Cookie", cookie());
+  expect(response.status).toBe(502);
+  expect(logger.warn).toHaveBeenCalledWith("[CDict] 语音请求失败", expect.objectContaining({
+    source: "engine", reason: "audio_conversion_failed", textLength: 5, langType: "en-USA",
+  }));
 });

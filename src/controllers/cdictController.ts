@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import logger from "../utils/logger";
 import { normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
 import { toBrowserCdictAudio } from "./cdictWebAudio";
+import { cdictSpeechFailureDiagnostic } from "../services/cdictSpeechDiagnostics";
 import {
   CDictMicrosoftSpeechError,
   normalizeMicrosoftSpeechLocale,
@@ -112,6 +113,10 @@ export class CDictController {
       }
       return CDictController.microsoftSpeech(req, res, text, langType);
     }
+    const startedAt = Date.now();
+    let converting = false;
+    let langType: string | undefined;
+    let voiceType: number | undefined;
     try {
       let audio: CDictAudio;
       if (source === SOURCE_DICTIONARY) {
@@ -125,21 +130,25 @@ export class CDictController {
           fail(res, 400, "type 只支持 1（英式）或 2（美式）");
           return;
         }
+        voiceType = type;
         audio = await fetchDictionaryVoice(text, type);
       } else {
-        const langType = firstString(req.query?.langType).trim() || "en-USA";
+        langType = firstString(req.query?.langType).trim() || "en-USA";
         if (!LANGUAGE_CODE.test(langType)) {
           fail(res, 400, "langType 不合法");
           return;
         }
         audio = await synthesizeSpeech(text, langType);
       }
-      if (forWeb) audio = toBrowserCdictAudio(audio);
+      if (forWeb) { converting = true; audio = toBrowserCdictAudio(audio); converting = false; }
       res.setHeader("Content-Type", audio.contentType);
       res.setHeader("Cache-Control", forWeb ? "private, no-store" : "public, max-age=86400");
       res.status(200).send(audio.data);
-    } catch {
-      logger.warn("[CDict] 语音请求失败", { source, category: "upstream_failed" });
+    } catch (error) {
+      const diagnostic = cdictSpeechFailureDiagnostic(error, converting);
+      const requestId = typeof req.requestId === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(req.requestId) ? req.requestId : undefined;
+      logger.warn("[CDict] 语音请求失败", { source, category: "upstream_failed", ...diagnostic,
+        langType, voiceType, textLength: text.length, durationMs: Math.max(0, Date.now() - startedAt), requestId });
       fail(res, 502, "上游服务暂时不可用");
     }
   }
