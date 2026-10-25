@@ -231,6 +231,8 @@ RUN pnpm install --prod --frozen-lockfile --ignore-scripts && \
            /root/.cache/node/corepack
 
 # 从构建阶段复制产物
+# 安装依赖时保留缓存层；运行时版本必须继承构建期同步后的manifest，不能用工作区旧版本。
+COPY --from=backend-builder /app/package.json ./package.json
 COPY --from=backend-builder /app/dist-obfuscated ./dist
 COPY --from=backend-builder /app/openapi.json ./openapi.json
 COPY --from=backend-builder /app/openapi.json ./dist/openapi.json
@@ -242,6 +244,7 @@ COPY --from=backend-builder /app/scripts/migrations/backfill-lumen-ttl.js ./scri
 COPY --from=backend-builder /app/scripts/migrations/backfill-mobile-token-lineage.js ./scripts/migrations/backfill-mobile-token-lineage.js
 # 前端由后端 Express 提供：frontend/dist 命中 registerStaticRoutes 的候选路径。
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+COPY --from=backend-builder /app/scripts/verify-build-info.mjs ./scripts/verify-build-info.mjs
 
 # 非 root 用户运行
 # /app/data 是 media-tool 工作根（resolveRootDir 兜底 <cwd>/data/media-tool）、
@@ -272,6 +275,9 @@ ARG GIT_SHA=unknown
 ENV APP_GIT_SHA=$GIT_SHA
 RUN printf '%s' "$GIT_SHA" > /app/.build-sha && \
     chown nodejs:nodejs /app/.build-sha
+
+# 在真实生产产物上核对前端注入、后端manifest与镜像SHA，漂移必须让构建失败。
+RUN node scripts/verify-build-info.mjs
 
 USER nodejs
 

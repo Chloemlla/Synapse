@@ -51,6 +51,9 @@ jobs:
       - name: Privacy contract validation
         run: pnpm run check:privacy-contract
 
+      - name: Build metadata regressions
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns="buildVersionSync|buildMetadata"
+
       - name: Frontend design language guard
         # 视觉基准：frontend/src/components/ResourceStoreList.tsx + studioTheme.tsx。
         # 静态扫描（无需构建）禁用色/任意色值/非 slate 中性/语义色漂移/高饱和渐变/
@@ -103,6 +106,14 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: pnpm run build
+
+      - name: Frontend build metadata consistency
+        run: |
+          printf '%s' "$GITHUB_SHA" > .build-sha
+          node scripts/verify-build-info.mjs
+
+      - name: Footer build information regressions
+        run: pnpm --dir frontend exec vitest run src/components/Footer.test.tsx
 
       - name: Enforce frontend bundle budget
         run: pnpm run check:frontend-bundle

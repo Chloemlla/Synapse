@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import vitePluginsAutoI18n, { GoogleTranslator } from "vite-auto-i18n-plugin";
 import path from "path";
@@ -54,6 +54,19 @@ const FRONTEND_VERSION = readPackageVersion(path.resolve(__dirname, "package.jso
 // 后端版本来自仓库根 package.json；Docker 前端构建阶段会把它拷到 /app/package.json。
 const BACKEND_VERSION = readPackageVersion(path.resolve(__dirname, "..", "package.json")) || "unknown";
 const GIT_SHORT_SHA = resolveGitShortSha();
+
+function buildMetadataPlugin(): Plugin {
+  return {
+    name: "synapse-build-metadata",
+    apply: "build",
+    generateBundle() {
+      // Use the exact same constants as define, not a second clock or manifest read.
+      this.emitFile({ type: "asset", fileName: "build-info.json", source: JSON.stringify({
+        frontendVersion: FRONTEND_VERSION, backendVersion: BACKEND_VERSION, shortSha: GIT_SHORT_SHA,
+      }) });
+    },
+  };
+}
 
 // Shared manual chunks mapping — used as a function for rolldown (Vite 7) compatibility
 const MANUAL_CHUNKS: Record<string, string[]> = {
@@ -296,6 +309,7 @@ export default defineConfig(({ mode, command }) => {
     base,
     plugins: [
       react(),
+      buildMetadataPlugin(),
       jsYamlDefaultInteropPlugin,
       // 自动多语言翻译插件（默认使用 Google 翻译）
       // vitePluginsAutoI18n({

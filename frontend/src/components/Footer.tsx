@@ -21,12 +21,14 @@ interface BackendBuildInfo {
   shortSha: string;
 }
 
-// PERF-05: 页脚的网络信息与后端版本在同一个会话内不会变。原先两个 effect 每次挂载都直接
-// fetch，而页脚在 shell 切换（登录/登出、768px 断点跨侧栏）时会重新挂载，于是重复请求。
-// 这里加一层「sessionStorage + TTL」缓存，并用模块级 in-flight 表合并并发挂载的重复请求；
-// TTL 与服务端 Cache-Control 对齐（/api/ip 120s、/api/status 30s，客户端取 60s 更保守）。
+// PERF-05: shell切换（登录/登出、768px断点）会重新挂载页脚，需要合并重复请求。
+// IP保留sessionStorage缓存120s；后端构建信息只在本文档缓存60s，刷新后必须重查。
+// 模块级in-flight表仍合并并发挂载，避免为一次shell切换重复访问后端。
 const IP_CACHE_KEY = 'synapse.footer.ip';
-const BUILD_CACHE_KEY = 'synapse.footer.backendBuild';
+let backendBuildCache: { expiresAt: number; data: BackendBuildInfo } | null = null;
+function readBackendBuildCache(): BackendBuildInfo | null {
+  return backendBuildCache && backendBuildCache.expiresAt > Date.now() ? backendBuildCache.data : null;
+}
 const IP_CACHE_TTL_MS = 120_000;
 const BUILD_CACHE_TTL_MS = 60_000;
 
@@ -116,7 +118,7 @@ const Footer: React.FC = () => {
   // 后端版本/SHA 以「刷新后向后端询问一次」的结果为准；
   // 初值用构建期注入的那份，查询失败时页脚不会出现空值。
   const [backendBuild, setBackendBuild] = useState<BackendBuildInfo>(
-    () => readFooterCache<BackendBuildInfo>(BUILD_CACHE_KEY) ?? {
+    () => readBackendBuildCache() ?? {
       version: buildInfo.backendVersion,
       shortSha: buildInfo.shortSha
     }
@@ -188,7 +190,7 @@ const Footer: React.FC = () => {
 
   useEffect(() => {
     // 每次页面刷新只问一次：/api/status 是后端启动时算好的常量，公开、无鉴权。
-    const cached = readFooterCache<BackendBuildInfo>(BUILD_CACHE_KEY);
+    const cached = readBackendBuildCache();
     if (cached) {
       setBackendBuild(cached);
       return;
@@ -200,7 +202,7 @@ const Footer: React.FC = () => {
       try {
         const url = `${getApiBaseUrl()}/api/status`;
         const response = await dedupedFooterRequest('status', () => fetch(url, {
-          headers: { 'Accept': 'application/json' }
+          headers: { 'Accept': 'application/json' }, cache: 'no-cache'
         }));
 
         if (!response.ok) {
@@ -221,7 +223,7 @@ const Footer: React.FC = () => {
           version: version || buildInfo.backendVersion,
           shortSha: shortSha || buildInfo.shortSha
         };
-        writeFooterCache(BUILD_CACHE_KEY, next, BUILD_CACHE_TTL_MS);
+        backendBuildCache = { expiresAt: Date.now() + BUILD_CACHE_TTL_MS, data: next };
         setBackendBuild(next);
       } catch (error) {
         // 保留构建期注入的后端版本作为兜底，不把页脚打成空白。
