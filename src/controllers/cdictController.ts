@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
 import logger from "../utils/logger";
+import { config } from "../config/config";
+import { CDictLanguageRequestError, describeCDictLanguageResponse, sanitizeCDictLanguageMessage, type CDictLanguageDiagnostic } from "../services/cdictLanguageDiagnostics";
 import { normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
 import { toBrowserCdictAudio } from "./cdictWebAudio";
 import { cdictSpeechFailureDiagnostic } from "../services/cdictSpeechDiagnostics";
@@ -69,13 +71,25 @@ export class CDictController {
   }
 
   /** GET /api/cdict/languages —— 透传上游支持的语言集合。 */
-  public static async languages(_req: Request, res: Response): Promise<void> {
+  public static async languages(req: Request, res: Response): Promise<void> {
+    const startedAt = Date.now();
+    let upstream: unknown;
+    let diagnostic: CDictLanguageDiagnostic | undefined;
+    let stage: "request" | "response_validation" = "request";
+    const settings = config.cdictUpstream;
+    const secrets = [settings?.translateAppId, settings?.ttsAppId, settings?.ttsAppKey].filter((value): value is string => typeof value === "string");
     try {
-      const upstream = await fetchLanguageList();
+      upstream = await fetchLanguageList(next => { diagnostic = next; });
+      stage = "response_validation";
       res.json(normalizeCdictLanguageResponse(upstream));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "语言列表获取失败";
-      logger.warn("[CDict] 语言列表获取失败", { message });
+      const details = error instanceof CDictLanguageRequestError ? error.diagnostic
+        : diagnostic ?? describeCDictLanguageResponse(upstream, secrets);
+      const errorMessage = sanitizeCDictLanguageMessage(error instanceof Error ? error.message : "语言列表获取失败", secrets);
+      const requestId = typeof req.requestId === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(req.requestId) ? req.requestId : undefined;
+      // Do not use meta.message: Winston treats it as the main log message and hides the context.
+      logger.warn("[CDict] 语言列表获取失败", { errorMessage, ...details, failureStage: stage,
+        requestId, durationMs: Math.max(0, Date.now() - startedAt) });
       fail(res, 502, "上游服务暂时不可用");
     }
   }

@@ -6,6 +6,7 @@ import { config } from "../config/config";
 import { isPublicCdictUpstreamAddress, normalizeCdictUpstreamUrl } from "../config/cdictUpstreamConfig";
 import logger from "../utils/logger";
 import { CDictSpeechError, cdictSpeechResponseMetadata, cdictSpeechTransportDiagnostic, safeCDictTransportCode } from "./cdictSpeechDiagnostics";
+import { CDictLanguageRequestError, describeCDictLanguageResponse, type CDictLanguageDiagnostic } from "./cdictLanguageDiagnostics";
 
 /**
  * CDict 上游代理服务。
@@ -181,7 +182,7 @@ export async function translateText(input: CDictTranslateInput): Promise<Record<
 }
 
 /** SDK queryAvailableLanguage supplies online=1 and the full NmtHttpParamsUtils identity. */
-export async function fetchLanguageList(): Promise<unknown> {
+export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageDiagnostic) => void): Promise<unknown> {
   const upstream = { ...config.cdictUpstream };
   const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
   const body = encodeForm({
@@ -209,6 +210,8 @@ export async function fetchLanguageList(): Promise<unknown> {
     responseType: "json" as const,
     maxContentLength: 2 * 1024 * 1024,
   };
+  const secrets = [upstream.translateAppId, upstream.ttsAppId, upstream.ttsAppKey];
+  let method: "GET" | "POST" = "GET";
   try {
     let response: AxiosResponse<unknown>;
     try {
@@ -216,6 +219,7 @@ export async function fetchLanguageList(): Promise<unknown> {
     } catch (error) {
       // SDK documents GET. Retry only a real 405, once, with identical parameters.
       if (!axios.isAxiosError(error) || error.response?.status !== 405) throw error;
+      method = "POST";
       response = await axios.post(url, body, {
         ...options,
         headers: {
@@ -225,9 +229,15 @@ export async function fetchLanguageList(): Promise<unknown> {
         },
       });
     }
+    onResponse?.({ ...cdictSpeechResponseMetadata(response), ...describeCDictLanguageResponse(response.data ?? {}, secrets),
+      upstreamMethod: method, compatibilityRetried: method === "POST", previousUpstreamStatus: method === "POST" ? 405 : undefined });
     return response.data ?? {};
   } catch (error) {
-    throw new Error(extractUpstreamError(error, "上游语言列表请求失败"));
+    throw new CDictLanguageRequestError(extractUpstreamError(error, "上游语言列表请求失败"), {
+      ...cdictSpeechTransportDiagnostic(error),
+      ...describeCDictLanguageResponse(axios.isAxiosError(error) ? error.response?.data : undefined, secrets),
+      upstreamMethod: method, compatibilityRetried: method === "POST", previousUpstreamStatus: method === "POST" ? 405 : undefined,
+    });
   }
 }
 

@@ -52,7 +52,7 @@ jobs:
         run: pnpm run check:privacy-contract
 
       - name: Build metadata regressions
-        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns="buildVersionSync|buildMetadata"
+        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns="buildVersionSync|buildMetadata|viteBuildConfig"
 
       - name: Frontend design language guard
         # 视觉基准：frontend/src/components/ResourceStoreList.tsx + studioTheme.tsx。
