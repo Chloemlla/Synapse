@@ -211,7 +211,9 @@ export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageD
     maxContentLength: 2 * 1024 * 1024,
   };
   const secrets = [upstream.translateAppId, upstream.ttsAppId, upstream.ttsAppKey];
-  let method: "GET" | "POST" = "GET";
+  const requestMetadata: Pick<CDictLanguageDiagnostic, "upstreamMethod" | "compatibilityRetried" | "previousUpstreamStatus"> = {
+    upstreamMethod: "GET", compatibilityRetried: false, previousUpstreamStatus: undefined,
+  };
   try {
     let response: AxiosResponse<unknown>;
     try {
@@ -219,7 +221,9 @@ export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageD
     } catch (error) {
       // SDK documents GET. Retry only a real 405, once, with identical parameters.
       if (!axios.isAxiosError(error) || error.response?.status !== 405) throw error;
-      method = "POST";
+      requestMetadata.upstreamMethod = "POST";
+      requestMetadata.compatibilityRetried = true;
+      requestMetadata.previousUpstreamStatus = 405;
       response = await axios.post(url, body, {
         ...options,
         headers: {
@@ -230,13 +234,13 @@ export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageD
       });
     }
     onResponse?.({ ...cdictSpeechResponseMetadata(response), ...describeCDictLanguageResponse(response.data ?? {}, secrets),
-      upstreamMethod: method, compatibilityRetried: method === "POST", previousUpstreamStatus: method === "POST" ? 405 : undefined });
+      ...requestMetadata });
     return response.data ?? {};
   } catch (error) {
     throw new CDictLanguageRequestError(extractUpstreamError(error, "上游语言列表请求失败"), {
       ...cdictSpeechTransportDiagnostic(error),
       ...describeCDictLanguageResponse(axios.isAxiosError(error) ? error.response?.data : undefined, secrets),
-      upstreamMethod: method, compatibilityRetried: method === "POST", previousUpstreamStatus: method === "POST" ? 405 : undefined,
+      ...requestMetadata,
     });
   }
 }

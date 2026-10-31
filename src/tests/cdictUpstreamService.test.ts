@@ -4,6 +4,7 @@ import { lookup } from "node:dns";
 import { config } from "../config/config";
 import { CDICT_UPSTREAM_DEFAULTS, type CdictUpstreamRuntimeConfig } from "../config/cdictUpstreamConfig";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
+import { CDictLanguageRequestError } from "../services/cdictLanguageDiagnostics";
 import { fetchDictionaryVoice, fetchLanguageList, synthesizeSpeech, translateText } from "../services/cdictUpstreamService";
 
 jest.mock("axios");
@@ -28,8 +29,13 @@ afterAll(() => { RuntimeConfigService.getCachedConfig().cdictUpstream = baseline
 
 it("sends the complete documented SDK language query including online and camelCase userId", async () => {
   const payload = { code: 0, data: { langs: ["en"] }, untouched: [1, 2] };
+  const onResponse = jest.fn();
   get.mockResolvedValueOnce({ data: payload });
-  expect(await fetchLanguageList()).toBe(payload);
+  expect(await fetchLanguageList(onResponse)).toBe(payload);
+  expect(onResponse).toHaveBeenCalledTimes(1);
+  expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({
+    upstreamMethod: "GET", compatibilityRetried: false, previousUpstreamStatus: undefined,
+  }));
   expect(post).not.toHaveBeenCalled();
   const [rawUrl, options] = get.mock.calls[0];
   const url = new URL(rawUrl);
@@ -45,8 +51,13 @@ it("sends the complete documented SDK language query including online and camelC
 it("retries only an HTTP405 once as a form POST with exactly the same SDK parameters", async () => {
   get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 405 } });
   const payload = { code: 0, data: { langs: ["en", "zh-CHS"] } };
+  const onResponse = jest.fn();
   post.mockResolvedValueOnce({ data: payload });
-  expect(await fetchLanguageList()).toBe(payload);
+  expect(await fetchLanguageList(onResponse)).toBe(payload);
+  expect(onResponse).toHaveBeenCalledTimes(1);
+  expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({
+    upstreamMethod: "POST", compatibilityRetried: true, previousUpstreamStatus: 405,
+  }));
   expect(get).toHaveBeenCalledTimes(1);
   expect(post).toHaveBeenCalledTimes(1);
   const [url, body, options] = post.mock.calls[0];
@@ -54,6 +65,39 @@ it("retries only an HTTP405 once as a form POST with exactly the same SDK parame
   expect(body).toBe(new URL(get.mock.calls[0][0]).search.slice(1));
   expect(options).toMatchObject({ headers: { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": String(Buffer.byteLength(body)) },
     timeout: 20_000, maxContentLength: 2 * 1024 * 1024, maxRedirects: 0, proxy: false });
+});
+
+it.each([
+  { failure: "HTTP500", upstreamError: { isAxiosError: true, response: { status: 500 } }, diagnostic: { reason: "http_error", upstreamStatus: 500 } },
+  { failure: "network error", upstreamError: { isAxiosError: true, code: "ERR_NETWORK" }, diagnostic: { reason: "transport_error", transportCode: "ERR_NETWORK" } },
+])("retains POST compatibility diagnostics when the HTTP405 retry fails with $failure", async ({ upstreamError, diagnostic }) => {
+  const onResponse = jest.fn();
+  get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 405 } });
+  post.mockRejectedValueOnce(upstreamError);
+  const error = await fetchLanguageList(onResponse).catch((failure: unknown) => failure);
+  expect(error).toBeInstanceOf(CDictLanguageRequestError);
+  expect(error).toMatchObject({ diagnostic: {
+    ...diagnostic, upstreamMethod: "POST", compatibilityRetried: true, previousUpstreamStatus: 405,
+  } });
+  expect(get).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(onResponse).not.toHaveBeenCalled();
+});
+
+it.each([
+  { failure: "HTTP400", upstreamError: { isAxiosError: true, response: { status: 400 } }, diagnostic: { reason: "http_error", upstreamStatus: 400 } },
+  { failure: "network error", upstreamError: { isAxiosError: true, code: "ERR_NETWORK" }, diagnostic: { reason: "transport_error", transportCode: "ERR_NETWORK" } },
+])("retains GET diagnostics without retrying a direct $failure", async ({ upstreamError, diagnostic }) => {
+  const onResponse = jest.fn();
+  get.mockRejectedValueOnce(upstreamError);
+  const error = await fetchLanguageList(onResponse).catch((failure: unknown) => failure);
+  expect(error).toBeInstanceOf(CDictLanguageRequestError);
+  expect(error).toMatchObject({ diagnostic: {
+    ...diagnostic, upstreamMethod: "GET", compatibilityRetried: false, previousUpstreamStatus: undefined,
+  } });
+  expect(get).toHaveBeenCalledTimes(1);
+  expect(post).not.toHaveBeenCalled();
+  expect(onResponse).not.toHaveBeenCalled();
 });
 
 it("does not retry a business rejection as another request method", async () => {
