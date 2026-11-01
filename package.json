@@ -131,7 +131,7 @@
     "qrcode": "^1.5.4",
     "react-syntax-highlighter": "^16.1.2",
     "redis": "^6.3.0",
-    "resend": "^6.34.1",
+    "resend": "^6.35.0",
     "socks-proxy-agent": "^10.1.0",
     "speakeasy": "^2.0.0",
     "ssh2": "^1.17.0",
