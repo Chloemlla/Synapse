@@ -145,8 +145,8 @@ importers:
         specifier: ^1.17.0
         version: 1.17.0
       svix:
-        specifier: ^2.9.0
-        version: 2.9.0
+        specifier: ^2.9.1
+        version: 2.9.1
       swagger-jsdoc:
         specifier: ^6.3.0
         version: 6.3.0(openapi-types@12.1.3)
@@ -3422,8 +3422,8 @@ packages:
     resolution: {integrity: sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q==}
     engines: {node: '>=10'}
 
-  svix@2.9.0:
-    resolution: {integrity: sha512-nAHGMr8fqGMeX+La2isqASxSFn3I8UB9QpswF/0lzIgO28yVvLPKgO8tWrx0+47BYueGacRKh7MUe8jYNl5eGg==}
+  svix@2.9.1:
+    resolution: {integrity: sha512-qeIouYbC4b2nnMAG9hKxglGh1hYlLyMt6HIg+pNqdNkj5T99a9tnhw4pV/mROPSCVGXv1rCBTUVdym3Y5R+UDA==}
     engines: {node: '>=22'}
 
   swagger-jsdoc@6.3.0:
@@ -7307,7 +7307,7 @@ snapshots:
     dependencies:
       has-flag: 4.0.0
 
-  svix@2.9.0:
+  svix@2.9.1:
     dependencies:
       standardwebhooks: 1.1.1
 
