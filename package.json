@@ -126,7 +126,7 @@
     "mongoose": "^9.11.4",
     "multer": "^2.5.0",
     "mysql2": "^3.24.6",
-    "openai": "^7.43.0",
+    "openai": "^7.45.1",
     "proxy-addr": "^2.0.8",
     "qrcode": "^1.5.4",
     "react-syntax-highlighter": "^16.1.2",
