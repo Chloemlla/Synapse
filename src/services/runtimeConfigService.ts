@@ -725,6 +725,8 @@ function normalizeStoredProxycheckConfig(
     blockRiskScore: normalizeInteger(raw.blockRiskScore, defaults.blockRiskScore, 0, 100),
     failOpen: normalizeBoolean(raw.failOpen, defaults.failOpen),
     usePublicKeyForClient: normalizeBoolean(raw.usePublicKeyForClient, defaults.usePublicKeyForClient),
+    // 存量文档没有这个字段 -> 回落默认 false，行为与改版前一致。
+    trustUnverifiedUpstream: normalizeBoolean(raw.trustUnverifiedUpstream, defaults.trustUnverifiedUpstream),
   };
 }
 
@@ -1788,6 +1790,7 @@ export class RuntimeConfigService {
         blockRiskScore: number;
         failOpen: boolean;
         usePublicKeyForClient: boolean;
+        trustUnverifiedUpstream: boolean;
       };
       updatedAt?: string;
     };
@@ -1815,6 +1818,7 @@ export class RuntimeConfigService {
           blockRiskScore: config.blockRiskScore,
           failOpen: config.failOpen,
           usePublicKeyForClient: config.usePublicKeyForClient,
+          trustUnverifiedUpstream: config.trustUnverifiedUpstream,
         },
         updatedAt: doc?.updatedAt?.toISOString(),
       },
@@ -1869,6 +1873,9 @@ export class RuntimeConfigService {
       usePublicKeyForClient: hasOwnKey(obj, "usePublicKeyForClient")
         ? normalizeBoolean(obj.usePublicKeyForClient, current.usePublicKeyForClient)
         : current.usePublicKeyForClient,
+      trustUnverifiedUpstream: hasOwnKey(obj, "trustUnverifiedUpstream")
+        ? normalizeBoolean(obj.trustUnverifiedUpstream, current.trustUnverifiedUpstream)
+        : current.trustUnverifiedUpstream,
     };
 
     // 跨字段校验：payloadVerificationKey 是 proxycheck 官方 Dashboard 生成的 64 字符密钥。

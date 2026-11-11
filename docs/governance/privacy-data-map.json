@@ -902,15 +902,16 @@
         "durationMs",
         "error",
         "createdAt",
-        "decision"
+        "decision",
+        "diagnostics"
       ],
-      "purpose": "Third-party IP reputation decision audit and daily-quota accounting; never stores the raw proxycheck.io response. The decision sub-document records the exact verdict handed to the caller (which frontend path asked, the action taken, the reason, the threshold and fail-open setting in force)",
+      "purpose": "Third-party IP reputation decision audit and daily-quota accounting. The decision sub-document records the exact verdict handed to the caller (which frontend path asked, the action taken, the reason, the threshold and fail-open setting in force). Failed lookups and lookups whose response signature could not be verified also carry a diagnostics sub-document: the redacted request (the api key appears only as length + sha256 fingerprint), the upstream HTTP status and headers, the raw proxycheck.io response body (truncated to 8 KiB), the signature verdict with the recomputed expected signature, and the shape of the four configured secrets (length + fingerprint, never plaintext)",
       "legalBasis": "security_and_abuse_prevention",
       "userFacing": {
         "label": "IP 风险查询台账",
         "category": "安全与风控",
-        "what": "IP、使用的密钥槽与密钥哈希、状态与耗时、风险分、是否命中缓存，以及交给调用方的判定结论与采取的动作。",
-        "why": "记录一次访问被放行/挑战/拒绝的依据，用于排障与误判申诉复核。",
+        "what": "IP、使用的密钥槽与密钥哈希、状态与耗时、风险分、是否命中缓存、交给调用方的判定结论与采取的动作；上游查询失败时的排障快照（上游响应原文片段、签名校验结论、密钥长度与指纹，不含任何密钥明文）。",
+        "why": "记录一次访问被放行/挑战/拒绝的依据，用于排障与误判申诉复核；上游报错时能定位到底是凭据失效还是验签密钥不匹配。",
         "retention": "目前无自动过期（建议 30–90 天，清理任务待补）。",
         "policySection": "enforcement"
       },
@@ -925,7 +926,7 @@
       },
       "export": {
         "supported": false,
-        "reason": "Security telemetry, not part of user data export; also exposed read-only to superadmins through /api/admin/proxycheck/lookups"
+        "reason": "Security telemetry, not part of user data export; also exposed read-only to superadmins through /api/admin/proxycheck/lookups and /api/admin/proxycheck/upstream-diagnostics"
       },
       "evidence": [
         "src/models/proxycheckLookupLogModel.ts",

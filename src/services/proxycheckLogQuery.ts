@@ -155,3 +155,43 @@ export function parseProbeReportQuery(query: Record<string, unknown>): ParsedPro
     webrtc: readWebrtcFilter(query.webrtc),
   };
 }
+
+/**
+ * 排障页（上游交互快照）的验签结论筛选项。
+ * 取值与 src/services/proxycheckExchange.ts 的 ProxycheckSignatureVerdict 对齐：
+ * 前四个来自验签本身，后三个是「根本没验成」。
+ */
+export const SIGNATURE_VERDICTS = [
+  "verified",
+  "header_missing",
+  "header_malformed",
+  "mismatch",
+  "not_configured",
+  "key_malformed",
+  "no_response",
+] as const;
+export type SignatureVerdict = (typeof SIGNATURE_VERDICTS)[number];
+
+export interface ParsedDiagnosticQuery {
+  limit: number;
+  offset: number;
+  ip: string;
+  verdict: SignatureVerdict | "";
+  /** true = 只看「验签未过但按配置采信了上游」的行；false = 只看真失败的；null = 不限。 */
+  trusted: boolean | null;
+}
+
+export function parseDiagnosticQuery(query: Record<string, unknown>): ParsedDiagnosticQuery {
+  const verdict = readRaw(query.verdict);
+  const normalizedVerdict = typeof verdict === "string" ? verdict.trim().toLowerCase() : "";
+
+  return {
+    limit: readBoundedInt(query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT),
+    offset: readBoundedInt(query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+    ip: readIpPrefix(query.ip),
+    verdict: SIGNATURE_VERDICTS.includes(normalizedVerdict as SignatureVerdict)
+      ? (normalizedVerdict as SignatureVerdict)
+      : "",
+    trusted: readBool(query.trusted),
+  };
+}

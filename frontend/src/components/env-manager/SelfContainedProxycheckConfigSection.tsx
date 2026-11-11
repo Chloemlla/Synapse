@@ -32,7 +32,10 @@ function pickNumericInput(cfg: Record<string, unknown>, key: ProxycheckNumericKe
   return String(Math.min(field.max, Math.max(field.min, Math.round(parsed))));
 }
 
-function pickBoolean(cfg: Record<string, unknown>, key: 'enabled' | 'failOpen' | 'usePublicKeyForClient'): boolean {
+function pickBoolean(
+  cfg: Record<string, unknown>,
+  key: 'enabled' | 'failOpen' | 'usePublicKeyForClient' | 'trustUnverifiedUpstream',
+): boolean {
   return typeof cfg[key] === 'boolean' ? (cfg[key] as boolean) : DEFAULT_PROXYCHECK_INPUTS[key];
 }
 
@@ -118,6 +121,7 @@ export default function SelfContainedProxycheckConfigSection({
         blockRiskScore: pickNumericInput(cfg, 'blockRiskScore'),
         failOpen: pickBoolean(cfg, 'failOpen'),
         usePublicKeyForClient: pickBoolean(cfg, 'usePublicKeyForClient'),
+        trustUnverifiedUpstream: pickBoolean(cfg, 'trustUnverifiedUpstream'),
       };
       setInputs(loadedInputs);
       setServerInputs(loadedInputs);
@@ -193,6 +197,7 @@ export default function SelfContainedProxycheckConfigSection({
       enabled: inputs.enabled,
       failOpen: inputs.failOpen,
       usePublicKeyForClient: inputs.usePublicKeyForClient,
+      trustUnverifiedUpstream: inputs.trustUnverifiedUpstream,
       ...numbers,
     };
     for (const key of SECRET_KEYS) {

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  FaBug,
   FaDatabase,
   FaExclamationTriangle,
   FaKey,
@@ -24,16 +25,18 @@ import { getBackendErrorMessage } from '@/utils/backendError';
 import { AUTO_REFRESH_OPTIONS, formatCount, formatRelativeTime, shortText, switchBadge } from './ip-risk-log/format';
 import { Badge, Collapsible, DecisionLegend, FilterSelect } from './ip-risk-log/ui';
 import LookupsTab from './ip-risk-log/LookupsTab';
+import DiagnosticsTab from './ip-risk-log/DiagnosticsTab';
 import OverviewTab from './ip-risk-log/OverviewTab';
 import ProbesTab from './ip-risk-log/ProbesTab';
 import QuotasTab from './ip-risk-log/QuotasTab';
 import RiskCacheTab from './ip-risk-log/RiskCacheTab';
 
-type TabKey = 'overview' | 'lookups' | 'risk-cache' | 'probes' | 'quotas';
+type TabKey = 'overview' | 'lookups' | 'diagnostics' | 'risk-cache' | 'probes' | 'quotas';
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: React.ReactNode; hint: string }> = [
   { key: 'overview', label: '概览', icon: <FaSlidersH />, hint: '配置 / 集合 / 配额 / 计数' },
   { key: 'lookups', label: '判定决策日志', icon: <FaListUl />, hint: 'proxycheck_lookup_logs' },
+  { key: 'diagnostics', label: '上游诊断', icon: <FaBug />, hint: '失败/未验签采信的请求与响应快照' },
   { key: 'risk-cache', label: '风险缓存', icon: <FaDatabase />, hint: 'proxycheck_risk_cache' },
   { key: 'probes', label: '探测上报', icon: <FaShieldAlt />, hint: 'proxycheck_probe_reports' },
   { key: 'quotas', label: '每日配额', icon: <FaKey />, hint: 'proxycheck_daily_quotas' },
@@ -109,7 +112,8 @@ const IpRiskLogPanel: React.FC = () => {
         eyebrow="IP 风险检测"
         title="proxycheck.io 详细日志"
         description={[
-          '把 proxycheck.io 集成的一切摊开：每一次风险判定决策（真打到上游 / 命中缓存 / in-flight 合并）与四个集合的已有内容。',
+          '把 proxycheck.io 集成的一切摊开：每一次风险判定决策（真打到上游 / 命中缓存 / in-flight 合并）、四个集合的已有内容，',
+          '以及上游失败的请求与响应快照（「上游诊断」页）。',
           '决策字段（caller / action / shouldChallenge / reason / threshold / failOpen / closedOnFailure）',
           '都来自后端的同一个 buildIpRiskDecision 函数，与真正回给前端的判据同源。',
         ].join('')}
@@ -119,7 +123,7 @@ const IpRiskLogPanel: React.FC = () => {
           <>
             {config ? <Badge style={switchBadge(config.enabled)} /> : null}
             <InfoBadge>{lastUpdatedAt ? `概览更新于 ${formatRelativeTime(lastUpdatedAt)}` : '概览尚未加载'}</InfoBadge>
-            <InfoBadge>本页全部只读</InfoBadge>
+            <InfoBadge>本页不修改任何数据</InfoBadge>
             {overviewError ? (
               <InfoBadge tone="rose">
                 <FaExclamationTriangle className="mr-1 inline" />
@@ -256,6 +260,7 @@ const IpRiskLogPanel: React.FC = () => {
           />
         ) : null}
         {tab === 'lookups' ? <LookupsTab refreshNonce={refreshNonce} /> : null}
+        {tab === 'diagnostics' ? <DiagnosticsTab refreshNonce={refreshNonce} /> : null}
         {tab === 'risk-cache' ? <RiskCacheTab refreshNonce={refreshNonce} /> : null}
         {tab === 'probes' ? <ProbesTab refreshNonce={refreshNonce} /> : null}
         {tab === 'quotas' ? (

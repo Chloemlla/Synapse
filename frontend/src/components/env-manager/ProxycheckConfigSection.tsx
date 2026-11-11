@@ -19,7 +19,7 @@ export type ProxycheckSecretKey = 'apiKey' | 'publicApiKey' | 'payloadVerificati
 /** 可由「清除」开关显式置空的密钥；后端约定 payload 传 null 即显式清除。 */
 export type ProxycheckClearableSecretKey = 'payloadVerificationKey' | 'hmacSecret';
 export type ProxycheckNumericKey = 'cacheTtlHours' | 'timeoutMs' | 'dailyQuotaPerKey' | 'challengeRiskScore' | 'blockRiskScore';
-type ProxycheckSwitchKey = 'failOpen' | 'usePublicKeyForClient';
+type ProxycheckSwitchKey = 'failOpen' | 'usePublicKeyForClient' | 'trustUnverifiedUpstream';
 
 /** 判断某密钥字段是否支持「显式清除」（用于收窄类型，避免调用方强转）。 */
 export function isClearableProxycheckSecretKey(
@@ -42,6 +42,8 @@ export interface ProxycheckInputs {
   blockRiskScore: string;
   failOpen: boolean;
   usePublicKeyForClient: boolean;
+  /** 验签未通过（头缺失/形态不对/不匹配）时是否仍采信上游结论。 */
+  trustUnverifiedUpstream: boolean;
 }
 
 /** 初始/重置兜底值，逐字对齐后端默认值（运行时配置契约 §1）。 */
@@ -58,6 +60,8 @@ export const DEFAULT_PROXYCHECK_INPUTS: ProxycheckInputs = {
   blockRiskScore: '90',
   failOpen: true,
   usePublicKeyForClient: true,
+  // 与后端默认值逐字对齐：验签失败仍采信属于显式降级，默认关闭。
+  trustUnverifiedUpstream: false,
 };
 
 export interface ProxycheckNumericField {
@@ -213,6 +217,12 @@ const TOGGLE_FIELDS: Array<{
     description:
       '开启：前端探测组件可通过 /api/ip-risk/probe-config 拿到公开 key 直连查询。关闭：前端只走本服务接口，不下发任何 key。',
   },
+  {
+    key: 'trustUnverifiedUpstream',
+    label: '验签未通过时仍采信上游结论',
+    description:
+      '关闭（默认）：响应验签没通过就当上游失败，按上面的 failOpen 处理——风控会降级放行，但绝不采信未验签的数据。开启：验签未通过时仍解析并使用上游返回的风险结论，同时每次留一条 error 级日志与一份排障快照。适合「验签密钥暂时对不上、但更需要风控结论」的排障窗口；密钥补好后请关回去。',
+  },
 ];
 
 export interface ProxycheckConfigSectionProps {
@@ -325,7 +335,18 @@ export default function ProxycheckConfigSection({
           <p className="mt-1 text-xs leading-5">
             这两把密钥方向相反：上游验签密钥必须来自 proxycheck.io 官方 Dashboard，自建主密钥由本服务自行生成。
             当前两处脱敏串完全一致，请核对后重新填写——上游验签密钥填错会让每一次查询都在验签阶段失败，
-            并按 failOpen 策略静默放行。
+            并按 failOpen 策略静默放行；若同时开了「验签未通过时仍采信上游结论」，则会拿着一把永远对不上的密钥
+            持续采信上游数据。
+          </p>
+        </div>
+      )}
+
+      {inputs.trustUnverifiedUpstream && (
+        <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50/90 p-3 text-sm text-amber-900">
+          <strong>已开启「验签未通过时仍采信上游结论」</strong>
+          <p className="mt-1 text-xs leading-5">
+            当前配置下，上游响应的签名对不上时仍会使用它返回的风险结论，每次都会留一条 error 级日志与一份排障快照。
+            这是排障窗口用的降级开关：密钥补好后请关回去，否则「响应未被篡改」这层保障就不再成立。
           </p>
         </div>
       )}
@@ -366,6 +387,11 @@ export default function ProxycheckConfigSection({
         </p>
         <p className="mt-1">
           响应验签密钥必须是 64 字符（官方约定）。长度不符会在外呼前直接判为配置错误，不会拿一把永远验不过的密钥去发请求。
+        </p>
+        <p className="mt-1">
+          验签未通过（头缺失 / 形态不对 / 不匹配）默认一律按上游失败处理。下列「验签未通过时仍采信上游结论」
+          打开后才会采信未验签的响应体；但上游自己回的「凭据无效」不受该开关影响 —— 那种响应里没有风险数据。
+          排障面板「上游诊断」页可以看每一次失败的请求与响应原文（密钥只以长度 + 指纹出现）。
         </p>
       </InfoBox>
 

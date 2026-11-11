@@ -192,6 +192,16 @@ export interface ProxycheckRuntimeConfig {
   blockRiskScore: number;
   /** proxycheck 是辅助信号而非唯一闸门，默认上游失败时放行。 */
   failOpen: boolean;
+  /**
+   * 验签未通过（http_x_signature 缺失 / 形态不对 / 不匹配）时是否仍采信上游响应体。
+   *
+   * 默认 false：未验签的结论一律当上游失败（与改版前行为逐字一致）。
+   * 打开它等于运维显式接受一个降级：「宁可拿可能与密钥不匹配的结论，
+   * 也不要风控整段 fail_open 静默放行」。注意它只影响验签，不影响上游自己回的
+   * status=auth/denied —— 那两种情况下 payload 里根本没有风险数据，采信它等于凭空放行。
+   * 每次因它采信都会落一条 error 级日志 + 一行带诊断的快照，见 ipRiskService。
+   */
+  trustUnverifiedUpstream: boolean;
   /** 是否把 publicApiKey 下发给前端做直连查询。 */
   usePublicKeyForClient: boolean;
 }
@@ -642,6 +652,8 @@ export function buildRuntimeConfigDefaults(options: {
       blockRiskScore: 90,
       failOpen: true,
       usePublicKeyForClient: true,
+      // 默认关闭：验签失败仍然采信上游结论属于显式降级，不能隐形默认开启。
+      trustUnverifiedUpstream: false,
     },
     // 默认关闭：存量部署未显式配置时不得凭空收紧注册入口（env 由 config.ts 覆盖）。
     registrationInvite: {

@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
-import { ProxycheckLookupLogModel } from "../models/proxycheckLookupLogModel";
+import {
+  ProxycheckLookupLogModel,
+  type ProxycheckLookupDiagnosticDoc,
+} from "../models/proxycheckLookupLogModel";
 import { ProxycheckProbeReportModel } from "../models/proxycheckProbeReportModel";
 import { ProxycheckQuotaModel } from "../models/proxycheckQuotaModel";
 import {
@@ -17,11 +20,13 @@ import { currentDayKey, docToParsed, toRiskResult } from "../services/proxycheck
 import {
   DEFAULT_QUOTA_DAYS,
   buildIpMatcher,
+  parseDiagnosticQuery,
   parseLookupQuery,
   parseProbeReportQuery,
   parseQuotaQuery,
   parseRiskCacheQuery,
 } from "../services/proxycheckLogQuery";
+import { computePayloadSignature, fingerprintSecret, verifyPayloadSignature } from "../services/proxycheckSignature";
 import { RuntimeConfigService } from "../services/runtimeConfigService";
 
 /**
@@ -126,6 +131,19 @@ interface LookupLogRow {
   createdAt: string | null;
   /** 旧行没有这个字段（decision 落库是后加的），一律回 null。 */
   decision: IpRiskDecision | null;
+  /** 带排障快照的行才有；本列表只回布尔，正文走 /upstream-diagnostics（避免一行 8KB 撑大分页）。 */
+  hasDiagnostics: boolean;
+}
+
+/** 上游交互排障快照行。 */
+interface UpstreamDiagnosticRow {
+  _id: string;
+  ip: string;
+  status: string;
+  error: string;
+  durationMs: number;
+  createdAt: string | null;
+  diagnostics: ProxycheckLookupDiagnosticDoc | null;
 }
 
 function isMongoReady(): boolean {
@@ -324,6 +342,7 @@ function toLookupLogRow(doc: LooseDoc): LookupLogRow {
     error: readRawString(doc.error),
     createdAt: toIso(doc.createdAt),
     decision: decision && typeof decision === "object" ? (decision as IpRiskDecision) : null,
+    hasDiagnostics: doc.diagnostics !== undefined && doc.diagnostics !== null,
   };
 }
 
@@ -512,6 +531,142 @@ export class IpRiskLogController {
 
       res.setHeader("Cache-Control", "no-store");
       res.json({ success: true, reports, total, limit: query.limit, offset: query.offset });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/admin/proxycheck/upstream-diagnostics —— 最近的上游交互排障快照。
+   *
+   * 只回带 `diagnostics` 的行（失败 + 「验签未过但已采信」），这正是「为什么报
+   * proxycheck 配置错误」需要看的东西：请求 URL（key 已脱敏）、上游响应状态与响应头、
+   * 上游回签值、用当前密钥重算的期望签名、响应体，以及四把密钥的长度 + 指纹。
+   * 密钥明文不在其中，也不可能在其中（AGENTS.md §8）。
+   */
+  static async listUpstreamDiagnostics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!isMongoReady()) {
+        respondMongoUnavailable(res);
+        return;
+      }
+
+      const query = parseDiagnosticQuery(req.query as Record<string, unknown>);
+      const conditions: Record<string, unknown>[] = [{ diagnostics: { $exists: true } }];
+      const ipMatcher = buildIpMatcher(query.ip);
+      if (ipMatcher) conditions.push({ ip: ipMatcher });
+      if (query.verdict) conditions.push({ "diagnostics.signature.verdict": query.verdict });
+      if (query.trusted !== null) conditions.push({ "diagnostics.trustedWithoutSignature": query.trusted });
+      const filter: Record<string, unknown> = { $and: conditions };
+
+      const [docs, total] = await Promise.all([
+        ProxycheckLookupLogModel.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(query.offset)
+          .limit(query.limit)
+          .select({ ip: 1, status: 1, error: 1, durationMs: 1, createdAt: 1, diagnostics: 1 })
+          .lean()
+          .exec(),
+        ProxycheckLookupLogModel.countDocuments(filter).exec(),
+      ]);
+
+      const rows: UpstreamDiagnosticRow[] = toLooseDocs(docs).map((doc) => {
+        const diagnostics = doc.diagnostics;
+        return {
+          _id: String(doc._id ?? ""),
+          ip: readRawString(doc.ip),
+          status: readRawString(doc.status),
+          error: readRawString(doc.error),
+          durationMs: readFiniteNumber(doc.durationMs, 0),
+          createdAt: toIso(doc.createdAt),
+          diagnostics:
+            diagnostics && typeof diagnostics === "object"
+              ? (diagnostics as ProxycheckLookupDiagnosticDoc)
+              : null,
+        };
+      });
+
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        success: true,
+        rows,
+        total,
+        limit: query.limit,
+        offset: query.offset,
+        filters: { ip: query.ip || null, verdict: query.verdict || null, trusted: query.trusted },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/admin/proxycheck/upstream-diagnostics/:id/verify-signature —— 用**候选密钥**重算一次验签。
+   *
+   * 这是「对比为什么验签不过」的正解：已存密钥的明文永不回显（接口与日志都不行），
+   * 但运维手里有一把从 Dashboard 复制的密钥。把它传进来，服务端在**已存响应体**上重算
+   * HMAC-SHA256，回「对不对得上上游回签值」——拿到的是确定性结论，而不是让人去肉眼比两串 hex。
+   * 候选密钥只在本次请求内使用，不落库、不写日志（连指纹都不回写日志）。
+   */
+  static async verifyDiagnosticSignature(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!isMongoReady()) {
+        respondMongoUnavailable(res);
+        return;
+      }
+
+      const id = readRawString(req.params.id).trim();
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, error: "诊断记录 ID 不合法" });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const candidate = typeof body.key === "string" ? body.key.trim() : "";
+      if (!candidate) {
+        res.status(400).json({ success: false, error: "缺少候选密钥（key）" });
+        return;
+      }
+      if (candidate.length > 1024) {
+        res.status(400).json({ success: false, error: "候选密钥过长（上限 1024 字符）" });
+        return;
+      }
+
+      const doc = (await ProxycheckLookupLogModel.findById(id)
+        .select({ ip: 1, createdAt: 1, diagnostics: 1 })
+        .lean()
+        .exec()) as unknown as LooseDoc | null;
+      const diagnostics = doc?.diagnostics as ProxycheckLookupDiagnosticDoc | undefined;
+      if (!doc || !diagnostics) {
+        res.status(404).json({ success: false, error: "该记录没有排障快照（旧行或上游从未响应）" });
+        return;
+      }
+
+      // 响应体是按字节截断过的展示副本：完整时 utf8 → Buffer 的往返是逐字节等价的；
+      // 截断过就必须显式告诉调用方「这次重算不能作为判据」，否则会得出假的 mismatch。
+      const rawBody = Buffer.from(diagnostics.body, "utf8");
+      const storedHeader = diagnostics.signature?.headerValue ?? "";
+      const verdict = verifyPayloadSignature(rawBody, candidate, storedHeader);
+      const expected = computePayloadSignature(rawBody, candidate);
+      const configuredFingerprint = diagnostics.signature?.key?.fingerprint ?? "";
+      const candidateFingerprint = fingerprintSecret(candidate);
+
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        success: true,
+        matches: verdict === "verified",
+        verdict,
+        bodyTruncated: diagnostics.bodyTruncated === true,
+        bodyBytes: readFiniteNumber(diagnostics.bodyBytes, 0),
+        upstreamSignature: storedHeader,
+        expectedSignature: expected,
+        candidateLength: candidate.length,
+        candidateFingerprint,
+        configuredKeyLength: readFiniteNumber(diagnostics.signature?.key?.length, 0),
+        configuredKeyFingerprint: configuredFingerprint,
+        // 指纹相同 = 你刚粘的就是服务端当前那把密钥（无论验签成不成功，这条信息都能定性）。
+        candidateMatchesConfiguredKey: !!configuredFingerprint && configuredFingerprint === candidateFingerprint,
+      });
     } catch (error) {
       next(error);
     }

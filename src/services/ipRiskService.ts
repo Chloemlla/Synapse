@@ -1,12 +1,17 @@
 import crypto from "node:crypto";
 import { config } from "../config/config";
-import { ProxycheckLookupLogModel } from "../models/proxycheckLookupLogModel";
+import { ProxycheckLookupLogModel, type ProxycheckLookupDiagnosticDoc } from "../models/proxycheckLookupLogModel";
 import { ProxycheckQuotaModel } from "../models/proxycheckQuotaModel";
 import { type ProxycheckRiskCacheDoc, ProxycheckRiskCacheModel } from "../models/proxycheckRiskCacheModel";
 import { isLocalIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 import { mongoose } from "./mongoService";
 import { BATCH_MAX_IPS, extractIpResult, requestBatchLookup, requestSingleLookup } from "./proxycheckHttp";
+import {
+  ProxycheckUpstreamError,
+  buildKeySnapshot,
+  type ProxycheckExchangeSnapshot,
+} from "./proxycheckExchange";
 import {
   type IpRiskLevel,
   type IpRiskResult,
@@ -161,6 +166,8 @@ interface LookupLogInput {
   error?: string;
   /** 交给前端的决策。未知（如 in-flight 合并的 promise 最终被拒）时留空，不写库。 */
   decision?: IpRiskDecision;
+  /** 上游交互的排障快照；只有失败与「验签未过但已采信」的行才带。 */
+  diagnostics?: ProxycheckLookupDiagnosticDoc;
 }
 
 /**
@@ -195,6 +202,7 @@ async function logLookup(input: LookupLogInput): Promise<void> {
       durationMs: input.durationMs,
       error: input.error || "",
       decision: input.decision,
+      diagnostics: input.diagnostics,
       createdAt: new Date(),
     });
   } catch (error) {
@@ -369,6 +377,53 @@ function proxycheckVerificationKey(): string {
 }
 
 /**
+ * 四把密钥的形状快照（长度 + 指纹），只用于排障展示。
+ * 仓库硬约束：日志与接口响应里绝不出现密钥明文（AGENTS.md §8），所以这里只给指纹。
+ */
+function proxycheckKeySnapshot() {
+  const pc = config.proxycheck;
+  return buildKeySnapshot({
+    apiKey: pc.apiKey,
+    publicApiKey: pc.publicApiKey,
+    payloadVerificationKey: pc.payloadVerificationKey,
+    hmacSecret: pc.hmacSecret,
+  });
+}
+
+/** 交互快照 → 落库文档（与 model 的 ProxycheckLookupDiagnosticDoc 逐字同形）。 */
+function toLookupDiagnostics(exchange: ProxycheckExchangeSnapshot): ProxycheckLookupDiagnosticDoc {
+  return {
+    errorCode: exchange.errorCode,
+    trustedWithoutSignature: exchange.trustedWithoutSignature,
+    method: exchange.method,
+    url: exchange.url,
+    requestHeaders: exchange.requestHeaders,
+    requestBody: exchange.requestBody,
+    status: exchange.status,
+    responseHeaders: exchange.responseHeaders,
+    body: exchange.body,
+    bodyBytes: exchange.bodyBytes,
+    bodyTruncated: exchange.bodyTruncated,
+    signature: {
+      verdict: exchange.signature.verdict,
+      headerName: exchange.signature.headerName,
+      headerValue: exchange.signature.headerValue,
+      expectedSignature: exchange.signature.expectedSignature,
+      key: { ...exchange.signature.key },
+    },
+    keys: {
+      apiKey: { ...exchange.keys.apiKey },
+      publicApiKey: { ...exchange.keys.publicApiKey },
+      payloadVerificationKey: { ...exchange.keys.payloadVerificationKey },
+      hmacSecret: { ...exchange.keys.hmacSecret },
+      payloadVerificationKeyMatchesHmacSecret: exchange.keys.payloadVerificationKeyMatchesHmacSecret,
+    },
+    durationMs: exchange.durationMs,
+    createdAt: new Date(),
+  };
+}
+
+/**
  * undici 把所有网络失败都抛成 TypeError("fetch failed")，真正原因（拒重定向 / DNS / TLS / 超时）
  * 只在 error.cause 里，线上只留 "fetch failed" 就无从归因。拼起来再过一遍脱敏。
  */
@@ -406,6 +461,8 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
   const timeoutMs = safePositiveNumber(pc.timeoutMs, DEFAULT_TIMEOUT_MS);
   const cacheTtlHours = safePositiveNumber(pc.cacheTtlHours, DEFAULT_CACHE_TTL_HOURS);
   const dailyQuotaPerKey = safePositiveNumber(pc.dailyQuotaPerKey, DEFAULT_DAILY_QUOTA_PER_KEY);
+  // 验签未通过时是否仍采信上游结论：默认 false（与改版前行为逐字一致）。
+  const trustUnverifiedUpstream = pc.trustUnverifiedUpstream === true;
 
   if (!ensureMongoIfEnabled()) {
     logger.warn("[IpRisk] Mongo 未连接，跳过 proxycheck 外呼", { ip });
@@ -452,18 +509,42 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
 
   const queriedAt = new Date();
   let parsed: ParsedRisk;
+  /** 验签未过但按配置采信时，把诊断挂到下面那条 status=ok 的行上。 */
+  let trustedDiagnostics: ProxycheckLookupDiagnosticDoc | undefined;
   try {
-    const raw = await requestSingleLookup(ip, {
+    const outcome = await requestSingleLookup(ip, {
       apiKey,
       verificationKey: proxycheckVerificationKey(),
       timeoutMs,
       days: daysWindowFromTtl(cacheTtlHours),
+      trustUnverifiedUpstream,
+      keySnapshot: proxycheckKeySnapshot(),
     });
-    if (!raw) throw new Error("proxycheck_response_missing_ip_result");
+    const raw = outcome.record;
+    if (!raw) {
+      // 用带诊断的错误：单地址查询没拿到本 IP 的结论同样需要看上游到底回了什么。
+      throw new ProxycheckUpstreamError("proxycheck_response_missing_ip_result", {
+        ...outcome.exchange,
+        errorCode: "proxycheck_response_missing_ip_result",
+      });
+    }
     parsed = parseV3Result(ip, raw, queriedAt);
+    if (outcome.exchange.trustedWithoutSignature) {
+      // 采信了未验签的结论：这不是常态，必须留 error 级日志 + 一行带诊断的日志。
+      trustedDiagnostics = toLookupDiagnostics(outcome.exchange);
+      logger.error("[IpRisk] proxycheck 验签未通过，已按 trustUnverifiedUpstream 采信上游结论", {
+        ip,
+        verdict: outcome.exchange.signature.verdict,
+        keyLength: outcome.exchange.signature.key.length,
+        keyFingerprint: outcome.exchange.signature.key.fingerprint,
+        risk: parsed.risk,
+      });
+    }
   } catch (error) {
     const message = describeError(error, apiKey);
     const result = settleFailure(ip, "lookup_failed");
+    // 失败一律留排障快照：线上只剩一行 proxycheck_signature_mismatch 时无从归因。
+    const exchange = error instanceof ProxycheckUpstreamError ? error.diagnostics : null;
     await logLookup({
       ip,
       apiKeyHash: hashApiKeyForLog(apiKey),
@@ -474,6 +555,7 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
       durationMs: Date.now() - startedAt,
       error: message,
       decision: buildIpRiskDecision(result, caller),
+      diagnostics: exchange ? toLookupDiagnostics(exchange) : undefined,
     });
     if (isProxycheckConfigError(error)) {
       // 配置错误与网络抖动一样走 fail_open，症状都是「每次都放行 + 满屏 warn」，没有独立信号
@@ -482,6 +564,12 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
         ip,
         error: message,
         failOpen: pc.failOpen,
+        trustUnverifiedUpstream,
+        // 这几项直接指向「为什么」：头有没有回、密钥是不是那一把。
+        signatureVerdict: exchange?.signature.verdict ?? null,
+        keyLength: exchange?.signature.key.length ?? null,
+        keyFingerprint: exchange?.signature.key.fingerprint ?? null,
+        payloadVerificationKeyMatchesHmacSecret: exchange?.keys.payloadVerificationKeyMatchesHmacSecret ?? null,
       });
     } else {
       logger.warn("[IpRisk] proxycheck lookup failed", { ip, error: message, failOpen: pc.failOpen });
@@ -500,6 +588,7 @@ async function performLookup(ip: string, caller: IpRiskCaller): Promise<IpRiskRe
     deduped: false,
     durationMs: Date.now() - startedAt,
     decision: buildIpRiskDecision(result, caller),
+    diagnostics: trustedDiagnostics,
   });
   logger.info("[IpRisk] proxycheck lookup completed", {
     ip,
@@ -620,6 +709,8 @@ async function resolveBatchFromUpstream(
   const dailyQuotaPerKey = safePositiveNumber(pc.dailyQuotaPerKey, DEFAULT_DAILY_QUOTA_PER_KEY);
   const days = daysWindowFromTtl(cacheTtlHours);
   const dayKey = currentDayKey();
+  // 与单地址同口径：验签未过是否采信，批量路径也必须跟同一个开关。
+  const trustUnverifiedUpstream = pc.trustUnverifiedUpstream === true;
 
   const lookupable: string[] = [];
   for (const ip of ips) {
@@ -641,11 +732,13 @@ async function resolveBatchFromUpstream(
     // 与单地址同口径：配额按上游 HTTP 请求计（一次批量算一次，不是按 IP 数），且在发起请求
     // 之前就记，失败的批量同样在消耗上游额度。
     await incrementQuota(dayKey, apiKey, dailyQuotaPerKey);
-    const payload = await requestBatchLookup(chunk, {
+    const { payload } = await requestBatchLookup(chunk, {
       apiKey,
       verificationKey: proxycheckVerificationKey(),
       timeoutMs,
       days,
+      trustUnverifiedUpstream,
+      keySnapshot: proxycheckKeySnapshot(),
     });
     const queriedAt = new Date();
 
@@ -719,10 +812,16 @@ export async function getIpRiskBatch(ips: string[], caller: IpRiskCaller): Promi
     } catch (error) {
       const apiKey = typeof pc.apiKey === "string" ? pc.apiKey.trim() : "";
       const message = redactSecret(error instanceof Error ? error.message : String(error), apiKey);
+      // 批量路径不逐 IP 落日志（一次请求对应上千个地址），但验签结论必须能看见：
+      // 否则开了 trustUnverifiedUpstream 之后，批量侧到底采没采信完全无从判断。
+      const exchange = error instanceof ProxycheckUpstreamError ? error.diagnostics : null;
       logger.warn("[IpRisk] proxycheck batch lookup failed", {
         count: unique.length,
         error: message,
         failOpen: pc.failOpen,
+        trustUnverifiedUpstream: pc.trustUnverifiedUpstream === true,
+        signatureVerdict: exchange?.signature.verdict ?? null,
+        keyLength: exchange?.signature.key.length ?? null,
       });
       // 不抛错：未解析的 IP 由下方的 fallback 统一回 unavailableResult，
       // 调用方靠 source === "unavailable" 判定（与新 settleFailure 的语义一致）。

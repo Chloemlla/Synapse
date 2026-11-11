@@ -20,6 +20,19 @@ export function isValidHmacKeyShape(key: string): boolean {
   return key.length === PROXYCHECK_HMAC_KEY_LENGTH;
 }
 
+/**
+ * 密钥指纹：同一把密钥稳定不变、不同密钥极难碰撞，但**不可反推明文**。
+ *
+ * 排障面板要回答「填进去的到底是哪一把密钥」，而仓库硬约束是「日志与接口响应里绝不出现密钥」
+ * （AGENTS.md §8）。指纹是这两者的交集：能比对「两处是不是同一串」「是不是换了 key」，
+ * 却拿不到密钥本身。绝不能改成回显明文或前缀/后缀片段。
+ */
+export function fingerprintSecret(secret: unknown): string {
+  const value = typeof secret === "string" ? secret.trim() : "";
+  if (!value) return "";
+  return crypto.createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
 /** 逐字节对原始响应体做 HMAC：绝不先 JSON.parse 再序列化（会改变字节，签名必然对不上）。 */
 export function computePayloadSignature(rawBody: string | Buffer, key: string): string {
   return crypto.createHmac("sha256", key).update(rawBody).digest("hex");

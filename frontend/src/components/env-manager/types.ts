@@ -195,6 +195,8 @@ export interface ProxycheckConfigSetting {
   blockRiskScore: number;
   failOpen: boolean;
   usePublicKeyForClient: boolean;
+  /** 验签未通过时是否仍采信上游结论（PROXYCHECK.trustUnverifiedUpstream）。旧后端响应没有该字段。 */
+  trustUnverifiedUpstream?: boolean;
 }
 
 /** GET /api/admin/registration-invite/setting 返回体里的 config 对象（updatedAt 在其同级 setting 下）。 */

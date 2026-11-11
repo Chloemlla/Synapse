@@ -50,6 +50,8 @@ export interface ProxycheckSettingConfig {
   blockRiskScore: number;
   failOpen: boolean;
   usePublicKeyForClient: boolean;
+  /** 验签未通过时是否仍采信上游结论（PROXYCHECK.trustUnverifiedUpstream）。旧后端响应没有该字段。 */
+  trustUnverifiedUpstream?: boolean;
 }
 
 export interface ProxycheckOverviewCounts {
@@ -119,6 +121,8 @@ export interface ProxycheckLookupLogRow {
   createdAt: string;
   /** 旧行（本次改造之前写入的）没有这个字段。 */
   decision?: IpRiskDecision | null;
+  /** 该行是否带上游交互排障快照（正文走 /upstream-diagnostics，列表只回布尔）。 */
+  hasDiagnostics?: boolean;
   [key: string]: unknown;
 }
 
@@ -291,6 +295,108 @@ export interface QuotasResponse {
   limit: number;
 }
 
+/* ------------------------------------------------------------------ *
+ * 上游交互排障快照（/api/admin/proxycheck/upstream-diagnostics）
+ * 契约：docs/contracts/proxycheck-signature-diagnostics.md
+ * 重申最要紧的一条：**密钥明文永远不会出现在这些响应里**，只有长度 + sha256 指纹。
+ * ------------------------------------------------------------------ */
+
+/** 一把密钥的形状：有没有配、多长、是哪一把。指纹不可反推明文。 */
+export interface ProxycheckKeyShape {
+  present: boolean;
+  length: number;
+  fingerprint: string;
+}
+
+export type ProxycheckSignatureVerdict =
+  | 'verified'
+  | 'header_missing'
+  | 'header_malformed'
+  | 'mismatch'
+  | 'not_configured'
+  | 'key_malformed'
+  | 'no_response';
+
+export interface ProxycheckExchangeDiagnostics {
+  errorCode: string;
+  /** 验签未过但按 trustUnverifiedUpstream 采信了上游结论。 */
+  trustedWithoutSignature: boolean;
+  method: string;
+  /** 已脱敏：key 参数只剩长度与指纹。 */
+  url: string;
+  requestHeaders: Record<string, string>;
+  requestBody?: string | null;
+  status: number | null;
+  responseHeaders: Record<string, string>;
+  /** 上游响应体（按字节截断的展示副本）。 */
+  body: string;
+  bodyBytes: number;
+  bodyTruncated: boolean;
+  signature: {
+    verdict: ProxycheckSignatureVerdict;
+    headerName: string;
+    headerValue: string;
+    expectedSignature: string | null;
+    key: ProxycheckKeyShape;
+  };
+  keys: {
+    apiKey: ProxycheckKeyShape;
+    publicApiKey: ProxycheckKeyShape;
+    payloadVerificationKey: ProxycheckKeyShape;
+    hmacSecret: ProxycheckKeyShape;
+    payloadVerificationKeyMatchesHmacSecret: boolean;
+  };
+  durationMs: number;
+  createdAt: string;
+}
+
+export interface UpstreamDiagnosticRow {
+  _id: string;
+  ip: string;
+  status: string;
+  error: string;
+  durationMs: number;
+  createdAt: string | null;
+  diagnostics: ProxycheckExchangeDiagnostics | null;
+}
+
+export type SignatureVerdictFilter = '' | ProxycheckSignatureVerdict;
+
+export interface UpstreamDiagnosticsParams {
+  limit?: number;
+  offset?: number;
+  ip?: string;
+  verdict?: SignatureVerdictFilter;
+  /** '' = 不限；'true' = 只看「验签未过但已采信」；'false' = 只看真失败。 */
+  trusted?: TriStateFilter;
+}
+
+export interface UpstreamDiagnosticsResponse {
+  success: boolean;
+  rows: UpstreamDiagnosticRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: { ip: string | null; verdict: string | null; trusted: boolean | null };
+}
+
+export interface SignatureVerifyResponse {
+  success: boolean;
+  /** 候选密钥对得上上游回签值。 */
+  matches: boolean;
+  verdict: ProxycheckSignatureVerdict;
+  bodyTruncated: boolean;
+  bodyBytes: number;
+  upstreamSignature: string;
+  expectedSignature: string;
+  candidateLength: number;
+  candidateFingerprint: string;
+  configuredKeyLength: number;
+  configuredKeyFingerprint: string;
+  /** 候选密钥就是服务端当前配置的那把。 */
+  candidateMatchesConfiguredKey: boolean;
+}
+
 const BASE = () => `${getApiBaseUrl()}/api/admin/proxycheck`;
 
 const toQuery = (params: Record<string, string | number | undefined>): string => {
@@ -326,6 +432,24 @@ export const ipRiskLogsApi = {
 
   probeReports: async (params: ProbeReportsParams = {}): Promise<ProbeReportsResponse> => {
     const res = await api.get(`${BASE()}/probe-reports${toQuery({ ...params })}`);
+    return res.data;
+  },
+
+  upstreamDiagnostics: async (
+    params: UpstreamDiagnosticsParams = {},
+  ): Promise<UpstreamDiagnosticsResponse> => {
+    const res = await api.get(`${BASE()}/upstream-diagnostics${toQuery({ ...params })}`);
+    return res.data;
+  },
+
+  /**
+   * 用候选密钥在**已存响应体**上重算一次验签。
+   * 用 POST 是因为候选密钥不能进 URL / 访问日志；该端点不改任何数据，候选密钥也不落库。
+   */
+  verifyDiagnosticSignature: async (id: string, key: string): Promise<SignatureVerifyResponse> => {
+    const res = await api.post(`${BASE()}/upstream-diagnostics/${encodeURIComponent(id)}/verify-signature`, {
+      key,
+    });
     return res.data;
   },
 };

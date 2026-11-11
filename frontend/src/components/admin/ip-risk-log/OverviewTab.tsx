@@ -210,6 +210,11 @@ const OverviewTab: React.FC<Props> = ({ overview, loading, error, onRefresh }) =
                 value={config.usePublicKeyForClient}
                 hint="是否把 publicApiKey 下发给前端做直连查询。"
               />
+              <BoolField
+                label="trustUnverifiedUpstream"
+                value={config.trustUnverifiedUpstream === true}
+                hint="验签未通过时是否仍采信上游结论；旧后端没有该字段，按 false（不采信）处理。开启后每次采信都会落 error 级日志 + 一份排障快照。"
+              />
               <BoolField label="enabled" value={config.enabled} hint="总开关；未配置 key 前不得外呼。" />
               <FieldRow
                 label="updatedAt"
