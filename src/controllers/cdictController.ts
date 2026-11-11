@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import logger from "../utils/logger";
 import { config } from "../config/config";
-import { CDictLanguageRequestError, describeCDictLanguageResponse, sanitizeCDictLanguageMessage, type CDictLanguageDiagnostic } from "../services/cdictLanguageDiagnostics";
-import { normalizeCdictLanguageResponse } from "../services/cdictLanguageResponse";
+import { sanitizeCDictLanguageMessage } from "../services/cdictLanguageDiagnostics";
+import { hasUsableCdictLanguages, resolveCdictLanguageList } from "../services/cdictLanguageCatalogService";
 import { toBrowserCdictAudio } from "./cdictWebAudio";
 import { cdictSpeechFailureDiagnostic } from "../services/cdictSpeechDiagnostics";
 import {
@@ -13,7 +13,6 @@ import {
 import {
   type CDictAudio,
   fetchDictionaryVoice,
-  fetchLanguageList,
   synthesizeSpeech,
   translateText,
 } from "../services/cdictUpstreamService";
@@ -70,28 +69,32 @@ export class CDictController {
     }
   }
 
-  /** GET /api/cdict/languages —— 透传上游支持的语言集合。 */
+  /** GET /api/cdict/languages —— 上游优先；上游不可用时回退内置语言集合（响应带 upstreamDegraded）。 */
   public static async languages(req: Request, res: Response): Promise<void> {
     const startedAt = Date.now();
-    let upstream: unknown;
-    let diagnostic: CDictLanguageDiagnostic | undefined;
-    let stage: "request" | "response_validation" = "request";
     const settings = config.cdictUpstream;
     const secrets = [settings?.translateAppId, settings?.ttsAppId, settings?.ttsAppKey].filter((value): value is string => typeof value === "string");
-    try {
-      upstream = await fetchLanguageList(next => { diagnostic = next; });
-      stage = "response_validation";
-      res.json(normalizeCdictLanguageResponse(upstream));
-    } catch (error) {
-      const details = error instanceof CDictLanguageRequestError ? error.diagnostic
-        : diagnostic ?? describeCDictLanguageResponse(upstream, secrets);
-      const errorMessage = sanitizeCDictLanguageMessage(error instanceof Error ? error.message : "语言列表获取失败", secrets);
-      const requestId = typeof req.requestId === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(req.requestId) ? req.requestId : undefined;
-      // Do not use meta.message: Winston treats it as the main log message and hides the context.
-      logger.warn("[CDict] 语言列表获取失败", { errorMessage, ...details, failureStage: stage,
-        requestId, durationMs: Math.max(0, Date.now() - startedAt) });
-      fail(res, 502, "上游服务暂时不可用");
+    const requestId = typeof req.requestId === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(req.requestId) ? req.requestId : undefined;
+    const result = await resolveCdictLanguageList();
+    if (result.source === "upstream") {
+      res.json(result.payload);
+      return;
     }
+    // 降级不能静默：日志里保留上游业务码/响应形状，响应头与正文都标出 fallback（客户端可继续用）。
+    const errorMessage = sanitizeCDictLanguageMessage(result.failureReason ?? "语言列表获取失败", secrets);
+    logger.warn("[CDict] 语言列表上游不可用，已回退内置语言集合", {
+      errorMessage,
+      ...result.diagnostic,
+      requestId,
+      durationMs: Math.max(0, Date.now() - startedAt),
+    });
+    if (!hasUsableCdictLanguages(result.payload)) {
+      fail(res, 502, "上游服务暂时不可用");
+      return;
+    }
+    res.setHeader("X-CDict-Languages", "fallback");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(result.payload);
   }
 
   /** GET /api/cdict/tts —— source=engine 走在线合成，source=youdao 走词典静态音频；成功回音频字节。 */

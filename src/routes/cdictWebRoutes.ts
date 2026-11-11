@@ -42,13 +42,13 @@ import { cdictDonationClaimLimiter } from "../middleware/routeLimiters";
  *   get:
  *     tags: [CDict Web]
  *     summary: 登录网站账号读取 CDict 语言列表
- *     description: 需要网站会话与翻译权限，语言集合结构与 CDict 上游一致。
+ *     description: 需要网站会话与翻译权限；上游优先，上游不可用时回退内置语言集合（`upstreamDegraded: true`）。
  *     responses:
- *       200: { description: 语言集合 }
+ *       200: { description: 语言集合（上游或内置，均为非空） }
  *       401: { description: 网站会话无效 }
  *       403: { description: 翻译权限受限 }
  *       429: { description: 请求过于频繁 }
- *       502: { description: 上游不可用 }
+ *       502: { description: 内置集合也不可用（防御性保留） }
  * /api/translate/cdict/tts:
  *   get:
  *     tags: [CDict Web]

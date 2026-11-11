@@ -185,13 +185,11 @@ export async function translateText(input: CDictTranslateInput): Promise<Record<
 export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageDiagnostic) => void): Promise<unknown> {
   const upstream = { ...config.cdictUpstream };
   const baseUrl = normalizeCdictUpstreamUrl(upstream.translateBaseUrl, "translateBaseUrl");
-  const body = encodeForm({
-    appId: upstream.translateAppId,
-    app: "com.vivo.translator",
-    userId: "com.vivo.translator", // SDK KEY_USER_ID is camelCase for language queries.
-    imei: "unknown", // SDK fallback, not a real device identifier.
+  // 不再叠两份 device 参数：历史上 deviceParams() 先铺一份占位值，再把 SDK 真值 append 上去，
+  // 于是 query 里出现 deviceType/av/an/sysVer/appVersion/appVer/screensize 各两份（上游取哪一份未定义）。
+  // 这里改为单份：SDK 真值覆盖占位值，键序不变。
+  const languageDeviceParams: Record<string, string> = {
     ...deviceParams(),
-    // HttpParamsUtils and the reverse-engineered 4.5.9.0 manifest, not text-query placeholders.
     deviceType: "phone",
     av: "34",
     an: "14",
@@ -199,6 +197,13 @@ export async function fetchLanguageList(onResponse?: (diagnostic: CDictLanguageD
     appVer: "4.5.9.0",
     sysVer: "unknown",
     screensize: "1080*2400",
+  };
+  const body = encodeForm({
+    appId: upstream.translateAppId,
+    app: "com.vivo.translator",
+    userId: "com.vivo.translator", // SDK KEY_USER_ID is camelCase for language queries.
+    imei: "unknown", // SDK fallback, not a real device identifier.
+    ...languageDeviceParams,
     online: "1",
   });
   const url = `${baseUrl}${LANGUAGE_LIST_PATH}`;

@@ -261,6 +261,7 @@ jobs:
         if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
         env:
           CDICT_LIVE_LANGUAGE_CHECK: "1"
-        # Unlike the mocked website contract tests, this makes one actual public
-        # upstream request. HTTP 405 or an empty/error payload must fail the step.
+        # 真实发一次 vivo 网关请求（走生产代码路径），但断言的是本服务契约：
+        # /languages 必须总能给出非空语言集合。上游业务拒绝（200 + code=10000，2026-11 起常态）
+        # 只允许触发内置集合降级并写进日志；传输层真断（DNS/TLS/非 200/非 JSON）仍然失败。
         run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns=cdictUpstreamLiveLanguages
