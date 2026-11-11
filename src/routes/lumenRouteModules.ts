@@ -13,6 +13,8 @@ export const lumenRouteModules: RouteModule[] = [
     path: "/",
     // lumenRouter 内部自带 /api/lumen 前缀（含未启用时 503 的 fail-closed 闸门），
     // 只能挂在 "/"；真实作用域用 scopes 声明，治理检查按它判定而不是按根路径。
+    // /api/lumen/v1 是同一个 router 的兼容别名（已发布的 Project-Lumen 安装包带 v1/ 段），
+    // 它嵌套在声明的作用域内，所以 scopes 不需要拆成两条。
     scopes: ["/api/lumen"],
     router: lumenRouter,
     requiresAuth: "mixed",
@@ -26,7 +28,7 @@ export const lumenRouteModules: RouteModule[] = [
     rateLimitPolicy: {
       mode: "router",
       limiters: ["lumenLimiter"],
-      note: "lumenLimiter 挂在 router 内部的 /api/lumen 挂载点上，对整棵 lumen 子树（含 health）生效。",
+      note: "lumenLimiter 挂在 router 内部的 /api/lumen 与 /api/lumen/v1 两个挂载点上，对整棵 lumen 子树（含 health）生效。",
     },
   },
   {

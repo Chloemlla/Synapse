@@ -10,9 +10,15 @@ const OPENAPI_SPEC = {
   info: {
     title: "Project Lumen API",
     version: "1.0.0",
-    description: "API for Project Lumen — eye-care and screen-time management for Android",
+    description:
+      "API for Project Lumen — eye-care and screen-time management for Android. " +
+      "规范基址是 /api/lumen；/api/lumen/v1 只是为已发布安装包保留的别名（旧客户端在请求里带 v1/ 段）。",
   },
-  servers: [{ url: "/api/lumen" }],
+  // 两个基址指向同一棵路由树：新版客户端走 /api/lumen，已发布安装包走 /api/lumen/v1。
+  servers: [
+    { url: "/api/lumen" },
+    { url: "/api/lumen/v1", description: "兼容已发布的 Project-Lumen 安装包（同一套路由）" },
+  ],
   paths: {
     "/auth/email/start": {
       post: { summary: "Start email login", tags: ["Auth"], requestBody: { content: { "application/json": { schema: { type: "object", properties: { email: { type: "string", format: "email" } }, required: ["email"] } } } }, responses: { "200": { description: "Login request ID" } } },

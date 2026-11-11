@@ -342,6 +342,39 @@ export class IpRiskController {
         directQueryUrl: publicApiKey
           ? `${DIRECT_QUERY_BASE_URL}?key=${encodeURIComponent(publicApiKey)}&vpn=1&asn=1&risk=1`
           : null,
+        /**
+         * 上报契约的自描述：让**没有浏览器能力**的官方客户端（Project-Lumen Android）也知道
+         * 自己该报什么、报一半算不算失败。以前这份契约只存在于网页探测组件里，原生客户端
+         * 无从得知「缺 wsExitIp / webrtc* 是不是会被判失败」——服务端其实把它们当「不可判定」，
+         * 永远不因此拒收（见 sanitizeProbePayload / computeProbeVerdict 的 comparability）。
+         */
+        reportProfile: {
+          signatureAlgorithm: "hmac-sha256",
+          signatureKeyEncoding: "hex",
+          canonicalization: "sorted-keys-json",
+          /** 原生客户端至少能报这些；httpExitIp 缺失时该次上报没有任何出口对照价值。 */
+          nativeFields: [
+            "httpExitIp",
+            "ipv6Exit",
+            "timezone",
+            "timezoneOffsetMin",
+            "languages",
+            "userAgent",
+            "uaPlatform",
+            "collectedAt",
+          ],
+          /** 只有浏览器侧才有的探测轴：原生客户端缺这些不算失败，对应轴记为不可判定。 */
+          browserOnlyFields: [
+            "wsExitIp",
+            "webrtcLeak",
+            "webrtcHostIps",
+            "webrtcSrflxIps",
+            "hardwareConcurrency",
+            "deviceMemory",
+            "screenRes",
+            "webdriver",
+          ],
+        },
       },
     });
   }
