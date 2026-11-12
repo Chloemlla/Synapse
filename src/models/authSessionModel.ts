@@ -1,7 +1,13 @@
 import { mongoose } from "../services/mongoService";
 
 export type AuthSessionKind = "jwt" | "client-token" | "oauth";
-export type AuthClientType = "web" | "PiliPlus" | "Synapse-Client" | "Project-Lumen" | "other";
+export type AuthClientType =
+  | "web"
+  | "PiliPlus"
+  | "Synapse-Client"
+  | "Project-Lumen"
+  | "NexAI"
+  | "other";
 
 export interface AuthSessionDoc {
   sessionId: string;
@@ -40,7 +46,7 @@ const AuthSessionSchema = new mongoose.Schema<AuthSessionDoc>(
     platform: { type: String, required: true },
     clientType: {
       type: String,
-      enum: ["web", "PiliPlus", "Synapse-Client", "Project-Lumen", "other"],
+      enum: ["web", "PiliPlus", "Synapse-Client", "Project-Lumen", "NexAI", "other"],
       required: true,
       index: true,
     },

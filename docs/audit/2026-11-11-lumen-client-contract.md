@@ -50,3 +50,31 @@
   Express 兜底 404（兜底 404 会把 `error` 写成字符串，客户端拿不到可读 message）。
 - **不把服务端 `/api/lumen/v1` 当新契约**：别名只为已发布安装包存在；新客户端走无版本段路径，
   这样客户端不需要等下一次服务端发布也能工作。
+
+## 3. NexAI（另一位官方客户端）：闸门未参与 + 身份头缺失
+
+排查方法同上：把 NexAI 的 24 个后端路径逐个打到线上（带/不带令牌对照），结论与 Project-Lumen
+**不同**：路径本身对得上（`/api/nexai/**` 就是 Synapse 的挂载点），但**没有一个请求通过首访闸门**。
+
+| 观测 | 结果 |
+| --- | --- |
+| `POST /api/nexai/auth/me`（无闸门头） | 403 `IP_VERIFICATION_REQUIRED` / `missing_verification_headers` |
+| 同上带 `X-Fingerprint` + 令牌 | 进入业务（`/auth/me` 是 GET，POST 才是 404 —— 方法不匹配，不是路径漂移） |
+| NexAI 源码 | `lib/`、`winui/` 里完全没有 `X-Fingerprint` / `X-IP-Verification-Token` / `X-Client-Name` |
+
+也就是说：**NexAI 的注册/登录/同步/制品/安全上报在闸门开启的部署上一律 403**，与密码、网络无关。
+
+| 编号 | 位置 | 缺陷 | 改法 |
+| --- | --- | --- | --- |
+| N-1 | `NexAI/lib/services/*` | 完全不参与 `/api/ip-verification` 握手 | 新增 `nexai_ip_verification.dart`：干净 IP 静默拿 `issuedBy:"auto"` 令牌，403+闸门标记时握手并重放一次；要人机验证/被封时只记原因不硬撞（冷却 5 分钟） |
+| N-2 | `NexAI/lib/services/nexai_backend_client.dart` | 单一发送点没有闸门头，也没有重放 | `_send` 统一挂 `X-Fingerprint`/令牌，闸门 403 时握手重放；每次尝试**重新签名**（nonce 一次性） |
+| N-3 | `NexAI/lib/services/lumen_translation_client.dart` | 翻译走 `/api/public/deeplx/**`，同样被闸门拦，表现为「网络错误」 | 同一套闸门头 + 重放，Lumen 签名 canonical 不含头集合，追加头不影响验签 |
+| N-4 | `NexAI/lib/services/nexai_client_identity.dart` | 不带 `X-Client-Name`/`X-Platform`/`X-Device-Id`/`X-Device-Name`，后台只能把它归成 `other` | 新增身份模块，设备标识复用闸门指纹（同一 sha256 hex，跨重启稳定） |
+| N-5 | `Synapse/src/services/authSessionService.ts`、`src/models/authSessionModel.ts` | `normalizeClientType` 不认 `NexAI`，会话列表里显示成 `other` | 词表加入 `nexai|nex-ai|nex_ai`，`AuthClientType` 与 schema enum 增加 `NexAI` |
+| N-6 | `NexAI/winui/NexAI.Infrastructure/Security/NexaiHttp.cs` | Windows 端同样的闸门缺失（CI 会构建 WinUI，属于在发布链路里的客户端） | 抽出 `SendOnceAsync`，闸门 403 时刷新令牌并重试；非闸门 403 重建响应原样交回（body 只能读一次） |
+| N-7 | `NexAI/winui/.../Tools/DeepLxTranslationClient.cs` | WinUI 翻译客户端同样绕过闸门 | 同上：`NexaiIpVerification` 头 + 重放 |
+| N-8 | `NexAI/test/services/nexai_ip_verification_test.dart`（新增） | 上述判断（什么 403 可重放、令牌缓存/冷却/封禁）无用例 | 6 条用例覆盖判定、握手、复用、冷却、封禁、异常降级 |
+
+**挂起（不本轮做）**：NexAI 的出口探测上报（`/api/ip-risk/echo` + `/api/ip-risk/report`）。
+理由是闸门才是「所有请求失败」的根因，报备属附加观测；服务端已把缺失的浏览器轴判为「不可判定」，
+不参与拒收，所以缺报备不会造成失败。Project-Lumen 侧已实现（见 §1 C-3），NexAI 可照同一契约后续补。

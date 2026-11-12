@@ -76,7 +76,7 @@ const DeviceSessionsPanel: React.FC<DeviceSessionsPanelProps> = ({
             <span id="device-sessions-title">设备与会话</span>
           </div>
           <p className="mt-2 text-[13px] leading-6 text-slate-600 sm:text-sm">
-            查看网页、PiliPlus、Synapse-Client、Project-Lumen 等登录设备。退出操作会保留当前 Profile 设备。
+            查看网页、PiliPlus、Synapse-Client、Project-Lumen、NexAI 等登录设备。退出操作会保留当前 Profile 设备。
           </p>
         </div>
         <button

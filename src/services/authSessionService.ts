@@ -107,6 +107,16 @@ function normalizeClientType(value: unknown): AuthClientType {
     return "Project-Lumen";
   }
   if (normalized === "web" || normalized.includes("browser")) return "web";
+  // NexAI 是 Synapse 的另一位官方客户端（Flutter Android/Web/Windows 三端共用一套后端）。
+  // 它带 `X-Client-Name: NexAI`；没带时只能归 other，所以词表要包含缩写与分隔符写法。
+  if (
+    normalized === "nexai" ||
+    normalized === "nex-ai" ||
+    normalized === "nex_ai" ||
+    normalized.includes("nexai")
+  ) {
+    return "NexAI";
+  }
   return "other";
 }
 
