@@ -42,6 +42,12 @@ const parseSpec = (data: unknown): SpecDocument => {
 const responseStatusOf = (error: unknown): number | undefined =>
   (error as { response?: { status?: number } } | undefined)?.response?.status;
 
+const countSpecPaths = (spec: SpecDocument): number => {
+  const paths = spec.paths;
+  if (!paths || typeof paths !== 'object' || Array.isArray(paths)) return 0;
+  return Object.keys(paths as Record<string, unknown>).length;
+};
+
 const ApiDocsBody: React.FC<{ state: DocsState; onRetry: () => void }> = ({ state, onRetry }) => {
   if (state.status === 'loading') {
     return (
@@ -98,6 +104,23 @@ const ApiDocsBody: React.FC<{ state: DocsState; onRetry: () => void }> = ({ stat
     );
   }
 
+  if (countSpecPaths(state.spec) === 0) {
+    return (
+      <InfoPanel>
+        <InfoSectionTitle
+          title="接口清单为空"
+          description="服务端这次返回的文档里没有任何端点，Swagger UI 渲染不出内容。可以点「重试」再取一次；若一直为空，请让管理员检查服务端的文档生成。"
+          icon={FaBook}
+          tone="amber"
+        />
+        <InfoPrimaryButton tone="slate" onClick={onRetry}>
+          <FaRedo className="text-xs" />
+          重试
+        </InfoPrimaryButton>
+      </InfoPanel>
+    );
+  }
+
   return (
     <InfoPanel>
       <Suspense fallback={<p className="text-sm text-slate-500">正在初始化 Swagger UI…</p>}>
@@ -133,9 +156,7 @@ const ApiDocs: React.FC = () => {
     void loadSpec();
   }, [loadSpec]);
 
-  const pathCount = state.status === 'ready'
-    ? Object.keys((state.spec.paths as Record<string, unknown>) || {}).length
-    : 0;
+  const pathCount = state.status === 'ready' ? countSpecPaths(state.spec) : 0;
 
   // G12-15：裸外链二次请求无法携带 Authorization 头，生产必然 401。
   // 改为复用已带鉴权取回的 spec，直接触发下载。
@@ -178,7 +199,7 @@ const ApiDocs: React.FC = () => {
             <button
               type="button"
               onClick={downloadSpec}
-              disabled={state.status !== 'ready'}
+              disabled={state.status !== 'ready' || pathCount === 0}
               className={cn(studioPrimaryButtonClassName, "py-3 shadow-sm disabled:opacity-50")}
             >
               <FaDownload className="text-xs" />

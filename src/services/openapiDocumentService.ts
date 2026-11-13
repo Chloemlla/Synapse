@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import swaggerJSDoc from "swagger-jsdoc";
+import logger from "../utils/logger";
 import {
   AUDIT_LOG_ADAPTATION_STATUS,
   AUDIT_LOG_OPENAPI_EXTENSION,
@@ -48,12 +49,19 @@ export function getOpenapiJsonCandidates(): string[] {
   ].filter(Boolean) as string[];
 }
 
-function formatOpenapiNotFoundError(candidates: string[]): Error {
-  return new Error(`openapi.json not found in: ${candidates.join(" | ")}`);
+function formatOpenapiNotFoundError(candidates: string[], detail?: string): Error {
+  const suffix = detail ? ` (${detail})` : "";
+  return new Error(`openapi.json not found in: ${candidates.join(" | ")}${suffix}`);
 }
 
 function isRecord(value: unknown): value is MutableOpenapiObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+/** 路径数量：0 表示这份 spec 不能用来渲染 API 文档（Swagger UI 只会显示空白页）。 */
+function countOpenapiPaths(document: unknown): number {
+  if (!isRecord(document) || !isRecord(document.paths)) return 0;
+  return Object.keys(document.paths).length;
 }
 
 function buildAuditLogMetadata(openapiPath: string, method?: string): MutableOpenapiObject {
@@ -107,17 +115,48 @@ function stringifyOpenapiDocument(document: MutableOpenapiObject): string {
   return `${JSON.stringify(addAuditLogMetadataToOpenapiDocument(document), null, 2)}\n`;
 }
 
-function addAuditLogMetadataToOpenapiJson(content: string): string {
-  return stringifyOpenapiDocument(JSON.parse(content));
+/**
+ * 把候选文件的原文变成可下发的 spec；不可用时给出原因，由调用方决定是否换下一个候选。
+ *
+ * 零路径的 spec 一律判为不可用：历史上镜像里那份 205 字节的空 openapi.json 就是这么把
+ * 「API 文档页空白」送到线上的——接口返回 200，前端却拿不到任何端点可渲染。
+ */
+type SpecContentResult = { ok: true; content: string } | { ok: false; reason: string };
+
+function toUsableSpecContent(raw: string, source: string): SpecContentResult {
+  let document: MutableOpenapiObject;
+  try {
+    document = JSON.parse(raw) as MutableOpenapiObject;
+  } catch (_error) {
+    logger.warn(`[openapi] ${source} 不是合法 JSON，跳过该候选`);
+    return { ok: false, reason: `${source} is not valid JSON` };
+  }
+
+  const pathCount = countOpenapiPaths(document);
+  if (pathCount === 0) {
+    logger.warn(`[openapi] ${source} 的 paths 为空，跳过该候选`);
+    return { ok: false, reason: `${source} declares zero paths` };
+  }
+
+  return { ok: true, content: stringifyOpenapiDocument(document) };
 }
 
 function generateOpenapiJson(): string {
   const swaggerSpec = swaggerJSDoc(runtimeSwaggerOptions) as MutableOpenapiObject;
+
+  // 运行期兜底同样是 glob + minimatch 的受害者：扫不到注释时 swagger-jsdoc 只会
+  // 吐空 spec。宁可让 /api/openapi.json 明确 500，也不要把空清单发给 Swagger UI。
+  const pathCount = countOpenapiPaths(swaggerSpec);
+  if (pathCount === 0) {
+    throw new Error("generated openapi document declares zero paths");
+  }
+
   return stringifyOpenapiDocument(swaggerSpec);
 }
 
 export async function readOpenapiJson(): Promise<string> {
   const candidates = getOpenapiJsonCandidates();
+  const skipReasons: string[] = [];
 
   for (const candidate of candidates) {
     try {
@@ -130,9 +169,14 @@ export async function readOpenapiJson(): Promise<string> {
         return openapiJsonCache.content;
       }
 
-      const content = addAuditLogMetadataToOpenapiJson(await fs.promises.readFile(candidate, "utf-8"));
-      openapiJsonCache = { filePath: candidate, mtimeMs: stats.mtimeMs, content };
-      return content;
+      const result = toUsableSpecContent(await fs.promises.readFile(candidate, "utf-8"), candidate);
+      if (!result.ok) {
+        skipReasons.push(result.reason);
+        continue;
+      }
+
+      openapiJsonCache = { filePath: candidate, mtimeMs: stats.mtimeMs, content: result.content };
+      return result.content;
     } catch (_error) {
       // Try the next candidate path.
     }
@@ -146,7 +190,8 @@ export async function readOpenapiJson(): Promise<string> {
     const content = generateOpenapiJson();
     openapiJsonCache = { filePath: GENERATED_OPENAPI_CACHE_KEY, mtimeMs: 0, content };
     return content;
-  } catch (_error) {
-    throw formatOpenapiNotFoundError(candidates);
+  } catch (error) {
+    logger.error(`[openapi] 无法提供 OpenAPI 文档：${(error as Error).message}`);
+    throw formatOpenapiNotFoundError(candidates, [...skipReasons, (error as Error).message].join("; "));
   }
 }

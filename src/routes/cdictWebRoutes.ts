@@ -42,7 +42,8 @@ import { cdictDonationClaimLimiter } from "../middleware/routeLimiters";
  *   get:
  *     tags: [CDict Web]
  *     summary: 登录网站账号读取 CDict 语言列表
- *     description: 需要网站会话与翻译权限；上游优先，上游不可用时回退内置语言集合（`upstreamDegraded: true`）。
+ *     description: >-
+ *       需要网站会话与翻译权限；上游优先，上游不可用时回退内置语言集合（`upstreamDegraded: true`）。
  *     responses:
  *       200: { description: 语言集合（上游或内置，均为非空） }
  *       401: { description: 网站会话无效 }

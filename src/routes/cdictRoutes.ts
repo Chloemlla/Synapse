@@ -64,7 +64,8 @@ router.post("/translate", CDictController.translate);
  *     tags:
  *       - CDict
  *     summary: CDict 支持语言列表
- *     description: 上游优先；上游不可用（业务拒绝/空列表/传输失败）时回退内置语言集合，
+ *     description: >-
+ *       上游优先；上游不可用（业务拒绝/空列表/传输失败）时回退内置语言集合，
  *       响应体带 `upstreamDegraded: true` 与响应头 `X-CDict-Languages: fallback`。
  *     responses:
  *       200:
