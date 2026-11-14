@@ -63,7 +63,26 @@
 4. 反向验证：故意把 `minimatch` 退回 11.x（或临时把 glob 的 minimatch 指向 11）时，
    `pnpm run generate:openapi` 必须**失败退出**而不是写出空 spec
 
-## 六、存量红灯（与本次无关，未动）
+## 六、复验结果（2026-11-13 实测）
 
-- `Quality Guardrails`：`src/tests/viteBuildConfig.test.ts` 断言 manualChunks 分组 `priority: 0` 失败（前端构建配置，非本次范围）
-- `Node Verification / CDict web regression`：另一条独立 job 的存量红
+| 判据 | 结果 |
+|---|---|
+| 锁文件重生（`Update Lockfiles` + `action=repair-lockfiles`，run `43462654279` / PR #1040） | diff 仅 `pnpm-lock.yaml` +10/−1：`glob@11.1.0 → minimatch: 10.2.6`，其他包仍是 11.0.5 |
+| 合并后 main（`375070e6`）的 `Node Verification` 步骤 13「Generate OpenAPI spec」/ 步骤 14「OpenAPI drift gate」 | 均 **success**（此前同一 job 在该步红：`Documented paths: 281 \| spec paths: 0`） |
+| `type-check` / `type-check-backend` / `type-check-frontend` | 全 success |
+| `Docker`（run `43463034920`）：`Publish Docker (amd64)` + `Deploy AMD64 image` | 均 success；`generate:openapi` 的新零命中护栏放行（说明确实是 281 条命中） |
+| 线上容器（`happyclo/tts-node:375070e-amd64`，healthy） | `/app/openapi.json` = **332374 字节 / 281 paths**（修复前 205 字节 / 0 paths） |
+| 运行期服务层实测（容器内直接调 `dist/services/openapiDocumentService.js` 的 `readOpenapiJson()`） | 下发 **454276 字节 / 281 paths**，且带 `x-audit-log` 扩展；与 `/api/openapi.json` 的响应一致（该端点自带首访 IP 校验，容器内 curl 会先被 403 拦下，故直接验服务层） |
+
+结论：`/api-docs` 拿到的是一份 281 条路径的完整 spec，Swagger UI 可正常渲染；为防止再次静默退化为空白页，
+前端另加了「接口清单为空」态。
+
+## 七、存量红灯（与本次无关，未动）
+
+- `Quality Guardrails / Build metadata regressions`：`src/tests/viteBuildConfig.test.ts` 断言 manualChunks 分组 `priority: 0` 失败
+  （前端构建配置，修复前后同一结论：`5f31241a` 也红）。因为它先红，同一 job 里的
+  `Frontend design language guard` 等后续步骤被 skip。
+- `Node Verification / CDict web regression`：独立 job 的存量红（`7e8fd6a3` 起）。
+- `Node Verification / Run backend Jest tests with coverage`：**慢性挂死**，与本次无关——
+  历史绿 run `40148228235`（2026-10-25）里同一步也跑了约 6 小时被 cancelled；本次同样长跑未完。
+  判定不改用「该 job 整体绿」，而看本次关心且已绿的 13/14 步。
