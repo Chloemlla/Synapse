@@ -116,8 +116,9 @@ export function isWafBypassPath(pathname: string): boolean {
  * 被注册的字段（及其子树）在 WAF 检查时会被跳过，不做 SQL 注入 / XSS 检测。
  * 适用于本身就会包含特殊字符的业务字段（如 HTML 内容、用户代理字符串等）。
  *
- * @param fields - 要加入白名单的字段路径，支持点号嵌套（如 `'deviceSignals.navigator.userAgent'`）。
- *                 传入顶层 key（如 `'deviceSignals'`）会跳过该 key 下的整棵子树。
+ * @param fields - 要加入白名单的字段名/路径，支持点号嵌套（如 `'deviceSignals.navigator.userAgent'`）。
+ *                 命中的 key 会跳过该 key 下的整棵子树；**匹配与深度无关**——
+ *                 `'ua'` 既命中顶层 `ua`，也命中 `latestFingerprint.ua`、`fingerprints[0].ua`。
  *
  * @example
  * ```ts
@@ -199,6 +200,19 @@ function isSafeRelaxedValue(raw: string): boolean {
   return !(SQL_INJECTION_PATTERN.test(val) || XSS_PATTERN.test(val));
 }
 
+/**
+ * 判断某个 key 是否在白名单内（`checkObject` 的 body 遍历用）。
+ *
+ * 匹配与深度无关，因为 body 里的字段经常是“存储后原样回传”的形状：
+ * 管理端编辑用户时会把整个用户文档回传，UA 串落在 `latestFingerprint.ua`（第 2 层）里，
+ * 而真实 UA 一定带 `;`（`Mozilla/5.0 (Windows NT 10.0; Win64; x64) …`），
+ * 若只在顶层匹配，就会把正常操作拦成 400（生产事故：PUT /api/admin/users/:id）。
+ * 白名单只是换成 relaxed 检查，命令注入 / 路径穿越 / SQLi / XSS 仍会被拦。
+ */
+function isWhitelistedField(key: string): boolean {
+  return BODY_FIELD_WHITELIST.has(key) || WHITELIST_PREFIX_SET.has(key);
+}
+
 /** 递归检查对象（迭代式，减少调用栈开销）。白名单字段仍做攻击模式检查（relaxed）。 */
 function checkObject(obj: any): string | null {
   // 用栈代替递归，避免深层嵌套时的函数调用开销
@@ -230,9 +244,8 @@ function checkObject(obj: any): string | null {
       for (let i = entries.length - 1; i >= 0; i--) {
         const [key, v] = entries[i];
         const childPath = path ? `${path}.${key}` : key;
-        // 顶层白名单 key 将其整棵子树标记为 whitelisted（仍做攻击模式检查）
-        const childWhitelisted =
-          whitelisted || (!path && (BODY_FIELD_WHITELIST.has(key) || WHITELIST_PREFIX_SET.has(key)));
+        // 白名单 key 在任意深度都将其整棵子树标记为 whitelisted（仍做攻击模式检查）
+        const childWhitelisted = whitelisted || isWhitelistedField(key);
         stack.push({ val: v, path: childPath, depth: depth + 1, whitelisted: childWhitelisted });
       }
     }
