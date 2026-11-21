@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { type ApiKeyDoc, ApiKeyModel } from "../models/apiKeyModel";
+import { redactLogPayload } from "../utils/auditRedaction";
 import logger from "../utils/logger";
 
 /** 所有可分配的权限 */
@@ -291,9 +292,14 @@ export async function enableKey(keyId: string): Promise<boolean> {
   return result.modifiedCount > 0;
 }
 
-/** 硬删除 */
+/**
+ * 硬删除。
+ *
+ * 为什么不走 softDeleteService：API Key 的「删除」是凭据销毁，软删除会把可用密钥留在库里，
+ * 与「删除即失效」的语义相反；审计由 `deleteKey` 调用点的 auditLog 记录。
+ */
 export async function deleteKey(keyId: string): Promise<boolean> {
-  const result = await ApiKeyModel.deleteOne({ keyId });
+  const result = await ApiKeyModel.deleteOne({ keyId }); // soft-delete-exempt: 凭据销毁，软删除等于密钥仍可用
   logger.info("[ApiKey] 删除 API Key", { keyId });
   return result.deletedCount > 0;
 }
@@ -386,14 +392,17 @@ export async function setApiKeyPenalty(
     },
   });
 
-  // codeql[js/clear-text-logging] 只记录 Key 文档 id（非密钥本身）、状态与批量写计数。
-  logger.warn("[ApiKey] 已应用 Key 处罚", {
-    scope: input.keyId ? `key:${input.keyId}` : `user:${input.userId}`,
-    status: input.status,
-    source: input.source,
-    matched: result.matchedCount,
-    modified: result.modifiedCount,
-  });
+  // 载荷过 `redactLogPayload`：只留 Key 文档 id（经 scope）、状态与批量写计数。
+  logger.warn(
+    "[ApiKey] 已应用 Key 处罚",
+    redactLogPayload({
+      scope: input.keyId ? `key:${input.keyId}` : `user:${input.userId}`,
+      status: input.status,
+      source: input.source,
+      matched: result.matchedCount,
+      modified: result.modifiedCount,
+    }),
+  );
 
   return { modified: result.modifiedCount, matched: result.matchedCount };
 }

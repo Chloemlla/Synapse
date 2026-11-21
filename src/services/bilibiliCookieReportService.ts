@@ -240,7 +240,8 @@ export async function removeBilibiliCookieReport(rawClientId: unknown, rawDevice
   const clientId = normalizeClientId(rawClientId);
   const deviceId = normalizeReportDeviceId(rawDeviceId);
   const uid = normalizeUid(rawUid);
-  const result = await BilibiliCookieReportModel.deleteOne({ clientId, deviceId, bilibiliUid: uid });
+  // 登录凭据存档删除是隐私删除权/凭据失效清理，软删除会留下可解密的密文。
+  const result = await BilibiliCookieReportModel.deleteOne({ clientId, deviceId, bilibiliUid: uid }); // soft-delete-exempt: 隐私删除权/凭据失效清理，软删除相当于留下可解密凭据
   return { removed: result.deletedCount > 0 };
 }
 

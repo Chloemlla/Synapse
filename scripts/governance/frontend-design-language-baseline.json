@@ -1,13 +1,13 @@
 {
   "palette-forbidden-hue": 1,
-  "arbitrary-color-value": 7,
-  "non-slate-neutral": 3,
-  "semantic-color-drift": 209,
-  "saturated-gradient": 9,
+  "arbitrary-color-value": 0,
+  "non-slate-neutral": 0,
+  "semantic-color-drift": 19,
+  "saturated-gradient": 0,
   "second-ui-kit-token": 18,
   "legacy-palette-name": 0,
   "second-brand-color-literal": 1,
   "independent-visual-overlay": 0,
-  "off-scale-radius": 71,
+  "off-scale-radius": 47,
   "mislocated-studio-primitive": 0
 }

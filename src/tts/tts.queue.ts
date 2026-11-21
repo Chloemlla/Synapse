@@ -1,4 +1,5 @@
 import { wsService } from "../services/wsService";
+import { redactLogPayload } from "../utils/auditRedaction";
 import logger from "../utils/logger";
 import { sendAdminAlert } from "../services/adminAlertService";
 import { generationHistoryStore, redactTtsTextForStorage } from "./tts.history";
@@ -115,11 +116,14 @@ export class TtsQueue {
       return Math.max(0, Math.floor(Number(value) || 0));
     } catch (error) {
       // 计数失败不该把正常提交拒掉：随后 createJob 若存储真的不可用会自然失败并走原有错误路径。
-      // codeql[js/clear-text-logging] 只记录 userId 与错误文本，不含凭据内容。
-      logger.warn("TTS 每用户活跃任务计数失败，跳过并发闸门", {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 载荷过 `redactLogPayload`：只留 userId 与错误文本。
+      logger.warn(
+        "TTS 每用户活跃任务计数失败，跳过并发闸门",
+        redactLogPayload({
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       return 0;
     }
   }

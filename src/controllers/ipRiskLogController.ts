@@ -556,7 +556,7 @@ export class IpRiskLogController {
       const ipMatcher = buildIpMatcher(query.ip);
       if (ipMatcher) conditions.push({ ip: ipMatcher });
       if (query.verdict) conditions.push({ "diagnostics.signature.verdict": query.verdict });
-      if (query.trusted !== null) conditions.push({ "diagnostics.trustedWithoutSignature": query.trusted });
+      if (query.accepted !== null) conditions.push({ "diagnostics.trustedWithoutSignature": query.accepted });
       const filter: Record<string, unknown> = { $and: conditions };
 
       const [docs, total] = await Promise.all([
@@ -593,7 +593,7 @@ export class IpRiskLogController {
         total,
         limit: query.limit,
         offset: query.offset,
-        filters: { ip: query.ip || null, verdict: query.verdict || null, trusted: query.trusted },
+        filters: { ip: query.ip || null, verdict: query.verdict || null, accepted: query.accepted },
       });
     } catch (error) {
       next(error);

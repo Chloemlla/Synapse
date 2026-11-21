@@ -255,7 +255,8 @@ export async function listBilibiliAccountsForAdmin(query: {
 
 export async function removeBilibiliAccount(userId: string, rawUid: unknown): Promise<{ removed: boolean; uid: string }> {
   const uid = normalizeUid(rawUid);
-  const result = await BilibiliAccountBindingModel.deleteOne({ userId, bilibiliUid: uid });
+  // 凭据存档删除就是隐私删除权的本体，软删除会留下可解密的密文。
+  const result = await BilibiliAccountBindingModel.deleteOne({ userId, bilibiliUid: uid }); // soft-delete-exempt: 隐私删除权本体，软删除相当于留下可解密凭据
   if (result.deletedCount > 0) {
     await clearLegacyPrimaryIfNeeded(userId, uid);
   }
@@ -280,7 +281,8 @@ export async function pruneBilibiliAccounts(userId: string, rawActiveUids: unkno
     .map((doc) => doc.bilibiliUid)
     .filter((uid) => uid && !activeUids.has(uid));
   if (stale.length > 0) {
-    await BilibiliAccountBindingModel.deleteMany({ userId, bilibiliUid: { $in: stale } });
+    // 客户端声明已不存在的账号，其密文存档保留等同残留凭据。
+    await BilibiliAccountBindingModel.deleteMany({ userId, bilibiliUid: { $in: stale } }); // soft-delete-exempt: 客户端已注销该账号，密文留存即残留凭据
     for (const uid of stale) {
       await clearLegacyPrimaryIfNeeded(userId, uid);
     }

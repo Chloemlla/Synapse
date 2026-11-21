@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { recordUsage, setApiKeyPenalty, validateApiKey } from "../services/apiKeyService";
 import { persistApiUsageFlags, recordApiUsageSample } from "../services/apiUsageWindowService";
 import { getClientIP } from "../utils/ipUtils";
+import { redactLogPayload } from "../utils/auditRedaction";
 import logger from "../utils/logger";
 import { UserStorage } from "../utils/userStorage";
 import { attachApiKeyBillingFinalizer, preauthorizeApiKeyBilling } from "../services/apiKeyBillingService";
@@ -72,11 +73,14 @@ function scheduleIdcEgressRecheck(params: {
         fingerprint: `api-key:${params.keyId}`.slice(0, 128),
       });
     } catch (error) {
-      // codeql[js/clear-text-logging] 只记录 Key 文档 id（非密钥本身）与错误文本。
-      logger.debug("[ApiKeyAuth] IDC 出口复查失败（不影响请求）", {
-        keyId: params.keyId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 载荷过 `redactLogPayload`：只留 Key 文档 id 与错误文本，凭据字段名单内一律打码。
+      logger.debug(
+        "[ApiKeyAuth] IDC 出口复查失败（不影响请求）",
+        redactLogPayload({
+          keyId: params.keyId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   })();
 }

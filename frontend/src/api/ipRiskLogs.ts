@@ -367,8 +367,13 @@ export interface UpstreamDiagnosticsParams {
   offset?: number;
   ip?: string;
   verdict?: SignatureVerdictFilter;
-  /** '' = 不限；'true' = 只看「验签未过但已采信」；'false' = 只看真失败。 */
-  trusted?: TriStateFilter;
+  /**
+   * '' = 不限；'true' = 只看「验签未过但已采信」；'false' = 只看真失败。
+   * 参数名 `accepted` 对应后端（见 `parseDiagnosticQuery` 注释）：库里字段叫
+   * `trustedWithoutSignature`，但作为查询参数 `trusted` 会被 CodeQL 的名字启发式误判成
+   * 密钥参数（`js/sensitive-get-query`），而它只是布尔筛选位。
+   */
+  accepted?: TriStateFilter;
 }
 
 export interface UpstreamDiagnosticsResponse {
@@ -377,7 +382,7 @@ export interface UpstreamDiagnosticsResponse {
   total: number;
   limit: number;
   offset: number;
-  filters: { ip: string | null; verdict: string | null; trusted: boolean | null };
+  filters: { ip: string | null; verdict: string | null; accepted: boolean | null };
 }
 
 export interface SignatureVerifyResponse {

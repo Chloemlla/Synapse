@@ -71,3 +71,41 @@ export const isSensitiveAuditField = (key: string): boolean => {
     SENSITIVE_AUDIT_FIELD_SUBSTRINGS.some((pattern) => normalized.includes(pattern))
   );
 };
+
+/** 载荷里被判定敏感的字段替换成的占位串（与 logger 的 `***` 同义，便于 grep）。 */
+export const REDACTED_LOG_VALUE = "[REDACTED]";
+
+/** 递归深度上限：日志载荷是扁平诊断信息（根 + 两层），再深基本等于有人把整棵树塞进来了。 */
+const LOG_PAYLOAD_MAX_DEPTH = 3;
+
+const redactValue = (value: unknown, depth: number): unknown => {
+  if (value instanceof Date || value instanceof Error) return value;
+  if (Array.isArray(value)) {
+    if (depth >= LOG_PAYLOAD_MAX_DEPTH) return REDACTED_LOG_VALUE;
+    return value.map((item) => redactValue(item, depth + 1));
+  }
+  if (value && typeof value === "object") {
+    if (depth >= LOG_PAYLOAD_MAX_DEPTH) return REDACTED_LOG_VALUE;
+    const redacted: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      redacted[key] = isSensitiveAuditField(key) ? REDACTED_LOG_VALUE : redactValue(item, depth + 1);
+    }
+    return redacted;
+  }
+  return value;
+};
+
+/**
+ * 日志载荷脱敏：所有 `logger.*` 的 meta 载荷都从这里过一道。
+ *
+ * 为什么需要它，而不是「调用点自己保证只记 id」：`js/clear-text-logging` 按字段名
+ * 判定敏感度 —— `req.apiKey` 上的 Key 文档一旦成为源，从它派生出的 `keyId` / `userId`
+ * 全被算作凭据流，调用点写不写注释都拦不住（本仓不发抑制查询，`// codeql[...]` 无效）。
+ * 过一道按名单过滤的函数，把「这里只记 id」变成**可执行、可测试**的边界：
+ * 以后有人往同一个 `logger` 调用里加 `apiKey` / `secret` 字段，会被就地打码而不是写进日志。
+ *
+ * 与 `isSensitiveAuditField` 共用同一份名单，避免审计脱敏与日志脱敏两套口径漂移。
+ */
+export function redactLogPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return redactValue(payload, 0) as Record<string, unknown>;
+}

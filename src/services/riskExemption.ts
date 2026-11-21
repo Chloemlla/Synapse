@@ -1,4 +1,5 @@
 import { SecurityEvent } from "../models/securityEventModel";
+import { redactLogPayload } from "../utils/auditRedaction";
 import logger from "../utils/logger";
 
 /**
@@ -88,12 +89,15 @@ export function noteRiskExemption(params: {
     userAgent: "",
     createdAt: new Date(),
   }).catch((error) => {
-    // codeql[js/clear-text-logging] 只记录 userId / 豁免范围与错误文本，不含凭据内容。
-    logger.warn("[RiskExemption] 豁免留痕写入失败", {
-      scope,
-      userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // 载荷过 `redactLogPayload`：只留 userId / 豁免范围与错误文本。
+    logger.warn(
+      "[RiskExemption] 豁免留痕写入失败",
+      redactLogPayload({
+        scope,
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   });
 }
 

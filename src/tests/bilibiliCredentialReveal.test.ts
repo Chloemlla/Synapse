@@ -17,7 +17,9 @@ jest.mock("../utils/logger", () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const mockAuditLog = jest.fn();
+// 控制器里是 `void AuditLogService.log({...}).catch(() => {})`，替身必须返回 Promise，
+// 否则 `undefined.catch` 会在审计那一行抛 TypeError（与真实实现在这里必须同形）。
+const mockAuditLog = jest.fn(async (_entry: unknown): Promise<void> => undefined);
 
 jest.mock("../services/auditLogService", () => ({
   AuditLogService: { log: (...args: unknown[]) => mockAuditLog(...args) },

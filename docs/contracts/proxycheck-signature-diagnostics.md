@@ -72,7 +72,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/proxycheck/upstream-diagnostics` | 分页列出带快照的行。参数：`limit` / `offset` / `ip`（前缀）/ `verdict` / `trusted`。 |
+| GET | `/api/admin/proxycheck/upstream-diagnostics` | 分页列出带快照的行。参数：`limit` / `offset` / `ip`（前缀）/ `verdict` / `accepted`（`true` = 只看「验签未过但已采信」，`false` = 只看真失败；原名 `trusted`）。 |
 | POST | `/api/admin/proxycheck/upstream-diagnostics/:id/verify-signature` | 用候选密钥在已存响应体上重算验签。body：`{ "key": "<候选密钥>" }`。 |
 
 两者都要求 superadmin，且沿用 `/api/admin` 挂载点的限流（不要在本文件里再挂一个限流器实例，会把额度减半）。

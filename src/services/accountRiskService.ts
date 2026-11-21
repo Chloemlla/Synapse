@@ -18,6 +18,7 @@ import {
   type AccountRiskTier,
   type AccountSharingFacts,
 } from "../utils/accountRiskScoring";
+import { redactLogPayload } from "../utils/auditRedaction";
 import logger from "../utils/logger";
 import type { User as UserType } from "../utils/userStorageTypes";
 import { AuditLogService } from "./auditLogService";
@@ -735,11 +736,14 @@ async function recordAccountRiskEvent(params: {
       createdAt: new Date(),
     });
   } catch (error) {
-    // codeql[js/clear-text-logging] 只记录 userId 与错误文本，不含凭据内容。
-    logger.warn("[AccountRisk] 风险事件写入失败", {
-      userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // 载荷过 `redactLogPayload`：只留 userId 与错误文本。
+    logger.warn(
+      "[AccountRisk] 风险事件写入失败",
+      redactLogPayload({
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 }
 
@@ -879,12 +883,15 @@ export async function applyAccountRiskAction(
   try {
     await updateUser(userId, patch);
   } catch (error) {
-    // codeql[js/clear-text-logging] 只记录 userId / 动作名与错误文本，不含凭据内容。
-    logger.error("[AccountRisk] 风险动作写回失败", {
-      userId,
-      action,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // 载荷过 `redactLogPayload`：只留 userId / 动作名与错误文本。
+    logger.error(
+      "[AccountRisk] 风险动作写回失败",
+      redactLogPayload({
+        userId,
+        action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return { ok: false, error: "写入失败", code: "WRITE_FAILED" };
   }
 
@@ -894,11 +901,14 @@ export async function applyAccountRiskAction(
     } catch (error) {
       // 会话撤销失败不能把已落库的封停回滚：漏撤的会话会由 assertActiveAuthSession 的
       // 账户状态检查拦下，但必须告警（否则没人知道有残留会话）。
-      // codeql[js/clear-text-logging] 只记录 userId 与错误文本，不含凭据内容。
-      logger.error("[AccountRisk] 封停后撤销存量会话失败，需人工核查", {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 载荷过 `redactLogPayload`：只留 userId 与错误文本。
+      logger.error(
+        "[AccountRisk] 封停后撤销存量会话失败，需人工核查",
+        redactLogPayload({
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
@@ -930,12 +940,15 @@ export async function applyAccountRiskAction(
       });
     }
   } catch (error) {
-    // codeql[js/clear-text-logging] 只记录 userId / 动作名与错误文本，不含凭据内容。
-    logger.error("[AccountRisk] 联动 API Key 处罚失败，需人工核查", {
-      userId,
-      action,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // 载荷过 `redactLogPayload`：只留 userId / 动作名与错误文本。
+    logger.error(
+      "[AccountRisk] 联动 API Key 处罚失败，需人工核查",
+      redactLogPayload({
+        userId,
+        action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 
   await recordAccountRiskEvent({
@@ -957,8 +970,11 @@ export async function applyAccountRiskAction(
 
   await writeRiskActionAudit({ userId, action, reason, operatorId, fromTier, toTier, stepUpUntil });
 
-  // codeql[js/clear-text-logging] 只记录 userId / 动作名 / 风险档位，不含凭据内容。
-  logger.info("[AccountRisk] 风险动作已执行", { userId, action, operatorId, fromTier, toTier, stepUpUntil });
+  // 载荷过 `redactLogPayload`：只留 userId / 动作名 / 风险档位。
+  logger.info(
+    "[AccountRisk] 风险动作已执行",
+    redactLogPayload({ userId, action, operatorId, fromTier, toTier, stepUpUntil }),
+  );
   return { ok: true, action, fromTier, toTier, stepUpUntil };
 }
 
@@ -991,12 +1007,15 @@ async function writeRiskActionAudit(params: {
       ip: "",
     });
   } catch (error) {
-    // codeql[js/clear-text-logging] 只记录 userId / 动作名与错误文本，不含凭据内容。
-    logger.warn("[AccountRisk] 风险动作审计写入失败", {
-      userId: params.userId,
-      action: params.action,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // 载荷过 `redactLogPayload`：只留 userId / 动作名与错误文本。
+    logger.warn(
+      "[AccountRisk] 风险动作审计写入失败",
+      redactLogPayload({
+        userId: params.userId,
+        action: params.action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 }
 
@@ -1294,12 +1313,15 @@ export function recordAccountAbuseSignal(input: AccountAbuseSignalInput): void {
       userAgent: String(input.userAgent || "").slice(0, 512),
       createdAt: new Date(),
     }).catch((error) => {
-      // codeql[js/clear-text-logging] 只记录 userId / 事件类型与错误文本，不含凭据内容。
-      logger.warn("[AccountRisk] 账户滥用信号写入失败", {
-        userId,
-        eventType,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 载荷过 `redactLogPayload`：只留 userId / 事件类型与错误文本。
+      logger.warn(
+        "[AccountRisk] 账户滥用信号写入失败",
+        redactLogPayload({
+          userId,
+          eventType,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     });
   };
 
@@ -1316,11 +1338,14 @@ export function recordAccountAbuseSignal(input: AccountAbuseSignalInput): void {
       if (!known) return;
       write();
     } catch (error) {
-      // codeql[js/clear-text-logging] 只记录 userId / 事件类型与错误文本，不含凭据内容。
-      logger.debug("[AccountRisk] 匿名 Abuse 信号归因检查失败（不写信号）", {
-        userId: input.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 载荷过 `redactLogPayload`：只留 userId 与错误文本。
+      logger.debug(
+        "[AccountRisk] 匿名 Abuse 信号归因检查失败（不写信号）",
+        redactLogPayload({
+          userId: input.userId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   })();
 }

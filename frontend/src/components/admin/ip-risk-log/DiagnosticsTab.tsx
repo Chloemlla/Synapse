@@ -141,7 +141,9 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
   const [draftIp, setDraftIp] = useState('');
   const [ip, setIp] = useState('');
   const [verdict, setVerdict] = useState<SignatureVerdictFilter>('');
-  const [trusted, setTrusted] = useState<TriStateFilter>('');
+  // 变量名跟后端查询参数一致叫 accepted：库里字段是 trustedWithoutSignature，
+  // 但「采信」不等于「可信」，而 trusted 作为查询参数会撞上 CodeQL 的密钥参数启发式。
+  const [accepted, setAccepted] = useState<TriStateFilter>('');
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [manualNonce, setManualNonce] = useState(0);
@@ -170,7 +172,7 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
           offset,
           ip: ip || undefined,
           verdict: verdict || undefined,
-          trusted: trusted || undefined,
+          accepted: accepted || undefined,
         });
         if (requestId !== requestRef.current) return;
         setRows(res.rows ?? []);
@@ -186,7 +188,7 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
         if (requestId === requestRef.current) setLoading(false);
       }
     })();
-  }, [pageSize, offset, ip, verdict, trusted, refreshNonce, manualNonce, notice]);
+  }, [pageSize, offset, ip, verdict, accepted, refreshNonce, manualNonce, notice]);
 
   const toggle = useCallback((key: string) => {
     setExpanded((current) => {
@@ -238,11 +240,11 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
     setDraftIp('');
     setIp('');
     setVerdict('');
-    setTrusted('');
+    setAccepted('');
     setOffset(0);
   };
 
-  const hasFilters = Boolean(ip || verdict || trusted);
+  const hasFilters = Boolean(ip || verdict || accepted);
 
   return (
     <div className="space-y-5">
@@ -318,10 +320,10 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
             />
             <FilterSelect
               title="按采信情况筛选"
-              value={trusted}
+              value={accepted}
               options={TRUSTED_OPTIONS}
               onChange={(value) => {
-                setTrusted(value as TriStateFilter);
+                setAccepted(value as TriStateFilter);
                 setOffset(0);
               }}
             />
@@ -603,7 +605,7 @@ const DiagnosticsTab: React.FC<Props> = ({ refreshNonce }) => {
 
       <DataPanel className="border-slate-200 bg-white/60">
         <p className="text-xs leading-6 text-slate-500">
-          筛选按服务端执行：<code>ip</code> 前缀匹配、<code>verdict</code> 为验签结论、<code>trusted</code> 区分
+          筛选按服务端执行：<code>ip</code> 前缀匹配、<code>verdict</code> 为验签结论、<code>accepted</code> 区分
           「验签未过但已采信」与「真失败」。排序固定为 <code>createdAt</code> 倒序。
         </p>
       </DataPanel>

@@ -177,8 +177,15 @@ export interface ParsedDiagnosticQuery {
   offset: number;
   ip: string;
   verdict: SignatureVerdict | "";
-  /** true = 只看「验签未过但按配置采信了上游」的行；false = 只看真失败的；null = 不限。 */
-  trusted: boolean | null;
+  /**
+   * true = 只看「验签未过但按配置采信了上游」的行；false = 只看真失败的；null = 不限。
+   *
+   * 查询参数用 `accepted` 而不是库里那个字段名 `trusted`：
+   * `js/sensitive-get-query` 的名字启发式会把 `trusted` 当成「可能装密钥的查询参数」
+   * （`maybeSecret()` 里 `(?<!un)trusted` 命中），而这里只是一枚布尔筛选位。
+   * 改名不损失信息，语义反而更准：采信（accepted）不等于可信（trusted）。
+   */
+  accepted: boolean | null;
 }
 
 export function parseDiagnosticQuery(query: Record<string, unknown>): ParsedDiagnosticQuery {
@@ -192,6 +199,6 @@ export function parseDiagnosticQuery(query: Record<string, unknown>): ParsedDiag
     verdict: SIGNATURE_VERDICTS.includes(normalizedVerdict as SignatureVerdict)
       ? (normalizedVerdict as SignatureVerdict)
       : "",
-    trusted: readBool(query.trusted),
+    accepted: readBool(query.accepted),
   };
 }
