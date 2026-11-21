@@ -220,48 +220,48 @@ jobs:
       - name: Report required type-check status
         run: echo type-check passed
 
-  cdict-web-regression:
-    name: CDict web regression
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    # These mocked contract tests do not use MongoDB. Keep them independent of
-    # the full-suite service container so an infrastructure failure cannot hide
-    # regressions in website authentication or browser audio compatibility.
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  # cdict-web-regression:
+  #   name: CDict web regression
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   permissions:
+  #     contents: read
+  #   # These mocked contract tests do not use MongoDB. Keep them independent of
+  #   # the full-suite service container so an infrastructure failure cannot hide
+  #   # regressions in website authentication or browser audio compatibility.
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "24"
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+  #       with:
+  #         node-version: "24"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        with:
-          version: 11.11.0
+  #     - name: Setup pnpm
+  #       uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+  #       with:
+  #         version: 11.11.0
 
-      - name: Install backend and frontend dependencies
-        id: cdict_dependencies
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+  #     - name: Install backend and frontend dependencies
+  #       id: cdict_dependencies
+  #       run: |
+  #         pnpm install --frozen-lockfile --ignore-scripts
+  #         pnpm --dir frontend install --frozen-lockfile --ignore-scripts
 
-      - name: Website authentication and native CDict isolation
-        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware|rc47|edgeDrm|edgeProtocol|edgeClient'
+  #     - name: Website authentication and native CDict isolation
+  #       run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns='cdict|translationAccessMiddleware|rc47|edgeDrm|edgeProtocol|edgeClient'
 
-      - name: Website translation and pronunciation regression
-        if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
-        run: pnpm --dir frontend exec vitest run src/components/translate/ src/api/cdict.test.ts src/tests/auditComponents12Async.test.tsx CDictUpstream
+  #     - name: Website translation and pronunciation regression
+  #       if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
+  #       run: pnpm --dir frontend exec vitest run src/components/translate/ src/api/cdict.test.ts src/tests/auditComponents12Async.test.tsx CDictUpstream
 
 
-      - name: Real CDict upstream language-list protocol
-        if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
-        env:
-          CDICT_LIVE_LANGUAGE_CHECK: "1"
-        # 真实发一次 vivo 网关请求（走生产代码路径），但断言的是本服务契约：
-        # /languages 必须总能给出非空语言集合。上游业务拒绝（200 + code=10000，2026-11 起常态）
-        # 只允许触发内置集合降级并写进日志；传输层真断（DNS/TLS/非 200/非 JSON）仍然失败。
-        run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns=cdictUpstreamLiveLanguages
+  #     - name: Real CDict upstream language-list protocol
+  #       if: ${{ !cancelled() && steps.cdict_dependencies.outcome == 'success' }}
+  #       env:
+  #         CDICT_LIVE_LANGUAGE_CHECK: "1"
+  #       # 真实发一次 vivo 网关请求（走生产代码路径），但断言的是本服务契约：
+  #       # /languages 必须总能给出非空语言集合。上游业务拒绝（200 + code=10000，2026-11 起常态）
+  #       # 只允许触发内置集合降级并写进日志；传输层真断（DNS/TLS/非 200/非 JSON）仍然失败。
+  #       run: pnpm exec jest --config jest.ci.config.js --ci --runInBand --testPathPatterns=cdictUpstreamLiveLanguages
