@@ -10,6 +10,7 @@ import { auditLog } from "../../middleware/auditLog";
 import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/adminScope";
 import { wsService } from "../../services/wsService";
 import adminScopeRouter from "./adminScope";
+import bilibiliCredentialsRouter from "./bilibiliCredentials";
 import broadcastRouter from "./broadcast";
 import clientErrorsRouter from "./clientErrors";
 import configRouter from "./config";
@@ -104,6 +105,8 @@ router.use("/client-errors", clientErrorsRouter);
 // Pixel 任务与 CDK 映射（页面 /admin/pixel；读接口 admin + 页面授权，凭据类写接口 superadmin）。
 router.use(pixelAdminRouter);
 router.use(mobileTokensRouter);
+// Bilibili 凭据解密查看（超管 + 安全会话 + 审计只留计数，见 routes/admin/bilibiliCredentials.ts）。
+router.use(bilibiliCredentialsRouter);
 // 管理总览的系统级汇总（跨集合计数；默认仅超管，页面授权里可单独放开）。
 router.use(overviewRouter);
 router.use(policyConsentsRouter);

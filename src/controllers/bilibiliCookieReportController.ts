@@ -5,9 +5,11 @@ import {
   removeBilibiliCookieReport,
   reportBilibiliCookie,
   resolveReportDeviceId,
+  revealBilibiliCookieReports,
 } from "../services/bilibiliCookieReportService";
-import { listBilibiliAccountsForAdmin } from "../services/bilibiliAccountService";
+import { listBilibiliAccountsForAdmin, revealBilibiliAccountCredentials } from "../services/bilibiliAccountService";
 import { BilibiliSyncError } from "../services/bilibiliSyncService";
+import { AuditLogService } from "../services/auditLogService";
 import logger from "../utils/logger";
 
 function reportError(res: Response, error: unknown): void {
@@ -148,5 +150,125 @@ export async function listAccountBindings(req: Request, res: Response): Promise<
     });
   } catch (error) {
     reportError(res, error);
+  }
+}
+
+/**
+ * 「解密查看」的审计：只记「谁在什么时候解了多少条、哪几条打不开」，**绝不记明文 Cookie**。
+ *
+ * 为什么不用通用 `auditLog` 中间件：它会把 resBody 写进审计（`AUDIT_LOG_CAPTURE_PAYLOADS=true` 时），
+ * 而这个响应体的正文就是解密后的 Cookie —— 等于把明文抄一份进 60 天保留期的审计库。
+ * 因此路由层先 `suppressAuditPayloadCapture(req)` 掐掉全局审计的载荷捕获，再由这里显式落一条
+ * 只含计数与标识的审计（与 routes/admin/pixelRoutes.ts 的卡密分发同一处理方式）。
+ */
+function auditReveal(
+  req: Request,
+  res: Response,
+  action: string,
+  detail: Record<string, unknown>,
+  result: "success" | "failure" = "success",
+  errorMessage?: string,
+): void {
+  void AuditLogService.log({
+    requestId: req.requestId,
+    userId: req.user?.id || "unknown",
+    username: req.user?.username || "unknown",
+    role: req.user?.role || "unknown",
+    action,
+    module: "privacy",
+    result,
+    errorMessage,
+    detail: { ...detail, statusCode: res.statusCode },
+    ip: req.ip || req.socket?.remoteAddress || "unknown",
+    userAgent: req.headers["user-agent"],
+    path: (req.originalUrl || req.path).split("?")[0],
+    method: req.method,
+  }).catch(() => {});
+}
+
+/** 审计里只放标识（定位取证必需），并统一截断到 200 字符。 */
+function shortId(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value.slice(0, 200) : undefined;
+}
+
+function revealSummary(rows: Array<{ error?: string }>): Record<string, unknown> {
+  return {
+    requested: rows.length,
+    revealed: rows.filter((row) => !row.error).length,
+    undecryptable: rows.filter((row) => row.error === "undecryptable").length,
+    notFound: rows.filter((row) => row.error === "not-found").length,
+  };
+}
+
+/**
+ * 超管「解密查看」登录上报存档（POST + 安全会话）。
+ *
+ * 为什么是 POST 而不是 GET：被解密的记录集合写在请求体里（一次最多 50 条），
+ * GET 会把设备 id / UID 拼进 URL —— URL 会进访问日志、浏览器历史、代理与 Referer，
+ * 而全局审计的 `detail.query` 还是**无条件**捕获的。凭据类操作不能走 query。
+ *
+ * 每一层都为「明文只在这一刻、这一屏存在」服务：超管角色 + 安全会话（二次验证）
+ * + `Cache-Control: no-store` + 审计只留计数。
+ */
+export async function revealReportCredentials(req: Request, res: Response): Promise<void> {
+  const rawItems = (req.body as { items?: unknown } | undefined)?.items;
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  try {
+    const rows = await revealBilibiliCookieReports(rawItems);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, data: rows });
+    auditReveal(req, res, "privacy.bilibiliReportReveal", {
+      ...revealSummary(rows),
+      keys: items
+        .map((item) => {
+          const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+          return {
+            clientId: shortId(record.clientId),
+            deviceId: shortId(record.deviceId),
+            uid: shortId(record.uid),
+          };
+        })
+        .slice(0, 50),
+    });
+  } catch (error) {
+    reportError(res, error);
+    auditReveal(
+      req,
+      res,
+      "privacy.bilibiliReportReveal",
+      { requested: items.length },
+      "failure",
+      error instanceof BilibiliSyncError ? error.code : "unknown",
+    );
+  }
+}
+
+/** 超管「解密查看」多账号绑定凭据（POST + 安全会话），契约同 `revealReportCredentials`。 */
+export async function revealAccountCredentials(req: Request, res: Response): Promise<void> {
+  const rawItems = (req.body as { items?: unknown } | undefined)?.items;
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  try {
+    const rows = await revealBilibiliAccountCredentials(rawItems);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, data: rows });
+    auditReveal(req, res, "privacy.bilibiliAccountReveal", {
+      ...revealSummary(rows),
+      keys: items
+        .map((item) => {
+          const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+          return { userId: shortId(record.userId), uid: shortId(record.uid) };
+        })
+        .slice(0, 50),
+    });
+  } catch (error) {
+    reportError(res, error);
+    auditReveal(
+      req,
+      res,
+      "privacy.bilibiliAccountReveal",
+      { requested: items.length },
+      "failure",
+      error instanceof BilibiliSyncError ? error.code : "unknown",
+    );
   }
 }

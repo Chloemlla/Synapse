@@ -1,6 +1,12 @@
 import { BilibiliSyncModel } from "../models/bilibiliSyncModel";
 import { BilibiliAccountBindingModel, type BilibiliAccountBindingDoc, type BilibiliAccountClientIdentity } from "../models/bilibiliAccountBindingModel";
-import { BilibiliSyncError, encryptCredential, normalizeUid, verifyBilibiliCookie } from "./bilibiliSyncService";
+import {
+  BilibiliSyncError,
+  decryptStoredCredential,
+  encryptCredential,
+  normalizeUid,
+  verifyBilibiliCookie,
+} from "./bilibiliSyncService";
 import { escapeRegexLiteral } from "../utils/regexEscape";
 
 export const MAX_DEVICE_BYTES = 16 * 1024;
@@ -280,4 +286,75 @@ export async function pruneBilibiliAccounts(userId: string, rawActiveUids: unkno
     }
   }
   return { removed: stale, activeCount: activeUids.size };
+}
+
+/** 一次「解密查看」最多解多少条（与登录上报存档同一上限）。 */
+export const MAX_ACCOUNT_REVEAL_ROWS = 50;
+
+export interface BilibiliRevealedAccountCredential {
+  userId: string;
+  uid: string;
+  status: "active" | "invalid" | "unknown";
+  lastSyncedAt: string | null;
+  /** 解密后的 Cookie 明文；失败/记录不存在时为 null，原因见 `error`。 */
+  cookie: string | null;
+  error?: "not-found" | "undecryptable";
+}
+
+/**
+ * 把一批多账号绑定的凭据解密成明文（**仅** `/api/admin/bilibili-accounts/credentials` 用）。
+ *
+ * 契约与 `revealBilibiliCookieReports` 完全一致：超管 + 安全会话 + 逐次审计 + 单批上限 +
+ * 失败逐条标记而不是整批 500。`credentialCiphertext` 等四个字段是 `select: false`，
+ * 这里必须显式 `+` 取回，否则每条都会被判成 undecryptable。
+ */
+export async function revealBilibiliAccountCredentials(rawItems: unknown): Promise<BilibiliRevealedAccountCredential[]> {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new BilibiliSyncError("需要指定要解密的记录", "BILIBILI_REVEAL_ITEMS_REQUIRED", 400);
+  }
+  if (rawItems.length > MAX_ACCOUNT_REVEAL_ROWS) {
+    throw new BilibiliSyncError(
+      `单次最多解密 ${MAX_ACCOUNT_REVEAL_ROWS} 条记录`,
+      "BILIBILI_REVEAL_ITEMS_TOO_MANY",
+      413,
+    );
+  }
+
+  const keys = rawItems.map((item) => {
+    const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const userId = typeof record.userId === "string" ? record.userId.trim() : "";
+    if (!userId) throw new BilibiliSyncError("缺少用户标识", "BILIBILI_REVEAL_USER_REQUIRED", 400);
+    return { userId, uid: normalizeUid(record.uid) };
+  });
+
+  const docs = await BilibiliAccountBindingModel.find({
+    $or: keys.map((key) => ({ userId: key.userId, bilibiliUid: key.uid })),
+  })
+    .select(
+      "+credentialCiphertext +credentialIv +credentialTag +credentialKeyVersion userId bilibiliUid credentialStatus lastSyncedAt",
+    )
+    .lean<BilibiliAccountBindingDoc[]>();
+
+  const byKey = new Map(docs.map((doc) => [`${doc.userId}|${doc.bilibiliUid}`, doc] as const));
+
+  return keys.map((key) => {
+    const doc = byKey.get(`${key.userId}|${key.uid}`);
+    if (!doc) {
+      return { ...key, status: "unknown" as const, lastSyncedAt: null, cookie: null, error: "not-found" as const };
+    }
+    let cookie: string | null = null;
+    let error: "undecryptable" | undefined;
+    try {
+      cookie = decryptStoredCredential(doc);
+    } catch {
+      error = "undecryptable";
+    }
+    return {
+      ...key,
+      status: doc.credentialStatus,
+      lastSyncedAt: doc.lastSyncedAt ? new Date(doc.lastSyncedAt).toISOString() : null,
+      cookie,
+      ...(error ? { error } : {}),
+    };
+  });
 }

@@ -3,9 +3,14 @@ import {
   FaCookieBite,
   FaDatabase,
   FaExclamationTriangle,
+  FaEye,
+  FaEyeSlash,
   FaFingerprint,
+  FaKey,
+  FaLock,
   FaMobileAlt,
   FaRedo,
+  FaRegCopy,
   FaSearch,
   FaShieldAlt,
   FaTrash,
@@ -13,6 +18,8 @@ import {
 } from 'react-icons/fa';
 import { useAuth } from '@/hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '@/utils/rbac';
+import { getSecuritySessionToken, useSecuritySession } from '@/hooks/useSecuritySession';
+import EstablishSecuritySession from './EstablishSecuritySession';
 import {
   InfoBadge,
   InfoMetricCard,
@@ -100,10 +107,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-const TAB_META: Record<
-  BilibiliTab,
-  { label: string; endpoint: string; description: string }
-> = {
+const TAB_META: Record<BilibiliTab, { label: string; endpoint: string; description: string }> = {
   reports: {
     label: '登录 Cookie 上报',
     endpoint: '/api/admin/bilibili-reports',
@@ -132,6 +136,102 @@ const statusBadge = (status: string) =>
     <InfoBadge tone='rose'>失效</InfoBadge>
   );
 
+/** 解密结果：`cookie` 为 null 时看 `error` 说原因。 */
+interface RevealEntry {
+  cookie: string | null;
+  error?: 'not-found' | 'undecryptable' | string;
+}
+
+/** 一次 POST 里的一条目标：key 用于把响应按行回写到 state。 */
+interface RevealTarget {
+  key: string;
+  payload: Record<string, string>;
+}
+
+const reportRevealKey = (row: CookieReportRow): string => `r:${row.clientId}:${row.deviceId}:${row.uid}`;
+const accountRevealKey = (row: AccountBindingRow): string => `a:${row.userId}:${row.uid}`;
+
+const revealErrorText = (error?: string): string => {
+  if (error === 'undecryptable') {
+    return '密文无法用当前密钥链解开（可能已轮换密钥或存档损坏），需要直接用数据库密钥排查。';
+  }
+  if (error === 'not-found') return '记录已不存在（可能刚被删除，或客户端已重新上报）。';
+  return error ? `解密失败：${error}` : '未返回明文。';
+};
+
+/**
+ * 单片明文展示：默认显示，可隐藏、可复制。
+ *
+ * 刻意不把明文直接铺在表格里：明文只在该行的展开块里存在，收起后从 DOM 移除（配合后端的
+ * `Cache-Control: no-store`，不落浏览器缓存）。
+ */
+const RevealBox: React.FC<{ entry: RevealEntry; onHide: () => void }> = ({ entry, onHide }) => {
+  const [visible, setVisible] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  if (!entry.cookie) {
+    return (
+      <div className='rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-xs leading-6 text-amber-800'>
+        {revealErrorText(entry.error)}
+      </div>
+    );
+  }
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(entry.cookie ?? '');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className='rounded-2xl border border-rose-200 bg-rose-50/50 p-3'>
+      <div className='mb-2 flex flex-wrap items-center gap-2 text-xs text-rose-700'>
+        <FaLock className='h-3 w-3' aria-hidden />
+        <span className='font-semibold'>明文 Cookie</span>
+        <span className='text-rose-500'>仅本屏可见 · 本次操作已写入审计</span>
+        <button
+          type='button'
+          onClick={() => setVisible((current) => !current)}
+          className='ml-auto inline-flex items-center gap-1 rounded-xl px-2 py-1 font-semibold text-slate-600 transition hover:bg-white'
+        >
+          {visible ? <FaEyeSlash className='h-3 w-3' /> : <FaEye className='h-3 w-3' />}
+          {visible ? '隐藏' : '显示'}
+        </button>
+        <button
+          type='button'
+          onClick={() => void copy()}
+          className='inline-flex items-center gap-1 rounded-xl px-2 py-1 font-semibold text-slate-600 transition hover:bg-white'
+        >
+          <FaRegCopy className='h-3 w-3' />
+          {copied ? '已复制' : '复制'}
+        </button>
+        <button
+          type='button'
+          onClick={onHide}
+          className='inline-flex items-center gap-1 rounded-xl px-2 py-1 font-semibold text-slate-600 transition hover:bg-white'
+        >
+          收起
+        </button>
+      </div>
+      {visible ? (
+        <textarea
+          readOnly
+          value={entry.cookie}
+          rows={3}
+          spellCheck={false}
+          className='w-full resize-y rounded-xl border border-rose-200 bg-white p-2 font-mono text-[11px] leading-5 text-slate-800'
+        />
+      ) : (
+        <p className='text-xs text-slate-500'>已隐藏（明文仍在本次响应内，刷新页面即消失）。</p>
+      )}
+    </div>
+  );
+};
+
 const BilibiliDataAdmin: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = isAdminRole(user?.role);
@@ -148,6 +248,68 @@ const BilibiliDataAdmin: React.FC = () => {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<CookieReportRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // 解密查看（超管 + 安全会话）。`revealed` 按行 key 存明文，收起时从 state 删掉。
+  const { isActive: sessionActive, clear: clearSession } = useSecuritySession();
+  const [revealed, setRevealed] = useState<Record<string, RevealEntry>>({});
+  const [revealing, setRevealing] = useState(false);
+  const [sessionOpen, setSessionOpen] = useState(false);
+  /** 因“还没建安全会话”被拦下的目标：建立成功后自动重试，不让用户再点一遍。 */
+  const pendingRevealRef = useRef<RevealTarget[] | null>(null);
+
+  const revealRows = useCallback(
+    async (targets: RevealTarget[]) => {
+      if (targets.length === 0) return;
+      // 直接从会话单例取 token：从 EstablishSecuritySession 回调里重试时，组件里的快照还是旧的。
+      const token = getSecuritySessionToken();
+      if (!token) {
+        pendingRevealRef.current = targets;
+        setSessionOpen(true);
+        return;
+      }
+      setRevealing(true);
+      setError('');
+      try {
+        const res = await fetch(`${TAB_META[tab].endpoint}/credentials`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'x-verification-token': token },
+          body: JSON.stringify({ items: targets.map((target) => target.payload) }),
+        });
+        const json = await res.json().catch(() => null);
+        const code = typeof json?.code === 'string' ? json.code : '';
+        if (code.startsWith('SECURITY_SESSION')) {
+          // 会话过期/环境变了：清掉本地会话并引导重新验证，而不是反复抡一个注定 403 的请求。
+          clearSession();
+          pendingRevealRef.current = targets;
+          setSessionOpen(true);
+          return;
+        }
+        if (!res.ok || !json?.success) throw new Error(json?.error || `HTTP ${res.status}`);
+        const rows = Array.isArray(json.data) ? (json.data as RevealEntry[]) : [];
+        const next: Record<string, RevealEntry> = {};
+        rows.forEach((row, index) => {
+          const key = targets[index]?.key;
+          if (key) next[key] = { cookie: row.cookie ?? null, error: row.error };
+        });
+        setRevealed((current) => ({ ...current, ...next }));
+      } catch (e) {
+        setError(getErrorMessage(e, '解密查看失败'));
+      } finally {
+        setRevealing(false);
+      }
+    },
+    [clearSession, tab],
+  );
+
+  const handleSessionEstablished = useCallback(() => {
+    setSessionOpen(false);
+    const pending = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+    // 等一帧再重试：EstablishSecuritySession 是先用 setSession 再调本回调的，
+    // 这里重新读单例里的 token，确保拿到的是刚签发的那枚。
+    if (pending && pending.length > 0) window.setTimeout(() => void revealRows(pending), 0);
+  }, [revealRows]);
 
   const confirmDeleteReport = async () => {
     if (!deleteTarget) return;
@@ -211,6 +373,9 @@ const BilibiliDataAdmin: React.FC = () => {
     if (isAdmin) fetchData(tab, 1, '');
     // Reset the search box when switching collections.
     setKeyword('');
+    // 明文不跟着标签页留下去（上一页的解密结果不应在新集合里继续可见）。
+    setRevealed({});
+    pendingRevealRef.current = null;
     return () => { requestRef.current++; };
   }, [tab, isAdmin, fetchData]);
 
@@ -240,7 +405,7 @@ const BilibiliDataAdmin: React.FC = () => {
       <InfoQueryHero
         eyebrow='PiliPlus'
         title='Bilibili 凭据与设备'
-        description='查看 PiliPlus 上报到 Synapse 的 B 站登录凭据与账号绑定。所有 Cookie 仅以密文存档，此处只展示元数据，绝不回传明文。'
+        description='查看 PiliPlus 上报到 Synapse 的 B 站登录凭据与账号绑定。Cookie 仅以 AES-GCM 密文存档；元数据只读展示，明文需超管 + 安全会话逐次解密，每次解密都写入审计。'
         icon={FaDatabase}
         tone='sky'
         meta={
@@ -298,6 +463,72 @@ const BilibiliDataAdmin: React.FC = () => {
           </div>
 
           <p className='text-xs leading-6 text-slate-500'>{TAB_META[tab].description}</p>
+
+          {/* 解密查看的入口与状态：未建立安全会话时不发任何明文请求，先在这里把会话建起来。 */}
+          {/* 门禁与删除同一条：`canDelete`（超管）。元数据列表对普通 admin 开放，明文只给超管。 */}
+          {canDelete ? (
+            <InfoPanel compact>
+              <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                <div className='flex items-start gap-3'>
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+                      sessionActive ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {sessionActive ? <FaKey /> : <FaLock />}
+                  </div>
+                  <div>
+                    <p className='text-sm font-semibold text-slate-900'>
+                      {sessionActive ? '安全会话已建立，可以解密查看' : '解密查看需要先建立安全会话'}
+                    </p>
+                    <p className='mt-1 text-xs leading-6 text-slate-500'>
+                      {sessionActive
+                        ? '解出的明文只在当前屏幕存在，并带 no-store 不落缓存；每次解密都会记一条只含计数与标识的审计。'
+                        : '明文 Cookie 属于最高敏感级别：需要超管身份 + 密码/TOTP/Passkey 二次验证。未建立会话时不会向服务端发起解密请求。'}
+                    </p>
+                  </div>
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  <button
+                    type='button'
+                    className={studioSecondaryButtonClassName}
+                    onClick={() => setSessionOpen(true)}
+                  >
+                    <FaLock className='h-3 w-3' />
+                    {sessionActive ? '换个身份验证' : '建立安全会话'}
+                  </button>
+                  <button
+                    type='button'
+                    className={studioSecondaryButtonClassName}
+                    disabled={revealing || (!reports.length && !accounts.length)}
+                    onClick={() => {
+                      const targets =
+                        tab === 'reports'
+                          ? reports.map((row) => ({
+                              key: reportRevealKey(row),
+                              payload: { clientId: row.clientId, deviceId: row.deviceId, uid: row.uid },
+                            }))
+                          : accounts.map((row) => ({
+                              key: accountRevealKey(row),
+                              payload: { userId: row.userId, uid: row.uid },
+                            }));
+                      void revealRows(targets);
+                    }}
+                  >
+                    <FaKey className='h-3 w-3' />
+                    {revealing ? '解密中…' : '解密本页全部'}
+                  </button>
+                </div>
+              </div>
+            </InfoPanel>
+          ) : (
+            <InfoPanel compact>
+              <div className='flex items-center gap-3 text-xs text-slate-500'>
+                <FaLock className='h-3 w-3' aria-hidden />
+                解密查看明文 Cookie 仅对超级管理员开放（当前身份只能看元数据）。
+              </div>
+            </InfoPanel>
+          )}
 
           <div className='grid gap-4 md:grid-cols-4'>
             <InfoMetricCard label='记录总数' value={stats.total} detail='数据库全部记录' icon={FaDatabase} />
@@ -366,47 +597,87 @@ const BilibiliDataAdmin: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {reports.map((row) => (
-                      <tr key={`${row.clientId}:${row.deviceId}:${row.uid}`} className='border-b border-slate-100 align-top'>
-                        <td className='px-3 py-3 font-semibold text-slate-900'>
-                          {row.uid}
-                          {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
-                        </td>
-                        <td className='px-3 py-3'>{statusBadge(row.status)}</td>
-                        <td className='px-3 py-3 text-slate-700'>
-                          {deviceLabel(row.deviceSummary)}
-                          <div className='text-xs text-slate-400'>{asText(row.deviceSummary.platform)}</div>
-                        </td>
-                        <td className='px-3 py-3 text-slate-700'>
-                          {asText(row.client.clientName || row.clientId)}
-                          <div className='text-xs text-slate-400'>{asText(row.client.clientVersion)}</div>
-                        </td>
-                        <td className='px-3 py-3 text-slate-700'>{row.reportCount}</td>
-                        <td className='px-3 py-3 text-xs text-slate-500'>
-                          <div>{formatDate(row.firstReportedAt)}</div>
-                          <div className='text-slate-700'>{formatDate(row.lastReportedAt)}</div>
-                        </td>
-                        <td className='px-3 py-3'>
-                          <code className='rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600'>
-                            {row.deviceId.slice(0, 12)}…
-                          </code>
-                        </td>
-                        {canDelete ? (
-                          <td className='px-3 py-3 text-right'>
-                            <button
-                              type='button'
-                              onClick={() => setDeleteTarget(row)}
-                              title='删除这条上报记录（仅删除密文存档，操作会写入审计日志）'
-                              aria-label={`删除 UID ${row.uid} 在设备 ${row.deviceId} 上的上报记录`}
-                              className='inline-flex min-h-11 items-center gap-1 rounded-2xl px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50'
-                            >
-                              <FaTrash className='h-3 w-3' />
-                              删除
-                            </button>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
+                    {reports.map((row) => {
+                      const revealKey = reportRevealKey(row);
+                      const entry = revealed[revealKey];
+                      return (
+                        <React.Fragment key={revealKey}>
+                          <tr className='border-b border-slate-100 align-top'>
+                            <td className='px-3 py-3 font-semibold text-slate-900'>
+                              {row.uid}
+                              {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
+                            </td>
+                            <td className='px-3 py-3'>{statusBadge(row.status)}</td>
+                            <td className='px-3 py-3 text-slate-700'>
+                              {deviceLabel(row.deviceSummary)}
+                              <div className='text-xs text-slate-400'>{asText(row.deviceSummary.platform)}</div>
+                            </td>
+                            <td className='px-3 py-3 text-slate-700'>
+                              {asText(row.client.clientName || row.clientId)}
+                              <div className='text-xs text-slate-400'>{asText(row.client.clientVersion)}</div>
+                            </td>
+                            <td className='px-3 py-3 text-slate-700'>{row.reportCount}</td>
+                            <td className='px-3 py-3 text-xs text-slate-500'>
+                              <div>{formatDate(row.firstReportedAt)}</div>
+                              <div className='text-slate-700'>{formatDate(row.lastReportedAt)}</div>
+                            </td>
+                            <td className='px-3 py-3'>
+                              <code className='rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600'>
+                                {row.deviceId.slice(0, 12)}…
+                              </code>
+                            </td>
+                            {canDelete ? (
+                              <td className='px-3 py-3 text-right whitespace-nowrap'>
+                                <button
+                                  type='button'
+                                  onClick={() =>
+                                    void revealRows([
+                                      {
+                                        key: revealKey,
+                                        payload: { clientId: row.clientId, deviceId: row.deviceId, uid: row.uid },
+                                      },
+                                    ])
+                                  }
+                                  disabled={revealing}
+                                  title='解密这条存档的 Cookie（需要安全会话；会写入审计）'
+                                  aria-label={`解密 UID ${row.uid} 在设备 ${row.deviceId} 上的 Cookie`}
+                                  className='inline-flex min-h-11 items-center gap-1 rounded-2xl px-2 py-1 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 disabled:opacity-50'
+                                >
+                                  <FaKey className='h-3 w-3' />
+                                  查看凭据
+                                </button>
+                                <button
+                                  type='button'
+                                  onClick={() => setDeleteTarget(row)}
+                                  title='删除这条上报记录（仅删除密文存档，操作会写入审计日志）'
+                                  aria-label={`删除 UID ${row.uid} 在设备 ${row.deviceId} 上的上报记录`}
+                                  className='inline-flex min-h-11 items-center gap-1 rounded-2xl px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50'
+                                >
+                                  <FaTrash className='h-3 w-3' />
+                                  删除
+                                </button>
+                              </td>
+                            ) : null}
+                          </tr>
+                          {entry ? (
+                            <tr className='border-b border-slate-100 bg-slate-50/60'>
+                              <td colSpan={canDelete ? 8 : 7} className='px-3 pb-3'>
+                                <RevealBox
+                                  entry={entry}
+                                  onHide={() =>
+                                    setRevealed((current) => {
+                                      const next = { ...current };
+                                      delete next[revealKey];
+                                      return next;
+                                    })
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
                     {reports.length === 0 && !loading && (
                       <tr>
                         <td colSpan={canDelete ? 8 : 7} className='px-3 py-10 text-center text-slate-400'>
@@ -426,33 +697,75 @@ const BilibiliDataAdmin: React.FC = () => {
                       <th className='px-3 py-3'>设备</th>
                       <th className='px-3 py-3'>权限数</th>
                       <th className='px-3 py-3'>绑定 / 最近同步</th>
+                      {canDelete ? <th className='px-3 py-3 text-right'>操作</th> : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts.map((row) => (
-                      <tr key={`${row.userId}:${row.uid}`} className='border-b border-slate-100 align-top'>
-                        <td className='px-3 py-3 font-semibold text-slate-900'>
-                          {row.uid}
-                          {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
-                        </td>
-                        <td className='px-3 py-3'>{statusBadge(row.status)}</td>
-                        <td className='px-3 py-3'>
-                          <code className='rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600'>{row.userId}</code>
-                        </td>
-                        <td className='px-3 py-3 text-slate-700'>
-                          {deviceLabel(row.deviceSummary)}
-                          <div className='text-xs text-slate-400'>{asText(row.deviceSummary.platform)}</div>
-                        </td>
-                        <td className='px-3 py-3 text-slate-700'>{row.permissionsCount}</td>
-                        <td className='px-3 py-3 text-xs text-slate-500'>
-                          <div>{formatDate(row.boundAt)}</div>
-                          <div className='text-slate-700'>{formatDate(row.lastSyncedAt)}</div>
-                        </td>
-                      </tr>
-                    ))}
+                    {accounts.map((row) => {
+                      const revealKey = accountRevealKey(row);
+                      const entry = revealed[revealKey];
+                      return (
+                        <React.Fragment key={revealKey}>
+                          <tr className='border-b border-slate-100 align-top'>
+                            <td className='px-3 py-3 font-semibold text-slate-900'>
+                              {row.uid}
+                              {row.isPrimary && <InfoBadge tone='sky' className='ml-2'>主</InfoBadge>}
+                            </td>
+                            <td className='px-3 py-3'>{statusBadge(row.status)}</td>
+                            <td className='px-3 py-3'>
+                              <code className='rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600'>{row.userId}</code>
+                            </td>
+                            <td className='px-3 py-3 text-slate-700'>
+                              {deviceLabel(row.deviceSummary)}
+                              <div className='text-xs text-slate-400'>{asText(row.deviceSummary.platform)}</div>
+                            </td>
+                            <td className='px-3 py-3 text-slate-700'>{row.permissionsCount}</td>
+                            <td className='px-3 py-3 text-xs text-slate-500'>
+                              <div>{formatDate(row.boundAt)}</div>
+                              <div className='text-slate-700'>{formatDate(row.lastSyncedAt)}</div>
+                            </td>
+                            {canDelete ? (
+                              <td className='px-3 py-3 text-right whitespace-nowrap'>
+                                <button
+                                  type='button'
+                                  onClick={() =>
+                                    void revealRows([
+                                      { key: revealKey, payload: { userId: row.userId, uid: row.uid } },
+                                    ])
+                                  }
+                                  disabled={revealing}
+                                  title='解密这条绑定的 Cookie（需要安全会话；会写入审计）'
+                                  aria-label={`解密用户 ${row.userId} 的 UID ${row.uid} 绑定凭据`}
+                                  className='inline-flex min-h-11 items-center gap-1 rounded-2xl px-2 py-1 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 disabled:opacity-50'
+                                >
+                                  <FaKey className='h-3 w-3' />
+                                  查看凭据
+                                </button>
+                              </td>
+                            ) : null}
+                          </tr>
+                          {entry ? (
+                            <tr className='border-b border-slate-100 bg-slate-50/60'>
+                              <td colSpan={canDelete ? 7 : 6} className='px-3 pb-3'>
+                                <RevealBox
+                                  entry={entry}
+                                  onHide={() =>
+                                    setRevealed((current) => {
+                                      const next = { ...current };
+                                      delete next[revealKey];
+                                      return next;
+                                    })
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
                     {accounts.length === 0 && !loading && (
                       <tr>
-                        <td colSpan={6} className='px-3 py-10 text-center text-slate-400'>
+                        <td colSpan={canDelete ? 7 : 6} className='px-3 py-10 text-center text-slate-400'>
                           {keyword ? '没有匹配的记录：换个关键词，或清除搜索条件重新查询' : '暂无记录：点上方的「刷新」重新读取'}
                         </td>
                       </tr>
@@ -526,6 +839,30 @@ const BilibiliDataAdmin: React.FC = () => {
             </div>
           </>
         ) : null}
+      </StudioModal>
+
+      {/* 建立安全会话（解密查看的前置条件）：放在弹窗里，不打断正在看列表的上下文。 */}
+      <StudioModal
+        open={sessionOpen}
+        onClose={() => setSessionOpen(false)}
+        labelledBy="bilibili-security-session-title"
+        maxWidthClassName="max-w-2xl"
+      >
+        <StudioModalHeader
+          title="建立安全会话"
+          titleId="bilibili-security-session-title"
+          icon={<FaLock className="h-4 w-4" aria-hidden />}
+          iconClassName="bg-amber-100 text-amber-700"
+          onClose={() => setSessionOpen(false)}
+        />
+        <p className="mt-4 text-sm leading-6 text-slate-600">
+          解密查看会拿到 B 站登录 Cookie 的<strong>明文</strong>，因此需要先做一次二次验证。
+          会话仅在当前浏览器标签页内有效（默认 10 分钟，由后台策略决定）；验证不会消耗登录态，
+          也不会取代常规登录。
+        </p>
+        <div className="mt-4">
+          <EstablishSecuritySession showActiveBar={false} onEstablished={handleSessionEstablished} />
+        </div>
       </StudioModal>
     </div>
   );

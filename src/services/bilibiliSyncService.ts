@@ -105,19 +105,37 @@ export function encryptCredential(cookie: string): { credentialCiphertext: strin
   };
 }
 
-function decryptCredential(doc: BilibiliSyncDoc): string {
+/**
+ * 库里存着的凭据密文字段（三张表同形：bilibili_syncs / bilibili_account_bindings / bilibili_cookie_reports）。
+ * 全部 `select: false`，因此读它的查询必须显式 `+credentialCiphertext` 之类，漏一个就只能解密失败。
+ */
+export interface StoredCredentialFields {
+  credentialCiphertext?: string | null;
+  credentialIv?: string | null;
+  credentialTag?: string | null;
+  credentialKeyVersion?: string | null;
+}
+
+/**
+ * 通用凭据解密（管理员“解密查看”与同步流程共用同一套密钥候选链）。
+ *
+ * 为什么要导出而不是让调用方自己拼 `createDecipheriv`：密钥候选链（新派生子密钥 + 四把历史 env 密钥 +
+ * config.jwtSecret 派生）只在这里维护一份，迁移/轮换才只改一个地方；调用方拿到的要么是明文，
+ * 要么是带稳定 code 的 `BILIBILI_CREDENTIAL_INVALID`（可审计、可回前端展示原因）。
+ */
+export function decryptStoredCredential(fields: StoredCredentialFields): string {
   if (
-    !doc.credentialKeyVersion ||
-    !KNOWN_CREDENTIAL_VERSIONS.has(doc.credentialKeyVersion) ||
-    !doc.credentialCiphertext ||
-    !doc.credentialIv ||
-    !doc.credentialTag
+    !fields.credentialKeyVersion ||
+    !KNOWN_CREDENTIAL_VERSIONS.has(fields.credentialKeyVersion) ||
+    !fields.credentialCiphertext ||
+    !fields.credentialIv ||
+    !fields.credentialTag
   ) {
     throw new BilibiliSyncError("Bilibili 凭据不可用", "BILIBILI_CREDENTIAL_INVALID", 403);
   }
-  const iv = Buffer.from(doc.credentialIv, "base64");
-  const tag = Buffer.from(doc.credentialTag, "base64");
-  const ciphertext = Buffer.from(doc.credentialCiphertext, "base64");
+  const iv = Buffer.from(fields.credentialIv, "base64");
+  const tag = Buffer.from(fields.credentialTag, "base64");
+  const ciphertext = Buffer.from(fields.credentialCiphertext, "base64");
   for (const key of credentialKeys()) {
     try {
       const decipher = crypto.createDecipheriv(CREDENTIAL_ALGO, key, iv);
@@ -128,6 +146,10 @@ function decryptCredential(doc: BilibiliSyncDoc): string {
     }
   }
   throw new BilibiliSyncError("Bilibili 凭据不可用", "BILIBILI_CREDENTIAL_INVALID", 403);
+}
+
+function decryptCredential(doc: BilibiliSyncDoc): string {
+  return decryptStoredCredential(doc);
 }
 
 export async function verifyBilibiliCookie(cookie: string, expectedUid: string): Promise<void> {

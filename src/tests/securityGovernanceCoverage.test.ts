@@ -94,6 +94,8 @@ describe("RC-32 敏感操作的安全会话清单", () => {
     { label: "OAuth 客户端密钥轮换", file: "src/routes/oauthRoutes.ts", guard: "requireSecuritySession" },
     { label: "短链 AES_KEY 轮换", file: "src/routes/shortUrlRoutes.ts", guard: "requireSecuritySession" },
     { label: "Pixel 主密钥重加密（含异步绑定）", file: "src/routes/admin/pixelRoutes.ts", guard: "assertSecuritySessionBinding" },
+    // 2026-11-14：Bilibili 凭据明文解密（元数据列表仍是 admin，解密必须超管 + 安全会话）。
+    { label: "Bilibili 凭据明文解密", file: "src/routes/admin/bilibiliCredentials.ts", guard: "requireSecuritySession" },
   ];
 
   it.each(sensitiveOps)("$label 仍要求安全会话", ({ file, guard }) => {

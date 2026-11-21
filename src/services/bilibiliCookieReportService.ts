@@ -2,6 +2,7 @@ import { BilibiliCookieReportModel, type BilibiliCookieReportDoc } from "../mode
 import type { BilibiliAccountClientIdentity } from "../models/bilibiliAccountBindingModel";
 import {
   BilibiliSyncError,
+  decryptStoredCredential,
   encryptCredential,
   normalizeUid,
   verifyBilibiliCookie,
@@ -241,4 +242,88 @@ export async function removeBilibiliCookieReport(rawClientId: unknown, rawDevice
   const uid = normalizeUid(rawUid);
   const result = await BilibiliCookieReportModel.deleteOne({ clientId, deviceId, bilibiliUid: uid });
   return { removed: result.deletedCount > 0 };
+}
+
+/** 一次「解密查看」最多解多少条：挡的是一条请求把整张表拉成明文。 */
+export const MAX_REVEAL_ROWS = 50;
+
+export interface BilibiliRevealedReportCredential {
+  clientId: string;
+  deviceId: string;
+  uid: string;
+  status: "active" | "invalid" | "unknown";
+  lastReportedAt: string | null;
+  /** 解密后的 Cookie 明文；失败/记录不存在时为 null，原因见 `error`。 */
+  cookie: string | null;
+  error?: "not-found" | "undecryptable";
+}
+
+/**
+ * 把一批登录上报记录的凭据解密成明文（**仅** `/api/admin/bilibili-reports/credentials` 用）。
+ *
+ * 安全约束（缺一不可）：
+ *   1. 调用方必须是超管 + 有效安全会话（二次验证），见 routes/admin/bilibiliCredentials.ts；
+ *   2. 逐次写审计（只有标识与结果，不含明文 Cookie）；
+ *   3. 对超长/非法键直接报错，不会“部分解密”后返回半张表；
+ *   4. 单次最多 `MAX_REVEAL_ROWS` 条，超过直接拒绝。
+ *
+ * 解密失败不抛错而是逐条标记 `undecryptable`：密钥轮换期间旧代密文必然存在，
+ * 面板需要能说清“哪几条打不开”，而不是整批 500。
+ */
+export async function revealBilibiliCookieReports(rawItems: unknown): Promise<BilibiliRevealedReportCredential[]> {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new BilibiliSyncError("需要指定要解密的记录", "BILIBILI_REVEAL_ITEMS_REQUIRED", 400);
+  }
+  if (rawItems.length > MAX_REVEAL_ROWS) {
+    throw new BilibiliSyncError(
+      `单次最多解密 ${MAX_REVEAL_ROWS} 条记录`,
+      "BILIBILI_REVEAL_ITEMS_TOO_MANY",
+      413,
+    );
+  }
+
+  const keys = rawItems.map((item) => {
+    const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    // 读取侧不过白名单：客户端一旦被从白名单里摘掉，旧存档仍然要能被读到（否则数据就“锁定”了）。
+    const clientId = typeof record.clientId === "string" ? record.clientId.trim().toLowerCase() : "";
+    if (!clientId) throw new BilibiliSyncError("缺少客户端标识", "BILIBILI_REPORT_CLIENT_REQUIRED", 400);
+    return {
+      clientId,
+      deviceId: normalizeReportDeviceId(record.deviceId),
+      uid: normalizeUid(record.uid),
+    };
+  });
+
+  const docs = await BilibiliCookieReportModel.find({
+    $or: keys.map((key) => ({ clientId: key.clientId, deviceId: key.deviceId, bilibiliUid: key.uid })),
+  })
+    .select(
+      "+credentialCiphertext +credentialIv +credentialTag +credentialKeyVersion clientId deviceId bilibiliUid credentialStatus lastReportedAt",
+    )
+    .lean<BilibiliCookieReportDoc[]>();
+
+  const byKey = new Map(
+    docs.map((doc) => [`${doc.clientId}|${doc.deviceId}|${doc.bilibiliUid}`, doc] as const),
+  );
+
+  return keys.map((key) => {
+    const doc = byKey.get(`${key.clientId}|${key.deviceId}|${key.uid}`);
+    if (!doc) {
+      return { ...key, status: "unknown" as const, lastReportedAt: null, cookie: null, error: "not-found" as const };
+    }
+    let cookie: string | null = null;
+    let error: "undecryptable" | undefined;
+    try {
+      cookie = decryptStoredCredential(doc);
+    } catch {
+      error = "undecryptable";
+    }
+    return {
+      ...key,
+      status: doc.credentialStatus,
+      lastReportedAt: doc.lastReportedAt ? new Date(doc.lastReportedAt).toISOString() : null,
+      cookie,
+      ...(error ? { error } : {}),
+    };
+  });
 }

@@ -88,9 +88,42 @@ field).
 `GET /api/admin/bilibili-reports?page=&limit=&search=` (admin JWT, same chain as
 the rest of `/api/admin`) returns metadata only: `clientId`, `deviceId`, `uid`,
 `isPrimary`, `status`, `reportCount`, `firstReportedAt`, `lastReportedAt`,
-`deviceSummary`, `permissionsCount`, `client`. There is no plaintext reveal
-endpoint — retrieving a cookie requires direct database access plus the
-encryption key, exactly like the bound-account vault.
+`deviceSummary`, `permissionsCount`, `client`, `userId`. The listing never
+returns the cookie.
+
+## Reveal surface (superadmin + security session)
+
+The admin panel `/admin/bilibili-data` can decrypt a stored cookie on demand. It
+is the only endpoint in this area that returns plaintext, and it is fenced:
+
+| gate | behaviour |
+|---|---|
+| `authenticateSuperAdmin` | plain `admin` keeps metadata-only access |
+| `requireSecuritySession` | a fresh step-up (password / TOTP / passkey) is mandatory; `x-verification-token` header, TTL from `security.session.ttlSeconds` |
+| payload capture | `suppressAuditPayloadCapture(req)` keeps the plaintext out of `AUDIT_LOG_CAPTURE_PAYLOADS` |
+| audit | one `privacy.bilibili{Report,Account}Reveal` entry per request with counts + identifiers only, never the cookie |
+| batch | `items` is required, ≤ 50 rows; more is `413 BILIBILI_REVEAL_ITEMS_TOO_MANY` |
+| caching | `Cache-Control: no-store` |
+| per-row failures | `undecryptable` (ciphertext does not match any key in the chain) / `not-found` — the batch still returns `200` |
+
+```http
+POST /api/admin/bilibili-reports/credentials
+x-verification-token: <step-up token>
+{ "items": [{ "clientId": "piliplus", "deviceId": "…", "uid": "12345" }] }
+```
+
+```json
+{ "success": true, "data": [{ "clientId": "piliplus", "deviceId": "…", "uid": "12345", "status": "active", "lastReportedAt": "…", "cookie": "SESSDATA=…" }] }
+```
+
+`POST /api/admin/bilibili-accounts/credentials` behaves identically and is keyed
+by `(userId, uid)`. Both are `POST` on purpose: the record set belongs in the
+body, because URLs end up in access logs, browser history, `Referer` and the
+unconditionally-captured audit `detail.query`.
+
+Decryption reuses the single key chain in `decryptStoredCredential()`
+(current `KL.BILIBILI_CRED` subkey first, then the legacy env keys and the
+`config.jwtSecret` derivation), so a rotation never strands old rows.
 
 ## Reporter behaviour (PiliPlus)
 
@@ -111,5 +144,8 @@ encryption key, exactly like the bound-account vault.
   agreement, empty and oversized cookie, UID mismatch (fail closed, no write),
   per-device quota, ciphertext-only write, metadata-only listing, controller
   envelope, admin gating.
+- `src/tests/bilibiliCredentialReveal.test.ts` — round-trip decrypt, foreign-key
+  `undecryptable`, `not-found`, empty/oversized batch rejection, account
+  `(userId, uid)` keying, `no-store` + audit-without-plaintext, failure-path audit.
 - PiliPlus: `test/services/synapse_cookie_report_test.dart` — payload shape,
   cookie serialization, per-login dedupe window, error classification.
