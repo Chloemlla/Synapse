@@ -35,6 +35,26 @@ const ALLOWED_SECURITY_EVENT_TYPES = new Set([
 
 const MAX_EVENT_DETAILS_JSON_LENGTH = 4_000;
 
+/** 列表页可选的时间窗（与 `/stats` 的 timeRange 同名同义，`all` = 不限）。 */
+const TIME_RANGE_MS: Record<string, number> = {
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+/**
+ * 把 `timeRange` 换成起始时间；`all`/缺失/非法值一律返回 null（= 不限时间）。
+ *
+ * 为什么不默认截到 24h：面板的列表页要回答「库里到底有哪些数据」，
+ * 默认截到 24 小时会让半年前的事件无法被看到 —— 那正是「必须先手查」的老毛病。
+ */
+function resolveTimeRangeStart(value: unknown): Date | null {
+  if (typeof value !== "string" || !value || value === "all") return null;
+  const windowMs = TIME_RANGE_MS[value];
+  return windowMs ? new Date(Date.now() - windowMs) : null;
+}
+
 function getRequestUserId(req: Request): string | undefined {
   return req.nexaiUser?.id || (req as any).user?.id;
 }
@@ -372,6 +392,8 @@ export async function getDeviceList(req: Request, res: Response): Promise<void> 
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
     const riskLevelParam = req.query.riskLevel;
     const searchParam = req.query.search;
+    const statusParam = req.query.status;
+    const since = resolveTimeRangeStart(req.query.timeRange);
 
     const query: any = {};
 
@@ -379,11 +401,19 @@ export async function getDeviceList(req: Request, res: Response): Promise<void> 
       query.riskLevel = riskLevelParam;
     }
 
+    // 「已攻破 / 正常」是设备画像里最常用的两个筛选，后端下推而不是前端过滤已加载页，
+    // 否则分页 total 与实际展示行数会矛盾。
+    if (statusParam === "compromised") query.isCompromised = true;
+    else if (statusParam === "normal") query.isCompromised = { $ne: true };
+
+    if (since) query.lastSeen = { $gte: since };
+
     if (typeof searchParam === "string" && searchParam) {
       const escapedSearch = escapeRegexLiteral(searchParam);
       query.$or = [
         { deviceFingerprint: { $regex: escapedSearch, $options: "i" } },
         { userId: { $regex: escapedSearch, $options: "i" } },
+        { ipAddress: { $regex: escapedSearch, $options: "i" } },
       ];
     }
 
@@ -422,6 +452,8 @@ export async function getSecurityEvents(req: Request, res: Response): Promise<vo
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
     const eventTypeParam = req.query.eventType;
     const deviceFingerprintParam = req.query.deviceFingerprint;
+    const searchParam = req.query.search;
+    const since = resolveTimeRangeStart(req.query.timeRange);
 
     const query: any = {};
     if (typeof eventTypeParam === "string" && eventTypeParam !== "all") {
@@ -429,6 +461,18 @@ export async function getSecurityEvents(req: Request, res: Response): Promise<vo
     }
     if (typeof deviceFingerprintParam === "string" && deviceFingerprintParam) {
       query.deviceFingerprint = deviceFingerprintParam;
+    }
+    // 默认不限时间（`all`）：与设备列表一致，面板要能回答「库里有全部事件」。
+    if (since) query.createdAt = { $gte: since };
+
+    if (typeof searchParam === "string" && searchParam) {
+      const escapedSearch = escapeRegexLiteral(searchParam);
+      query.$or = [
+        { deviceFingerprint: { $regex: escapedSearch, $options: "i" } },
+        { userId: { $regex: escapedSearch, $options: "i" } },
+        { ipAddress: { $regex: escapedSearch, $options: "i" } },
+        { eventType: { $regex: escapedSearch, $options: "i" } },
+      ];
     }
 
     const total = await SecurityEvent.countDocuments(query);

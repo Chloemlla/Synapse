@@ -114,9 +114,16 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   root_detected: 'Root检测',
   debugger_detected: '调试器检测',
   emulator_detected: '模拟器检测',
+  vpn_detected: 'VPN 检测',
+  hook_detected: 'Hook 检测',
   tamper_detected: '篡改检测',
+  anti_debug: '反调试命中',
   frida_detected: 'Frida框架检测',
   xposed_detected: 'Xposed框架检测',
+  login_anomaly: '登录异常',
+  device_switch: '设备切换',
+  heartbeat: '心跳上报',
+  custom: '自定义事件',
   dom_modification: 'DOM 篡改',
   network_tampering: '网络篡改',
   proxy_tampering: '代理篡改',
@@ -133,54 +140,213 @@ const getRiskLevelLabel = (level: string) => RISK_LEVEL_LABELS[level] || level;
 
 const getEventTypeLabel = (type: string) => EVENT_TYPE_LABELS[type] || type;
 
+/** 与后端 `ALLOWED_SECURITY_EVENT_TYPES` 对齐的事件类型筛选项（只列上报接口真正接受的值）。 */
+const EVENT_TYPE_OPTIONS: ReadonlyArray<string> = [
+  'integrity_fail',
+  'root_detected',
+  'debugger_detected',
+  'emulator_detected',
+  'vpn_detected',
+  'hook_detected',
+  'tamper_detected',
+  'anti_debug',
+  'frida_detected',
+  'xposed_detected',
+  'login_anomaly',
+  'device_switch',
+  'heartbeat',
+  'custom',
+];
+
+/** 后端 `/devices` `/events` 统一回的分页元数据。 */
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+const EMPTY_PAGINATION: Pagination = { page: 1, limit: 20, total: 0, totalPages: 0 };
+
+const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
+
+/**
+ * 列表分页器（服务端分页）：显示「第 x–y 条 / 共 n 条」，并只给上一页/下一页。
+ * 之前两个列表都写死了 `page=1&limit=20`，超出 20 条的数据根本看不到。
+ */
+const ListPager: React.FC<{
+  pagination: Pagination;
+  loading: boolean;
+  onChange: (page: number) => void;
+}> = ({ pagination, loading, onChange }) => {
+  const { page, limit, total, totalPages } = pagination;
+  if (total === 0) return null;
+  const from = (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+      <span className="text-xs text-slate-500">
+        第 {from}–{to} 条 / 共 {total} 条（第 {page} / {Math.max(totalPages, 1)} 页）
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={loading || page <= 1}
+          onClick={() => onChange(page - 1)}
+          className={cn(studioSecondaryButtonClassName, 'min-h-9 px-3 py-1.5 text-xs disabled:opacity-50')}
+        >
+          上一页
+        </button>
+        <button
+          type="button"
+          disabled={loading || page >= totalPages}
+          onClick={() => onChange(page + 1)}
+          className={cn(studioSecondaryButtonClassName, 'min-h-9 px-3 py-1.5 text-xs disabled:opacity-50')}
+        >
+          下一页
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const NexAISecurityDashboard: React.FC = () => {
   const { setNotification } = useNotification();
-  const requestRef = useRef(0);
+  const statsRequestRef = useRef(0);
+  const devicesRequestRef = useRef(0);
+  const eventsRequestRef = useRef(0);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [devices, setDevices] = useState<DeviceTracking[]>([]);
-  const [events, setEvents] = useState<SecurityEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
   // 拉取失败与「真的是 0 台设备」必须分开：失败时给错误态 + 重试，不渲染一组全 0 的指标
   const [loadError, setLoadError] = useState('');
   const [selectedTab, setSelectedTab] = useState<'overview' | 'devices' | 'events'>('overview');
   const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
-  const [filterRiskLevel, setFilterRiskLevel] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 30000); // 每30秒刷新
-    return () => { ++requestRef.current; clearInterval(interval); };
-  }, [timeRange]);
+  // 设备列表：服务端分页 + 服务端筛选（搜索 / 风险等级 / 攻破状态）
+  const [devices, setDevices] = useState<DeviceTracking[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [devicesError, setDevicesError] = useState('');
+  const [devicesPagination, setDevicesPagination] = useState<Pagination>(EMPTY_PAGINATION);
+  const [deviceSearchDraft, setDeviceSearchDraft] = useState('');
+  const [deviceQuery, setDeviceQuery] = useState({
+    search: '',
+    riskLevel: 'all',
+    status: 'all',
+    page: 1,
+    limit: 20,
+  });
 
-  const fetchDashboardData = async () => {
-    const request = ++requestRef.current;
-    setLoading(true);
+  // 安全事件列表：同样全部下推到服务端（默认不限时间窗，库里有多少就能翻到多少）
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState('');
+  const [eventsPagination, setEventsPagination] = useState<Pagination>(EMPTY_PAGINATION);
+  const [eventSearchDraft, setEventSearchDraft] = useState('');
+  const [eventQuery, setEventQuery] = useState({
+    search: '',
+    eventType: 'all',
+    timeRange: 'all',
+    page: 1,
+    limit: 20,
+  });
+
+  const loadStats = async () => {
+    const request = ++statsRequestRef.current;
+    setStatsLoading(true);
     try {
-      // 使用 api 拦截器处理 token
-      const [statsRes, devicesRes, eventsRes] = await Promise.all([
-        api.get(`/api/nexai/security/stats?timeRange=${timeRange}`),
-        api.get(`/api/nexai/security/devices?page=1&limit=20`),
-        api.get(`/api/nexai/security/events?page=1&limit=20`)
-      ]);
-
-      if (request !== requestRef.current) return;
-      setStats(statsRes.data);
-      setDevices(devicesRes.data.devices || []);
-      setEvents(eventsRes.data.events || []);
+      const res = await api.get(`/api/nexai/security/stats?timeRange=${timeRange}`);
+      if (request !== statsRequestRef.current) return;
+      setStats(res.data);
       setLoadError('');
-      setLoading(false);
     } catch (error: any) {
-      if (request !== requestRef.current) return;
-      console.error('Failed to fetch dashboard data:', error);
+      if (request !== statsRequestRef.current) return;
+      console.error('Failed to fetch dashboard stats:', error);
       if (error.response?.status !== 401) {
         setNotification({ type: 'error', message: '加载数据失败' });
       }
       // 401 交给 api 拦截器处理跳转，这里同样记错误态，避免渲染成「全部为 0」
       setLoadError('安全数据加载失败，请检查网络后重试。');
-      setLoading(false);
+    } finally {
+      if (request === statsRequestRef.current) setStatsLoading(false);
     }
   };
+
+  const loadDevices = async () => {
+    const request = ++devicesRequestRef.current;
+    setDevicesLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(deviceQuery.page),
+        limit: String(deviceQuery.limit),
+      });
+      if (deviceQuery.search) params.set('search', deviceQuery.search);
+      if (deviceQuery.riskLevel !== 'all') params.set('riskLevel', deviceQuery.riskLevel);
+      if (deviceQuery.status !== 'all') params.set('status', deviceQuery.status);
+      const res = await api.get(`/api/nexai/security/devices?${params.toString()}`);
+      if (request !== devicesRequestRef.current) return;
+      setDevices(res.data.devices || []);
+      setDevicesPagination(res.data.pagination ?? EMPTY_PAGINATION);
+      setDevicesError('');
+    } catch (error: any) {
+      if (request !== devicesRequestRef.current) return;
+      console.error('Failed to fetch devices:', error);
+      setDevicesError('设备列表加载失败，请稍后重试。');
+    } finally {
+      if (request === devicesRequestRef.current) setDevicesLoading(false);
+    }
+  };
+
+  const loadEvents = async () => {
+    const request = ++eventsRequestRef.current;
+    setEventsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(eventQuery.page),
+        limit: String(eventQuery.limit),
+      });
+      if (eventQuery.search) params.set('search', eventQuery.search);
+      if (eventQuery.eventType !== 'all') params.set('eventType', eventQuery.eventType);
+      if (eventQuery.timeRange !== 'all') params.set('timeRange', eventQuery.timeRange);
+      const res = await api.get(`/api/nexai/security/events?${params.toString()}`);
+      if (request !== eventsRequestRef.current) return;
+      setEvents(res.data.events || []);
+      setEventsPagination(res.data.pagination ?? EMPTY_PAGINATION);
+      setEventsError('');
+    } catch (error: any) {
+      if (request !== eventsRequestRef.current) return;
+      console.error('Failed to fetch events:', error);
+      setEventsError('安全事件列表加载失败，请稍后重试。');
+    } finally {
+      if (request === eventsRequestRef.current) setEventsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadStats();
+    const interval = setInterval(loadStats, 30000); // 每30秒刷新统计（列表页不动，避免翻页被打断）
+    return () => {
+      ++statsRequestRef.current;
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange]);
+
+  useEffect(() => {
+    void loadDevices();
+    return () => {
+      ++devicesRequestRef.current;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceQuery]);
+
+  useEffect(() => {
+    void loadEvents();
+    return () => {
+      ++eventsRequestRef.current;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventQuery]);
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
@@ -246,25 +412,13 @@ const NexAISecurityDashboard: React.FC = () => {
     }]
   }), [stats]);
 
-  // 设备列表过滤：接口只取第一页（page=1&limit=20），因此这里只过滤「已加载」的设备，
-  // 空态文案也据此说明，避免让用户以为筛的是全量数据。
-  const normalizedDeviceSearch = searchQuery.trim().toLowerCase();
-  const hasActiveDeviceFilter = normalizedDeviceSearch.length > 0 || filterRiskLevel !== 'all';
+  // 设备筛选已全部下推到服务端（见 loadDevices），这里只回答「有没有筛选条件」用于空态文案。
+  const hasActiveDeviceFilter =
+    deviceQuery.search.length > 0 || deviceQuery.riskLevel !== 'all' || deviceQuery.status !== 'all';
 
-  const filteredDevices = useMemo(() => {
-    if (!hasActiveDeviceFilter) return devices;
-    return devices.filter((device) => {
-      if (filterRiskLevel !== 'all' && device.riskLevel !== filterRiskLevel) return false;
-      if (!normalizedDeviceSearch) return true;
-      return [device.deviceFingerprint, device.userId, device.ipAddress].some(
-        (value) => typeof value === 'string' && value.toLowerCase().includes(normalizedDeviceSearch)
-      );
-    });
-  }, [devices, filterRiskLevel, hasActiveDeviceFilter, normalizedDeviceSearch]);
-
-  // 页巡检每 30 秒会把 loading 置为 true：只在「一条数据都还没有」时才整页等，
+  // 页巡检每 30 秒会把 statsLoading 置为 true：只在「一条数据都还没有」时才整页等，
   // 否则每次轮询都会把已经显示的指标刷成白屏。
-  if (!stats && loading) {
+  if (!stats && statsLoading) {
     return (
       <div className="p-4 sm:p-6">
         <StudioLoadingState text="正在加载安全数据…" minHeightClassName="min-h-screen" />
@@ -280,8 +434,7 @@ const NexAISecurityDashboard: React.FC = () => {
           message={loadError}
           retryLabel="重新加载"
           onRetry={() => {
-            setLoading(true);
-            void fetchDashboardData();
+            void loadStats();
           }}
           className="w-full max-w-md"
         />
@@ -508,32 +661,99 @@ const NexAISecurityDashboard: React.FC = () => {
           {/* 设备管理标签页 */}
           {selectedTab === 'devices' && (
             <div className="p-4 sm:p-6">
-              {/* 搜索和筛选 */}
-              <div className="mb-6 flex flex-col sm:flex-row gap-4">
+              {/* 搜索和筛选（全部下推到服务端：搜全库、筛全库，而不只是当前这一页） */}
+              <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div className="relative flex-1">
                   <FaFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="搜索设备指纹、用户ID..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索设备指纹、用户ID、IP（回车或点搜索）"
+                    value={deviceSearchDraft}
+                    onChange={(e) => setDeviceSearchDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setDeviceQuery((current) => ({ ...current, search: deviceSearchDraft.trim(), page: 1 }));
+                      }
+                    }}
                     className={cn(studioFieldClassName, 'pl-10')}
                   />
                 </div>
-                <select
-                  value={filterRiskLevel}
-                  onChange={(e) => setFilterRiskLevel(e.target.value)}
-                  aria-label="按风险等级筛选"
-                  className={cn(studioFieldClassName, 'font-medium sm:w-48')}
-                >
-                  <option value="all">所有风险等级</option>
-                  <option value="SAFE">安全</option>
-                  <option value="LOW">低风险</option>
-                  <option value="MEDIUM">中风险</option>
-                  <option value="HIGH">高风险</option>
-                  <option value="CRITICAL">极高风险</option>
-                </select>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeviceQuery((current) => ({ ...current, search: deviceSearchDraft.trim(), page: 1 }))
+                    }
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                  >
+                    搜索
+                  </button>
+                  <select
+                    value={deviceQuery.riskLevel}
+                    onChange={(e) => setDeviceQuery((current) => ({ ...current, riskLevel: e.target.value, page: 1 }))}
+                    aria-label="按风险等级筛选"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-40')}
+                  >
+                    <option value="all">所有风险等级</option>
+                    <option value="SAFE">安全</option>
+                    <option value="LOW">低风险</option>
+                    <option value="MEDIUM">中风险</option>
+                    <option value="HIGH">高风险</option>
+                    <option value="CRITICAL">极高风险</option>
+                  </select>
+                  <select
+                    value={deviceQuery.status}
+                    onChange={(e) => setDeviceQuery((current) => ({ ...current, status: e.target.value, page: 1 }))}
+                    aria-label="按设备状态筛选"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-36')}
+                  >
+                    <option value="all">全部状态</option>
+                    <option value="compromised">已攻破</option>
+                    <option value="normal">正常</option>
+                  </select>
+                  <select
+                    value={deviceQuery.limit}
+                    onChange={(e) =>
+                      setDeviceQuery((current) => ({ ...current, limit: Number(e.target.value), page: 1 }))
+                    }
+                    aria-label="每页条数"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-32')}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        每页 {size} 条
+                      </option>
+                    ))}
+                  </select>
+                  {hasActiveDeviceFilter ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeviceSearchDraft('');
+                        setDeviceQuery((current) => ({
+                          ...current,
+                          search: '',
+                          riskLevel: 'all',
+                          status: 'all',
+                          page: 1,
+                        }));
+                      }}
+                      className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                    >
+                      清除筛选
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void loadDevices()}
+                    disabled={devicesLoading}
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                  >
+                    {devicesLoading ? '刷新中…' : '刷新'}
+                  </button>
+                </div>
               </div>
+              {devicesError ? <StudioErrorNote className="mb-4 text-xs">{devicesError}</StudioErrorNote> : null}
 
               {/* 设备列表 */}
               <div className={cn(studioSurfaceClassName)}>
@@ -550,8 +770,8 @@ const NexAISecurityDashboard: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white/80 backdrop-blur-xl divide-y divide-slate-200">
-                      {filteredDevices.length > 0 ? (
-                        filteredDevices.map((device) => (
+                      {devices.length > 0 ? (
+                        devices.map((device) => (
                           <tr key={device._id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-600">
                               {device.deviceFingerprint.substring(0, 12)}...
@@ -600,15 +820,21 @@ const NexAISecurityDashboard: React.FC = () => {
                             <StudioEmptyState
                               message={
                                 hasActiveDeviceFilter
-                                  ? '未在当前已加载的设备中找到匹配项。清空搜索与风险等级筛选可以看回全部设备。'
-                                  : '当前时间范围内没有设备上报。设备接入后会自动出现在这里。'
+                                  ? '当前筛选条件下没有匹配的设备。清空搜索与筛选可以看回全部设备。'
+                                  : '库里还没有任何设备上报。设备接入后会自动出现在这里。'
                               }
                               action={
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setSearchQuery('');
-                                    setFilterRiskLevel('all');
+                                    setDeviceSearchDraft('');
+                                    setDeviceQuery((current) => ({
+                                      ...current,
+                                      search: '',
+                                      riskLevel: 'all',
+                                      status: 'all',
+                                      page: 1,
+                                    }));
                                   }}
                                   className={cn(studioSecondaryButtonClassName, 'min-h-11')}
                                 >
@@ -622,6 +848,11 @@ const NexAISecurityDashboard: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+                <ListPager
+                  pagination={devicesPagination}
+                  loading={devicesLoading}
+                  onChange={(page) => setDeviceQuery((current) => ({ ...current, page }))}
+                />
               </div>
             </div>
           )}
@@ -629,8 +860,92 @@ const NexAISecurityDashboard: React.FC = () => {
           {/* 安全事件标签页 */}
           {selectedTab === 'events' && (
             <div className="p-4 sm:p-6">
+              {/* 事件筛选（服务端）：默认不限时间窗，库里有多少事件就能翻到多少 */}
+              <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="relative flex-1">
+                  <FaFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="搜索设备指纹、用户ID、IP、事件类型（回车或点搜索）"
+                    value={eventSearchDraft}
+                    onChange={(e) => setEventSearchDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setEventQuery((current) => ({ ...current, search: eventSearchDraft.trim(), page: 1 }));
+                      }
+                    }}
+                    className={cn(studioFieldClassName, 'pl-10')}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEventQuery((current) => ({ ...current, search: eventSearchDraft.trim(), page: 1 }))
+                    }
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                  >
+                    搜索
+                  </button>
+                  <select
+                    value={eventQuery.eventType}
+                    onChange={(e) => setEventQuery((current) => ({ ...current, eventType: e.target.value, page: 1 }))}
+                    aria-label="按事件类型筛选"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-44')}
+                  >
+                    <option value="all">全部事件类型</option>
+                    {EVENT_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>
+                        {getEventTypeLabel(type)}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={eventQuery.timeRange}
+                    onChange={(e) => setEventQuery((current) => ({ ...current, timeRange: e.target.value, page: 1 }))}
+                    aria-label="按时间范围筛选"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-36')}
+                  >
+                    <option value="all">全部时间</option>
+                    <option value="1h">最近1小时</option>
+                    <option value="24h">最近24小时</option>
+                    <option value="7d">最近7天</option>
+                    <option value="30d">最近30天</option>
+                  </select>
+                  <select
+                    value={eventQuery.limit}
+                    onChange={(e) =>
+                      setEventQuery((current) => ({ ...current, limit: Number(e.target.value), page: 1 }))
+                    }
+                    aria-label="每页条数"
+                    className={cn(studioFieldClassName, 'font-medium sm:w-32')}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        每页 {size} 条
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void loadEvents()}
+                    disabled={eventsLoading}
+                    className={cn(studioSecondaryButtonClassName, 'min-h-11')}
+                  >
+                    {eventsLoading ? '刷新中…' : '刷新'}
+                  </button>
+                </div>
+              </div>
+              {eventsError ? <StudioErrorNote className="mb-4 text-xs">{eventsError}</StudioErrorNote> : null}
+              <div className="mb-3 text-xs text-slate-500">
+                {eventsPagination.total > 0
+                  ? `共 ${eventsPagination.total} 条事件`
+                  : eventsLoading
+                    ? '正在读取事件…'
+                    : '没有事件'}
+              </div>
               <div className="space-y-3">
-                {events && events.length > 0 ? (
+                {events.length > 0 ? (
                   events.map((event) => {
                     const getSeverityColor = (riskScore?: number) => {
                       if (!riskScore) return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -701,6 +1016,11 @@ const NexAISecurityDashboard: React.FC = () => {
                   />
                 )}
               </div>
+              <ListPager
+                pagination={eventsPagination}
+                loading={eventsLoading}
+                onChange={(page) => setEventQuery((current) => ({ ...current, page }))}
+              />
             </div>
           )}
         </div>

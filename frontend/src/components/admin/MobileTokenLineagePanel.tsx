@@ -9,6 +9,8 @@ import {
 } from 'react-icons/fa';
 import {
   mobileTokenApi,
+  type AllTokensParams,
+  type AllTokensResponse,
   type LineageResponse,
   type OverviewResponse,
   type ReuseResponse,
@@ -52,12 +54,29 @@ import {
  * 策略正文见服务端 docs/contracts/mobile-token-risk-control.md §3～§5；本页只读，数据全部经服务端掩码。
  */
 
-type TabKey = 'overview' | 'reuse' | 'lineage';
+type TabKey = 'overview' | 'tokens' | 'reuse' | 'lineage';
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: React.ReactNode; hint: string }> = [
   { key: 'overview', label: '概览', icon: <FaShieldAlt />, hint: '总量 / 生效中 / 复用断链计数' },
+  { key: 'tokens', label: '全部代次', icon: <FaListUl />, hint: '全库代次表：搜索 / 状态 / 排序 / 分页' },
   { key: 'reuse', label: '复用断链看板', icon: <FaExclamationTriangle />, hint: 'MOBILE_TOKEN_REUSED 事件' },
   { key: 'lineage', label: '血缘时间线', icon: <FaRoute />, hint: '按 lineageId / userId 查代次' },
+];
+
+/** 全量代次表的状态过滤项，取值与后端 `status` 参数、以及行上的状态徽标同口径。 */
+const TOKEN_STATUS_OPTIONS: ReadonlyArray<{ value: NonNullable<AllTokensParams['status']>; label: string }> = [
+  { value: 'all', label: '全部状态' },
+  { value: 'current', label: '当前在用' },
+  { value: 'superseded', label: '已顶替' },
+  { value: 'revoked', label: '已撤销' },
+  { value: 'reused', label: '复用断链' },
+  { value: 'expired', label: '已过期' },
+];
+
+const TOKEN_SORT_OPTIONS: ReadonlyArray<{ value: NonNullable<AllTokensParams['sort']>; label: string }> = [
+  { value: 'recent', label: '签发时间（新→旧）' },
+  { value: 'oldest', label: '签发时间（旧→新）' },
+  { value: 'activity', label: '最近活动' },
 ];
 
 const CURRENT_BADGE: BadgeStyle = {
@@ -273,6 +292,194 @@ const OverviewTab: React.FC<{
             ) : null}
           </tbody>
         </TableWrap>
+      </InfoPanel>
+    </div>
+  );
+};
+
+/**
+ * 「全部代次」：进页就是一张可搜、可筛、可排序、可分页的全库代次表。
+ *
+ * 为什么要这一栏：原来三个栏都要管理员**先猜一个 ID**（lineageId / userId）才能看到任何数据，
+ * 与 `/admin/client-errors` 那种「进来就是全量列表」差一个入口。这里把后端
+ * `GET /api/admin/mobile-token/tokens` 接上来，搜索/状态/排序全部下推到服务端，
+ * 客户端不做任何过滤（否则分页的 total 会与实际展示行数矛盾）。
+ */
+const AllTokensTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
+  const reportError = useErrorNotice();
+  const [searchDraft, setSearchDraft] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<NonNullable<AllTokensParams['status']>>('all');
+  const [sort, setSort] = useState<NonNullable<AllTokensParams['sort']>>('recent');
+  const [limit, setLimit] = useState(PAGE_SIZE_OPTIONS[1] ?? 50);
+  const [offset, setOffset] = useState(0);
+  const [data, setData] = useState<AllTokensResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const requestId = ++requestRef.current;
+    setLoading(true);
+    try {
+      const res = await mobileTokenApi.tokens({ search: search || undefined, status, sort, limit, offset });
+      if (requestId !== requestRef.current) return;
+      setData(res);
+      setError(null);
+    } catch (caught) {
+      if (requestId !== requestRef.current) return;
+      const message = getBackendErrorMessage(caught, '加载全部令牌代次失败');
+      setError(message);
+      reportError(message);
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  }, [limit, offset, reportError, search, sort, status]);
+
+  useEffect(() => {
+    void load();
+  }, [load, refreshNonce]);
+
+  const applySearch = (): void => {
+    setSearch(searchDraft.trim());
+    setOffset(0);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionNote>
+        全库代次总表，不需要先知道任何 ID：可按用户 ID / 设备标识 / 令牌 hash 搜索，按状态与签发时间筛选。
+        哈希、设备标识与 IP 仍是服务端掩码值，令牌明文永不出库（库里只有 SHA-256 哈希）。
+      </SectionNote>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={searchDraft}
+          onChange={(event) => setSearchDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') applySearch();
+          }}
+          placeholder="搜索用户 ID / 设备 / 令牌 hash"
+          aria-label="搜索用户 ID、设备或令牌 hash"
+          className={`${studioFieldClassName} font-mono sm:max-w-sm`}
+        />
+        <button type="button" onClick={applySearch} className={studioPrimaryButtonClassName}>
+          查询
+        </button>
+        <FilterSelect
+          title="状态"
+          value={status}
+          options={TOKEN_STATUS_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+          onChange={(value) => {
+            setStatus(value as NonNullable<AllTokensParams['status']>);
+            setOffset(0);
+          }}
+        />
+        <FilterSelect
+          title="排序"
+          value={sort}
+          options={TOKEN_SORT_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+          onChange={(value) => {
+            setSort(value as NonNullable<AllTokensParams['sort']>);
+            setOffset(0);
+          }}
+        />
+        <FilterSelect
+          title="每页条数"
+          value={limit}
+          options={PAGE_SIZE_OPTIONS.map((size) => ({ value: size, label: `每页 ${size} 条` }))}
+          onChange={(value) => {
+            setLimit(Number(value));
+            setOffset(0);
+          }}
+        />
+        {search || status !== 'all' ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setSearchDraft('');
+              setStatus('all');
+              setOffset(0);
+            }}
+            className={studioSecondaryButtonClassName}
+          >
+            清除筛选
+          </button>
+        ) : null}
+        <RefreshButton onClick={() => void load()} loading={loading} />
+      </div>
+      <InfoPanel compact>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <span className="text-xs font-semibold text-slate-600">
+            {data ? `共 ${formatCount(data.total)} 代` : '正在统计…'}
+          </span>
+          {search ? <InfoBadge className="text-[10px]">关键词：{search}</InfoBadge> : null}
+          {status !== 'all' ? (
+            <InfoBadge className="text-[10px]">
+              状态：{TOKEN_STATUS_OPTIONS.find((item) => item.value === status)?.label ?? status}
+            </InfoBadge>
+          ) : null}
+        </div>
+        <TableWrap minWidth="min-w-[1180px]">
+          <thead>
+            <tr>
+              <Th>用户 ID</Th>
+              <Th>代次</Th>
+              <Th>状态</Th>
+              <Th>设备</Th>
+              <Th>最近属地</Th>
+              <Th>签发时间</Th>
+              <Th>最近活动</Th>
+              <Th>过期时间</Th>
+              <Th>轮换 IP（掩码）</Th>
+              <Th>令牌 hash（掩码）</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            <TableState
+              loading={loading}
+              error={error}
+              empty={(data?.generations.length ?? 0) === 0}
+              emptyText={search || status !== 'all' ? '当前筛选条件下没有代次记录。' : '库里还没有任何令牌代次。'}
+              colSpan={10}
+            />
+            {(data?.generations ?? []).map((row, index) => (
+              <tr key={`${row.tokenHash}-${row.createdAt}-${index}`} className={cn(row.current && 'bg-emerald-50/40')}>
+                <Td>
+                  <Mono value={row.userId} />
+                </Td>
+                <Td>第 {row.rotationIndex} 代</Td>
+                <Td>
+                  <Badge style={generationBadge(row)} />
+                  {row.verificationPending ? (
+                    <div className="mt-1">
+                      <InfoBadge tone="amber" className="text-[10px]">
+                        待重新校验
+                      </InfoBadge>
+                    </div>
+                  ) : null}
+                </Td>
+                <Td>
+                  <DeviceCell row={row} />
+                </Td>
+                <Td className="text-slate-600">{row.ipLocation || '-'}</Td>
+                <Td className="whitespace-nowrap">{formatIso(row.createdAt)}</Td>
+                <Td className="whitespace-nowrap">{formatIso(row.lastUsedAt)}</Td>
+                <Td className="whitespace-nowrap">{formatIso(row.expiresAt)}</Td>
+                <Td>
+                  <Mono value={row.rotatedIp ?? row.lastUsedIp} />
+                </Td>
+                <Td>
+                  <Mono value={row.tokenHash} title={`血缘 ${row.lineageId ?? '-'}`} />
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+        {data && data.total > 0 ? (
+          <Pager total={data.total} limit={data.limit} offset={data.offset} loading={loading} onChange={setOffset} />
+        ) : null}
       </InfoPanel>
     </div>
   );
@@ -714,6 +921,7 @@ const MobileTokenLineagePanel: React.FC = () => {
           />
         ) : null}
         {tab === 'reuse' ? <ReuseTab refreshNonce={refreshNonce} /> : null}
+        {tab === 'tokens' ? <AllTokensTab refreshNonce={refreshNonce} /> : null}
         {tab === 'lineage' ? <LineageTab refreshNonce={refreshNonce} /> : null}
       </div>
     </InfoQueryShell>

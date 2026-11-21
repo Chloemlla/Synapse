@@ -9,6 +9,8 @@ import { api, getApiBaseUrl } from './api';
 
 /** 一代令牌的展示形状：掩码标识 + ISO 时间 + 属地。 */
 export interface TokenGenerationRow {
+  /** 归属用户（全量代次列表跨用户，所以行上带） */
+  userId?: string | null;
   rotationIndex: number;
   tokenHash: string | null;
   lineageId: string | null;
@@ -115,6 +117,27 @@ export interface GenerationsParams {
   offset?: number;
 }
 
+/**
+ * 全量代次列表的参数：不需要 userId / lineageId，进去就能看到整张表。
+ * `status` 的取值与行上的状态徽标同一口径（current / superseded / revoked / expired / reused）。
+ */
+export interface AllTokensParams {
+  search?: string;
+  status?: 'all' | 'current' | 'superseded' | 'revoked' | 'expired' | 'reused';
+  sort?: 'recent' | 'oldest' | 'activity';
+  limit?: number;
+  offset?: number;
+}
+
+export interface AllTokensResponse {
+  success: boolean;
+  generations: TokenGenerationRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: { search: string | null; status: string; sort: string };
+}
+
 export interface GenerationsResponse {
   success: boolean;
   generations: TokenGenerationRow[];
@@ -155,6 +178,12 @@ export const mobileTokenApi = {
 
   generations: async (params: GenerationsParams): Promise<GenerationsResponse> => {
     const res = await api.get(`${BASE()}/generations${toQuery({ ...params })}`);
+    return res.data;
+  },
+
+  /** 全量代次（分页 + 关键词 + 状态过滤），不需要预先知道任何 ID。 */
+  tokens: async (params: AllTokensParams = {}): Promise<AllTokensResponse> => {
+    const res = await api.get(`${BASE()}/tokens${toQuery({ ...params })}`);
     return res.data;
   },
 };

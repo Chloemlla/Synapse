@@ -19,5 +19,8 @@ router.get("/mobile-token/lineage", authenticateSuperAdmin, MobileTokenAdminCont
 router.get("/mobile-token/reuse", authenticateSuperAdmin, MobileTokenAdminController.listReuse);
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/mobile-token/generations", authenticateSuperAdmin, MobileTokenAdminController.listGenerations);
+// 「全量代次」列表：不需要先知道 userId / lineageId，进去就是可筛可分页的整张表。
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+router.get("/mobile-token/tokens", authenticateSuperAdmin, MobileTokenAdminController.listTokens);
 
 export default router;

@@ -104,6 +104,7 @@ describe("Mongo 未就绪时", () => {
     ["listLineage", MobileTokenAdminController.listLineage],
     ["listReuse", MobileTokenAdminController.listReuse],
     ["listGenerations", MobileTokenAdminController.listGenerations],
+    ["listTokens", MobileTokenAdminController.listTokens],
   ] as const)("%s 直接 503，不发任何查询", async (_name, handler) => {
     mockMongoState.readyState = 0;
     const res = makeRes();
@@ -290,6 +291,73 @@ describe("按用户查代次", () => {
     expect(body.total).toBe(9);
     expect(body.summary.lineages).toBe(2);
     expect(body.generations[0].deviceFingerprint).toBe("fp-hash-va…");
+  });
+});
+
+describe("全部代次（全库列表）", () => {
+  it("默认不限状态/关键词，按创建时间倒序分页，并回传 filters", async () => {
+    mockTokenQuery.find.mockReturnValueOnce(chain([REUSED_DOC]));
+    mockTokenQuery.countDocuments.mockReturnValueOnce(chain(42));
+    mockSessionFind.mockReturnValueOnce(chain([]));
+
+    const res = makeRes();
+    await MobileTokenAdminController.listTokens(
+      { query: { limit: "10", offset: "20" } } as unknown as Request,
+      res as unknown as Response,
+      passThrough,
+    );
+
+    // 不传 status/search 时不能凭空加条件：这是一张“进去就有数据”的全量表。
+    expect(mockTokenQuery.find).toHaveBeenCalledWith({});
+    const chainValue = mockTokenQuery.find.mock.results[0]?.value as Chain;
+    expect(chainValue.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(chainValue.skip).toHaveBeenCalledWith(20);
+    expect(chainValue.limit).toHaveBeenCalledWith(10);
+
+    const body = res.body as Record<string, any>;
+    expect(body.total).toBe(42);
+    expect(body.filters).toMatchObject({ search: null, status: "all", sort: "recent" });
+    expect(body.generations[0].userId).toBe("user-1");
+    // 出口仍然掩码（hash / 指纹 / IP 不得明文）。
+    expect(body.generations[0].deviceFingerprint).toBe("fp-hash-va…");
+  });
+
+  it("status / search / sort 均下推到查询，并对关键词转义", async () => {
+    mockTokenQuery.find.mockReturnValueOnce(chain([]));
+    mockTokenQuery.countDocuments.mockReturnValueOnce(chain(0));
+    mockSessionFind.mockReturnValueOnce(chain([]));
+
+    const res = makeRes();
+    await MobileTokenAdminController.listTokens(
+      { query: { status: "reused", sort: "oldest", search: "a.b*" } } as unknown as Request,
+      res as unknown as Response,
+      passThrough,
+    );
+
+    const filter = mockTokenQuery.find.mock.calls[0]?.[0] as Record<string, any>;
+    expect(filter.reusedAt).toEqual({ $ne: null });
+    // 关键词必须是字面量：`a.b*` 不能变成通配符/病态正则。
+    const regex = filter.$or?.[0]?.userId?.$regex as string;
+    expect(regex).toBe("a\\.b\\*");
+    const chainValue = mockTokenQuery.find.mock.results[0]?.value as Chain;
+    expect(chainValue.sort).toHaveBeenCalledWith({ createdAt: 1 });
+  });
+
+  it("非法 status 回退成 all，非法 sort 回退成 recent", async () => {
+    mockTokenQuery.find.mockReturnValueOnce(chain([]));
+    mockTokenQuery.countDocuments.mockReturnValueOnce(chain(0));
+    mockSessionFind.mockReturnValueOnce(chain([]));
+
+    const res = makeRes();
+    await MobileTokenAdminController.listTokens(
+      { query: { status: "bogus", sort: "bogus" } } as unknown as Request,
+      res as unknown as Response,
+      passThrough,
+    );
+
+    expect(mockTokenQuery.find).toHaveBeenCalledWith({});
+    expect((res.body as Record<string, any>).filters).toMatchObject({ status: "all", sort: "recent" });
+    expect(res.headers["Cache-Control"]).toBe("no-store");
   });
 });
 

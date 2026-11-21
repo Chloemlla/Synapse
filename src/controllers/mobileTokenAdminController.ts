@@ -3,6 +3,7 @@ import { AuthSessionModel } from "../models/authSessionModel";
 import { MobileClientTokenModel } from "../models/mobileClientTokenModel";
 import { LINEAGE_MAX_GENERATIONS } from "../services/mobileTokenLineageAlertService";
 import { mongoose } from "../services/mongoService";
+import { escapeRegexLiteral } from "../utils/regexEscape";
 
 /**
  * `sml_` 客户端登录令牌血缘的只读后台面板数据源（超级管理员专用，全部 GET）。
@@ -99,6 +100,24 @@ function parseParam(value: unknown): string {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
+/**
+ * 全量代次列表的状态过滤值。语义与 `toGenerationRow` 的 `current` 口径保持一致，
+ * 否则「按状态筛出来的行」和「行上显示的状态徽标」会自相矛盾。
+ */
+const TOKEN_STATUS_VALUES = new Set(["all", "current", "superseded", "revoked", "expired", "reused"]);
+/** 全量列表的排序口径：最近签发 / 最早签发 / 最近活动。 */
+const TOKEN_SORT_VALUES = new Set(["recent", "oldest", "activity"]);
+
+function parseTokenStatus(value: unknown): string {
+  const raw = parseParam(value).toLowerCase();
+  return TOKEN_STATUS_VALUES.has(raw) ? raw : "all";
+}
+
+function parseTokenSort(value: unknown): string {
+  const raw = parseParam(value).toLowerCase();
+  return TOKEN_SORT_VALUES.has(raw) ? raw : "recent";
+}
+
 /** 一代令牌交给前端的形状：哈希/设备/IP 掩码，属地取自会话，时间统一 ISO。 */
 function toGenerationRow(doc: LooseDoc, ipLocation: string | null): Record<string, unknown> {
   const supersededAt = readNumber(doc.supersededAt);
@@ -109,6 +128,8 @@ function toGenerationRow(doc: LooseDoc, ipLocation: string | null): Record<strin
     supersededAt === null && revokedAt === null && (expiresAt === null || expiresAt > now);
 
   return {
+    /** 归属用户：全量列表跨用户，行上必须能看出「这张令牌是谁的」。 */
+    userId: readString(doc.userId) || null,
     rotationIndex: readNumber(doc.rotationIndex) ?? 0,
     tokenHash: maskHash(doc.tokenHash),
     lineageId: maskHash(doc.lineageId ?? doc.tokenHash),
@@ -131,6 +152,26 @@ function toGenerationRow(doc: LooseDoc, ipLocation: string | null): Record<strin
     ipLocation: ipLocation && ipLocation.trim() ? ipLocation : null,
     current,
   };
+}
+
+/**
+ * 全量列表专用：不限定 userId，一次把当页所有 tokenHash 的属地拉回来。
+ * tokenHash 全局唯一（模型上是 unique 索引），所以跨用户批量取不会串号。
+ */
+async function loadIpLocationByTokenHashAcrossUsers(tokenHashes: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (tokenHashes.length === 0) return map;
+  const sessions = await AuthSessionModel.find({ clientTokenHash: { $in: tokenHashes } })
+    .select("clientTokenHash ipLocation lastActivityAt")
+    .sort({ lastActivityAt: 1 })
+    .lean()
+    .exec();
+  for (const session of toLooseDocs(sessions)) {
+    const hash = readString(session.clientTokenHash);
+    const location = readString(session.ipLocation);
+    if (hash && location) map.set(hash, location);
+  }
+  return map;
 }
 
 /** 按 tokenHash 批量取会话台账里已算好的属地，避免逐代查询归属地。 */
@@ -344,6 +385,89 @@ export class MobileTokenAdminController {
         limit,
         offset,
         filters: { userId: userId || null },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/admin/mobile-token/tokens?search=&status=&sort=&limit=&offset=
+   *
+   * 全量代次列表：不需要先知道 userId / lineageId 就能看到「库里到底有哪些代」。
+   * 之前只有 `listGenerations`（必须带 userId）与 `listLineage`（必须带 lineageId 或 userId），
+   * 于是面板实际上要求管理员**先猜一个 ID** 才能看到任何数据 —— 与 `/admin/client-errors`
+   * 那种「进来就是一张可筛可分页的全量表」相差一个入口。这里补的就是这个入口。
+   *
+   * 仍然只读、仍然掩码：搜索词只做字面量前缀/子串匹配（`escapeRegexLiteral` 防病态回溯），
+   * 不新增任何明文回显字段。
+   */
+  static async listTokens(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!isMongoReady()) {
+        respondMongoUnavailable(res);
+        return;
+      }
+
+      const limit = parseLimit(req.query.limit);
+      const offset = parseOffset(req.query.offset);
+      const search = parseParam(req.query.search);
+      const status = parseTokenStatus(req.query.status);
+      const sort = parseTokenSort(req.query.sort);
+
+      const now = Date.now();
+      const filter: Record<string, unknown> = {};
+      if (status === "current") {
+        filter.revokedAt = null;
+        filter.supersededAt = null;
+        filter.expiresAt = { $gt: now };
+      } else if (status === "superseded") {
+        filter.supersededAt = { $ne: null };
+      } else if (status === "revoked") {
+        filter.revokedAt = { $ne: null };
+      } else if (status === "reused") {
+        filter.reusedAt = { $ne: null };
+      } else if (status === "expired") {
+        filter.revokedAt = null;
+        filter.supersededAt = null;
+        filter.expiresAt = { $lte: now };
+      }
+
+      if (search) {
+        // 关键词进 `$regex` 前必须当字面量：`.`/`*` 会变通配符，病态模式会打满 mongod（坑 33 同源）。
+        const keyword = escapeRegexLiteral(search);
+        filter.$or = [
+          { userId: { $regex: keyword, $options: "i" } },
+          { deviceId: { $regex: keyword, $options: "i" } },
+          { deviceName: { $regex: keyword, $options: "i" } },
+          { tokenHash: { $regex: keyword, $options: "i" } },
+          { lineageId: { $regex: keyword, $options: "i" } },
+        ];
+      }
+
+      const sortSpec: Record<string, 1 | -1> =
+        sort === "oldest" ? { createdAt: 1 } : sort === "activity" ? { lastUsedAt: -1, createdAt: -1 } : { createdAt: -1 };
+
+      const [docs, total] = await Promise.all([
+        MobileClientTokenModel.find(filter).sort(sortSpec).skip(offset).limit(limit).lean().exec(),
+        MobileClientTokenModel.countDocuments(filter).exec(),
+      ]);
+
+      const pageDocs = toLooseDocs(docs);
+      const tokenHashes = pageDocs.map((doc) => readString(doc.tokenHash)).filter((hash) => hash.length > 0);
+      const locationByHash = await loadIpLocationByTokenHashAcrossUsers(tokenHashes);
+      const generations = pageDocs.map((doc) =>
+        toGenerationRow(doc, locationByHash.get(readString(doc.tokenHash)) ?? null),
+      );
+
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        success: true,
+        generations,
+        total,
+        limit,
+        offset,
+        filters: { search: search || null, status, sort },
       });
     } catch (error) {
       next(error);
