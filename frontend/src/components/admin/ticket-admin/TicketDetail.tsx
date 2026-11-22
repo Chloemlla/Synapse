@@ -6,6 +6,7 @@ import { StudioErrorState, StudioLoadingState } from '@/components/studioFeedbac
 import { useNotification } from '@/components/Notification';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
+import { useAuth } from '@/hooks/useAuth';
 import TicketConversation from '../../ticket/TicketConversation';
 import TicketEventTimeline from '../../ticket/TicketEventTimeline';
 import TicketSatisfactionCard from '../../ticket/TicketSatisfactionCard';
@@ -31,6 +32,9 @@ const TicketAdminDetail: React.FC<{
   onChanged: () => void;
 }> = ({ ticketId, canWrite, onBack, onChanged }) => {
   const { setNotification } = useNotification();
+  // 会话组件用 currentUserId 区分「我的消息」与「对方消息」的气泡方向；
+  // 管理端不传会让所有消息都靠左，读起来像一条连续的对方发言。
+  const { user } = useAuth();
   const [ticket, setTicket] = useState<ITicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +133,7 @@ const TicketAdminDetail: React.FC<{
 
           <TicketConversation
             ticket={ticket}
-            currentUserId={undefined}
+            currentUserId={user?.id}
             isAdmin
             canWrite={canWrite}
             streamingAiResponse={null}
@@ -243,7 +247,7 @@ const TicketAdminDetail: React.FC<{
 
           <TicketSatisfactionCard
             ticket={ticket}
-            currentUserId={undefined}
+            currentUserId={user?.id}
             isAdmin
             onSubmit={async () => false}
           />
