@@ -24,6 +24,8 @@ router.get("/rate-limits/ladders", RateLimitAdminController.listLadders);
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/rate-limits/tts-occupancy", RateLimitAdminController.getTtsOccupancy);
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
+router.get("/rate-limits/tts-jobs", RateLimitAdminController.listTtsJobs);
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/rate-limits/resources", RateLimitAdminController.getResources);
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/rate-limits/limiters", RateLimitAdminController.listLimiters);

@@ -14,6 +14,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { FEATURE_CONSENT_REQUIREMENTS, type FeatureConsentKey } from "../config/featureConsent";
 import { CURRENT_POLICY_VERSION } from "../config/policyMeta";
 import { resolveFeatureConsentViews } from "../services/policyConsentService";
+import { recordFeatureConsentDenial } from "../services/featureConsentMetrics";
 import type { AuthenticatedRequest } from "../types/authRequest";
 import logger from "../utils/logger";
 
@@ -73,6 +74,10 @@ export function requireFeatureConsent(feature: FeatureConsentKey): RequestHandle
         return;
       }
 
+      // 只记进程内计数（不写库）：管理端「功能门禁」页签据此显示「哪个功能在挡人」。
+      // 它是请求次数而非人数，页面文案已按此口径标注。
+      recordFeatureConsentDenial(feature);
+
       res.status(403).json({
         error: "该功能需要先同意相关条款",
         code: POLICY_CONSENT_REQUIRED_CODE,
@@ -94,6 +99,8 @@ export function requireFeatureConsent(feature: FeatureConsentKey): RequestHandle
         path: `${req.baseUrl || ""}${req.path || ""}`,
         error: error instanceof Error ? error.message : String(error),
       });
+      // 校验失败同样计一次：用户看到的都是「被同意闸门挡下」，不该分两种口径统计。
+      recordFeatureConsentDenial(feature);
       res.status(403).json({
         error: "该功能需要先同意相关条款",
         code: POLICY_CONSENT_REQUIRED_CODE,

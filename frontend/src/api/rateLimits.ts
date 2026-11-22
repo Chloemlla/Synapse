@@ -167,6 +167,11 @@ export const rateLimitsApi = {
     const res = await api.get(`${BASE()}/ladders${toQuery(params)}`);
     return res.data;
   },
+  /** 逐任务明细（排队 + 运行中）：只含执行元数据，不含题词与产物地址。 */
+  ttsJobs: async (params: { userId?: string; limit?: number; offset?: number } = {}): Promise<TtsJobsResponse> => {
+    const res = await api.get(`${BASE()}/tts-jobs${toQuery(params)}`);
+    return res.data;
+  },
   ttsOccupancy: async (top = 20): Promise<{ success: boolean; generatedAt: string } & TtsOccupancy> => {
     const res = await api.get(`${BASE()}/tts-occupancy${toQuery({ top })}`);
     return res.data;
@@ -180,3 +185,24 @@ export const rateLimitsApi = {
     return res.data;
   },
 };
+
+export interface TtsActiveJobRow {
+  taskId: string;
+  userId: string;
+  status: string;
+  provider: string | null;
+  providerModel: string | null;
+  providerVoice: string | null;
+  processingOwner: string | null;
+  attempts: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TtsJobsResponse {
+  success: boolean;
+  generatedAt: string;
+  total: number;
+  jobs: TtsActiveJobRow[];
+  note: string;
+}

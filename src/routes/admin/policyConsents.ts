@@ -7,6 +7,7 @@ import {
   FEATURE_CONSENT_KEYS,
   FEATURE_CONSENT_REQUIREMENTS,
 } from "../../config/featureConsent";
+import { getFeatureConsentDenialSnapshot } from "../../services/featureConsentMetrics";
 
 /**
  * 隐私政策同意记录只读面板（超级管理员专用）。
@@ -27,9 +28,9 @@ router.get("/policy-consents", authenticateSuperAdmin, PolicyConsentLogControlle
  * 只读派生自 `config/featureConsent.ts` —— 那份文件是「功能 → 条款」的唯一真相源，
  * 这里不再维护第二份清单，避免面板展示与真实门禁漂移。
  *
- * 故意**不**回「某功能挡住了多少人」：那需要逐功能实时查同意状态，
- * 在管理端热路径上代价高且容易误读（同意是有有效期的）。页面对此显式写「不提供」，
- * 而不是渲染一个 0 让人以为没人被挡。
+ * `denials` 是**本进程内的拒绝计数**（`services/featureConsentMetrics.ts`）：
+ * 它回答「哪个功能在挡请求」，代价为零（不查库、不写库）。口径必须如实呈现 ——
+ * 它是请求次数而不是人数，多实例各自计数、重启清零，页面会原样标出这段说明。
  */
 // codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/policy-consents/feature-gates", authenticateSuperAdmin, (_req, res) => {
@@ -53,8 +54,7 @@ router.get("/policy-consents/feature-gates", authenticateSuperAdmin, (_req, res)
         message: requirement.message,
       };
     }),
-    deniedCountNote:
-      "本页不统计「某功能当前挡住了多少用户」：同意有有效期且按 userId 实时判定，管理端热路径上不做该聚合。",
+    denials: getFeatureConsentDenialSnapshot(),
   });
 });
 

@@ -10,6 +10,9 @@ import { InfoBadge, InfoPanel, studioSecondaryButtonClassName } from '@/componen
 import { StudioErrorState, StudioLoadingState, StudioModal } from '@/components/studioFeedback';
 import { useNotification } from '@/components/Notification';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdmin } from '@/utils/rbac';
+import { AccountDispositionModal, type DispositionTarget } from './DispositionModal';
 import { getBackendErrorMessage } from '@/utils/backendError';
 import { formatCount, formatRelativeTime, formatTime } from '../ip-risk-log/format';
 import {
@@ -63,6 +66,11 @@ const PAGE_SIZES = [20, 50, 100, 200];
  */
 const AccountRiskAccountsTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) => {
   const { setNotification } = useNotification();
+  const { user } = useAuth();
+  // 处置入口只对超管显示：服务端 bulk-action 要求 authenticateSuperAdmin，
+  // 普通管理员点了必然是 403，不如直接不给按钮。
+  const canDispose = isSuperAdmin(user?.role);
+  const [disposeTarget, setDisposeTarget] = useState<DispositionTarget | null>(null);
   const [filters, patchFilters] = useUrlFilters(FILTER_DEFAULTS);
   const [searchInput, setSearchInput] = useState(filters.q);
   const [sort, setSort] = useState<string>(filters.sort);
@@ -274,12 +282,30 @@ const AccountRiskAccountsTab: React.FC<{ refreshNonce: number }> = ({ refreshNon
                       >
                         {expandedId === row.id ? '收起' : '详情'}
                       </button>
+                      {canDispose ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDisposeTarget({
+                              id: row.id,
+                              username: row.username,
+                              riskTier: row.riskTier,
+                              riskScore: row.riskScore,
+                              accountStatus: row.accountStatus,
+                            })
+                          }
+                          className={cn(studioSecondaryButtonClassName, 'whitespace-nowrap px-2.5 py-1 text-[11px]')}
+                          title="在本页直接处置（走服务端唯一出口 applyAccountRiskAction）"
+                        >
+                          处置
+                        </button>
+                      ) : null}
                       <Link
                         to={`/admin/users?focus=${encodeURIComponent(row.id)}`}
                         className={cn(studioSecondaryButtonClassName, 'whitespace-nowrap px-2.5 py-1 text-[11px]')}
-                        title="跳到用户管理页处置（封停 / 标记观察 / 设受限）"
+                        title="跳到用户管理页查看完整资料（角色 / 会话 / 数据导出）"
                       >
-                        <FaExternalLinkAlt className="mr-1 inline" />去处置
+                        <FaExternalLinkAlt className="mr-1 inline" />资料
                       </Link>
                     </div>
                   </Td>
@@ -297,6 +323,12 @@ const AccountRiskAccountsTab: React.FC<{ refreshNonce: number }> = ({ refreshNon
         </TableWrap>
         <Pager total={total} limit={limit} offset={offset} loading={loading} onChange={setOffset} />
       </InfoPanel>
+
+      <AccountDispositionModal
+        target={disposeTarget}
+        onClose={() => setDisposeTarget(null)}
+        onDone={() => void load()}
+      />
     </div>
   );
 };

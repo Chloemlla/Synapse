@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaTachometerAlt } from 'react-icons/fa';
-import { rateLimitsApi, type TtsOccupancy } from '@/api/rateLimits';
+import { rateLimitsApi, type TtsActiveJobRow, type TtsOccupancy } from '@/api/rateLimits';
 import { InfoBadge, InfoMetricCard, InfoPanel } from '@/components/studioTheme';
 import { StudioEmptyState, StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { getBackendErrorMessage } from '@/utils/backendError';
-import { formatCount, formatRelativeTime } from '../ip-risk-log/format';
-import { DataPanel, TableWrap, Td, Th, UtilizationBar, FilterSelect, RefreshButton } from './ui';
+import { formatCount, formatRelativeTime, formatTime } from '../ip-risk-log/format';
+import { DataPanel, FilterSelect, Pager, RefreshButton, TableState, TableWrap, Td, Th, UtilizationBar, InlineError } from './ui';
 
 const TOP_OPTIONS = [
   { value: 10, label: 'Top 10' },
@@ -27,6 +27,43 @@ const RateLimitsTtsTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) 
   const [error, setError] = useState<string | null>(null);
   const [top, setTop] = useState(20);
   const requestRef = useRef(0);
+
+  // 逐任务明细：默认跟随展开的用户过滤，也可以单独按 userId 查。
+  const [jobUserId, setJobUserId] = useState('');
+  const [jobUserIdInput, setJobUserIdInput] = useState('');
+  const [jobs, setJobs] = useState<TtsActiveJobRow[]>([]);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsOffset, setJobsOffset] = useState(0);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const res = await rateLimitsApi.ttsJobs({ userId: jobUserId, limit: 50, offset: jobsOffset });
+      setJobs(res.jobs);
+      setJobsTotal(res.total);
+      setJobsError(null);
+    } catch (err) {
+      setJobsError(getBackendErrorMessage(err, '读取 TTS 任务明细失败'));
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [jobUserId, jobsOffset]);
+
+  useEffect(() => {
+    void loadJobs();
+  }, [loadJobs, refreshNonce]);
+
+  useEffect(() => {
+    const timer: number = window.setTimeout(() => {
+      if (jobUserIdInput.trim() !== jobUserId) {
+        setJobUserId(jobUserIdInput.trim());
+        setJobsOffset(0);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [jobUserId, jobUserIdInput]);
 
   const load = useCallback(async () => {
     const requestId = ++requestRef.current;
@@ -128,6 +165,91 @@ const RateLimitsTtsTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce }) 
             </tbody>
           </TableWrap>
         )}
+      </InfoPanel>
+
+      <InfoPanel compact>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">逐任务明细（排队 + 运行中）</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              value={jobUserIdInput}
+              onChange={(event) => setJobUserIdInput(event.target.value)}
+              placeholder="按用户 ID 过滤"
+              aria-label="按用户 ID 过滤 TTS 任务"
+              className="min-h-11 min-w-[200px] rounded-2xl border border-slate-200 bg-white/80 px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none sm:min-h-0"
+            />
+            <RefreshButton onClick={() => void loadJobs()} loading={jobsLoading} />
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          共 {formatCount(jobsTotal)} 个活跃任务；只含执行元数据，题词与产物地址属用户内容，不在此视图内。
+        </p>
+        {jobsError && jobs.length > 0 ? <InlineError message={jobsError} onRetry={() => void loadJobs()} /> : null}
+        <TableWrap minWidth="min-w-[980px]">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400">
+              <Th>任务</Th>
+              <Th>用户</Th>
+              <Th>状态</Th>
+              <Th>提供者 / 模型</Th>
+              <Th>时间</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            <TableState
+              loading={jobsLoading && jobs.length === 0}
+              error={jobsError}
+              empty={!jobsLoading && jobs.length === 0}
+              emptyText="当前没有排队或运行中的 TTS 任务。任务完成后会离开本视图（历史记录在 TTS 生成记录页）。"
+              colSpan={5}
+              onRetry={() => void loadJobs()}
+            />
+            {jobs.map((job) => (
+              <tr key={job.taskId} className="align-top transition hover:bg-slate-50/80">
+                <Td>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-mono text-[11px] text-slate-700">{job.taskId}</span>
+                    {job.attempts > 0 ? <span className="text-[10px] text-slate-400">已重试 {job.attempts} 次</span> : null}
+                  </div>
+                </Td>
+                <Td>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJobUserIdInput(job.userId);
+                      setJobUserId(job.userId);
+                      setJobsOffset(0);
+                    }}
+                    className="font-mono text-[11px] text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline"
+                    title="只看该用户的任务"
+                  >
+                    {job.userId || '-'}
+                  </button>
+                </Td>
+                <Td>
+                  <InfoBadge tone={job.status === 'processing' ? 'sky' : 'slate'}>{job.status}</InfoBadge>
+                  {job.processingOwner ? (
+                    <span className="mt-1 block font-mono text-[10px] text-slate-400">{job.processingOwner}</span>
+                  ) : null}
+                </Td>
+                <Td>
+                  <div className="flex flex-col gap-0.5 text-[11px] text-slate-600">
+                    <span>{job.provider ?? '-'}</span>
+                    <span className="text-slate-400">{job.providerModel ?? '-'}</span>
+                  </div>
+                </Td>
+                <Td>
+                  <div className="flex flex-col gap-0.5 text-[11px] text-slate-500">
+                    <span>{formatTime(job.createdAt)}</span>
+                    <span>{formatRelativeTime(job.updatedAt)}</span>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+        <Pager total={jobsTotal} limit={50} offset={jobsOffset} loading={jobsLoading} onChange={setJobsOffset} />
       </InfoPanel>
 
       <DataPanel>

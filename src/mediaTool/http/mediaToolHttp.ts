@@ -18,6 +18,8 @@ import { MediaJobRunner } from "../jobs/mediaJobRunner";
 import { MEDIA_EXTS, ensureDir, isAudioFile, relInsideRoot, resolveRootDir, resolveYtDlpBin, runTool, sanitizeFileName, statOrNull } from "../runtime";
 import { validatePublicUrl } from "../../utils/ssrfGuard";
 import { maskedView, type MediaSettingsPatch, type MediaSettingsStore } from "../settingsStore";
+import { MEDIA_SANDBOX_DEFAULTS, resolveMediaSandboxLimits } from "../sandbox";
+import { resolveWatchdogMode } from "../../utils/processWatchdog";
 import { normalizeTranscribeOutputs } from "../types";
 import { readSegments } from "../vivoLasr";
 import type { MediaJobRecord, MediaJobStatus } from "../types";
@@ -138,6 +140,42 @@ export function createMediaToolRouter(deps: MediaToolRouterDeps): express.Router
     } catch (e) {
       res.status(500).json({ ok: false, error: (e as Error).message });
     }
+  });
+
+  /**
+   * 资源闸门生效值（RC-39）：文件沙箱四道硬顶 + 子进程看门狗。
+   *
+   * 放在这个工厂里而不是 `/api/admin` 的某个子路由：这两条限制是媒体工具独有的，
+   * 与 health/settings 同源（都读当前进程的 env 解析结果），放在一起才不会出现
+   * 「standalone 态看不到限制」的分叉。只读，改值要改部署 env。
+   */
+  // codeql[js/missing-rate-limiting] media-tool admin subtree rate-limited at mount; in-router copy would split quota
+  router.get("/limits", (_req: Request, res: Response) => {
+    const limits = resolveMediaSandboxLimits();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      mediaSandbox: {
+        effective: limits,
+        defaults: MEDIA_SANDBOX_DEFAULTS,
+        env: {
+          maxFileBytes: "MEDIA_TOOL_MAX_FILE_BYTES",
+          maxFilesPerJob: "MEDIA_TOOL_MAX_FILES_PER_JOB",
+          maxUserDirBytes: "MEDIA_TOOL_USER_DIR_MAX_BYTES",
+          maxUserDirFiles: "MEDIA_TOOL_USER_DIR_MAX_FILES",
+        },
+        note: "四道硬顶：路径 / 大小 / 类型 / 数量。任一检查失败一律拒绝（fail-closed），不留孤儿文件。",
+      },
+      processWatchdog: {
+        mode: resolveWatchdogMode(),
+        env: {
+          mode: "PROCESS_WATCHDOG_MODE",
+          maxRssMb: "PROCESS_WATCHDOG_MAX_RSS_MB",
+          maxDurationMs: "PROCESS_WATCHDOG_MAX_DURATION_MS",
+        },
+        note: "只对目标子进程树的 RSS 计量（读 /proc），绝不读全局 RSS；非 Linux 环境内存判据不可用，时长判据仍生效。",
+      },
+    });
   });
 
   router.get("/settings", async (_req: Request, res: Response) => {

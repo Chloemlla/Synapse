@@ -18,7 +18,9 @@ import { DataPanel, FieldGrid, FieldRow, TableWrap, Td, Th } from '../account-ri
  * 只读：值来自服务端 env 解析结果，改它们要改部署配置。
  */
 interface MediaToolLimitsResponse {
-  success: boolean;
+  /** 工厂里的路由回 `ok`；保留 success 兼容可能的网关包装。 */
+  ok?: boolean;
+  success?: boolean;
   mediaSandbox: {
     effective: Record<string, number>;
     defaults: Record<string, number>;

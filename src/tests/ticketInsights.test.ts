@@ -61,6 +61,46 @@ describe("computeTicketInsights", () => {
     expect(zero.windowDays).toBe(30);
   });
 
+  it("聚合表达式里不出现查询操作符 $nin（服务端会回 InvalidPipelineOperator）", async () => {
+    mockAggregate.mockImplementation(() => aggregateChain([]));
+
+    await computeTicketInsights({ windowDays: 30 });
+
+    for (const call of mockAggregate.mock.calls) {
+      const serialized = JSON.stringify(call[0] ?? []);
+      // $match 阶段的 $nin 合法；出错的是「表达式位置」的 $nin。
+      // 这里用「$nin 出现在 $sum/$cond/$project 之后」这种粗略但稳定的判据：
+      // 本服务里 assignee 聚合的 open 计数曾经写成 { $cond: [{ $nin: [...] }] }。
+      if (serialized.includes('"$nin"')) {
+        expect(serialized).not.toMatch(/\$sum[^}]*\$nin/);
+        expect(serialized).not.toMatch(/\$cond[^\]]*\$nin/);
+      }
+    }
+  });
+
+  it("$percentile 不可用时回退到应用层分位，不整块失败", async () => {
+    let percentileAttempted = false;
+    mockAggregate.mockImplementation((pipeline: unknown) => {
+      const serialized = JSON.stringify(Array.isArray(pipeline) ? pipeline : []);
+      if (serialized.includes("$percentile")) {
+        percentileAttempted = true;
+        // 模拟老服务端：pipeline 解析失败。
+        return { exec: jest.fn().mockRejectedValue(new Error("Unrecognized expression '$percentile'")) };
+      }
+      if (serialized.includes('"values"')) {
+        return aggregateChain([{ samples: 4, values: [1, 2, 3, 4] }]);
+      }
+      return aggregateChain([]);
+    });
+
+    const result = await computeTicketInsights({ windowDays: 30 });
+
+    expect(percentileAttempted).toBe(true);
+    // 4 个样本 [1,2,3,4] 的 P50 = 2.5。
+    expect(result.firstResponse.p50Hours).toBe(2.5);
+    expect(result.firstResponse.samples).toBe(4);
+  });
+
   it("SLA 聚合只看未关闭且最后一条是用户发言的工单", async () => {
     mockAggregate.mockImplementation((pipeline: unknown) => {
       const serialized = JSON.stringify(Array.isArray(pipeline) ? pipeline : []);

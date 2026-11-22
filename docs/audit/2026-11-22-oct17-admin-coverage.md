@@ -473,23 +473,34 @@
 | 2026-11-22 | B5 | GeoGebra 拆 7 页签 + AI 配置表单；新增 jobs/shares/assets/settings 四个只读端点 | `759c8009` |
 | 2026-11-22 | B6 | 邮件溯源概览、媒体工具「限制与沙箱」、政策「功能门禁」、用户页 `?focus=` 深链；Pixel 复核无需改动 | `d5cc4adb` |
 
-### 12.1 交付时的偏差与补充（与上文计划的差异都在这里）
+### 12.1 交付时的偏差与补充（全部已落地）
 
-| 计划 | 实际 | 原因 |
+> 2026-11-22 第二批：owner 要求「偏差全部修复落地」。下表逐条给出最终形态；
+> **不再有任何一项停留在「按计划外的临时做法」**。
+
+| 原计划 | 最终形态 | 说明 |
 | --- | --- | --- |
-| §5 端点总表 27 条 | 实际新增 **30 条**：多出 `GET /api/admin/account-risk/accounts/:id`（单账户详情，供展开行/弹窗用）、`GET /api/outemail/records/stats`、`GET /api/admin/media-tool/limits` | 展开行如果塞进列表响应，会把「跨账户详情」变成列表字段；另两条是 B6 扩展页的实际形态 |
-| doc-tool 处理函数写在 `routes/admin/docTool.ts` | 同上写成 `src/docTool/admin/docToolAdminService.ts` + 路由薄层 | 服务层承接聚合与清理编排，路由只做参数与响应 |
-| 工单页复用 `TicketConversation` / `TicketEventTimeline` | **未复用**：详情跳 `/support` 的管理视图 | 会话组件依赖属主视角的滚动/草稿/未读状态机，塞进管理页会出现两套状态；跳转保持单一实现 |
-| 媒体工具限制端点放在 media-tool 路由工厂里 | 放在 `src/routes/admin/index.ts`（同一 `/api/admin/media-tool/limits` 路径） | 该 router 在 preTamper 相位先于 postTamper 的 media-tool 挂载，子路径由它应答，不触碰媒体工具的工厂与测试 |
-| 页面内批量写按钮按角色隐藏 | 由页面用 `useAuth` 判定，而不是等父组件传 props | 路由表用 `React.lazy` 挂载组件、不传 props；依赖 props 会让超管也看不到按钮 |
-| 新增页面测试 | 后端 `accountRiskAdmin` / `rateLimitAdmin` / `docToolAdmin` / `ticketInsights` / `adminPages` 各补用例；前端 `adminOct17Pages.test.ts` 钉入册与默认不授权 | 与 §9 一致 |
+| §5 端点总表 27 条 | 实际 **32 条**只读 + 2 条写（doc-tool 清理预演/执行） | 追加：`account-risk/accounts/:id`、`outemail/records/stats`、`media-tool/limits`、`rate-limits/tts-jobs`、`policy-consents/feature-gates` |
+| doc-tool 处理函数写在路由里 | `src/docTool/admin/docToolAdminService.ts` 承接聚合与清理编排，`routes/admin/docTool.ts` 只做参数与响应 | 服务层可单测；路由保持薄 |
+| 工单详情跳 `/support` | **已内嵌**：`admin/ticket-admin/TicketDetail.tsx` 复用 `TicketConversation` / `TicketEventTimeline` / `TicketSatisfactionCard`，支持回复、内部备注、改状态、编辑/删除消息 | 队列筛选与勾选不再因跳页丢失；写操作按角色隐藏（服务端仍要求超管） |
+| 媒体工具 limits 放在 `routes/admin/index.ts` | **已迁回** `mediaTool/http/mediaToolHttp.ts` 工厂 | standalone 态也能看到限制，不再依赖 `/api/admin` 的挂载相位 |
+| 页面内批量写按钮按角色隐藏由 props 传入 | 页面用 `useAuth` 自行判定 | 路由表用 `React.lazy` 挂载、不传 props |
+| 功能门禁「挡住多少人」不提供 | **已提供计数**：`services/featureConsentMetrics.ts` 进程内计数（不写库、不参与评分），门禁 403 分支调用，页面显示「本进程累计拒绝 N 次 + 每功能次数 + 最近时间」，并原样标注「是请求次数不是人数」 | 页面没有渲染假 0：没计数时显示 0 但口径说明常驻 |
+| 逐用户 TTS 占用只给 Top N | **已补逐任务明细**：`GET /api/admin/rate-limits/tts-jobs`（可按 userId 过滤、分页），页面「TTS 占用」页签新增明细表 | 只含执行元数据（taskId/userId/status/provider/时间），题词与产物地址不投影 |
+| 账户风险页没有处置写入口 | **已补处置抽屉**：`account-risk/DispositionModal.tsx` 调 `POST /api/admin/users/:id/translation-penalty`（历史命名，承载 RC-07 全部风险动作），理由必填，需要超管 | 仍走 `applyAccountRiskAction` 唯一出口，没有第二条处罚路径 |
+| 限流阈值在线修改 | **保持只读**（见 §12.2 的裁决） | 阈值散落在 30+ 个 limiter 实例的构造期，热更新需要重建实例；页面给出「env 名 + 生效值 + 默认值」并指向运行时配置 |
 
-### 12.2 未做 / 明确挂起
+### 12.2 明确不做（附裁决理由）
 
-| 项 | 状态 | 说明 |
+| 项 | 裁决 | 理由 |
 | --- | --- | --- |
-| 账户风险页的处置写入口 | 保持不做 | 处置仍只经 `applyAccountRiskAction`，入口在用户管理页；页面用 `?focus=` 深链过去 |
-| 工单详情内嵌会话 | 不做 | 见上表 |
-| 「某功能当前挡住多少人」 | 不做 | 需要按 userId 实时判定，管理端热路径不做该聚合；页面显式说明 |
-| 限流阈值在线修改 | 不做 | 仍走运行时配置页（超管 + 安全会话 + 审计） |
-| 逐用户 TTS 占用详情页 | 部分做 | 限流页给 Top N；逐用户全量明细按需再加端点 |
+| 在管理页在线修改限流阈值 | 不做 | limiter 在构造期读取 `max`/`windowMs`，热更新要重建全部实例并处理在途计数；风险高于收益。阈值改动仍走部署 env 或运行时配置页（后者带审计）。页面已给出每一项的 env 名与生效值 |
+| 功能门禁的「被挡人数」（去重用户） | 不做 | 需要按 userId 实时判定同意状态并做集合基数，管理端热路径上代价高；改为进程内请求计数并显式标注口径 |
+| 账户风险页的批量处置 | 不做 | 批量处置会放大误操作；单账户抽屉 + 用户页批量导出已覆盖高频场景 |
+
+### 12.3 生产事故修复（2026-11-22）
+
+| 症状 | 根因 | 修复 |
+| --- | --- | --- |
+| `/admin/tickets` 的「质量与 SLA」反复 500，日志 `Unrecognized expression '$nin'` | 分位聚合并行的 assignee 聚合里，`open` 计数写成 `$cond: [{ $nin: ["$status", [...]] }]` —— `$nin` 是**查询**操作符，聚合**表达式**位置不认识 | 改为等价的 `{ $not: [{ $in: [...] }] }`；并加一条用例扫描所有聚合管道，禁止表达式位置出现 `$nin` |
+| （预防）老版本 MongoDB 没有 `$percentile` 时整块 500 | 分位依赖 MongoDB 7+ | `computePercentiles()` 捕获解析失败后回退到「取样本数组在应用层线性插值」，样本上限 5000；加用例模拟解析失败 |

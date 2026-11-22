@@ -287,6 +287,51 @@ class MongoTtsJobStore implements TtsJobStore {
     return rows.map((row: { _id: string; active: number }) => ({ userId: String(row._id), active: Number(row.active) || 0 }));
   }
 
+  /**
+   * 逐任务明细（管理端「TTS 占用」页签的展开视图）。
+   *
+   * **只回执行元数据**：taskId / userId / status / provider / 时间戳。
+   * 题词文本、语音参数、产物 URL 都是用户内容，一律不进投影 ——
+   * 运维要回答的是「这个用户凭什么占着三个槽位」，不是「他说了什么」。
+   */
+  public async listActiveJobs(options: {
+    userId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ total: number; jobs: Array<Record<string, unknown>> }> {
+    const limit = Math.min(Math.max(Math.floor(Number(options.limit) || 50), 1), 200);
+    const offset = Math.max(Math.floor(Number(options.offset) || 0), 0);
+    const filter: Record<string, unknown> = { status: { $in: ["queued", "processing"] } };
+    if (options.userId) filter.userId = options.userId;
+
+    const [docs, total] = await Promise.all([
+      TtsJobModel.find(filter)
+        .select("taskId userId status provider providerModel providerVoice createdAt updatedAt processingOwner attempts")
+        .sort({ createdAt: 1 })
+        .skip(offset)
+        .limit(limit)
+        .lean()
+        .exec(),
+      TtsJobModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      total,
+      jobs: (docs as unknown as Array<Record<string, unknown>>).map((doc) => ({
+        taskId: String(doc.taskId ?? ""),
+        userId: String(doc.userId ?? ""),
+        status: String(doc.status ?? ""),
+        provider: typeof doc.provider === "string" ? doc.provider : null,
+        providerModel: typeof doc.providerModel === "string" ? doc.providerModel : null,
+        providerVoice: typeof doc.providerVoice === "string" ? doc.providerVoice : null,
+        processingOwner: typeof doc.processingOwner === "string" ? doc.processingOwner : null,
+        attempts: Number(doc.attempts) || 0,
+        createdAt: typeof doc.createdAt === "string" ? doc.createdAt : null,
+        updatedAt: typeof doc.updatedAt === "string" ? doc.updatedAt : null,
+      })),
+    };
+  }
+
   public async getQueuePosition(taskId: string) {
     const job = await this.getJob(taskId);
     if (!job || job.status !== "queued") {

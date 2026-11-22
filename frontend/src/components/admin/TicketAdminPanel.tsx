@@ -34,6 +34,7 @@ import {
   ticketServiceLabel,
 } from '../ticket/ticketConstants';
 import { DataPanel, FieldGrid, FieldRow, FilterSelect, Pager, RefreshButton, TableWrap, Td, Th } from './account-risk/ui';
+import TicketAdminDetail from './ticket-admin/TicketDetail';
 
 /**
  * 工单管理（`/admin/tickets`）——分诊工作台 + 质量与 SLA + 客服工作量。
@@ -273,6 +274,8 @@ const QueueSection: React.FC<{ canWrite: boolean; refreshNonce: number }> = ({ c
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<string[]>([]);
+  /** 打开中的工单详情（内嵌视图，不跳页——跳转会丢掉队列筛选）。 */
+  const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [stats, setStats] = useState<TicketStats | null>(null);
   const requestRef = useRef(0);
@@ -378,6 +381,20 @@ const QueueSection: React.FC<{ canWrite: boolean; refreshNonce: number }> = ({ c
 
   const totalPages = Math.max(1, Math.ceil(total / Math.max(1, limit)));
 
+  if (openTicketId) {
+    return (
+      <TicketAdminDetail
+        ticketId={openTicketId}
+        canWrite={canWrite}
+        onBack={() => {
+          setOpenTicketId(null);
+          void load();
+        }}
+        onChanged={() => void load()}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <TicketStatsBar stats={stats} loading={loading && !stats} onQuickFilter={() => undefined} activeView={activeView} />
@@ -438,10 +455,7 @@ const QueueSection: React.FC<{ canWrite: boolean; refreshNonce: number }> = ({ c
                   onToggleCheck={(id) =>
                     setChecked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
                   }
-                  onOpen={() => {
-                    // 会话详情在 /support 的管理视图中打开：那里有事件时间线、内部备注与附件设置。
-                    window.open(`/support?ticket=${encodeURIComponent(ticket._id)}`, '_blank', 'noopener');
-                  }}
+                  onOpen={() => setOpenTicketId(ticket._id)}
                 />
               </li>
             ))}

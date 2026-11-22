@@ -55,6 +55,71 @@ export interface TicketInsights {
   }>;
 }
 
+/**
+ * 分位计算：优先 `$percentile`（MongoDB 7+），失败时回退到「取样本数组在应用层算」。
+ *
+ * 为什么需要回退：`$percentile` 在老服务端上会让整条 pipeline 解析失败
+ * （同 `$nin` 那类 `InvalidPipelineOperator`），面板会整块 500。
+ * 回退路径把样本上限压到 5000 条，按 `$sort` 后取数组算线性插值分位 ——
+ * 精度足够回答「P50 大概几小时」，且不会拖垮内存。
+ */
+const PERCENTILE_FALLBACK_SAMPLES = 5000;
+
+async function computePercentiles(
+  matchStage: Record<string, unknown>,
+  hoursExpression: Record<string, unknown>,
+  fractions: number[],
+): Promise<{ samples: number; values: Array<number | null> }> {
+  try {
+    const rows = await TicketModel.aggregate([
+      { $match: matchStage },
+      { $project: { hours: hoursExpression } },
+      { $match: { hours: { $gte: 0 } } },
+      {
+        $group: {
+          _id: null,
+          samples: { $sum: 1 },
+          p: { $percentile: { input: "$hours", p: fractions, method: "approximate" } },
+        },
+      },
+    ]).exec();
+    const row = rows[0] as { samples?: number; p?: unknown } | undefined;
+    return {
+      samples: Number(row?.samples) || 0,
+      values: fractions.map((_, index) => readPercentile(row, index)),
+    };
+  } catch {
+    // 老服务端不认识 $percentile：降级成「样本在应用层排序后取分位」。
+    const rows = await TicketModel.aggregate([
+      { $match: matchStage },
+      { $project: { hours: hoursExpression } },
+      { $match: { hours: { $gte: 0 } } },
+      { $sort: { hours: 1 } },
+      { $limit: PERCENTILE_FALLBACK_SAMPLES },
+      { $group: { _id: null, samples: { $sum: 1 }, values: { $push: "$hours" } } },
+    ]).exec();
+    const row = rows[0] as { samples?: number; values?: unknown } | undefined;
+    const values = Array.isArray(row?.values)
+      ? (row.values as unknown[]).filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+      : [];
+    return {
+      samples: Number(row?.samples) || values.length,
+      values: values.length === 0 ? fractions.map(() => null) : fractions.map((fraction) => interpolate(values, fraction)),
+    };
+  }
+}
+
+/** 线性插值分位（与 `$percentile` 的 method:"approximate" 同量级精度）。输入需已升序。 */
+function interpolate(sorted: number[], fraction: number): number | null {
+  if (sorted.length === 0) return null;
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const weight = position - lower;
+  const value = sorted[lower]! + (sorted[upper]! - sorted[lower]!) * weight;
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+}
+
 function readPercentile(row: unknown, index: number): number | null {
   if (!row || typeof row !== "object") return null;
   const values = (row as { p?: unknown }).p;
@@ -81,32 +146,18 @@ export async function computeTicketInsights(options: { windowDays?: number } = {
   const slaCutoff = new Date(now.getTime() - TICKET_SLA_HOURS * 3600 * 1000);
   const atRiskCutoff = new Date(now.getTime() - Math.floor(TICKET_SLA_HOURS * 0.75) * 3600 * 1000);
 
-  const [firstResponseRows, resolutionRows, slaRows, csatRows, serviceAgg, categoryAgg, trendRows, facetRows, assigneeRows] =
+  const [firstResponseStats, resolutionStats, slaRows, csatRows, serviceAgg, categoryAgg, trendRows, facetRows, assigneeRows] =
     await Promise.all([
-      TicketModel.aggregate([
-        { $match: { firstResponseAt: { $ne: null }, createdAt: { $gte: since } } },
-        { $project: { hours: { $divide: [{ $subtract: ["$firstResponseAt", "$createdAt"] }, 3_600_000] } } },
-        { $match: { hours: { $gte: 0 } } },
-        {
-          $group: {
-            _id: null,
-            samples: { $sum: 1 },
-            p: { $percentile: { input: "$hours", p: [0.5, 0.9, 0.95], method: "approximate" } },
-          },
-        },
-      ]),
-      TicketModel.aggregate([
-        { $match: { resolvedAt: { $ne: null }, createdAt: { $gte: since } } },
-        { $project: { hours: { $divide: [{ $subtract: ["$resolvedAt", "$createdAt"] }, 3_600_000] } } },
-        { $match: { hours: { $gte: 0 } } },
-        {
-          $group: {
-            _id: null,
-            samples: { $sum: 1 },
-            p: { $percentile: { input: "$hours", p: [0.5, 0.9, 0.95], method: "approximate" } },
-          },
-        },
-      ]),
+      computePercentiles(
+        { firstResponseAt: { $ne: null }, createdAt: { $gte: since } },
+        { $divide: [{ $subtract: ["$firstResponseAt", "$createdAt"] }, 3_600_000] },
+        [0.5, 0.9, 0.95],
+      ),
+      computePercentiles(
+        { resolvedAt: { $ne: null }, createdAt: { $gte: since } },
+        { $divide: [{ $subtract: ["$resolvedAt", "$createdAt"] }, 3_600_000] },
+        [0.5, 0.9, 0.95],
+      ),
       TicketModel.aggregate([
         { $match: { status: { $ne: "closed" }, createdAt: { $gte: since } } },
         { $addFields: { tail: { $arrayElemAt: ["$messages", -1] } } },
@@ -222,7 +273,9 @@ export async function computeTicketInsights(options: { windowDays?: number } = {
           $group: {
             _id: "$assigneeId",
             assigneeName: { $last: "$assigneeName" },
-            open: { $sum: { $cond: [{ $nin: ["$status", ["resolved", "closed"]] }, 1, 0] } },
+            // 聚合表达式里没有 `$nin`（那是查询操作符，服务端会回
+            // "Unrecognized expression '$nin'"）；等价的写法是 $not + $in。
+            open: { $sum: { $cond: [{ $not: [{ $in: ["$status", ["resolved", "closed"]] }] }, 1, 0] } },
             awaitingReply: {
               $sum: {
                 $cond: [{ $and: [{ $ne: ["$status", "closed"] }, { $eq: ["$tail.senderRole", "user"] }] }, 1, 0],
@@ -258,8 +311,6 @@ export async function computeTicketInsights(options: { windowDays?: number } = {
       ]),
     ]);
 
-  const firstRow = firstResponseRows[0] as { samples?: number; p?: unknown } | undefined;
-  const resolutionRow = resolutionRows[0] as { samples?: number; p?: unknown } | undefined;
   const slaRow = (slaRows[0] || {}) as { evaluated?: number; breached?: number; atRisk?: number };
   const csatRow = (csatRows[0] || {}) as Record<string, number | undefined>;
 
@@ -322,16 +373,16 @@ export async function computeTicketInsights(options: { windowDays?: number } = {
   return {
     windowDays,
     firstResponse: {
-      p50Hours: readPercentile(firstRow, 0),
-      p90Hours: readPercentile(firstRow, 1),
-      p95Hours: readPercentile(firstRow, 2),
-      samples: Number(firstRow?.samples) || 0,
+      p50Hours: firstResponseStats.values[0] ?? null,
+      p90Hours: firstResponseStats.values[1] ?? null,
+      p95Hours: firstResponseStats.values[2] ?? null,
+      samples: firstResponseStats.samples,
     },
     resolution: {
-      p50Hours: readPercentile(resolutionRow, 0),
-      p90Hours: readPercentile(resolutionRow, 1),
-      p95Hours: readPercentile(resolutionRow, 2),
-      samples: Number(resolutionRow?.samples) || 0,
+      p50Hours: resolutionStats.values[0] ?? null,
+      p90Hours: resolutionStats.values[1] ?? null,
+      p95Hours: resolutionStats.values[2] ?? null,
+      samples: resolutionStats.samples,
     },
     sla: {
       breached: Number(slaRow.breached) || 0,

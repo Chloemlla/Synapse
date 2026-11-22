@@ -5,7 +5,7 @@ import { InfoBadge, InfoPanel, studioSecondaryButtonClassName } from '@/componen
 import { StudioErrorState, StudioLoadingState } from '@/components/studioFeedback';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
-import { formatCount } from '../ip-risk-log/format';
+import { formatCount, formatRelativeTime, formatTime } from '../ip-risk-log/format';
 import { DataPanel, TableState, TableWrap, Td, Th } from '../account-risk/ui';
 
 /**
@@ -32,7 +32,13 @@ interface FeatureGate {
 interface FeatureGatesResponse {
   success: boolean;
   gates: FeatureGate[];
-  deniedCountNote: string;
+  /** 本进程内的拒绝计数（不是人数）：多实例各自计数、重启清零。 */
+  denials: {
+    since: string;
+    total: number;
+    byFeature: Array<{ feature: string; count: number; lastAt: string | null }>;
+    note: string;
+  };
 }
 
 export const AGREEMENT_LABELS: Record<string, string> = {
@@ -80,6 +86,7 @@ const PolicyConsentFeatureGatesTab: React.FC<{ refreshNonce: number }> = ({ refr
   if (!data) return null;
 
   const inconsistent = data.gates.filter((gate) => !gate.consistent);
+  const denialByFeature = new Map(data.denials.byFeature.map((item) => [item.feature, item]));
 
   return (
     <div className="space-y-4">
@@ -102,7 +109,13 @@ const PolicyConsentFeatureGatesTab: React.FC<{ refreshNonce: number }> = ({ refr
             <FaSync className={cn('mr-1 inline', loading && 'animate-spin')} />刷新
           </button>
         </div>
-        <p className="mt-2 text-xs leading-5 text-slate-500">{data.deniedCountNote}</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">{data.denials.note}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <InfoBadge tone={data.denials.total > 0 ? 'amber' : 'slate'}>
+            本进程累计拒绝 {formatCount(data.denials.total)} 次
+          </InfoBadge>
+          <span className="text-[11px] text-slate-400">统计起点 {formatTime(data.denials.since)}</span>
+        </div>
       </InfoPanel>
 
       <InfoPanel compact>
@@ -113,6 +126,7 @@ const PolicyConsentFeatureGatesTab: React.FC<{ refreshNonce: number }> = ({ refr
               <Th>分类</Th>
               <Th>要求条款</Th>
               <Th>依据</Th>
+              <Th>被拒次数</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -121,7 +135,7 @@ const PolicyConsentFeatureGatesTab: React.FC<{ refreshNonce: number }> = ({ refr
               error={null}
               empty={!loading && data.gates.length === 0}
               emptyText="没有登记任何功能门禁。新增按同意放行的功能时要在 config/featureConsent.ts 里加键。"
-              colSpan={4}
+              colSpan={5}
             />
             {data.gates.map((gate) => (
               <tr key={gate.key} className="align-top transition hover:bg-slate-50/80">
@@ -151,6 +165,18 @@ const PolicyConsentFeatureGatesTab: React.FC<{ refreshNonce: number }> = ({ refr
                 </Td>
                 <Td>
                   <span className="block max-w-[380px] text-[11px] leading-5 text-slate-600">{gate.rationale}</span>
+                </Td>
+                <Td>
+                  {(() => {
+                    const denial = denialByFeature.get(gate.key);
+                    if (!denial) return <span className="text-slate-400">0</span>;
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="tabular-nums font-semibold text-slate-800">{formatCount(denial.count)}</span>
+                        <span className="text-[10px] text-slate-400">{formatRelativeTime(denial.lastAt)}</span>
+                      </div>
+                    );
+                  })()}
                 </Td>
               </tr>
             ))}

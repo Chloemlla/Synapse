@@ -377,6 +377,31 @@ export class RateLimitAdminController {
   }
 
   /**
+   * GET /api/admin/rate-limits/tts-jobs —— 逐任务明细（排队 + 运行中）。
+   *
+   * 只回执行元数据（taskId / userId / provider / 时间），不回题词与产物 URL：
+   * 「谁占着槽位」是运维问题，「他说了什么」不是。
+   */
+  static async listTtsJobs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await ttsStorage.listActiveJobs({
+        userId: readParam(req.query.userId),
+        limit: Number(readParam(req.query.limit)) || 50,
+        offset: Number(readParam(req.query.offset)) || 0,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        success: true,
+        generatedAt: new Date().toISOString(),
+        ...result,
+        note: "只含排队与运行中的任务；题词、语音参数与产物地址属用户内容，不在此视图内。",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/admin/rate-limits/resources —— 资源闸门生效值。
    *
    * 每条都给出「env 名 / 生效值 / 默认值」三列：管理员看到的数字必须是**当前进程真的在用**的值，
