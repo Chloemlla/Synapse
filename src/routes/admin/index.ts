@@ -132,6 +132,7 @@ router.use("/system", systemRouter);
  * 权限与 media-tool 页面同一档（挂载层 adminAuthMiddleware + requireAdminScope）。
  * 只读：四道硬顶来自 env 解析结果，改它们要改部署配置。
  */
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter, preTamperModules G11-06); in-router copy would split quota
 router.get("/media-tool/limits", (req, res) => {
   const limits = resolveMediaSandboxLimits();
   res.setHeader("Cache-Control", "no-store");
