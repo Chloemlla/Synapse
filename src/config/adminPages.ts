@@ -71,6 +71,8 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   // 限流 / 配额 / 资源闸门（RC-27/28/29/30/37/39）：只读；阈值仍由 env 与运行时配置决定。
   // 默认授予集合不含它 → 默认仅超管可见，可按页面下放。
   { key: "rate-limits", label: "限流与配额", apiPrefixes: ["/api/admin/rate-limits"] },
+  // 文档转换运维：只回元数据（不提供跨用户文件下载）；清理写操作另叠安全会话与审计。
+  { key: "doc-tool", label: "文档转换运维", apiPrefixes: ["/api/admin/doc-tool"] },
   { key: "qq-guard", label: "QQ 群守卫", apiPrefixes: ["/api/admin/qq-guard"] },
   { key: "shortlink", label: "短链管理", apiPrefixes: ["/api/admin/shortlinks", "/api/shorturl"] },
   { key: "broadcast", label: "广播推送", apiPrefixes: ["/api/admin/broadcast"] },

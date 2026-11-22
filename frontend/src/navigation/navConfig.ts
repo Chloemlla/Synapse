@@ -448,6 +448,13 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             icon: FaFileAlt as IconType,
           },
           {
+            // 文档转换运维：读接口 admin + 页面授权 doc-tool（默认仅超管）；清理另需安全会话。
+            title: '文档转换运维',
+            url: '/admin/doc-tool',
+            icon: FaFileAlt as IconType,
+            requiredPage: 'doc-tool',
+          },
+          {
             title: '媒体工具',
             url: '/admin/media-tool',
             icon: FaDownload as IconType,

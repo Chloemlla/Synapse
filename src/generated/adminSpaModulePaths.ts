@@ -26,6 +26,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/crash-reports",
   "/admin/data-collection",
   "/admin/debug-console",
+  "/admin/doc-tool",
   "/admin/ecoenchants",
   "/admin/ecoenchants-ops",
   "/admin/email-traceability",

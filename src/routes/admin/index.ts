@@ -16,6 +16,7 @@ import broadcastRouter from "./broadcast";
 import clientErrorsRouter from "./clientErrors";
 import configRouter from "./config";
 import crashReportsRouter from "./crashReports";
+import docToolAdminRouter from "./docTool";
 import integrationsRouter from "./integrations";
 import ipRiskLogsRouter from "./ipRiskLogs";
 import legalHoldsRouter from "./legalHolds";
@@ -104,6 +105,8 @@ router.use("/legal-holds", legalHoldsRouter);
 router.use(accountRiskRouter);
 // 限流 / 配额 / 资源闸门（页面 /admin/rate-limits；全部只读，阈值仍在 env 与运行时配置）。
 router.use(rateLimitsRouter);
+// 文档转换运维（页面 /admin/doc-tool）：只回元数据，清理需安全会话 + 审计。
+router.use("/doc-tool", docToolAdminRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
 // 客户端遥测与问题追踪码复盘（页面 /admin/client-errors；读 admin + 页面授权，删除超管）。
