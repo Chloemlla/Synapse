@@ -13,6 +13,16 @@ import {
   isAuditLogRuntimeEnabled,
   isBackendApiPath,
 } from "./auditLogMetadata";
+import {
+  AUDIT_MODULES,
+  AUDIT_MODULE_GROUP_LABELS,
+  AUDIT_MODULE_GROUP_ORDER,
+  AUDIT_RESULT_LABELS,
+  AUDIT_ROLE_FILTER_ORDER,
+  AUDIT_ROLE_LABELS,
+  AUDIT_SORT_OPTIONS,
+  isAuditSortOrder,
+} from "./auditLogCatalog";
 
 // ── Batch audit log buffer ───────────────────────────────────────────────
 // Accumulate audit entries in memory and flush periodically to reduce
@@ -238,6 +248,8 @@ export interface AuditLogQueryParams {
   statusCode?: number | string;
   minDurationMs?: number | string;
   maxDurationMs?: number | string;
+  /** 时间排序：默认 `desc`（最新在前）。 */
+  sort?: "desc" | "asc";
 }
 
 function safePageNumber(value: unknown, fallback: number): number {
@@ -461,28 +473,7 @@ export class AuditLogService {
   /**
    * 分页查询审计日志
    */
-  static async query(params: {
-    page?: number;
-    pageSize?: number;
-    requestId?: string;
-    module?: string;
-    action?: string;
-    userId?: string;
-    username?: string;
-    role?: string;
-    result?: string;
-    startDate?: string;
-    endDate?: string;
-    keyword?: string;
-    method?: string;
-    path?: string;
-    ip?: string;
-    targetId?: string;
-    targetName?: string;
-    statusCode?: number | string;
-    minDurationMs?: number | string;
-    maxDurationMs?: number | string;
-  }) {
+  static async query(params: AuditLogQueryParams = {}) {
     const page = safePageNumber(params.page, 1);
     const pageSize = safePageNumber(params.pageSize, 20);
 
@@ -509,12 +500,17 @@ export class AuditLogService {
     const safeSize = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
     const skip = (safePage - 1) * safeSize;
 
+    const sortOrder = isAuditSortOrder(params.sort) ? params.sort : "desc";
     const [logs, total] = await Promise.all([
-      AuditLogModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(safeSize).lean(),
+      AuditLogModel.find(filter)
+        .sort({ createdAt: sortOrder === "asc" ? 1 : -1 })
+        .skip(skip)
+        .limit(safeSize)
+        .lean(),
       AuditLogModel.countDocuments(filter),
     ]);
 
-    return { logs, total, page: safePage, pageSize: safeSize };
+    return { logs, total, page: safePage, pageSize: safeSize, sort: sortOrder };
   }
 
   /**
@@ -566,6 +562,12 @@ export class AuditLogService {
             { $limit: 8 },
           ],
           byMethod: [{ $group: { _id: "$method", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          byRole: [{ $group: { _id: "$role", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          topIps: [
+            { $group: { _id: "$ip", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 8 },
+          ],
           byStatusCode: [
             { $match: { "detail.statusCode": { $type: "number" } } },
             { $group: { _id: "$detail.statusCode", count: { $sum: 1 } } },
@@ -593,6 +595,8 @@ export class AuditLogService {
     const topActions = facetResult.topActions;
     const topUsers = facetResult.topUsers;
     const byMethod = facetResult.byMethod;
+    const byRole = facetResult.byRole;
+    const topIps = facetResult.topIps;
     const byStatusCode = facetResult.byStatusCode;
     const durationStats = facetResult.durationStats;
 
@@ -608,6 +612,14 @@ export class AuditLogService {
       byMethod: byMethod
         .filter((m: { _id?: string; count: number }) => Boolean(m._id))
         .map((m: { _id: string; count: number }) => ({ method: m._id, count: m.count })),
+      // 老版本/替身可能没有这两个 facet 字段：缺省按空数组，避免整个统计接口 500。
+      byRole: (byRole || []).map((r: { _id?: string; count: number }) => ({
+        role: r._id || "unknown",
+        count: r.count,
+      })),
+      topIps: (topIps || [])
+        .filter((item: { _id?: string; count: number }) => Boolean(item._id))
+        .map((item: { _id: string; count: number }) => ({ ip: item._id, count: item.count })),
       byStatusCode: byStatusCode.map((s: { _id: number; count: number }) => ({ statusCode: s._id, count: s.count })),
       averageDurationMs: Math.round(durationStats[0]?.averageDurationMs || 0),
       maxDurationMs: durationStats[0]?.maxDurationMs || 0,
@@ -618,9 +630,28 @@ export class AuditLogService {
 
   static getCapabilities() {
     return {
+      // `modules` 保持字符串数组（旧调用方按值判断）；新增的都是「值 + 中文名」的展示层数据。
       modules: Array.from(ALLOWED_AUDIT_MODULES).sort(),
+      moduleCatalog: AUDIT_MODULES.map((item) => ({
+        value: item.value,
+        label: item.label,
+        group: item.group,
+        groupLabel: AUDIT_MODULE_GROUP_LABELS[item.group],
+        hint: item.hint,
+      })),
+      moduleGroups: AUDIT_MODULE_GROUP_ORDER.map((group) => ({
+        value: group,
+        label: AUDIT_MODULE_GROUP_LABELS[group],
+      })),
+      // 只列真正会出现在库里的角色；`anonymous` 仅用于展示文案，不进筛选器。
+      roles: AUDIT_ROLE_FILTER_ORDER.filter((value) => Boolean(AUDIT_ROLE_LABELS[value])).map((value) => ({
+        value,
+        label: AUDIT_ROLE_LABELS[value],
+      })),
       results: Array.from(ALLOWED_RESULTS),
+      resultLabels: AUDIT_RESULT_LABELS,
       methods: Array.from(ALLOWED_METHODS),
+      sortOptions: AUDIT_SORT_OPTIONS,
       maxPageSize: MAX_PAGE_SIZE,
       maxExportRows: MAX_EXPORT_ROWS,
       retentionDays: AUDIT_LOG_RETENTION_DAYS,

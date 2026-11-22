@@ -37,6 +37,11 @@ export function builtInAuditLogPresets(now: Date = new Date()): AuditLogPreset[]
     { id: 'builtin:today-write', name: '今日写操作', builtIn: true, query: { method: 'POST', startDate: today } },
     { id: 'builtin:slow', name: '慢请求 ≥1s', builtIn: true, query: { minDurationMs: 1000 } },
     { id: 'builtin:today-admin', name: '今日管理后台', builtIn: true, query: { module: 'admin', startDate: today } },
+    // 值班最常见的两条追查路径：今天有没有人被拦、有没有人登录失败。
+    { id: 'builtin:today-security', name: '今日安全风控', builtIn: true, query: { module: 'security', startDate: today } },
+    { id: 'builtin:today-login-failure', name: '今日登录失败', builtIn: true, query: { module: 'auth', result: 'failure', startDate: today } },
+    // 权限相关复盘（谁在动配置/用户），按角色而不是按模块，避免漏掉散落在各模块的管理动作。
+    { id: 'builtin:admin-ops', name: '管理员操作', builtIn: true, query: { role: 'admin', startDate: today } },
   ];
 }
 

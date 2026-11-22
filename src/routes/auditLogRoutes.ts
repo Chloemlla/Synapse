@@ -31,6 +31,7 @@ function buildAuditLogQuery(req: Request): AuditLogQueryParams {
     statusCode: firstString(req.query.statusCode),
     minDurationMs: firstString(req.query.minDurationMs),
     maxDurationMs: firstString(req.query.maxDurationMs),
+    sort: firstString(req.query.sort) === "asc" ? "asc" : "desc",
   };
 }
 

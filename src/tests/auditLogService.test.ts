@@ -75,6 +75,8 @@ describe("auditLogService", () => {
         topActions: [{ _id: "post /api/tts/generate", count: 5 }],
         topUsers: [{ _id: "admin", userId: "u1", count: 4 }],
         byMethod: [{ _id: "POST", count: 8 }],
+        byRole: [{ _id: "admin", count: 9 }, { _id: "user", count: 3 }],
+        topIps: [{ _id: "127.0.0.1", count: 6 }, { _id: "", count: 1 }],
         byStatusCode: [{ _id: 200, count: 10 }, { _id: 500, count: 2 }],
         durationStats: [{ averageDurationMs: 42.4, maxDurationMs: 120 }],
       },
@@ -102,7 +104,22 @@ describe("auditLogService", () => {
       topActions: [{ action: "post /api/tts/generate", count: 5 }],
       topUsers: [{ username: "admin", userId: "u1", count: 4 }],
       byStatusCode: [{ statusCode: 200, count: 10 }, { statusCode: 500, count: 2 }],
+      byRole: [{ role: "admin", count: 9 }, { role: "user", count: 3 }],
+      topIps: [{ ip: "127.0.0.1", count: 6 }],
     });
+  });
+
+  it("defaults to newest-first and honours an explicit ascending sort", async () => {
+    const descChain = mockFindChain([]);
+    (AuditLogModel.countDocuments as jest.Mock).mockResolvedValue(0);
+    await AuditLogService.query({ page: 1, pageSize: 20 });
+    expect(descChain.sort).toHaveBeenCalledWith({ createdAt: -1 });
+
+    const ascChain = mockFindChain([]);
+    (AuditLogModel.countDocuments as jest.Mock).mockResolvedValue(0);
+    const result = await AuditLogService.query({ sort: "asc" });
+    expect(ascChain.sort).toHaveBeenCalledWith({ createdAt: 1 });
+    expect(result.sort).toBe("asc");
   });
 
   it("exports a capped CSV and neutralizes spreadsheet formulas", async () => {
@@ -140,5 +157,15 @@ describe("auditLogService", () => {
     expect(capabilities.methods).toContain("POST");
     expect(capabilities.maxPageSize).toBe(100);
     expect(capabilities.maxExportRows).toBe(5000);
+    // 模块中文名与分组随能力一起下发（前端不再自己维护一份会漂的映射表）。
+    const labels = new Map(capabilities.moduleCatalog.map((item) => [item.value, item.label] as [string, string]));
+    expect(labels.get("tts")).toBe("语音合成");
+    // 曾经漏登记的两个模块：写进了库却筛不到，选它们会静默返回全部日志。
+    expect(labels.get("modlist")).toBe("模组列表");
+    expect(labels.get("lumen-config")).toBe("Lumen 客户端配置");
+    expect(capabilities.moduleGroups.map((group) => group.value)).toContain("security");
+    expect(capabilities.roles.map((role) => role.value)).toEqual(
+      expect.arrayContaining(["superadmin", "admin", "user"]),
+    );
   });
 });

@@ -28,43 +28,17 @@ import {
   writeCustomAuditLogPresets,
   type AuditLogPreset,
 } from '../utils/auditLogPresets';
-import { studioFieldClassName, studioInfoRowClassName, studioSurfaceClassName, studioTileClassName } from './studioTheme';
-
-const MODULE_LABELS: Record<string, string> = {
-  admin: '管理后台',
-  announcement: '公告',
-  api: 'API',
-  auth: '认证',
-  cdk: 'CDK',
-  config: '配置',
-  debug: '调试',
-  email: '邮件',
-  env: '环境变量',
-  ipban: 'IP封禁',
-  ipfs: 'IPFS',
-  life: '生活服务',
-  lottery: '抽奖',
-  media: '媒体',
-  network: '网络',
-  oauth: 'OAuth',
-  other: '其他',
-  policy: '策略',
-  privacy: '隐私',
-  recommendation: '推荐',
-  resource: '资源',
-  security: '安全',
-  shorturl: '短链',
-  social: '社交',
-  system: '系统',
-  tts: 'TTS',
-  user: '用户管理',
-  workspace: '工作区',
-};
-
-const RESULT_LABELS: Record<string, string> = {
-  success: '成功',
-  failure: '失败',
-};
+import { studioInfoRowClassName, studioSurfaceClassName, studioTileClassName } from './studioTheme';
+import { AuditLogFilterPanel } from './admin/audit-log/AuditLogFilterPanel';
+import { AuditLogStatsPanels } from './admin/audit-log/AuditLogStatsPanels';
+import {
+  moduleLabel,
+  resultLabel,
+  resultTone,
+  roleLabel,
+  roleTone,
+  statusTone,
+} from './admin/audit-log/labels';
 
 const DEFAULT_FILTERS: AuditLogQuery = {
   module: '',
@@ -85,6 +59,7 @@ const DEFAULT_FILTERS: AuditLogQuery = {
   maxDurationMs: '',
   startDate: '',
   endDate: '',
+  sort: 'desc',
 };
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
@@ -109,14 +84,13 @@ const readAuditLogFilters = (params: URLSearchParams): AuditLogQuery => ({
   maxDurationMs: params.get('maxDurationMs') ?? '',
   startDate: params.get('startDate') ?? '',
   endDate: params.get('endDate') ?? '',
+  sort: params.get('sort') === 'asc' ? 'asc' : 'desc',
 });
 
 const readPageSize = (params: URLSearchParams): number => {
   const value = Number(params.get('pageSize'));
   return PAGE_SIZE_OPTIONS.includes(value) ? value : 20;
 };
-
-const FALLBACK_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 const AuditLogViewer: React.FC = () => {
   const { setNotification } = useNotification();
@@ -207,6 +181,8 @@ const AuditLogViewer: React.FC = () => {
     const params = new URLSearchParams();
     (Object.keys(appliedFilters) as Array<keyof AuditLogQuery>).forEach((key) => {
       const value = appliedFilters[key];
+      // 默认排序写进 URL 只会让分享链接变脏；只有非默认值才持久化。
+      if (key === 'sort' && (value === 'desc' || value === undefined || value === '')) return;
       if (value !== undefined && value !== '') params.set(key, String(value));
     });
     if (page > 1) params.set('page', String(page));
@@ -214,25 +190,6 @@ const AuditLogViewer: React.FC = () => {
     setSearchParams(params, { replace: true });
   }, [appliedFilters, page, pageSize, setSearchParams]);
 
-  const moduleOptions = useMemo(() => {
-    const modules = meta?.modules?.length ? meta.modules : Object.keys(MODULE_LABELS).sort();
-    return [
-      { value: '', label: '全部模块' },
-      ...modules.map((module) => ({
-        value: module,
-        label: MODULE_LABELS[module] || module,
-      })),
-    ];
-  }, [meta]);
-
-  const methodOptions = useMemo(() => {
-    const methods = meta?.methods?.length ? meta.methods : FALLBACK_METHODS;
-    return [{ value: '', label: '全部方法' }, ...methods.map((method) => ({ value: method, label: method }))];
-  }, [meta]);
-
-  const successCount = stats?.byResult.find((item) => item.result === 'success')?.count || 0;
-  const failureCount = stats?.byResult.find((item) => item.result === 'failure')?.count || 0;
-  const failureRate = stats?.total ? `${((failureCount / stats.total) * 100).toFixed(1)}%` : '0%';
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const activeFilters = useMemo(() => {
@@ -258,26 +215,32 @@ const AuditLogViewer: React.FC = () => {
     };
 
     return Object.entries(appliedFilters)
-      .filter(([, value]) => value !== undefined && value !== '')
+      // `sort` 是排序偏好而不是筛选条件：混进 chip 里会被误点掉。
+      .filter(([key, value]) => key !== 'sort' && value !== undefined && value !== '')
       .map(([key, value]) => {
         const typedKey = key as keyof AuditLogQuery;
         const rawValue = String(value);
         const displayValue =
           typedKey === 'module'
-            ? MODULE_LABELS[rawValue] || rawValue
+            ? moduleLabel(rawValue, meta)
             : typedKey === 'result'
-              ? RESULT_LABELS[rawValue] || rawValue
-              : rawValue;
+              ? resultLabel(rawValue, meta)
+              : typedKey === 'role'
+                ? roleLabel(rawValue, meta)
+                : rawValue;
         return { key: typedKey, label: labels[typedKey] || key, value: displayValue };
       });
-  }, [appliedFilters]);
+  }, [appliedFilters, meta]);
 
   const updateFilter = (key: keyof AuditLogQuery, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
   };
 
-  const applySearch = () => {
-    setAppliedFilters({ ...filters });
+  /** `patch` 用于「点一下就该筛好」的入口（快捷时间窗），始终覆盖在草稿之上。 */
+  const applySearch = (patch?: Partial<AuditLogQuery>) => {
+    const next = { ...DEFAULT_FILTERS, ...filters, ...patch };
+    setFilters(next);
+    setAppliedFilters(next);
     setPage(1);
     setQueryVersion((value) => value + 1);
   };
@@ -294,6 +257,16 @@ const AuditLogViewer: React.FC = () => {
     setAppliedFilters((current) => ({ ...current, [key]: '' }));
     setPage(1);
     setQueryVersion((value) => value + 1);
+  };
+
+  /** 点分布条 = 立即按该维度筛选（同时同步草稿，打开面板时看到的是同一份条件）。 */
+  const filterByFacet = (key: keyof AuditLogQuery, value: string) => {
+    if (!value) return;
+    const next = { ...DEFAULT_FILTERS, ...appliedFilters, [key]: value };
+    setFilters(next);
+    setAppliedFilters(next);
+    setPage(1);
+    setQueryVersion((version) => version + 1);
   };
 
   const refresh = () => {
@@ -361,36 +334,7 @@ const AuditLogViewer: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {stats ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          <StatCard label="匹配记录" value={stats.total} />
-          <StatCard label="近24小时" value={stats.last24h} />
-          <StatCard label="成功" value={successCount} color="text-green-600" />
-          <StatCard label="失败" value={failureCount} color="text-red-500" />
-          <StatCard label="失败率" value={failureRate} color={failureCount > 0 ? 'text-amber-600' : 'text-slate-800'} />
-          <StatCard label="平均耗时" value={formatDuration(stats.averageDurationMs)} />
-        </div>
-      ) : null}
-
-      {stats ? (
-        <div className="grid gap-3 lg:grid-cols-2">
-          <DistributionPanel
-            title="模块分布"
-            items={stats.byModule.slice(0, 8).map((item) => ({
-              label: moduleLabel(item.module),
-              count: item.count,
-            }))}
-          />
-          <DistributionPanel
-            title="高频操作"
-            items={stats.topActions.slice(0, 8).map((item) => ({
-              label: item.action,
-              count: item.count,
-            }))}
-            emptyText="暂无操作统计"
-          />
-        </div>
-      ) : null}
+      <AuditLogStatsPanels stats={stats} meta={meta} onSelect={filterByFacet} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
@@ -398,7 +342,7 @@ const AuditLogViewer: React.FC = () => {
           <input
             type="text"
             placeholder="搜索请求ID、用户、操作、目标或IP"
-            className={cn(studioFieldClassName, "border px-9 py-2")}
+            className="w-full rounded-2xl border-2 border-slate-200 bg-white/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300"
             value={filters.keyword}
             onChange={(event) => updateFilter('keyword', event.target.value)}
             onKeyDown={handleKeyDown}
@@ -407,15 +351,21 @@ const AuditLogViewer: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowFilters((value) => !value)}
-          className={`rounded-2xl px-3 py-2 text-sm transition ${
+          className={`inline-flex items-center gap-1 rounded-2xl px-3 py-2 text-sm transition ${
             showFilters ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
+          aria-expanded={showFilters}
         >
-          <span className="inline-flex items-center gap-1"><FaFilter />筛选</span>
+          <FaFilter aria-hidden /> 筛选
+          {activeFilters.length > 0 ? (
+            <span className="ml-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              {activeFilters.length}
+            </span>
+          ) : null}
         </button>
         <button
           type="button"
-          onClick={applySearch}
+          onClick={() => applySearch()}
           className="rounded-2xl bg-slate-900 px-4 py-2 text-sm text-white transition hover:bg-slate-800"
         >
           搜索
@@ -426,6 +376,7 @@ const AuditLogViewer: React.FC = () => {
           disabled={exporting || total === 0}
           className="rounded-2xl bg-slate-900 px-3 py-2 text-sm text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           title={meta ? `最多导出 ${meta.maxExportRows.toLocaleString()} 条` : '导出CSV'}
+          aria-label="导出 CSV"
         >
           <FaDownload className={exporting ? 'animate-pulse' : ''} />
         </button>
@@ -434,6 +385,7 @@ const AuditLogViewer: React.FC = () => {
           onClick={refresh}
           className="rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-200"
           title="刷新"
+          aria-label="刷新"
         >
           <FaSync className={loading ? 'animate-spin' : ''} />
         </button>
@@ -523,157 +475,14 @@ const AuditLogViewer: React.FC = () => {
       </div>
 
       {showFilters ? (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="grid gap-3 rounded-2xl bg-slate-50/80 p-3 sm:grid-cols-2 xl:grid-cols-4"
-        >
-          <select
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-            value={filters.module}
-            onChange={(event) => updateFilter('module', event.target.value)}
-          >
-            {moduleOptions.map((module) => (
-              <option key={module.value} value={module.value}>{module.label}</option>
-            ))}
-          </select>
-          <select
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-            value={filters.result}
-            onChange={(event) => updateFilter('result', event.target.value)}
-          >
-            <option value="">全部结果</option>
-            <option value="success">成功</option>
-            <option value="failure">失败</option>
-          </select>
-          <select
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-            value={filters.method}
-            onChange={(event) => updateFilter('method', event.target.value)}
-          >
-            {methodOptions.map((method) => (
-              <option key={method.value} value={method.value}>{method.label}</option>
-            ))}
-          </select>
-          <input
-            value={filters.statusCode}
-            onChange={(event) => updateFilter('statusCode', event.target.value)}
-            onKeyDown={handleKeyDown}
-            inputMode="numeric"
-            placeholder="状态码"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.requestId}
-            onChange={(event) => updateFilter('requestId', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="请求ID"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.action}
-            onChange={(event) => updateFilter('action', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="操作"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.userId}
-            onChange={(event) => updateFilter('userId', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="用户ID"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.username}
-            onChange={(event) => updateFilter('username', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="用户名"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.role}
-            onChange={(event) => updateFilter('role', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="角色"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.ip}
-            onChange={(event) => updateFilter('ip', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="IP"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.path}
-            onChange={(event) => updateFilter('path', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="请求路径"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.targetId}
-            onChange={(event) => updateFilter('targetId', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="目标ID"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.targetName}
-            onChange={(event) => updateFilter('targetName', event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="目标名称"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.minDurationMs}
-            onChange={(event) => updateFilter('minDurationMs', event.target.value)}
-            onKeyDown={handleKeyDown}
-            inputMode="numeric"
-            placeholder="最小耗时 ms"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <input
-            value={filters.maxDurationMs}
-            onChange={(event) => updateFilter('maxDurationMs', event.target.value)}
-            onKeyDown={handleKeyDown}
-            inputMode="numeric"
-            placeholder="最大耗时 ms"
-            className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-          />
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:col-span-2">
-            <input
-              type="date"
-              className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-              value={filters.startDate}
-              onChange={(event) => updateFilter('startDate', event.target.value)}
-            />
-            <span className="text-xs text-slate-400">至</span>
-            <input
-              type="date"
-              className={cn(studioTileClassName, "px-3 py-2 text-sm text-slate-900")}
-              value={filters.endDate}
-              onChange={(event) => updateFilter('endDate', event.target.value)}
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2 sm:col-span-2 xl:col-span-4">
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="rounded-2xl px-3 py-2 text-sm text-slate-500 transition hover:bg-white hover:text-slate-700"
-            >
-              重置
-            </button>
-            <button
-              type="button"
-              onClick={applySearch}
-              className="rounded-2xl bg-slate-900 px-4 py-2 text-sm text-white transition hover:bg-slate-800"
-            >
-              应用筛选
-            </button>
-          </div>
-        </motion.div>
+        <AuditLogFilterPanel
+          filters={filters}
+          meta={meta}
+          onChange={updateFilter}
+          onApply={applySearch}
+          onReset={resetFilters}
+          onKeyDown={handleKeyDown}
+        />
       ) : null}
 
       {activeFilters.length > 0 ? (
@@ -697,8 +506,8 @@ const AuditLogViewer: React.FC = () => {
           <div className="p-8 text-center text-slate-400">加载中...</div>
         ) : loadError ? (
           <div className="p-8 text-center">
-            <FaTimes className="mx-auto text-2xl text-red-500" />
-            <div className="mt-2 text-sm text-red-600">{loadError}</div>
+            <FaTimes className="mx-auto text-2xl text-rose-500" />
+            <div className="mt-2 text-sm text-rose-600">{loadError}</div>
             <button
               type="button"
               onClick={() => { void fetchLogs(appliedFilters, page, pageSize); }}
@@ -723,6 +532,7 @@ const AuditLogViewer: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setExpandedId(expanded ? null : log._id)}
+                    aria-expanded={expanded}
                     className="w-full px-3 py-3 text-left sm:px-4"
                   >
                     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -730,14 +540,17 @@ const AuditLogViewer: React.FC = () => {
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                           <span
                             className={`h-2 w-2 flex-shrink-0 rounded-full ${
-                              log.result === 'success' ? 'bg-green-400' : 'bg-red-400'
+                              log.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
                             }`}
                           />
                           <span className="rounded bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600">
-                            {moduleLabel(log.module)}
+                            {moduleLabel(log.module, meta)}
                           </span>
                           <span className={`rounded px-1.5 py-0.5 text-xs ${resultTone(log.result)}`}>
-                            {RESULT_LABELS[log.result] || log.result}
+                            {resultLabel(log.result, meta)}
+                          </span>
+                          <span className={`rounded px-1.5 py-0.5 text-xs ${roleTone(log.role)}`}>
+                            {roleLabel(log.role, meta)}
                           </span>
                           {log.method ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{log.method}</span> : null}
                           {statusCode ? <span className={`rounded px-1.5 py-0.5 text-xs ${statusTone(statusCode)}`}>{statusCode}</span> : null}
@@ -770,7 +583,8 @@ const AuditLogViewer: React.FC = () => {
                       <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
                         <DetailField label="请求ID" value={log.requestId} onCopy={() => void copyText(log.requestId)} />
                         <DetailField label="操作者ID" value={log.userId} onCopy={() => void copyText(log.userId)} />
-                        <DetailField label="角色" value={log.role} />
+                        <DetailField label="角色" value={`${roleLabel(log.role, meta)}（${log.role}）`} />
+                        <DetailField label="模块" value={`${moduleLabel(log.module, meta)}（${log.module}）`} />
                         <DetailField label="请求" value={`${log.method || '-'} ${log.path || '-'}`} className="xl:col-span-2" />
                         <DetailField label="IP" value={log.ip} onCopy={() => void copyText(log.ip)} />
                         <DetailField label="目标ID" value={log.targetId} onCopy={() => void copyText(log.targetId)} />
@@ -778,7 +592,7 @@ const AuditLogViewer: React.FC = () => {
                         <DetailField label="状态码" value={statusCode} />
                         <DetailField label="耗时" value={durationMs !== undefined ? formatDuration(durationMs) : undefined} />
                         {log.errorMessage ? (
-                          <DetailField label="错误" value={log.errorMessage} className="text-red-500 sm:col-span-2 xl:col-span-3" />
+                          <DetailField label="错误" value={log.errorMessage} className="text-rose-500 sm:col-span-2 xl:col-span-3" />
                         ) : null}
                       </div>
 
@@ -794,6 +608,17 @@ const AuditLogViewer: React.FC = () => {
                           <span className="text-slate-500">UA：</span>{log.userAgent}
                         </div>
                       ) : null}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <QuickFilterButton label="按此用户筛选" onClick={() => filterByFacet('userId', log.userId)} />
+                        <QuickFilterButton label="按此 IP 筛选" onClick={() => filterByFacet('ip', log.ip)} />
+                        <QuickFilterButton label="按此模块筛选" onClick={() => filterByFacet('module', log.module)} />
+                        {log.action ? (
+                          <QuickFilterButton label="按此操作筛选" onClick={() => filterByFacet('action', log.action)} />
+                        ) : null}
+                        {log.requestId ? (
+                          <QuickFilterButton label="按此请求ID筛选" onClick={() => filterByFacet('requestId', log.requestId as string)} />
+                        ) : null}
+                      </div>
                     </motion.div>
                   ) : null}
                 </div>
@@ -803,17 +628,37 @@ const AuditLogViewer: React.FC = () => {
         )}
       </div>
 
-      <div className={cn(studioInfoRowClassName, "gap-2 text-xs text-slate-500")}>
+      <div className={cn(studioInfoRowClassName, 'gap-2 text-xs text-slate-500')}>
         <div className="flex flex-wrap items-center gap-2">
           <span>共 {total.toLocaleString()} 条，{page}/{totalPages} 页</span>
           {meta ? <span>保留 {meta.retentionDays} 天</span> : null}
+          <select
+            value={appliedFilters.sort || 'desc'}
+            onChange={(event) => {
+              const next = { ...appliedFilters, sort: event.target.value === 'asc' ? 'asc' : 'desc' } as AuditLogQuery;
+              setFilters((current) => ({ ...current, sort: next.sort }));
+              setAppliedFilters(next);
+              setPage(1);
+              setQueryVersion((value) => value + 1);
+            }}
+            aria-label="时间排序"
+            className={cn(studioTileClassName, 'px-2 py-1 text-xs text-slate-600')}
+          >
+            {(meta?.sortOptions?.length ? meta.sortOptions : [
+              { value: 'desc', label: '最新在前' },
+              { value: 'asc', label: '最早在前' },
+            ]).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           <select
             value={pageSize}
             onChange={(event) => {
               setPageSize(Number(event.target.value));
               setPage(1);
             }}
-            className={cn(studioTileClassName, "px-2 py-1 text-xs text-slate-600")}
+            aria-label="每页条数"
+            className={cn(studioTileClassName, 'px-2 py-1 text-xs text-slate-600')}
           >
             {PAGE_SIZE_OPTIONS.map((size) => (
               <option key={size} value={size}>每页 {size}</option>
@@ -825,6 +670,7 @@ const AuditLogViewer: React.FC = () => {
             type="button"
             disabled={page <= 1}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
+            aria-label="上一页"
             className="rounded-2xl border border-slate-200 bg-white/80 px-2 py-1 transition hover:bg-slate-100 disabled:opacity-40"
           >
             <FaChevronLeft />
@@ -833,6 +679,7 @@ const AuditLogViewer: React.FC = () => {
             type="button"
             disabled={page >= totalPages}
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            aria-label="下一页"
             className="rounded-2xl border border-slate-200 bg-white/80 px-2 py-1 transition hover:bg-slate-100 disabled:opacity-40"
           >
             <FaChevronRight />
@@ -842,8 +689,6 @@ const AuditLogViewer: React.FC = () => {
     </div>
   );
 };
-
-const moduleLabel = (module: string) => MODULE_LABELS[module] || module;
 
 const formatTime = (iso: string) => {
   const date = new Date(iso);
@@ -889,64 +734,15 @@ const getDurationMs = (log: AuditLogEntry) => {
   return typeof value === 'number' ? value : undefined;
 };
 
-const resultTone = (result: string) => (
-  result === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+const QuickFilterButton: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+  >
+    {label}
+  </button>
 );
-
-const statusTone = (statusCode: number | string) => {
-  const code = Number(statusCode);
-  if (code >= 500) return 'bg-red-50 text-red-600';
-  if (code >= 400) return 'bg-amber-50 text-amber-700';
-  if (code >= 300) return 'bg-sky-50 text-sky-700';
-  return 'bg-green-50 text-green-700';
-};
-
-const StatCard: React.FC<{ label: string; value: number | string; color?: string }> = ({
-  label,
-  value,
-  color = 'text-slate-800',
-}) => (
-  <div className={cn(studioTileClassName, "p-3 text-center")}>
-    <div className={`text-xl font-bold ${color}`}>
-      {typeof value === 'number' ? value.toLocaleString() : value}
-    </div>
-    <div className="mt-0.5 text-xs text-slate-500">{label}</div>
-  </div>
-);
-
-const DistributionPanel: React.FC<{
-  title: string;
-  items: Array<{ label: string; count: number }>;
-  emptyText?: string;
-}> = ({ title, items, emptyText = '暂无统计' }) => {
-  const maxCount = items.reduce((max, item) => Math.max(max, item.count), 0);
-
-  return (
-    <div className={cn(studioTileClassName, "p-3")}>
-      <div className="mb-2 text-sm font-medium text-slate-800">{title}</div>
-      {items.length === 0 ? (
-        <div className="py-4 text-center text-xs text-slate-400">{emptyText}</div>
-      ) : (
-        <div className="space-y-2">
-          {items.map((item) => (
-            <div key={item.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs">
-              <div className="min-w-0">
-                <div className="truncate text-slate-600">{item.label || 'unknown'}</div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-slate-500"
-                    style={{ width: maxCount > 0 ? `${Math.max(6, (item.count / maxCount) * 100)}%` : '0%' }}
-                  />
-                </div>
-              </div>
-              <div className="font-medium text-slate-700">{item.count.toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const DetailField: React.FC<{
   label: string;
@@ -968,6 +764,7 @@ const DetailField: React.FC<{
           onClick={onCopy}
           className="ml-1 inline-flex text-slate-400 transition hover:text-slate-700"
           title="复制"
+          aria-label={`复制${label}`}
         >
           <FaCopy />
         </button>
@@ -979,7 +776,7 @@ const DetailField: React.FC<{
 const JsonBlock: React.FC<{ label: string; value: unknown }> = ({ label, value }) => (
   <div className="mt-2">
     <span className="text-slate-500">{label}：</span>
-    <pre className={cn(studioTileClassName, "mt-1 max-h-48 overflow-x-auto whitespace-pre-wrap break-all p-2 text-xs")}>
+    <pre className={cn(studioTileClassName, 'mt-1 max-h-48 overflow-x-auto whitespace-pre-wrap break-all p-2 text-xs')}>
       {formatJson(value)}
     </pre>
   </div>

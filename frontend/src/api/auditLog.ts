@@ -41,6 +41,8 @@ export interface AuditLogQuery {
   statusCode?: string | number;
   minDurationMs?: string | number;
   maxDurationMs?: string | number;
+  /** 时间排序：默认最新在前。 */
+  sort?: 'desc' | 'asc';
 }
 
 export interface AuditLogResponse {
@@ -49,6 +51,21 @@ export interface AuditLogResponse {
   total: number;
   page: number;
   pageSize: number;
+  sort?: 'desc' | 'asc';
+}
+
+/** 服务端下发的模块目录项（中文名与分组由后端唯一维护）。 */
+export interface AuditLogModuleMeta {
+  value: string;
+  label: string;
+  group: string;
+  groupLabel: string;
+  hint?: string;
+}
+
+export interface AuditLogLabelOption {
+  value: string;
+  label: string;
 }
 
 export interface AuditLogStats {
@@ -58,6 +75,8 @@ export interface AuditLogStats {
   topActions: { action: string; count: number }[];
   topUsers: { username: string; userId: string; count: number }[];
   byMethod: { method: string; count: number }[];
+  byRole?: { role: string; count: number }[];
+  topIps?: { ip: string; count: number }[];
   byStatusCode: { statusCode: number; count: number }[];
   averageDurationMs: number;
   maxDurationMs: number;
@@ -68,8 +87,14 @@ export interface AuditLogStats {
 export interface AuditLogMeta {
   success: boolean;
   modules: string[];
+  /** 模块中文名 + 分组（`/meta` 下发；缺失时前端退回本地兜底表）。 */
+  moduleCatalog?: AuditLogModuleMeta[];
+  moduleGroups?: AuditLogLabelOption[];
+  roles?: AuditLogLabelOption[];
   results: string[];
+  resultLabels?: Record<string, string>;
   methods: string[];
+  sortOptions?: AuditLogLabelOption[];
   maxPageSize: number;
   maxExportRows: number;
   retentionDays: number;
