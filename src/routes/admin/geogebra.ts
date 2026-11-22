@@ -3,6 +3,7 @@ import { authenticateAdmin, authenticateSuperAdmin } from "../../middleware/auth
 import { auditLog } from "../../middleware/auditLog";
 import { requireSecuritySession } from "../../utils/securitySession";
 import { getGeoGebraDiagnostics } from "../../geogebra/adminDiagnosticsService";
+import { GeoGebraAdminListService } from "../../geogebra/adminListService";
 import {
   GeoGebraAiConfigError,
   getGeoGebraAiAdminSetting,
@@ -34,6 +35,60 @@ router.get("/geogebra/overview", authenticateAdmin, async (_req, res) => {
       errorType: error instanceof Error ? error.name : "unknown",
     });
     res.status(500).json({ success: false, error: "暂时无法读取运行概览。", code: "GEOGEBRA_ADMIN_OVERVIEW_FAILED" });
+  }
+});
+
+// 分页列表（任务 / 分享 / 资源）与保留口径：全部只读，走与概览同一档权限
+// （admin + 页面授权 geogebra；写操作仍由下面的 maintenance / ai setting 叠超管）。
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+router.get("/geogebra/jobs", authenticateAdmin, async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...(await GeoGebraAdminListService.listJobs(req.query as Record<string, unknown>)) });
+  } catch (error) {
+    logger.error("[GeoGebraAdmin] list jobs failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    res.status(500).json({ success: false, error: "暂时无法读取任务列表。", code: "GEOGEBRA_ADMIN_JOBS_FAILED" });
+  }
+});
+
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+router.get("/geogebra/shares", authenticateAdmin, async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...(await GeoGebraAdminListService.listShares(req.query as Record<string, unknown>)) });
+  } catch (error) {
+    logger.error("[GeoGebraAdmin] list shares failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    res.status(500).json({ success: false, error: "暂时无法读取分享列表。", code: "GEOGEBRA_ADMIN_SHARES_FAILED" });
+  }
+});
+
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+router.get("/geogebra/assets", authenticateAdmin, async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...(await GeoGebraAdminListService.listAssets(req.query as Record<string, unknown>)) });
+  } catch (error) {
+    logger.error("[GeoGebraAdmin] list assets failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    res.status(500).json({ success: false, error: "暂时无法读取资源列表。", code: "GEOGEBRA_ADMIN_ASSETS_FAILED" });
+  }
+});
+
+// codeql[js/missing-rate-limiting] admin subtree rate-limited at mount (/api/admin adminLimiter); in-router copy would split quota
+router.get("/geogebra/settings", authenticateAdmin, (_req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...GeoGebraAdminListService.settings() });
+  } catch (error) {
+    logger.error("[GeoGebraAdmin] read settings failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    res.status(500).json({ success: false, error: "暂时无法读取运行口径。", code: "GEOGEBRA_ADMIN_SETTINGS_FAILED" });
   }
 });
 
