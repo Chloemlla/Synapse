@@ -54,6 +54,8 @@ jest.mock("../docTool/types", () => ({
 }));
 
 const mockQuotaCount = jest.fn();
+/** countDocuments 返回 Query（调用方会 .exec()），替身要给 exec。 */
+const countQuery = (value: number) => ({ exec: jest.fn().mockResolvedValue(value) });
 const mockQuotaFind = jest.fn();
 const mockQuotaAggregate = jest.fn();
 jest.mock("../models/quotaEventModel", () => ({
@@ -119,7 +121,7 @@ beforeEach(() => {
 
 describe("rateLimitAdmin 配额事件", () => {
   it("阈值筛选映射成区间，limit 钳到 200，keyId 打码", async () => {
-    mockQuotaCount.mockResolvedValue(1);
+    mockQuotaCount.mockImplementation(() => countQuery(1));
     mockQuotaFind.mockReturnValue(
       queryChain([
         {
@@ -164,7 +166,7 @@ describe("rateLimitAdmin 配额事件", () => {
 
 describe("rateLimitAdmin 阶梯", () => {
   it("封禁状态筛选写成 bannedUntil 区间", async () => {
-    mockUserCount.mockResolvedValue(0);
+    mockUserCount.mockImplementation(() => countQuery(0));
     mockUserFind.mockReturnValue(queryChain([]));
 
     const res = makeRes();

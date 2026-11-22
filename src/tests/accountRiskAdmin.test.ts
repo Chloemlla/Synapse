@@ -43,6 +43,8 @@ jest.mock("../services/runtimeConfigService", () => ({
 
 const mockUserAggregate = jest.fn();
 const mockUserCount = jest.fn();
+/** countDocuments 返回 Query（调用方会 .exec()），替身要给 exec。 */
+const countQuery = (value: number) => ({ exec: jest.fn().mockResolvedValue(value) });
 const mockUserFind = jest.fn();
 const mockUserIndexes = jest.fn();
 
@@ -121,7 +123,7 @@ beforeEach(() => {
 
 describe("accountRiskAdmin 账户列表", () => {
   it("筛选下推 Mongo，limit 被钳到 200，IP 打码，密码类字段不在投影里", async () => {
-    mockUserCount.mockResolvedValue(1);
+    mockUserCount.mockImplementation(() => countQuery(1));
     mockUserFind.mockReturnValue(
       queryChain([
         {
@@ -167,7 +169,7 @@ describe("accountRiskAdmin 账户列表", () => {
   });
 
   it("按关键词搜索时把关键词当字面量（`.` 不得变通配符）", async () => {
-    mockUserCount.mockResolvedValue(0);
+    mockUserCount.mockImplementation(() => countQuery(0));
     mockUserFind.mockReturnValue(queryChain([]));
 
     const res = makeRes();
@@ -185,7 +187,7 @@ describe("accountRiskAdmin 账户列表", () => {
 
 describe("accountRiskAdmin 信号", () => {
   it("匿名筛选写进 eventData.anonymous，载荷递归脱敏", async () => {
-    mockEventCount.mockResolvedValue(1);
+    mockEventCount.mockImplementation(() => countQuery(1));
     mockEventFind.mockReturnValue(
       queryChain([
         {
@@ -224,7 +226,7 @@ describe("accountRiskAdmin 信号", () => {
 
 describe("accountRiskAdmin 处置记录", () => {
   it("只认两个处置事件类型，操作者可筛", async () => {
-    mockEventCount.mockResolvedValue(0);
+    mockEventCount.mockImplementation(() => countQuery(0));
     mockEventFind.mockReturnValue(queryChain([]));
 
     const res = makeRes();
@@ -246,11 +248,11 @@ describe("accountRiskAdmin 概览", () => {
     mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "watch", count: 2 }]));
     mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "active", count: 5 }]));
     mockUserAggregate.mockReturnValueOnce(aggregateChain([]));
-    mockEventCount.mockResolvedValue(0);
+    mockEventCount.mockImplementation(() => countQuery(0));
     mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
     mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
     mockEventFind.mockReturnValue(queryChain([]));
-    mockIpCount.mockResolvedValue(0);
+    mockIpCount.mockImplementation(() => countQuery(0));
     mockUserIndexes.mockResolvedValue([{ name: "riskTier_1" }]);
 
     const res = makeRes();
