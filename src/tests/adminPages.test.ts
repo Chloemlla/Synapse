@@ -63,6 +63,25 @@ describe("adminPages 登记表", () => {
     expect(resolveAdminPagesForPath("/api/admin/verify-access")).toEqual([]);
   });
 
+  it("十月十七日批次新增的四个页面：key 存在、前缀覆盖真实端点", () => {
+    const expected: Record<string, string> = {
+      "account-risk": "/api/admin/account-risk",
+      "rate-limits": "/api/admin/rate-limits",
+      "tickets": "/api/tickets",
+      "doc-tool": "/api/admin/doc-tool",
+    };
+    for (const [key, prefix] of Object.entries(expected)) {
+      const page = getAdminPage(key);
+      expect(page, `${key} 未登记`).toBeDefined();
+      expect(page!.apiPrefixes).toContain(prefix);
+      // 前缀必须能命中自己的真实端点，同时不误伤同前缀兄弟路径。
+      expect(isAdminPageApiPath(key, `${prefix}/overview`)).toBe(true);
+      expect(isAdminPageApiPath(key, `${prefix}-other/x`)).toBe(false);
+      // 默认集合不含新页面：默认行为仍是「只有超管」。
+      expect(DEFAULT_PLAIN_ADMIN_PAGES).not.toContain(key);
+    }
+  });
+
   it("授权集合判定：命中任一所授页面的前缀即放行", () => {
     expect(isAdminPathAllowedForPages("/api/admin/users", ["users"])).toBe(true);
     expect(isAdminPathAllowedForPages("/api/admin/users", ["audit-log"])).toBe(false);

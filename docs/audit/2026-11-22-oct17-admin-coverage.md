@@ -465,4 +465,31 @@
 | 日期 | 批次 | 结果 | 提交 |
 | --- | --- | --- | --- |
 | 2026-11-22 | 核查 | 本文落盘，未改代码 | — |
-| 2026-11-22 | 裁决确认 | §11 全部默认裁决获 owner 确认；GAP-13 由可选改为纳入 | — |
+| 2026-11-22 | 裁决确认 | §11 全部默认裁决获 owner 确认；GAP-13 由可选改为纳入；另追加裁决：**新增端点的角色判定统一交给 `admin` + `requireAdminScope` 页面授权**，不在路由上硬编码 `authenticateSuperAdmin`（写端点另叠安全会话 + 审计） | — |
+| 2026-11-22 | B1 | 账户风险页 `/admin/account-risk` 上线（6 页签 + 7 只读端点，含单账户详情）；修掉首批 22 处前端 TS 报错 | `31f27f40` / `f6265733` |
+| 2026-11-22 | B2 | 限流与配额页 `/admin/rate-limits`（7 页签 + 7 只读端点）；新增 `getLimiterDefinitionSnapshot()` 与 TTS 队列注册表（均不改运行行为） | `f6265733` |
+| 2026-11-22 | B3 | 工单管理页 `/admin/tickets`（4 页签）+ `GET /api/tickets/admin/insights`；处理函数放在路由层以避开 1500 行体积闸门 | `b2a320f9` |
+| 2026-11-22 | B4 | 文档转换运维 `/admin/doc-tool`（5 页签 + 6 端点，含清理预演/执行） | `2905405e` |
+| 2026-11-22 | B5 | GeoGebra 拆 7 页签 + AI 配置表单；新增 jobs/shares/assets/settings 四个只读端点 | `759c8009` |
+| 2026-11-22 | B6 | 邮件溯源概览、媒体工具「限制与沙箱」、政策「功能门禁」、用户页 `?focus=` 深链；Pixel 复核无需改动 | `d5cc4adb` |
+
+### 12.1 交付时的偏差与补充（与上文计划的差异都在这里）
+
+| 计划 | 实际 | 原因 |
+| --- | --- | --- |
+| §5 端点总表 27 条 | 实际新增 **30 条**：多出 `GET /api/admin/account-risk/accounts/:id`（单账户详情，供展开行/弹窗用）、`GET /api/outemail/records/stats`、`GET /api/admin/media-tool/limits` | 展开行如果塞进列表响应，会把「跨账户详情」变成列表字段；另两条是 B6 扩展页的实际形态 |
+| doc-tool 处理函数写在 `routes/admin/docTool.ts` | 同上写成 `src/docTool/admin/docToolAdminService.ts` + 路由薄层 | 服务层承接聚合与清理编排，路由只做参数与响应 |
+| 工单页复用 `TicketConversation` / `TicketEventTimeline` | **未复用**：详情跳 `/support` 的管理视图 | 会话组件依赖属主视角的滚动/草稿/未读状态机，塞进管理页会出现两套状态；跳转保持单一实现 |
+| 媒体工具限制端点放在 media-tool 路由工厂里 | 放在 `src/routes/admin/index.ts`（同一 `/api/admin/media-tool/limits` 路径） | 该 router 在 preTamper 相位先于 postTamper 的 media-tool 挂载，子路径由它应答，不触碰媒体工具的工厂与测试 |
+| 页面内批量写按钮按角色隐藏 | 由页面用 `useAuth` 判定，而不是等父组件传 props | 路由表用 `React.lazy` 挂载组件、不传 props；依赖 props 会让超管也看不到按钮 |
+| 新增页面测试 | 后端 `accountRiskAdmin` / `rateLimitAdmin` / `docToolAdmin` / `ticketInsights` / `adminPages` 各补用例；前端 `adminOct17Pages.test.ts` 钉入册与默认不授权 | 与 §9 一致 |
+
+### 12.2 未做 / 明确挂起
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| 账户风险页的处置写入口 | 保持不做 | 处置仍只经 `applyAccountRiskAction`，入口在用户管理页；页面用 `?focus=` 深链过去 |
+| 工单详情内嵌会话 | 不做 | 见上表 |
+| 「某功能当前挡住多少人」 | 不做 | 需要按 userId 实时判定，管理端热路径不做该聚合；页面显式说明 |
+| 限流阈值在线修改 | 不做 | 仍走运行时配置页（超管 + 安全会话 + 审计） |
+| 逐用户 TTS 占用详情页 | 部分做 | 限流页给 Top N；逐用户全量明细按需再加端点 |
