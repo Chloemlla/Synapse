@@ -248,6 +248,8 @@ describe("accountRiskAdmin 概览", () => {
     mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "watch", count: 2 }]));
     mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "active", count: 5 }]));
     mockUserAggregate.mockReturnValueOnce(aggregateChain([]));
+    // 概览里还有一个 countDocuments（待逐步验证数），没给替身的话会在 undefined.exec() 上炸。
+    mockUserCount.mockImplementation(() => countQuery(0));
     mockEventCount.mockImplementation(() => countQuery(0));
     mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
     mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
