@@ -50,6 +50,15 @@ interface FullRecord {
   channel?: EmailTraceChannel;
 }
 
+interface TraceStats {
+  windowDays: number;
+  byChannel: { internal: number; outemail: number };
+  total: number;
+  trend: Array<{ date: string; internal: number; outemail: number }>;
+  topDomains: Array<{ domain: string; count: number }>;
+  hourly: Array<{ hour: string; count: number }>;
+}
+
 interface QuotaInfo {
   used: number;
   total: number;
@@ -93,6 +102,13 @@ const EmailTraceability: React.FC = () => {
   const [channelFilter, setChannelFilter] = useState<"" | EmailTraceChannel>("");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [quota, setQuota] = useState<QuotaInfo>({ used: 0, total: 0, resetAt: "" });
+  /**
+   * 概览：按来源计数 + 按天趋势 + Top 收件域 + 24 小时分布。
+   * 只回聚合，不含收件人账号/正文/令牌（正文里可能有重置链接与验证码）。
+   */
+  const [traceStats, setTraceStats] = useState<TraceStats | null>(null);
+  const [traceStatsError, setTraceStatsError] = useState<string | null>(null);
+  const [traceStatsLoading, setTraceStatsLoading] = useState(false);
 
   // 详情弹窗状态
   const [detailLoading, setDetailLoading] = useState(false);
@@ -138,6 +154,29 @@ const EmailTraceability: React.FC = () => {
     }
   }, []);
 
+  const fetchTraceStats = useCallback(async () => {
+    setTraceStatsLoading(true);
+    try {
+      const res = await api.get("/api/outemail/records/stats?windowDays=7");
+      if (res.data?.success) {
+        setTraceStats({
+          windowDays: res.data.windowDays ?? 7,
+          byChannel: res.data.byChannel ?? { internal: 0, outemail: 0 },
+          total: res.data.total ?? 0,
+          trend: Array.isArray(res.data.trend) ? res.data.trend : [],
+          topDomains: Array.isArray(res.data.topDomains) ? res.data.topDomains : [],
+          hourly: Array.isArray(res.data.hourly) ? res.data.hourly : [],
+        });
+        setTraceStatsError(null);
+      }
+    } catch {
+      // 统计失败不影响列表可用：显式标出而不是渲染成 0。
+      setTraceStatsError("概览统计读取失败（需要 outemail 页面授权）");
+    } finally {
+      setTraceStatsLoading(false);
+    }
+  }, []);
+
   const fetchQuota = useCallback(async () => {
     try {
       const res = await api.get("/api/outemail/quota");
@@ -153,12 +192,14 @@ const EmailTraceability: React.FC = () => {
     fetchRecords(1);
     fetchStatus();
     fetchQuota();
-  }, [fetchRecords, fetchStatus, fetchQuota]);
+    fetchTraceStats();
+  }, [fetchRecords, fetchStatus, fetchQuota, fetchTraceStats]);
 
   const handleSearch = () => fetchRecords(1);
   const handleRefresh = () => {
     fetchStatus();
     fetchQuota();
+    fetchTraceStats();
     fetchRecords(page);
   };
 
@@ -218,6 +259,85 @@ const EmailTraceability: React.FC = () => {
           <h2 className="text-lg font-bold text-slate-900">邮件发信溯源日志</h2>
           <p className="text-sm text-slate-500">系统内部发信与对外发信的记录查询与追踪</p>
         </div>
+      </div>
+
+      {/* 概览：按来源 / 趋势 / Top 收件域 / 24 小时分布（只回聚合） */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">投递概览</span>
+            {traceStats ? (
+              <>
+                <span className={cn(studioBadgeClassName("slate"))}>
+                  最近 {traceStats.windowDays} 天 {traceStats.total} 封
+                </span>
+                <span className={cn(studioBadgeClassName("slate"))}>内部发信 {traceStats.byChannel.internal}</span>
+                <span className={cn(studioBadgeClassName("blue"))}>对外发信 {traceStats.byChannel.outemail}</span>
+              </>
+            ) : null}
+            {traceStatsLoading ? <span className="text-xs text-slate-400">统计中…</span> : null}
+            {traceStatsError ? <span className="text-xs text-rose-700">{traceStatsError}</span> : null}
+          </div>
+          <span className="text-[11px] text-slate-400">只统计聚合，不含收件人账号与正文</span>
+        </div>
+
+        {traceStats ? (
+          <div className="mt-3 grid gap-4 lg:grid-cols-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-slate-600">按天趋势</p>
+              <ul className="mt-2 space-y-1">
+                {traceStats.trend.slice(-7).map((row) => {
+                  const max = Math.max(1, ...traceStats.trend.slice(-7).map((item) => item.internal + item.outemail));
+                  const ratio = Math.round(((row.internal + row.outemail) / max) * 100);
+                  return (
+                    <li key={row.date} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-16 shrink-0 text-slate-500">{row.date.slice(5)}</span>
+                      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <span className="block h-full rounded-full bg-slate-900" style={{ width: `${Math.max(ratio, row.internal + row.outemail > 0 ? 3 : 0)}%` }} />
+                      </span>
+                      <span className="w-18 shrink-0 text-right tabular-nums text-slate-600">
+                        {row.internal + row.outemail}
+                        <span className="text-slate-400">（内 {row.internal}）</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-slate-600">Top 收件域</p>
+              {traceStats.topDomains.length === 0 ? (
+                <p className="mt-2 text-[11px] text-slate-400">窗口内没有收件记录。</p>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {traceStats.topDomains.slice(0, 6).map((row) => (
+                    <li key={row.domain} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="min-w-0 truncate text-slate-600" title={row.domain}>{row.domain}</span>
+                      <span className="shrink-0 tabular-nums font-semibold text-slate-800">{row.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-slate-600">24 小时分布</p>
+              {traceStats.hourly.length === 0 ? (
+                <p className="mt-2 text-[11px] text-slate-400">最近 24 小时没有发信。</p>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {traceStats.hourly.slice(-8).map((row) => (
+                    <li key={row.hour} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="text-slate-500">{row.hour.slice(11)}</span>
+                      <span className="tabular-nums font-semibold text-slate-800">{row.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* 状态卡片 */}

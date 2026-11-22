@@ -173,3 +173,113 @@ export async function getEmailTraceRecordById(id: string): Promise<EmailTraceLis
     channel: normalizeChannel(doc.channel),
   };
 }
+
+/**
+ * 邮件溯源概览（页面 `/admin/email-traceability` 的「概览」页签）。
+ *
+ * 只回聚合计数与趋势：**不含任何收件人、正文或令牌**（正文里可能有重置链接与验证码）。
+ * 收件域按「域名」聚合，域名本身算运营信息；账号部分从不出现。
+ */
+export interface EmailTraceStats {
+  windowDays: number;
+  byChannel: { internal: number; outemail: number };
+  total: number;
+  trend: Array<{ date: string; internal: number; outemail: number }>;
+  topDomains: Array<{ domain: string; count: number }>;
+  hourly: Array<{ hour: string; count: number }>;
+}
+
+export async function getEmailTraceStats(options: { windowDays?: number } = {}): Promise<EmailTraceStats> {
+  const windowDays = Math.min(Math.max(Math.floor(Number(options.windowDays) || 7), 1), 180);
+  const since = new Date(Date.now() - windowDays * 24 * 3600 * 1000);
+
+  try {
+    // 老记录没有 channel 字段：$ifNull 归到 outemail，与列表筛选口径一致。
+    const [byChannelRows, trendRows, domainRows, hourlyRows] = await Promise.all([
+      EmailTraceRecord.aggregate([
+        { $match: { sentAt: { $gte: since } } },
+        { $group: { _id: { $ifNull: ["$channel", "outemail"] }, count: { $sum: 1 } } },
+      ]).exec(),
+      EmailTraceRecord.aggregate([
+        { $match: { sentAt: { $gte: since } } },
+        {
+          $group: {
+            _id: {
+              day: { $dateToString: { format: "%Y-%m-%d", date: "$sentAt", timezone: "Asia/Shanghai" } },
+              channel: { $ifNull: ["$channel", "outemail"] },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]).exec(),
+      EmailTraceRecord.aggregate([
+        { $match: { sentAt: { $gte: since }, to: { $exists: true, $ne: "" } } },
+        { $project: { domain: { $toLower: { $arrayElemAt: [{ $split: ["$to", "@"] }, -1] } } } },
+        { $match: { domain: { $nin: ["", null] } } },
+        // 收件人串里可能有多个地址：只取第一段域名，不展开账号。
+        { $group: { _id: "$domain", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]).exec(),
+      EmailTraceRecord.aggregate([
+        { $match: { sentAt: { $gte: new Date(Date.now() - 24 * 3600 * 1000) } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d %H:00", date: "$sentAt", timezone: "Asia/Shanghai" } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]).exec(),
+    ]);
+
+    const byChannel = { internal: 0, outemail: 0 };
+    for (const row of byChannelRows as Array<{ _id?: string; count?: number }>) {
+      if (row._id === "internal") byChannel.internal += row.count || 0;
+      else byChannel.outemail += row.count || 0;
+    }
+
+    const trendMap = new Map<string, { internal: number; outemail: number }>();
+    for (const row of trendRows as Array<{ _id?: { day?: string; channel?: string }; count?: number }>) {
+      const day = row._id?.day;
+      if (!day) continue;
+      const bucket = trendMap.get(day) ?? { internal: 0, outemail: 0 };
+      if (row._id?.channel === "internal") bucket.internal += row.count || 0;
+      else bucket.outemail += row.count || 0;
+      trendMap.set(day, bucket);
+    }
+    const trend: EmailTraceStats["trend"] = [];
+    for (let index = windowDays - 1; index >= 0; index -= 1) {
+      const day = new Date(Date.now() - index * 24 * 3600 * 1000).toLocaleDateString("sv-SE", {
+        timeZone: "Asia/Shanghai",
+      });
+      const bucket = trendMap.get(day) ?? { internal: 0, outemail: 0 };
+      trend.push({ date: day, internal: bucket.internal, outemail: bucket.outemail });
+    }
+
+    return {
+      windowDays,
+      byChannel,
+      total: byChannel.internal + byChannel.outemail,
+      trend,
+      topDomains: (domainRows as Array<{ _id?: string; count?: number }>).map((row) => ({
+        domain: String(row._id ?? ""),
+        count: row.count || 0,
+      })),
+      hourly: (hourlyRows as Array<{ _id?: string; count?: number }>).map((row) => ({
+        hour: String(row._id ?? ""),
+        count: row.count || 0,
+      })),
+    };
+  } catch (error) {
+    logger.error("统计邮件发信记录失败", { error: (error as any)?.message });
+    return {
+      windowDays,
+      byChannel: { internal: 0, outemail: 0 },
+      total: 0,
+      trend: [],
+      topDomains: [],
+      hourly: [],
+    };
+  }
+}

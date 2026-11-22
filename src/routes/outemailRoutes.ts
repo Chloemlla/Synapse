@@ -5,6 +5,7 @@ import { createLimiter } from "../middleware/rateLimiter";
 import { authMiddlewareV2 as authMiddleware, adminAuthMiddleware, authenticateSuperAdmin } from "../middleware/auth";
 import { getOutEmailServiceStatus, resolveOutEmailDomain } from "../services/emailService";
 import { getOutEmailAuthStatus, getOutEmailQuota, sendOutEmail, sendOutEmailBatch, getOutEmailRecords, getOutEmailRecordById } from "../services/outEmailService";
+import { getEmailTraceStats } from "../services/emailTraceService";
 import { getClientIP } from "../utils/ipUtils";
 import { firstString } from "../utils/httpParam";
 import logger from "../utils/logger";
@@ -237,6 +238,35 @@ router.get("/records", statusQueryLimiter, authMiddleware, adminAuthMiddleware, 
     res.status(500).json({ success: false, error: "查询失败" });
   }
 });
+
+/**
+ * GET /api/outemail/records/stats
+ * 邮件溯源概览（系统内部发信 + 对外发信）：按来源计数、按天趋势、Top 收件域、24 小时分布。
+ *
+ * 只回聚合：**不含任何收件人账号、正文或令牌**（正文里可能有重置链接与验证码）。
+ * 权限与列表同一档（admin + 页面授权 outemail），不再单独要求超管 ——
+ * 需要更严时由超管在页面授权里收回 outemail 页面。
+ */
+router.get(
+  "/records/stats",
+  statusQueryLimiter,
+  authMiddleware,
+  adminAuthMiddleware,
+  requireAdminScope,
+  async (req, res) => {
+    try {
+      const windowDays = Number(req.query.windowDays);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        success: true,
+        ...(await getEmailTraceStats({ windowDays: Number.isFinite(windowDays) ? windowDays : undefined })),
+      });
+    } catch (error) {
+      logger.error("[OutEmail] 溯源概览统计失败", { errorType: error instanceof Error ? error.name : "unknown" });
+      res.status(500).json({ success: false, error: "统计失败", code: "EMAIL_TRACE_STATS_FAILED" });
+    }
+  },
+);
 
 /**
  * GET /api/outemail/records/:id

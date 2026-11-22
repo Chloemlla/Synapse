@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FaClipboardCheck, FaExclamationTriangle, FaFileSignature, FaListUl, FaSync } from 'react-icons/fa';
+import { FaClipboardCheck, FaExclamationTriangle, FaFileSignature, FaListUl, FaShieldAlt, FaSync } from 'react-icons/fa';
 import { policyConsentApi, type PolicyConsentOverviewResponse } from '@/api/policyConsents';
 import { useNotification } from '@/components/Notification';
 import { InfoBadge, InfoQueryHero, InfoQueryShell, studioPrimaryButtonClassName } from '@/components/studioTheme';
@@ -9,6 +9,7 @@ import { AUTO_REFRESH_OPTIONS } from './ip-risk-log/format';
 import { FilterSelect } from './ip-risk-log/ui';
 import PolicyConsentOverviewTab from './policy-consent/PolicyConsentOverviewTab';
 import PolicyConsentRecordsTab from './policy-consent/PolicyConsentRecordsTab';
+import PolicyConsentFeatureGatesTab from './policy-consent/FeatureGatesTab';
 import { TREND_WINDOW_OPTIONS } from './policy-consent/shared';
 
 /**
@@ -17,11 +18,13 @@ import { TREND_WINDOW_OPTIONS } from './policy-consent/shared';
  * 面板全部只读，唯一的批量出口（导出）由服务端挂审计留痕并封顶行数。
  */
 
-type TabKey = 'overview' | 'records';
+type TabKey = 'overview' | 'records' | 'gates';
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: React.ReactNode; hint: string }> = [
   { key: 'overview', label: '概览', icon: <FaClipboardCheck />, hint: '计数 / 版本与来源分布 / 趋势' },
   { key: 'records', label: '同意记录', icon: <FaListUl />, hint: 'policy_consents 逐条记录（可导出 CSV）' },
+  // 功能门禁（RC-31）：功能键 → 要求条款 → 依据，派生自 config/featureConsent.ts。
+  { key: 'gates', label: '功能门禁', icon: <FaShieldAlt />, hint: '哪些功能按同意放行、各要求哪几份条款' },
 ];
 
 const PolicyConsentPanel: React.FC = () => {
@@ -165,6 +168,7 @@ const PolicyConsentPanel: React.FC = () => {
             }}
           />
         ) : null}
+        {tab === 'gates' ? <PolicyConsentFeatureGatesTab refreshNonce={refreshNonce} /> : null}
         {tab === 'records' ? (
           <PolicyConsentRecordsTab
             refreshNonce={refreshNonce}

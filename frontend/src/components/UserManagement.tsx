@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { api } from '../api/api';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useUserFocusDeepLink } from '../hooks/useUserFocusDeepLink';
 import { useAuth } from '../hooks/useAuth';
 import { isAdminRole, isSuperAdmin } from '../utils/rbac';
 import { useNotification } from './Notification';
@@ -512,6 +513,20 @@ const UserManagement: React.FC = () => {
     setSelectedUserIds(prev => prev.filter(id => id !== deleted.id));
     fetchUsers(false, true);
   }, [fetchUsers]);
+
+  // `?focus=<userId>` 深链（账户风险页跳进来）：直接打开该用户的编辑表单。
+  // 逻辑在 hooks/useUserFocusDeepLink.ts（页面已顶到文件体积闸门）。
+  useUserFocusDeepLink<User>({
+    focusId: searchParams.get('focus'),
+    users,
+    keyword: activeFilters.keyword,
+    onOpenUser: (target) => void openEdit(target),
+    onFilterById: (id) => {
+      setPendingFilters(prev => (prev.keyword === id ? prev : { ...prev, keyword: id }));
+      setActiveFilters(prev => (prev.keyword === id ? prev : { ...prev, keyword: id }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    },
+  });
 
   const openEdit = useCallback(async (u: User) => {
     if (showForm && !(await confirmDiscardIfDirty())) return;

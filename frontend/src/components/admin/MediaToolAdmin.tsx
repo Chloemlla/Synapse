@@ -6,6 +6,7 @@ import {
   FaHistory,
   FaPlay,
   FaServer,
+  FaShieldAlt,
   FaSlidersH,
   FaSyncAlt,
 } from 'react-icons/fa';
@@ -19,6 +20,7 @@ import { BiliPanel } from './media-tool/BiliPanel';
 import { JobsPanel } from './media-tool/JobsPanel';
 import { SettingsPanel } from './media-tool/SettingsPanel';
 import { TranscribePanel } from './media-tool/TranscribePanel';
+import MediaToolLimitsPanel from './media-tool/LimitsPanel';
 import { btnGhost, cx, inputCls } from './media-tool/ui';
 
 import { useAuth } from '../../hooks/useAuth';
@@ -105,11 +107,13 @@ const MEDIA_DEFAULT_SETTINGS: MediaToolSettings = {
   },
 };
 
-const TAB: Array<{ id: 'settings' | 'bili' | 'transcribe' | 'jobs'; label: string; icon: IconType }> = [
+const TAB: Array<{ id: 'settings' | 'bili' | 'transcribe' | 'jobs' | 'limits'; label: string; icon: IconType }> = [
   { id: 'settings', label: '设置', icon: FaSlidersH },
   { id: 'bili', label: 'B站下载', icon: FaDownload },
   { id: 'transcribe', label: '语音转文本', icon: FaPlay },
   { id: 'jobs', label: '任务历史', icon: FaHistory },
+  // 资源闸门（RC-39）：只对「站点内置」目标有意义（限制属于当前服务端）。
+  { id: 'limits', label: '限制与沙箱', icon: FaShieldAlt },
 ];
 
 /**
@@ -129,7 +133,7 @@ export const MediaToolAdmin: React.FC = () => {
   const [health, setHealth] = useState<MediaToolHealth | null>(null);
   const [probing, setProbing] = useState(false);
   const [probeError, setProbeError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'settings' | 'bili' | 'transcribe' | 'jobs'>('bili');
+  const [activeTab, setActiveTab] = useState<'settings' | 'bili' | 'transcribe' | 'jobs' | 'limits'>('bili');
 
   const isInternal = mode === 'internal';
   const target = useMemo<MediaTarget>(
@@ -389,6 +393,7 @@ export const MediaToolAdmin: React.FC = () => {
             {activeTab === 'bili' ? <BiliPanel target={target} settings={panelSettings} /> : null}
             {activeTab === 'transcribe' ? <TranscribePanel target={target} settings={panelSettings} /> : null}
             {activeTab === 'jobs' ? <JobsPanel target={target} canManage={canManage} /> : null}
+            {activeTab === 'limits' ? <MediaToolLimitsPanel /> : null}
           </>
         )}
       </div>

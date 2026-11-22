@@ -9,6 +9,8 @@ import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middlewar
 import { auditLog } from "../../middleware/auditLog";
 import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/adminScope";
 import { wsService } from "../../services/wsService";
+import { MEDIA_SANDBOX_DEFAULTS, resolveMediaSandboxLimits } from "../../mediaTool/sandbox";
+import { resolveWatchdogMode } from "../../utils/processWatchdog";
 import accountRiskRouter from "./accountRisk";
 import adminScopeRouter from "./adminScope";
 import bilibiliCredentialsRouter from "./bilibiliCredentials";
@@ -121,6 +123,42 @@ router.use(overviewRouter);
 router.use(policyConsentsRouter);
 // 系统级只读运维：Redis 在库数据浏览/快照（超管 + 安全会话，见 routes/admin/system.ts）。
 router.use("/system", systemRouter);
+
+/**
+ * 媒体工具的资源闸门生效值（页面 /admin/media-tool 的「限制与沙箱」页签）。
+ *
+ * 挂在 `/api/admin/media-tool/limits`：本路由器在 preTamper 相位、先于 postTamper 的
+ * `/api/admin/media-tool` 挂载，因此这个子路径由这里应答，不会与媒体工具自身的端点冲突。
+ * 权限与 media-tool 页面同一档（挂载层 adminAuthMiddleware + requireAdminScope）。
+ * 只读：四道硬顶来自 env 解析结果，改它们要改部署配置。
+ */
+router.get("/media-tool/limits", (req, res) => {
+  const limits = resolveMediaSandboxLimits();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    success: true,
+    mediaSandbox: {
+      effective: limits,
+      defaults: MEDIA_SANDBOX_DEFAULTS,
+      env: {
+        maxFileBytes: "MEDIA_TOOL_MAX_FILE_BYTES",
+        maxFilesPerJob: "MEDIA_TOOL_MAX_FILES_PER_JOB",
+        maxUserDirBytes: "MEDIA_TOOL_USER_DIR_MAX_BYTES",
+        maxUserDirFiles: "MEDIA_TOOL_USER_DIR_MAX_FILES",
+      },
+      note: "四道硬顶：路径 / 大小 / 类型 / 数量。任一检查失败一律拒绝（fail-closed），不留孤儿文件。",
+    },
+    processWatchdog: {
+      mode: resolveWatchdogMode(),
+      env: {
+        mode: "PROCESS_WATCHDOG_MODE",
+        maxRssMb: "PROCESS_WATCHDOG_MAX_RSS_MB",
+        maxDurationMs: "PROCESS_WATCHDOG_MAX_DURATION_MS",
+      },
+      note: "只对目标子进程树的 RSS 计量（读 /proc），绝不读全局 RSS；非 Linux 环境内存判据不可用，时长判据仍生效。",
+    },
+  });
+});
 
 // Bilibili Sync 管理（PiliPlus 配置数据）
 router.get("/bilibili-sync", (req, res) => adminController.getBilibiliSyncRecords(req, res));
