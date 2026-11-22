@@ -88,6 +88,8 @@ export const ADMIN_MODULE_LOADERS = {
   'bilibili-sync': () => import('@/components/BilibiliSyncAdmin'),
   'bilibili-data': () => import('@/components/BilibiliDataAdmin'),
   'ip-risk-logs': () => import('@/components/admin/IpRiskLogPanel'),
+  // 账户风险与自动化信号（RC-14/15/20/26/38/56/57 + RC-07 处置记录）：只读，处置在用户管理页。
+  'account-risk': () => import('@/components/admin/AccountRiskPanel'),
   'mobile-token-lineage': () => import('@/components/admin/MobileTokenLineagePanel'),
   'policy-consents': () => import('@/components/admin/PolicyConsentPanel'),
   // 法律保留与取证（RC-22/35/58）：页面可见性走页面授权，写操作在路由层再叠 superadmin。

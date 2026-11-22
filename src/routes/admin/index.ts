@@ -9,6 +9,7 @@ import { authMiddlewareV2 as authMiddleware, isAdminRole } from "../../middlewar
 import { auditLog } from "../../middleware/auditLog";
 import { isAdminUserSelfServicePath, requireAdminScope } from "../../middleware/adminScope";
 import { wsService } from "../../services/wsService";
+import accountRiskRouter from "./accountRisk";
 import adminScopeRouter from "./adminScope";
 import bilibiliCredentialsRouter from "./bilibiliCredentials";
 import broadcastRouter from "./broadcast";
@@ -98,6 +99,8 @@ router.use(qqGuardRouter);
 router.use(ipRiskLogsRouter);
 // 法律保留与取证（RC-22/35/58）：读 admin + 页面授权，写 superadmin + 安全会话。
 router.use("/legal-holds", legalHoldsRouter);
+// 账户风险与自动化信号（页面 /admin/account-risk；全部只读，角色判定交给挂载层 + 页面授权）。
+router.use(accountRiskRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
 // 客户端遥测与问题追踪码复盘（页面 /admin/client-errors；读 admin + 页面授权，删除超管）。

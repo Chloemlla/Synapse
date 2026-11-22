@@ -64,6 +64,10 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
     apiPrefixes: ["/api/admin/mobile-token"],
   },
   { key: "policy-consents", label: "政策同意记录", apiPrefixes: ["/api/admin/policy-consents"] },
+  // 账户风险与自动化信号（RC-14/15/20/26/38/56/57 + RC-07 处置记录）：
+  // 端点只做 admin + 页面授权，默认授予集合不含它，因此默认仅超管可见；
+  // 需要下放时由超管在这里勾选，不必改路由。页面全部只读，处置仍走用户管理页。
+  { key: "account-risk", label: "账户风险与信号", apiPrefixes: ["/api/admin/account-risk"] },
   { key: "qq-guard", label: "QQ 群守卫", apiPrefixes: ["/api/admin/qq-guard"] },
   { key: "shortlink", label: "短链管理", apiPrefixes: ["/api/admin/shortlinks", "/api/shorturl"] },
   { key: "broadcast", label: "广播推送", apiPrefixes: ["/api/admin/broadcast"] },

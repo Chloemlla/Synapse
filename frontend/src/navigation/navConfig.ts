@@ -624,6 +624,14 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             requiredRole: 'superadmin',
           },
           {
+            // 账户风险与自动化信号：读接口走 admin + 页面授权（默认仅超管），
+            // 需要下放时在「页面授权」里勾选 account-risk，不必改代码。
+            title: '账户风险与信号',
+            url: '/admin/account-risk',
+            icon: FaUserShield as IconType,
+            requiredPage: 'account-risk',
+          },
+          {
             title: '登录令牌血缘',
             url: '/admin/mobile-token-lineage',
             icon: FaProjectDiagram as IconType,

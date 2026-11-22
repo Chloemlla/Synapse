@@ -10,6 +10,7 @@
 
 /** 管理面板模块页（/admin/<module>）。前缀匹配：同一模块下的子路径仍属于该页面。 */
 export const ADMIN_SPA_MODULE_PATHS = [
+  "/admin/account-risk",
   "/admin/admin-scope",
   "/admin/announcement",
   "/admin/apikey-billing",

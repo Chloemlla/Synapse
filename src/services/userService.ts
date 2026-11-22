@@ -146,6 +146,11 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ role: 1, createdAt: 1 });
 
+// 账户风险面板（/admin/account-risk）的排序与筛选：按档位 + 最近评估、按分数倒序。
+// 两个都是「管理端列表」的读路径，不加会让排序落到内存（账户量大时撞 sort memory limit）。
+userSchema.index({ riskTier: 1, riskUpdatedAt: -1 });
+userSchema.index({ riskScore: -1 });
+
 // 唯一性只在活跃账号之间成立；已软删除的账号不再占着邮箱/用户名（否则无法重注）。
 // 是否允许重注由 blocked_identities 墓碑在应用层裁决。
 userSchema.index(
