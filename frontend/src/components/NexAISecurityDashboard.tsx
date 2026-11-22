@@ -60,6 +60,11 @@ interface DeviceTracking {
   isDebugger: boolean;
   isEmulator: boolean;
   isVpn: boolean;
+  isAdbEnabled?: boolean;
+  isDevelopmentSettingsEnabled?: boolean;
+  isDebugBuild?: boolean;
+  isTracerAttached?: boolean;
+  antiDebugScore?: number;
   signatureValid: boolean;
   hashValid: boolean;
   appVersion?: string;
@@ -88,6 +93,8 @@ interface DashboardStats {
   totalDevices: number;
   highRiskDevices: number;
   compromisedDevices: number;
+  /** 反调试命中（tracer / debugger / ADB / 调试包 / 反调试分 ≥0.5）的设备数。 */
+  antiDebugDevices?: number;
   totalEvents: number;
   riskDistribution: {
     SAFE: number;
@@ -101,7 +108,43 @@ interface DashboardStats {
   topRiskyDevices: DeviceTracking[];
 }
 
-const RISK_LEVEL_LABELS: Record<string, string> = {
+/**
+ * 面板涉及的「代号 → 中文」全部由后端 `/api/nexai/security/catalog` 下发
+ * （`services/nexaiSecurityCatalog.ts` 是唯一事实源）。这里只保留两样东西：
+ * 1. 首帧兜底表 —— 目录还没回来时不至于把 `root_detected` 铺到界面上；
+ * 2. 目录类型定义。
+ *
+ * 原则：主界面只显示中文名；原始代号（`SUPERADMIN_RISK_EXEMPT` 这类）只出现在
+ * 「详情」展开区，供排查时核对与搜索。
+ */
+
+interface CatalogOption {
+  value: string;
+  label: string;
+}
+
+interface SecurityCatalogEntry extends CatalogOption {
+  group: string;
+  groupLabel: string;
+  source: 'client' | 'server';
+}
+
+interface SecurityCatalog {
+  eventTypes: SecurityCatalogEntry[];
+  eventGroups: CatalogOption[];
+  riskLevels: CatalogOption[];
+  riskTiers: CatalogOption[];
+  riskFlags: CatalogOption[];
+  riskActions: CatalogOption[];
+  exemptionScopes: CatalogOption[];
+  deviceFlags: CatalogOption[];
+  strategies: CatalogOption[];
+  automationSignals: CatalogOption[];
+  eventDataLabels: Record<string, string>;
+  eventDataOrder: string[];
+}
+
+const FALLBACK_RISK_LEVEL_LABELS: Record<string, string> = {
   SAFE: '安全',
   LOW: '低风险',
   MEDIUM: '中风险',
@@ -109,54 +152,143 @@ const RISK_LEVEL_LABELS: Record<string, string> = {
   CRITICAL: '极高风险',
 };
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  integrity_fail: '完整性验证失败',
-  root_detected: 'Root检测',
-  debugger_detected: '调试器检测',
-  emulator_detected: '模拟器检测',
-  vpn_detected: 'VPN 检测',
-  hook_detected: 'Hook 检测',
-  tamper_detected: '篡改检测',
+/** 只兜底客户端上报的 14 个类型（其余靠目录；目录缺失时显示「未登记事件类型」）。 */
+const FALLBACK_EVENT_TYPE_LABELS: Record<string, string> = {
+  integrity_fail: '完整性校验失败',
+  root_detected: '检测到 Root',
+  debugger_detected: '检测到调试器',
+  emulator_detected: '检测到模拟器',
+  vpn_detected: '检测到 VPN / 代理',
+  hook_detected: '检测到 Hook 框架',
+  tamper_detected: '客户端被篡改',
   anti_debug: '反调试命中',
-  frida_detected: 'Frida框架检测',
-  xposed_detected: 'Xposed框架检测',
-  login_anomaly: '登录异常',
+  frida_detected: '检测到 Frida',
+  xposed_detected: '检测到 Xposed',
+  login_anomaly: '登录行为异常',
   device_switch: '设备切换',
   heartbeat: '心跳上报',
   custom: '自定义事件',
-  dom_modification: 'DOM 篡改',
-  network_tampering: '网络篡改',
-  proxy_tampering: '代理篡改',
-  script_injection: '脚本注入',
-  dom: 'DOM 篡改',
-  network: '网络篡改',
-  proxy: '代理篡改',
-  injection: '脚本注入',
-  manual_test: '手动测试',
-  unknown: '未知事件',
 };
 
-const getRiskLevelLabel = (level: string) => RISK_LEVEL_LABELS[level] || level;
+const UNKNOWN_EVENT_LABEL = '未登记事件类型';
 
-const getEventTypeLabel = (type: string) => EVENT_TYPE_LABELS[type] || type;
+/** 事件类型下拉的兜底项：目录未就绪时至少能筛客户端上报的类型。 */
+const FALLBACK_EVENT_TYPE_OPTIONS: CatalogOption[] = Object.entries(FALLBACK_EVENT_TYPE_LABELS).map(
+  ([value, label]) => ({ value, label }),
+);
 
-/** 与后端 `ALLOWED_SECURITY_EVENT_TYPES` 对齐的事件类型筛选项（只列上报接口真正接受的值）。 */
-const EVENT_TYPE_OPTIONS: ReadonlyArray<string> = [
-  'integrity_fail',
-  'root_detected',
-  'debugger_detected',
-  'emulator_detected',
-  'vpn_detected',
-  'hook_detected',
-  'tamper_detected',
-  'anti_debug',
-  'frida_detected',
-  'xposed_detected',
-  'login_anomaly',
-  'device_switch',
-  'heartbeat',
-  'custom',
-];
+const DEVICE_FLAG_LABELS_FALLBACK: Record<string, string> = {
+  isRoot: 'Root 权限',
+  isDebugger: '调试器',
+  isEmulator: '模拟器',
+  isVpn: 'VPN / 代理',
+  isAdbEnabled: 'ADB 调试',
+  isDevelopmentSettingsEnabled: '开发者选项',
+  isDebugBuild: '调试包',
+  isTracerAttached: '调试器附着',
+};
+
+/** 事件详情里的风险档位（`eventData.fromTier` / `toTier`）。 */
+const FALLBACK_TIER_LABELS: Record<string, string> = {
+  normal: '正常',
+  watch: '观察',
+  restricted: '受限',
+  danger: '高危',
+};
+
+const labelFromOptions = (options: CatalogOption[] | undefined, value: string): string | undefined =>
+  options?.find((option) => option.value === value)?.label;
+
+/** 服务端内部事件用固定标识占位 deviceFingerprint（不是真实设备），界面上要换个说法。 */
+const PSEUDO_FINGERPRINTS = new Set([
+  'risk-exemption',
+  'account-risk',
+  'account-abuse',
+  'device-fingerprint',
+  'automation-trace',
+]);
+
+const isPseudoFingerprint = (value?: string): boolean => Boolean(value && PSEUDO_FINGERPRINTS.has(value));
+
+const EVENT_SOURCE_LABELS: Record<string, string> = {
+  action: '人工处置',
+  auto: '自动升档',
+  device_fingerprint: '设备指纹上报',
+};
+
+/**
+ * 事件 `eventData` 的某个字段 → 展示文本。
+ *
+ * 数组按「命中判据 / 自动化信号」分别翻中文，其它数组原样顿号连接；
+ * 代号型字段（档位、处置动作、豁免范围）走服务端字典，查不到才显示原值。
+ */
+function formatEventValue(key: string, value: unknown, catalog: SecurityCatalog | null): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        const text = String(item);
+        if (key === 'flags') return labelFromOptions(catalog?.riskFlags, text) || text;
+        if (key === 'signals') return labelFromOptions(catalog?.automationSignals, text) || text;
+        return text;
+      })
+      .join('、');
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  const text = String(value);
+  if (key === 'fromTier' || key === 'toTier') {
+    return labelFromOptions(catalog?.riskTiers, text) || FALLBACK_TIER_LABELS[text] || text;
+  }
+  if (key === 'action') return labelFromOptions(catalog?.riskActions, text) || text;
+  if (key === 'scope') return labelFromOptions(catalog?.exemptionScopes, text) || text;
+  if (key === 'source') return EVENT_SOURCE_LABELS[text] || text;
+  return text;
+}
+
+/** 事件详情：字段名与取值都翻中文；原始代号只在最下面一行出现。 */
+const SecurityEventDetail: React.FC<{ event: SecurityEvent; catalog: SecurityCatalog | null }> = ({
+  event,
+  catalog,
+}) => {
+  const data =
+    event.eventData && typeof event.eventData === 'object' && !Array.isArray(event.eventData)
+      ? (event.eventData as Record<string, unknown>)
+      : {};
+  const preferredOrder = catalog?.eventDataOrder?.length ? catalog.eventDataOrder : [];
+  const keys = [
+    ...preferredOrder.filter((key) => key in data),
+    ...Object.keys(data).filter((key) => !preferredOrder.includes(key)),
+  ];
+
+  return (
+    <div className="min-w-0">
+      {keys.length === 0 ? (
+        <p className="text-xs text-slate-500">该事件没有附加数据。</p>
+      ) : (
+        <dl className="grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
+          {keys.map((key) => (
+            <div key={key} className="min-w-0">
+              <dt className="text-slate-500">{catalog?.eventDataLabels?.[key] || key}</dt>
+              <dd className="break-all text-slate-700">{formatEventValue(key, data[key], catalog)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <p className="mt-3 text-[11px] text-slate-400">
+        事件代号 <span className="font-mono text-slate-500">{event.eventType}</span>
+        <span className="mx-1">·</span>
+        记录 ID <span className="font-mono text-slate-500">{event._id}</span>
+      </p>
+    </div>
+  );
+};
 
 /** 后端 `/devices` `/events` 统一回的分页元数据。 */
 interface Pagination {
@@ -210,6 +342,21 @@ const ListPager: React.FC<{
   );
 };
 
+/** 设备环境特征徽标。颜色只表达「多危险」，文字才是判据本身。 */
+const DeviceFlagBadge: React.FC<{ tone: 'rose' | 'amber' | 'sky' | 'slate'; label: string }> = ({ tone, label }) => {
+  const toneClass =
+    tone === 'rose'
+      ? 'bg-rose-100 text-rose-700 border-rose-200'
+      : tone === 'amber'
+        ? 'bg-amber-100 text-amber-700 border-amber-200'
+        : tone === 'sky'
+          ? 'bg-sky-50 text-sky-700 border-sky-200'
+          : 'bg-slate-100 text-slate-700 border-slate-200';
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${toneClass}`}>{label}</span>
+  );
+};
+
 const NexAISecurityDashboard: React.FC = () => {
   const { setNotification } = useNotification();
   const statsRequestRef = useRef(0);
@@ -217,6 +364,8 @@ const NexAISecurityDashboard: React.FC = () => {
   const eventsRequestRef = useRef(0);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  // 代号字典（事件类型/风险等级/判据/豁免范围的中文名）由服务端下发，见 loadCatalog。
+  const [catalog, setCatalog] = useState<SecurityCatalog | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   // 拉取失败与「真的是 0 台设备」必须分开：失败时给错误态 + 重试，不渲染一组全 0 的指标
   const [loadError, setLoadError] = useState('');
@@ -242,6 +391,8 @@ const NexAISecurityDashboard: React.FC = () => {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState('');
   const [eventsPagination, setEventsPagination] = useState<Pagination>(EMPTY_PAGINATION);
+  /** 展开中的事件（详情里才出现原始代号与 eventData）。 */
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [eventSearchDraft, setEventSearchDraft] = useState('');
   const [eventQuery, setEventQuery] = useState({
     search: '',
@@ -250,6 +401,21 @@ const NexAISecurityDashboard: React.FC = () => {
     page: 1,
     limit: 20,
   });
+
+  /**
+   * 取代号字典。失败不阻塞页面：本地兜底表仍能把最常见的类型显示成中文，
+   * 其余显示「未登记事件类型」而不是把大写代号铺出去。
+   */
+  const loadCatalog = async () => {
+    try {
+      const res = await api.get('/api/nexai/security/catalog');
+      if (res.data?.success !== false) {
+        setCatalog(res.data as SecurityCatalog);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch security catalog:', error);
+    }
+  };
 
   const loadStats = async () => {
     const request = ++statsRequestRef.current;
@@ -323,6 +489,10 @@ const NexAISecurityDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    void loadCatalog();
+  }, []);
+
+  useEffect(() => {
     void loadStats();
     const interval = setInterval(loadStats, 30000); // 每30秒刷新统计（列表页不动，避免翻页被打断）
     return () => {
@@ -348,6 +518,36 @@ const NexAISecurityDashboard: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventQuery]);
 
+  /** 事件类型 → 中文。主界面绝不显示原始代号；代号只在详情里出现。 */
+  const eventTypeLabel = (type: string): string =>
+    labelFromOptions(catalog?.eventTypes, type) || FALLBACK_EVENT_TYPE_LABELS[type] || UNKNOWN_EVENT_LABEL;
+
+  const riskLevelLabel = (level: string): string =>
+    labelFromOptions(catalog?.riskLevels, level) || FALLBACK_RISK_LEVEL_LABELS[level] || level;
+
+  const deviceFlagLabel = (key: string): string =>
+    labelFromOptions(catalog?.deviceFlags, key) || DEVICE_FLAG_LABELS_FALLBACK[key] || key;
+
+  /** 事件类型下拉：按目录分组（客户端检测 / 账户风控 / 会话 / 系统 / 指纹）。 */
+  const eventTypeGroups = useMemo(() => {
+    if (catalog?.eventTypes?.length) {
+      const order = (catalog.eventGroups || []).map((group) => group.value);
+      const groups = new Map<string, { value: string; label: string; options: CatalogOption[] }>();
+      for (const entry of catalog.eventTypes) {
+        const key = entry.group || 'other';
+        if (!groups.has(key)) {
+          groups.set(key, { value: key, label: entry.groupLabel || '其他', options: [] });
+        }
+        groups.get(key)!.options.push({ value: entry.value, label: entry.label });
+      }
+      return [
+        ...order.map((key) => groups.get(key)).filter((group): group is { value: string; label: string; options: CatalogOption[] } => Boolean(group)),
+        ...Array.from(groups.values()).filter((group) => !order.includes(group.value)),
+      ];
+    }
+    return [{ value: 'client', label: '客户端设备检测', options: FALLBACK_EVENT_TYPE_OPTIONS }];
+  }, [catalog]);
+
   const getRiskLevelColor = (level: string) => {
     switch (level) {
       case 'SAFE': return 'text-emerald-600 bg-emerald-100';
@@ -366,7 +566,7 @@ const NexAISecurityDashboard: React.FC = () => {
         className={`px-2 py-1 rounded-full text-xs font-semibold ${colorClass}`}
         title={level}
       >
-        {getRiskLevelLabel(level)}
+        {riskLevelLabel(level)}
       </span>
     );
   };
@@ -402,7 +602,7 @@ const NexAISecurityDashboard: React.FC = () => {
 
   // 事件类型分布柱状图数据（枚举值统一转中文展示）
   const eventTypeData = useMemo(() => ({
-    labels: stats ? Object.keys(stats.eventTypeDistribution).map(getEventTypeLabel) : [],
+    labels: stats ? Object.keys(stats.eventTypeDistribution).map(eventTypeLabel) : [],
     datasets: [{
       label: '事件数量',
       data: stats ? Object.values(stats.eventTypeDistribution) : [],
@@ -410,7 +610,9 @@ const NexAISecurityDashboard: React.FC = () => {
       borderColor: 'rgb(14, 165, 233)',
       borderWidth: 1
     }]
-  }), [stats]);
+    // eventTypeLabel 依赖 catalog；把 catalog 列进依赖，字典到达后图表标签才会刷新。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [stats, catalog]);
 
   // 设备筛选已全部下推到服务端（见 loadDevices），这里只回答「有没有筛选条件」用于空态文案。
   const hasActiveDeviceFilter =
@@ -477,7 +679,7 @@ const NexAISecurityDashboard: React.FC = () => {
         </div>
 
         {/* 统计卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-5">
           <div className={cn(studioTileClassName, "p-6")}>
             <div className="flex items-center justify-between">
               <div>
@@ -505,6 +707,16 @@ const NexAISecurityDashboard: React.FC = () => {
                 <p className="text-3xl font-bold text-rose-600 mt-2">{stats?.compromisedDevices || 0}</p>
               </div>
               <FaShieldAlt className="w-10 h-10 text-rose-600 opacity-80" />
+            </div>
+          </div>
+
+          <div className={cn(studioTileClassName, "p-6")}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">反调试命中</p>
+                <p className="text-3xl font-bold text-amber-600 mt-2">{stats?.antiDebugDevices || 0}</p>
+              </div>
+              <FaShieldAlt className="w-10 h-10 text-amber-600 opacity-80" />
             </div>
           </div>
 
@@ -790,19 +1002,34 @@ const NexAISecurityDashboard: React.FC = () => {
                             <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                               <div className="flex gap-1.5 flex-wrap max-w-xs">
                                 {device.isRoot && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">ROOT</span>
+                                  <DeviceFlagBadge tone="rose" label={deviceFlagLabel('isRoot')} />
                                 )}
                                 {device.isDebugger && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">DEBUG</span>
+                                  <DeviceFlagBadge tone="amber" label={deviceFlagLabel('isDebugger')} />
                                 )}
                                 {device.isEmulator && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">模拟器</span>
+                                  <DeviceFlagBadge tone="slate" label={deviceFlagLabel('isEmulator')} />
                                 )}
                                 {device.isVpn && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-sky-700 border border-sky-200">VPN</span>
+                                  <DeviceFlagBadge tone="sky" label={deviceFlagLabel('isVpn')} />
+                                )}
+                                {device.isAdbEnabled && (
+                                  <DeviceFlagBadge tone="amber" label={deviceFlagLabel('isAdbEnabled')} />
+                                )}
+                                {device.isDevelopmentSettingsEnabled && (
+                                  <DeviceFlagBadge tone="amber" label={deviceFlagLabel('isDevelopmentSettingsEnabled')} />
+                                )}
+                                {device.isDebugBuild && (
+                                  <DeviceFlagBadge tone="amber" label={deviceFlagLabel('isDebugBuild')} />
+                                )}
+                                {device.isTracerAttached && (
+                                  <DeviceFlagBadge tone="rose" label={deviceFlagLabel('isTracerAttached')} />
                                 )}
                                 {!device.signatureValid && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">签名错</span>
+                                  <DeviceFlagBadge tone="rose" label="签名校验失败" />
+                                )}
+                                {device.hashValid === false && (
+                                  <DeviceFlagBadge tone="rose" label="完整性校验失败" />
                                 )}
                               </div>
                             </td>
@@ -894,10 +1121,14 @@ const NexAISecurityDashboard: React.FC = () => {
                     className={cn(studioFieldClassName, 'font-medium sm:w-44')}
                   >
                     <option value="all">全部事件类型</option>
-                    {EVENT_TYPE_OPTIONS.map((type) => (
-                      <option key={type} value={type}>
-                        {getEventTypeLabel(type)}
-                      </option>
+                    {eventTypeGroups.map((group) => (
+                      <optgroup key={group.value} label={group.label}>
+                        {group.options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <select
@@ -937,12 +1168,15 @@ const NexAISecurityDashboard: React.FC = () => {
                 </div>
               </div>
               {eventsError ? <StudioErrorNote className="mb-4 text-xs">{eventsError}</StudioErrorNote> : null}
-              <div className="mb-3 text-xs text-slate-500">
-                {eventsPagination.total > 0
-                  ? `共 ${eventsPagination.total} 条事件`
-                  : eventsLoading
-                    ? '正在读取事件…'
-                    : '没有事件'}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span>
+                  {eventsPagination.total > 0
+                    ? `共 ${eventsPagination.total} 条事件`
+                    : eventsLoading
+                      ? '正在读取事件…'
+                      : '没有事件'}
+                </span>
+                {eventsPagination.total > 0 ? <span className="text-slate-400">点任意一条展开判定依据与原始数据</span> : null}
               </div>
               <div className="space-y-3">
                 {events.length > 0 ? (
@@ -969,35 +1203,58 @@ const NexAISecurityDashboard: React.FC = () => {
                       return `${diffDays} 天前`;
                     };
 
+                    const expanded = expandedEventId === event._id;
+                    const pseudo = isPseudoFingerprint(event.deviceFingerprint);
+
                     return (
-                      <div key={event._id} className={`bg-white/80 backdrop-blur-xl rounded-2xl p-4 border transition-all hover:shadow-md ${getSeverityColor(event.riskScore)}`}>
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider">
-                                {getEventTypeLabel(event.eventType)}
-                              </span>
-                              <span className="text-xs font-medium opacity-60 flex items-center gap-1">
-                                <FaClock className="w-3 h-3" /> {getTimeAgo(event.createdAt)}
-                              </span>
+                      <div key={event._id} className={`bg-white/80 backdrop-blur-xl rounded-2xl border transition-all hover:shadow-md ${getSeverityColor(event.riskScore)}`}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedEventId(expanded ? null : event._id)}
+                          aria-expanded={expanded}
+                          className="w-full p-4 text-left"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-2 flex flex-wrap items-center gap-3">
+                                <span className="rounded-full px-2.5 py-0.5 text-xs font-bold tracking-wide">
+                                  {eventTypeLabel(event.eventType)}
+                                </span>
+                                <span className="flex items-center gap-1 text-xs font-medium opacity-60">
+                                  <FaClock className="h-3 w-3" aria-hidden /> {getTimeAgo(event.createdAt)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <FaExclamationCircle className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                                <p className="min-w-0 truncate text-sm font-medium">
+                                  {pseudo ? '系统内部记录' : '设备'}{' '}
+                                  <span className="font-mono font-bold">
+                                    {pseudo ? event.deviceFingerprint : `${event.deviceFingerprint.substring(0, 12)}...`}
+                                  </span>
+                                </p>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 opacity-75 sm:grid-cols-3">
+                                {event.userId ? (
+                                  <p className="flex items-center gap-1 text-[11px]"><FaUsers className="h-2.5 w-2.5" aria-hidden /> {event.userId}</p>
+                                ) : null}
+                                {event.ipAddress ? (
+                                  <p className="flex items-center gap-1 text-[11px]"><FaGlobe className="inline" aria-hidden /> {event.ipAddress}</p>
+                                ) : null}
+                                <p className="flex items-center gap-1 text-[11px]">
+                                  <FaShieldAlt className="h-2.5 w-2.5" aria-hidden /> 风险分：{typeof event.riskScore === 'number' ? event.riskScore : '未评分'}
+                                </p>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <FaExclamationCircle className="w-4 h-4 opacity-50" />
-                              <p className="text-sm font-medium">
-                                设备 <span className="font-mono font-bold">{event.deviceFingerprint.substring(0, 12)}...</span> 触发异常
-                              </p>
-                            </div>
-                            <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-y-1 gap-x-4 opacity-75">
-                              {event.userId && (
-                                <p className="text-[11px] flex items-center gap-1"><FaUsers className="w-2.5 h-2.5" /> {event.userId}</p>
-                              )}
-                              {event.ipAddress && (
-                                <p className="text-[11px] flex items-center gap-1"><FaGlobe className="inline" aria-hidden /> {event.ipAddress}</p>
-                              )}
-                              <p className="text-[11px] flex items-center gap-1"><FaShieldAlt className="w-2.5 h-2.5" /> 风险值: {event.riskScore || 'N/A'}</p>
-                            </div>
+                            <span className="shrink-0 text-[11px] font-medium text-slate-500">
+                              {expanded ? '收起详情' : '展开详情'}
+                            </span>
                           </div>
-                        </div>
+                        </button>
+                        {expanded ? (
+                          <div className="border-t border-slate-200/70 px-4 pb-4 pt-3">
+                            <SecurityEventDetail event={event} catalog={catalog} />
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })

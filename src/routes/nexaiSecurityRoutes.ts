@@ -3,6 +3,7 @@ import {
   checkAnomalies,
   getDashboardStats,
   getDeviceList,
+  getSecurityCatalogMeta,
   getSecurityEvents,
   getSecurityStatus,
   reportSecurityEvent,
@@ -166,6 +167,28 @@ router.post("/security/track", nexaiSecurityAuthLimiter, nexaiAuthRequired, trac
  *         description: Internal server error
  */
 router.get("/security/stats", nexaiSecurityAdminLimiter, authenticateToken, getDashboardStats);
+
+/**
+ * @openapi
+ * /api/nexai/security/catalog:
+ *   get:
+ *     summary: Get security label catalog
+ *     description: Chinese labels for security event types, risk levels, risk flags, exemption scopes and device flags (requires admin authentication)
+ *     tags:
+ *       - NexAI Security
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Label catalog retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/security/catalog", nexaiSecurityAdminLimiter, authenticateToken, getSecurityCatalogMeta);
 
 /**
  * @openapi

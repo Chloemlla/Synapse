@@ -14,24 +14,14 @@ import {
   trackDevice,
 } from "../services/nexaiSecurityService";
 import { getClientIP } from "../utils/ipUtils";
+import { CLIENT_REPORTED_EVENT_TYPES, getSecurityCatalog } from "../services/nexaiSecurityCatalog";
 import logger from "../utils/logger";
 
-const ALLOWED_SECURITY_EVENT_TYPES = new Set([
-  "integrity_fail",
-  "root_detected",
-  "debugger_detected",
-  "emulator_detected",
-  "vpn_detected",
-  "hook_detected",
-  "tamper_detected",
-  "anti_debug",
-  "frida_detected",
-  "xposed_detected",
-  "login_anomaly",
-  "device_switch",
-  "heartbeat",
-  "custom",
-]);
+/**
+ * 客户端可上报的事件类型。清单本身住在 `services/nexaiSecurityCatalog.ts`
+ * （与中文名同一份事实源）——这里再抄一份的话，新增类型时面板与白名单必然漂。
+ */
+const ALLOWED_SECURITY_EVENT_TYPES = new Set<string>(CLIENT_REPORTED_EVENT_TYPES);
 
 const MAX_EVENT_DETAILS_JSON_LENGTH = 4_000;
 
@@ -430,6 +420,28 @@ export async function getDeviceList(req: Request, res: Response): Promise<void> 
     });
   } catch (error) {
     logger.error("Error getting device list:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/**
+ * GET /nexai/security/catalog
+ * 事件类型、风险等级、档位、判据、豁免范围等全部代号的中文名。
+ *
+ * 为什么由服务端下发：这些代号是服务端写的（`ACCOUNT_ABUSE_*`、`SUPERADMIN_RISK_EXEMPT` …），
+ * 前端如果自己抄一份映射，服务端新增事件类型时面板会把代号原样铺出来。这里一次发全，
+ * 前端只负责展示。
+ */
+export async function getSecurityCatalogMeta(req: Request, res: Response): Promise<void> {
+  try {
+    const role = req.nexaiUser?.role || (req as any).user?.role;
+    if (!isAdminRole(role)) {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
+    res.json({ success: true, ...getSecurityCatalog() });
+  } catch (error) {
+    logger.error("Error getting security catalog:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 }
