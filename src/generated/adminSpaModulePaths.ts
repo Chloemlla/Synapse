@@ -56,6 +56,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/shortlink",
   "/admin/shorturlmigration",
   "/admin/system",
+  "/admin/tickets",
   "/admin/translation-audit",
   "/admin/tts-history",
   "/admin/users",

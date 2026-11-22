@@ -122,7 +122,9 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   { key: "shorturlmigration", label: "短链迁移", apiPrefixes: [] },
   { key: "nexai-security", label: "NexAI 安全", apiPrefixes: ["/api/nexai/security"] },
   { key: "email-sender", label: "邮件发送（总览）", apiPrefixes: ["/api/outemail", "/api/email"] },
-  { key: "tickets", label: "工单管理", apiPrefixes: [] },
+  // 工单管理（页面 /admin/tickets）：读接口是 admin + requireAdminScope（/api/tickets/admin/*），
+  // 写接口仍由路由层 authenticateSuperAdmin 收口，因此把前缀放进来不会放宽任何写操作。
+  { key: "tickets", label: "工单管理", apiPrefixes: ["/api/tickets"] },
 ];
 
 const ADMIN_PAGE_BY_KEY = new Map(ADMIN_PAGES.map((page) => [page.key, page]));

@@ -92,6 +92,8 @@ export const ADMIN_MODULE_LOADERS = {
   'account-risk': () => import('@/components/admin/AccountRiskPanel'),
   // 限流 / 配额 / 资源闸门（RC-27/28/29/30/37/39）：只读，阈值仍在 env 与运行时配置。
   'rate-limits': () => import('@/components/admin/RateLimitsPanel'),
+  // 工单管理（分诊工作台 + 质量与 SLA + 客服工作量）：读 admin + 页面授权，写仍由服务端收口到超管。
+  tickets: () => import('@/components/admin/TicketAdminPanel'),
   'mobile-token-lineage': () => import('@/components/admin/MobileTokenLineagePanel'),
   'policy-consents': () => import('@/components/admin/PolicyConsentPanel'),
   // 法律保留与取证（RC-22/35/58）：页面可见性走页面授权，写操作在路由层再叠 superadmin。

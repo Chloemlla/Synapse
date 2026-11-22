@@ -435,6 +435,14 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
       items: filterByVisibility(
         [
           {
+            // 工单管理：读接口 admin + 页面授权 tickets（默认不授予，仅超管）；
+            // 批量分诊仍由服务端 authenticateSuperAdmin 收口，页面按角色隐藏写按钮。
+            title: '工单管理',
+            url: '/admin/tickets',
+            icon: FaHeadset as IconType,
+            requiredPage: 'tickets',
+          },
+          {
             title: '公告管理',
             url: '/admin/announcement',
             icon: FaFileAlt as IconType,

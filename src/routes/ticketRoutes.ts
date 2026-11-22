@@ -13,6 +13,8 @@ import {
   ticketWriteLimiter,
 } from "../middleware/routeLimiters";
 import { MAX_TICKET_ATTACHMENT_BYTES } from "../utils/ticketAttachments";
+import { computeTicketInsights } from "../services/ticketInsightsService";
+import logger from "../utils/logger";
 
 const router = express.Router();
 
@@ -58,6 +60,24 @@ const adminOnly = (req: Request, res: Response, next: NextFunction) => {
 // 普通管理员看不了工单原文（用户内容）：与后端范围守卫口径一致。
 router.get("/admin/all", ticketAdminLimiter, adminOnly, requireAdminScope, ticketController.getAllTickets);
 router.get("/admin/stats", ticketAdminLimiter, adminOnly, requireAdminScope, ticketController.getTicketStats);
+// 质量与 SLA 聚合（页面 /admin/tickets）：与统计同级（admin + 页面授权），只读。
+// 处理函数写在这里而不是 ticketController：控制器已顶到 1500 行的文件体积闸门，
+// 而这一段只是参数解析 + 转发，聚合逻辑在 services/ticketInsightsService.ts。
+router.get(
+  "/admin/insights",
+  ticketAdminLimiter,
+  adminOnly,
+  requireAdminScope,
+  async (req: Request, res: Response) => {
+    try {
+      const raw = Number(typeof req.query.windowDays === "string" ? req.query.windowDays : "");
+      res.json(await computeTicketInsights({ windowDays: Number.isFinite(raw) && raw > 0 ? raw : undefined }));
+    } catch (error) {
+      logger.error("获取工单质量聚合失败:", error);
+      res.status(500).json({ error: "服务器内部错误" });
+    }
+  },
+);
 router.patch(
   "/admin/bulk/status",
   ticketAdminLimiter,
