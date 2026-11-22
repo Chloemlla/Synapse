@@ -26,6 +26,7 @@ import overviewRouter from "./overview";
 import policyConsentsRouter from "./policyConsents";
 import profileRouter from "./profile";
 import qqGuardRouter from "./qqGuard";
+import rateLimitsRouter from "./rateLimits";
 import registrationInvitesRouter from "./registrationInvites";
 import shortlinksRouter from "./shortlinks";
 import systemRouter from "./system";
@@ -101,6 +102,8 @@ router.use(ipRiskLogsRouter);
 router.use("/legal-holds", legalHoldsRouter);
 // 账户风险与自动化信号（页面 /admin/account-risk；全部只读，角色判定交给挂载层 + 页面授权）。
 router.use(accountRiskRouter);
+// 限流 / 配额 / 资源闸门（页面 /admin/rate-limits；全部只读，阈值仍在 env 与运行时配置）。
+router.use(rateLimitsRouter);
 // GeoGebra 工作台诊断（页面 /admin/geogebra；读接口 admin + 页面授权，维护写接口 superadmin）。
 router.use(geoGebraAdminRouter);
 // 客户端遥测与问题追踪码复盘（页面 /admin/client-errors；读 admin + 页面授权，删除超管）。

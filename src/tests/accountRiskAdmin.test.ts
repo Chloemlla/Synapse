@@ -41,36 +41,36 @@ jest.mock("../services/runtimeConfigService", () => ({
   },
 }));
 
-const userAggregate = jest.fn();
-const userCount = jest.fn();
-const userFind = jest.fn();
-const userIndexes = jest.fn();
+const mockUserAggregate = jest.fn();
+const mockUserCount = jest.fn();
+const mockUserFind = jest.fn();
+const mockUserIndexes = jest.fn();
 
 jest.mock("../services/userService", () => ({
   UserModel: {
-    aggregate: (...args: unknown[]) => userAggregate(...args),
-    countDocuments: (...args: unknown[]) => userCount(...args),
-    find: (...args: unknown[]) => userFind(...args),
-    collection: { indexes: () => userIndexes() },
+    aggregate: (...args: unknown[]) => mockUserAggregate(...args),
+    countDocuments: (...args: unknown[]) => mockUserCount(...args),
+    find: (...args: unknown[]) => mockUserFind(...args),
+    collection: { indexes: () => mockUserIndexes() },
   },
 }));
 
-const eventCount = jest.fn();
-const eventFind = jest.fn();
-const eventAggregate = jest.fn();
+const mockEventCount = jest.fn();
+const mockEventFind = jest.fn();
+const mockEventAggregate = jest.fn();
 
 jest.mock("../models/securityEventModel", () => ({
   SecurityEvent: {
-    countDocuments: (...args: unknown[]) => eventCount(...args),
-    find: (...args: unknown[]) => eventFind(...args),
-    aggregate: (...args: unknown[]) => eventAggregate(...args),
+    countDocuments: (...args: unknown[]) => mockEventCount(...args),
+    find: (...args: unknown[]) => mockEventFind(...args),
+    aggregate: (...args: unknown[]) => mockEventAggregate(...args),
   },
 }));
 
-const ipCount = jest.fn();
+const mockIpCount = jest.fn();
 jest.mock("../models/accountIpSignalModel", () => ({
   AccountIpSignal: {
-    countDocuments: (...args: unknown[]) => ipCount(...args),
+    countDocuments: (...args: unknown[]) => mockIpCount(...args),
     find: jest.fn(),
   },
 }));
@@ -121,8 +121,8 @@ beforeEach(() => {
 
 describe("accountRiskAdmin 账户列表", () => {
   it("筛选下推 Mongo，limit 被钳到 200，IP 打码，密码类字段不在投影里", async () => {
-    userCount.mockResolvedValue(1);
-    userFind.mockReturnValue(
+    mockUserCount.mockResolvedValue(1);
+    mockUserFind.mockReturnValue(
       queryChain([
         {
           id: "u-1",
@@ -146,12 +146,12 @@ describe("accountRiskAdmin 账户列表", () => {
       jest.fn() as never,
     );
 
-    const match = (userFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    const match = (mockUserFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(match.riskTier).toBe("watch");
     expect(match.riskFlags).toBe("GEO_JUMP");
     expect(match.accountStatus).toEqual({ $in: ["active", null] });
 
-    const chain = userFind.mock.results[0]!.value as Record<string, jest.Mock>;
+    const chain = mockUserFind.mock.results[0]!.value as Record<string, jest.Mock>;
     expect(chain.limit).toHaveBeenCalledWith(200);
     expect(chain.skip).toHaveBeenCalledWith(20);
 
@@ -167,8 +167,8 @@ describe("accountRiskAdmin 账户列表", () => {
   });
 
   it("按关键词搜索时把关键词当字面量（`.` 不得变通配符）", async () => {
-    userCount.mockResolvedValue(0);
-    userFind.mockReturnValue(queryChain([]));
+    mockUserCount.mockResolvedValue(0);
+    mockUserFind.mockReturnValue(queryChain([]));
 
     const res = makeRes();
     await AccountRiskAdminController.listAccounts(
@@ -177,7 +177,7 @@ describe("accountRiskAdmin 账户列表", () => {
       jest.fn() as never,
     );
 
-    const match = (userFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    const match = (mockUserFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     const or = match.$or as Array<Record<string, RegExp>>;
     expect(or[0]!.username!.source).toContain("a\\.b");
   });
@@ -185,8 +185,8 @@ describe("accountRiskAdmin 账户列表", () => {
 
 describe("accountRiskAdmin 信号", () => {
   it("匿名筛选写进 eventData.anonymous，载荷递归脱敏", async () => {
-    eventCount.mockResolvedValue(1);
-    eventFind.mockReturnValue(
+    mockEventCount.mockResolvedValue(1);
+    mockEventFind.mockReturnValue(
       queryChain([
         {
           _id: "evt-1",
@@ -207,7 +207,7 @@ describe("accountRiskAdmin 信号", () => {
       jest.fn() as never,
     );
 
-    const match = (eventFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    const match = (mockEventFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(match["eventData.anonymous"]).toBe(true);
     expect(match.eventType).toBe("ACCOUNT_ABUSE_CAPTCHA_FAILED");
 
@@ -224,8 +224,8 @@ describe("accountRiskAdmin 信号", () => {
 
 describe("accountRiskAdmin 处置记录", () => {
   it("只认两个处置事件类型，操作者可筛", async () => {
-    eventCount.mockResolvedValue(0);
-    eventFind.mockReturnValue(queryChain([]));
+    mockEventCount.mockResolvedValue(0);
+    mockEventFind.mockReturnValue(queryChain([]));
 
     const res = makeRes();
     await AccountRiskAdminController.listActions(
@@ -234,7 +234,7 @@ describe("accountRiskAdmin 处置记录", () => {
       jest.fn() as never,
     );
 
-    const match = (eventFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    const match = (mockEventFind.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(match.eventType).toEqual({ $in: ["ACCOUNT_RISK_ACTION", "ACCOUNT_RISK_TIER_CHANGED"] });
     expect(match["eventData.action"]).toBe("suspend");
     expect(match["eventData.operatorId"]).toBe("admin-9");
@@ -243,15 +243,15 @@ describe("accountRiskAdmin 处置记录", () => {
 
 describe("accountRiskAdmin 概览", () => {
   it("风险档缺项补 0，缺索引显式报出来", async () => {
-    userAggregate.mockReturnValueOnce(aggregateChain([{ _id: "watch", count: 2 }]));
-    userAggregate.mockReturnValueOnce(aggregateChain([{ _id: "active", count: 5 }]));
-    userAggregate.mockReturnValueOnce(aggregateChain([]));
-    eventCount.mockResolvedValue(0);
-    eventAggregate.mockReturnValueOnce(aggregateChain([]));
-    eventAggregate.mockReturnValueOnce(aggregateChain([]));
-    eventFind.mockReturnValue(queryChain([]));
-    ipCount.mockResolvedValue(0);
-    userIndexes.mockResolvedValue([{ name: "riskTier_1" }]);
+    mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "watch", count: 2 }]));
+    mockUserAggregate.mockReturnValueOnce(aggregateChain([{ _id: "active", count: 5 }]));
+    mockUserAggregate.mockReturnValueOnce(aggregateChain([]));
+    mockEventCount.mockResolvedValue(0);
+    mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
+    mockEventAggregate.mockReturnValueOnce(aggregateChain([]));
+    mockEventFind.mockReturnValue(queryChain([]));
+    mockIpCount.mockResolvedValue(0);
+    mockUserIndexes.mockResolvedValue([{ name: "riskTier_1" }]);
 
     const res = makeRes();
     await AccountRiskAdminController.getOverview(asReq(), res as unknown as never, jest.fn() as never);
@@ -273,6 +273,6 @@ describe("accountRiskAdmin 概览", () => {
     await AccountRiskAdminController.getOverview(asReq(), res as unknown as never, jest.fn() as never);
 
     expect(res.statusCode).toBe(503);
-    expect(userAggregate).not.toHaveBeenCalled();
+    expect(mockUserAggregate).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,7 @@ import {
   FaShareAlt,
   FaShieldAlt,
   FaStore,
+  FaTachometerAlt,
   FaTerminal,
   FaUser,
   FaUserShield,
@@ -630,6 +631,13 @@ export function getAdminNavGroups(ctx: NavVisibilityContext): NavGroup[] {
             url: '/admin/account-risk',
             icon: FaUserShield as IconType,
             requiredPage: 'account-risk',
+          },
+          {
+            // 限流 / 配额 / 资源闸门：同上，端点只做 admin + 页面授权，默认仅超管。
+            title: '限流与配额',
+            url: '/admin/rate-limits',
+            icon: FaTachometerAlt as IconType,
+            requiredPage: 'rate-limits',
           },
           {
             title: '登录令牌血缘',

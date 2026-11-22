@@ -269,6 +269,24 @@ class MongoTtsJobStore implements TtsJobStore {
       .exec();
   }
 
+  /**
+   * RC-30 的管理端视图：谁在占用队列。
+   *
+   * 只回聚合后的「用户 + 活跃任务数」，不回任务正文（题词 / 语音参数都是用户内容）。
+   * 按活跃数倒序、只取前 N 个用户：面板要回答「现在谁把队列占满了」，
+   * 而不是把每个排队任务摊开。
+   */
+  public async listActiveJobOwners(limit = 20): Promise<Array<{ userId: string; active: number }>> {
+    const safeLimit = Math.min(Math.max(Math.floor(limit) || 20, 1), 100);
+    const rows = await TtsJobModel.aggregate<{ _id: string; active: number }>([
+      { $match: { status: { $in: ["queued", "processing"] }, userId: { $nin: ["", null] } } },
+      { $group: { _id: "$userId", active: { $sum: 1 } } },
+      { $sort: { active: -1 } },
+      { $limit: safeLimit },
+    ]).exec();
+    return rows.map((row: { _id: string; active: number }) => ({ userId: String(row._id), active: Number(row.active) || 0 }));
+  }
+
   public async getQueuePosition(taskId: string) {
     const job = await this.getJob(taskId);
     if (!job || job.status !== "queued") {

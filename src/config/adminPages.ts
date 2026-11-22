@@ -68,6 +68,9 @@ export const ADMIN_PAGES: readonly AdminPageDefinition[] = [
   // 端点只做 admin + 页面授权，默认授予集合不含它，因此默认仅超管可见；
   // 需要下放时由超管在这里勾选，不必改路由。页面全部只读，处置仍走用户管理页。
   { key: "account-risk", label: "账户风险与信号", apiPrefixes: ["/api/admin/account-risk"] },
+  // 限流 / 配额 / 资源闸门（RC-27/28/29/30/37/39）：只读；阈值仍由 env 与运行时配置决定。
+  // 默认授予集合不含它 → 默认仅超管可见，可按页面下放。
+  { key: "rate-limits", label: "限流与配额", apiPrefixes: ["/api/admin/rate-limits"] },
   { key: "qq-guard", label: "QQ 群守卫", apiPrefixes: ["/api/admin/qq-guard"] },
   { key: "shortlink", label: "短链管理", apiPrefixes: ["/api/admin/shortlinks", "/api/shorturl"] },
   { key: "broadcast", label: "广播推送", apiPrefixes: ["/api/admin/broadcast"] },

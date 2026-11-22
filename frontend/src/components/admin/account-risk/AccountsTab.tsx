@@ -41,13 +41,15 @@ import {
   useUrlFilters,
 } from './ui';
 
-const FILTER_DEFAULTS = {
+// 显式标成 string：`as const` 会把初值推成字面量类型（`""`），
+// 于是 `useState(filters.q)` 的 setter 只接受 `""`，输入框赋值会报 TS2345。
+const FILTER_DEFAULTS: Record<'q' | 'tier' | 'status' | 'flag' | 'sort', string> = {
   q: '',
   tier: '',
   status: '',
   flag: '',
   sort: 'risk_desc',
-} as const;
+};
 
 type AccountsFilterKey = keyof typeof FILTER_DEFAULTS;
 
@@ -495,3 +497,5 @@ export const AccountRiskDetailModal: React.FC<{ userId: string | null; onClose: 
     </div>
   </StudioModal>
 );
+
+export default AccountRiskAccountsTab;

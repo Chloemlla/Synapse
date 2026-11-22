@@ -43,24 +43,24 @@ export { CopyIconButton } from '../crash-reports/ui';
  *
  * `defaults` 必须是模块级常量（对象身份稳定），否则 memo 每次都会失效。
  */
-export function useUrlFilters<T extends Record<string, string>>(
-  defaults: T,
-): readonly [T, (patch: Partial<Record<keyof T, string>>) => void] {
+export function useUrlFilters<K extends string>(
+  defaults: Record<K, string>,
+): readonly [Record<K, string>, (patch: Partial<Record<K, string>>) => void] {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const value = useMemo(() => {
-    const next: Record<string, string> = { ...defaults };
-    for (const key of Object.keys(defaults)) {
+    const next: Record<K, string> = { ...defaults };
+    for (const key of Object.keys(defaults) as K[]) {
       const raw = searchParams.get(key);
       if (raw !== null) next[key] = raw;
     }
-    return next as T;
+    return next;
   }, [searchParams, defaults]);
 
   const patch = useCallback(
-    (next: Partial<Record<keyof T, string>>) => {
+    (next: Partial<Record<K, string>>) => {
       const params = new URLSearchParams(searchParams);
-      for (const [key, raw] of Object.entries(next) as Array<[keyof T & string, string | undefined]>) {
+      for (const [key, raw] of Object.entries(next) as Array<[K, string | undefined]>) {
         if (raw === undefined || raw === '') {
           params.delete(key);
           continue;

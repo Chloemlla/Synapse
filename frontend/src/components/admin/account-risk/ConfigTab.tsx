@@ -153,9 +153,12 @@ const AccountRiskConfigTab: React.FC<{ refreshNonce: number }> = ({ refreshNonce
                   return (
                     <Td key={tier}>
                       {locked ? (
-                        <InfoBadge tone="rose" title={cell?.reason ?? undefined} className="whitespace-nowrap">
-                          冻结 · {cell?.appealChannel === 'ticket' ? '可提工单' : '邮件申诉'}
-                        </InfoBadge>
+                        // InfoBadge 不接受 title：说明文字要包一层 span，否则 TS 直接拒收这个属性。
+                        <span title={cell?.reason ?? undefined}>
+                          <InfoBadge tone="rose" className="whitespace-nowrap">
+                            冻结 · {cell?.appealChannel === 'ticket' ? '可提工单' : '邮件申诉'}
+                          </InfoBadge>
+                        </span>
                       ) : (
                         <InfoBadge tone="emerald" className="whitespace-nowrap">开放</InfoBadge>
                       )}

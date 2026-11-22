@@ -51,6 +51,7 @@ export const ADMIN_SPA_MODULE_PATHS = [
   "/admin/pixel",
   "/admin/policy-consents",
   "/admin/qq-guard",
+  "/admin/rate-limits",
   "/admin/registration-invites",
   "/admin/shortlink",
   "/admin/shorturlmigration",

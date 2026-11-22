@@ -24,16 +24,16 @@ import { StudioErrorState, StudioLoadingState } from '@/components/studioFeedbac
 import { useNotification } from '@/components/Notification';
 import { cn } from '@/lib/utils';
 import { getBackendErrorMessage } from '@/utils/backendError';
-import { AUTO_REFRESH_OPTIONS, formatCount, formatRelativeTime } from '../ip-risk-log/format';
-import { FilterSelect } from '../ip-risk-log/ui';
-import type { AccountRiskQuickFilter } from './format';
-import { Collapsible } from './ui';
-import AccountRiskOverviewTab from './OverviewTab';
-import AccountRiskAccountsTab from './AccountsTab';
-import AccountRiskSignalsTab from './SignalsTab';
-import AccountRiskIpFactsTab from './IpFactsTab';
-import AccountRiskActionsTab from './ActionsTab';
-import AccountRiskConfigTab from './ConfigTab';
+import { AUTO_REFRESH_OPTIONS, formatCount, formatRelativeTime } from './ip-risk-log/format';
+import { FilterSelect } from './ip-risk-log/ui';
+import type { AccountRiskQuickFilter } from './account-risk/format';
+import { Collapsible } from './account-risk/ui';
+import AccountRiskOverviewTab from './account-risk/OverviewTab';
+import AccountRiskAccountsTab from './account-risk/AccountsTab';
+import AccountRiskSignalsTab from './account-risk/SignalsTab';
+import AccountRiskIpFactsTab from './account-risk/IpFactsTab';
+import AccountRiskActionsTab from './account-risk/ActionsTab';
+import AccountRiskConfigTab from './account-risk/ConfigTab';
 
 type TabKey = 'overview' | 'accounts' | 'signals' | 'ip-facts' | 'actions' | 'config';
 

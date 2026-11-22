@@ -22,14 +22,15 @@ import {
   useUrlFilters,
 } from './ui';
 
-const FILTER_DEFAULTS = {
+// 显式标成 string：`as const` 会把初值推成字面量类型，导致 setter 只接受 `""`。
+const FILTER_DEFAULTS: Record<'userId' | 'eventType' | 'ip' | 'anonymous' | 'since' | 'sort', string> = {
   userId: '',
   eventType: '',
   ip: '',
   anonymous: '',
   since: '',
   sort: 'recent',
-} as const;
+};
 
 const PAGE_SIZES = [20, 50, 100, 200];
 

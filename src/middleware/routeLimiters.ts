@@ -1045,6 +1045,50 @@ const LIMITER_DEFINITIONS = {
   },
 } as const satisfies Record<string, LimiterDefinition>;
 
+/**
+ * 限流器清单快照（只读，供 `/admin/rate-limits` 的「限流器清单」页签使用）。
+ *
+ * 为什么需要导出：`LIMITER_DEFINITIONS` 是模块内部常量，管理端看不到「哪个端点用了哪一档」，
+ * 排查 429 时只能靠翻源码。这里按 createLimiter 的同一套解析规则（profile → windowMs/max，
+ * 静态资源类走内存档）投影成清单，**不参与任何限流判定**，也不改变既有行为。
+ */
+export function getLimiterDefinitionSnapshot(): Array<{
+  name: string;
+  profile: string;
+  category: LimiterCategory;
+  windowMs: number;
+  max: number;
+  /** 键口径：user+ip 双键 = 账号与出口各自计数；其余为按 IP。 */
+  keyMode: "user-ip" | "ip";
+  storage: "memory" | "shared";
+  skipLocal: boolean;
+  message: string;
+}> {
+  return (Object.keys(LIMITER_DEFINITIONS) as Array<keyof typeof LIMITER_DEFINITIONS>).map((name) => {
+    const definition: LimiterDefinition = LIMITER_DEFINITIONS[name];
+    const profileName = definition.profile || "standard";
+    const profile = RATE_PROFILES[profileName];
+    const category = definition.category || "public-api";
+    const preferMemory = definition.preferMemory ?? category === STATIC_RESOURCE_CATEGORY;
+    return {
+      name: String(name),
+      profile: String(profileName),
+      category,
+      windowMs: definition.windowMs ?? profile.windowMs,
+      max: definition.max ?? profile.max,
+      keyMode: definition.keyGenerator === userIpDualKey ? "user-ip" : "ip",
+      storage: preferMemory ? "memory" : "shared",
+      // 默认 skip 就是 isLocalRequest；两个具名 skip 也都保留本地豁免。
+      // 其余自定义 skip 无法从函数体反推，标 false 而不是猜成 true。
+      skipLocal:
+        definition.skip === undefined ||
+        definition.skip === skipLocalAndStatusPoll ||
+        definition.skip === skipLocalAndAuthSpecific,
+      message: definition.message || "请求过于频繁，请稍后再试",
+    };
+  });
+}
+
 function limiterFromDefinition(name: keyof typeof LIMITER_DEFINITIONS): RateLimitRequestHandler {
   const definition: LimiterDefinition = LIMITER_DEFINITIONS[name];
   return createLimiter({

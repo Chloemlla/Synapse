@@ -259,7 +259,8 @@ const EXPECTED_USER_INDEXES = [
 async function readUserIndexNames(): Promise<string[]> {
   try {
     const raw = await UserModel.collection.indexes();
-    return raw.map((index) => String(index.name ?? ""));
+    // 显式标注：`indexes()` 的返回类型依赖 mongoose 版本，不写死泛型避免升级后静默变 any。
+    return raw.map((index: { name?: string }) => String(index.name ?? ""));
   } catch (error) {
     logger.warn("[AccountRiskAdmin] 读取 user_datas 索引失败", {
       errorType: error instanceof Error ? error.name : "unknown",

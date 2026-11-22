@@ -10,6 +10,7 @@ import { generationHistoryStore, redactTtsTextForStorage } from "./tts.history";
 import type { TtsHistoryRecord, TtsHistoryReviewStatus } from "./tts.ports";
 import { TtsSubmissionPipeline } from "./tts.pipeline";
 import { TtsQueue } from "./tts.queue";
+import { registerTtsQueue } from "./tts.queueRegistry";
 import { ttsAssetAccessService } from "./tts.assetAccess";
 import { ttsAudioAssetStore } from "./tts.asset";
 import { type TtsNextAction, ttsStorage } from "./tts.storage";
@@ -22,6 +23,12 @@ export class TtsController {
     buildUsageSummary: (userId, isAdmin) => TtsController.submissionPipeline.buildUsageSummaryByUserId(userId, isAdmin),
     buildNextAction: (type, label, message) => TtsController.buildNextAction(type, label, message),
   });
+
+  // RC-30 管理端只读视图：把队列实例登记到进程内注册表（见 tts.queueRegistry.ts）。
+  // 放在静态初始化里，保证任何读到队列占用的地方（管理端 / 诊断）都拿得到同一个实例。
+  static {
+    registerTtsQueue(TtsController.ttsQueue);
+  }
 
   private static getClientIp(req: Request): string {
     return getClientIP(req);
