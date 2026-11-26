@@ -1,4 +1,5 @@
 import { FiAlertCircle } from "react-icons/fi";
+import { describeAiFailureReason } from "../utils/aiDiagnostics";
 import type { AiErrorDetails } from "../types/aiDiagnostics";
 
 interface AiErrorDetailsPanelProps {
@@ -17,7 +18,9 @@ export function AiErrorDetailsPanel({ diagnostics }: AiErrorDetailsPanelProps) {
         <div className="rounded-[10px] border border-rose-100 bg-white/80 p-3">
           <div className="font-semibold text-slate-800">{diagnostics.summary}</div>
           <div className="mt-1 text-slate-500">
-            类型：{diagnostics.reason} · 时间：{new Date(diagnostics.occurredAt).toLocaleString()}
+            原因：{describeAiFailureReason(diagnostics.reason)}
+            {/* 诊断面同时保留稳定码:前端靠 code 识别分支,写文案匹配会说谎。 */}
+            <span className="ml-1 font-mono">[{diagnostics.reason}]</span> · 时间：{new Date(diagnostics.occurredAt).toLocaleString()}
           </div>
         </div>
 
