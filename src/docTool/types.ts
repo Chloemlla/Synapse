@@ -5,6 +5,10 @@
 //
 // 迁入自本机脚本 md2docx（F:\studys\md2docx），字段命名按服务端语义重排：
 // 本机版的「输出到同目录 / 指定目录」在 Web 侧叫 alongside / custom，因为源文件是上传来的副本。
+//
+// 契约子系统的类型只在 `contract/types.ts` 里定义，这里**只做 type-only 引入**：
+// 它不带任何运行期依赖（那个文件只 import node:crypto），所以 HTTP 层与单测都能安全共享。
+import type { ContractSummary } from "./contract/types";
 
 /** 目标 .docx 已存在时的处理方式。默认 rename：不覆盖用户已有产物。 */
 export type ConflictMode = "skip" | "rename" | "overwrite";
@@ -34,6 +38,11 @@ export interface DocPrefs {
   recursive: boolean;
   /** 参考样式文档（用户工作目录内的相对路径，空表示不用） */
   referenceDoc: string;
+  /**
+   * 排版契约 id。**空串 = 不做契约处理**（与没有这个功能时的行为完全一致）。
+   * 非空时按 id 解析：用户自建优先，其次内置，都没有则回落默认契约并在日志里说明。
+   */
+  contractId: string;
 }
 
 /** 运行限额：由环境变量决定，只读。 */
@@ -79,6 +88,26 @@ export interface CreateJobInput {
   outDir?: string;
   conflict?: ConflictMode;
   referenceDoc?: string;
+  /** 本次任务使用的排版契约 id（不传 = 用偏好里的；偏好也为空 = 不做契约处理） */
+  contractId?: string;
+}
+
+/**
+ * 单个产物的排版体检结论。字段是验收器的直接输出，不做二次加工：
+ * score 与被扣的项必须能对上，否则报告就没法被核对。
+ */
+export interface DocItemVerdict {
+  contractId: string;
+  /** 0-100，加权通过率 */
+  score: number;
+  /** pass = 达到契约的 minScore；review = 60 分以上但有项目不合规；fail = 60 以下 */
+  grade: "pass" | "review" | "fail";
+  /** 实际执行的修复轮数（0 = 产物本来就合规） */
+  rounds: number;
+  /** 实际执行过的修复项（sectPr/tableBorders/tableRow/fontRun） */
+  applied: string[];
+  /** 未修复的缺陷（含 fixable=null 的“只能人工改”） */
+  defects: Array<{ code: string; check: string; message: string }>;
 }
 
 /** 单个文件的转换结果。 */
@@ -92,6 +121,8 @@ export interface DocJobItem {
   /** 实际写了新名字（旧文件保留） */
   renamed?: boolean;
   error?: string;
+  /** 排版体检结论（契约管线跑过才有；纯转换不跑契约时为空） */
+  verdict?: DocItemVerdict;
 }
 
 /** 日志行：与 mediaTool 一致用 epoch 秒，前端只用来做「详情」折叠区。 */
@@ -128,6 +159,8 @@ export interface DocJobRecord {
     outDir: string;
     conflict: ConflictMode;
     referenceDoc: string;
+    /** 本次任务实际使用的契约 id（落库后即使以后删掉该契约，报告里也能看出当时用的是哪份） */
+    contractId?: string;
   };
   items: DocJobItem[];
   logs: DocJobLog[];
@@ -142,6 +175,16 @@ export interface DocSettingsView {
   prefs: DocPrefs;
   /** 用户工作目录内的模板清单（生成过的 reference.docx） */
   templates: ReferenceTemplate[];
+  /** 可选的排版契约（内置 + 该用户自己的），按 id 排序 */
+  contracts: ContractOption[];
+}
+
+/** 契约选项（列表展示用；summary 是给人看的一行摘要，不是契约本体）。 */
+export interface ContractOption {
+  id: string;
+  name: string;
+  source: "builtin" | "user";
+  summary: ContractSummary;
 }
 
 /** GET /health 的响应。 */
@@ -178,6 +221,7 @@ export const DEFAULT_DOC_PREFS: DocPrefs = {
   outDir: "out",
   recursive: true,
   referenceDoc: "",
+  contractId: "",
 };
 
 export const CONFLICT_MODES: ConflictMode[] = ["skip", "rename", "overwrite"];

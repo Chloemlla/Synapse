@@ -16,6 +16,8 @@ import express, { type Request, type Response } from "express";
 import multer from "multer";
 import logger from "../../utils/logger";
 import { buildReferenceDoc, buildReport, describeFile, destForFile } from "../converter";
+import { importContractFromDocx, listBuiltinContracts, listUserContracts, resolveContract } from "../contract/contractStore";
+import { DEFAULT_CONTRACT_ID } from "../contract/types";
 import { purgeDocArtifacts, sweepExpiredArtifacts } from "../jobs/docArtifactCleanup";
 import type { DocJobRunner } from "../jobs/docJobRunner";
 import type { DocJobStore } from "../jobs/docJobStore";
@@ -220,12 +222,18 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         const abs = resolveOwnedFile(c, prefs.referenceDoc);
         if (!abs || !isDocxFile(abs) || !statOrNull(abs)?.isFile()) prefs.referenceDoc = "";
       }
+      // 契约同理：内置的永远在，用户自己的可能被删。留着不存在的 id 会让界面显示一个
+      // 「看着已选中、提交后却静默回落默认契约」的幽灵选项。
+      const contracts = [...listBuiltinContracts(), ...listUserContracts(c.userRoot)];
+      if (prefs.contractId && !contracts.some((entry) => entry.id === prefs.contractId)) prefs.contractId = "";
       res.json({
         ok: true,
         pandoc: probe(),
         limits: deps.limits,
         prefs,
         templates: listTemplates(c.userRoot),
+        contracts,
+        defaultContractId: DEFAULT_CONTRACT_ID,
         // 用户 prefs.referenceDoc 为空时，转换会落到这份默认样式上，界面必须能说清「不填会用什么」
         defaultReference: describeDefaultReferenceDoc(),
       });
@@ -239,12 +247,94 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
     try {
       const c = ctx(req, res);
       if (!c) return;
-      // 白名单化交给 settingsStore.update：它只认 DocPrefs 的五个键，非法值回落默认而不是 400
+      // 白名单化交给 settingsStore.update：它只认 DocPrefs 的六个键，非法值回落默认而不是 400
       const patch = ((req.body ?? {}) as { prefs?: Partial<DocPrefs> }).prefs ?? {};
       res.json({ ok: true, prefs: await settingsStore.update(c.user.id, patch) });
     } catch (e) {
       res.status(500).json({ ok: false, error: errMessage(e) });
     }
+  });
+
+  // ---- 排版契约：内置 + 用户自己的（存在 <userRoot>/contracts/*.json） ----
+  // codeql[js/missing-rate-limiting] 同上：挂载层 doc-tool-limiter 已覆盖
+  router.get("/contracts", async (req: Request, res: Response) => {
+    try {
+      const c = ctx(req, res);
+      if (!c) return;
+      res.json({
+        ok: true,
+        contracts: [...listBuiltinContracts(), ...listUserContracts(c.userRoot)],
+        defaultContractId: DEFAULT_CONTRACT_ID,
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: errMessage(e) });
+    }
+  });
+
+  /**
+   * 从一份 .docx 反编译出契约（「老师手上已经有排好的范本」的入口）。
+   * 用内存存储而不是落盘临时文件：产物只是几 KB 的 JSON，没必要为了读一次在用户目录里留垃圾。
+   * id 可缺省（缺省则自动生成 `custom-<time36>`）；显式传 id 且重名就是覆盖 —— 与上传 .md 同名覆盖的语义一致。
+   */
+  // codeql[js/missing-rate-limiting] 同上
+  router.post("/contracts", async (req: Request, res: Response) => {
+    if (!/multipart\/form-data/i.test(String(req.headers["content-type"] || ""))) {
+      res.status(400).json({ ok: false, error: "请以 multipart/form-data 提交（字段名 file，内容为 .docx）" });
+      return;
+    }
+    const c = ctx(req, res);
+    if (!c) return;
+    const upload = multer({
+      storage: multer.memoryStorage(),
+      fileFilter: (_req, file, cb) => {
+        if (!/\.docx$/i.test(file.originalname)) {
+          cb(new Error("只接受 .docx（Word 文档）"));
+          return;
+        }
+        cb(null, true);
+      },
+      // 上限用 maxFileBytes：反编译只需要 styles.xml + document.xml，再大的「范本」已经超出这个工具的职责
+      limits: { fileSize: deps.limits.maxFileBytes, files: 1 },
+    }).single("file");
+
+    upload(req, res, (err: unknown) => {
+      if (err) {
+        const code = (err as { code?: string }).code || "";
+        const message = code === "LIMIT_FILE_SIZE" ? `文件超过 ${mb(deps.limits.maxFileBytes)} 上限` : errMessage(err);
+        res.status(400).json({ ok: false, error: message || "上传失败" });
+        return;
+      }
+      void (async () => {
+        try {
+          const file = (req as Request & { file?: Express.Multer.File }).file;
+          if (!file?.buffer?.length) {
+            res.status(400).json({ ok: false, error: "未收到文件（字段名 file）" });
+            return;
+          }
+          // id 缺省时自动生成：用户点「导入 .docx」不该先被要求起个英文 id。
+          // 想覆盖某份已有契约就显式传 id（同名即覆盖），不传则每次都是新的一份。
+          const id = String((req.body as { id?: string })?.id ?? "").trim() || `custom-${Date.now().toString(36)}`;
+          const fallbackName = String(file.originalname || "").replace(/\.docx$/i, "").trim();
+          const name = String((req.body as { name?: string })?.name ?? "").trim() || fallbackName || id;
+          const saved = importContractFromDocx({ userRoot: c.userRoot, id, name, docx: file.buffer });
+          if (!saved.ok || !saved.contract) {
+            res.status(400).json({ ok: false, error: saved.error ?? "无法解析这份文档" });
+            return;
+          }
+          res.json({
+            ok: true,
+            contract: {
+              id: saved.contract.id,
+              name: saved.contract.name,
+              source: "user",
+              summary: listUserContracts(c.userRoot).find((entry) => entry.id === saved.contract?.id)?.summary,
+            },
+          });
+        } catch (e) {
+          res.status(500).json({ ok: false, error: errMessage(e) });
+        }
+      })();
+    });
   });
 
   // ---- 已上传的 .md（上传落在 <userRoot>/inbox/，所以列表与任务里的 rel 都带 inbox/ 前缀） ----
@@ -520,6 +610,23 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         }
       }
 
+      // 契约：显式传的不存在就 400（用户以为选好了、实际用了默认契约，这是最需要报错的一种）；
+      // 从偏好带出来的失效 id 静默回落默认（契约文件可能已被删，不该因此让整个任务建不出来）。
+      const contractFromBody = body.contractId !== undefined;
+      const rawContractId = contractFromBody ? String(body.contractId ?? "").trim() : String(prefs.contractId ?? "").trim();
+      let contractId = "";
+      if (rawContractId) {
+        const resolved = resolveContract({ userRoot: c.userRoot, contractId: rawContractId });
+        if (resolved.source === "default") {
+          if (contractFromBody) {
+            res.status(400).json({ ok: false, error: `排版契约不存在：${rawContractId}` });
+            return;
+          }
+        } else {
+          contractId = resolved.contract.id;
+        }
+      }
+
       const record: DocJobRecord = {
         id: genJobId(),
         userId: c.user.id,
@@ -533,7 +640,7 @@ export function createDocToolRouter(deps: DocToolRouterDeps): express.Router {
         ok: 0,
         skipped: 0,
         failed: 0,
-        input: { files: checked, outMode, outDir, conflict, referenceDoc },
+        input: { files: checked, outMode, outDir, conflict, referenceDoc, contractId },
         items: [],
         logs: [],
         cancelRequested: false,

@@ -100,6 +100,10 @@ const DocBatchPanel: React.FC = () => {
   const [outMode, setOutMode] = useState<OutMode>(DEFAULT_DOC_PREFS.outMode);
   const [outDir, setOutDir] = useState(DEFAULT_DOC_PREFS.outDir);
   const [referenceDoc, setReferenceDoc] = useState(DEFAULT_DOC_PREFS.referenceDoc);
+  // 空 = 不做契约处理。老用户打开面板时的默认值必须是空，否则「上了个新功能」会悄悄改掉他们的产物。
+  // `?? ''`：老后端/老 mock 没有这个字段时，select 的 value 不能是 undefined（会变成非受控）
+  const [contractId, setContractId] = useState<string>(DEFAULT_DOC_PREFS.contractId ?? '');
+  const [importingContract, setImportingContract] = useState(false);
   const [recursive, setRecursive] = useState(DEFAULT_DOC_PREFS.recursive);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -120,6 +124,7 @@ const DocBatchPanel: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  const contractInputRef = useRef<HTMLInputElement>(null);
   /**
    * 输出位置（模式 + 目录）用 ref 追一份当前值：listFiles 是空依赖的 useCallback，
    * 直接闭包会拿到旧 state；把这两个值随每次渲染同步进 ref，列文件时读 ref 就不会预告错目标名。
@@ -170,6 +175,7 @@ const DocBatchPanel: React.FC = () => {
         setOutMode(prefs.outMode);
         setOutDir(prefs.outDir ?? DEFAULT_DOC_PREFS.outDir);
         setReferenceDoc(prefs.referenceDoc ?? '');
+        setContractId(prefs.contractId ?? '');
         setRecursive(prefs.recursive);
       } catch (err) {
         if (!alive) return;
@@ -303,10 +309,10 @@ const DocBatchPanel: React.FC = () => {
     setJob(null);
     setJobId(null);
     try {
-      const prefs: DocPrefs = { conflict, outMode, outDir, recursive, referenceDoc };
+      const prefs: DocPrefs = { conflict, outMode, outDir, recursive, referenceDoc, contractId: contractId ?? '' };
       // 偏好先落服务端：下次打开面板时能带出同一套选项。
       await docToolApi.updateSettings(prefs);
-      const created = await docToolApi.createJob({ files: targetFiles, outMode, outDir, conflict, referenceDoc });
+      const created = await docToolApi.createJob({ files: targetFiles, outMode, outDir, conflict, referenceDoc, contractId });
       refreshedJobRef.current = null;
       setJobId(created);
       setNotice(`已提交 ${targetFiles.length} 个文件。`);
@@ -389,6 +395,30 @@ const DocBatchPanel: React.FC = () => {
     }
   };
 
+  /** 把一份 .docx 反向编译成契约：老师把教研组的模板丢进来就能全量生效，不需要懂任何参数。 */
+  const importContractFromFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // 先清空 value：否则同一份文件连续导入两次（改完再导）浏览器不会再触发 change
+    event.target.value = '';
+    if (!file) return;
+    setImportingContract(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const fallbackName = file.name.replace(/\.docx$/i, '');
+      const { contract } = await docToolApi.importContract(file, undefined, fallbackName);
+      const view = await docToolApi.getSettings();
+      setSettings(view);
+      setContractId(contract.id);
+      setNotice(`已导入契约「${contract.name}」，本次任务将按它体检。`);
+    } catch (err) {
+      setError(describeError(err, '导入排版契约失败，请确认这是一份可以正常打开的 .docx。'));
+      console.error('doc-tool 导入契约失败:', err);
+    } finally {
+      setImportingContract(false);
+    }
+  };
+
   const toggleSelected = (rel: string) => {
     setSelected((prev) => (prev.includes(rel) ? prev.filter((item) => item !== rel) : [...prev, rel]));
   };
@@ -396,6 +426,8 @@ const DocBatchPanel: React.FC = () => {
   const pandoc = settings?.pandoc;
   const limits = settings?.limits;
   const templates = settings?.templates ?? [];
+  // 契约清单由服务端给（内置 + 该用户自己的），前端不缓存：删了契约下次打开就该消失
+  const contracts = settings?.contracts ?? [];
   const serverDefaultReference = settings?.defaultReference;
   const engineUnavailable = pandoc ? !pandoc.available : false;
   const pandocLabel = pandoc
@@ -620,6 +652,46 @@ const DocBatchPanel: React.FC = () => {
         </div>
         <p className="text-[11px] leading-5 text-slate-400">
           参考样式决定正文中英文字体与标题层级样式；不选就用服务器自带的那份，也可以自己生成一份在 Word 里改好再替换。
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="min-w-[220px] flex-1">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-500">排版契约（体检 + 定向修复）</span>
+            <select
+              className={`${studioFieldClassName} py-2 text-xs`}
+              value={contractId}
+              onChange={(event) => setContractId(event.target.value)}
+              aria-label="排版契约"
+            >
+              <option value="">不使用（只转换，不做体检）</option>
+              {contracts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.source === 'user' ? `${item.name}（自定义）` : item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <input
+            ref={contractInputRef}
+            type="file"
+            className="hidden"
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            aria-label="导入 docx 作为排版契约"
+            onChange={(event) => void importContractFromFile(event)}
+          />
+          <button
+            type="button"
+            onClick={() => contractInputRef.current?.click()}
+            disabled={importingContract || busy}
+            className={studioSecondaryButtonClassName}
+          >
+            {importingContract ? <SimpleLoadingSpinner size={0.7} /> : <FaPlusCircle className="text-[11px]" />}
+            从 .docx 导入契约
+          </button>
+        </div>
+        <p className="text-[11px] leading-5 text-slate-400">
+          选中后每个产物都会做 8 项体检（框线、中文字体、页边距、公式、图片、表格行不跨页、标题层级、容器自洽），
+          能自动修的自动修，修不了的列进报告的人工清单；选「不使用」与旧版行为完全一致。
         </p>
       </section>
 

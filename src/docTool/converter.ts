@@ -9,8 +9,16 @@ import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { applyContract, type StyleContract } from "./contract";
 import { ensureDir, relInside, runPandoc, statOrNull, uniqueDestPath, type RunPandoc } from "./runtime";
-import type { ConflictMode, DocFileFreshness, DocItemStatus, DocJobRecord, OutMode } from "./types";
+import type {
+  ConflictMode,
+  DocFileFreshness,
+  DocItemStatus,
+  DocItemVerdict,
+  DocJobRecord,
+  OutMode,
+} from "./types";
 
 const fmtKB = (bytes: number): string => `${(bytes / 1024).toFixed(1)} KB`;
 const secs = (ms: number): string => (ms / 1000).toFixed(1);
@@ -113,6 +121,25 @@ export interface ConvertOneResult {
   ms: number;
   renamed?: boolean;
   error?: string;
+  /** 排版体检结论（传了 contract 才有） */
+  verdict?: DocItemVerdict;
+}
+
+/** 契约管线结果 → 任务项上的精简结论（只留报告要显示的字段，不把 8 项明细塞进 Mongo 文档）。 */
+function toItemVerdict(contractId: string, run: ReturnType<typeof applyContract>): DocItemVerdict {
+  return {
+    contractId,
+    score: run.verdict.score,
+    grade: run.verdict.grade,
+    rounds: run.rounds,
+    applied: run.applied,
+    // 缺陷列表截断到 8 条：一份文档可能缺几十处框线，把它们全部写进报告只会把真正要看的那几条冲掉
+    defects: run.verdict.defects.slice(0, 8).map((defect) => ({
+      code: defect.code,
+      check: defect.check,
+      message: defect.message,
+    })),
+  };
 }
 
 /**
@@ -125,6 +152,8 @@ export async function convertOne(opts: {
   dest: string;
   referenceDoc?: string;
   conflict: ConflictMode;
+  /** 排版契约：传了就在 pandoc 成功后、改名之前跑体检+修复 */
+  contract?: { spec: StyleContract; sourceMarkdown?: string };
   run?: RunPandoc;
   onChild?: (child: import("node:child_process").ChildProcess | null) => void;
 }): Promise<ConvertOneResult> {
@@ -153,10 +182,50 @@ export async function convertOne(opts: {
   // 先写同目录的临时 .docx，成功后再改名：pandoc 中途失败（磁盘满/被 kill）时不会把 overwrite 模式下的
   // 上一份好产物截成半个文件。后缀必须保留 .docx —— pandoc 靠 -o 的扩展名判断输出格式。
   const temp = tempTargetFor(target);
-  const args = [opts.src, "-o", temp, ...(opts.referenceDoc ? [`--reference-doc=${opts.referenceDoc}`] : [])];
+  const args = [
+    opts.src,
+    "-o",
+    temp,
+    ...(opts.referenceDoc ? [`--reference-doc=${opts.referenceDoc}`] : []),
+    // 图片是按「相对路径」写在 md 里的，而 pandoc 的工作目录是进程 cwd 而不是 md 所在目录。
+    // 不给 --resource-path，`![](fig/a.png)` 一律变成「图片找不到」的空占位 —— 这是 C5 失分的头号原因。
+    `--resource-path=${path.dirname(opts.src)}`,
+  ];
   const run = opts.run ?? runPandoc;
   const result = await run(opts.pandoc, args, opts.onChild);
   const ms = elapsed();
+
+  // 契约管线：pandoc 成功之后、原子改名之前。
+  // 失败语义刻意不变 —— 体检抛错时仍然交付 pandoc 原件（能打开的文档），只把结论记成 fail。
+  // 反过来做（体检失败就报任务失败）等于让一个可选的排版层拥有了否决权，用户会拿不到任何产物。
+  let verdict: DocItemVerdict | undefined;
+  if (result.code === 0 && opts.contract) {
+    try {
+      const raw = fs.readFileSync(temp);
+      const runResult = applyContract({
+        docx: raw,
+        contract: opts.contract.spec,
+        sourceMarkdown: opts.contract.sourceMarkdown,
+      });
+      if (!runResult.docx.equals(raw)) fs.writeFileSync(temp, runResult.docx);
+      verdict = toItemVerdict(opts.contract.spec.id, runResult);
+    } catch (error) {
+      verdict = {
+        contractId: opts.contract.spec.id,
+        score: 0,
+        grade: "fail",
+        rounds: 0,
+        applied: [],
+        defects: [
+          {
+            code: "E_PIPELINE",
+            check: "C8",
+            message: `排版契约管线异常（已交付未加工的产物）：${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
 
   const stat = result.code === 0 ? statOrNull(temp) : null;
   if (result.code === 0 && stat) {
@@ -173,7 +242,7 @@ export async function convertOne(opts: {
     }
     // sizeBytes 一律用**字节**（与 DocFileEntry/describeFile 同单位）：界面自己格式化，
     // 否则同一个列表里会混着 KB 与字节两种量纲。
-    return { status: "ok", dest: target, sizeBytes: stat.size, ms, renamed: target !== opts.dest };
+    return { status: "ok", dest: target, sizeBytes: stat.size, ms, renamed: target !== opts.dest, verdict };
   }
   removeQuietly(temp);
   // 失败的通用出口：pandoc 可能「退出码 0 但没产出文件」（磁盘满、路径被劫），两条都算失败
@@ -182,6 +251,7 @@ export async function convertOne(opts: {
     dest: target,
     ms,
     error: result.code === 0 ? "pandoc 报告成功但没有产出文件" : result.msg,
+    verdict,
   };
 }
 
@@ -242,6 +312,7 @@ export function buildReport(job: DocJobRecord): string {
   lines.push(`输出：${job.input.outMode === "custom" ? job.input.outDir || "out" : "与源文件同目录"}`);
   lines.push(`已存在时：${CONFLICT_LABEL[job.input.conflict]}`);
   if (job.input.referenceDoc) lines.push(`参考样式：${job.input.referenceDoc}`);
+  if (job.input.contractId) lines.push(`排版契约：${job.input.contractId}`);
   lines.push(
     `结果：成功 ${job.ok} · 跳过 ${job.skipped} · 失败 ${job.failed} · 共 ${job.total} · 用时 ${secs(durationMs)}s`,
   );
@@ -250,10 +321,15 @@ export function buildReport(job: DocJobRecord): string {
   lines.push("明细：");
 
   for (const item of job.items) {
+    const grade = item.verdict ? `  [体检 ${item.verdict.score} 分 ${item.verdict.grade}]` : "";
     if (item.status === "ok") {
       const size = typeof item.sizeBytes === "number" ? `${fmtKB(item.sizeBytes).padStart(11)}` : "";
       const renamed = item.renamed ? `  → ${item.destRel}（重命名，未覆盖旧文件）` : "";
-      lines.push(`  [成功] ${item.rel}  ${size}${renamed}`);
+      lines.push(`  [成功] ${item.rel}  ${size}${renamed}${grade}`);
+      // 未修复的缺陷要跟着报告走：产物是给人用的，报告才是给人看的
+      for (const defect of item.verdict?.defects ?? []) {
+        lines.push(`           · ${defect.code} ${defect.message}`);
+      }
     } else if (item.status === "skipped") {
       lines.push(`  [跳过] ${item.rel}  已存在`);
     } else {

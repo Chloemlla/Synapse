@@ -31,19 +31,34 @@ const cleanReferenceDoc = (value: unknown): string | undefined => {
 };
 
 /**
- * 白名单化：只认识 DocPrefs 的五个键，其余键（前端回传整个对象时多带的、或手工改库塞进去的）直接丢。
+ * 契约 id 会成为磁盘上的文件名（`contracts/<id>.json`），所以字符集必须在这里就收紧，
+ * 不能等到写文件时才挡。空串是合法值（= 关闭契约，与老行为一致）；非空但非法同样回落空串而不是抛错。
+ * 是否存在同名契约不在这里判：那是文件系统的事，HTTP 层读完后会像 referenceDoc 一样洗一遍。
+ */
+const cleanContractId = (value: unknown): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return DEFAULT_DOC_PREFS.contractId;
+  const id = value.trim().toLowerCase();
+  if (id === "") return DEFAULT_DOC_PREFS.contractId;
+  return /^[a-z0-9][a-z0-9_-]{0,40}$/.test(id) ? id : DEFAULT_DOC_PREFS.contractId;
+};
+
+/**
+ * 白名单化：只认识 DocPrefs 的六个键，其余键（前端回传整个对象时多带的、或手工改库塞进去的）直接丢。
  * base 提供「本次没传的键」的取值 —— get 时是 DEFAULT_DOC_PREFS（老存档缺字段不炸），update 时是当前值。
  */
 function applyPrefs(base: DocPrefs, raw: unknown): DocPrefs {
   const src = (raw ?? {}) as Partial<DocPrefs>;
   const outDir = cleanOutDir(src.outDir);
   const referenceDoc = cleanReferenceDoc(src.referenceDoc);
+  const contractId = cleanContractId(src.contractId);
   return {
     conflict: src.conflict === undefined ? base.conflict : normalizeConflict(src.conflict),
     outMode: src.outMode === undefined ? base.outMode : normalizeOutMode(src.outMode),
     outDir: outDir ?? base.outDir,
     recursive: typeof src.recursive === "boolean" ? src.recursive : base.recursive,
     referenceDoc: referenceDoc ?? base.referenceDoc,
+    contractId: contractId ?? base.contractId,
   };
 }
 

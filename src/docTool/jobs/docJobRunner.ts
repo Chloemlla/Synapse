@@ -6,9 +6,12 @@
 // 进度契约（前端进度条与文案的唯一依据）：
 //   progress = Math.round(done / total * 100)（done 只统计真的跑完的文件）
 //   stage    = 中文短句，形如「正在转换 3/12」
+import fs from "node:fs";
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { convertOne, destForFile } from "../converter";
+import type { StyleContract } from "../contract";
+import { defaultReferenceBytes, ensureCompiledReference, resolveContract } from "../contract/contractStore";
 import {
   ensureDir,
   isDocxFile,
@@ -48,6 +51,12 @@ export interface DocJobRunnerDeps {
    * 传 null 表示本次显式不要默认样式（单测也靠它验两条分支）。
    */
   defaultReferenceDoc?: string | null;
+}
+
+/** 本任务生效的契约：spec 给验收器，referenceDoc 是编译后（含契约）的样式文件路径。 */
+interface JobContract {
+  spec: StyleContract;
+  referenceDoc: string;
 }
 
 /** 把失败项拼成一行摘要（列表页的 error 字段）。 */
@@ -194,6 +203,7 @@ export class DocJobRunner {
     userRoot: string,
     rel: string,
     input: DocJobRecord["input"],
+    contract?: JobContract,
   ): Promise<DocJobItem> {
     const src = path.resolve(userRoot, rel);
     // double 守界：relInside 挡 ".."/绝对路径，realInside 挡「用户目录里指向外部的符号链接」。
@@ -218,7 +228,18 @@ export class DocJobRunner {
       statOrNull(referenceAbs)?.isFile()
         ? referenceAbs
         : undefined;
-    const referenceDoc = userReference ?? this.defaultReferenceDoc ?? undefined;
+    const referenceDoc = contract?.referenceDoc ?? userReference ?? this.defaultReferenceDoc ?? undefined;
+
+    // 源 Markdown 原文：C4/C5 要拿它算「应该有几个公式/图片」。
+    // 读失败就用 undefined（验收器会写明「无源对照」），不能让体检把一次转换拖下水。
+    let sourceMarkdown: string | undefined;
+    if (contract) {
+      try {
+        sourceMarkdown = fs.readFileSync(src, "utf8");
+      } catch {
+        sourceMarkdown = undefined;
+      }
+    }
 
     const outcome = await this.convert({
       pandoc: this.pandocBin,
@@ -226,6 +247,7 @@ export class DocJobRunner {
       dest,
       referenceDoc,
       conflict: input.conflict,
+      contract: contract ? { spec: contract.spec, sourceMarkdown } : undefined,
       onChild: (child) => this.children.set(jobId, child),
     });
     return {
@@ -237,7 +259,70 @@ export class DocJobRunner {
       ms: outcome.ms,
       renamed: outcome.renamed,
       error: outcome.error,
+      verdict: outcome.verdict,
     };
+  }
+
+  /**
+   * 准备本任务的排版契约（每个任务一次，不是每个文件一次）：
+   * 编译一份 reference.docx 要解开/重打包 ZIP，一份文档做一次就够，300 个文件的批量任务不能做 300 次。
+   *
+   * 空 contractId = 不使用契约（保持历史行为）。刻意做成「显式开启」：
+   * 老用户的历史任务记录里没有这个字段，默认就把他们的产物按新规矩重写一遍，是不告而改。
+   *
+   * 基础样式优先级：用户自己的模板（在他的目录内且真实存在）> pandoc 内置默认样式。
+   * 在用户模板上叠加而不是另起一份，是为了保住他模板里的页眉页脚与 Logo；
+   * 契约只覆盖它声明要管的那几项。
+   *
+   * 任何一步拿不到就返回 null —— 契约层是**可选增强**，不能成为转换失败的理由。
+   */
+  private prepareContract(
+    input: DocJobRecord["input"],
+    userRoot: string,
+    pushLog: (text: string) => void,
+  ): JobContract | null {
+    const requested = String(input.contractId ?? "").trim();
+    if (!requested) return null;
+    const resolved = resolveContract({ userRoot, contractId: requested });
+    if (resolved.source === "default" && resolved.contract.id !== requested) {
+      // POST /jobs 会把显式不存在的 id 拦成 400，走到这里只可能是手改过库或契约文件被删了
+      pushLog(`契约 ${requested} 不存在，已改用默认契约 ${resolved.contract.id}`);
+    }
+    let base: Buffer | null = null;
+    if (input.referenceDoc) {
+      const abs = path.resolve(userRoot, input.referenceDoc);
+      const usable =
+        relInside(userRoot, abs) !== null && realInside(userRoot, abs) && isDocxFile(abs) && Boolean(statOrNull(abs)?.isFile());
+      if (usable) {
+        try {
+          base = fs.readFileSync(abs);
+        } catch {
+          base = null;
+        }
+      }
+    }
+    if (!base) {
+      const fallback = defaultReferenceBytes(this.pandocBin);
+      if (!fallback.ok || !fallback.bytes) {
+        pushLog(`排版契约未启用：拿不到基础参考样式（${fallback.error ?? "未知原因"}）`);
+        return null;
+      }
+      base = fallback.bytes;
+    }
+    const compiled = ensureCompiledReference({ contract: resolved.contract, cacheRoot: this.workRoot, baseDocx: base });
+    if (!compiled.ok || !compiled.path) {
+      pushLog(`排版契约未启用：编译参考样式失败（${compiled.error ?? "未知原因"}）`);
+      return null;
+    }
+    pushLog(
+      `排版契约：${resolved.contract.id}（${{ builtin: "内置", user: "用户", default: "默认" }[resolved.source]}）` +
+        `${compiled.cached ? "，复用已编译样式" : `，已编译 ${compiled.bytes ?? 0} 字节`}`,
+    );
+    if (!compiled.cached) {
+      for (const line of (compiled.applied ?? []).slice(0, 6)) pushLog(`契约应用：${line}`);
+    }
+    for (const line of (compiled.warnings ?? []).slice(0, 6)) pushLog(`契约提示：${line}`);
+    return { spec: resolved.contract, referenceDoc: compiled.path };
   }
 
   private async runJob(jobId: string): Promise<void> {
@@ -302,6 +387,8 @@ export class DocJobRunner {
     };
 
     pushLog(`开始转换 ${total} 个文件`);
+    // 契约只准备一次：编译 reference.docx 要重打包 ZIP，不能按文件重复做
+    const contract = this.prepareContract(current.input, userRoot, pushLog);
     await this.deps.store.patch(jobId, {
       status: "running",
       stage: `正在转换 1/${total}`,
@@ -321,7 +408,7 @@ export class DocJobRunner {
       pushLog(`[${i + 1}/${total}] ${rel}`);
       await patchProgress(`正在转换 ${i + 1}/${total}`);
 
-      const item = await this.convertFile(jobId, userRoot, rel, current.input);
+      const item = await this.convertFile(jobId, userRoot, rel, current.input, contract ?? undefined);
 
       if (this.cancels.has(jobId)) {
         // 被取消的这一件产物不完整（子进程被 kill），既不算成功也不算失败：不计入 items/done，
@@ -337,6 +424,10 @@ export class DocJobRunner {
       else {
         failed += 1;
         pushLog(`失败: ${item.error ?? "未知错误"}`);
+      }
+      if (item.verdict) {
+        const label = item.verdict.grade === "pass" ? "合格" : item.verdict.grade === "review" ? "需复核" : "不合格";
+        pushLog(`体检 ${item.verdict.score} 分（${label}）${item.verdict.rounds ? `，修复 ${item.verdict.rounds} 轮` : ""}`);
       }
       await patchProgress(`正在转换 ${Math.min(done + 1, total)}/${total}`);
     }

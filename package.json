@@ -59,6 +59,7 @@
     "profile:inspect": "node scripts/profiling/run-node-with-profiling.js --inspect",
     "profile:load": "node scripts/profiling/run-load-profile-report.js",
     "check:ts-file-size": "node scripts/governance/check-ts-file-size.js",
+    "eval:doc-contract": "node scripts/doc-tool-contract/eval.js",
     "check:frontend-bundle": "node scripts/governance/check-frontend-bundle.js",
     "check:privacy-contract": "node scripts/governance/check-privacy-contract.js",
     "check:frontend-design-language": "node scripts/governance/check-frontend-design-language.js",

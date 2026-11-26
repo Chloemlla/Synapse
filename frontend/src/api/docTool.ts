@@ -28,6 +28,8 @@ export interface DocPrefs {
   recursive: boolean;
   /** 参考样式文档（用户工作目录内的相对路径，空表示不用） */
   referenceDoc: string;
+  /** 排版契约 id（空 = 不做契约处理；非空时按 id 解析，找不到就回落默认契约） */
+  contractId: string;
 }
 
 export interface DocLimits {
@@ -67,6 +69,8 @@ export interface CreateJobInput {
   outDir?: string;
   conflict?: ConflictMode;
   referenceDoc?: string;
+  /** 显式传了但服务端找不到该契约时，后端 400 —— 静默换成默认契约会让「我明明选了」无从察觉 */
+  contractId?: string;
 }
 
 export interface DocJobItem {
@@ -78,6 +82,21 @@ export interface DocJobItem {
   /** 实际写了新名字（旧文件保留） */
   renamed?: boolean;
   error?: string;
+  /** 排版体检结论（契约管线跑过才有；关卡关闭时为空） */
+  verdict?: DocItemVerdict;
+}
+
+/** 单个产物的排版体检结论，与后端 DocItemVerdict 一一对应。 */
+export interface DocItemVerdict {
+  contractId: string;
+  /** 0-100 加权通过率 */
+  score: number;
+  grade: 'pass' | 'review' | 'fail';
+  /** 实际执行的修复轮数（0 = 产物本来就合规） */
+  rounds: number;
+  applied: string[];
+  /** 未修复的缺陷（含只能人工改的） */
+  defects: Array<{ code: string; check: string; message: string }>;
 }
 
 export interface DocJobLog {
@@ -109,6 +128,7 @@ export interface DocJobRecord {
     outDir: string;
     conflict: ConflictMode;
     referenceDoc: string;
+    contractId?: string;
   };
   items: DocJobItem[];
   logs: DocJobLog[];
@@ -146,6 +166,18 @@ export interface DocSettingsView {
   templates: ReferenceTemplate[];
   /** 不填参考样式时实际会用的那份（服务端内置） */
   defaultReference?: DefaultReferenceInfo;
+  /** 可选的排版契约（内置 + 该用户自己的） */
+  contracts?: ContractOption[];
+  /** 内置默认契约 id（下拉里「不选」等于关掉契约，这个是「选错了」时的兜底说明） */
+  defaultContractId?: string;
+}
+
+/** 下拉里的一项；summary 是给人看的一行摘要，不是契约本体。 */
+export interface ContractOption {
+  id: string;
+  name: string;
+  source: 'builtin' | 'user';
+  summary: string;
 }
 
 export interface DocUploadRejected {
@@ -176,6 +208,8 @@ export const DEFAULT_DOC_PREFS: DocPrefs = {
   outDir: 'out',
   recursive: true,
   referenceDoc: '',
+  // 默认关：老用户打开面板时不该因为上了新功能就悄悄改掉产物形态
+  contractId: '',
 };
 
 export const CONFLICT_MODES: ConflictMode[] = ['skip', 'rename', 'overwrite'];
@@ -222,8 +256,24 @@ export const docToolApi = {
   getSettings: async (): Promise<DocSettingsView> => {
     const res = await api.get(`${BASE}/settings`);
     const data = (res.data ?? {}) as Partial<DocSettingsView>;
-    // templates 当可选处理：后端只回 pandoc/limits/prefs 时，面板也不该因为字段缺失崩掉。
-    return { ...(data as DocSettingsView), templates: data.templates ?? [] };
+    // templates/contracts 当可选处理：后端只回 pandoc/limits/prefs 时，面板也不该因为字段缺失崩掉。
+    return { ...(data as DocSettingsView), templates: data.templates ?? [], contracts: data.contracts ?? [] };
+  },
+
+  /**
+   * 把一份 .docx（通常就是学校/教研组的既有模板）反向编译成排版契约。
+   * 只上传一个文件，字段名固定 `file`：后端 POST /contracts 用 multer memoryStorage 收这一个字段。
+   */
+  importContract: async (file: File, id?: string, name?: string): Promise<{ contract: ContractOption }> => {
+    const form = new FormData();
+    form.append('file', file);
+    if (id?.trim()) form.append('id', id.trim());
+    if (name?.trim()) form.append('name', name.trim());
+    const res = await api.post(`${BASE}/contracts`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+    });
+    return { contract: res.data?.contract as ContractOption };
   },
 
   /** 偏好落服务端，下次打开面板自动带出。 */
