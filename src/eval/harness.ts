@@ -223,7 +223,12 @@ export async function runEvalSuite(input: RunEvalSuiteInput): Promise<EvalReport
 
 /** 汇总口径见文件头:errors 与 failed 分账,准确率只在可判定的例上计算。 */
 export function summarizeCases(results: readonly CaseResult[]): EvalSummary {
-  const list: CaseResult[] = Array.isArray(results) ? results.filter((item) => isPlainObject(item)) : [];
+  // 只挡住 null/非对象。这里**故意不用** `isPlainObject` 谓词：它把元素类型改写成
+  // `Record<string, unknown>`，`CaseResult` 的字段就被摸平了 —— 赋值直接编译错
+  // （CI 的 type-check-backend 拓到的就是这一条）。过滤条件本身是等价的。
+  const list: CaseResult[] = (Array.isArray(results) ? results : []).filter(
+    (item) => Boolean(item) && typeof item === "object",
+  );
   const errors = list.filter((item) => item.error !== undefined).length;
   const answered = list.length - errors;
   const passed = list.filter((item) => item.ok === true).length;
