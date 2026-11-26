@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { SecurityEvent } from "../models/securityEventModel";
+import { evaluateHoneypotRepeatBan } from "../services/turnstile/honeypotBan";
 import { getClientIP } from "../utils/ipUtils";
 import logger from "../utils/logger";
 
@@ -13,8 +14,10 @@ import logger from "../utils/logger";
  * - **D20**：Tarpit 只对**已确认的蜜罐命中对象**生效，并且有**全局并发硬顶**（默认 20）与
  *   **延时上限**（默认 2 秒观察期）。超顶直接立即断开，不排队等待 —— 否则“拖住攻击者”会先拖死自己
  *  （Node 单进程，每个被拖住的请求都占着一个连接与一个事件循环任务）；
- * - 蜜罐命中是**高置信但不自动封禁**的信号：先写审计/事件 + 告警，自动封禁阈值可配（默认关）。
- *   管理员工具与旧客户端可能访问 `/api/debug/*`，误杀代价远高于收益；
+ * - 蜜罐命中是**高置信**信号：写审计/事件 + 告警，并按 owner 2026-11-26 的裁决
+ *   **同一 IP 在 2 小时内命中 ≥2 次即自动封禁 30 天**（判据实现在 `services/turnstile/honeypotBan.ts`）。
+ *   这条推翻了 RC-42 当时的「只留痕不封禁」——误伤兜底改为：阈值 ≥2 次、
+ *   回环/私网地址永不自动封、`/admin/ip-ban` 可溯源并一键解封；
  * - 蜜罐路径**不写 `@swagger`**：写了就会被 `check-openapi-drift` 要求进 `openapi.json`，
  *   而它本就不该出现在文档里。
  */
@@ -51,35 +54,59 @@ export function getActiveTarpitConnections(): number {
   return activeTarpitConnections;
 }
 
-/** 记录一次蜜罐命中（事件 + 告警日志）。不在这里做处罚：阈值策略由调用方/配置决定。 */
-function recordHoneypotHit(req: Request, kind: string): void {
+/**
+ * 记录一次蜜罐命中（事件 + 告警日志），随后交给自动处置判据。
+ *
+ * `await` 落库是必需的：自动处置的统计口径就是这张表，先查后写会让**本次命中自己漏算**，
+ * 于是「连续第 2 次」永远统计不到 2 次。写入失败只降级（无证据不处置），不拦请求。
+ */
+async function recordHoneypotHit(req: Request, kind: string): Promise<void> {
   const ip = getClientIP(req);
-  const user = (req as Request & { user?: { id?: string } }).user;
-  void SecurityEvent.create({
-    deviceFingerprint: String(req.headers["x-device-id"] || "honeypot").slice(0, 128),
-    userId: user?.id,
-    eventType: "HONEYPOT_HIT",
-    eventData: {
-      kind,
-      path: req.originalUrl || req.path,
-      method: req.method,
-      userAgent: String(req.headers["user-agent"] || "").slice(0, 512),
-    },
-    // 高置信恶意信号：给高分但不直接封禁（管理员工具/旧客户端也可能误入）。
-    riskScore: 80,
-    ipAddress: ip || "",
-    userAgent: String(req.headers["user-agent"] || "").slice(0, 512),
-    createdAt: new Date(),
-  }).catch((error) => {
+  const user = (req as Request & { user?: { id?: string; role?: string } }).user;
+  const userAgent = String(req.headers["user-agent"] || "").slice(0, 512);
+  const fingerprint = String(req.headers["x-device-id"] || "honeypot").slice(0, 128);
+  const path = req.originalUrl || req.path;
+
+  try {
+    await SecurityEvent.create({
+      deviceFingerprint: fingerprint,
+      userId: user?.id,
+      eventType: "HONEYPOT_HIT",
+      eventData: {
+        kind,
+        path,
+        method: req.method,
+        userAgent,
+      },
+      // 高置信恶意信号：给高分（后台「账户风险与信号」按此排序）。
+      riskScore: 80,
+      ipAddress: ip || "",
+      userAgent,
+      createdAt: new Date(),
+    });
+  } catch (error) {
     logger.warn("[Honeypot] 命中事件写入失败", {
       error: error instanceof Error ? error.message : String(error),
     });
-  });
+    return;
+  }
 
-  logger.error("[Honeypot] 蜜罐端点被访问（高置信恶意信号，需人工复核）", {
+  logger.error("[Honeypot] 蜜罐端点被访问（高置信恶意信号）", {
     kind,
     ip,
-    path: req.originalUrl || req.path,
+    path,
+  });
+
+  // 自动处置：2 小时内 ≥2 次 → 封禁 30 天。判定内部自带豁免与幂等，且不会抛异常。
+  await evaluateHoneypotRepeatBan({
+    ip,
+    kind,
+    path,
+    method: req.method,
+    userAgent,
+    fingerprint,
+    userId: user?.id,
+    role: user?.role,
   });
 }
 
@@ -118,7 +145,7 @@ export async function honeypotMiddleware(req: Request, res: Response, next: Next
     return;
   }
 
-  recordHoneypotHit(req, "path_prefix");
+  await recordHoneypotHit(req, "path_prefix");
   await tarpit(req, () => undefined);
   res.status(200).json(dummyTrapPayload(req.path || req.url || ""));
 }

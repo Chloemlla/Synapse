@@ -40,6 +40,55 @@ export interface IPBanListResponse {
   summary?: IPBanListSummary;
 }
 
+/** 封禁溯源里的业务事件条目（与后端 `IpBanTraceEvent` 对应）。 */
+export interface IPBanTraceEvent {
+  id: string;
+  eventType: string;
+  riskScore: number;
+  ipAddress: string;
+  userAgent?: string;
+  createdAt: string | null;
+  /** 蜜罐命中才有。 */
+  kind?: string;
+  path?: string;
+  method?: string;
+}
+
+/** 自动处置判据的实时复核结果（当前只有「蜜罐连续命中」一条）。 */
+export interface IPBanTraceRule {
+  key: string;
+  label: string;
+  windowMinutes: number;
+  threshold: number;
+  banDays: number;
+  /** 计入判据的匿名命中次数。 */
+  hitsInWindow: number;
+  /** 窗口内全部命中（含已登录），用于解释“有命中却没封”。 */
+  totalHitsInWindow: number;
+  triggered: boolean;
+}
+
+/** 该 IP 的管理操作（封禁 / 解封 / 自动判定）。 */
+export interface IPBanTraceAuditEntry {
+  id: string;
+  action: string;
+  username: string;
+  role: string;
+  result: string;
+  createdAt: string | null;
+  reason?: string;
+}
+
+export interface IPBanTrace {
+  ipAddress: string;
+  generatedAt: string;
+  ban: IPBan | null;
+  rules: IPBanTraceRule[];
+  events: IPBanTraceEvent[];
+  auditTrail: IPBanTraceAuditEntry[];
+  windows: { eventsDays: number; auditDays: number };
+}
+
 export interface IPBanListQuery {
   page?: number;
   pageSize?: number;
@@ -338,6 +387,42 @@ class TurnstileAPI {
   /** 兼容入口：旧签名（page, pageSize）仍可用。 */
   async getIPBanList(page: number = 1, pageSize: number = 20): Promise<IPBanListResponse> {
     return this.listIPBans({ page, pageSize });
+  }
+
+  /**
+   * 封禁溯源：判据复核 + 命中证据 + 管理操作史。
+   * 只接受单个 IP（后端拒绝 CIDR）：溯源靠 `ipAddress` 精确匹配。
+   */
+  async getIPBanTrace(ipAddress: string): Promise<IPBanTrace> {
+    const params = new URLSearchParams();
+    params.set('ip', ipAddress.trim());
+
+    const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/turnstile/ip-ban-trace?${params.toString()}`, {
+      headers: this.getAuthHeaders(),
+      credentials: 'include'
+    });
+    if (!response.ok) throw new Error('获取IP封禁溯源失败');
+    const result = await response.json();
+
+    return {
+      ipAddress: typeof result?.ipAddress === 'string' ? result.ipAddress : ipAddress,
+      generatedAt: typeof result?.generatedAt === 'string' ? result.generatedAt : new Date().toISOString(),
+      ban: result?.ban ?? null,
+      // 老后端没有 `totalHitsInWindow`：缺省回退到 `hitsInWindow`，避免溯源自相矛盾。
+      rules: Array.isArray(result?.rules)
+        ? (result.rules as IPBanTraceRule[]).map((rule) => ({
+            ...rule,
+            hitsInWindow: Number(rule.hitsInWindow) || 0,
+            totalHitsInWindow: Number(rule.totalHitsInWindow) || Number(rule.hitsInWindow) || 0,
+          }))
+        : [],
+      events: Array.isArray(result?.events) ? result.events : [],
+      auditTrail: Array.isArray(result?.auditTrail) ? result.auditTrail : [],
+      windows: {
+        eventsDays: typeof result?.windows?.eventsDays === 'number' ? result.windows.eventsDays : 7,
+        auditDays: typeof result?.windows?.auditDays === 'number' ? result.windows.auditDays : 60,
+      },
+    };
   }
 
   // 指纹管理

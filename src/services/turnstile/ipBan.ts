@@ -1,10 +1,20 @@
+import { AuditLogModel } from "../../models/auditLogModel";
 import { IpBanModel } from "../../models/ipBanModel";
+import { SecurityEvent } from "../../models/securityEventModel";
 import logger from "../../utils/logger";
 import { escapeRegexLiteral } from "../../utils/regexEscape";
 import { isConnected, mongoose } from "../mongoService";
 import { redisService } from "../redisService";
 import { clearIPBanCache } from "../../middleware/ipBanCheck";
-import { BAN_DURATION, MAX_VIOLATIONS, VIOLATION_COOLDOWN } from "./constants";
+import {
+  BAN_DURATION,
+  HONEYPOT_BAN_DURATION_MINUTES,
+  HONEYPOT_REPEAT_THRESHOLD,
+  HONEYPOT_REPEAT_WINDOW_MS,
+  MAX_BAN_DURATION_MINUTES,
+  MAX_VIOLATIONS,
+  VIOLATION_COOLDOWN,
+} from "./constants";
 import { sanitizeString, validateIpAddress } from "./validators";
 
 export async function isIpBanned(
@@ -323,7 +333,7 @@ export async function manualBanIp(
         return { success: false, error: "封禁时长必须是有效的数字" };
       }
 
-      validDuration = Math.min(Math.max(duration, 1), 24 * 60);
+      validDuration = Math.min(Math.max(duration, 1), MAX_BAN_DURATION_MINUTES);
     }
 
     if (mongoose.connection.readyState !== 1) {
@@ -456,5 +466,187 @@ export async function unbanIp(ipAddress: string): Promise<boolean> {
   } catch (error) {
     logger.error("手动解除IP封禁失败", error);
     return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 封禁溯源
+// ---------------------------------------------------------------------------
+
+/** 溯源里回看的业务事件窗口：7 天足够覆盖一次封禁的前因（攻击通常集中在这段时间）。 */
+const TRACE_EVENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const TRACE_EVENT_LIMIT = 50;
+/** 审计回看 60 天（`AuditLogModel` 的 TTL 上限，再往前查必然查不到）。 */
+const TRACE_AUDIT_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+const TRACE_AUDIT_SCAN_LIMIT = 200;
+const TRACE_AUDIT_LIMIT = 20;
+
+export interface IpBanTraceEvent {
+  id: string;
+  eventType: string;
+  riskScore: number;
+  ipAddress: string;
+  userAgent?: string;
+  createdAt: Date | null;
+  /** 蜜罐命中才有：命中类型 / 路径 / 方法（来自 eventData）。 */
+  kind?: string;
+  path?: string;
+  method?: string;
+}
+
+export interface IpBanTraceRule {
+  key: string;
+  label: string;
+  windowMinutes: number;
+  threshold: number;
+  banDays: number;
+  /** 计入判据的匿名命中次数。 */
+  hitsInWindow: number;
+  /** 窗口内全部命中（含已登录），用来解释“为什么有命中却没封”。 */
+  totalHitsInWindow: number;
+  triggered: boolean;
+}
+
+export interface IpBanTraceAuditEntry {
+  id: string;
+  action: string;
+  username: string;
+  role: string;
+  result: string;
+  createdAt: Date | null;
+  reason?: string;
+}
+
+export interface IpBanTrace {
+  ipAddress: string;
+  generatedAt: Date;
+  /** 当前（或最近一次）封禁记录；从未封禁过则为 null。 */
+  ban: IpBanListEntry | null;
+  /** 自动处置判据的实时复核结果：后台据此说明「为什么被封」。 */
+  rules: IpBanTraceRule[];
+  /** 窗口内该 IP 的业务事件（蜜罐命中在最前）。 */
+  events: IpBanTraceEvent[];
+  /** 该 IP 的管理操作（封禁 / 解封 / 自动判定）。 */
+  auditTrail: IpBanTraceAuditEntry[];
+  windows: { eventsDays: number; auditDays: number };
+}
+
+function toTraceEvent(doc: Record<string, unknown>): IpBanTraceEvent {
+  const data = (doc.eventData ?? {}) as Record<string, unknown>;
+  const createdAt = doc.createdAt instanceof Date ? doc.createdAt : doc.createdAt ? new Date(String(doc.createdAt)) : null;
+  return {
+    id: String(doc._id ?? ""),
+    eventType: String(doc.eventType ?? ""),
+    riskScore: typeof doc.riskScore === "number" ? doc.riskScore : 0,
+    ipAddress: String(doc.ipAddress ?? ""),
+    userAgent: typeof doc.userAgent === "string" && doc.userAgent ? doc.userAgent : undefined,
+    createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null,
+    kind: typeof data.kind === "string" ? data.kind : undefined,
+    path: typeof data.path === "string" ? data.path : undefined,
+    method: typeof data.method === "string" ? data.method : undefined,
+  };
+}
+
+/**
+ * 封禁溯源：一次性给出「判决书 + 证据 + 操作史」。
+ *
+ * 为什么需要：名单页只能看到 IP / 原因 / 到期，管理员要判断「这封得对不对」必须自己去
+ * 事件页搜 IP、再去审计页搜 IP，两处口径还不一致。这里把三件事合并：
+ * 1. **判据复核**：按当前阈值实时重算窗口内命中数，说明是判据命中还是人工封的；
+ * 2. **证据**：窗口内该 IP 的事件（含蜜罐命中的路径/UA，直接对应 `/admin/account-risk` 里那一条）；
+ * 3. **操作史**：谁封的、谁解的、什么时候（自动判定记 `system:honeypot`）。
+ *
+ * 已知边界：批量封禁的审计 detail 只有 `count`，没有逐 IP 明细，因此匹配不到 `ipAddress`，
+ * 这类操作只能靠封禁记录本身的原因文本还原。
+ */
+export async function getIpBanTrace(ipAddress: string): Promise<IpBanTrace> {
+  const now = new Date();
+  const empty: IpBanTrace = {
+    ipAddress,
+    generatedAt: now,
+    ban: null,
+    rules: [],
+    events: [],
+    auditTrail: [],
+    windows: { eventsDays: TRACE_EVENT_WINDOW_MS / 86400000, auditDays: TRACE_AUDIT_WINDOW_MS / 86400000 },
+  };
+
+  const validatedIp = validateIpAddress(ipAddress);
+  if (!validatedIp || mongoose.connection.readyState !== 1) {
+    return empty;
+  }
+
+  try {
+    const honeypotWindowStart = honeypotRepeatWindowStart(now);
+    const eventWindowStart = new Date(now.getTime() - TRACE_EVENT_WINDOW_MS);
+    const auditWindowStart = new Date(now.getTime() - TRACE_AUDIT_WINDOW_MS);
+
+    const [banDoc, honeypotHitsInWindow, totalHoneypotHits, eventDocs, auditDocs] = await Promise.all([
+      IpBanModel.findOne({ ipAddress: validatedIp }).lean().exec(),
+      // 与处分判据用同一个过滤器（只统计匿名命中）：口径分裂会让溯源显示“已触发”但实际没封。
+      SecurityEvent.countDocuments(buildHoneypotRepeatQuery(validatedIp, honeypotWindowStart)),
+      SecurityEvent.countDocuments({
+        eventType: "HONEYPOT_HIT",
+        ipAddress: validatedIp,
+        createdAt: { $gte: honeypotWindowStart },
+      }),
+      SecurityEvent.find({ ipAddress: validatedIp, createdAt: { $gte: eventWindowStart } })
+        .sort({ createdAt: -1 })
+        .limit(TRACE_EVENT_LIMIT)
+        .lean()
+        .exec(),
+      AuditLogModel.find({ module: "ipban", createdAt: { $gte: auditWindowStart } })
+        .sort({ createdAt: -1 })
+        .limit(TRACE_AUDIT_SCAN_LIMIT)
+        .lean()
+        .exec(),
+    ]);
+
+    const rules: IpBanTraceRule[] = [
+      {
+        key: "honeypot-repeat",
+        label: "蜜罐连续命中",
+        windowMinutes: Math.round(HONEYPOT_REPEAT_WINDOW_MS / 60000),
+        threshold: HONEYPOT_REPEAT_THRESHOLD,
+        banDays: Math.round(HONEYPOT_BAN_DURATION_MINUTES / 1440),
+        hitsInWindow: honeypotHitsInWindow,
+        totalHitsInWindow: totalHoneypotHits,
+        // 判据是「匿名命中 ≥ 阈值」；封禁记录本身由 honeypotBan 落库，这里只做实时复核。
+        triggered: honeypotHitsInWindow >= HONEYPOT_REPEAT_THRESHOLD,
+      },
+    ];
+
+    const auditTrail: IpBanTraceAuditEntry[] = [];
+    for (const doc of auditDocs as unknown as Record<string, unknown>[]) {
+      const detail = (doc.detail ?? {}) as Record<string, unknown>;
+      // `detail.ipAddress` 没有索引，所以先在 module 上取一批（有 `module+createdAt` 索引），
+      // 再在内存里按 IP 精确匹配；匹配不到就是批量操作，跳过。
+      // IPv6 大小写与首尾空白不统一，比较前先归一，否则同一地址会“查不到操作史”。
+      const detailIp = String(detail.ipAddress ?? "").trim().toLowerCase();
+      if (detailIp !== validatedIp.toLowerCase()) continue;
+      const createdAt =
+        doc.createdAt instanceof Date ? doc.createdAt : doc.createdAt ? new Date(String(doc.createdAt)) : null;
+      auditTrail.push({
+        id: String(doc._id ?? ""),
+        action: String(doc.action ?? ""),
+        username: String(doc.username ?? ""),
+        role: String(doc.role ?? ""),
+        result: String(doc.result ?? ""),
+        createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null,
+        reason: typeof detail.reason === "string" ? detail.reason : undefined,
+      });
+      if (auditTrail.length >= TRACE_AUDIT_LIMIT) break;
+    }
+
+    return {
+      ...empty,
+      ban: banDoc ? toIpBanEntry(banDoc as unknown as Record<string, unknown>, now) : null,
+      rules,
+      events: (eventDocs as unknown as Record<string, unknown>[]).map(toTraceEvent),
+      auditTrail,
+    };
+  } catch (error) {
+    logger.error("获取IP封禁溯源失败", error);
+    return empty;
   }
 }

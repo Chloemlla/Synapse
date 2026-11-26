@@ -238,14 +238,14 @@ function BanIPModal({ isOpen, onClose, onSuccess, mode, canWrite }: BanIPModalPr
                 <input
                   type="number"
                   min="1"
-                  max="1440"
+                  max="43200"
                   required
                   disabled={!canWrite}
                   className={`${studioFieldClassName} mt-1`}
                   value={formData.durationMinutes}
                   onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) || 60 })}
                 />
-                <p className="mt-1 text-xs text-slate-500">1分钟到24小时（1440分钟）</p>
+                <p className="mt-1 text-xs text-slate-500">1 分钟到 30 天（43200 分钟）；自动封禁（蜜罐连续命中）默认 30 天</p>
               </div>
 
               {error && (

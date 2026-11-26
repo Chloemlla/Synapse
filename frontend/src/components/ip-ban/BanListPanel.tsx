@@ -4,6 +4,7 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
   FaCopy,
   FaDownload,
+  FaHistory,
   FaSearch,
   FaSync,
   FaTachometerAlt,
@@ -25,6 +26,7 @@ import {
   studioSecondaryButtonClassName,
 } from '../studioTheme';
 import { StudioPager } from '../studioFeedback';
+import BanTraceModal from './BanTraceModal';
 
 type StatusFilter = 'all' | 'active' | 'expired';
 type SortField = 'bannedAt' | 'expiresAt' | 'violationCount' | 'ipAddress';
@@ -113,6 +115,8 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
   const [order, setOrder] = useState<SortOrder>(() => (searchParams.get('order') === 'asc' ? 'asc' : 'desc'));
   const [loading, setLoading] = useState(false);
   const [busyIp, setBusyIp] = useState<string | null>(null);
+  /** 正在打开溯源的地址；非 null 即弹窗打开。 */
+  const [traceIp, setTraceIp] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const requestRef = useRef(0);
 
@@ -191,20 +195,22 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
     }
   };
 
-  const unbanOne = async (ip: string) => {
+  const unbanOne = async (ip: string): Promise<boolean> => {
     const ok = await confirmDialog({
       title: '解封该 IP',
       description: `确认解除 ${ip} 的封禁？该地址将立即恢复访问。`,
       confirmLabel: '解封',
     });
-    if (!ok) return;
+    if (!ok) return false;
     setBusyIp(ip);
     try {
       await turnstileApi.unbanIP(ip);
       setNotification({ type: 'success', message: `已解除 ${ip} 的封禁` });
       await load();
+      return true;
     } catch (error) {
       setNotification({ type: 'error', message: getBackendErrorMessage(error, '解封失败') });
+      return false;
     } finally {
       setBusyIp(null);
     }
@@ -430,6 +436,16 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
+                          onClick={() => setTraceIp(ban.ipAddress)}
+                          title="溯源：查看判据、命中证据与操作史"
+                          aria-label={`溯源 ${ban.ipAddress}`}
+                          className="flex h-7 items-center gap-1 rounded-2xl px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          <FaHistory className="h-3 w-3" />
+                          溯源
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void copyIp(ban.ipAddress)}
                           title="复制地址"
                           aria-label={`复制 ${ban.ipAddress}`}
@@ -479,6 +495,14 @@ const BanListPanel: React.FC<Props> = ({ canWrite, reloadToken, onSummary }) => 
           正在加载…
         </p>
       ) : null}
+
+      <BanTraceModal
+        open={traceIp !== null}
+        ip={traceIp ?? ''}
+        canWrite={canWrite}
+        onClose={() => setTraceIp(null)}
+        onUnban={unbanOne}
+      />
     </InfoPanel>
   );
 };

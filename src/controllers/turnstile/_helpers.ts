@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { isAdminRole, isSuperAdmin } from "../../middleware/auth";
+import { MAX_BAN_DURATION_MINUTES } from "../../services/turnstile/constants";
 import { getClientIP } from "../../utils/ipUtils";
 
 export function getClientIp(req: Request): string {
@@ -43,7 +44,7 @@ export function validateBanDuration(durationMinutes: unknown): { value: number }
     if (Number.isNaN(duration) || !Number.isFinite(duration)) {
       return { error: "封禁时长必须是有效的数字" };
     }
-    banDuration = Math.min(Math.max(duration, 1), 24 * 60);
+    banDuration = Math.min(Math.max(duration, 1), MAX_BAN_DURATION_MINUTES);
   }
   return { value: banDuration };
 }

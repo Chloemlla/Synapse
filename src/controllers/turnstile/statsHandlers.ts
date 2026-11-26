@@ -1,7 +1,7 @@
 import logger from "../../utils/logger";
 import type { Request, Response } from "express";
 import { TurnstileService } from "../../services/turnstileService";
-import { requireAdmin, requireSuperAdmin } from "./_helpers";
+import { requireAdmin, isValidIpOrCidr, requireSuperAdmin } from "./_helpers";
 
 export async function cleanupExpiredFingerprints(req: Request, res: Response) {
   try {
@@ -76,6 +76,29 @@ export async function listBannedIps(req: Request, res: Response) {
     });
   } catch (error) {
     logger.error("获取IP封禁名单失败:", error);
+    res.status(500).json({ success: false, error: "服务器内部错误" });
+  }
+}
+
+/**
+ * `GET /api/turnstile/ip-ban-trace?ip=1.2.3.4` —— 单 IP 封禁溯源。
+ *
+ * 只接受单个 IP（不接受 CIDR）：溯源是按 `ipAddress` 精确匹配事件与审计，传网段既算不准，
+ * 也容易被当成「顺手导出全站审计」的入口。
+ */
+export async function traceBannedIp(req: Request, res: Response) {
+  try {
+    if (!requireAdmin(req, res)) return;
+
+    const rawIp = typeof req.query.ip === "string" ? req.query.ip.trim() : "";
+    if (!rawIp || !isValidIpOrCidr(rawIp) || rawIp.includes("/")) {
+      return res.status(400).json({ success: false, error: "IP地址参数无效，需为单个 IP" });
+    }
+
+    const trace = await TurnstileService.getIpBanTrace(rawIp);
+    res.json({ success: true, ...trace });
+  } catch (error) {
+    logger.error("获取IP封禁溯源失败:", error);
     res.status(500).json({ success: false, error: "服务器内部错误" });
   }
 }

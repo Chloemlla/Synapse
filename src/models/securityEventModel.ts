@@ -41,6 +41,11 @@ securityEventSchema.index({ deviceFingerprint: 1, createdAt: -1 });
 // sort memory limit，因此补与 (eventType, createdAt) 同口径的复合索引。
 securityEventSchema.index({ userId: 1, createdAt: -1 });
 
+// 蜜罐自动封禁（services/turnstile/honeypotBan.ts）与 `/api/turnstile/ip-ban-trace` 溯源都是
+// `find/countDocuments({ ipAddress, eventType, createdAt: {$gte} })`；没有这个复合索引时，
+// 每次蜜罐命中都要扫全表（攻击流量越高扫得越狠），且溯源回看 7 天只能落内存排序。
+securityEventSchema.index({ ipAddress: 1, createdAt: -1 });
+
 export const SecurityEvent =
   (mongoose.models.SecurityEvent as mongoose.Model<ISecurityEvent>) ||
   mongoose.model<ISecurityEvent>("SecurityEvent", securityEventSchema);

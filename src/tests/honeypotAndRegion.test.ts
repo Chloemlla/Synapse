@@ -19,6 +19,11 @@ jest.mock("../models/securityEventModel", () => ({
 }));
 jest.mock("../models/ipBanModel", () => ({ IpBanModel: {} }));
 jest.mock("../services/turnstile/ipBan", () => ({ manualBanIp: jest.fn(async () => true) }));
+// 蜜罐命中后会调自动处置判据（`honeypotBan`），它会拉审计/事件模型；本文件只测判据与
+// 占位响应，故把自动处置整块替身掉，避免把审计服务的导入副作用带进这个单测。
+jest.mock("../services/turnstile/honeypotBan", () => ({
+  evaluateHoneypotRepeatBan: jest.fn(async () => ({ banned: false, hitsInWindow: 0, threshold: 2 })),
+}));
 jest.mock("../services/ipRiskService", () => ({ getCachedIpRisk: jest.fn(async () => null) }));
 jest.mock("../config/config", () => ({ config: { regionPolicy: { mode: "off", allowedCountries: [], blockedCountries: [], failOpen: true } } }));
 

@@ -23,6 +23,7 @@ export class TurnstileService {
   static cleanupExpiredIpBans = ipBan.cleanupExpiredIpBans;
   static getIpBanStats = ipBan.getIpBanStats;
   static listIpBans = ipBan.listIpBans;
+  static getIpBanTrace = ipBan.getIpBanTrace;
 
   // 访问密钥
   static generateAccessToken = accessToken.generateAccessToken;
