@@ -130,7 +130,13 @@ describe("ZIP 读 / 写往返", () => {
   it("readZip 能拿回全部条目与原文", () => {
     const docx = rawDocx();
     const archive = readZip(docx);
-    expect(archive.names.sort()).toEqual(["[Content_Types].xml", "word/document.xml", "word/styles.xml"]);
+    expect(archive.names.sort()).toEqual([
+      "[Content_Types].xml",
+      "_rels/.rels",
+      "word/_rels/document.xml.rels",
+      "word/document.xml",
+      "word/styles.xml",
+    ]);
     expect(archive.text("word/document.xml")).toBe(MIN_DOCUMENT);
     expect(archive.get("word/styles.xml")?.data.equals(Buffer.from(MIN_STYLES, "utf8"))).toBe(true);
   });
