@@ -1,0 +1,74 @@
+{
+  "suite": "abstain",
+  "system": "你在整理课程群里的通知。原文没有说、说得自相矛盾、或者只是转述传闻的信息,不要填值,直接省略那个键;宁可整份返回空对象,也不要编。",
+  "spec": {
+    "defaultMaxLen": 200,
+    "fields": [
+      { "name": "subject", "type": "string", "maxLen": 40, "description": "事项名称,只在通知明确写了的时候给出" },
+      { "name": "dueAt", "type": "string", "maxLen": 40, "description": "截止时间;出现多个互相矛盾的说法或明说待定就省略" },
+      { "name": "submitWay", "type": "string", "maxLen": 40, "description": "提交入口或方式" }
+    ]
+  },
+  "cases": [
+    {
+      "id": "abstain-01",
+      "task": "abstain",
+      "tags": ["abstain", "question"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "还有人没交吗?",
+      "expected": { "abstained": ["subject", "dueAt", "submitWay"] },
+      "note": "这是一句反问,不是一条通知。任何字段被填出来都是幻觉。"
+    },
+    {
+      "id": "abstain-02",
+      "task": "abstain",
+      "tags": ["abstain", "missing-source"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "材料都在附件里,自己看。",
+      "expected": { "abstained": ["subject", "dueAt", "submitWay"] },
+      "note": "信息在模型看不到的地方(附件正文不随消息进来)。此例测的是「没读到」绝不等于「随便写」。"
+    },
+    {
+      "id": "abstain-03",
+      "task": "abstain",
+      "tags": ["abstain", "conflict"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "【实验调课】本次实验课改到周五上午,不对,是周六上午,具体以课表为准。",
+      "expected": {
+        "subject": "实验调课",
+        "abstained": ["dueAt", "submitWay"]
+      },
+      "note": "两个时间互相矛盾且明说「以课表为准」,取任何一个都是猜。"
+    },
+    {
+      "id": "abstain-04",
+      "task": "abstain",
+      "tags": ["abstain", "pending"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "【体检】体检安排在下周,具体时间等医院通知。",
+      "expected": {
+        "subject": "体检",
+        "abstained": ["dueAt", "submitWay"]
+      },
+      "note": "「下周」不是截止时间,「等通知」是显式的未定;把它写成「下周」就是给下游一个假时间。"
+    },
+    {
+      "id": "abstain-05",
+      "task": "abstain",
+      "tags": ["abstain", "hearsay"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "【消息】听说可能要交一份读书笔记,真假还不确定。",
+      "expected": { "abstained": ["subject", "dueAt", "submitWay"] },
+      "note": "传闻 + 未定:连「要不要交」都不成立,所以事项名也不该被确认为一条通知。"
+    },
+    {
+      "id": "abstain-06",
+      "task": "abstain",
+      "tags": ["abstain", "ask-back"],
+      "user": "把这条消息抽成结构化字段。",
+      "input": "【求助】谁知道这次作业要交几份?截止是几点?",
+      "expected": { "abstained": ["subject", "dueAt", "submitWay"] },
+      "note": "提问句里出现了「作业」「截止」这些词面,但不是信息;测的是模型会不会把关键词当结论。"
+    }
+  ]
+}

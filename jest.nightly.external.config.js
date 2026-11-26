@@ -8,6 +8,8 @@ module.exports = {
     "<rootDir>/src/tests/media-social-life-apis.test.ts",
     "<rootDir>/src/tests/ip-query.test.ts",
     "<rootDir>/src/tests/yiyan-api.test.ts",
+    // X4-08：真模型评测。需要 AI_LIVE_EVAL_CHECK=1 且配了聊天 provider，否则整组 skip。
+    "<rootDir>/src/tests/aiEvalLive.test.ts",
   ],
   testPathIgnorePatterns: [...(baseConfig.testPathIgnorePatterns ?? [])],
   collectCoverage: false,

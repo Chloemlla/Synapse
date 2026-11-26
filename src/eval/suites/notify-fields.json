@@ -1,0 +1,181 @@
+{
+  "suite": "notify-fields",
+  "system": "你在帮同学整理课程群里的通知。只写通知原文明确说了的信息;原文没有说、或者明说「等通知」的字段,不要猜、不要填「未知」或 null,直接省略那个键。",
+  "spec": {
+    "defaultMaxLen": 200,
+    "fields": [
+      { "name": "subject", "type": "string", "maxLen": 40, "description": "事项名称,照通知开头方括号里的说法写,不要自己加书名号" },
+      { "name": "dueAt", "type": "string", "maxLen": 40, "description": "截止时间,照原文写法;没有明确截止时间就省略" },
+      { "name": "submitWay", "type": "string", "maxLen": 40, "description": "提交入口或交到哪儿;原文没说就省略" },
+      { "name": "mandatory", "type": "boolean", "description": "是否必须参加/提交;原文没表态或说明待定就省略" },
+      { "name": "material", "type": "string[]", "maxItems": 6, "description": "通知要求一并提交的材料,分条列;没有列出就省略" }
+    ]
+  },
+  "cases": [
+    {
+      "id": "notify-01",
+      "task": "structured",
+      "tags": ["notify", "complete"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【通知】数据结构第三次实验报告,截止12月3日24:00,提交入口:课程平台作业区,必交。需同时上传:实验报告、原始数据表。",
+      "expected": {
+        "subject": "数据结构第三次实验报告",
+        "dueAt": "12月3日24:00",
+        "submitWay": "课程平台作业区",
+        "mandatory": true,
+        "material": ["实验报告", "原始数据表"]
+      },
+      "note": "五字段齐全的基线例:任何一列掉了都说明提示词或解析层退化。"
+    },
+    {
+      "id": "notify-02",
+      "task": "structured",
+      "tags": ["notify", "partial-abstain"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【教材费】这门课的教材费由课程组统一收取,每人必交;怎么交、什么时候交,等财务那边通知。",
+      "expected": {
+        "subject": "教材费",
+        "mandatory": true,
+        "abstained": ["dueAt", "submitWay", "material"]
+      },
+      "note": "通知自己说了「等通知」:三个未定字段填任何一个都是编。"
+    },
+    {
+      "id": "notify-03",
+      "task": "structured",
+      "tags": ["notify", "partial-abstain"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【讲座报名】周四下午有一场关于图灵测试的线上讲座,请通过共享表格提交报名,截止本周二18:00,自愿参加。",
+      "expected": {
+        "subject": "讲座报名",
+        "dueAt": "本周二18:00",
+        "submitWay": "共享表格",
+        "mandatory": false,
+        "abstained": ["material"]
+      },
+      "note": "「自愿参加」必须落成 false 而不是省略,同时不能给它编一份材料清单。"
+    },
+    {
+      "id": "notify-04",
+      "task": "structured",
+      "tags": ["notify", "partial-abstain"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【值日安排】实训室值日以后改由各班轮流,具体怎么排、从哪周开始,等班会定了再发。",
+      "expected": {
+        "subject": "值日安排",
+        "abstained": ["dueAt", "submitWay", "mandatory", "material"]
+      },
+      "note": "除了事项名,其余全部「再发」:这是最容易因为看着像有信息而瞎填的一例。"
+    },
+    {
+      "id": "notify-05",
+      "task": "structured",
+      "tags": ["notify", "relative-time"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【实验报告补交】上次没交上的同学,明天中午之前把纸质版交到系办公室,必交。",
+      "expected": {
+        "subject": "实验报告补交",
+        "dueAt": "明天中午之前",
+        "submitWay": "系办公室",
+        "mandatory": true,
+        "abstained": ["material"]
+      },
+      "note": "相对时间照原文写,不换算成具体日期:换算会把「哪天」变成模型对今天的猜测。"
+    },
+    {
+      "id": "notify-06",
+      "task": "structured",
+      "tags": ["notify", "list"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【课程设计】第4组课程设计答辩定在12月10日9:00,材料交到实训楼B204值班台:设计说明书、演示视频、组员分工表。是否计入平时成绩待定。",
+      "expected": {
+        "subject": "课程设计",
+        "dueAt": "12月10日9:00",
+        "submitWay": "实训楼B204值班台",
+        "abstained": ["mandatory"],
+        "material": ["设计说明书", "演示视频", "组员分工表"]
+      },
+      "note": "多材料分列的钉子:合成一条或漏一条都会露馅;「待定」的必交性不能替它做主。"
+    },
+    {
+      "id": "notify-07",
+      "task": "structured",
+      "tags": ["notify", "reschedule"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【读书报告改期】原本周三交的读书报告推迟到下周一早自习,仍然交到学习委员处,必须交。",
+      "expected": {
+        "subject": "读书报告改期",
+        "dueAt": "下周一早自习",
+        "submitWay": "学习委员处",
+        "mandatory": true,
+        "abstained": ["material"]
+      },
+      "note": "同一句里出现新旧两个时间,只能取生效的那个;取到「周三」就是没读懂改期。"
+    },
+    {
+      "id": "notify-08",
+      "task": "structured",
+      "tags": ["notify", "boolean-false"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【志愿队招募】想加入图书馆志愿服务队请填写群共享文档登记,截止12月20日17:00,想去就报,不去也行。",
+      "expected": {
+        "subject": "志愿队招募",
+        "dueAt": "12月20日17:00",
+        "submitWay": "群共享文档",
+        "mandatory": false,
+        "abstained": ["material"]
+      },
+      "note": "与 notify-03 同一档:「不去也行」是明确的 false,不是信息缺失。"
+    },
+    {
+      "id": "notify-09",
+      "task": "abstain",
+      "tags": ["notify", "full-abstain"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【提醒】请各位同学平时留意本群公告,以免错过后续消息。",
+      "expected": {
+        "abstained": ["subject", "dueAt", "submitWay", "mandatory", "material"]
+      },
+      "note": "纯寒暄式提醒,五个字段一个都不该出现。此例挂了说明提示词把「没有信息」当成了「要填满字段」。"
+    },
+    {
+      "id": "notify-10",
+      "task": "abstain",
+      "tags": ["notify", "full-abstain"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "周五18:00之前交上来,收到请回复。",
+      "expected": {
+        "dueAt": "周五18:00之前",
+        "abstained": ["subject", "submitWay", "mandatory", "material"]
+      },
+      "note": "只说了时间,连交什么都没说。给 subject 编一个「作业」是最典型的幻觉。"
+    },
+    {
+      "id": "notify-11",
+      "task": "abstain",
+      "tags": ["notify", "hearsay"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "听班长说好像要交一份读书报告,具体时间还没定,定了我再在群里说。",
+      "expected": {
+        "subject": "读书报告",
+        "abstained": ["dueAt", "submitWay", "mandatory", "material"]
+      },
+      "note": "事项明确但时间「还没定」:时间/入口/是否必交必须留白,不能因为读到了「读书报告」就顺手补齐。"
+    },
+    {
+      "id": "notify-12",
+      "task": "structured",
+      "tags": ["notify", "complete", "long"],
+      "user": "把这条通知抽成结构化字段。",
+      "input": "【期末材料】操作系统课程期末需要提交三项材料:课程设计方案、运行日志、个人总结。请在12月28日12:00之前上传到课程平台作业区,三项缺一项按未完成计,所有人必交。另外推荐参加12月30日的经验分享会,自愿。",
+      "expected": {
+        "subject": "期末材料",
+        "dueAt": "12月28日12:00之前",
+        "submitWay": "课程平台作业区",
+        "mandatory": true,
+        "material": ["课程设计方案", "运行日志", "个人总结"]
+      },
+      "note": "同一则消息里掺了第二条通知(分享会),只能取主事项;把「经验分享会」当成 subject 就是被长文本带偏。"
+    }
+  ]
+}

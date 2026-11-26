@@ -67,6 +67,9 @@ module.exports = {
     // isAdminUser() 运行时代码的同名文件必须继续计入。
     '!src/services/turnstile/types.ts',
     '!src/services/librechat/types.ts',
+    // 同上：X4 评测台的类型文件只被 `import type` 消费（harness/scorers 均如此），
+    // 编译后引用被完全擦除 → 模块永不加载 → 0% 是结构噪声，不是测试欠账。
+    '!src/eval/types.ts',
   ],
   coverageProvider: 'v8',
   coverageDirectory: 'coverage',

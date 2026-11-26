@@ -69,6 +69,14 @@ jobs:
           ADMIN_PASSWORD: nightly-admin-password
           TEST_ADMIN_PASSWORD: nightly-admin-password
           IP_QUERY_KEY: ${{ secrets.IP_QUERY_API_KEY }}
+          # X4 真模型评测（src/tests/aiEvalLive.test.ts）：默认不跑，`secrets.*` 缺失时
+          # 解析成空串 → 守卫 `=== "1"` 不成立 → 整组 skip，不改变现有 nightly 结论。
+          # 要激活：把仓库 secret AI_LIVE_EVAL_CHECK 设成 "1"，并配好 CHAT_*。
+          # 只开开关却没配 provider 会**显式失败**而不是静默跳过（不许假绿）。
+          AI_LIVE_EVAL_CHECK: ${{ secrets.AI_LIVE_EVAL_CHECK }}
+          CHAT_BASE_URL: ${{ secrets.CHAT_BASE_URL }}
+          CHAT_API_KEY: ${{ secrets.CHAT_API_KEY }}
+          CHAT_MODEL: ${{ secrets.CHAT_MODEL }}
         run: pnpm run test:nightly:external
 
       - name: Report nightly outcome
