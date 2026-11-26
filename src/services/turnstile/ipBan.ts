@@ -15,6 +15,7 @@ import {
   MAX_VIOLATIONS,
   VIOLATION_COOLDOWN,
 } from "./constants";
+import { buildHoneypotRepeatQuery, honeypotRepeatWindowStart } from "./honeypotQuery";
 import { sanitizeString, validateIpAddress } from "./validators";
 
 export async function isIpBanned(
