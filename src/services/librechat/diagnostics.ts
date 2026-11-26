@@ -1,4 +1,4 @@
-import type { ChatFailureDiagnostics, ChatMessage, ChatProviderFailureAttempt } from "./types";
+import type { ChatFailureDiagnostics, ChatFailureReason, ChatMessage, ChatProviderFailureAttempt } from "./types";
 
 interface ChatProviderDescriptor {
   baseUrl: string;
@@ -93,22 +93,30 @@ export function mergeChatProviderFailureAttempt(
   return attempts.length < limit ? [...attempts, failureAttempt] : attempts;
 }
 
-/** 按原因取一句话说明:新增原因时必须同时补文案,否则会把新原因写成「全部 0 个调用均失败」。 */
-const FAILURE_SUMMARIES: Record<ChatFailureDiagnostics["reason"], (count: number) => string> = {
+/** 按原因取一句话说明:新增原因时必须同时补文案,否则 `Record` 缺项会直接编译错。 */
+const FAILURE_SUMMARIES: Record<ChatFailureReason, (count: number) => string> = {
   no_provider_configured: () => "未配置可用的对话服务提供者",
   all_providers_failed: (count) => `全部 ${count} 个对话服务调用均失败`,
   vision_unavailable: () => "没有支持识图的对话服务提供者，这条请求需要一张图片才能处理",
   content_rejected: () => "附带的图片无法处理（可能是外链、格式不支持或体积过大）",
 };
 
+/**
+ * 原因码清单,由上面的 `Record` 键集合派生 —— 与类型定义永远同步。
+ * 给 `ticketModel` 的 mongoose enum 用:两处手写副本的后果是新增原因在写库时被 enum 拒掉。
+ */
+export const CHAT_FAILURE_REASONS: readonly ChatFailureReason[] = Object.keys(
+  FAILURE_SUMMARIES,
+) as ChatFailureReason[];
+
 export function buildChatFailureDiagnostics(
-  reason: ChatFailureDiagnostics["reason"],
+  reason: ChatFailureReason,
   attempts: ChatProviderFailureAttempt[],
 ): ChatFailureDiagnostics {
-  const describe = FAILURE_SUMMARIES[reason] || FAILURE_SUMMARIES.all_providers_failed;
+  const describe = FAILURE_SUMMARIES[reason];
   return {
     reason,
-    summary: describe(attempts.length),
+    summary: describe ? describe(attempts.length) : "对话服务调用失败",
     attempts,
     occurredAt: new Date(),
   };

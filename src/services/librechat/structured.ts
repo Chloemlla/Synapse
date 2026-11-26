@@ -43,6 +43,8 @@ export type StructuredIssueCode =
   | "UNBALANCED_JSON"
   | "INVALID_JSON"
   | "NOT_AN_OBJECT"
+  | "EMPTY_OUTPUT"
+  | "PARSE_FAILED"
   | "MISSING_FIELD"
   | "TYPE_MISMATCH"
   | "OUT_OF_ENUM"

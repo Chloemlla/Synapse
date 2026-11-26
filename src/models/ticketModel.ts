@@ -1,4 +1,6 @@
 import { mongoose } from "../services/mongoService";
+import { CHAT_FAILURE_REASONS } from "../services/librechat/diagnostics";
+import type { ChatFailureReason } from "../services/librechat/types";
 
 /** 工单类型：咨询 / 故障（两端标签见 frontend ticketConstants.ts 的 TICKET_TYPE_META）。 */
 export const TICKET_TYPES = ["inquiry", "incident"] as const;
@@ -40,7 +42,8 @@ const ticketAiErrorDetailsSchema = new mongoose.Schema(
   {
     reason: {
       type: String,
-      enum: ["no_provider_configured", "all_providers_failed"],
+      // 清单由 librechat 诊断层派生:写两份副本时,新增原因会在写库这一刻被 enum 拒掉。
+      enum: [...CHAT_FAILURE_REASONS],
       required: true,
     },
     summary: { type: String, required: true },
@@ -232,7 +235,7 @@ export interface ITicketAiProviderFailure {
 }
 
 export interface ITicketAiErrorDetails {
-  reason: "no_provider_configured" | "all_providers_failed";
+  reason: ChatFailureReason;
   summary: string;
   attempts: ITicketAiProviderFailure[];
   occurredAt: Date;
