@@ -36,6 +36,7 @@ export interface LibreChatProvidersSectionProps {
   providerWire: ChatWireFormat;
   providerGroup: string;
   providerEnabled: boolean;
+  providerVision: boolean;
   providerWeight: number;
   onFilterGroupChange: (value: string) => void;
   onBaseUrlChange: (value: string) => void;
@@ -44,6 +45,7 @@ export interface LibreChatProvidersSectionProps {
   onWireChange: (value: ChatWireFormat) => void;
   onGroupChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
+  onVisionChange: (value: boolean) => void;
   onWeightChange: (value: number) => void;
   onRefresh: () => void;
   onSave: () => void;
@@ -70,6 +72,7 @@ export default function LibreChatProvidersSection({
   providerWire,
   providerGroup,
   providerEnabled,
+  providerVision,
   providerWeight,
   onFilterGroupChange,
   onBaseUrlChange,
@@ -78,6 +81,7 @@ export default function LibreChatProvidersSection({
   onWireChange,
   onGroupChange,
   onEnabledChange,
+  onVisionChange,
   onWeightChange,
   onRefresh,
   onSave,
@@ -174,6 +178,23 @@ export default function LibreChatProvidersSection({
                     className="h-4 w-4"
                   />
                 </div>
+                {/* 与 GeoGebra AI 面板的同类勾选保持一致：id + htmlFor；长文案一侧 min-w-0，让提示能换行而不是撑宽整行。 */}
+                <div className="flex items-start gap-3">
+                  <input
+                    id="librechat-provider-vision"
+                    type="checkbox"
+                    checked={providerVision}
+                    onChange={(e) => onVisionChange(e.target.checked)}
+                    disabled={disabled}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <label htmlFor="librechat-provider-vision" className="min-w-0 text-sm font-medium text-slate-700">
+                    支持识图
+                    <span className="block font-normal text-xs text-slate-500">
+                      勾上后这个模型能看图；不勾就只会当纯文本模型用。
+                    </span>
+                  </label>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">权重（1-10）</label>
                   <input
@@ -187,6 +208,16 @@ export default function LibreChatProvidersSection({
                   />
                 </div>
               </div>
+
+              {/* 行为约定收在可展开的「详情」里，主表单只留一句能看懂的开关说明。 */}
+              <details className="mb-4 rounded-2xl border border-slate-200 px-4 py-3">
+                <summary className="cursor-pointer text-sm text-slate-600">详情</summary>
+                <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                  <li>带图片的提问只会发给勾了「支持识图」的提供者；一个都没有时直接回复无法处理，不会剔掉图照样回答。</li>
+                  <li>一次最多 4 张图片、单张不超过 4 MB；不合适的图片会在调用前被拒并给出原因。</li>
+                  <li>图片只用于当次提问，不写进聊天记录；下一轮追问时模型看不到之前那张图。</li>
+                </ul>
+              </details>
 
               <div className="flex items-center justify-end gap-3 mb-4">
                 <m.button
@@ -231,6 +262,7 @@ export default function LibreChatProvidersSection({
                             <div className="mt-1">格式：{WIRE_LABELS[p.wire] || p.wire}</div>
                             <div className="mt-1">Group：{p.group || '-'}</div>
                             <div className="mt-1">Enabled：{p.enabled ? '是' : '否'}｜Weight：{p.weight}</div>
+                            <div className="mt-1">识图：{p.vision ? '是' : '否'}</div>
                             <div className="mt-1 font-mono text-xs text-slate-700">{p.apiKey}</div>
                             <div className="mt-1 text-xs text-slate-500">{p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '-'}</div>
                           </div>
@@ -266,6 +298,7 @@ export default function LibreChatProvidersSection({
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">格式</th>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Group</th>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Enabled</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">识图</th>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Weight</th>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">API Key（脱敏）</th>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Updated</th>
@@ -286,6 +319,7 @@ export default function LibreChatProvidersSection({
                             <td className="px-4 py-3 text-sm text-slate-800">{WIRE_LABELS[p.wire] || p.wire}</td>
                             <td className="px-4 py-3 text-sm text-slate-800">{p.group || '-'}</td>
                             <td className="px-4 py-3 text-sm text-slate-800">{p.enabled ? '是' : '否'}</td>
+                            <td className="px-4 py-3 text-sm text-slate-800">{p.vision ? '是' : '否'}</td>
                             <td className="px-4 py-3 text-sm text-slate-800">{p.weight}</td>
                             <td className="px-4 py-3 font-mono text-sm text-slate-700">{p.apiKey}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '-'}</td>

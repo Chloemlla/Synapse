@@ -33,6 +33,8 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
   const [providerWire, setProviderWire] = useState<ChatWireFormat>('openai-chat');
   const [providerGroup, setProviderGroup] = useState('');
   const [providerEnabled, setProviderEnabled] = useState(true);
+  // 默认不勾：后端把缺字段当纯文本 provider，表单默认值与后端口径一致才不会“看起来能识图”。
+  const [providerVision, setProviderVision] = useState(false);
   const [providerWeight, setProviderWeight] = useState(1);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -51,7 +53,9 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
       const res = await authFetch(url, { headers: { ...getAuthHeaders() } });
       const data = await res.json();
       if (!res.ok || !data.success) { setNotification({ message: data.error || '获取提供者失败', type: 'error' }); return; }
-      setProviders(Array.isArray(data.providers) ? data.providers : []);
+      const rows: ChatProviderItem[] = Array.isArray(data.providers) ? data.providers : [];
+      // 老文档没有 vision 字段，列表回显与“编辑”回填都依赖这里归一，不能直接透传 data.providers。
+      setProviders(rows.map((row) => ({ ...row, vision: row.vision === true })));
     } catch (e) {
       setNotification({ message: '获取提供者失败：' + (e instanceof Error ? e.message : '未知错误'), type: 'error' });
     } finally { setLoading(false); }
@@ -64,7 +68,7 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
   const resetForm = useCallback(() => {
     setProviderId(null); setProviderBaseUrl(''); setProviderApiKey(''); setProviderModel('');
     setProviderWire('openai-chat');
-    setProviderGroup(''); setProviderEnabled(true); setProviderWeight(1);
+    setProviderGroup(''); setProviderEnabled(true); setProviderVision(false); setProviderWeight(1);
   }, []);
 
   const handleSave = useCallback(() => {
@@ -76,7 +80,7 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
     setSaving(true);
     (async () => {
       try {
-        const body: Record<string, unknown> = { baseUrl, apiKey, model, wire: providerWire, group, enabled, weight };
+        const body: Record<string, unknown> = { baseUrl, apiKey, model, wire: providerWire, vision: providerVision === true, group, enabled, weight };
         if (providerId) body.id = providerId;
         const res = await authFetch(LIBRECHAT_PROVIDERS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(body) });
         const data = await res.json();
@@ -86,7 +90,7 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
       } catch (e) { setNotification({ message: '保存失败：' + (e instanceof Error ? e.message : '未知错误'), type: 'error' }); }
       finally { setSaving(false); }
     })();
-  }, [canWrite, saving, providerId, providerBaseUrl, providerApiKey, providerModel, providerWire, providerGroup, providerEnabled, providerWeight, fetchProviders, resetForm, setNotification]);
+  }, [canWrite, saving, providerId, providerBaseUrl, providerApiKey, providerModel, providerWire, providerGroup, providerEnabled, providerVision, providerWeight, fetchProviders, resetForm, setNotification]);
 
   const handleDelete = useCallback(async (id: string) => {
     if (!canWrite) return;
@@ -116,6 +120,7 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
     setProviderWire(p.wire === 'openai-responses' || p.wire === 'anthropic' ? p.wire : 'openai-chat');
     setProviderGroup(p.group || '');
     setProviderEnabled(!!p.enabled); setProviderWeight(Number(p.weight || 1));
+    setProviderVision(p.vision === true);
   }, [canWrite]);
 
   return (
@@ -127,9 +132,11 @@ export default function SelfContainedLibreChatProvidersSection({ prefersReducedM
       providerBaseUrl={providerBaseUrl} providerApiKey={providerApiKey} providerModel={providerModel}
       providerWire={providerWire}
       providerGroup={providerGroup} providerEnabled={providerEnabled} providerWeight={providerWeight}
+      providerVision={providerVision}
       onFilterGroupChange={setProviderFilterGroup} onBaseUrlChange={setProviderBaseUrl} onApiKeyChange={setProviderApiKey}
       onModelChange={setProviderModel} onWireChange={setProviderWire}
       onGroupChange={setProviderGroup} onEnabledChange={setProviderEnabled} onWeightChange={setProviderWeight}
+      onVisionChange={setProviderVision}
       onRefresh={fetchProviders} onSave={handleSave} onReset={resetForm} onEdit={handleEdit} onDelete={handleDelete}
     />
   );

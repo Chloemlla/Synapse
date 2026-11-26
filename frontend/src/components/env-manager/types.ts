@@ -36,6 +36,11 @@ export interface ChatProviderItem {
   model: string;
   /** 线格式:openai-chat(默认)/ openai-responses / anthropic。 */
   wire: ChatWireFormat;
+  /**
+   * 这个模型能不能看图。后端只认严格布尔 true，缺字段/脏值一律按纯文本 provider 处理，
+   * 所以读取时必须自己 `=== true` 归一，不能靠 `Boolean()` 或直接透传 undefined。
+   */
+  vision: boolean;
   group: string;
   enabled: boolean;
   weight: number;
