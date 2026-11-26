@@ -138,6 +138,8 @@ export function registerLibreChatAdminRoutes(router: Router): void {
         baseUrl: d.baseUrl,
         model: d.model,
         wire: normalizeWire(d.wire),
+        // X1-05:老文档没这个字段就是 false(fail-closed),带图请求会在调用前被拒而不是被剔图。
+        vision: d.vision === true,
         group: d.group || "",
         enabled: d.enabled !== false,
         weight: Number(d.weight || 1),
@@ -162,7 +164,7 @@ export function registerLibreChatAdminRoutes(router: Router): void {
     }),
     async (req, res) => {
     try {
-      const { id, baseUrl, apiKey, model, group, enabled, weight, wire } = req.body || {};
+      const { id, baseUrl, apiKey, model, group, enabled, weight, wire, vision } = req.body || {};
       const ChatProviderModel = (mongoose.models.ChatProvider as any) || mongoose.model("ChatProvider");
       const safeBase = typeof baseUrl === "string" ? baseUrl.trim().replace(/\/$/, "") : "";
       const safeKey = typeof apiKey === "string" ? apiKey.trim() : "";
@@ -171,6 +173,8 @@ export function registerLibreChatAdminRoutes(router: Router): void {
       const safeGroup = typeof group === "string" ? group.trim() : "";
       const safeEnabled = typeof enabled === "boolean" ? enabled : true;
       const safeWeight = Number.isFinite(Number(weight)) ? Math.max(1, Math.min(10, Number(weight))) : 1;
+      // 只认布尔 true,其余(缺字段/字符串/脏数据)一律当纯文本 provider。
+      const safeVision = vision === true;
       if (!safeBase || !safeKey || !safeModel) {
         return res.status(400).json({ success: false, error: "baseUrl/apiKey/model 不能为空" });
       }
@@ -183,6 +187,7 @@ export function registerLibreChatAdminRoutes(router: Router): void {
             apiKey: safeKey,
             model: safeModel,
             wire: safeWire,
+            vision: safeVision,
             group: safeGroup,
             enabled: safeEnabled,
             weight: safeWeight,
@@ -197,6 +202,7 @@ export function registerLibreChatAdminRoutes(router: Router): void {
           apiKey: safeKey,
           model: safeModel,
           wire: safeWire,
+          vision: safeVision,
           group: safeGroup,
           enabled: safeEnabled,
           weight: safeWeight,

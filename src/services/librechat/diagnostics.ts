@@ -93,16 +93,22 @@ export function mergeChatProviderFailureAttempt(
   return attempts.length < limit ? [...attempts, failureAttempt] : attempts;
 }
 
+/** 按原因取一句话说明:新增原因时必须同时补文案,否则会把新原因写成「全部 0 个调用均失败」。 */
+const FAILURE_SUMMARIES: Record<ChatFailureDiagnostics["reason"], (count: number) => string> = {
+  no_provider_configured: () => "未配置可用的对话服务提供者",
+  all_providers_failed: (count) => `全部 ${count} 个对话服务调用均失败`,
+  vision_unavailable: () => "没有支持识图的对话服务提供者，这条请求需要一张图片才能处理",
+  content_rejected: () => "附带的图片无法处理（可能是外链、格式不支持或体积过大）",
+};
+
 export function buildChatFailureDiagnostics(
   reason: ChatFailureDiagnostics["reason"],
   attempts: ChatProviderFailureAttempt[],
 ): ChatFailureDiagnostics {
+  const describe = FAILURE_SUMMARIES[reason] || FAILURE_SUMMARIES.all_providers_failed;
   return {
     reason,
-    summary:
-      reason === "no_provider_configured"
-        ? "未配置可用的对话服务提供者"
-        : `全部 ${attempts.length} 个对话服务调用均失败`,
+    summary: describe(attempts.length),
     attempts,
     occurredAt: new Date(),
   };

@@ -47,11 +47,27 @@ import type {
 } from "./librechat/types";
 import {
   buildWireRequest,
+  countContentImages,
   extractWireText,
   normalizeWire,
+  validateContentParts,
   wireStreamEvent,
+  type ChatContentPart,
   type ChatWireFormat,
+  type ContentPartsIssue,
+  type WireChatContent,
+  type WireChatMessage,
 } from "./librechat/wire";
+import { buildTryList, providerKey, type ProviderRequirement, type ResolvedProvider } from "./librechat/selection";
+import { invokeWithFailover } from "./librechat/invoke";
+import { sanitizeAssistantText } from "./librechat/sanitize";
+import type { StructuredSpec } from "./librechat/structured";
+import {
+  runStructuredExtraction,
+  runStructuredQuorum,
+  type StructuredExtractionOutcome,
+  type StructuredQuorumOutcome,
+} from "./librechat/structuredRunner";
 
 function normalizeOwnerReference(input?: string): string {
   if (!input || typeof input !== "string") return "";
@@ -63,26 +79,9 @@ function normalizeOwnerReference(input?: string): string {
 // 关键词当字面量（统一实现见 utils/regexEscape；undefined 返回空串）。
 const escapeRegex = escapeRegexLiteralOrEmpty;
 
-// 清洗助手文本中的 <think> 思考内容与可视化标记
-function sanitizeAssistantText(text: string): string {
-  if (!text) return text;
-  try {
-    return (
-      text
-        // 移除完整的 <think ...>...</think> 段落（允许属性，跨行）
-        .replace(/<think\b[^>]*>[\s\S]*?<\/?think>/gi, "")
-        // 兜底：去掉可能残留的起止标签（含空白）
-        .replace(/<\/?\s*think\b[^>]*>/gi, "")
-        // 去除常见的可视化标记行
-        .replace(/^\s*(已深度思考|深度思考|Deep\s*Thinking)\b.*$/gim, "")
-        // 折叠多余空行
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
-    );
-  } catch {
-    return text;
-  }
-}
+// 折叠多余空行
+// sanitizeAssistantText 见 `librechat/sanitize.ts`(X3-03):一次性调用层 `invoke.ts` 也要用它,
+// 留在这个文件里会让服务层与调用层互相引用。行为未变。
 
 // 识别“询问模型身份/名称/版本”等问题（中英文常见写法），用于强制保持沉默
 function isModelIdentityQuery(text: string): boolean {
@@ -110,13 +109,26 @@ function normalizeBaseUrl(url?: string): string {
   return url.replace(/\/$/, "");
 }
 
-function shuffleInPlace<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+/** provider 的可展示描述:绝不含 apiKey,可以安全地进诊断与评测报告(X3-02)。 */
+export interface ProviderDescriptor {
+  key: string;
+  model: string;
+  host: string;
+  wire: ChatWireFormat;
+  vision: boolean;
+  source: "db" | "env";
 }
+
+/** `chatOnce()` 的结果:失败带原因与诊断,成功带回实际用的 provider(便于溯源与评测归因)。 */
+export type ChatOnceResult =
+  | { ok: true; text: string; provider: ResolvedProvider }
+  | {
+      ok: false;
+      text?: undefined;
+      reason: ChatFailureDiagnostics["reason"];
+      diagnostics: ChatFailureDiagnostics;
+      issues?: ContentPartsIssue[];
+    };
 
 export interface SendMessageOptions {
   /**
@@ -124,6 +136,15 @@ export interface SendMessageOptions {
    * 管理端据此按组件名分组展示。普通用户会话不传。
    */
   internal?: Pick<InternalConversation, "component" | "name">;
+  /**
+   * X1:本轮附带的图片件(`{type:"image",dataUrl}`)。**只进本轮上游请求,不入库**(X1-08)。
+   * 文字仍走 `sendMessage` 的 `message` 参数 —— 历史、搜索、导出都只看得到文字。
+   *
+   * 这里刻意不接受 `system` 覆盖:用户聊天通路的内置系统提示带着平台合规约束
+   * (比如模型身份问题保持沉默),能被请求改写就等于能被绕过。内部服务的一次性调用
+   * 走 `chatOnce()`,那里才允许自带系统提示。
+   */
+  parts?: ChatContentPart[];
 }
 
 /** 内部服务会话在历史文档上的投影（读写两用）。 */
@@ -301,6 +322,7 @@ class LibreChatService {
           apiKey: String((d as any).apiKey || ""),
           model: String((d as any).model || ""),
           wire: normalizeWire((d as any).wire),
+          vision: (d as any).vision === true,
           enabled: (d as any).enabled !== false,
           weight: Number((d as any).weight || 1),
           group: String((d as any).group || ""),
@@ -324,24 +346,169 @@ class LibreChatService {
     return this.providersCache;
   }
 
-  private buildProviderTryList(envFallbackFirst = false): { baseUrl: string; apiKey: string; model: string; wire: ChatWireFormat }[] {
+  /** 环境变量兼底 provider(与既有行为同口径:CHAT_BASE_URL + CHAT_API_KEY 都在才算配置)。 */
+  private envProviderCandidate(): ChatProviderDoc | null {
     const envBase = normalizeBaseUrl(process.env.CHAT_BASE_URL || "");
     const envKey = process.env.CHAT_API_KEY || "";
     const envModel = process.env.CHAT_MODEL || "gpt-oss-120b";
-    const envWire = normalizeWire(process.env.CHAT_WIRE);
-    const envProvider = envBase && envKey ? [{ baseUrl: envBase, apiKey: envKey, model: envModel, wire: envWire }] : [];
-    // 混合顺序：可选择将 env 放前或放后
-    const dbProviders = [...this.providersCache];
-    // 按 weight 简单展开
-    const weighted: ChatProviderDoc[] = [];
-    for (const p of dbProviders) {
-      const times = Math.min(10, Math.max(1, Number(p.weight || 1)));
-      for (let i = 0; i < times; i++) weighted.push(p);
+    if (!envBase || !envKey) return null;
+    // 环境变量兼底默认**不算**能识图:CHAT_VISION=1 才抬那个位,免得把图送给一个纯文本模型。
+    return {
+      baseUrl: envBase,
+      apiKey: envKey,
+      model: envModel,
+      wire: normalizeWire(process.env.CHAT_WIRE),
+      vision: process.env.CHAT_VISION === "1",
+    };
+  }
+
+  private buildProviderTryList(
+    envFallbackFirst = false,
+    requirement: ProviderRequirement = {},
+  ): ResolvedProvider[] {
+    // X3-01:过滤 + weight 展开 + 洗牌全部交给 `selection.ts`(可注入随机、可单测)。
+    return buildTryList({
+      pool: this.providersCache,
+      envProvider: this.envProviderCandidate(),
+      envFirst: envFallbackFirst,
+      requirement,
+      random: Math.random,
+    });
+  }
+
+  /** 当前可用的 provider 概览(无凭据),给管理端/评测报告用。 */
+  public async listProviderCandidates(requirement: ProviderRequirement = {}): Promise<ProviderDescriptor[]> {
+    await this.getProvidersFresh();
+    return this.buildProviderTryList(false, requirement).map((provider) => {
+      let host = provider.baseUrl;
+      try {
+        host = new URL(provider.baseUrl).host;
+      } catch {
+        host = provider.baseUrl.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+      }
+      return { key: providerKey(provider), model: provider.model, host, wire: provider.wire, vision: provider.vision, source: provider.source };
+    });
+  }
+
+  /**
+   * X3-03:一次性、不写会话历史的上游调用。内部服务(抽取/审查/评测)走这里。
+   *
+   * 与 `sendMessage()` 的差别是有意的:没有客服 system、没有历史回灌、没有 SSE。
+   * 一次性判定读到上一轮内容就是 `conversations.ts` 里记着的“跳样本串味”问题。
+   */
+  public async chatOnce(input: {
+    system: string;
+    messages: WireChatMessage[];
+    requirement?: ProviderRequirement;
+    responseFormat?: "json";
+    maxTokens?: number;
+    timeoutMs?: number;
+  }): Promise<ChatOnceResult> {
+    const images = (input.messages || []).reduce((sum, message) => sum + countContentImages(message?.content), 0);
+    if (images > 0) {
+      const issues = input.messages.flatMap((message) => validateContentParts(message?.content));
+      if (issues.length) {
+        return {
+          ok: false,
+          reason: "content_rejected",
+          issues,
+          diagnostics: buildChatFailureDiagnostics("content_rejected", []),
+        };
+      }
     }
-    const tryList = shuffleInPlace(
-      weighted.map((p) => ({ baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model, wire: normalizeWire(p.wire) })),
-    );
-    return envFallbackFirst ? [...envProvider, ...tryList] : [...tryList, ...envProvider];
+
+    await this.getProvidersFresh();
+    const providers = this.buildProviderTryList(false, input.requirement || {});
+    if (!providers.length) {
+      return { ok: false, reason: "no_provider_configured", diagnostics: buildChatFailureDiagnostics("no_provider_configured", []) };
+    }
+    // X1-06 fail-closed:没有能看图的就**不查上游**,而不是剔掉图再问 —— 后者会得到
+    // 一个“看过图”的假答案,比失败更难发现。
+    if (images > 0 && !providers.some((provider) => provider.vision)) {
+      return { ok: false, reason: "vision_unavailable", diagnostics: buildChatFailureDiagnostics("vision_unavailable", []) };
+    }
+
+    const { outcome, attempts } = await invokeWithFailover({
+      providers,
+      request: {
+        system: String(input.system || ""),
+        messages: input.messages,
+        ...(input.responseFormat === "json" ? { responseFormat: "json" as const } : {}),
+        ...(Number.isFinite(Number(input.maxTokens)) ? { maxTokens: Math.trunc(Number(input.maxTokens)) } : {}),
+      },
+      ...(Number.isFinite(Number(input.timeoutMs)) ? { timeoutMs: Number(input.timeoutMs) } : {}),
+    });
+    if (outcome?.ok) return { ok: true, text: outcome.text, provider: outcome.provider };
+    return { ok: false, reason: "all_providers_failed", diagnostics: buildChatFailureDiagnostics("all_providers_failed", attempts) };
+  }
+
+  /**
+   * X2-08:结构化抽取(可含一次修复轮)。失败返回 `ok:false` + 稳定 code,
+   * 绝不编一个默认对象回去(G-06)。
+   */
+  public async extractStructured(input: {
+    spec: StructuredSpec;
+    user: WireChatContent;
+    system?: string;
+    requirement?: ProviderRequirement;
+    maxRepairTurns?: number;
+  }): Promise<StructuredExtractionOutcome> {
+    return runStructuredExtraction({
+      spec: input.spec,
+      user: input.user,
+      ...(typeof input.system === "string" && input.system.trim() ? { system: input.system } : {}),
+      ...(Number.isFinite(Number(input.maxRepairTurns)) ? { maxRepairTurns: Number(input.maxRepairTurns) } : {}),
+      invoke: async (turn) => {
+        const result = await this.chatOnce({
+          system: turn.system,
+          messages: turn.messages,
+          responseFormat: turn.responseFormat,
+          ...(input.requirement ? { requirement: input.requirement } : {}),
+        });
+        if (!result.ok) throw new Error(`chat_once_failed:${result.reason}`);
+        return result.text;
+      },
+    });
+  }
+
+  /**
+   * X3-07:多票表决。每一票用 `exclude` 排掉用过的 provider,尽量拿到真正不同的模型;
+   * 池子不够时就复用(结果里 `distinctProviders:false` 会诚实告知,别让“3 票”骗人)。
+   */
+  public async extractStructuredQuorum(input: {
+    spec: StructuredSpec;
+    user: WireChatContent;
+    system?: string;
+    votes?: number;
+    minVotes?: number;
+    threshold?: number;
+    requirement?: ProviderRequirement;
+  }): Promise<StructuredQuorumOutcome & { distinctProviders: boolean }> {
+    const usedKeys: string[] = [];
+    const outcome = await runStructuredQuorum({
+      spec: input.spec,
+      user: input.user,
+      ...(typeof input.system === "string" && input.system.trim() ? { system: input.system } : {}),
+      ...(Number.isFinite(Number(input.votes)) ? { votes: Number(input.votes) } : {}),
+      ...(Number.isFinite(Number(input.minVotes)) ? { minVotes: Number(input.minVotes) } : {}),
+      ...(Number.isFinite(Number(input.threshold)) ? { threshold: Number(input.threshold) } : {}),
+      invoke: async (turn) => {
+        const requirement: ProviderRequirement = {
+          ...(input.requirement || {}),
+          exclude: [...usedKeys],
+        };
+        const result = await this.chatOnce({
+          system: turn.system,
+          messages: turn.messages,
+          responseFormat: turn.responseFormat,
+          requirement,
+        });
+        if (!result.ok) throw new Error(`chat_once_failed:${result.reason}`);
+        usedKeys.push(providerKey(result.provider));
+        return result.text;
+      },
+    });
+    return { ...outcome, distinctProviders: new Set(usedKeys).size >= Math.max(1, outcome.votes.succeeded) };
   }
 
   private async withOwnerLock<T>(ownerKey: string, action: () => Promise<T>): Promise<T> {
@@ -1010,6 +1177,21 @@ class LibreChatService {
     const internalMeta = options.internal
       ? { component: options.internal.component, name: options.internal.name }
       : undefined;
+
+    // X1:附件图片先过校验 —— 拒绝要发生在花钱之前,也要发生在历史写入之前。
+    const imageParts = (Array.isArray(options.parts) ? options.parts : []).filter((part) => part?.type === "image");
+    if (imageParts.length) {
+      const issues = validateContentParts(imageParts);
+      if (issues.length) {
+        // 图不入库(X1-08),所以连用户消息也不写:一条被拒的请求不该污了历史。
+        const rejected = "附带的图片没能处理（可能是外链、格式不支持或太大），请换一张图或用文字描述。";
+        onFailure?.(buildChatFailureDiagnostics("content_rejected", []));
+        this.sendSSENotification(ownerKey, "message_completed", { messageId: "", hasResponse: false, reason: "content_rejected" });
+        logger.warn("[LibreChat] 图片件被拒绝，未发起上游调用", { ownerKey, codes: issues.map((issue) => issue.code) });
+        return rejected;
+      }
+    }
+
     // 先将用户消息写入历史
     const userMsg: ChatMessage = {
       id: randomUUID(),
@@ -1034,7 +1216,7 @@ class LibreChatService {
     }
 
     // 尝试加载 DB 提供者
-    let providers: { baseUrl: string; apiKey: string; model: string; wire: ChatWireFormat }[] = [];
+    let providers: ResolvedProvider[] = [];
     try {
       await this.getProvidersFresh();
       providers = this.buildProviderTryList(false);
@@ -1048,7 +1230,17 @@ class LibreChatService {
       const envKey = process.env.CHAT_API_KEY || "";
       const envModel = process.env.CHAT_MODEL || "gpt-oss-120b";
       if (envBase && envKey) {
-        providers = [{ baseUrl: envBase, apiKey: envKey, model: envModel, wire: normalizeWire(process.env.CHAT_WIRE) }];
+        providers = [
+          {
+            baseUrl: envBase,
+            apiKey: envKey,
+            model: envModel,
+            wire: normalizeWire(process.env.CHAT_WIRE),
+            // 环境变量兼底默认不算能识图,CHAT_VISION=1 才抬这个位。
+            vision: process.env.CHAT_VISION === "1",
+            source: "env",
+          },
+        ];
       }
     }
 
@@ -1084,11 +1276,36 @@ class LibreChatService {
     // 组织对话上下文，只读取 canonical owner 的最近消息。
     const recent = (await this.getOwnerMessages(ownerKey)).slice(-20);
 
+    if (imageParts.length && !providers.some((provider) => provider.vision)) {
+      // X1-06 fail-closed:没有能看图的就**不查上游**,而不是剔掉图再问 —— 后者会得到
+      // 一个“看过图”的假答案,比直说不可用更难发现。
+      const unavailable = "这个问题需要看图，但暂时没有支持识图的模型可用。请先用文字描述图片内容。";
+      const unavailableDetails = buildChatFailureDiagnostics("vision_unavailable", []);
+      onFailure?.(unavailableDetails);
+      const skipMsg: ChatMessage = {
+        id: randomUUID(),
+        message: unavailable,
+        role: "assistant",
+        timestamp: new Date().toISOString(),
+        ownerKey,
+        aiErrorDetails: unavailableDetails,
+      };
+      const skipTotal = await this.appendHistoryMessage(ownerKey, skipMsg, internalMeta);
+      this.sendSSENotification(ownerKey, "message_completed", {
+        messageId: skipMsg.id,
+        hasResponse: true,
+        responseLength: unavailable.length,
+        totalMessages: skipTotal,
+        isFallback: true,
+      });
+      return unavailable;
+    }
+
     // G7-31: cap the input-token budget. A malicious caller could otherwise push
     // arbitrarily long history into every request, inflating provider cost.
     const MAX_PROMPT_CHARS = 12000;
     let budget = MAX_PROMPT_CHARS;
-    const recentMessages = [];
+    const recentMessages: { role: "user" | "assistant"; content: WireChatContent }[] = [];
     for (let i = recent.length - 1; i >= 0; i--) {
       const m = recent[i];
       const text = typeof m.message === "string" ? m.message : "";
@@ -1100,6 +1317,18 @@ class LibreChatService {
         content: clipped,
       });
       if (recentMessages.length >= 12) break;
+    }
+
+    // X1-01:图片只拼到**本轮**最后一条用户消息上(历史里那份只有文字 —— X1-08)。
+    if (imageParts.length) {
+      const lastTurn = recentMessages[recentMessages.length - 1];
+      const text = lastTurn && lastTurn.role === "user" ? String(lastTurn.content ?? "") : message;
+      const withImages: { role: "user" | "assistant"; content: WireChatContent } = {
+        role: "user",
+        content: [{ type: "text", text }, ...imageParts],
+      };
+      if (lastTurn && lastTurn.role === "user") recentMessages[recentMessages.length - 1] = withImages;
+      else recentMessages.push(withImages);
     }
 
     const messagesPayload = [
@@ -1151,7 +1380,8 @@ class LibreChatService {
           system: String(messagesPayload[0]?.content ?? ""),
           messages: messagesPayload.slice(1).map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
-            content: typeof m.content === "string" ? m.content : "",
+            // 字符串原样走(文本请求体逐字节不变,G-04);只有带图轮次才是件数组。
+            content: m.content as WireChatContent,
           })),
           temperature: 0.7,
           stream: isStream,

@@ -19,6 +19,8 @@ export const INTERNAL_SERVICE_COMPONENTS = {
   moderation: "工单言论审查",
   "qq-guard": "QQ 群纪律审查",
   "ticket-ai": "工单 AI 助手",
+  // X4-09:评测台的会话也要能被管理端分组辨认，而且每轮评测都是全新会话。
+  "ai-eval": "AI 能力评测",
 } as const;
 
 export type InternalServiceComponent = keyof typeof INTERNAL_SERVICE_COMPONENTS;

@@ -6,6 +6,11 @@ export interface ChatProviderDoc {
   model: string;
   /** 线格式:openai-chat | openai-responses | anthropic;缺省按 openai-chat 处理。 */
   wire?: "openai-chat" | "openai-responses" | "anthropic";
+  /**
+   * 能不能吃图(X1-05)。默认 false:没标过的老文档一律当纯文本 provider 用,
+   * 带图请求会在调用前 fail-closed,而不是把图剔掉后给出一个“看过图”的假答案。
+   */
+  vision?: boolean;
   enabled?: boolean;
   weight?: number;
   group?: string;
@@ -74,6 +79,7 @@ const ChatProviderSchema = new mongoose.Schema(
     apiKey: { type: String, required: true },
     model: { type: String, required: true },
     wire: { type: String, default: "openai-chat" },
+    vision: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
     weight: { type: Number, default: 1 },
     group: { type: String, default: "" },
