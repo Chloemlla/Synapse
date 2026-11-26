@@ -24,7 +24,7 @@
 | X1-02 | 只接受 **`data:` URL**（`data:image/(png\|jpeg\|webp\|gif);base64,`），拒绝 `http(s)://` 外链 | `wire.ts: parseInlineImage()` | 单测：外链被拒 + 原因码 `EXTERNAL_IMAGE_NOT_ALLOWED`（防把 SSRF 交给上游） |
 | X1-03 | 体积与张数上限：单图 base64 ≤ 4 MB、每次 ≤ 4 张、超限返回原因码 | `wire.ts` 常量 + `assertContentParts()` | 单测：超限被拒、边界值通过 |
 | X1-04 | 三种线格式各自的图片件构造：chat→`content[].image_url.url`；anthropic→`content[].{type:"image",source:{type:"base64",media_type,data}}`；responses→`input[].{type:"input_image",image_url}` | `wire.ts: buildWireRequest()` | 单测：三协议各钉一组请求体 |
-| X1-05 | provider 能力位 `vision`（schema 默认 `false`） | `librechat/models.ts`、`routes/libreChatRoutes.admin.ts`（list + upsert 白名单）、`frontend/.../env-manager/types.ts` + providers 面板 | 单测：`vision` 非法值归一为 `false`；管理端列表回显 `vision` |
+| X1-05 | provider 能力位 `vision`（schema 默认 `false`） | `librechat/models.ts`、`routes/libreChatRoutes.admin.ts`（list + upsert 白名单，实际挂载路径 `/api/librechat/admin/providers`）、`frontend/.../env-manager/types.ts` + providers 面板 | 单测：`vision` 非法值归一为 `false`；管理端列表回显 `vision` |
 | X1-06 | **fail-closed**：请求含图但候选集里没有 vision provider → 不调用上游、不静默丢图，返回诊断 `reason: "vision_unavailable"` | `libreChatService.sendMessage()` 入口 + `diagnostics.ts` 的 summary 映射 | 单测：无 vision 时 `invoke` 从未被调用，且 `attempts` 为空数组 |
 | X1-07 | `ChatFailureDiagnostics["reason"]` 加 `"vision_unavailable"`；`buildChatFailureDiagnostics` 的 summary 改成按 reason 取表（原来的三元会把新 reason 写成"全部 0 个调用均失败"） | `librechat/types.ts`、`diagnostics.ts` | 单测：新 reason 的 summary 可读、不含实现术语（AGENTS §4 文案约定） |
 | X1-08 | 历史只存文本件（图不落盘），并在代码注释写清"下一轮追问看不到图"是**刻意取舍** | `libreChatService.sendMessage()` | 代码走查 |
@@ -49,7 +49,7 @@
 | X3-01 | 把 `buildProviderTryList()` 内联的"按 weight 展开 + shuffle"抽成纯模块 `selection.ts`：`selectProviders(pool, req)` / `shuffleWithRandom(items, random)` / `buildTryList(...)`，`random` 可注入（原来 `shuffleInPlace(Math.random)` 不可测） | `librechat/selection.ts` | 单测：同种子 → 同顺序；`requireVision` 过滤；`exclude` 生效；weight 上下界 [1,10] |
 | X3-02 | `ProviderRequirement = { requireVision?: boolean; group?: string; exclude?: string[]; limit?: number }`；`providerKey()` = `model@host`（不含凭据，永不入日志/响应） | `selection.ts` | 单测：key 不含 apiKey 子串 |
 | X3-03 | 一次性上游调用抽到 `invoke.ts`：`invokeChatOnce({ provider, spec, timeoutMs })`，沿用既有护栏（`maxContentLength` 2 MB、`proxy:false`、`maxRedirects:5`、超时） | `librechat/invoke.ts` | 单测：注入假 axios？→ 改为纯请求构造 + 错误归因（`buildChatProviderFailureAttempt` 复用） |
-| X3-04 | `normalizeForAgreement(value)`：键排序、数字归一（`3.0`≡`3`、`"3.0"`≡`3`）、字符串 NFKC + 折叠空白；`agreementOf()` 给 `{majority,votes,total,score}` | `librechat/consensus.ts` | 单测：等价写法同票、不同值分票、平票判定 |
+| X3-04 | `normalizeForAgreement(value)`：键排序、**仅 number** 走数字归一（`3`≡`3.0`≡`"3"`）、字符串 NFKC + 折叠空白 + 忽略大小写；带小数尾巴的字符串**不**参与数字归一（类型纠正属于 X2-04 的 `COERCED` 通道，表决层再做一次会把 `"1.10"`/`"1.1"`、`"007"`/`"7"` 判成同票，悄悄抬高一致率）；`agreementOf()` 给 `{majority,votes,total,score,tied}` | `librechat/consensus.ts` | 单测：等价写法（number 侧）同票 + `"3.0"` 与 `3` **分票**的负向断言；平票 `majority=null` |
 | X3-05 | `structuredConsensus(payloads, spec, { minVotes=2, threshold=0.5 })`：**逐字段多数**，低于阈值字段**丢弃**（= 弃权，不是猜）→ 输出 `{value, fieldAgreement, dropped}` | `consensus.ts` | 单测：3 份里 2 份一致留、1 份独占丢；全丢时 `value` 为 `{}` 且 `dropped` 齐 |
 | X3-06 | `runStructuredQuorum({ invoke, spec, votes=3, ... })`：串行取 N 份结构化结果 → 交给 X3-05；返回 `coverage = 保留字段数/期望字段数` | `structuredRunner.ts` | 单测：3 票一致 coverage=1、全不一致 coverage=0 且 `code:"NO_CONSENSUS"` |
 | X3-07 | `libreChatService.chatOnce({ system, parts, requirement, responseFormat, votes? })` 与 `extractStructuredQuorum()`：每一票用 `exclude` 排掉已用过的 provider，票不够就退回单 provider 复用并在结果里标 `distinctProviders:false` | `libreChatService.ts`（≤60 行） | 单测：3 票来自 3 个不同 key；池里只有 1 个时标记为 false |
@@ -96,3 +96,22 @@ frontend/src/components/env-manager/*ProvidersSection   X1-05 表单/表格回�
 2. `git diff --cached --name-only` 与白名单逐字一致；**docTool 在飞 WIP 不纳入**。
 3. 签名提交 + `GIT_TERMINAL_PROMPT=0` push + `gh` 带 `-R Chloemlla/Synapse`。
 4. 判据：`Node verification` / `type-check` / `Quality Guardrails` 全绿；且**确认新测试套件真的跑了**（日志里 `Tests: N passed` 增量、套件名可见），不是被 skipped。
+
+## 7. 落地记录与偏差（逐条有去向）
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| X1-01…04、X1-06、X1-07 | 已实现 | `content_rejected` 是落地时新增的第四个原因码（图本身不合法 ≠ 没有能看图的 provider，两者对用户的出路不同） |
+| X1-05 | 已实现 | 管理端实际挂载路径是 `/api/librechat/admin/providers`（不是 `/api/libre-chat/...`，compat 路由另有别名）；前端回显/表单/payload 在 `env-manager/{types,LibreChatProvidersSection,SelfContainedLibreChatProvidersSection}.tsx` |
+| X1-08 | 已实现 | 图不入库的连带结果：被拒的请求连用户消息也不写（一条被拒的请求不该污历史） |
+| X2-01…07 | 已实现 | `extractJsonObject` 的括号配对扫描顺带修掉了 `qqGuardModerationService` 那份贪婪正则的同类问题；**旧调用点本次不改**（改动它属于业务判定链路，另开一笔） |
+| X2-08 | 部分 | `system` 覆盖落在 `chatOnce()`，**没有**开在 `sendMessage()` 的用户聊天通路上——内置客服系统提示带着平台合规约束（模型身份问题保持沉默），能被请求改写就等于能被绕过。`responseFormat` 同理 |
+| X3-01…06 | 已实现 | `shuffleInPlace` 随抽层删除；X3-04 的等价范围按实现修正（见上表），带小数尾巴的字符串**不**参与数字归一 |
+| X3-07 | 已实现 | `distinctProviders:false` 诚实标记“票不是独立的” |
+| X3-08 | 已实现 | `chatOnce` 不读会话历史也不写 → 天然不沾用户聊天额度桶；需要连续上下文的场景才走 `sendMessage` |
+| X4-01…07 | 已实现 | golden 集用**保留键 `expected.abstained`** 表达“这些字段必须不给值”；评测台只 `import type` 后端纯层，无服务耦合 |
+| X4-08 | 已实现 + 加强 | 套件已进 `jest.nightly.external.config.js`；另在 `nightly-test-matrix.yml` 的 external 步骤注入 `AI_LIVE_EVAL_CHECK` / `CHAT_*`（secret 缺失 → 空串 → 整组 skip，不改变现有 nightly 结论） |
+| X4-09 | 已实现 | `"ai-eval": "AI 能力评测"` 在批次 A 就加进 `conversations.ts` |
+| 附带 | — | `sanitizeAssistantText` 抽到 `librechat/sanitize.ts`（`invoke.ts` 也要用，留 service 里会成环）；`jest.config.js` 把 `src/eval/types.ts` 加进覆盖率排除（纯 `import type` 消费的结构性 0%，与 `librechat/types.ts` 同口径） |
+| 挂起 | — | `.env.example` 未写 `CHAT_VISION`（同 clone 有其他会话在飞 WIP，避锋头）——口径先记在 `docs/guides/ai-infra-extensions.md` §2 |
+| 挂起 | — | 用户聊天通路尚无上传图片的入口（X1 的基建已就绪，缺一个文件→data URL 的前端采集与新路由限流），属下一个作品切片 |

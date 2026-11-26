@@ -26,7 +26,13 @@ function normalizeNumber(value: number, digits: number): string {
 /**
  * 把任意值压成"可比较的规范串"(X3-04)。
  *
- * `3` / `3.0` / `"3.0"` 必须同票,`" 是 "` 与 `"是"` 必须同票,对象键顺序不得影响结果 ——
+ * 等价范围是**按类型划的**,这是刻意的:
+ *  - number 走 `normalizeNumber` → `3` ≡ `3.0` ≡ `"3"`(整数尾巴的字符串与数字同形,天然同票);
+ *  - 带小数尾巴的字符串(`"3.0"`)**不参与数字归一** —— 数字字符串的类型纠正属于
+ *    `structured.ts`(它已经把 `"3.0"` 收进 number 字段并记 `COERCED`);表决层再做一次
+ *    隐式归一,`type:"string"` 字段里的 `"1.10"` vs `"1.1"`、`"007"` vs `"7"`(版本号、编号、
+ *    比例文本)就会被判成同票,一致率被悄悄抬高 —— 而这个一致率是要拿去画 risk-coverage 曲线的。
+ * 另两条归一只做无害的排版拉齐:对象键顺序不得影响结果、字符串 NFKC + 折叠空白 + 默认忽略大小写。
  * 否则一致性分数测的是"模型排版习惯",不是"模型判断是否一致"。
  */
 export function normalizeForAgreement(value: unknown, options: AgreementOptions = {}): string {
