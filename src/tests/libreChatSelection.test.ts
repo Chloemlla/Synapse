@@ -21,7 +21,7 @@ import {
 
 const A: ProviderCandidate = { baseUrl: "https://a.example.com/v1", apiKey: "sk-a-very-secret", model: "mA" };
 const B: ProviderCandidate = { baseUrl: "https://b.example.com/v1", apiKey: "sk-b-very-secret", model: "mB", weight: 3 };
-const V: ProviderCandidate = { baseUrl: "https://v.example.com/v1", apiKey: "sk-v", model: "mVision", vision: true };
+const V: ProviderCandidate = { baseUrl: "https://v.example.com/v1", apiKey: "sk-v-very-secret", model: "mVision", vision: true };
 const DISABLED: ProviderCandidate = { baseUrl: "https://d.example.com/v1", apiKey: "sk-d", model: "mD", enabled: false };
 
 /** 固定序列的注入随机:每次调用给一个预设值,耗尽后重复最后一个,保证用例可复现。 */

@@ -70,10 +70,11 @@ export const STRUCTURED_DEFAULT_VOTES = 3;
 export const STRUCTURED_MAX_VOTES = 5;
 
 function userContentToText(content: WireChatContent): string {
-  if (typeof content === "string") return content;
+  if (typeof content === "string") return content.trim();
   return (content as ChatContentPart[])
     .filter((part): part is { type: "text"; text: string } => part?.type === "text")
-    .map((part) => part.text)
+    .map((part) => String(part.text ?? "").trim())
+    .filter((text) => text)
     .join("\n")
     .trim();
 }
@@ -102,7 +103,9 @@ export async function runStructuredExtraction(input: RunStructuredInput): Promis
   const system = buildStructuredSystemPrompt(String(input.system || "你是信息抽取助手,只按要求输出 JSON。"), input.spec);
   const user = input.user;
   const userText = userContentToText(user);
-  if (!userText && !(Array.isArray(user) && user.length)) {
+  // 只有空白也算“没内容”:不然会为一句空话付一次上游调用(以及一个没人看的回答)。
+  // 纯图片件仍然是有效输入 —— 能不能识图由服务层 fail-closed 判定(X1-06)。
+  if (!userText && !(Array.isArray(user) && user.some((part) => part?.type === "image"))) {
     return {
       ok: false,
       code: "INVALID_INPUT",

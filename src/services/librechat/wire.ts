@@ -120,16 +120,16 @@ export function countContentImages(content: WireChatContent | undefined | null):
   return parts.filter((part) => part?.type === "image").length;
 }
 
-/** 历史只存文本件(X1-08):图不入库、不进隐私数据地图(G-05)。 */
+/** 历史只存文本件(X1-08):图不入库、不进隐私数据地图(G-05)。逐件裁空白，空件丢弃。 */
 export function contentPartsToPlainText(content: WireChatContent | undefined | null): string {
   if (typeof content === "string") return content;
   const parts = toContentParts(content);
   if (!parts) return "";
   return parts
     .filter((part): part is WireTextPart => part?.type === "text")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
+    .map((part) => String(part.text ?? "").trim())
+    .filter((text) => text)
+    .join("\n");
 }
 
 export interface ContentPartsIssue {

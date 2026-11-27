@@ -76,7 +76,7 @@ describe("extractJsonObject · 括号配对扫描(X2-02)", () => {
   });
 
   it("半个对象(括号不配平)→ INVALID_JSON,而不是静默返回半截内容", () => {
-    expect(extractJsonObject('{"a":1').toEqual({
+    expect(extractJsonObject('{"a":1')).toEqual({
       ok: false,
       code: "INVALID_JSON",
       message: "内容里有花括号,但不是合法的 JSON 对象",

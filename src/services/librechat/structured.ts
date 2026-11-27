@@ -206,7 +206,15 @@ export function validateStructuredPayload(input: unknown, spec: StructuredSpec):
     const raw = parsed[field.name];
     if (emptyish(raw)) {
       if (field.required) {
-        issues.push({ code: "MISSING_FIELD", field: field.name, message: `缺少「${field.description || field.name}」` });
+        // 键写了但只有空白 → 「是空的」；键根本没给 / 写了「未知」这类占位 → 「缺少」。
+        // 两者对使用者的修法不同（补一下 vs 这条通知里就没这个信息），不能都报成缺失。
+        const present = Object.prototype.hasOwnProperty.call(parsed, field.name);
+        const blank = present && (raw === null || (typeof raw === "string" && !raw.trim()));
+        issues.push(
+          blank
+            ? { code: "EMPTY_VALUE", field: field.name, message: `「${field.name}」是空的` }
+            : { code: "MISSING_FIELD", field: field.name, message: `缺少「${field.description || field.name}」` },
+        );
       }
       continue;
     }
