@@ -206,10 +206,13 @@ export function validateStructuredPayload(input: unknown, spec: StructuredSpec):
     const raw = parsed[field.name];
     if (emptyish(raw)) {
       if (field.required) {
-        // 键写了但只有空白 → 「是空的」；键根本没给 / 写了「未知」这类占位 → 「缺少」。
-        // 两者对使用者的修法不同（补一下 vs 这条通知里就没这个信息），不能都报成缺失。
+        // 三分法，不是二分：
+        //  - 键根本没给 / 值是 null / 值是「未知、无法确定」这类占位 → MISSING_FIELD（这条材料里没有，别编）；
+        //  - 键写了但值只有空白 → EMPTY_VALUE（有这一栏但没填，补一下就行）。
+        // 两者对使用者是两件事，修复提示的文案也不同（`risk: null` 归 MISSING，
+        // 因为 null 就是模型在说「我不知道」，与写「未知」同义）。
         const present = Object.prototype.hasOwnProperty.call(parsed, field.name);
-        const blank = present && (raw === null || (typeof raw === "string" && !raw.trim()));
+        const blank = present && typeof raw === "string" && !raw.trim();
         issues.push(
           blank
             ? { code: "EMPTY_VALUE", field: field.name, message: `「${field.name}」是空的` }

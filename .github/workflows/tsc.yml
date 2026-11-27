@@ -102,6 +102,10 @@ jobs:
 
       - name: Run frontend Vitest tests with coverage
         id: frontend-tests
+        # 必须加 `if: always()`：不加的话，后端用例一红（仓库存量欠账就是这个现状），
+        # 这一步会被一起带成 skipped，前端用例连续几轮根本没被裁判看过一眼。
+        # skipped ≠ 通过（AGENTS.md §3），而这层掩盖只有逐 step outcome 才看得出来。
+        if: always()
         run: pnpm --dir frontend run test:ci
 
       - name: Report test step outcomes

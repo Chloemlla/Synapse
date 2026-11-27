@@ -80,7 +80,7 @@ describe("extractJsonObject · 括号配对扫描(X2-02)", () => {
       ok: false,
       code: "INVALID_JSON",
       message: "内容里有花括号,但不是合法的 JSON 对象",
-    }));
+    });
   });
 
   it("括号配平但语法非法(尾逗号)→ INVALID_JSON", () => {
@@ -130,8 +130,10 @@ describe("validateStructuredPayload · 逐类 issue 与 note(X2-04)", () => {
     expect(result.value).toEqual({ summary: "还行" });
   });
 
+  // 占位串与 null 一律归为「这条材料里没有」；**只有空白**归为「有这一栏但没填」（EMPTY_VALUE，
+  // 见下面「空字符串字段」那条）。两种文案让使用者做的事完全不同，不能混。
   it("把「未知/无法确定」当弃权:必填字段仍判 MISSING_FIELD,而不是收下这个占位串", () => {
-    for (const placeholder of ["未知", "无法确定", "unknown", "null", "无", "  "]) {
+    for (const placeholder of ["未知", "无法确定", "unknown", "null", "无", null]) {
       const result = validateStructuredPayload({ risk: placeholder }, SPEC);
       expect(result.ok).toBe(false);
       expect(result.issues).toEqual([{ code: "MISSING_FIELD", field: "risk", message: "缺少「风险等级」" }]);
