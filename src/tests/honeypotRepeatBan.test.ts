@@ -38,7 +38,8 @@ jest.mock("../models/ipBanModel", () => ({
 }));
 
 jest.mock("../models/securityEventModel", () => ({
-  SecurityEvent: { find: jest.fn(), countDocuments: jest.fn() },
+  // `create` 是 RC-44 豁免留痕用的（riskExemption 直接写 SecurityEvent），不是本服务写命中事件。
+  SecurityEvent: { find: jest.fn(), countDocuments: jest.fn(), create: jest.fn(async () => ({})) },
 }));
 
 jest.mock("../services/turnstile/ipBan", () => ({
@@ -51,6 +52,7 @@ jest.mock("../services/auditLogService", () => ({
 
 const mockedFind = SecurityEvent.find as unknown as jest.Mock;
 const mockedCount = SecurityEvent.countDocuments as unknown as jest.Mock;
+const mockedEventCreate = SecurityEvent.create as unknown as jest.Mock;
 const mockedFindOne = IpBanModel.findOne as unknown as jest.Mock;
 const mockedManualBanIp = manualBanIp as unknown as jest.Mock;
 const mockedAuditLog = AuditLogService.log as unknown as jest.Mock;
@@ -203,12 +205,19 @@ describe("evaluateHoneypotRepeatBan", () => {
     expect(mockedManualBanIp).not.toHaveBeenCalled();
   });
 
-  it("超管命中走统一风控豁免判据（RC-44），不封禁", async () => {
+  it("超管命中走统一风控豁免判据（RC-44），不封禁但必须留痕", async () => {
     const decision = await evaluateHoneypotRepeatBan({ ...hit(), userId: "u-1", role: "superadmin" });
     expect(decision.banned).toBe(false);
     expect(decision.skippedReason).toBe("risk-exempt");
     expect(mockedCount).not.toHaveBeenCalled();
     expect(mockedManualBanIp).not.toHaveBeenCalled();
+    // RC-44：豁免本身也要有取证记录，否则「为什么这个 IP 没被封」事后无从解释。
+    expect(mockedEventCreate).toHaveBeenCalledTimes(1);
+    expect(mockedEventCreate.mock.calls[0][0]).toMatchObject({
+      eventType: "SUPERADMIN_RISK_EXEMPT",
+      userId: "u-1",
+      eventData: { scope: "honeypot" },
+    });
   });
 
   it("回环 / 私网地址永不自动封，且根本不查库", async () => {
