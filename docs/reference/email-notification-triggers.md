@@ -50,8 +50,8 @@
 | 用户信息被修改 | 管理员更新用户（通用变更表） | 被修改用户 | `generateAdminUserUpdatedEmailHtml` | admin-user-updated.html |
 | 角色变更 | 管理员修改角色 | 用户 | `generateRoleChangedEmailHtml` | security-notice.html |
 | 邮箱变更 | 管理员或用户修改邮箱 | 旧邮箱 + 新邮箱 | `generateEmailChangeOldNoticeHtml` / `generateEmailChangeNewNoticeHtml` | security-notice.html |
-| **账号停用** | 管理员单个更新 `active→suspended`，或批量 `action="suspend"` | 被停用用户 | `generateAccountSuspendedEmailHtml` | security-notice.html |
-| **账号恢复** | 管理员单个更新 `suspended→active`，或批量 `action="activate"` | 被恢复用户 | `generateAccountRestoredEmailHtml` | security-notice.html |
+| **账号停用** | 管理员单个更新 `active→suspended`，或批量 `action="suspend"` | 被停用用户 | `generateAccountSuspendedEmailHtml` | security-notice-time-only.html |
+| **账号恢复** | 管理员单个更新 `suspended→active`，或批量 `action="activate"` | 被恢复用户 | `generateAccountRestoredEmailHtml` | security-notice-time-only.html |
 
 ### 账号生命周期与资源
 
@@ -100,3 +100,8 @@
 - 内容模板：`src/templates/*.html`（占位符 `{{key}}` 替换）。
 - 生成器：`src/templates/emailTemplates.ts`（原有场景）+ `src/templates/emailTemplatesExtended.ts`（工作空间 / 账号状态 / API Key 场景）。
 - 通用安全通知内容模板：`src/templates/security-notice.html`（用户名 chip + 标题 + 描述 + 操作时间/IP/设备表 + 提示块），多数安全类场景复用。
+- 管理员处置类通知：`src/templates/security-notice-time-only.html`（同上，但**详情表只有「操作时间」**）。
+  用于账号停用/恢复等「管理员对用户」的场景：其中 IP / 设备两行的真实值来自**发起操作的管理员机器**
+  （管理员出口 IP、浏览器 UA），发给被处置用户等于泄露操作者指纹。处置原因、操作者与证据保留在
+  管理端审计（AuditLog / 安全事件）里，不随邮件外发。回归判据见
+  `src/tests/accountStatusEmailPrivacy.test.ts`。

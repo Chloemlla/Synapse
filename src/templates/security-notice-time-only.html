@@ -1,0 +1,40 @@
+<!--
+  「只报时间」的安全通知内容模板。
+
+  与 security-notice.html 的差别只有一处：**没有 IP 地址 / 设备环境两行**。
+  这张模板专供「管理员处置用户」类通知（停用 / 恢复）。原因：
+  那两行的值来自发起管理操作的那台机器（管理员浏览器 UA、管理员出口 IP），
+  发给被处置的普通用户等于把操作者指纹外泄，而用户真正需要知道的只有生效时间。
+  操作者、依据与证据留在管理端审计（AuditLog + 事件记录）里，不进邮件。
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td style="padding:0 0 8px 0;">
+      <span style="display:inline-block;padding:6px 12px;background-color:#D3E3FD;border-radius:18px;font-size:14px;line-height:20px;font-weight:500;color:#041E49;">{{username}}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 0 0 0;">
+      <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:500;color:#1F1F1F;">{{title}}</h1>
+    </td>
+  </tr>  <tr>
+    <td style="padding:16px 0 0 0;font-size:16px;line-height:24px;font-weight:400;color:#3C4043;">{{description}}</td>
+  </tr>  <tr>
+    <td style="padding:24px 0 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;border:1px solid #DADCE0;border-radius:8px;overflow:hidden;">
+        <tr>
+          <td width="38%" style="padding:14px 16px;font-size:14px;line-height:20px;color:#5F6368;vertical-align:top;">操作时间</td>
+          <td style="padding:14px 16px;font-size:14px;line-height:20px;font-weight:500;color:#1F1F1F;vertical-align:top;word-break:break-word;">{{time}}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>  <tr>
+    <td style="padding:24px 0 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background-color:#D3E3FD;border-radius:8px;">
+        <tr>
+          <td style="padding:14px 16px;font-size:14px;line-height:20px;color:#041E49;">{{warning}}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

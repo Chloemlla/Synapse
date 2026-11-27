@@ -3,7 +3,7 @@
  * 沿用 email-layout.html 外壳与 security-notice.html 内容模板。
  */
 
-import { escapeHtml, generateSecurityNoticeHtml, renderEmail } from "./emailTemplates";
+import { escapeHtml, generateSecurityNoticeHtml, generateTimeOnlyNoticeHtml, renderEmail } from "./emailTemplates";
 
 /**
  * 生成工作空间成员邀请 HTML 邮件内容。
@@ -57,34 +57,30 @@ export function generateWorkspaceInviteAcceptedEmailHtml(
   });
 }
 
-/** 账户：账号已被停用 */
-export function generateAccountSuspendedEmailHtml(
-  username: string,
-  reason: string,
-  time: string,
-  ip: string,
-  device: string,
-): string {
-  return generateSecurityNoticeHtml(
+/**
+ * 账户：账号已被停用
+ *
+ * 只告诉用户「已停用」与「生效时间」。**不写处置原因、不写操作者 IP/设备**：
+ * 停用是管理员操作，把操作者环境、内部依据告诉普通用户既不必要，也等于泄露
+ * 管理端指纹。取证信息留在管理端审计里，需要时由管理员在后台查看。
+ */
+export function generateAccountSuspendedEmailHtml(username: string, time: string): string {
+  return generateTimeOnlyNoticeHtml(
     username,
     "账号已被停用",
-    `您的账号已因以下原因被停用：<strong>${escapeHtml(reason)}</strong>。<br/>停用期间登录将被阻止。`,
+    "您的账号已被停用，停用期间将无法登录系统。",
     time,
-    ip,
-    device,
     "如果您认为这是误判，请联系管理员申诉以恢复账号。",
   );
 }
 
-/** 账户：账号已恢复使用 */
+/** 账户：账号已恢复使用（同样只报生效时间） */
 export function generateAccountRestoredEmailHtml(username: string, time: string): string {
-  return generateSecurityNoticeHtml(
+  return generateTimeOnlyNoticeHtml(
     username,
     "账号已恢复使用",
     "您的账号已恢复使用，现在可以正常登录系统并访问各项功能。",
     time,
-    "系统管理后台",
-    "系统自动执行",
     "欢迎回来，请遵守平台规则。",
   );
 }

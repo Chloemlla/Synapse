@@ -362,6 +362,29 @@ export function generateSecurityNoticeHtml(
   });
 }
 
+/**
+ * 「只报事实、不报操作者」的安全通知。
+ *
+ * 与 `generateSecurityNoticeHtml` 的区别：**没有 IP / 设备两行**（见
+ * `security-notice-time-only.html` 里的说明）。专供管理员处置用户的通知使用 ——
+ * 那两行的值来自发起管理操作的机器，属于操作者指纹，不该随邮件发给被处置用户。
+ */
+export function generateTimeOnlyNoticeHtml(
+  username: string,
+  title: string,
+  description: string,
+  time: string,
+  warning: string,
+): string {
+  return renderEmail(title, "security-notice-time-only.html", {
+    username: escapeHtml(username),
+    title: escapeHtml(title),
+    description,
+    time: escapeHtml(time),
+    warning: escapeHtml(warning),
+  });
+}
+
 /** 2FA 变更：启用 TOTP */
 export function generateTOTPEnabledEmailHtml(username: string, time: string, ip: string, device: string): string {
   return generateSecurityNoticeHtml(

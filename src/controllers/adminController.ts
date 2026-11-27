@@ -738,19 +738,11 @@ export const adminController = {
           const { generateAccountSuspendedEmailHtml, generateAccountRestoredEmailHtml } = require(
             "../templates/emailTemplates",
           );
-          const { getClientIP } = require("../utils/ipUtils");
           const changeTime = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-          const clientIP = getClientIP(req);
-          const deviceName = req.headers["user-agent"] || "未知设备";
 
           if (statusChangedToSuspended) {
-            const emailHtml = generateAccountSuspendedEmailHtml(
-              user.username,
-              "由管理员根据平台规则执行",
-              changeTime,
-              clientIP,
-              deviceName,
-            );
+            // 停用通知只发账号状态与生效时间：原因/操作者 IP/UA 属管理端信息，不外发给普通用户。
+            const emailHtml = generateAccountSuspendedEmailHtml(user.username, changeTime);
             sendEmail({
               to: user.email,
               subject: "Synapse 账号已被停用通知",
@@ -919,10 +911,7 @@ export const adminController = {
           const { generateAccountSuspendedEmailHtml, generateAccountRestoredEmailHtml } = require(
             "../templates/emailTemplates",
           );
-          const { getClientIP } = require("../utils/ipUtils");
           const changeTime = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-          const clientIP = getClientIP(req);
-          const deviceName = req.headers["user-agent"] || "未知设备";
 
           for (const resultItem of results) {
             if (!resultItem.success) continue;
@@ -930,13 +919,8 @@ export const adminController = {
             if (!targetUser || !targetUser.email) continue;
 
             if (action === "suspend") {
-              const emailHtml = generateAccountSuspendedEmailHtml(
-                targetUser.username,
-                "由管理员根据平台规则执行",
-                changeTime,
-                clientIP,
-                deviceName,
-              );
+              // 同上：批量停用也不带原因/操作者环境。
+              const emailHtml = generateAccountSuspendedEmailHtml(targetUser.username, changeTime);
               sendEmail({
                 to: targetUser.email,
                 subject: "Synapse 账号已被停用通知",
