@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { generateAccountRestoredEmailHtml, generateAccountSuspendedEmailHtml } from "../templates/emailTemplates";
 
 /**
@@ -42,5 +44,11 @@ describe("账号状态通知邮件：只报时间，不报操作者", () => {
     expect(html).not.toContain("设备/环境");
     expect(html).not.toContain("系统自动执行");
     expect(html).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it("内容模板自带作者注释也不行（内容模板会被原样嵌进外发 HTML）", () => {
+    const template = readFileSync(join(__dirname, "..", "templates", "security-notice-time-only.html"), "utf-8");
+
+    expect(template).not.toContain("<!--");
   });
 });

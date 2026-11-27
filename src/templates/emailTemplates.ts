@@ -365,9 +365,16 @@ export function generateSecurityNoticeHtml(
 /**
  * 「只报事实、不报操作者」的安全通知。
  *
- * 与 `generateSecurityNoticeHtml` 的区别：**没有 IP / 设备两行**（见
- * `security-notice-time-only.html` 里的说明）。专供管理员处置用户的通知使用 ——
- * 那两行的值来自发起管理操作的机器，属于操作者指纹，不该随邮件发给被处置用户。
+ * 与 `generateSecurityNoticeHtml` 的区别：**没有 IP / 设备两行**
+ * （模板 `security-notice-time-only.html`，详情表只有「操作时间」）。
+ *
+ * 为什么不能直接拿 `security-notice.html` 把 ip/device 传空：那张表的真实值来自
+ * **发起管理操作的那台机器**（管理员出口 IP、管理员浏览器 UA），发给被处置用户
+ * 等于把操作者指纹外泄；空串则会渲染成两行只有标签的空格子，看着像邮件坏了。
+ * 操作者、依据与证据留在管理端审计（AuditLog / 安全事件）里，不进邮件。
+ *
+ * 注：模板文件里刻意**不写注释**。内容模板会被原样嵌进外发 HTML，
+ * 一句“这里故意不放 IP”的注释本身就发给用户了。
  */
 export function generateTimeOnlyNoticeHtml(
   username: string,

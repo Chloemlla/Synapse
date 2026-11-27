@@ -1,12 +1,3 @@
-<!--
-  「只报时间」的安全通知内容模板。
-
-  与 security-notice.html 的差别只有一处：**没有 IP 地址 / 设备环境两行**。
-  这张模板专供「管理员处置用户」类通知（停用 / 恢复）。原因：
-  那两行的值来自发起管理操作的那台机器（管理员浏览器 UA、管理员出口 IP），
-  发给被处置的普通用户等于把操作者指纹外泄，而用户真正需要知道的只有生效时间。
-  操作者、依据与证据留在管理端审计（AuditLog + 事件记录）里，不进邮件。
--->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
   <tr>
     <td style="padding:0 0 8px 0;">
